@@ -42,6 +42,10 @@ class MainActivity : AppCompatActivity() {
             text = "Live"
             setOnClickListener { startActivity(Intent(this@MainActivity, LiveActivity::class.java)) }
         }
+        val board = Button(this).apply {
+            text = "Board"
+            setOnClickListener { startActivity(Intent(this@MainActivity, BoardActivity::class.java)) }
+        }
         // Mobile parity (owner decision): teach + task control from the phone.
         val teach = Button(this).apply { text = "Teach" }
         teach.setOnClickListener {
@@ -82,7 +86,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        row.addView(save); row.addView(live); row.addView(teach); row.addView(demo)
+        row.addView(save); row.addView(board); row.addView(live); row.addView(teach); row.addView(demo)
         list = ListView(this)
         root.addView(addr); root.addView(row); root.addView(status)
         root.addView(list, LinearLayout.LayoutParams(-1, -1))

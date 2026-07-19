@@ -33,6 +33,11 @@ object HubStore {
         get() = prefs.getString("pairSecret", "") ?: ""
         set(v) { prefs.edit().putString("pairSecret", v).apply() }
 
+    /** Last repo path used when filing a request — saves phone typing. */
+    var lastRepo: String
+        get() = prefs.getString("lastRepo", "") ?: ""
+        set(v) { prefs.edit().putString("lastRepo", v).apply() }
+
     /** Cached run index (JSON as served by the daemon /runs) — usable offline. */
     var runIndex: JSONArray
         get() = try { JSONArray(prefs.getString("runIndex", "[]")) } catch (e: Exception) { JSONArray() }

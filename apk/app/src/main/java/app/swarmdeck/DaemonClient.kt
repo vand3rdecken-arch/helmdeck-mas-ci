@@ -85,4 +85,24 @@ object DaemonClient {
             JSONObject(r.body!!.string())
         }
     }
+
+    // ---- the board: branches as resumable sessions, kanban on top ----
+
+    suspend fun tracks(): JSONArray = withContext(Dispatchers.IO) {
+        http.newCall(req("/tracks")).execute().use { r -> JSONArray(r.body!!.string()) }
+    }
+
+    suspend fun trackHistory(id: String): JSONArray = withContext(Dispatchers.IO) {
+        http.newCall(req("/tracks/$id/history")).execute().use { r -> JSONArray(r.body!!.string()) }
+    }
+
+    suspend fun steerTrack(id: String, text: String): JSONObject =
+        post("/tracks/$id/steer", JSONObject().put("text", text))
+
+    suspend fun moveLane(id: String, lane: String): JSONObject =
+        post("/tracks/$id/lane", JSONObject().put("lane", lane))
+
+    suspend fun newTrack(repo: String, branch: String, task: String): JSONObject =
+        post("/tracks/new", JSONObject().put("repo", repo).put("branch", branch)
+            .put("task", task).put("lane", "backlog"))
 }
