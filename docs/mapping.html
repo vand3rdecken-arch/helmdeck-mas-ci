@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SwarmDeck — what a card IS</title>
+<style>
+  :root{--bg:#0a0e13;--panel:#111a24;--panel2:#0e151d;--edge:#24303c;--ink:#e3edf6;
+        --dim:#8fb0c9;--faint:#5d7488;--mint:#2affc0;--blue:#6fb2e8;--amber:#ffd166;
+        --purple:#b78ef7;--mono:ui-monospace,Consolas,monospace;--sans:system-ui,"Segoe UI",sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);padding:36px 28px 60px}
+  .wrap{max-width:1150px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px}h1 b{color:var(--mint)}
+  .sub{color:var(--faint);margin:0 0 26px}
+  .lead{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+        margin:30px 0 12px;border-top:1px solid var(--edge);padding-top:14px}
+  /* identity diagram */
+  .idrow{display:grid;grid-template-columns:300px 60px 1fr;gap:0;align-items:center}
+  .card{background:var(--panel);border:1px solid var(--edge);border-left:4px solid var(--amber);
+        border-radius:10px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .card b{font-size:15px}.card .m{font:11.5px var(--mono);color:var(--faint);margin-top:3px}
+  .card .r{font-size:12.5px;color:var(--dim);margin-top:6px}
+  .eq{font-size:34px;color:var(--mint);text-align:center;font-weight:700}
+  .ids{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .id{background:var(--panel2);border:1px solid var(--edge);border-radius:9px;padding:10px 13px}
+  .id .t{font:600 12px var(--sans);letter-spacing:.06em;text-transform:uppercase}
+  .id .v{font:12px var(--mono);color:var(--dim);margin-top:3px}
+  .id .d{font-size:11.5px;color:var(--faint);margin-top:4px}
+  .id.branch .t{color:var(--mint)} .id.sess .t{color:var(--blue)}
+  .id.wt .t{color:var(--amber)} .id.rec .t{color:var(--purple)}
+  .one{margin-top:12px;font-size:13px;color:var(--dim)}
+  .one code{font:12px var(--mono);color:var(--mint)}
+  /* lifecycle */
+  .lanes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .lane{background:var(--panel2);border:1px solid var(--edge);border-radius:11px;padding:12px 14px;position:relative}
+  .lane h3{margin:0 0 2px;font-size:14px}
+  .lane .verb{font:600 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+  .l1 h3{color:var(--faint)}.l1 .verb{color:var(--faint)}
+  .l2 h3{color:var(--blue)}.l2 .verb{color:var(--blue)}
+  .l3 h3{color:var(--purple)}.l3 .verb{color:var(--purple)}
+  .l4 h3{color:var(--mint)}.l4 .verb{color:var(--mint)}
+  .lane ul{margin:0;padding-left:0;list-style:none}
+  .lane li{font:12px/1.55 var(--mono);color:var(--dim);padding:2px 0}
+  .lane li b{color:var(--ink);font-weight:600}
+  .lane li.no{color:#4a5c6b;text-decoration:line-through;text-decoration-color:#33424f}
+  .arrow{position:absolute;right:-14px;top:44%;color:var(--mint);font-size:17px;z-index:2}
+  .drag{font-size:11px;color:var(--amber);margin-top:8px;border-top:1px dashed var(--edge);padding-top:7px}
+  /* session strip */
+  .strip{background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:16px 18px;margin-top:14px}
+  .flow{font:13px/2 var(--mono);color:var(--dim);white-space:pre-wrap;margin:0}
+  .flow .s{color:var(--amber)}.flow .r{color:var(--ink)}.flow .c{color:var(--mint)}
+  .flow .n{color:var(--faint)}.flow .b{color:var(--blue)}
+  .key{margin-top:8px;font-size:12px;color:var(--faint)}
+  .key span{margin-right:16px}
+  .key .k1{color:var(--amber)}.key .k2{color:var(--ink)}.key .k3{color:var(--mint)}.key .k4{color:var(--blue)}
+  .not{background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.3);border-radius:10px;
+       padding:12px 16px;margin-top:16px;font-size:13.5px;color:var(--dim)}
+  .not b{color:#ff9b9b}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>A card is <b>a branch with a living session</b> — not a commit</h1>
+  <p class="sub">One card = one deliverable. Commits are what the card <i>produces</i> along the way (many per card).</p>
+
+  <p class="lead">1 · What one card IS — four things bound together</p>
+  <div class="idrow">
+    <div class="card">
+      <b>Fix login redirect loop</b>
+      <div class="m">fix/login-bug · 7 turns · needs_you</div>
+      <div class="r">"Found it — Safari drops the session cookie on 302. Patched, added a test. Ship it?"</div>
+    </div>
+    <div class="eq">=</div>
+    <div class="ids">
+      <div class="id branch"><div class="t">git branch</div><div class="v">fix/login-bug</div>
+        <div class="d">the deliverable — where commits accumulate</div></div>
+      <div class="id sess"><div class="t">claude session</div><div class="v">session_id: 9823bb6b…</div>
+        <div class="d">the conversation — resumes, never rebuilt</div></div>
+      <div class="id wt"><div class="t">worktree</div><div class="v">swarmdeck-worktrees/fix-login-bug/</div>
+        <div class="d">its own folder — parallel cards can't collide</div></div>
+      <div class="id rec"><div class="t">flight recording</div><div class="v">actions.jsonl + video</div>
+        <div class="d">every steer & reply — the receipts</div></div>
+    </div>
+  </div>
+  <p class="one">Select the card anywhere (desktop, phone, glasses) → you continue <code>session 9823bb6b</code> on <code>fix/login-bug</code> exactly where it left off. <b>1 card : 1 branch : 1 session : 1 recording : many commits.</b></p>
+
+  <p class="lead">2 · What a lane move DOES — the drag is the verb</p>
+  <div class="lanes">
+    <div class="lane l1"><span class="arrow">▶</span>
+      <h3>Backlog</h3><div class="verb">request filed</div>
+      <ul>
+        <li><b>a JSON row</b>, nothing more</li>
+        <li class="no">no branch yet</li>
+        <li class="no">no session yet</li>
+        <li class="no">no worktree yet</li>
+        <li>free to queue ideas</li>
+      </ul>
+      <div class="drag">drag → Working = <b>dispatch</b></div>
+    </div>
+    <div class="lane l2"><span class="arrow">▶</span>
+      <h3>Working</h3><div class="verb">dispatched</div>
+      <ul>
+        <li><b>branch + worktree created</b></li>
+        <li><b>session opens</b> with the task</li>
+        <li>steers <b>--resume</b> the session</li>
+        <li>agent edits, runs, <b>commits</b></li>
+        <li>all of it recorded</li>
+      </ul>
+      <div class="drag">drag → Review = <b>submit</b></div>
+    </div>
+    <div class="lane l3"><span class="arrow">▶</span>
+      <h3>Review</h3><div class="verb">submitted</div>
+      <ul>
+        <li>diffstat snapshotted</li>
+        <li>you read <b>timeline first</b></li>
+        <li>video / diff as evidence</li>
+        <li>steer more if not right<br>&nbsp;&nbsp;(back to Working)</li>
+      </ul>
+      <div class="drag">drag → Done = <b>accept</b></div>
+    </div>
+    <div class="lane l4">
+      <h3>Done</h3><div class="verb">accepted</div>
+      <ul>
+        <li>deliverable taken</li>
+        <li>branch ready to <b>merge / PR</b></li>
+        <li>session kept — reopen<br>&nbsp;&nbsp;any time, context intact</li>
+        <li>recording archived</li>
+      </ul>
+      <div class="drag">= client structure: filed → dispatched → submitted → accepted</div>
+    </div>
+  </div>
+
+  <p class="lead">3 · Inside one card's life — session vs commits</p>
+  <div class="strip">
+    <pre class="flow"><span class="n">card dispatched</span>
+<span class="s">steer 1</span> "fix the redirect loop"   → <span class="r">agent works</span> → <span class="c">commit a1f</span> "repro test"
+<span class="s">steer 2</span> "also cover Safari 16"    → <span class="r">same session resumes (remembers everything)</span> → <span class="c">commit b7e</span> "cookie fix" → <span class="c">commit c92</span> "edge case"
+<span class="s">steer 3</span> "clean up + changelog"    → <span class="r">resumes again</span> → <span class="c">commit d10</span> "polish"
+<span class="n">drag → Review</span>  (diff of a1f..d10 + the full recording = the submission)
+<span class="n">drag → Done</span>    <span class="b">branch fix/login-bug: 4 commits, ready to merge</span></pre>
+    <div class="key"><span class="k1">■ steer (you)</span><span class="k2">■ session turn (agent)</span><span class="k3">■ commit (git)</span><span class="k4">■ deliverable</span></div>
+  </div>
+
+  <div class="not"><b>So, not this:</b> a card per commit (too fine — you'd drown), or a card per repo (too coarse — one conversation about everything). A card is the unit you'd naturally review and accept: <b>one branch-sized piece of work with its own memory.</b></div>
+</div>
+</body>
+</html>
