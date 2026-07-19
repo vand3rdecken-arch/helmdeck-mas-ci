@@ -111,6 +111,14 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(
                         {"teach": s.rid if s and not s.stopped.is_set() else None,
                          "busy": list(_ctl["busy"])}))
+            # --- orchestrator: branches/sessions (the Paseo half) ---
+            if p == "/tracks":
+                import sessions
+                return self._send(200, json.dumps(sessions.list_tracks()))
+            parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "history":
+                import sessions
+                return self._send(200, json.dumps(sessions.history(parts[1])))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass
@@ -150,6 +158,26 @@ class H(BaseHTTPRequestHandler):
                 import swarm
                 _bg("demo", swarm.browser_demo)
                 return self._send(200, json.dumps({"started": "browser-demo"}))
+            # --- orchestrator control ---
+            if p == "/tracks/new":
+                import sessions
+                repo = body.get("repo"); branch = body.get("branch"); task = body.get("task")
+                if not (repo and branch and task):
+                    return self._send(400, json.dumps({"error": "repo, branch, task required"}))
+                out = {}
+                def go():
+                    out["t"] = sessions.new_track(repo, branch, task,
+                                                  body.get("perm", sessions.DEFAULT_PERM))
+                _bg("track:new:" + branch, go)
+                return self._send(200, json.dumps({"started": branch}))
+            if len(p.strip("/").split("/")) == 3 and p.strip("/").split("/")[2] == "steer":
+                import sessions
+                tid = p.strip("/").split("/")[1]
+                text = body.get("text")
+                if not text:
+                    return self._send(400, json.dumps({"error": "text required"}))
+                _bg("track:steer:" + tid, lambda: sessions.steer(tid, text))
+                return self._send(200, json.dumps({"started": tid}))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass

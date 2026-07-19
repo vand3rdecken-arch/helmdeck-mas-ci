@@ -11,3 +11,4 @@ push.env
 
 # built APK is committed as a release artifact at repo root; ignore build intermediates
 apk/gradle/wrapper/dists/
+daemon/tracks.json
