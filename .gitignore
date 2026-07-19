@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+daemon/recordings/
+apk/local.properties
+apk/.gradle/
+apk/build/
+apk/app/build/
+.idea/
+*.keystore
+push.env

@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="mrbd-web-app-capable" content="yes">
+<title>SwarmDeck</title>
+<style>
+  /* Additive display: black = transparent; bright accents only, no dark fills. */
+  html,body{margin:0;background:#000;color:#dfe9f2;font:16px/1.4 system-ui;height:100%}
+  #wrap{display:flex;flex-direction:column;height:100%;align-items:center;justify-content:center}
+  #frame{max-width:96vw;max-height:78vh;border:2px solid #2affc0;border-radius:8px;
+         box-shadow:0 0 18px rgba(42,255,192,.35)}
+  #label{color:#2affc0;font-weight:700;letter-spacing:.06em;margin:10px 0 0;text-shadow:0 0 8px rgba(42,255,192,.6)}
+  #empty{color:#8fb6d9;font-weight:700;text-align:center;padding:0 30px}
+</style>
+<div id="wrap">
+  <img id="frame" alt="" hidden>
+  <div id="empty">no agent is on the desk right now</div>
+  <div id="label">SWARMDECK · LIVE</div>
+</div>
+<script>
+"use strict";
+/* Viewer only (the glasses never hold logic — APK rule). Source priority:
+   ?src=<daemon-or-relay-frame-url>; refreshes ~1/s with a cache-buster. */
+var q = new URLSearchParams(location.search);
+var SRC = q.get("src") || "";                 // e.g. http://<pc>:8140/live.jpg or relay /frame
+var img = document.getElementById("frame"), empty = document.getElementById("empty");
+function tick(){
+  if(!SRC){ empty.textContent = "open with ?src=<frame url>"; return; }
+  var probe = new Image();
+  probe.onload = function(){ img.src = probe.src; img.hidden = false; empty.hidden = true; };
+  probe.onerror = function(){ img.hidden = true; empty.hidden = false; };
+  probe.src = SRC + (SRC.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now();
+}
+tick(); setInterval(tick, 1000);
+</script>

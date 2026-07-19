@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:label="SwarmDeck"
+        android:theme="@style/Theme.Material3.Dark.NoActionBar"
+        android:usesCleartextTraffic="true">
+        <!-- cleartext: the daemon is a LAN peer (http://pc-ip:8140); pairing secret gates it -->
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".ReviewActivity" />
+        <activity android:name=".LiveActivity" />
+    </application>
+</manifest>
