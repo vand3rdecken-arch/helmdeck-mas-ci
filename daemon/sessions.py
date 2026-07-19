@@ -68,6 +68,13 @@ def _claude(cwd, prompt, session_id=None, perm=DEFAULT_PERM, timeout=600):
     d = json.loads(r.stdout)
     return d.get("session_id"), d.get("result", "")
 
+# -- lanes: the kanban IS the company structure, just relabeled ----------
+# backlog = request filed (client needs ABC; nothing started, no session yet)
+# working = dispatched      (agent session live on its branch)
+# review  = submitted       (work + recording handed back for acceptance)
+# done    = accepted        (deliverable taken; branch ready to merge)
+LANES = ("backlog", "working", "review", "done")
+
 # -- public API ----------------------------------------------------------
 
 def list_tracks():
@@ -76,31 +83,83 @@ def list_tracks():
 def get_track(tid):
     return _find(_load(), tid)
 
-def new_track(repo, branch, task, perm=DEFAULT_PERM):
-    """Create branch (worktree) + open a coding session on it with the opening task."""
+def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client=""):
+    """File a request. lane=backlog stores it un-started (no worktree, no session);
+    lane=working starts the branch session immediately."""
     repo = os.path.abspath(repo)
     tracks = _load()
     tid = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(branch)
-    wt = _worktree_for(repo, branch)
-    if not os.path.exists(wt):
-        if _branch_exists(repo, branch):
-            _git(repo, "worktree", "add", wt, branch)
-        else:
-            _git(repo, "worktree", "add", wt, "-b", branch)
     run_dir = os.path.join(REC, tid)
     os.makedirs(run_dir, exist_ok=True)
-    from actionlog import ActionLog
-    log = ActionLog(run_dir)
-    log.log("note", "TRACK opened on branch %s (%s)" % (branch, repo))
-    log.log("steer", task)
-    sid, result = _claude(wt, task, perm=perm)
-    log.log("reply", result[:2000])
-    t = {"id": tid, "repo": repo, "branch": branch, "worktree": wt, "task": task,
-         "session_id": sid, "perm": perm, "status": "needs_you", "turns": 1,
-         "run_dir": run_dir, "last_reply": result[:2000],
+    t = {"id": tid, "repo": repo, "branch": branch, "worktree": "", "task": task,
+         "client": client, "session_id": None, "perm": perm, "lane": "backlog",
+         "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
+    from actionlog import ActionLog
+    ActionLog(run_dir).log("note", "REQUEST filed: %s (branch %s)" % (task, branch))
     tracks.insert(0, t)
+    _save(tracks)
+    if lane == "working":
+        t = _start(tid)
+    return t
+
+def _start(tid):
+    """Dispatch a backlog request: create the worktree + open its coding session."""
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    if t["session_id"]:
+        return t
+    wt = _worktree_for(t["repo"], t["branch"])
+    if not os.path.exists(wt):
+        if _branch_exists(t["repo"], t["branch"]):
+            _git(t["repo"], "worktree", "add", wt, t["branch"])
+        else:
+            _git(t["repo"], "worktree", "add", wt, "-b", t["branch"])
+    from actionlog import ActionLog
+    log = ActionLog(t["run_dir"])
+    log.log("note", "DISPATCHED -> branch %s" % t["branch"])
+    log.log("steer", t["task"])
+    t["worktree"] = wt; t["lane"] = "working"; t["status"] = "running"
+    _save(tracks)
+    sid, result = _claude(wt, t["task"], perm=t["perm"])
+    log.log("reply", result[:2000])
+    tracks = _load(); t = _find(tracks, tid)
+    t["session_id"] = sid; t["turns"] = 1
+    t["last_reply"] = result[:2000]; t["status"] = "needs_you"
+    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _save(tracks)
+    return t
+
+def move_lane(tid, lane):
+    """The board move is the workflow verb: ->working dispatches, ->review submits
+    (records a submission note + branch diffstat), ->done accepts."""
+    if lane not in LANES:
+        raise RuntimeError("bad lane: " + lane)
+    if lane == "working":
+        return _start(tid)   # idempotent: resumes position if already started
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    from actionlog import ActionLog
+    log = ActionLog(t["run_dir"])
+    if lane == "review" and t.get("worktree"):
+        try:
+            stat = _git(t["worktree"], "diff", "--stat", "HEAD") or "(all committed)"
+        except Exception:
+            stat = "?"
+        log.log("note", "SUBMITTED for review — diff: " + stat[:400])
+        t["status"] = "submitted"
+    elif lane == "done":
+        log.log("note", "ACCEPTED")
+        t["status"] = "accepted"
+    elif lane == "backlog":
+        t["status"] = "queued"
+    t["lane"] = lane
+    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save(tracks)
     return t
 
@@ -110,6 +169,10 @@ def steer(tid, text, perm=None):
     t = _find(tracks, tid)
     if not t:
         raise RuntimeError("no such track: " + tid)
+    if not t.get("session_id"):
+        _start(tid)                      # steering a backlog card dispatches it first
+        tracks = _load(); t = _find(tracks, tid)
+    t["lane"] = "working"
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("steer", text)
