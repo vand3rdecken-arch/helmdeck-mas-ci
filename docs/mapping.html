@@ -142,6 +142,42 @@
   </div>
 
   <div class="not"><b>So, not this:</b> a card per commit (too fine — you'd drown), or a card per repo (too coarse — one conversation about everything). A card is the unit you'd naturally review and accept: <b>one branch-sized piece of work with its own memory.</b></div>
+
+  <p class="lead">4 · Where HARNESS and LOOP fit</p>
+  <div class="idrow" style="grid-template-columns:1fr 60px 1fr;align-items:start">
+    <div class="strip" style="margin-top:0">
+      <h3 style="margin:0 0 4px;color:var(--blue);font-size:15px">HARNESS — belongs to the REPO</h3>
+      <div class="key" style="margin:0 0 8px">the standing environment every card inherits through its worktree</div>
+      <pre class="flow">repo/
+├ <span class="b">CLAUDE.md / AGENTS.md</span>   <span class="n">the rules & runbook</span>
+├ <span class="b">tools/</span>                  <span class="n">check · evaluate · deploy…</span>
+├ <span class="b">hooks + permissions</span>     <span class="n">what's allowed, what's enforced</span>
+└ <span class="b">MCP / data context</span>      <span class="n">backends, secrets, memory</span>
+
+<span class="c">every card on this repo gets ALL of it for free</span>
+<span class="n">(the session runs inside the worktree = inside the harness)</span></pre>
+    </div>
+    <div class="eq" style="padding-top:60px">+</div>
+    <div class="strip" style="margin-top:0">
+      <h3 style="margin:0 0 4px;color:var(--amber);font-size:15px">LOOP — belongs to the CARD</h3>
+      <div class="key" style="margin:0 0 8px">two nested state machines, one per card</div>
+      <pre class="flow"><span class="s">outer loop = the lanes</span>  <span class="n">(who has the ball)</span>
+backlog → working → review → done
+            <span class="n">you ⇄ agent         you</span>
+
+<span class="s">inner loop = quality states</span>  <span class="n">(inside Working)</span>
+define → build → verify → commit
+         <span class="n">agent self-advances; gates block</span>
+
+<span class="c">rule: a card may only move → Review
+when its inner loop is green</span>  <span class="n">(gates passed)</span></pre>
+    </div>
+  </div>
+  <p class="one" style="max-width:980px">So your instinct is right, with one refinement each: the <b>harness</b> is not per-branch —
+  it's the repo's toolbox, rules and data context, and every branch <i>inherits</i> it by running inside a worktree of that repo.
+  The <b>loop</b> is per-card, and it's two loops nested: the lanes are the outer workflow (ownership handoffs between you and the agent),
+  while the harness's own quality loop (define → build → verify → commit) runs <i>inside</i> the Working lane —
+  and the submit-to-Review move is the gate where the inner loop must be green.</p>
 </div>
 </body>
 </html>
