@@ -42,7 +42,47 @@ class MainActivity : AppCompatActivity() {
             text = "Live"
             setOnClickListener { startActivity(Intent(this@MainActivity, LiveActivity::class.java)) }
         }
-        row.addView(save); row.addView(live)
+        // Mobile parity (owner decision): teach + task control from the phone.
+        val teach = Button(this).apply { text = "Teach" }
+        teach.setOnClickListener {
+            lifecycleScope.launch {
+                try {
+                    val st = DaemonClient.state()
+                    if (st.isNull("teach")) {
+                        val input = EditText(this@MainActivity).apply { hint = "task name" }
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Record a demo on the PC")
+                            .setView(input)
+                            .setPositiveButton("Start") { _, _ ->
+                                lifecycleScope.launch {
+                                    DaemonClient.teachStart(
+                                        input.text.toString().ifBlank { "unnamed task" })
+                                    teach.text = "Stop rec"
+                                    status.text = "recording your PC — do the task now"
+                                }
+                            }
+                            .setNegativeButton("Cancel", null).show()
+                    } else {
+                        val r = DaemonClient.teachStop()
+                        teach.text = "Teach"
+                        status.text = "demo saved: " + r.optString("id")
+                        refresh()
+                    }
+                } catch (e: Exception) { status.text = "daemon unreachable" }
+            }
+        }
+        val demo = Button(this).apply {
+            text = "Demo task"
+            setOnClickListener {
+                lifecycleScope.launch {
+                    try {
+                        DaemonClient.demoTask()
+                        status.text = "browser demo started — watch Live"
+                    } catch (e: Exception) { status.text = "daemon unreachable" }
+                }
+            }
+        }
+        row.addView(save); row.addView(live); row.addView(teach); row.addView(demo)
         list = ListView(this)
         root.addView(addr); root.addView(row); root.addView(status)
         root.addView(list, LinearLayout.LayoutParams(-1, -1))

@@ -2,9 +2,12 @@ package app.swarmdeck
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -49,6 +52,37 @@ object DaemonClient {
             val f = HubStore.recordingFile(runId, "video.$ext")
             f.outputStream().use { out -> r.body!!.byteStream().copyTo(out) }
             f
+        }
+    }
+
+    suspend fun playbook(runId: String): String? = withContext(Dispatchers.IO) {
+        http.newCall(req("/runs/$runId/playbook")).execute().use { r ->
+            if (r.isSuccessful) r.body!!.string() else null
+        }
+    }
+
+    // ---- control: mobile has the same verbs as the desktop CLI ----
+
+    private suspend fun post(path: String, body: JSONObject = JSONObject()): JSONObject =
+        withContext(Dispatchers.IO) {
+            val rb = body.toString().toRequestBody("application/json".toMediaType())
+            http.newCall(Request.Builder().url(HubStore.daemonUrl + path).post(rb).build())
+                .execute().use { r -> JSONObject(r.body!!.string()) }
+        }
+
+    suspend fun teachStart(title: String): JSONObject =
+        post("/control/teach/start", JSONObject().put("title", title))
+
+    suspend fun teachStop(): JSONObject = post("/control/teach/stop")
+
+    suspend fun distill(runId: String): JSONObject =
+        post("/control/distill", JSONObject().put("id", runId))
+
+    suspend fun demoTask(): JSONObject = post("/control/demo")
+
+    suspend fun state(): JSONObject = withContext(Dispatchers.IO) {
+        http.newCall(req("/control/state")).execute().use { r ->
+            JSONObject(r.body!!.string())
         }
     }
 }

@@ -26,11 +26,30 @@ class ReviewActivity : AppCompatActivity() {
         val steps = ListView(this)
         val video = VideoView(this)
         val load = Button(this).apply { text = "Load video (pulls to phone)" }
+        val playbookBtn = Button(this).apply { text = "Playbook" }
+        val playbook = TextView(this).apply { setPadding(8, 8, 8, 8) }
+        val btnRow = LinearLayout(this)
+        btnRow.addView(load); btnRow.addView(playbookBtn)
         root.addView(title)
         root.addView(steps, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(load)
+        root.addView(btnRow)
+        root.addView(playbook)
         root.addView(video, LinearLayout.LayoutParams(-1, 600))
         setContentView(root)
+
+        playbookBtn.setOnClickListener {
+            lifecycleScope.launch {
+                val pb = DaemonClient.playbook(runId)
+                if (pb != null) {
+                    playbook.text = pb
+                } else {
+                    playbook.text = "not distilled yet — distilling now (check back in ~1 min)"
+                    try { DaemonClient.distill(runId) } catch (e: Exception) {
+                        playbook.text = "daemon unreachable"
+                    }
+                }
+            }
+        }
 
         lifecycleScope.launch {
             try {

@@ -1,17 +1,33 @@
 # -*- coding: utf-8 -*-
-"""Local review/index server. The APK (the brain) pulls from here over LAN:
-  /runs                     index of all runs (meta + step counts)
-  /runs/<id>/timeline       the action timeline (JSON)
-  /runs/<id>/video          screen.mp4 or browser.webm (Range supported by SimpleHTTP? no —
-                            fine for v1: full-file; APK downloads then plays locally)
-  /runs/<id>/playbook       playbook.md if distilled
-  /live.jpg                 newest frame of the ACTIVE run (glance feed)
-  /                         human review UI: timeline-first, video drill-down
+"""Local review/index + CONTROL server. The APK is a full-capability client (owner
+decision: mobile = same capabilities), so besides pulling it can drive:
+
+  GET  /runs, /runs/<id>/timeline, /runs/<id>/video, /runs/<id>/playbook, /live.jpg, /
+  POST /control/teach/start   {"title": "..."}      arm a demo recording on the PC
+  POST /control/teach/stop                          finalize it (phone stop button)
+  POST /control/distill       {"id": "<run-id>"}    demo -> playbook (background)
+  POST /control/demo                                scripted browser demo run (background)
+  GET  /control/state                               {"teach": <run-id>|null, "busy": [...]}
 """
-import json, os
+import json, os, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from actionlog import read_timeline
 from runs import REC, list_runs
+
+_ctl = {"teach": None, "busy": []}   # current TeachSession + background job names
+_ctl_lock = threading.Lock()
+
+def _bg(name, fn):
+    """Run a control job in the background; the phone polls /control/state."""
+    def wrap():
+        try: fn()
+        finally:
+            with _ctl_lock:
+                if name in _ctl["busy"]:
+                    _ctl["busy"].remove(name)
+    with _ctl_lock:
+        _ctl["busy"].append(name)
+    threading.Thread(target=wrap, daemon=True).start()
 
 def _active_live():
     for m in list_runs():
@@ -89,9 +105,56 @@ class H(BaseHTTPRequestHandler):
                             with open(fp, "rb") as f:
                                 return self._send(200, f.read(), ct)
                     return self._send(404, b"no video", "text/plain")
+            if p == "/control/state":
+                with _ctl_lock:
+                    s = _ctl["teach"]
+                    return self._send(200, json.dumps(
+                        {"teach": s.rid if s and not s.stopped.is_set() else None,
+                         "busy": list(_ctl["busy"])}))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass
+
+    def do_POST(self):
+        p = self.path.split("?")[0]
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+        except ValueError:
+            body = {}
+        try:
+            if p == "/control/teach/start":
+                from teach import TeachSession
+                with _ctl_lock:
+                    if _ctl["teach"] and not _ctl["teach"].stopped.is_set():
+                        return self._send(409, json.dumps({"error": "already recording",
+                                                           "id": _ctl["teach"].rid}))
+                    s = TeachSession(body.get("title") or "unnamed task").start()
+                    _ctl["teach"] = s
+                return self._send(200, json.dumps({"id": s.rid}))
+            if p == "/control/teach/stop":
+                with _ctl_lock:
+                    s = _ctl["teach"]
+                if not s:
+                    return self._send(404, json.dumps({"error": "not recording"}))
+                rid = s.stop()
+                return self._send(200, json.dumps({"id": rid}))
+            if p == "/control/distill":
+                rid = os.path.basename(body.get("id") or "")
+                if not rid:
+                    return self._send(400, json.dumps({"error": "id required"}))
+                from distill import distill
+                _bg("distill:" + rid, lambda: distill(rid))
+                return self._send(200, json.dumps({"started": rid}))
+            if p == "/control/demo":
+                import swarm
+                _bg("demo", swarm.browser_demo)
+                return self._send(200, json.dumps({"started": "browser-demo"}))
+            self._send(404, b"?", "text/plain")
+        except (ConnectionAbortedError, BrokenPipeError):
+            pass
+        except Exception as e:
+            self._send(500, json.dumps({"error": str(e)}))
 
 def serve(port=8140):
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
