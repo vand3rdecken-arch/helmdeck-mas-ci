@@ -29,8 +29,8 @@ export function dueChip(t: Track) {
 function clientHues(key: string): [string, string] {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  const h1 = h % 360, h2 = (h1 + 75) % 360;
-  return [`oklch(.62 .17 ${h1})`, `oklch(.6 .19 ${h2})`];
+  const h1 = h % 360, h2 = (h1 + 80) % 360;
+  return [`oklch(.72 .27 ${h1})`, `oklch(.65 .29 ${h2})`];
 }
 
 export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
