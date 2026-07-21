@@ -426,6 +426,18 @@ class H(BaseHTTPRequestHandler):
             if p == "/dashboard":
                 return self._send(200, DASH, "text/html; charset=utf-8")
             parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "live":
+                # the card's own glance feed: newest frame while its agent's
+                # turn is being screen-recorded (fresh = written in last 20s)
+                import sessions, time as _t
+                t = sessions.get_track(parts[1])
+                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+                    return self._send(403, b"not your card", "text/plain")
+                fp = os.path.join(t["run_dir"], "live.jpg") if t else ""
+                if fp and os.path.exists(fp) and _t.time() - os.path.getmtime(fp) < 20:
+                    with open(fp, "rb") as f:
+                        return self._send(200, f.read(), "image/jpeg")
+                return self._send(404, b"no live frame", "text/plain")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "history":
                 import sessions
                 if user["role"] == "client":

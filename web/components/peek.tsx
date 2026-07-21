@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { get, post, HistoryRow, Track } from "@/lib/api";
 import { STATUS, useBoard } from "@/lib/store";
+import LiveThumb from "./live";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, toast, refresh } = useBoard();
@@ -45,6 +46,9 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             <span>{e.tokens_in} in / {e.tokens_out} out{e.models.length ? ` · ${e.models.join(", ")}` : ""}</span>
           </>}
         </div>
+        {t.status === "running" && met?.settings?.drivers?.[t.driver]?.record && (
+          <div style={{ padding: "10px 16px 0" }}><LiveThumb trackId={t.id} big /></div>
+        )}
         <div id="feed">
           {hist.map((r, i) =>
             r.kind === "steer" ? <div key={i} className="f-steer">{r.detail}</div> :
