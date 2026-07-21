@@ -91,6 +91,14 @@ a{color:var(--accent-txt);text-decoration:none}
 #layouts .lay:hover{background:var(--bg-transparent-hover)}
 #layouts .lay.active{background:var(--bg-transparent-hover);color:var(--txt-primary)}
 
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in oklch,var(--warn) 45%,transparent)}50%{box-shadow:0 0 0 7px transparent}}
+/* ---- next-up strip: what to work on now ---- */
+#nextup{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:var(--bg-surface-1);
+  border:1px solid var(--warn);border-radius:10px;padding:9px 14px;margin-bottom:14px}
+#nextup .nu{display:inline-flex;align-items:center;gap:7px;background:var(--bg-layer-1);
+  border:1px solid var(--border-subtle);border-radius:7px;padding:5px 10px;cursor:pointer;font-size:12.5px}
+#nextup .nu:hover{background:var(--bg-layer-1-hover)}
+#nextup .nu .why{font-size:10.5px;font-weight:600;color:var(--warn)}
 /* ---- list layout ---- */
 .lrow{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border-subtle);
   cursor:pointer;font-size:12.5px}
@@ -409,6 +417,41 @@ function render(){
   else if(view==='recs')renderRecs();else if(view==='procs')renderProcs();else renderSettings();
 }
 var MODE_ICON={do:'🤖 do',prepare:'✍ prepare',cowork:'🤝 cowork',teach:'🎓 teach',human:'👤 human'};
+var MODE_EMOJI={do:'🤖',prepare:'✍',cowork:'🤝',teach:'🎓',human:'👤'};
+var STATE_STYLE={  // ring color, fill, label
+  done:['var(--ok)','color-mix(in oklch,var(--ok) 18%,transparent)','done'],
+  working:['var(--ai)','color-mix(in oklch,var(--ai) 18%,transparent)','agent working'],
+  ready:['var(--warn)','color-mix(in oklch,var(--warn) 20%,transparent)','▶ up next'],
+  waiting:['var(--border-strong)','transparent','waiting'],
+  proposed:['var(--border-subtle)','transparent','proposed']};
+function pipeline(p){
+  /* the loop, drawn: one node per step, chained left-to-right. green=done,
+     blue=agent working, amber pulse=the chain is HERE, gray=waiting */
+  if(!(p.steps||[]).length)return '';
+  return '<div style="display:flex;align-items:flex-start;overflow-x:auto;padding:10px 2px 6px">'
+    +p.steps.map(function(s,i){
+      var st=STATE_STYLE[s.state||'proposed']||STATE_STYLE.proposed;
+      var review=s.lane==='review';
+      var node='<div style="width:96px;flex-shrink:0;text-align:center;cursor:pointer" onclick="pipeClick(\''+p.id+'\','+i+')">'
+        +'<div style="width:42px;height:42px;border-radius:50%;margin:0 auto;display:grid;place-items:center;'
+        +'font-size:17px;border:2.5px '+(s.state==='proposed'?'dashed':'solid')+' '+st[0]+';background:'+st[1]
+        +(s.state==='ready'?';animation:pulse 1.6s infinite':'')+'">'+(s.done?'✓':MODE_EMOJI[s.mode]||'•')+'</div>'
+        +'<div style="font-size:10.5px;line-height:1.25;margin-top:4px;color:var(--txt-secondary);'
+        +'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+esc(s.title)+'</div>'
+        +'<div style="font-size:9.5px;font-weight:600;color:'+st[0]+'">'+(review?'in review':st[2])+'</div></div>';
+      var link=i<p.steps.length-1?'<div style="flex:0 0 22px;height:42px;display:flex;align-items:center;justify-content:center;'
+        +'color:'+(s.done?'var(--ok)':'var(--border-strong)')+';font-size:15px">→</div>':'';
+      return node+link;}).join('')+'</div>';
+}
+function pipeClick(pid,i){
+  fetchJSON('/processes').then(function(ps){
+    var p=null;ps.forEach(function(x){if(x.id===pid)p=x});
+    if(!p)return;
+    var s=p.steps[i];
+    if(s&&s.track){var t=tracks.filter(function(x){return x.id===s.track})[0];
+      if(t){openPeek(t);return}}
+    toast(s?s.desc||s.title:'');});
+}
 
 /* ---------- processes: propose -> adjust -> accept ---------- */
 function renderProcs(){
@@ -434,7 +477,7 @@ function loadProcs(){
         +(p.client?'<span class=chip>client: '+esc(p.client)+'</span>':'')
         +(p.due?'<span class=chip>📅 '+esc(p.due)+'</span>':'')
         +(p.cost?'<span class=chip>proposal AI $'+p.cost.toFixed(2)+'</span>':'')+'</div>';
-      var steps='';
+      var steps=pipeline(p);
       if(p.status==='proposing')steps='<div style="margin-top:8px;color:var(--txt-tertiary)">agent is proposing steps…</div>';
       else if(p.status==='failed')steps='<div style="margin-top:8px;color:var(--danger)">'+esc(p.error||'proposal failed')+'</div>';
       steps+=(p.steps||[]).map(function(s,i){
@@ -559,9 +602,37 @@ function renderTimeline(){
     r.addEventListener('click',function(){
       var t=tracks.filter(function(x){return x.id===r.dataset.id})[0];if(t)openPeek(t)})});
 }
+function nextUpStrip(){
+  /* the worker's answer to "what do I do now": needs-you cards + chain-ready
+     human/teach/cowork steps, priority first. */
+  var items=tracks.filter(function(t){
+    return t.lane!=='done'&&(t.status==='needs_you'||t.status==='bounced'
+      ||(t.up_next&&t.lane==='backlog'))});
+  items.sort(function(a,b){return (PRIO_ORD[a.priority||'medium']-PRIO_ORD[b.priority||'medium'])
+    ||((a.due||'9999')<(b.due||'9999')?-1:1)});
+  if(!items.length)return '';
+  return '<div id=nextup><b style="font-size:12px;color:var(--warn)">▶ NEXT UP</b>'
+    +items.slice(0,4).map(function(t){
+      var why=t.status==='bounced'?'gate bounced — fix':t.status==='needs_you'?'agent needs you'
+        :t.mode==='human'?'your step in the process':t.mode==='teach'?'demonstrate this once'
+        :t.mode==='cowork'?'cowork — start together':'next in process';
+      return '<span class=nu data-id="'+t.id+'">'+(t.mode?MODE_EMOJI[t.mode]||'':'')+' '
+        +esc(t.task.replace(/^(PREPARE|COWORK|TEACH|HUMAN STEP)[^:]*: /,'')).slice(0,48)
+        +' <span class=why>'+why+'</span>'
+        +(t.mode==='human'&&t.lane==='backlog'?'<button class="btn ghost" style="font-size:10.5px;padding:1px 7px" onclick="event.stopPropagation();markDone(\''+t.id+'\')">✓ done</button>':'')
+        +'</span>';}).join('')
+    +(items.length>4?'<span style="font-size:11.5px;color:var(--txt-tertiary)">+'+(items.length-4)+' more</span>':'')
+    +'</div>';
+}
+function markDone(tid){
+  post('/tracks/'+tid+'/lane',{lane:'done'}).then(function(){
+    toast('Step done — the chain advances');setTimeout(load,600)})}
 function renderBoard(){
-  var host=$('content');host.innerHTML='<div id=board></div>';
-  var b=host.firstChild;
+  var host=$('content');host.innerHTML=nextUpStrip()+'<div id=board></div>';
+  host.querySelectorAll('#nextup .nu').forEach(function(n){
+    n.addEventListener('click',function(){
+      var t=tracks.filter(function(x){return x.id===n.dataset.id})[0];if(t)openPeek(t)})});
+  var b=$('board');
   var maxA=0.01,maxH=1;
   if(met)met.cards.forEach(function(x){if(x.ai_cost>maxA)maxA=x.ai_cost;if(x.touches>maxH)maxH=x.touches});
   LANES.forEach(function(L){

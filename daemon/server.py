@@ -402,6 +402,10 @@ class H(BaseHTTPRequestHandler):
             # --- company instrumentation: settings + CEO dashboard ---
             if p == "/processes":
                 import processes
+                try:
+                    processes.sync()
+                except Exception:
+                    pass
                 return self._send(200, json.dumps(processes.list_processes(
                     client=user["name"] if user["role"] == "client" else None)))
             if p == "/me":
@@ -650,6 +654,8 @@ def serve(port=8140):
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
+    import processes
+    processes.start_chain_poller()
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
 

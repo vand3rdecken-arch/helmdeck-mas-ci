@@ -166,6 +166,76 @@ def remove_step(pid, idx):
                 return p
     raise RuntimeError("no such step")
 
+# -- the chain: a process is a LOOP its work travels through -------------
+# Step N+1 becomes READY when step N's card reaches done. Ready agent steps
+# (do/prepare) auto-dispatch; ready cowork/teach/human steps surface as
+# "up next" for the human. This is what links human and automatic work:
+# a human finishing their step is the trigger that starts the next agent.
+
+def sync():
+    """Reconcile step states with the board; auto-advance the chain."""
+    import sessions, events
+    with _lock:
+        ps = _load()
+    tracks = sessions._load()
+    tmap = {t["id"]: t for t in tracks}
+    tracks_changed = False
+    for p in ps:
+        prev_done = True
+        for s in p["steps"]:
+            t = tmap.get(s.get("track"))
+            done = bool(t and t.get("lane") == "done")
+            s["done"] = done
+            s["ready"] = prev_done and not done and bool(t)
+            s["lane"] = t.get("lane") if t else None
+            s["state"] = ("done" if done else
+                          "working" if t and t.get("lane") in ("working", "review") else
+                          "ready" if s["ready"] else
+                          "waiting" if t else "proposed")
+            if t:
+                want = s["ready"] and t.get("lane") == "backlog"
+                if t.get("up_next") != bool(want):
+                    t["up_next"] = bool(want)
+                    tracks_changed = True
+                # auto-run agent steps the moment the chain reaches them
+                if s["ready"] and s.get("mode") in ("do", "prepare") \
+                   and t.get("lane") == "backlog" and not s.get("auto_dispatched"):
+                    s["auto_dispatched"] = True
+                    events.emit("process", p["id"], action="auto_advance",
+                                step=s["title"][:80], card=t["id"])
+                    threading.Thread(target=_auto_dispatch, args=(t["id"],),
+                                     daemon=True).start()
+            prev_done = done
+        if p["steps"] and all(x.get("done") for x in p["steps"]):
+            if p.get("status") != "done":
+                p["status"] = "done"
+                import events as _e
+                _e.emit("process", p["id"], action="completed")
+        elif p.get("status") == "done":
+            p["status"] = "running"
+    with _lock:
+        _save(ps)
+    if tracks_changed:
+        sessions._save(tracks)
+    return ps
+
+def _auto_dispatch(tid):
+    import sessions
+    try:
+        sessions.move_lane(tid, "working", actor="chain")
+    except Exception as e:
+        print("chain auto-dispatch failed:", tid, e)
+
+def start_chain_poller(interval=20):
+    def loop():
+        while True:
+            try:
+                sync()
+            except Exception as e:
+                print("chain sync error:", e)
+            time.sleep(interval)
+    threading.Thread(target=loop, daemon=True).start()
+
 MODE_DRIVER = {"do": "claude", "prepare": "claude", "cowork": "claude", "teach": None, "human": None}
 
 def accept_step(pid, idx, repo, actor="owner"):
