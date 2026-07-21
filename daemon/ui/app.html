@@ -314,16 +314,33 @@ function authGate(){
       +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><span style="width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px">S</span><b style="font-size:15px">SwarmDeck</b></div>'
       +(setup?'<h3 style="margin:0 0 4px;font-size:14px">Create the owner account</h3>'
         +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:12px">First run — this account manages everything, including other users.</div>'
-       :'<h3 style="margin:0 0 12px;font-size:14px">Sign in</h3>')
+       :'<div style="display:flex;gap:14px;margin-bottom:12px;font-size:13px;font-weight:600">'
+        +'<span id=tab-in style="cursor:pointer;border-bottom:2px solid var(--accent);padding-bottom:3px">Sign in</span>'
+        +(st.registration?'<span id=tab-up style="cursor:pointer;color:var(--txt-tertiary);padding-bottom:3px">Create account</span>':'')
+        +'</div>')
       +'<input id=a-name style="width:100%;margin-bottom:8px" placeholder="username" autocomplete=username>'
       +'<input id=a-pw type=password style="width:100%" placeholder="password'+(setup?' (min 8 chars)':'')+'" autocomplete='+(setup?'new-password':'current-password')+'>'
+      +'<input id=a-invite style="width:100%;margin-top:8px;display:none" placeholder="invite code">'
       +'<div id=a-err style="font-size:12px;color:var(--danger);margin-top:8px;min-height:16px"></div>'
       +'<button class="btn primary" id=a-go style="width:100%;justify-content:center;padding:8px">'+(setup?'Create & sign in':'Sign in')+'</button></div>';
     document.body.appendChild(d);
+    var mode=setup?'setup':'in';
+    function setMode(m){mode=m;
+      d.querySelector('#a-invite').style.display=(m==='up'&&!st.registration_open)?'':'none';
+      d.querySelector('#a-go').textContent=m==='up'?'Create account':'Sign in';
+      d.querySelector('#a-pw').placeholder=m==='up'?'password (min 8 chars)':'password';
+      if(d.querySelector('#tab-in')){
+        d.querySelector('#tab-in').style.cssText='cursor:pointer;padding-bottom:3px;'+(m==='in'?'border-bottom:2px solid var(--accent)':'color:var(--txt-tertiary)');
+        if(d.querySelector('#tab-up'))d.querySelector('#tab-up').style.cssText='cursor:pointer;padding-bottom:3px;'+(m==='up'?'border-bottom:2px solid var(--accent)':'color:var(--txt-tertiary)');
+      }}
+    if(d.querySelector('#tab-in'))d.querySelector('#tab-in').addEventListener('click',function(){setMode('in')});
+    if(d.querySelector('#tab-up'))d.querySelector('#tab-up').addEventListener('click',function(){setMode('up')});
     function go(){
-      fetch(setup?'/auth/setup':'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      var url=mode==='setup'?'/auth/setup':mode==='up'?'/auth/register':'/auth/login';
+      fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({name:d.querySelector('#a-name').value.trim(),
-                             password:d.querySelector('#a-pw').value})})
+                             password:d.querySelector('#a-pw').value,
+                             invite:d.querySelector('#a-invite').value.trim()})})
       .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})})
       .then(function(res){
         if(!res.ok){d.querySelector('#a-err').textContent=res.j.error||'failed';return}
@@ -636,7 +653,16 @@ function renderSettings(){
       +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
       +'<input id=u-name placeholder="username" style="width:130px"><input id=u-pw type=password placeholder="password (8+)" style="width:150px">'
       +'<select id=u-role><option>operator</option><option>client</option><option>owner</option></select>'
-      +'<button class="btn primary" onclick="addUser()">Add user</button></div></div>':'')
+      +'<button class="btn primary" onclick="addUser()">Add user</button></div>'
+      +'<h3 style="margin-top:20px">Registration</h3>'
+      +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:8px">Lets people create their own account on the sign-in screen. Share the invite code; new accounts get the default role.</div>'
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin:0"><input type=checkbox id=r-open'+((met.settings.registration||{}).open?' checked':'')+'> open (no code needed)</label>'
+      +'<input id=r-code placeholder="invite code (empty = registration off)" style="width:220px" value="'+esc((met.settings.registration||{}).invite_code||'')+'">'
+      +'<button class="btn ghost" onclick="$(\'r-code\').value=Math.random().toString(36).slice(2,10)">generate</button>'
+      +'<select id=r-role>'+['client','operator'].map(function(r){return '<option'+(r===((met.settings.registration||{}).default_role||'client')?' selected':'')+'>'+r+'</option>'}).join('')+'</select>'
+      +'<button class="btn primary" onclick="saveReg()">Save registration</button></div>'
+      +'</div>':'')
     +'</div>';
   if(ME&&ME.role==='owner')loadUsers();
 }
@@ -658,6 +684,9 @@ function loadUsers(){
   });
 }
 function post(u,b){return fetchJSON(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})}
+function saveReg(){
+  post('/settings',{registration:{open:$('r-open').checked,invite_code:$('r-code').value.trim(),
+    default_role:$('r-role').value}}).then(function(){toast('Registration settings saved');load()})}
 function addUser(){
   post('/users',{name:$('u-name').value.trim(),password:$('u-pw').value,role:$('u-role').value})
   .then(function(r){if(r.error){toast(r.error,3600);return}

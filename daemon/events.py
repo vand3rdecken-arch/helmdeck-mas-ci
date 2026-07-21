@@ -38,6 +38,10 @@ DEFAULTS = {
                 "claude-desktop": {"type": "claude",
                                    "allowed_tools": ["mcp__windows-mcp__*"],
                                    "record": True}},
+    # self-registration on the sign-in screen: closed by default; users join
+    # with the invite code (owner shares it) and get default_role. open=True
+    # drops the code requirement (LAN-trusted setups only).
+    "registration": {"open": False, "invite_code": "", "default_role": "client"},
     # auth: every API call needs a bearer token of one of these users.
     # roles: owner (everything) / operator (work, no settings) / client
     # (file + comment + watch own cards only). Filled on first serve.

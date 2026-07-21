@@ -286,7 +286,8 @@ class H(BaseHTTPRequestHandler):
 
     # HTML shells + the auth endpoints are public; every data/control route
     # needs a logged-in session (cookie) or a per-user device token.
-    OPEN = ("/", "/classic", "/auth/state", "/auth/login", "/auth/logout", "/auth/setup")
+    OPEN = ("/", "/classic", "/auth/state", "/auth/login", "/auth/logout",
+            "/auth/setup", "/auth/register")
 
     def _sid(self):
         for part in (self.headers.get("Cookie") or "").split(";"):
@@ -328,9 +329,12 @@ class H(BaseHTTPRequestHandler):
         try:
             user = self._user()
             if p == "/auth/state":
-                import auth
+                import auth, events
+                reg = events.settings().get("registration") or {}
                 return self._send(200, json.dumps(
-                    {"setup_needed": not auth.list_users(), "user": user}))
+                    {"setup_needed": not auth.list_users(), "user": user,
+                     "registration": bool(reg.get("open") or reg.get("invite_code")),
+                     "registration_open": bool(reg.get("open"))}))
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             if p == "/users":
@@ -441,6 +445,21 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "already set up"}))
                 try:
                     auth.create_user(body.get("name", ""), body.get("password", ""), "owner")
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+                sid = auth.login(body["name"], body["password"])
+                return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+            if p == "/auth/register":
+                import events, secrets as _s
+                reg = events.settings().get("registration") or {}
+                code = (body.get("invite") or "").strip()
+                if not reg.get("open"):
+                    want = reg.get("invite_code") or ""
+                    if not want or not code or not _s.compare_digest(code, want):
+                        return self._send(403, json.dumps({"error": "valid invite code required"}))
+                try:
+                    auth.create_user(body.get("name", ""), body.get("password", ""),
+                                     reg.get("default_role", "client"))
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
                 sid = auth.login(body["name"], body["password"])
