@@ -363,7 +363,7 @@ function authGate(){
 }
 function signOut(){
   fetch('/auth/logout',{method:'POST'}).then(function(){
-    try{delete localStorage.sdToken}catch(e){}TOKEN='';ME=null;location.reload()})}
+    try{delete localStorage.sdToken;delete localStorage.sdRole}catch(e){}TOKEN='';ME=null;location.reload()})}
 
 function load(){
   var q=[fetchJSON('/tracks'),
@@ -374,6 +374,7 @@ function load(){
     if(ME)$('whoami').innerHTML='<b style="color:var(--txt-secondary)">'+esc(ME.name)+'</b> · '+esc(ME.role);
     // role-based nav: clients get board only. Set explicitly BOTH ways so
     // switching accounts in the same tab restores the items.
+    try{if(ME)localStorage.sdRole=ME.role}catch(e){}
     var isClient=ME&&ME.role==='client';
     document.querySelectorAll('.navitem[data-view="dash"],.navitem[data-view="settings"]')
       .forEach(function(n){n.style.display=isClient?'none':''});
@@ -789,6 +790,13 @@ $('themebtn').addEventListener('click',function(){
   r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';
   try{localStorage.sdTheme=r.dataset.theme}catch(e){}});
 try{if(localStorage.sdTheme)document.documentElement.dataset.theme=localStorage.sdTheme}catch(e){}
+// pre-paint role gate: apply the device's last known role BEFORE /me answers,
+// so a client refresh never flashes Dashboard/Settings (corrected after load()).
+try{if(localStorage.sdRole==='client'){
+  document.querySelectorAll('.navitem[data-view="dash"],.navitem[data-view="settings"]')
+    .forEach(function(n){n.style.display='none'});
+  if(/^#(dash|settings)$/.test(location.hash)){view='board';location.hash='board'}
+}}catch(e){}
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){closePeek();closeModal()}
   if(e.key==='c'&&!e.ctrlKey&&!e.metaKey&&view==='board'
