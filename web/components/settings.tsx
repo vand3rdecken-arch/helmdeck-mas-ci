@@ -19,6 +19,7 @@ export default function SettingsView() {
   const [autoPrio, setAutoPrio] = useState("");
   const [laneLabels, setLaneLabels] = useState<Record<string, string>>({
     backlog: "Backlog", working: "Working", review: "Review", done: "Done" });
+  const [backdrop, setBackdrop] = useState("mesh");
 
   useEffect(() => {
     if (s && !loaded) {
@@ -31,6 +32,7 @@ export default function SettingsView() {
       setAutoModes(s.policy?.auto_dispatch_modes ?? ["do", "prepare"]);
       setAutoPrio(s.policy?.auto_dispatch_priority ?? "");
       setLaneLabels({ backlog: "Backlog", working: "Working", review: "Review", done: "Done", ...(s.policy?.lane_labels ?? {}) });
+      setBackdrop(s.appearance?.backdrop ?? "mesh");
       setLoaded(true);
     }
   }, [s, loaded]);
@@ -51,7 +53,7 @@ export default function SettingsView() {
   async function savePolicy() {
     await post("/settings", { policy: { auto_accept_green: autoAccept,
       auto_dispatch_modes: autoModes, auto_dispatch_priority: autoPrio,
-      lane_labels: laneLabels } });
+      lane_labels: laneLabels }, appearance: { backdrop } });
     toast("Policy saved"); refresh();
   }
   async function saveReg() {
@@ -120,6 +122,10 @@ export default function SettingsView() {
           <option value="">never (default)</option>
           <option value="urgent">urgent only</option>
           <option value="high">high + urgent</option>
+        </select>
+        <label>Backdrop theme (ambient, behind the glass — data colors stay semantic)</label>
+        <select style={{ width: 180 }} value={backdrop} onChange={(e) => setBackdrop(e.target.value)}>
+          {["mesh", "aurora", "ember", "forest", "mono"].map((b) => <option key={b}>{b}</option>)}
         </select>
         <label>Lane labels (rename the loop&apos;s states; semantics stay fixed)</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

@@ -35,6 +35,7 @@ configure may ONLY touch these keys (the flexible half of the workspace):
   value_per_card, default_repo, registration {open, invite_code, default_role}
   currency "EUR"|"USD"
   prices {<model-substring>: {in: $/Mtok, out: $/Mtok}, default: {...}} - AI cost table
+  appearance {backdrop: "mesh"|"aurora"|"ember"|"forest"|"mono"} - ambient background theme
   dashboard {tiles: [...], panels: [...]} - what the economics dashboard shows, in order.
     tiles vocabulary: value_delivered, ai_spend, margin, yield, automation, leverage
     panels vocabulary: capacity, gates, work
@@ -92,7 +93,7 @@ def _find_card(frag):
     return hits[0] if len(hits) == 1 else (hits if hits else None)
 
 ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
-                  "registration", "dashboard", "prices", "currency"}
+                  "registration", "dashboard", "prices", "currency", "appearance"}
 
 def _run_action(a, actor, role="operator"):
     import sessions, processes, events

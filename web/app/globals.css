@@ -402,3 +402,21 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     border-color:color-mix(in oklch,var(--ai) 70%,var(--glass-border))}
   70%{box-shadow:0 0 34px 6px transparent}
   100%{box-shadow:0 0 0 0 transparent}}
+
+/* ---- ambient backdrop themes (settings.appearance.backdrop) ---- */
+/* glass needs something to refract; these live BEHIND everything and never
+   carry meaning - card/status color stays semantic. */
+[data-backdrop="aurora"] body::before{background:
+  radial-gradient(52% 44% at 8% -8%,oklch(.6 .16 200/22%),transparent 70%),
+  radial-gradient(46% 40% at 92% 4%,oklch(.6 .19 300/20%),transparent 70%),
+  radial-gradient(56% 46% at 45% 112%,oklch(.62 .17 165/16%),transparent 72%),
+  radial-gradient(34% 30% at 70% 55%,oklch(.6 .16 330/9%),transparent 75%)}
+[data-backdrop="ember"] body::before{background:
+  radial-gradient(50% 42% at 10% -8%,oklch(.6 .16 45/20%),transparent 70%),
+  radial-gradient(44% 38% at 94% 6%,oklch(.55 .19 25/16%),transparent 70%),
+  radial-gradient(52% 44% at 50% 112%,oklch(.62 .15 70/14%),transparent 72%)}
+[data-backdrop="forest"] body::before{background:
+  radial-gradient(50% 42% at 10% -8%,oklch(.58 .13 160/20%),transparent 70%),
+  radial-gradient(44% 38% at 94% 6%,oklch(.6 .12 200/16%),transparent 70%),
+  radial-gradient(52% 44% at 50% 112%,oklch(.62 .13 130/13%),transparent 72%)}
+[data-backdrop="mono"] body::before{background:none}
