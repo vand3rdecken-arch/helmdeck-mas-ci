@@ -536,6 +536,19 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(copilot.chat(user["name"], text, role=user["role"])))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
+            if p in ("/import/jira", "/import/url"):
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import importers
+                try:
+                    if p.endswith("jira"):
+                        made = importers.jira_import(body.get("jql", ""), actor=user["name"])
+                        return self._send(200, json.dumps({"imported": len(made), "ids": made}))
+                    pr = importers.url_import(body.get("url", ""), client=body.get("client", ""),
+                                              due=body.get("due", ""), actor=user["name"])
+                    return self._send(200, json.dumps(pr))
+                except Exception as e:
+                    return self._send(400, json.dumps({"error": str(e)[:300]}))
             # ---- processes: propose -> adjust -> accept into cards ----
             if p == "/processes/new":
                 import processes

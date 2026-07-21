@@ -44,7 +44,8 @@ export interface Metrics {
     drivers?: Record<string, { type: string; record?: boolean }>;
     registration?: { open: boolean; invite_code: string; default_role: string };
     policy?: { lane_labels?: Record<string, string>; auto_dispatch_modes?: string[];
-      auto_accept_green?: boolean; auto_dispatch_priority?: string };
+      auto_accept_green?: boolean; auto_dispatch_priority?: string; chat_configure_roles?: string[] };
+    jira?: { base: string; email: string; api_token: string; default_jql: string };
     dashboard?: { tiles?: string[]; panels?: string[] };
     appearance?: { backdrop?: string };
   };

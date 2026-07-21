@@ -67,7 +67,12 @@ DEFAULTS = {
         # backlog cards at/above this priority dispatch themselves when
         # capacity has headroom ("" = never)
         "auto_dispatch_priority": "",
+        # which roles may RECONFIGURE the workspace from the copilot chat
+        # (actions/steering stay available to owner+operator regardless)
+        "chat_configure_roles": ["owner"],
     },
+    # Jira Cloud data flow (Settings > Data flows). api_token = Atlassian API token.
+    "jira": {"base": "", "email": "", "api_token": "", "default_jql": ""},
     # auth: every API call needs a bearer token of one of these users.
     # roles: owner (everything) / operator (work, no settings) / client
     # (file + comment + watch own cards only). Filled on first serve.

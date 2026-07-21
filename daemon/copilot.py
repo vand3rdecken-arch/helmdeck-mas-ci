@@ -23,7 +23,9 @@ Reply with ONLY JSON:
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
-   {"type": "configure", "patch": {..}}  (OWNER ONLY - workspace policy/settings)
+   {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
+   {"type": "import_url", "url": "https://...", "client": "", "due": ""}  - fetch a page, agent derives a process from it
+   {"type": "import_jira", "jql": "project = X AND status = 'To Do'"}  - pull Jira issues into backlog cards (needs settings.jira)
  ]}
 
 configure may ONLY touch these keys (the flexible half of the workspace):
@@ -93,14 +95,15 @@ def _find_card(frag):
     return hits[0] if len(hits) == 1 else (hits if hits else None)
 
 ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
-                  "registration", "dashboard", "prices", "currency", "appearance"}
+                  "registration", "dashboard", "prices", "currency", "appearance", "jira"}
 
 def _run_action(a, actor, role="operator"):
     import sessions, processes, events
     kind = a.get("type")
     if kind == "configure":
-        if role != "owner":
-            return "configure denied: owner only"
+        allowed_roles = (events.settings().get("policy") or {}).get("chat_configure_roles", ["owner"])
+        if role not in allowed_roles:
+            return "configure denied: policy allows roles %s" % ", ".join(allowed_roles)
         raw = a.get("patch") or {}
         patch = {}
         for k, v in raw.items():   # accept both {"policy": {...}} and "policy.x"
@@ -146,6 +149,15 @@ def _run_action(a, actor, role="operator"):
         threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
                          kwargs={"actor": actor}, daemon=True).start()
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "import_url":
+        import importers
+        p2 = importers.url_import(a.get("url", ""), client=a.get("client", ""),
+                                  due=a.get("due", ""), actor=actor)
+        return "imported %s - agent is deriving the process steps" % a.get("url")
+    if kind == "import_jira":
+        import importers
+        made = importers.jira_import(a.get("jql", ""), actor=actor)
+        return "imported %d Jira issues into the backlog" % len(made)
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),
                              due=a.get("due", ""), actor=actor)
