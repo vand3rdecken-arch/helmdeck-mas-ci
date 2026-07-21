@@ -63,6 +63,14 @@ def main():
                   (m["id"], m["kind"], m["status"], n, m["title"]))
     elif cmd == "serve":
         import server
+        try:
+            import plane_bridge
+            if plane_bridge._cfg()["api_token"]:
+                plane_bridge.start_thread()
+            else:
+                print("plane-bridge idle (set plane.api_token in settings.json)")
+        except Exception as e:
+            print("plane-bridge not started:", e)
         server.serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8140)
     else:
         print(__doc__)

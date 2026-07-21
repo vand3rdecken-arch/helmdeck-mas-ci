@@ -27,6 +27,11 @@ DEFAULTS = {
                "default": {"in": 3.0, "out": 15.0}},
     "value_per_card": 50.0,   # default deliverable value; per-card value overrides
     "currency": "EUR",
+    # preset repos: filing a ticket never needs a path typed. default_repo is
+    # the fallback; plane.repos maps a Plane project name -> repo path.
+    "default_repo": "",
+    "plane": {"base": "http://localhost:8090", "api_token": "", "workspace": "",
+              "repos": {}, "default_repo": "", "poll_secs": 20},
 }
 
 def settings():
