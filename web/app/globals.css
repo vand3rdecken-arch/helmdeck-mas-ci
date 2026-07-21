@@ -612,3 +612,19 @@ body:has(#peek) #chatfab{display:none}
 #props input[type="date"]::-webkit-calendar-picker-indicator{opacity:.45;filter:invert(.6)}
 #props input[type="number"]::-webkit-inner-spin-button,
 #props input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+
+/* ---- themed controls EVERYWHERE (not just the peek) ---- */
+select{appearance:none;-webkit-appearance:none;padding-right:24px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888f9b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right 8px center;cursor:pointer}
+input[type="date"]::-webkit-calendar-picker-indicator{opacity:.45;filter:invert(.6);cursor:pointer}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:15px;height:15px;
+  border:1.5px solid var(--border-strong);border-radius:5px;background:var(--bg-surface-2);
+  display:inline-grid;place-items:center;cursor:pointer;padding:0;transition:all .12s}
+input[type="checkbox"]:checked{background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  border-color:transparent}
+input[type="checkbox"]:checked::before{content:"";width:8px;height:8px;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6L9 17l-5-5'/></svg>") center/contain no-repeat}
+#settings input[type="checkbox"]{width:15px;height:15px}
