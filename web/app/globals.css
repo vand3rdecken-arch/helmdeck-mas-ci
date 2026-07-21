@@ -464,3 +464,19 @@ input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--gla
   background:linear-gradient(180deg,oklch(1 0 0/7%),transparent)}
 [data-theme="dark"] .panel::before,[data-theme="dark"] .tile::before{
   background:linear-gradient(180deg,oklch(1 0 0/5%),transparent)}
+
+/* ---- client aura: the showcase language on real cards - a skewed gradient
+   panel behind each glass card, hued per client, blooming on hover ---- */
+.gwrap{position:relative}
+.gwrap .card{position:relative;z-index:1}
+.gpanel{position:absolute;top:5%;left:16%;width:56%;height:90%;border-radius:16px;
+  transform:skewX(9deg);pointer-events:none;z-index:0;
+  background:linear-gradient(315deg,var(--g1),var(--g2));
+  opacity:.16;transition:all .5s cubic-bezier(.2,.7,.3,1)}
+.gpanel.gblur{filter:blur(24px);opacity:.22}
+.gwrap:hover .gpanel{transform:skewX(0);left:2%;width:96%;opacity:.34}
+.gwrap:hover .gpanel.gblur{opacity:.42}
+/* spotlighted cards bloom their aura even without direct hover */
+#board.spotlighting .gwrap:has(.card.spot) .gpanel{transform:skewX(0);left:2%;width:96%;opacity:.30}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{opacity:.4}
+#board.spotlighting .gwrap:has(.card.dim) .gpanel{opacity:.05}

@@ -26,8 +26,17 @@ export function dueChip(t: Track) {
   );
 }
 
+function clientHues(key: string): [string, string] {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  const h1 = h % 360, h2 = (h1 + 75) % 360;
+  return [`oklch(.62 .17 ${h1})`, `oklch(.6 .19 ${h2})`];
+}
+
 export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
   const { met, spot, setSpot } = useBoard();
+  const [g1, g2] = t.client ? clientHues(t.client)
+    : ["var(--accent)", "var(--accent-2)"];
   const spotKey: Spot | null = t.process ? { type: "process", value: t.process }
     : t.client ? { type: "client", value: t.client } : null;
   const related = spot ? (spot.type === "client" ? t.client === spot.value : t.process === spot.value) : false;
@@ -37,11 +46,14 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
   met?.cards.forEach((x) => { if (x.ai_cost > maxA) maxA = x.ai_cost; if (x.touches > maxH) maxH = x.touches; });
   const st = STATUS[t.status] ?? [t.status, "var(--txt-tertiary)"];
   return (
-    <div className={`card${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
-      onDragStart={(ev) => ev.dataTransfer.setData("text", t.id)}
-      onMouseEnter={() => spotKey && setSpot(spotKey)}
-      onMouseLeave={() => setSpot(null)}
-      onClick={() => onOpen(t)}>
+    <div className="gwrap" style={{ "--g1": g1, "--g2": g2 } as React.CSSProperties}>
+      <span className="gpanel" aria-hidden />
+      <span className="gpanel gblur" aria-hidden />
+      <div className={`card${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
+        onDragStart={(ev) => ev.dataTransfer.setData("text", t.id)}
+        onMouseEnter={() => spotKey && setSpot(spotKey)}
+        onMouseLeave={() => setSpot(null)}
+        onClick={() => onOpen(t)}>
       <div className="cid">{t.branch} · {t.turns} turns</div>
       <div className="title">{t.task}</div>
       <div className="chips">
@@ -67,11 +79,12 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
         </div>
       )}
       {alive && met?.settings?.drivers?.[t.driver]?.record && <LiveThumb trackId={t.id} />}
-      {t.gate_report && (
-        <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--warn)" }}>
-          gate: {t.gate_report.join(" | ").slice(0, 140)}
-        </div>
-      )}
+        {t.gate_report && (
+          <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--warn)" }}>
+            gate: {t.gate_report.join(" | ").slice(0, 140)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
