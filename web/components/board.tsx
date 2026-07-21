@@ -105,7 +105,7 @@ function NextUp({ onOpen }: { onOpen: (t: Track) => void }) {
 }
 
 export default function BoardView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
-  const { tracks, toast, refresh } = useBoard();
+  const { tracks, met, toast, refresh } = useBoard();
   const [dragLane, setDragLane] = useState<string | null>(null);
 
   async function drop(lane: string, ev: React.DragEvent) {
@@ -125,7 +125,8 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
     <>
       <NextUp onOpen={onOpen} />
       <div id="board">
-        {LANES.map(([key, name, color]) => {
+        {LANES.map(([key, defName, color]) => {
+          const name = met?.settings?.policy?.lane_labels?.[key] ?? defName;
           let inLane = tracks.filter((t) => (t.lane || "working") === key &&
             (filter === "all" ||
              (filter === "needs_you" ? (t.status === "needs_you" || t.status === "bounced")

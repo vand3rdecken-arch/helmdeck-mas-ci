@@ -23,7 +23,18 @@ Reply with ONLY JSON:
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
+   {"type": "configure", "patch": {..}}  (OWNER ONLY - workspace policy/settings)
  ]}
+
+configure may ONLY touch these keys (the flexible half of the workspace):
+  policy.lane_labels {backlog,working,review,done: "label"} - rename lanes
+  policy.auto_dispatch_modes ["do","prepare",...] - which step modes the chain starts alone
+  policy.auto_accept_green true|false - green gate auto-accepts (autonomy) vs human accepts (control)
+  policy.auto_dispatch_priority ""|"urgent"|"high" - backlog at/above this priority self-dispatches within WIP headroom
+  capacity {wip_limit, touch_budget_day, tariff{steer,review,bounce}}
+  value_per_card, default_repo, registration {open, invite_code, default_role}
+Everything else (auth, users, drivers, audit, the gate itself) is FIXED - refuse
+politely and explain it is part of the harness, not policy.
 
 Rules: answer status questions from the snapshot with NO actions. Only act when
 the user clearly asks for a change. Prefer one precise action over many. When a
@@ -47,7 +58,9 @@ def _save_sessions(d):
 def _snapshot():
     import sessions, processes, events
     m = events.metrics(sessions.list_tracks())
-    lines = ["CAPACITY: WIP %d/%d, headroom %d cards" % (
+    pol = events.settings().get("policy") or {}
+    lines = ["POLICY: " + json.dumps(pol)]
+    lines += ["CAPACITY: WIP %d/%d, headroom %d cards" % (
         m["capacity"]["wip"], m["capacity"]["wip_limit"], m["capacity"]["headroom"])]
     lines.append("CARDS:")
     for t in sessions.list_tracks():
@@ -73,9 +86,33 @@ def _find_card(frag):
             or frag in t["task"].lower()]
     return hits[0] if len(hits) == 1 else (hits if hits else None)
 
-def _run_action(a, actor):
+ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo", "registration"}
+
+def _run_action(a, actor, role="operator"):
     import sessions, processes, events
     kind = a.get("type")
+    if kind == "configure":
+        if role != "owner":
+            return "configure denied: owner only"
+        raw = a.get("patch") or {}
+        patch = {}
+        for k, v in raw.items():   # accept both {"policy": {...}} and "policy.x"
+            if "." in k:
+                top, _, sub = k.partition(".")
+                patch.setdefault(top, {})
+                if isinstance(patch[top], dict):
+                    patch[top][sub] = v
+            elif isinstance(v, dict) and k in patch and isinstance(patch[k], dict):
+                patch[k].update(v)
+            else:
+                patch[k] = v
+        bad = set(patch) - ALLOWED_CONFIG
+        if bad:
+            return "configure denied for fixed keys: %s (harness, not policy)" % ", ".join(sorted(bad))
+        import events as _ev
+        _ev.save_settings(patch)
+        _ev.emit("config", "-", actor=actor, patch=patch)
+        return "policy updated: " + json.dumps(patch)[:300]
     if kind == "file_card":
         repo = events.settings().get("default_repo")
         if not repo:
@@ -123,7 +160,7 @@ def _run_action(a, actor):
 def _branchless_slug_fix():
     pass  # new_track slugs empty branch to 'track'; acceptable
 
-def chat(user, message):
+def chat(user, message, role="operator"):
     """One copilot turn for this user. Returns {reply, actions: [results]}."""
     sess = _sessions()
     sid = sess.get(user)
@@ -150,7 +187,7 @@ def chat(user, message):
     results = []
     for a in out.get("actions", [])[:6]:
         try:
-            results.append(_run_action(a, user))
+            results.append(_run_action(a, user, role))
         except Exception as e:
             results.append("action failed: %s" % str(e)[:200])
     return {"reply": out.get("reply", ""), "actions": results,

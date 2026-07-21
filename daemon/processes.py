@@ -173,8 +173,14 @@ def remove_step(pid, idx):
 # a human finishing their step is the trigger that starts the next agent.
 
 def sync():
-    """Reconcile step states with the board; auto-advance the chain."""
+    """Reconcile step states with the board; auto-advance the chain.
+    Behavior is driven by settings POLICY: which modes auto-dispatch, and
+    whether a green gate auto-accepts (autonomy) or waits for a human
+    (control)."""
     import sessions, events
+    policy = events.settings().get("policy") or {}
+    auto_modes = policy.get("auto_dispatch_modes", ["do", "prepare"])
+    auto_accept = bool(policy.get("auto_accept_green"))
     with _lock:
         ps = _load()
     tracks = sessions._load()
@@ -197,8 +203,18 @@ def sync():
                 if t.get("up_next") != bool(want):
                     t["up_next"] = bool(want)
                     tracks_changed = True
+                # policy: green gate on a finished chain step -> auto-accept
+                if auto_accept and s["ready"] and t.get("status") == "needs_you" \
+                   and s.get("mode") in auto_modes and not s.get("auto_accepted"):
+                    ok, _problems = sessions._gate(t)
+                    if ok:
+                        s["auto_accepted"] = True
+                        events.emit("process", p["id"], action="auto_accept",
+                                    step=s["title"][:80], card=t["id"])
+                        threading.Thread(target=_auto_accept, args=(t["id"],),
+                                         daemon=True).start()
                 # auto-run agent steps the moment the chain reaches them
-                if s["ready"] and s.get("mode") in ("do", "prepare") \
+                if s["ready"] and s.get("mode") in auto_modes \
                    and t.get("lane") == "backlog" and not s.get("auto_dispatched"):
                     s["auto_dispatched"] = True
                     events.emit("process", p["id"], action="auto_advance",
@@ -226,11 +242,39 @@ def _auto_dispatch(tid):
     except Exception as e:
         print("chain auto-dispatch failed:", tid, e)
 
+def _auto_accept(tid):
+    import sessions
+    try:
+        sessions.move_lane(tid, "done", actor="policy")
+    except Exception as e:
+        print("policy auto-accept failed:", tid, e)
+
+def _priority_dispatch():
+    """Policy: backlog cards at/above auto_dispatch_priority start themselves
+    while WIP headroom exists."""
+    import sessions, events
+    s = events.settings()
+    floor = (s.get("policy") or {}).get("auto_dispatch_priority") or ""
+    if floor not in ("urgent", "high", "medium", "low"):
+        return
+    order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    tracks = sessions.list_tracks()
+    wip = sum(1 for t in tracks if t.get("lane") == "working")
+    headroom = s["capacity"]["wip_limit"] - wip
+    todo = sorted((t for t in tracks if t.get("lane") == "backlog"
+                   and not t.get("mode") in ("human", "teach", "cowork")
+                   and order.get(t.get("priority", "medium"), 2) <= order[floor]),
+                  key=lambda t: (order.get(t.get("priority", "medium"), 2), t.get("due") or "9999"))
+    for t in todo[:max(0, headroom)]:
+        events.emit("process", "-", action="priority_dispatch", card=t["id"])
+        threading.Thread(target=_auto_dispatch, args=(t["id"],), daemon=True).start()
+
 def start_chain_poller(interval=20):
     def loop():
         while True:
             try:
                 sync()
+                _priority_dispatch()
             except Exception as e:
                 print("chain sync error:", e)
             time.sleep(interval)

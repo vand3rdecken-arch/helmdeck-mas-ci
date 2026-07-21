@@ -42,6 +42,23 @@ DEFAULTS = {
     # with the invite code (owner shares it) and get default_role. open=True
     # drops the code requirement (LAN-trusted setups only).
     "registration": {"open": False, "invite_code": "", "default_role": "client"},
+    # POLICY - the flexible half of the harness/loop split. Everything here is
+    # workspace configuration the owner may change (incl. via the copilot):
+    # how work flows. The FIXED half (auth, audit, gate-before-review, measured
+    # economics, worktree isolation, chain ordering, driver commands) is code,
+    # deliberately not configurable from chat.
+    "policy": {
+        "lane_labels": {"backlog": "Backlog", "working": "Working",
+                        "review": "Review", "done": "Done"},
+        # which step modes the chain starts without a human
+        "auto_dispatch_modes": ["do", "prepare"],
+        # green gate on a chain step -> accept automatically (full autonomy);
+        # False = a human always accepts (control). Per-workspace choice.
+        "auto_accept_green": False,
+        # backlog cards at/above this priority dispatch themselves when
+        # capacity has headroom ("" = never)
+        "auto_dispatch_priority": "",
+    },
     # auth: every API call needs a bearer token of one of these users.
     # roles: owner (everything) / operator (work, no settings) / client
     # (file + comment + watch own cards only). Filled on first serve.

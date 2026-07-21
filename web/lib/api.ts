@@ -43,6 +43,8 @@ export interface Metrics {
       tariff: { steer: number; review: number; bounce: number } };
     drivers?: Record<string, { type: string; record?: boolean }>;
     registration?: { open: boolean; invite_code: string; default_role: string };
+    policy?: { lane_labels?: Record<string, string>; auto_dispatch_modes?: string[];
+      auto_accept_green?: boolean; auto_dispatch_priority?: string };
   };
   cards: EconCard[];
   capacity: { wip: number; wip_limit: number; touches_today: number;
