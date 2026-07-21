@@ -19,6 +19,7 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
   const [value, setValue] = useState("");
+  const [client, setClient] = useState("");
   const [driver, setDriver] = useState("claude");
   const [adv, setAdv] = useState(false);
   const [followup, setFollowup] = useState<string[] | null>(null);
@@ -38,6 +39,7 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
     if (repo.trim()) body.repo = repo.trim();
     if (branch.trim()) body.branch = branch.trim();
     if (value.trim()) body.value = parseFloat(value);
+    if (client.trim()) body.client = client.trim();
     const r = await post<{ error?: string }>("/tracks/new", body);
     if (r.error) { toast(r.error, 4000); return; }
     toast("Filed to Backlog");
@@ -76,12 +78,13 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
             Fill them above, or click <b>File to Backlog</b> again to file as-is.
           </div>
         )}
-        <div className="adv" onClick={() => setAdv(!adv)}>▸ advanced (repo / branch / value / driver)</div>
+        <div className="adv" onClick={() => setAdv(!adv)}>▸ advanced (repo / branch / value / client / driver)</div>
         {adv && <>
           <div className="row"><input style={{ flex: 1 }} placeholder="repo path (default preset used if empty)" value={repo} onChange={(e) => setRepo(e.target.value)} /></div>
           <div className="row">
             <input style={{ flex: 1 }} placeholder="branch (auto from task if empty)" value={branch} onChange={(e) => setBranch(e.target.value)} />
             <input style={{ width: 110 }} placeholder="value €" value={value} onChange={(e) => setValue(e.target.value)} />
+            <input style={{ width: 130 }} placeholder="client" value={client} onChange={(e) => setClient(e.target.value)} />
           </div>
           <div className="row">
             <select style={{ flex: 1 }} value={driver} onChange={(e) => setDriver(e.target.value)}>

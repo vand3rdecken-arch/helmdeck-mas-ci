@@ -4,7 +4,8 @@
 // chain is here waiting for a human, gray waiting, dashed proposed.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { get, post, Process, Track } from "@/lib/api";
-import { MODE_EMOJI, MODE_ICON, useBoard } from "@/lib/store";
+import { useBoard } from "@/lib/store";
+import { IconCheck, ModeIcon, MODE_LABEL, MODE_ICONS } from "./icons";
 
 const STATE_STYLE: Record<string, [string, string, string]> = {
   done: ["var(--ok)", "color-mix(in oklch,var(--ok) 18%,transparent)", "done"],
@@ -36,7 +37,7 @@ function Pipeline({ p, onOpen }: { p: Process; onOpen: (t: Track) => void }) {
                 background: st[1],
                 animation: s.state === "ready" ? "pulse 1.6s infinite" : undefined,
               }}>
-                {s.done ? "✓" : MODE_EMOJI[s.mode] ?? "•"}
+                {s.done ? <IconCheck size={17} /> : <ModeIcon mode={s.mode} size={17} />}
               </div>
               <div style={{
                 fontSize: 10.5, lineHeight: 1.25, marginTop: 4, color: "var(--txt-secondary)",
@@ -128,7 +129,7 @@ export default function ProcsView({ onOpen }: { onOpen: (t: Track) => void }) {
                 onBlur={(e) => e.target.value !== s.title && stepAct(p.id, i, "update", { title: e.target.value })} />
               <select style={{ width: 118 }} value={s.mode}
                 onChange={(e) => stepAct(p.id, i, "update", { mode: e.target.value })}>
-                {Object.keys(MODE_ICON).map((m) => <option key={m} value={m}>{MODE_ICON[m]}</option>)}
+                {Object.keys(MODE_ICONS).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
               </select>
               <input type="date" value={s.due ?? ""} style={{ width: 135 }}
                 onChange={(e) => stepAct(p.id, i, "update", { due: e.target.value })} />
