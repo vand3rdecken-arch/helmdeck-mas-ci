@@ -6,7 +6,7 @@ import { IconChat } from "./icons";
 
 interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
 
-export default function Chat({ open, setOpen }: { open: boolean; setOpen: (b: boolean) => void }) {
+export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpen: (b: boolean) => void; hideFab?: boolean }) {
   const { me, refresh } = useBoard();
   const [msgs, setMsgs] = useState<Msg[]>([{
     cls: "bot",
@@ -41,7 +41,7 @@ export default function Chat({ open, setOpen }: { open: boolean; setOpen: (b: bo
     setBusy(false);
   }
 
-  if (!open) return <button id="chatfab" title="Chat with the board (k)" onClick={() => setOpen(true)}><IconChat size={20} /></button>;
+  if (!open) return hideFab ? null : <button id="chatfab" title="Chat with the board (k)" onClick={() => setOpen(true)}><IconChat size={20} /></button>;
   return (
     <div id="chat">
       <div className="ch">
