@@ -272,7 +272,17 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 
 <div id="modal"><div id="mcard">
   <h3>New request</h3>
+  <div id="m-examples" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
   <textarea id="m-task" placeholder="What needs doing — that's all that's required. Repo comes from your preset."></textarea>
+  <div class="row" style="align-items:center">
+    <select id="m-priority" style="width:130px">
+      <option value="urgent">urgent</option><option value="high">high</option>
+      <option value="medium" selected>medium</option><option value="low">low</option>
+    </select>
+    <input id="m-due" type="date" style="width:150px" title="due date">
+    <span style="font-size:11px;color:var(--txt-tertiary)">priority · due date</span>
+  </div>
+  <div id="m-followup" style="display:none;border:1px solid var(--warn);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12px"></div>
   <div class="adv" onclick="document.querySelectorAll('.advrow').forEach(function(r){r.classList.toggle('show')})">▸ advanced (repo / branch / value)</div>
   <div class="row advrow"><input id="m-repo" placeholder="repo path (default preset used if empty)"></div>
   <div class="row advrow"><input id="m-branch" placeholder="branch (auto from task if empty)"><input id="m-value" placeholder="value €" style="width:110px"></div>
@@ -395,6 +405,16 @@ function render(){
   else if(view==='recs')renderRecs();else renderSettings();
 }
 function laneColor(l){var c={backlog:'var(--txt-tertiary)',working:'var(--ai)',review:'var(--human)',done:'var(--ok)'};return c[l]||c.backlog}
+var PRIO={urgent:['⚠ urgent','var(--danger)'],high:['↑ high','var(--warn)'],medium:['− med','var(--txt-tertiary)'],low:['↓ low','var(--txt-tertiary)']};
+var PRIO_ORD={urgent:0,high:1,medium:2,low:3};
+function prioChip(t){
+  var p=PRIO[t.priority||'medium'];
+  return (t.priority&&t.priority!=='medium')?'<span class=chip style="color:'+p[1]+'">'+p[0]+'</span>':'';}
+function dueChip(t){
+  if(!t.due)return '';
+  var overdue=t.lane!=='done'&&t.due<new Date().toISOString().slice(0,10);
+  return '<span class=chip'+(overdue?' style="color:var(--danger);border-color:var(--danger)"':'')
+    +' title="due date">📅 '+esc(t.due.slice(5))+(overdue?' overdue':'')+'</span>';}
 
 /* ---------- list layout (Plane's spreadsheet-ish list, grouped by lane) ---------- */
 function renderList(){
@@ -426,10 +446,11 @@ function parseTs(s){return s?new Date(s.replace(' ','T')).getTime():null}
 function renderTimeline(){
   var now=Date.now(),DAY=86400e3;
   var ts=tracks.map(function(t){return {t:t,a:parseTs(t.created)||now,
-    b:(t.lane==='done'?parseTs(t.updated):now)||now}});
+    b:(t.lane==='done'?parseTs(t.updated):now)||now,
+    due:t.due?parseTs(t.due+' 23:59:59'):null}});
   if(!ts.length){$('content').innerHTML='<div class=panel>no work yet</div>';return}
   var min=Math.min.apply(null,ts.map(function(x){return x.a})),max=Math.max(now,
-    Math.max.apply(null,ts.map(function(x){return x.b})));
+    Math.max.apply(null,ts.map(function(x){return Math.max(x.b,x.due||0)})));
   var d0=new Date(min);d0.setHours(0,0,0,0);min=d0.getTime();
   var days=Math.max(1,Math.ceil((max-min)/DAY)),pxday=Math.max(64,Math.floor(900/days));
   var W=days*pxday;
@@ -440,10 +461,14 @@ function renderTimeline(){
   head+='</div></div>';
   var rows=ts.map(function(r){
     var t=r.t,l=x(r.a),w=Math.max(14,x(r.b)-l);
+    var lateness=r.due&&t.lane!=='done'&&now>r.due;
     return '<div class=g-row data-id="'+t.id+'"><div class=g-side title="'+esc(t.task)+'">'+esc(t.task)+'</div>'
       +'<div class=g-track style="width:'+W+'px"><div class=g-today style="left:'+x(now)+'px"></div>'
+      +(r.due?'<div title="due '+esc(t.due)+'" style="position:absolute;left:'+(x(r.due)-5)+'px;top:11px;width:10px;height:10px;transform:rotate(45deg);background:'
+        +(lateness?'var(--danger)':'var(--txt-tertiary)')+'"></div>':'')
       +'<div class=g-bar style="left:'+l+'px;width:'+w+'px;background:'+laneColor(t.lane)+'" title="'
-      +esc(t.branch)+' · '+t.lane+'"><span>'+esc(t.branch)+' · '+t.lane+'</span></div></div></div>';
+      +esc(t.branch)+' · '+t.lane+'"><span>'+esc(t.branch)+' · '+t.lane
+      +(lateness?' · <b style="color:var(--danger)">overdue</b>':'')+'</span></div></div></div>';
   }).join('');
   $('content').innerHTML='<div id=gantt>'+head+rows+'</div>'
     +'<div style="margin-top:10px;font-size:11.5px;color:var(--txt-tertiary)">bar = filed → last activity (done cards freeze at acceptance) · '
@@ -462,6 +487,9 @@ function renderBoard(){
     var lane=document.createElement('div');lane.className='lane';lane.dataset.lane=L[0];
     var inLane=tracks.filter(function(t){return (t.lane||'working')===L[0]
       &&(filter!=='needs_you'||t.status==='needs_you'||t.status==='bounced')});
+    if(L[0]==='backlog')inLane.sort(function(a,b){
+      return (PRIO_ORD[a.priority||'medium']-PRIO_ORD[b.priority||'medium'])
+        ||((a.due||'9999')<(b.due||'9999')?-1:1)});
     lane.innerHTML='<div class=lane-h><span class=ldot style="background:'+L[2]+'"></span>'
       +'<span class=lname>'+L[1]+'</span><span class=lcount>'+inLane.length+'</span></div>'
       +'<div class=lane-body></div>';
@@ -473,6 +501,7 @@ function renderBoard(){
       c.innerHTML='<div class=cid>'+esc(t.branch)+' · '+t.turns+' turns</div>'
         +'<div class=title>'+esc(t.task)+'</div>'
         +'<div class=chips><span class=chip><span class=sdot style="background:'+st[1]+'"></span>'+st[0]+'</span>'
+        +prioChip(t)+dueChip(t)
         +(t.driver&&t.driver!=='claude'?'<span class=chip title="execution driver" style="color:var(--accent-txt)">🖥 '+esc(t.driver)+'</span>':'')
         +(e?'<span class=chip title="deliverable value">€'+e.value+'</span>'
            +'<span class=chip title="AI cost so far">AI $'+e.ai_cost.toFixed(2)+'</span>'
@@ -534,7 +563,21 @@ function sendSteer(){var v=$('steer-box').value.trim();if(!v||!cur)return;
       setTimeout(function(){if(cur)openPeek(cur);load()},1500)})}
 
 /* ---------- new request ---------- */
+var EXAMPLES=[
+  {label:'🐛 bug fix',task:'Fix: the dashboard capacity gauge shows 0% when touch budget is 0 — guard the division and show a hint instead.',driver:'claude'},
+  {label:'✨ feature',task:'Add a CSV export button to the dashboard work table (all columns, current filters applied).',driver:'claude'},
+  {label:'🖥 desktop task',task:'Open the invoice tool, export June as PDF into Downloads, and verify the file exists.',driver:'claude-desktop'},
+  {label:'🌐 browser task',task:'Go to the supplier portal, download the latest price list, and summarize what changed vs the file in data/prices.csv.',driver:'claude-desktop'},
+  {label:'🔍 research',task:'Read the three competitor changelogs linked in docs/watchlist.md and write a one-page summary of what shipped this month.',driver:'claude'}];
 function openModal(){
+  var ex=$('m-examples');ex.innerHTML='';
+  EXAMPLES.forEach(function(e){
+    var b=document.createElement('button');b.className='btn ghost';b.style.cssText='font-size:11px;padding:2px 9px';
+    b.textContent=e.label;b.title=e.task;
+    b.addEventListener('click',function(){$('m-task').value=e.task;
+      if($('m-driver'))$('m-driver').value=e.driver;$('m-task').focus()});
+    ex.appendChild(b)});
+  $('m-followup').style.display='none';fileArmed=false;
   var sel=$('m-driver');
   if(met&&met.settings&&met.settings.drivers){
     var cur2=sel.value;sel.innerHTML='';
@@ -547,9 +590,26 @@ function openModal(){
   }
   $('modal').classList.add('open');$('m-task').focus()}
 function closeModal(){$('modal').classList.remove('open')}
+var fileArmed=false;
 function fileReq(){
   var task=$('m-task').value.trim();if(!task){toast('Describe the task');return}
-  var body={task:task,lane:'backlog'};
+  // follow-up pass: catch what the dashboard would otherwise fill with defaults
+  if(!fileArmed){
+    var asks=[];
+    if(task.length<25)asks.push('the task is very short — an agent works better with a sentence of context (what, where, what does done look like)');
+    if(!$('m-value').value.trim())asks.push('no value set — dashboard will use the €'+((met&&met.settings)?met.settings.value_per_card:50)+' default (margin/ROI will be generic)');
+    if(!$('m-due').value)asks.push('no due date — the card won’t show risk on the timeline');
+    if(asks.length){
+      fileArmed=true;
+      $('m-followup').style.display='block';
+      $('m-followup').innerHTML='<b style="color:var(--warn)">Before filing:</b><ul style="margin:4px 0 4px 16px;padding:0">'
+        +asks.map(function(a){return '<li>'+a+'</li>'}).join('')
+        +'</ul>Fill them above, or click <b>File to Backlog</b> again to file as-is.';
+      if(!$('m-value').value.trim())document.querySelectorAll('.advrow').forEach(function(r){r.classList.add('show')});
+      return;
+    }
+  }
+  var body={task:task,lane:'backlog',priority:$('m-priority').value,due:$('m-due').value};
   if($('m-repo').value.trim())body.repo=$('m-repo').value.trim();
   if($('m-branch').value.trim())body.branch=$('m-branch').value.trim();
   if($('m-value').value.trim())body.value=parseFloat($('m-value').value);
@@ -557,7 +617,8 @@ function fileReq(){
   fetchJSON('/tracks/new',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)}).then(function(r){
       if(r.error){toast(r.error,4000);return}
-      closeModal();$('m-task').value='';toast('Filed to Backlog');load()})}
+      closeModal();$('m-task').value='';$('m-due').value='';$('m-priority').value='medium';
+      fileArmed=false;toast('Filed to Backlog');load()})}
 
 /* ---------- dashboard ---------- */
 function renderDash(){

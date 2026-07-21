@@ -555,13 +555,17 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(sessions.new_track(
                         repo, branch, task, body.get("perm", sessions.DEFAULT_PERM),
                         lane="backlog", client=client, value=body.get("value"),
-                        driver=driver, actor=user["name"])))
+                        driver=driver, actor=user["name"],
+                        priority=body.get("priority", "medium"),
+                        due=body.get("due", ""))))
                 def go():
                     sessions.new_track(repo, branch, task,
                                        body.get("perm", sessions.DEFAULT_PERM),
                                        lane="working", client=client,
                                        value=body.get("value"),
-                                       driver=driver, actor=user["name"])
+                                       driver=driver, actor=user["name"],
+                                       priority=body.get("priority", "medium"),
+                                       due=body.get("due", ""))
                 _bg("track:new:" + branch, go)
                 return self._send(200, json.dumps({"started": branch}))
             parts = p.strip("/").split("/")
