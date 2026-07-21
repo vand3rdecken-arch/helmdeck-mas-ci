@@ -239,7 +239,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div class="navitem" data-filter="all">All work</div>
     <div class="navitem" data-filter="needs_you">Needs you</div>
     <div class="foot">
-      <span id="themebtn" style="cursor:pointer">◐ theme</span>
+      <div id="whoami" style="margin-bottom:6px"></div>
+      <span id="themebtn" style="cursor:pointer">◐ theme</span> ·
+      <span onclick="signOut()" style="cursor:pointer">sign out</span>
     </div>
   </nav>
   <div id="main">
@@ -292,29 +294,49 @@ function $(id){return document.getElementById(id)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function toast(m,ms){var t=$('toast');t.textContent=m;t.style.display='block';
   clearTimeout(t._h);t._h=setTimeout(function(){t.style.display='none'},ms||2600)}
-var TOKEN='';try{TOKEN=localStorage.sdToken||''}catch(e){}
+var TOKEN='';try{TOKEN=localStorage.sdToken||''}catch(e){}   // device-token fallback (glasses/APK style)
 var ME=null;
 function fetchJSON(u,opt){
   opt=opt||{};opt.headers=opt.headers||{};
   if(TOKEN)opt.headers['Authorization']='Bearer '+TOKEN;
   return fetch(u,opt).then(function(r){
-    if(r.status===401){askToken();throw new Error('auth')}
+    if(r.status===401){authGate();throw new Error('auth')}
     return r.json()})}
-function askToken(){
-  if(document.getElementById('tokmodal'))return;
-  var d=document.createElement('div');d.id='tokmodal';
-  d.style.cssText='position:fixed;inset:0;background:var(--backdrop);display:grid;place-items:center;z-index:40';
-  d.innerHTML='<div style="background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:12px;padding:20px;width:min(420px,90vw)">'
-    +'<h3 style="margin:0 0 6px;font-size:14px">Access token</h3>'
-    +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:10px">Printed by the daemon on startup (AUTH: owner token). Stored on this device.</div>'
-    +'<input id=tokin style="width:100%" placeholder="paste token">'
-    +'<div style="margin-top:12px;text-align:right"><button class="btn primary" id=tokgo>Unlock</button></div></div>';
-  document.body.appendChild(d);
-  d.querySelector('#tokgo').addEventListener('click',function(){
-    TOKEN=d.querySelector('#tokin').value.trim();
-    try{localStorage.sdToken=TOKEN}catch(e){}
-    d.remove();load()});
+var authOpen=false;
+function authGate(){
+  if(authOpen||document.getElementById('authmodal'))return;
+  authOpen=true;
+  fetch('/auth/state').then(function(r){return r.json()}).then(function(st){
+    var setup=st.setup_needed;
+    var d=document.createElement('div');d.id='authmodal';
+    d.style.cssText='position:fixed;inset:0;background:var(--bg-canvas);display:grid;place-items:center;z-index:40';
+    d.innerHTML='<div style="background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:14px;padding:26px;width:min(380px,90vw)">'
+      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><span style="width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px">S</span><b style="font-size:15px">SwarmDeck</b></div>'
+      +(setup?'<h3 style="margin:0 0 4px;font-size:14px">Create the owner account</h3>'
+        +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:12px">First run — this account manages everything, including other users.</div>'
+       :'<h3 style="margin:0 0 12px;font-size:14px">Sign in</h3>')
+      +'<input id=a-name style="width:100%;margin-bottom:8px" placeholder="username" autocomplete=username>'
+      +'<input id=a-pw type=password style="width:100%" placeholder="password'+(setup?' (min 8 chars)':'')+'" autocomplete='+(setup?'new-password':'current-password')+'>'
+      +'<div id=a-err style="font-size:12px;color:var(--danger);margin-top:8px;min-height:16px"></div>'
+      +'<button class="btn primary" id=a-go style="width:100%;justify-content:center;padding:8px">'+(setup?'Create & sign in':'Sign in')+'</button></div>';
+    document.body.appendChild(d);
+    function go(){
+      fetch(setup?'/auth/setup':'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:d.querySelector('#a-name').value.trim(),
+                             password:d.querySelector('#a-pw').value})})
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})})
+      .then(function(res){
+        if(!res.ok){d.querySelector('#a-err').textContent=res.j.error||'failed';return}
+        d.remove();authOpen=false;ME=null;load()});
+    }
+    d.querySelector('#a-go').addEventListener('click',go);
+    d.addEventListener('keydown',function(e){if(e.key==='Enter')go()});
+    d.querySelector('#a-name').focus();
+  });
 }
+function signOut(){
+  fetch('/auth/logout',{method:'POST'}).then(function(){
+    try{delete localStorage.sdToken}catch(e){}TOKEN='';ME=null;location.reload()})}
 
 function load(){
   var q=[fetchJSON('/tracks'),
@@ -322,6 +344,7 @@ function load(){
          ME?Promise.resolve(ME):fetchJSON('/me').catch(function(){return null})];
   Promise.all(q).then(function(rs){
     tracks=rs[0];met=rs[1];ME=rs[2];
+    if(ME)$('whoami').innerHTML='<b style="color:var(--txt-secondary)">'+esc(ME.name)+'</b> · '+esc(ME.role);
     if(ME&&ME.role==='client'){  // clients: board only
       document.querySelectorAll('.navitem[data-view="dash"],.navitem[data-view="settings"]')
         .forEach(function(n){n.style.display='none'});
@@ -608,8 +631,47 @@ function renderSettings(){
     +'<input id=s-t2 type=number value="'+s.capacity.tariff.review+'">'
     +'<input id=s-t3 type=number value="'+s.capacity.tariff.bounce+'"></div>'
     +'<div style="margin-top:14px"><button class="btn primary" onclick="saveSettings()">Save</button></div>'
-    +'</div></div>';
+    +'</div>'
+    +(ME&&ME.role==='owner'?'<div class=panel id=userspanel><h3>Users</h3><div id=userslist style="font-size:12.5px;color:var(--txt-tertiary)">loading…</div>'
+      +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
+      +'<input id=u-name placeholder="username" style="width:130px"><input id=u-pw type=password placeholder="password (8+)" style="width:150px">'
+      +'<select id=u-role><option>operator</option><option>client</option><option>owner</option></select>'
+      +'<button class="btn primary" onclick="addUser()">Add user</button></div></div>':'')
+    +'</div>';
+  if(ME&&ME.role==='owner')loadUsers();
 }
+function loadUsers(){
+  fetchJSON('/users').then(function(us){
+    var el=$('userslist');if(!el)return;
+    el.innerHTML='<table><tr><th>user</th><th>role</th><th>device tokens</th><th></th></tr>'
+      +us.map(function(u){
+        return '<tr><td><b>'+esc(u.name)+'</b><div style="font-size:10.5px;color:var(--txt-tertiary)">'+esc(u.created||'')+'</div></td>'
+        +'<td><select onchange="setRole(\''+u.name+'\',this.value)">'
+          +['owner','operator','client'].map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>'}).join('')+'</select></td>'
+        +'<td>'+(u.tokens||[]).map(function(t){
+            return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0"><span class=chip title="'+esc(t.token)+'">'+esc(t.label)+' · …'+esc(t.token.slice(-6))+'</span>'
+            +'<button class="btn ghost" style="padding:0 7px;font-size:11px" onclick="revokeTok(\''+u.name+'\',\''+t.token+'\')">revoke</button></div>'}).join('')
+          +'<button class="btn ghost" style="padding:1px 8px;font-size:11px;margin-top:3px" onclick="newTok(\''+u.name+'\')">+ token</button></td>'
+        +'<td style="text-align:right"><button class="btn ghost" style="font-size:11px" onclick="resetPw(\''+u.name+'\')">reset pw</button> '
+        +'<button class="btn ghost" style="font-size:11px;color:var(--danger);border-color:var(--danger)" onclick="delUser(\''+u.name+'\')">delete</button></td></tr>'})
+      .join('')+'</table>';
+  });
+}
+function post(u,b){return fetchJSON(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})}
+function addUser(){
+  post('/users',{name:$('u-name').value.trim(),password:$('u-pw').value,role:$('u-role').value})
+  .then(function(r){if(r.error){toast(r.error,3600);return}
+    toast('User created');$('u-name').value='';$('u-pw').value='';loadUsers()})}
+function setRole(n,r){post('/users/'+n+'/role',{role:r}).then(function(x){toast(x.error||'Role updated');loadUsers()})}
+function resetPw(n){var p=prompt('New password for '+n+' (8+ chars):');if(!p)return;
+  post('/users/'+n+'/password',{password:p}).then(function(x){toast(x.error||'Password set')})}
+function newTok(n){var l=prompt('Token label (e.g. glasses, apk):','device');if(l===null)return;
+  post('/users/'+n+'/tokens',{label:l}).then(function(x){
+    if(x.error){toast(x.error,3600);return}
+    prompt('Device token for '+n+' — copy it now (shown once here, also visible to owner in this panel):',x.token);loadUsers()})}
+function revokeTok(n,t){post('/users/'+n+'/revoke',{token:t}).then(function(){toast('Token revoked');loadUsers()})}
+function delUser(n){if(!confirm('Delete user '+n+'? Their sessions and tokens die immediately.'))return;
+  post('/users/'+n+'/delete').then(function(x){toast(x.error||'User deleted');loadUsers()})}
 function saveSettings(){
   fetchJSON('/settings',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({default_repo:$('s-repo').value.trim(),
