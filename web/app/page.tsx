@@ -12,6 +12,7 @@ import { ListView, TimelineView } from "@/components/views";
 import ProcsView from "@/components/procs";
 import RecsView from "@/components/recs";
 import SettingsView from "@/components/settings";
+import Palette from "@/components/palette";
 
 type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "settings";
 const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "settings"];
@@ -25,12 +26,13 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 
 function App() {
-  const { met, me, tracks, authNeeded, toastMsg } = useBoard();
+  const { met, me, tracks, authNeeded, toastMsg, setSpot } = useBoard();
   const [view, setView] = useState<View>("board");
   const [filter, setFilter] = useState<string>("all");
   const [peek, setPeek] = useState<Track | null>(null);
   const [modal, setModal] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [palOpen, setPalOpen] = useState(false);
 
   // hash routing (linkable views, glasses-friendly)
   useEffect(() => {
@@ -54,6 +56,9 @@ function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault(); setPalOpen((o) => !o); return;
+      }
       const tag = (document.activeElement as HTMLElement)?.tagName;
       if (/INPUT|TEXTAREA|SELECT/.test(tag ?? "")) {
         if (e.key === "Escape") { setPeek(null); setModal(false); }
@@ -61,7 +66,7 @@ function App() {
       }
       if (e.key === "c" && view === "board") setModal(true);
       if (e.key === "k") setChatOpen((o) => !o);
-      if (e.key === "Escape") { setPeek(null); setModal(false); setChatOpen(false); }
+      if (e.key === "Escape") { setPeek(null); setModal(false); setChatOpen(false); setPalOpen(false); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -98,6 +103,8 @@ function App() {
         {clients.length > 0 && <>
           {clients.map(([name, count]) => (
             <div key={name} className={`navitem${isWork && filter === "client:" + name ? " active" : ""}`}
+              onMouseEnter={() => setSpot({ type: "client", value: name })}
+              onMouseLeave={() => setSpot(null)}
               onClick={() => { nav("board"); setFilter(filter === "client:" + name ? "all" : "client:" + name); }}>
               <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /><path d="M3 13h18" /></svg>
               {name}<span className="lcount" style={{ marginLeft: "auto" }}>{count}</span>
@@ -146,6 +153,7 @@ function App() {
           {view === "settings" && <SettingsView />}
         </div>
       </div>
+      {palOpen && <Palette onOpen={(t) => setPeek(t)} onNav={(v) => nav(v as View)} onClose={() => setPalOpen(false)} />}
       {peek && <Peek t={peek} onClose={() => setPeek(null)} />}
       {modal && <NewRequestModal onClose={() => setModal(false)} />}
       {!isClient && me && <Chat open={chatOpen} setOpen={setChatOpen} />}

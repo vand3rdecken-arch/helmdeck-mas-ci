@@ -4,6 +4,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AuthRequired, get, Me, Metrics, Track } from "./api";
 
+export interface Spot { type: "client" | "process"; value: string }
 interface BoardState {
   tracks: Track[];
   met: Metrics | null;
@@ -13,6 +14,8 @@ interface BoardState {
   refresh: () => void;
   toast: (msg: string, ms?: number) => void;
   toastMsg: string | null;
+  spot: Spot | null;
+  setSpot: (s: Spot | null) => void;
 }
 
 const Ctx = createContext<BoardState>(null as unknown as BoardState);
@@ -24,6 +27,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [authNeeded, setAuthNeeded] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [spot, setSpot] = useState<Spot | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const refresh = useCallback(async () => {
@@ -57,7 +61,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   return (
-    <Ctx.Provider value={{ tracks, met, me, authNeeded, setAuthed, refresh, toast, toastMsg }}>
+    <Ctx.Provider value={{ tracks, met, me, authNeeded, setAuthed, refresh, toast, toastMsg, spot, setSpot }}>
       {children}
     </Ctx.Provider>
   );
