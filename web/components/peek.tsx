@@ -49,7 +49,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           onBlur={() => task.trim() && task !== t.task && edit({ task: task.trim() })}
           style={{
             margin: "12px 16px 4px", fontSize: 15, fontWeight: 600, lineHeight: 1.4,
-            minHeight: 64, resize: "vertical",
+            minHeight: 96, resize: "vertical",
           }}
           title="the request — editable, saves on blur"
         />
