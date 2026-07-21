@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@theme inline {
+  --color-background: var(--bg-canvas);
+  --color-foreground: var(--txt-primary);
+  --color-card: var(--bg-surface-1);
+  --color-card-foreground: var(--txt-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: oklch(0.98 0 0);
+  --color-secondary: var(--bg-layer-1);
+  --color-secondary-foreground: var(--txt-secondary);
+  --color-muted: var(--bg-layer-1);
+  --color-muted-foreground: var(--txt-tertiary);
+  --color-border: var(--border-subtle);
+}
+
 /* ---- design tokens: Plane's system (packages/tailwind-config/variables.css), trimmed ---- */
 :root{
   --neutral-white:oklch(1 0 0);--neutral-100:oklch(.9848 .0003 230.66);--neutral-200:oklch(.9696 .0007 230.67);
@@ -519,3 +533,14 @@ input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--gla
 #board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{transform:skewX(0)}
 #board.spotlighting .card.spot{transform:translateY(-3px) scale(1.03)}
 .gpanel{transition:all .45s cubic-bezier(.2,.7,.3,1.1)}
+
+/* ---- aura v3: no skew ever. straight vibrant field + blog-card hover ---- */
+.gpanel{transform:none !important;top:6%;left:5%;width:90%;height:104%;border-radius:18px}
+.gpanel.gblur{filter:blur(28px)}
+.gwrap:hover .gpanel{left:2%;width:96%;height:110%;opacity:.8}
+.gwrap:hover .gpanel.gblur{opacity:.95}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel{left:2%;width:96%;height:108%;opacity:.75}
+/* blog-card grammar: client-colored border + soft colored shadow on attention */
+.gwrap:hover .card,#board.spotlighting .card.spot{
+  border-color:color-mix(in oklch,var(--g1) 60%,transparent);
+  box-shadow:0 12px 34px color-mix(in oklch,var(--g1) 25%,transparent),var(--spec)}
