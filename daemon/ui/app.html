@@ -86,6 +86,33 @@ a{color:var(--accent-txt);text-decoration:none}
 .btn.ghost:hover{background:var(--bg-transparent-hover)}
 #capline{font-size:12px;color:var(--txt-tertiary)}
 #capline b{color:var(--txt-primary);font-weight:600}
+#layouts{display:inline-flex;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden}
+#layouts .lay{padding:2px 10px;font-size:13px;color:var(--txt-tertiary)}
+#layouts .lay:hover{background:var(--bg-transparent-hover)}
+#layouts .lay.active{background:var(--bg-transparent-hover);color:var(--txt-primary)}
+
+/* ---- list layout ---- */
+.lrow{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border-subtle);
+  cursor:pointer;font-size:12.5px}
+.lrow:hover{background:var(--bg-transparent-hover)}
+.lrow .lbranch{width:170px;color:var(--txt-tertiary);font-size:11.5px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .ltask{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.lgroup{font-size:11.5px;font-weight:600;padding:10px 12px 6px;display:flex;align-items:center;gap:7px}
+.lgroup .lcount{font-size:11px;color:var(--txt-tertiary);background:var(--bg-layer-1);border-radius:9px;padding:0 7px;line-height:16px}
+
+/* ---- timeline (gantt) layout ---- */
+#gantt{background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:10px;overflow-x:auto}
+.g-head{display:flex;border-bottom:1px solid var(--border-subtle);font-size:10.5px;color:var(--txt-tertiary)}
+.g-side{width:230px;flex-shrink:0;padding:6px 12px;border-right:1px solid var(--border-subtle);position:sticky;left:0;background:var(--bg-surface-1)}
+.g-days{display:flex;flex:1}
+.g-day{flex-shrink:0;padding:6px 0;text-align:center;border-right:1px dashed var(--border-subtle)}
+.g-row{display:flex;align-items:center;border-bottom:1px solid var(--border-subtle)}
+.g-row:hover{background:var(--bg-transparent-hover);cursor:pointer}
+.g-row .g-side{font-size:12px;font-weight:500;padding:8px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-track{position:relative;flex:1;height:34px}
+.g-bar{position:absolute;top:9px;height:14px;border-radius:7px;min-width:14px}
+.g-bar span{position:absolute;left:calc(100% + 7px);top:-2px;font-size:10.5px;color:var(--txt-tertiary);white-space:nowrap}
+.g-today{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);opacity:.6}
 #content{flex:1;overflow:auto;padding:14px 16px}
 
 /* ---- kanban ---- */
@@ -130,7 +157,11 @@ a{color:var(--accent-txt);text-decoration:none}
 .f-steer{color:var(--txt-primary);background:var(--bg-layer-1);border-radius:8px;padding:7px 11px;margin:8px 0 4px;font-weight:500}
 .f-steer::before{content:"you";display:block;font-size:10.5px;color:var(--txt-tertiary);font-weight:600;margin-bottom:2px}
 .f-reply{white-space:pre-wrap;padding:4px 2px 10px;color:var(--txt-secondary)}
-.f-note{font-size:11px;color:var(--txt-tertiary);padding:5px 0;border-top:1px dashed var(--border-subtle)}
+.f-note{position:relative;font-size:11.5px;color:var(--txt-tertiary);padding:6px 0 6px 20px}
+.f-note::before{content:"";position:absolute;left:5px;top:12px;width:7px;height:7px;border-radius:50%;
+  background:var(--border-strong)}
+.f-note::after{content:"";position:absolute;left:8px;top:20px;bottom:-8px;width:1px;background:var(--border-subtle)}
+.f-note:last-child::after{display:none}
 #steer-row{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border-subtle)}
 #steer-box{flex:1;resize:none;height:60px}
 
@@ -166,6 +197,26 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .msplit{display:inline-block;width:90px;vertical-align:middle}
 .msplit i{display:block;height:3px;border-radius:2px}
 
+/* ---- recordings view ---- */
+.run{background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.run-h{display:flex;align-items:center;gap:10px;padding:11px 15px;cursor:pointer}
+.run-h:hover{background:var(--bg-transparent-hover)}
+.run-h .rt{font-weight:600;font-size:13px}
+.run-h .rm{font-size:11.5px;color:var(--txt-tertiary)}
+.run-h .rkind{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  border:1px solid var(--border-subtle);border-radius:5px;padding:1px 7px;color:var(--txt-secondary)}
+.run-h .chev{margin-left:auto;color:var(--txt-tertiary);transition:transform .15s}
+.run.open .chev{transform:rotate(90deg)}
+.run-body{display:none;border-top:1px solid var(--border-subtle);padding:12px 15px}
+.run.open .run-body{display:block}
+.steps{margin:0 0 12px;padding:0;list-style:none;max-height:300px;overflow-y:auto}
+.steps li{display:flex;gap:10px;padding:3px 8px;border-left:2px solid var(--border-subtle);
+  font-size:12px;color:var(--txt-secondary)}
+.steps li.flag{border-left-color:var(--warn);background:color-mix(in oklch,var(--warn) 8%,transparent);color:var(--txt-primary)}
+.steps .st{color:var(--txt-tertiary);font-variant-numeric:tabular-nums;flex-shrink:0;width:46px}
+.steps .sk{color:var(--txt-tertiary);flex-shrink:0;width:52px}
+.run video{max-width:100%;border-radius:8px;border:1px solid var(--border-subtle);background:#000}
+
 /* ---- settings view ---- */
 #settings .panel{max-width:620px}
 #settings label{display:block;font-size:11.5px;color:var(--txt-tertiary);margin:10px 0 3px}
@@ -182,7 +233,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div id="logo"><span class="dot">S</span> SwarmDeck</div>
     <div class="navitem" data-view="board"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/></svg>Board</div>
     <div class="navitem" data-view="dash"><svg viewBox="0 0 24 24"><path d="M3 12h5l2-7 4 14 2-7h5"/></svg>Dashboard</div>
-    <div class="navitem" onclick="location.href='/recorder'"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Recordings</div>
+    <div class="navitem" data-view="recs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Recordings</div>
     <div class="navitem" data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>Settings</div>
     <div class="sect">Views</div>
     <div class="navitem" data-filter="all">All work</div>
@@ -194,6 +245,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div id="main">
     <div id="hdr">
       <span class="crumb" id="crumb">Board</span>
+      <span id="layouts">
+        <button class="lay" data-lay="board" title="Board">▦</button><button class="lay" data-lay="list" title="List">☰</button><button class="lay" data-lay="timeline" title="Timeline">⧖</button>
+      </span>
       <span class="sep" id="capsep">·</span><span id="capline"></span>
       <span class="spacer"></span>
       <button class="btn primary" id="newbtn" onclick="openModal()">+ New request</button>
@@ -241,7 +295,9 @@ function fetchJSON(u,opt){return fetch(u,opt).then(function(r){return r.json()})
 
 function load(){
   Promise.all([fetchJSON('/tracks'),fetchJSON('/dashboard/data')]).then(function(rs){
-    tracks=rs[0];met=rs[1];renderCap();render();});
+    tracks=rs[0];met=rs[1];renderCap();
+    // recordings view is interactive (expanded runs, playing video) - don't re-render it on poll
+    if(view!=='recs'||!document.querySelector('.run'))render();});
 }
 function econOf(t){if(!met)return null;var c=null;met.cards.forEach(function(x){if(x.id===t.id)c=x});return c}
 function renderCap(){
@@ -256,9 +312,74 @@ function render(){
     n.classList.toggle('active',n.dataset.view===view)});
   document.querySelectorAll('.navitem[data-filter]').forEach(function(n){
     n.classList.toggle('active',view==='board'&&n.dataset.filter===filter)});
-  $('crumb').textContent=view==='board'?'Board':view==='dash'?'Dashboard':'Settings';
-  $('newbtn').style.display=view==='board'?'':'none';
-  if(view==='board')renderBoard();else if(view==='dash')renderDash();else renderSettings();
+  var isWork=(view==='board'||view==='list'||view==='timeline');
+  document.querySelector('.navitem[data-view="board"]').classList.toggle('active',isWork);
+  $('crumb').textContent=isWork?'Board':view==='dash'?'Dashboard':view==='recs'?'Recordings':'Settings';
+  $('newbtn').style.display=isWork?'':'none';
+  $('layouts').style.display=isWork?'':'none';
+  document.querySelectorAll('.lay').forEach(function(l){l.classList.toggle('active',l.dataset.lay===view)});
+  if(view==='board')renderBoard();else if(view==='list')renderList();
+  else if(view==='timeline')renderTimeline();else if(view==='dash')renderDash();
+  else if(view==='recs')renderRecs();else renderSettings();
+}
+function laneColor(l){var c={backlog:'var(--txt-tertiary)',working:'var(--ai)',review:'var(--human)',done:'var(--ok)'};return c[l]||c.backlog}
+
+/* ---------- list layout (Plane's spreadsheet-ish list, grouped by lane) ---------- */
+function renderList(){
+  var h='<div class=panel style="padding:0">';
+  LANES.forEach(function(L){
+    var inLane=tracks.filter(function(t){return (t.lane||'working')===L[0]});
+    if(!inLane.length)return;
+    h+='<div class=lgroup><span class=ldot style="background:'+L[2]+';width:8px;height:8px;border-radius:50%;display:inline-block"></span>'
+      +L[1]+'<span class=lcount>'+inLane.length+'</span></div>';
+    inLane.forEach(function(t){
+      var st=STATUS[t.status]||[t.status,'var(--txt-tertiary)'];var e=econOf(t);
+      h+='<div class=lrow data-id="'+t.id+'"><span class=lbranch>'+esc(t.branch)+'</span>'
+        +'<span class=ltask>'+esc(t.task)+'</span>'
+        +'<span class=chip><span class=sdot style="background:'+st[1]+'"></span>'+st[0]+'</span>'
+        +(e?'<span class=chip>€'+e.value+'</span><span class=chip>AI $'+e.ai_cost.toFixed(2)+'</span>'
+           +'<span class=chip>'+e.touches+'t</span>':'')
+        +'<span style="font-size:11px;color:var(--txt-tertiary);width:118px;text-align:right">'+esc(t.updated||'')+'</span></div>';
+    });
+  });
+  h+='</div>';
+  $('content').innerHTML=h;
+  document.querySelectorAll('.lrow').forEach(function(r){
+    r.addEventListener('click',function(){
+      var t=tracks.filter(function(x){return x.id===r.dataset.id})[0];if(t)openPeek(t)})});
+}
+
+/* ---------- timeline layout (Plane's gantt: card = bar from filed to last activity) ---------- */
+function parseTs(s){return s?new Date(s.replace(' ','T')).getTime():null}
+function renderTimeline(){
+  var now=Date.now(),DAY=86400e3;
+  var ts=tracks.map(function(t){return {t:t,a:parseTs(t.created)||now,
+    b:(t.lane==='done'?parseTs(t.updated):now)||now}});
+  if(!ts.length){$('content').innerHTML='<div class=panel>no work yet</div>';return}
+  var min=Math.min.apply(null,ts.map(function(x){return x.a})),max=Math.max(now,
+    Math.max.apply(null,ts.map(function(x){return x.b})));
+  var d0=new Date(min);d0.setHours(0,0,0,0);min=d0.getTime();
+  var days=Math.max(1,Math.ceil((max-min)/DAY)),pxday=Math.max(64,Math.floor(900/days));
+  var W=days*pxday;
+  function x(t){return Math.round((t-min)/DAY*pxday)}
+  var head='<div class=g-head><div class=g-side>card</div><div class=g-days style="width:'+W+'px">';
+  for(var i=0;i<days;i++){var d=new Date(min+i*DAY);
+    head+='<div class=g-day style="width:'+pxday+'px">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>'}
+  head+='</div></div>';
+  var rows=ts.map(function(r){
+    var t=r.t,l=x(r.a),w=Math.max(14,x(r.b)-l);
+    return '<div class=g-row data-id="'+t.id+'"><div class=g-side title="'+esc(t.task)+'">'+esc(t.task)+'</div>'
+      +'<div class=g-track style="width:'+W+'px"><div class=g-today style="left:'+x(now)+'px"></div>'
+      +'<div class=g-bar style="left:'+l+'px;width:'+w+'px;background:'+laneColor(t.lane)+'" title="'
+      +esc(t.branch)+' · '+t.lane+'"><span>'+esc(t.branch)+' · '+t.lane+'</span></div></div></div>';
+  }).join('');
+  $('content').innerHTML='<div id=gantt>'+head+rows+'</div>'
+    +'<div style="margin-top:10px;font-size:11.5px;color:var(--txt-tertiary)">bar = filed → last activity (done cards freeze at acceptance) · '
+    +'<span style="color:var(--ai)">■</span> working · <span style="color:var(--human)">■</span> review · '
+    +'<span style="color:var(--ok)">■</span> done · blue line = now</div>';
+  document.querySelectorAll('.g-row').forEach(function(r){
+    r.addEventListener('click',function(){
+      var t=tracks.filter(function(x){return x.id===r.dataset.id})[0];if(t)openPeek(t)})});
 }
 function renderBoard(){
   var host=$('content');host.innerHTML='<div id=board></div>';
@@ -392,6 +513,39 @@ function renderDash(){
   $('content').innerHTML=h;
 }
 
+/* ---------- recordings ---------- */
+function renderRecs(){
+  var host=$('content');
+  host.innerHTML='<div style="color:var(--txt-tertiary);font-size:12.5px">loading…</div>';
+  fetchJSON('/runs').then(function(runs){
+    if(!runs.length){host.innerHTML='<div class=panel style="max-width:560px">'
+      +'<h3>No recordings yet</h3><div style="font-size:12.5px;color:var(--txt-secondary)">'
+      +'Record a demo (<b>swarm.py teach</b>), run a task, or dispatch a card — every agent run lands here '
+      +'as a step timeline with drill-down video.</div></div>';return}
+    host.innerHTML=runs.map(function(m,i){
+      return '<div class=run data-id="'+esc(m.id)+'">'
+        +'<div class="run-h" data-i="'+i+'"><span class=rkind>'+esc(m.kind)+'</span>'
+        +'<span class=rt>'+esc(m.title)+'</span>'
+        +'<span class=rm>'+esc(m.id)+' · '+esc(m.status)+' · '+(m.steps||0)+' steps</span>'
+        +'<span class=chev>▸</span></div>'
+        +'<div class=run-body></div></div>'}).join('');
+    host.querySelectorAll('.run-h').forEach(function(h){
+      h.addEventListener('click',function(){
+        var run=h.parentElement,body=run.querySelector('.run-body');
+        if(run.classList.toggle('open')&&!body.dataset.loaded){
+          body.dataset.loaded='1';
+          var id=run.dataset.id;
+          fetchJSON('/runs/'+id+'/timeline').then(function(tl){
+            body.innerHTML='<ul class=steps>'+tl.map(function(s){
+              return '<li'+(s.kind==='flag'?' class=flag':'')+'><span class=st>'+s.t.toFixed(1)+'s</span>'
+                +'<span class=sk>'+esc(s.kind)+'</span><span>'+esc(s.detail)+'</span>'}).join('')+'</ul>'
+              +'<video controls preload=none src="/runs/'+id+'/video"></video>';
+          }).catch(function(){body.innerHTML='<div style="color:var(--txt-tertiary)">no timeline</div>'});
+        }});
+    });
+  });
+}
+
 /* ---------- settings ---------- */
 function renderSettings(){
   var s=met.settings;
@@ -420,9 +574,11 @@ function saveSettings(){
 /* ---------- nav / theme ---------- */
 document.querySelectorAll('.navitem[data-view]').forEach(function(n){
   n.addEventListener('click',function(){view=n.dataset.view;location.hash=view;render()})});
-if(/^#(board|dash|settings)$/.test(location.hash))view=location.hash.slice(1);
+document.querySelectorAll('.lay').forEach(function(l){
+  l.addEventListener('click',function(){view=l.dataset.lay;location.hash=view;render()})});
+if(/^#(board|list|timeline|dash|recs|settings)$/.test(location.hash))view=location.hash.slice(1);
 window.addEventListener('hashchange',function(){
-  if(/^#(board|dash|settings)$/.test(location.hash)){view=location.hash.slice(1);render()}});
+  if(/^#(board|list|timeline|dash|recs|settings)$/.test(location.hash)){view=location.hash.slice(1);render()}});
 document.querySelectorAll('.navitem[data-filter]').forEach(function(n){
   n.addEventListener('click',function(){view='board';filter=n.dataset.filter;render()})});
 $('themebtn').addEventListener('click',function(){
