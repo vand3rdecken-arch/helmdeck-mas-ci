@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+"""Processes - the n8n half. A client request ("get this document approved")
+is not one card: an agent PROPOSES a step sequence, the human adjusts it, and
+each accepted step becomes a normal board card with an execution mode:
+
+  do      - agent executes it fully (claude / claude-desktop driver)
+  prepare - agent drafts, human finishes & sends (email, proposal, sketch)
+  cowork  - interactive: dispatched, human steers alongside
+  teach   - human records the sequence once on the machine (teach-mode),
+            the playbook executes it after
+  human   - a person does it; the card only tracks it
+
+Dates: the proposer estimates days per step; due dates are laid end-to-end
+from today (capped by the process due date when set). Store: processes.json.
+Steps link to their card (track id) once accepted; the timeline groups cards
+by process so one client engagement reads as a swimlane."""
+import json, os, re, shutil, subprocess, threading, time
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+STORE = os.path.join(ROOT, "processes.json")
+CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+          or r"C:\Program Files\nodejs\claude.cmd")
+MODES = ("do", "prepare", "cowork", "teach", "human")
+_lock = threading.Lock()
+
+def _load():
+    if not os.path.exists(STORE):
+        return []
+    try:
+        with open(STORE, encoding="utf-8") as f:
+            return json.load(f)
+    except ValueError:
+        return []
+
+def _save(ps):
+    tmp = STORE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(ps, f, indent=2)
+    os.replace(tmp, STORE)
+
+def list_processes(client=None):
+    ps = _load()
+    if client:
+        ps = [p for p in ps if p.get("client") == client]
+    return ps
+
+def get(pid):
+    for p in _load():
+        if p["id"] == pid:
+            return p
+    return None
+
+PROPOSE_PROMPT = """You are a process designer for an agent-execution board.
+A client request follows. Break it into 3-8 concrete, orderable steps.
+
+For each step decide the best execution mode:
+  do      = an AI agent can complete it alone (code, research, documents, browser/desktop work)
+  prepare = an AI agent should DRAFT it but a human must review/send it (emails to people, proposals, designs)
+  cowork  = human and agent should work it together interactively
+  teach   = a repetitive machine sequence a human should demonstrate once so it becomes a playbook
+  human   = only a human can do it (signatures, phone calls, physical actions, approvals by named people)
+
+Reply with ONLY a JSON array, no prose:
+[{"title": "...", "desc": "one sentence of what done looks like", "mode": "do|prepare|cowork|teach|human", "days": <estimated working days, 1-5>}]
+
+REQUEST:
+%s"""
+
+def _propose_steps(request_text):
+    r = subprocess.run(["cmd", "/c", CLAUDE, "-p", "--output-format", "json",
+                        "--permission-mode", "plan"],
+                       input=PROPOSE_PROMPT % request_text,
+                       capture_output=True, text=True, timeout=300)
+    d = json.loads(r.stdout)
+    txt = d.get("result", "")
+    m = re.search(r"\[.*\]", txt, re.S)
+    steps = json.loads(m.group(0)) if m else []
+    out = []
+    for s in steps[:8]:
+        out.append({"title": str(s.get("title", ""))[:120],
+                    "desc": str(s.get("desc", ""))[:300],
+                    "mode": s.get("mode") if s.get("mode") in MODES else "do",
+                    "days": min(5, max(1, int(s.get("days", 1)))),
+                    "status": "proposed", "track": None, "due": ""})
+    return out, d.get("total_cost_usd")
+
+def _lay_dates(p):
+    """End-to-end schedule from today; compress into the process due if set."""
+    total = sum(s.get("days", 1) for s in p["steps"]) or 1
+    start = time.time()
+    horizon = total * 86400
+    if p.get("due"):
+        try:
+            end = time.mktime(time.strptime(p["due"], "%Y-%m-%d")) + 86399
+            horizon = max(86400, end - start)
+        except ValueError:
+            pass
+    acc = 0
+    for s in p["steps"]:
+        acc += s.get("days", 1)
+        s["due"] = time.strftime("%Y-%m-%d", time.localtime(start + horizon * acc / total))
+
+def create(request_text, client="", due="", actor="owner"):
+    """File a process; proposal runs in the background (status: proposing)."""
+    pid = time.strftime("%Y%m%d-%H%M%S") + "-proc"
+    p = {"id": pid, "request": request_text, "client": client, "due": due,
+         "status": "proposing", "steps": [], "cost": 0.0,
+         "created": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor}
+    with _lock:
+        ps = _load(); ps.insert(0, p); _save(ps)
+    import events
+    events.emit("process", pid, action="filed", actor=actor)
+    def go():
+        try:
+            steps, cost = _propose_steps(request_text)
+            err = "" if steps else "proposer returned no steps - add them manually"
+        except Exception as e:
+            steps, cost, err = [], 0, str(e)[:200]
+        with _lock:
+            ps = _load()
+            for q in ps:
+                if q["id"] == pid:
+                    q["steps"] = steps
+                    q["cost"] = cost or 0.0
+                    q["status"] = "ready" if steps else "failed"
+                    q["error"] = err
+                    _lay_dates(q)
+            _save(ps)
+    threading.Thread(target=go, daemon=True).start()
+    return p
+
+def update_step(pid, idx, patch):
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid and 0 <= idx < len(p["steps"]):
+                s = p["steps"][idx]
+                for k in ("title", "desc", "mode", "due", "days"):
+                    if k in patch:
+                        s[k] = patch[k]
+                _save(ps)
+                return s
+    raise RuntimeError("no such step")
+
+def add_step(pid, title, mode="do"):
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid:
+                p["steps"].append({"title": title[:120], "desc": "", "mode": mode,
+                                   "days": 1, "status": "proposed", "track": None,
+                                   "due": p.get("due", "")})
+                _save(ps)
+                return p
+    raise RuntimeError("no such process")
+
+def remove_step(pid, idx):
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid and 0 <= idx < len(p["steps"]):
+                if p["steps"][idx].get("track"):
+                    raise RuntimeError("step already has a card")
+                p["steps"].pop(idx)
+                _save(ps)
+                return p
+    raise RuntimeError("no such step")
+
+MODE_DRIVER = {"do": "claude", "prepare": "claude", "cowork": "claude", "teach": None, "human": None}
+
+def accept_step(pid, idx, repo, actor="owner"):
+    """Proposed step -> real card. Mode decides driver + task framing; teach
+    and human steps become tracked-only cards (no agent session)."""
+    import sessions
+    p = get(pid)
+    if not p or not (0 <= idx < len(p["steps"])):
+        raise RuntimeError("no such step")
+    s = p["steps"][idx]
+    if s.get("track"):
+        return p
+    mode = s.get("mode", "do")
+    task = s["title"]
+    if s.get("desc"):
+        task += "\n\n" + s["desc"]
+    if mode == "prepare":
+        task = "PREPARE (draft only - a human reviews and sends/finishes): " + task
+    elif mode == "cowork":
+        task = "COWORK (start, then wait for the human's steers): " + task
+    elif mode == "teach":
+        task = "TEACH: human demonstrates this once (swarm.py teach), playbook runs it after: " + task
+    elif mode == "human":
+        task = "HUMAN STEP (tracked only): " + task
+    branch = "proc-" + pid.split("-")[0] + "-s%d" % (idx + 1)
+    t = sessions.new_track(repo, branch, task, lane="backlog", client=p.get("client", ""),
+                           driver=MODE_DRIVER.get(mode) or "claude", actor=actor,
+                           priority="high" if idx == 0 else "medium", due=s.get("due", ""))
+    t_id = t["id"]
+    # human/teach steps never auto-dispatch; agent modes wait in backlog for the drag
+    with _lock:
+        ps = _load()
+        for q in ps:
+            if q["id"] == pid:
+                q["steps"][idx]["status"] = "accepted"
+                q["steps"][idx]["track"] = t_id
+                if all(x.get("track") for x in q["steps"]):
+                    q["status"] = "running"
+        _save(ps)
+    # tag the track with its process for the timeline swimlane
+    tracks = sessions._load()
+    tt = sessions._find(tracks, t_id)
+    if tt:
+        tt["process"] = pid
+        tt["process_title"] = p["request"][:60]
+        tt["mode"] = mode
+        sessions._save(tracks)
+    return get(pid)

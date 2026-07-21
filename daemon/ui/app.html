@@ -232,6 +232,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <nav id="side">
     <div id="logo"><span class="dot">S</span> SwarmDeck</div>
     <div class="navitem" data-view="board"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/></svg>Board</div>
+    <div class="navitem" data-view="procs"><svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M7 7l3 3M14 13l3 3"/></svg>Processes</div>
     <div class="navitem" data-view="dash"><svg viewBox="0 0 24 24"><path d="M3 12h5l2-7 4 14 2-7h5"/></svg>Dashboard</div>
     <div class="navitem" data-view="recs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Recordings</div>
     <div class="navitem" data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>Settings</div>
@@ -399,13 +400,75 @@ function render(){
     n.classList.toggle('active',view==='board'&&n.dataset.filter===filter)});
   var isWork=(view==='board'||view==='list'||view==='timeline');
   document.querySelector('.navitem[data-view="board"]').classList.toggle('active',isWork);
-  $('crumb').textContent=isWork?'Board':view==='dash'?'Dashboard':view==='recs'?'Recordings':'Settings';
+  $('crumb').textContent=isWork?'Board':view==='dash'?'Dashboard':view==='recs'?'Recordings':view==='procs'?'Processes':'Settings';
   $('newbtn').style.display=isWork?'':'none';
   $('layouts').style.display=isWork?'':'none';
   document.querySelectorAll('.lay').forEach(function(l){l.classList.toggle('active',l.dataset.lay===view)});
   if(view==='board')renderBoard();else if(view==='list')renderList();
   else if(view==='timeline')renderTimeline();else if(view==='dash')renderDash();
-  else if(view==='recs')renderRecs();else renderSettings();
+  else if(view==='recs')renderRecs();else if(view==='procs')renderProcs();else renderSettings();
+}
+var MODE_ICON={do:'🤖 do',prepare:'✍ prepare',cowork:'🤝 cowork',teach:'🎓 teach',human:'👤 human'};
+
+/* ---------- processes: propose -> adjust -> accept ---------- */
+function renderProcs(){
+  var host=$('content');
+  host.innerHTML='<div class=panel style="max-width:760px"><h3>New process</h3>'
+    +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:8px">Describe the client request in plain words — an agent proposes the step sequence, you adjust, each accepted step becomes a card.</div>'
+    +'<textarea id=pr-req style="width:100%;height:64px" placeholder="e.g. Client Meier needs the Q3 contract document approved: draft it from the template, get legal wording checked, send to the client for signature, archive the signed copy."></textarea>'
+    +'<div style="display:flex;gap:8px;margin-top:8px;align-items:center">'
+    +'<input id=pr-client placeholder="client (optional)" style="width:150px">'
+    +'<input id=pr-due type=date style="width:150px" title="process due date">'
+    +'<button class="btn primary" onclick="newProc()">Propose steps</button></div></div>'
+    +'<div id=proclist style="font-size:12.5px;color:var(--txt-tertiary)">loading…</div>';
+  loadProcs();
+}
+function loadProcs(){
+  fetchJSON('/processes').then(function(ps){
+    var el=$('proclist');if(!el)return;
+    if(!ps.length){el.innerHTML='<div class=panel style="max-width:760px;color:var(--txt-tertiary)">No processes yet.</div>';return}
+    el.innerHTML=ps.map(function(p){
+      var head='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        +'<b style="font-size:13.5px;color:var(--txt-primary)">'+esc(p.request).slice(0,90)+'</b>'
+        +'<span class=chip>'+esc(p.status)+'</span>'
+        +(p.client?'<span class=chip>client: '+esc(p.client)+'</span>':'')
+        +(p.due?'<span class=chip>📅 '+esc(p.due)+'</span>':'')
+        +(p.cost?'<span class=chip>proposal AI $'+p.cost.toFixed(2)+'</span>':'')+'</div>';
+      var steps='';
+      if(p.status==='proposing')steps='<div style="margin-top:8px;color:var(--txt-tertiary)">agent is proposing steps…</div>';
+      else if(p.status==='failed')steps='<div style="margin-top:8px;color:var(--danger)">'+esc(p.error||'proposal failed')+'</div>';
+      steps+=(p.steps||[]).map(function(s,i){
+        return '<div style="display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap">'
+          +'<span style="color:var(--txt-tertiary);width:18px;text-align:right">'+(i+1)+'.</span>'
+          +'<input value="'+esc(s.title).replace(/"/g,'&quot;')+'" style="flex:1;min-width:200px;font-size:12.5px" onchange="stepAct(\''+p.id+'\','+i+',\'update\',{title:this.value})">'
+          +'<select style="width:110px" onchange="stepAct(\''+p.id+'\','+i+',\'update\',{mode:this.value})">'
+            +Object.keys(MODE_ICON).map(function(m){return '<option value='+m+(m===s.mode?' selected':'')+'>'+MODE_ICON[m]+'</option>'}).join('')+'</select>'
+          +'<input type=date value="'+esc(s.due||'')+'" style="width:135px" onchange="stepAct(\''+p.id+'\','+i+',\'update\',{due:this.value})">'
+          +(s.track?'<span class=chip style="color:var(--ok)">✔ card</span>'
+            :'<button class="btn ghost" style="font-size:11px;padding:2px 9px" onclick="stepAct(\''+p.id+'\','+i+',\'accept\')">Accept → card</button>'
+            +'<button class="btn ghost" style="font-size:11px;padding:2px 7px" onclick="stepAct(\''+p.id+'\','+i+',\'remove\')">✕</button>')
+          +(s.desc?'<div style="flex-basis:100%;padding-left:26px;font-size:11.5px;color:var(--txt-tertiary)">'+esc(s.desc)+'</div>':'')
+          +'</div>';}).join('');
+      var foot=p.steps&&p.steps.length?'<div style="margin-top:10px;display:flex;gap:8px">'
+        +'<button class="btn primary" style="font-size:12px" onclick="stepAct(\''+p.id+'\',0,\'accept_all\')">Accept all → cards</button>'
+        +'<button class="btn ghost" style="font-size:12px" onclick="var t=prompt(\'Step title:\');if(t)stepAct(\''+p.id+'\',0,\'add\',null,t)">+ add step</button></div>':'';
+      return '<div class=panel style="max-width:920px">'+head+steps+foot+'</div>';}).join('');
+  });
+}
+function newProc(){
+  var req=$('pr-req').value.trim();if(!req){toast('Describe the request');return}
+  post('/processes/new',{request:req,client:$('pr-client').value.trim(),due:$('pr-due').value})
+  .then(function(r){if(r.error){toast(r.error,3600);return}
+    $('pr-req').value='';toast('Filed — agent is proposing steps');
+    setTimeout(loadProcs,1500);var iv=setInterval(function(){
+      if(view!=='procs'){clearInterval(iv);return}loadProcs()},4000);
+    setTimeout(function(){clearInterval(iv)},120000)});
+}
+function stepAct(pid,idx,action,patch,title){
+  post('/processes/'+pid+'/step',{action:action,idx:idx,patch:patch,title:title})
+  .then(function(r){if(r.error){toast(r.error,3600);return}
+    if(action==='accept'||action==='accept_all')toast('Card'+(action==='accept_all'?'s':'')+' created on the board');
+    loadProcs();});
 }
 function laneColor(l){var c={backlog:'var(--txt-tertiary)',working:'var(--ai)',review:'var(--human)',done:'var(--ok)'};return c[l]||c.backlog}
 var PRIO={urgent:['⚠ urgent','var(--danger)'],high:['↑ high','var(--warn)'],medium:['− med','var(--txt-tertiary)'],low:['↓ low','var(--txt-tertiary)']};
@@ -462,7 +525,21 @@ function renderTimeline(){
   for(var i=0;i<days;i++){var d=new Date(min+i*DAY);
     head+='<div class=g-day style="width:'+pxday+'px">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>'}
   head+='</div></div>';
+  // group into process swimlanes: process cards together under a header row
+  ts.sort(function(a,b){
+    var pa=a.t.process||'~',pb=b.t.process||'~';
+    return pa<pb?-1:pa>pb?1:(a.a-b.a)});
+  var lastProc=null;
   var rows=ts.map(function(r){
+    var hdr='';
+    var proc=r.t.process||null;
+    if(proc!==lastProc){
+      lastProc=proc;
+      if(proc)hdr='<div class=g-row style="cursor:default;background:var(--bg-layer-1)"><div class=g-side style="color:var(--accent-txt)">⛓ '
+        +esc(r.t.process_title||proc)+(r.t.client?' · '+esc(r.t.client):'')+'</div><div class=g-track style="width:'+W+'px;height:22px"></div></div>';
+      else if(ts.some(function(x){return x.t.process}))hdr='<div class=g-row style="cursor:default;background:var(--bg-layer-1)"><div class=g-side style="color:var(--txt-tertiary)">single cards</div><div class=g-track style="width:'+W+'px;height:22px"></div></div>';
+    }
+    return hdr+(function(r){
     var t=r.t,l=x(r.a),w=Math.max(14,x(r.b)-l);
     var lateness=r.due&&t.lane!=='done'&&now>r.due;
     return '<div class=g-row data-id="'+t.id+'"><div class=g-side title="'+esc(t.task)+'">'+esc(t.task)+'</div>'
@@ -472,6 +549,7 @@ function renderTimeline(){
       +'<div class=g-bar style="left:'+l+'px;width:'+w+'px;background:'+laneColor(t.lane)+'" title="'
       +esc(t.branch)+' · '+t.lane+'"><span>'+esc(t.branch)+' · '+t.lane
       +(lateness?' · <b style="color:var(--danger)">overdue</b>':'')+'</span></div></div></div>';
+    })(r);
   }).join('');
   $('content').innerHTML='<div id=gantt>'+head+rows+'</div>'
     +'<div style="margin-top:10px;font-size:11.5px;color:var(--txt-tertiary)">bar = filed → last activity (done cards freeze at acceptance) · '
@@ -505,6 +583,8 @@ function renderBoard(){
         +'<div class=title>'+esc(t.task)+'</div>'
         +'<div class=chips><span class=chip><span class=sdot style="background:'+st[1]+'"></span>'+st[0]+'</span>'
         +prioChip(t)+dueChip(t)
+        +(t.mode?'<span class=chip title="execution mode">'+(MODE_ICON[t.mode]||esc(t.mode))+'</span>':'')
+        +(t.process?'<span class=chip title="'+esc(t.process_title||'')+'" style="color:var(--accent-txt)">⛓ process</span>':'')
         +(t.driver&&t.driver!=='claude'?'<span class=chip title="execution driver" style="color:var(--accent-txt)">🖥 '+esc(t.driver)+'</span>':'')
         +(e?'<span class=chip title="deliverable value">€'+e.value+'</span>'
            +'<span class=chip title="AI cost so far">AI $'+e.ai_cost.toFixed(2)+'</span>'
@@ -780,9 +860,9 @@ document.querySelectorAll('.navitem[data-view]').forEach(function(n){
   n.addEventListener('click',function(){view=n.dataset.view;location.hash=view;render()})});
 document.querySelectorAll('.lay').forEach(function(l){
   l.addEventListener('click',function(){view=l.dataset.lay;location.hash=view;render()})});
-if(/^#(board|list|timeline|dash|recs|settings)$/.test(location.hash))view=location.hash.slice(1);
+if(/^#(board|list|timeline|dash|recs|procs|settings)$/.test(location.hash))view=location.hash.slice(1);
 window.addEventListener('hashchange',function(){
-  if(/^#(board|list|timeline|dash|recs|settings)$/.test(location.hash)){view=location.hash.slice(1);render()}});
+  if(/^#(board|list|timeline|dash|recs|procs|settings)$/.test(location.hash)){view=location.hash.slice(1);render()}});
 document.querySelectorAll('.navitem[data-filter]').forEach(function(n){
   n.addEventListener('click',function(){view='board';filter=n.dataset.filter;render()})});
 $('themebtn').addEventListener('click',function(){
