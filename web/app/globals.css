@@ -16,7 +16,7 @@
   --accent:var(--brand-default);--accent-txt:var(--brand-default);
   --accent-2:oklch(.55 .19 292);
   --glass:oklch(1 0 0/72%);--glass-border:oklch(0 0 0/8%);
-  --glow-1:oklch(.62 .12 238/14%);--glow-2:oklch(.55 .19 292/10%);
+  --glow-1:oklch(.62 .12 238/30%);--glow-2:oklch(.55 .19 292/24%);
   --ok:var(--green-700);--warn:var(--amber-600);--danger:var(--red-700);
   --ai:#4b8fc9;--human:#a8842d;
   --backdrop:oklch(.1482 .0034 196.79/50%);
@@ -39,7 +39,7 @@
   --backdrop:oklch(0 0 0/60%);
   --accent-2:oklch(.66 .17 292);
   --glass:oklch(.21 .003 230/62%);--glass-border:oklch(1 0 0/9%);
-  --glow-1:oklch(.63 .13 238/13%);--glow-2:oklch(.66 .17 292/9%);
+  --glow-1:oklch(.63 .15 238/34%);--glow-2:oklch(.66 .19 292/26%);
   --ai:#5b9fd9;--human:#c99b2e;
   --shadow:0 1px 3px oklch(0 0 0/40%);
   --shadow-overlay:0 10px 40px oklch(0 0 0/60%);
@@ -407,10 +407,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 /* glass needs something to refract; these live BEHIND everything and never
    carry meaning - card/status color stays semantic. */
 [data-backdrop="aurora"] body::before{background:
-  radial-gradient(52% 44% at 8% -8%,oklch(.6 .16 200/22%),transparent 70%),
-  radial-gradient(46% 40% at 92% 4%,oklch(.6 .19 300/20%),transparent 70%),
-  radial-gradient(56% 46% at 45% 112%,oklch(.62 .17 165/16%),transparent 72%),
-  radial-gradient(34% 30% at 70% 55%,oklch(.6 .16 330/9%),transparent 75%)}
+  radial-gradient(52% 44% at 8% -8%,oklch(.6 .16 200/38%),transparent 70%),
+  radial-gradient(46% 40% at 92% 4%,oklch(.6 .19 300/32%),transparent 70%),
+  radial-gradient(56% 46% at 45% 112%,oklch(.62 .17 165/28%),transparent 72%),
+  radial-gradient(34% 30% at 70% 55%,oklch(.6 .16 330/18%),transparent 75%)}
 [data-backdrop="ember"] body::before{background:
   radial-gradient(50% 42% at 10% -8%,oklch(.6 .16 45/20%),transparent 70%),
   radial-gradient(44% 38% at 94% 6%,oklch(.55 .19 25/16%),transparent 70%),
@@ -420,3 +420,45 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   radial-gradient(44% 38% at 94% 6%,oklch(.6 .12 200/16%),transparent 70%),
   radial-gradient(52% 44% at 50% 112%,oklch(.62 .13 130/13%),transparent 72%)}
 [data-backdrop="mono"] body::before{background:none}
+
+/* ==== LIQUID GLASS PASS: real material - translucency, refraction, specular light ==== */
+:root{--glass:oklch(1 0 0/52%);--glass-border:oklch(1 0 0/55%);
+  --spec:inset 0 1px 0 oklch(1 0 0/70%),inset 0 0 0 1px oklch(1 0 0/25%)}
+[data-theme="dark"]{--glass:oklch(.23 .004 230/38%);--glass-border:oklch(1 0 0/13%);
+  --spec:inset 0 1.5px 0 oklch(1 0 0/16%),inset 0 0 0 1px oklch(1 0 0/6%)}
+
+.card,.panel,.tile,.run,#gantt{
+  backdrop-filter:blur(28px) saturate(1.8);-webkit-backdrop-filter:blur(28px) saturate(1.8);
+  box-shadow:var(--shadow),var(--spec)}
+#side,#hdr{backdrop-filter:blur(34px) saturate(1.8);-webkit-backdrop-filter:blur(34px) saturate(1.8)}
+#hdr{box-shadow:inset 0 -1px 0 var(--glass-border)}
+#peek,#mcard,#chat,#authcard,#palcard{
+  backdrop-filter:blur(40px) saturate(1.9);-webkit-backdrop-filter:blur(40px) saturate(1.9);
+  box-shadow:var(--shadow-overlay),var(--spec)}
+[data-theme="dark"] #peek,[data-theme="dark"] #mcard,[data-theme="dark"] #chat,
+[data-theme="dark"] #authcard,[data-theme="dark"] #palcard{
+  background:oklch(.22 .004 230/52%)}
+#peek{background:oklch(1 0 0/60%)}
+[data-theme="dark"] #peek{background:oklch(.2 .004 230/55%)}
+
+/* concentric, softer radii - the Apple geometry */
+.card{border-radius:16px}.panel,.tile,.run,#gantt{border-radius:18px}
+#mcard,#chat,#palcard,#authcard{border-radius:22px}
+.chip{border-radius:999px;padding:2px 9px;background:color-mix(in oklch,var(--glass) 60%,transparent);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  box-shadow:inset 0 .5px 0 oklch(1 0 0/18%)}
+.btn{border-radius:999px}
+#layouts{border-radius:999px}#layouts .lay{padding:2px 12px}
+.lcount{box-shadow:inset 0 .5px 0 oklch(1 0 0/15%)}
+#nextup{border-radius:16px}
+input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--glass) 75%,transparent);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#nextup .nu{border-radius:999px}
+
+/* specular sheen sweeping the top of glass sheets */
+.panel,.tile,.card{position:relative}
+.panel::before,.tile::before{content:"";position:absolute;inset:0 0 60% 0;border-radius:inherit;
+  pointer-events:none;
+  background:linear-gradient(180deg,oklch(1 0 0/7%),transparent)}
+[data-theme="dark"] .panel::before,[data-theme="dark"] .tile::before{
+  background:linear-gradient(180deg,oklch(1 0 0/5%),transparent)}
