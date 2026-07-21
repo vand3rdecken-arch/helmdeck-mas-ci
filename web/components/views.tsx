@@ -4,8 +4,9 @@ import { Track } from "@/lib/api";
 import { LANES, PRIO_ORD, STATUS, laneColor, useBoard } from "@/lib/store";
 import { dueChip, prioChip } from "./board";
 
-export function ListView({ onOpen }: { onOpen: (t: Track) => void }) {
-  const { tracks, met } = useBoard();
+export function ListView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
+  const { tracks: all, met } = useBoard();
+  const tracks = filter.startsWith("client:") ? all.filter((t) => t.client === filter.slice(7)) : all;
   return (
     <div className="panel" style={{ padding: 0 }}>
       {LANES.map(([key, name, color]) => {
@@ -45,8 +46,9 @@ export function ListView({ onOpen }: { onOpen: (t: Track) => void }) {
 const DAY = 86400e3;
 const parseTs = (s?: string) => (s ? new Date(s.replace(" ", "T")).getTime() : null);
 
-export function TimelineView({ onOpen }: { onOpen: (t: Track) => void }) {
-  const { tracks } = useBoard();
+export function TimelineView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
+  const { tracks: all } = useBoard();
+  const tracks = filter.startsWith("client:") ? all.filter((t) => t.client === filter.slice(7)) : all;
   const now = Date.now();
   const ts = tracks.map((t) => ({
     t,

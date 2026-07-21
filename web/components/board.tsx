@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { post, Track } from "@/lib/api";
-import { LANES, STATUS, PRIO_ORD, MODE_EMOJI, MODE_ICON, useBoard } from "@/lib/store";
+import { LANES, STATUS, PRIO_ORD, useBoard } from "@/lib/store";
+import { IconBriefcase, IconCalendar, IconChain, IconMonitor, ModeIcon, MODE_LABEL } from "./icons";
 
 export function prioChip(t: Track) {
   const p = t.priority ?? "medium";
@@ -19,7 +20,7 @@ export function dueChip(t: Track) {
   return (
     <span className="chip" title="due date"
       style={overdue ? { color: "var(--danger)", borderColor: "var(--danger)" } : undefined}>
-      📅 {t.due.slice(5)}{overdue ? " overdue" : ""}
+      <IconCalendar /> {t.due.slice(5)}{overdue ? " overdue" : ""}
     </span>
   );
 }
@@ -39,10 +40,11 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
       <div className="chips">
         <span className="chip"><span className="sdot" style={{ background: st[1] }} />{st[0]}</span>
         {prioChip(t)}{dueChip(t)}
-        {t.mode && <span className="chip" title="execution mode">{MODE_ICON[t.mode] ?? t.mode}</span>}
-        {t.process && <span className="chip" title={t.process_title} style={{ color: "var(--accent-txt)" }}>⛓ process</span>}
+        {t.mode && <span className="chip" title="execution mode"><ModeIcon mode={t.mode} />{MODE_LABEL[t.mode] ?? t.mode}</span>}
+        {t.client && <span className="chip" title="client"><IconBriefcase />{t.client}</span>}
+        {t.process && <span className="chip" title={t.process_title} style={{ color: "var(--accent-txt)" }}><IconChain />process</span>}
         {t.driver && t.driver !== "claude" && (
-          <span className="chip" title="execution driver" style={{ color: "var(--accent-txt)" }}>🖥 {t.driver}</span>
+          <span className="chip" title="execution driver" style={{ color: "var(--accent-txt)" }}><IconMonitor />{t.driver}</span>
         )}
         {e && <>
           <span className="chip" title="deliverable value">€{e.value}</span>
@@ -89,7 +91,7 @@ function NextUp({ onOpen }: { onOpen: (t: Track) => void }) {
       <b style={{ fontSize: 12, color: "var(--warn)" }}>▶ NEXT UP</b>
       {items.slice(0, 4).map((t) => (
         <span key={t.id} className="nu" onClick={() => onOpen(t)}>
-          {t.mode ? MODE_EMOJI[t.mode] : ""} {t.task.replace(/^(PREPARE|COWORK|TEACH|HUMAN STEP)[^:]*: /, "").slice(0, 48)}
+          <ModeIcon mode={t.mode} /> {t.task.replace(/^(PREPARE|COWORK|TEACH|HUMAN STEP)[^:]*: /, "").slice(0, 48)}
           <span className="why">{why(t)}</span>
           {t.mode === "human" && t.lane === "backlog" && (
             <button className="btn ghost" style={{ fontSize: 10.5, padding: "1px 7px" }}
@@ -125,7 +127,9 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
       <div id="board">
         {LANES.map(([key, name, color]) => {
           let inLane = tracks.filter((t) => (t.lane || "working") === key &&
-            (filter !== "needs_you" || t.status === "needs_you" || t.status === "bounced"));
+            (filter === "all" ||
+             (filter === "needs_you" ? (t.status === "needs_you" || t.status === "bounced")
+              : t.client === filter.slice(7))));
           if (key === "backlog") {
             inLane = [...inLane].sort((a, b) =>
               (PRIO_ORD[a.priority ?? "medium"] - PRIO_ORD[b.priority ?? "medium"]) ||

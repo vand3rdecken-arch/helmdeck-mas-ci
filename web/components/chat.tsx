@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
+import { IconChat } from "./icons";
 
 interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
 
@@ -40,7 +41,7 @@ export default function Chat({ open, setOpen }: { open: boolean; setOpen: (b: bo
     setBusy(false);
   }
 
-  if (!open) return <button id="chatfab" title="Chat with the board (k)" onClick={() => setOpen(true)}>💬</button>;
+  if (!open) return <button id="chatfab" title="Chat with the board (k)" onClick={() => setOpen(true)}><IconChat size={20} /></button>;
   return (
     <div id="chat">
       <div className="ch">

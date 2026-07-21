@@ -27,7 +27,7 @@ const ICONS: Record<string, React.ReactNode> = {
 function App() {
   const { met, me, tracks, authNeeded, toastMsg } = useBoard();
   const [view, setView] = useState<View>("board");
-  const [filter, setFilter] = useState<"all" | "needs_you">("all");
+  const [filter, setFilter] = useState<string>("all");
   const [peek, setPeek] = useState<Track | null>(null);
   const [modal, setModal] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -69,6 +69,10 @@ function App() {
 
   const isClient = me?.role === "client";
   const isWork = view === "board" || view === "list" || view === "timeline";
+  const clients = Object.entries(tracks.reduce<Record<string, number>>((acc, t) => {
+    if (t.client) acc[t.client] = (acc[t.client] ?? 0) + 1;
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1]);
   useEffect(() => {
     if (isClient && (view === "dash" || view === "settings")) nav("board");
   }, [isClient, view, nav]);
@@ -91,6 +95,15 @@ function App() {
         <div className={`navitem${view === "recs" ? " active" : ""}`} onClick={() => nav("recs")}>{ICONS.recs}Recordings</div>
         {!isClient && <div className={`navitem${view === "settings" ? " active" : ""}`} onClick={() => nav("settings")}>{ICONS.settings}Settings</div>}
         <div className="sect">Views</div>
+        {clients.length > 0 && <>
+          {clients.map(([name, count]) => (
+            <div key={name} className={`navitem${isWork && filter === "client:" + name ? " active" : ""}`}
+              onClick={() => { nav("board"); setFilter(filter === "client:" + name ? "all" : "client:" + name); }}>
+              <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /><path d="M3 13h18" /></svg>
+              {name}<span className="lcount" style={{ marginLeft: "auto" }}>{count}</span>
+            </div>
+          ))}
+        </>}
         <div className={`navitem${isWork && filter === "all" ? " active" : ""}`} onClick={() => { nav("board"); setFilter("all"); }}>All work</div>
         <div className={`navitem${isWork && filter === "needs_you" ? " active" : ""}`} onClick={() => { nav("board"); setFilter("needs_you"); }}>Needs you</div>
         <div className="foot">
@@ -106,7 +119,7 @@ function App() {
       <div id="main">
         <div id="hdr">
           <span className="crumb">
-            {isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : "Settings"}
+            {isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : "Settings"}
           </span>
           {isWork && (
             <span id="layouts">
@@ -125,8 +138,8 @@ function App() {
         </div>
         <div id="content">
           {view === "board" && <BoardView filter={filter} onOpen={setPeek} />}
-          {view === "list" && <ListView onOpen={setPeek} />}
-          {view === "timeline" && <TimelineView onOpen={setPeek} />}
+          {view === "list" && <ListView filter={filter} onOpen={setPeek} />}
+          {view === "timeline" && <TimelineView filter={filter} onOpen={setPeek} />}
           {view === "procs" && <ProcsView onOpen={setPeek} />}
           {view === "dash" && <DashView />}
           {view === "recs" && <RecsView />}
