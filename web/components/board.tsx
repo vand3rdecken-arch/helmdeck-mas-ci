@@ -3,6 +3,7 @@ import { useState } from "react";
 import { post, Track } from "@/lib/api";
 import { LANES, STATUS, PRIO_ORD, useBoard, Spot } from "@/lib/store";
 import { IconBriefcase, IconCalendar, IconChain, IconMonitor, ModeIcon, MODE_LABEL } from "./icons";
+import LiveThumb from "./live";
 
 export function prioChip(t: Track) {
   const p = t.priority ?? "medium";
@@ -65,6 +66,7 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
           <i className="hb" style={{ width: `${Math.max(2, Math.round(100 * e.touches / maxH))}%` }} />
         </div>
       )}
+      {alive && met?.settings?.drivers?.[t.driver]?.record && <LiveThumb trackId={t.id} />}
       {t.gate_report && (
         <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--warn)" }}>
           gate: {t.gate_report.join(" | ").slice(0, 140)}
