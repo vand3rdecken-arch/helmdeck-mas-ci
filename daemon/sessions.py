@@ -110,7 +110,7 @@ def get_track(tid):
     return _find(_load(), tid)
 
 def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
-              value=None, driver="claude", actor="owner"):
+              value=None, driver="claude", actor="owner", priority="medium", due=""):
     """File a request. lane=backlog stores it un-started (no worktree, no session);
     lane=working starts the branch session immediately. value = what the
     deliverable is worth (settings default when omitted) - set at intake so
@@ -125,7 +125,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
          "client": client, "session_id": None, "perm": perm, "lane": "backlog",
          "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "value": float(value) if value else events.settings()["value_per_card"],
-         "driver": driver or "claude",
+         "driver": driver or "claude", "priority": priority or "medium", "due": due or "",
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
