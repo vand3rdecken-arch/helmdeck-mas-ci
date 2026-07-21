@@ -400,6 +400,9 @@ class H(BaseHTTPRequestHandler):
                     ts = [t for t in ts if t.get("client") == user["name"]]
                 return self._send(200, json.dumps(ts))
             # --- company instrumentation: settings + CEO dashboard ---
+            if p == "/connectors":
+                import connectors
+                return self._send(200, json.dumps(connectors.list_connectors()))
             if p == "/processes":
                 import processes
                 try:
@@ -536,6 +539,16 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(copilot.chat(user["name"], text, role=user["role"])))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
+            parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "run":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import connectors
+                try:
+                    made = connectors.run_connector(parts[1], actor=user["name"])
+                    return self._send(200, json.dumps({"cards": len(made)}))
+                except Exception as e:
+                    return self._send(400, json.dumps({"error": str(e)[:300]}))
             if p in ("/import/jira", "/import/url"):
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -701,8 +714,9 @@ def serve(port=8140):
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
-    import processes
+    import processes, connectors
     processes.start_chain_poller()
+    connectors.start_scheduler()
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
 

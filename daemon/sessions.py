@@ -253,6 +253,12 @@ def move_lane(tid, lane, actor="owner"):
         log.log("note", "ACCEPTED (%s) - AI $%.4f, value %s" %
                 (mode, t.get("ai_cost", 0.0), t.get("value")))
         t["status"] = "accepted"; t["mode"] = mode
+        if t.get("connector"):
+            import connectors
+            inst = connectors.install_from_worktree(t)
+            if inst:
+                log.log("note", "CONNECTOR INSTALLED: " + ", ".join(inst))
+                events.emit("connector", tid, action="installed", files=inst)
     elif lane == "backlog":
         t["status"] = "queued"
     events.emit("lane", tid, frm=prev, to=lane)
