@@ -508,3 +508,14 @@ input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--gla
 .gwrap:hover .gpanel.gblur{opacity:.9}
 #board.spotlighting .gwrap:has(.card.spot) .gpanel{opacity:.72}
 #board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{opacity:.85}
+
+/* aura v2.2: hover grows the card (scale = bigger text, no reflow),
+   and the Raute straightens into a Viereck */
+.gwrap:hover .card{transform:translateY(-3px) scale(1.045);z-index:3}
+.gwrap:hover{z-index:3;position:relative}
+.gwrap:hover .gpanel{transform:skewX(0);left:6%;width:92%;height:112%;opacity:.72}
+.gwrap:hover .gpanel.gblur{transform:skewX(0);opacity:.85}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel{transform:skewX(0);left:6%;width:92%;height:112%}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{transform:skewX(0)}
+#board.spotlighting .card.spot{transform:translateY(-3px) scale(1.03)}
+.gpanel{transition:all .45s cubic-bezier(.2,.7,.3,1.1)}
