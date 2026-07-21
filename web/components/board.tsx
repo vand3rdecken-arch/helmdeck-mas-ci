@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { post, Track } from "@/lib/api";
 import { LANES, STATUS, PRIO_ORD, useBoard, Spot } from "@/lib/store";
 import { IconBriefcase, IconCalendar, IconChain, IconMonitor, ModeIcon, MODE_LABEL } from "./icons";
@@ -116,7 +116,35 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
   const { tracks, met, toast, refresh, spot } = useBoard();
   const [dragLane, setDragLane] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [fx, setFx] = useState<Record<string, string>>({});
+  const prevRef = useRef<Record<string, { status: string; lane: string }>>({});
   const total = tracks.length || 1;
+
+  // completion choreography: diff each poll against the last and stage the
+  // right transition - agent finished (shimmer), reached done (shockwave),
+  // chain woke the next card (pulse).
+  useEffect(() => {
+    const prev = prevRef.current;
+    const next: Record<string, { status: string; lane: string }> = {};
+    const stage: Record<string, string> = {};
+    for (const t of tracks) {
+      next[t.id] = { status: t.status, lane: t.lane };
+      const p = prev[t.id];
+      if (!p) continue;
+      if (p.lane !== "done" && t.lane === "done") stage[t.id] = "fx-done";
+      else if (p.status === "running" && t.status === "needs_you") stage[t.id] = "fx-finished";
+      else if (p.lane === "backlog" && t.lane === "working" && t.status === "running") stage[t.id] = "fx-woken";
+    }
+    prevRef.current = next;
+    if (Object.keys(stage).length) {
+      setFx((f) => ({ ...f, ...stage }));
+      setTimeout(() => setFx((f) => {
+        const g = { ...f };
+        for (const k of Object.keys(stage)) delete g[k];
+        return g;
+      }), 1800);
+    }
+  }, [tracks]);
 
   async function drop(lane: string, ev: React.DragEvent) {
     ev.preventDefault();
@@ -161,7 +189,11 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
                 <span className="lprog"><i style={{ width: `${Math.round(100 * inLane.length / total)}%`, background: color }} /></span>
               </div>
               <div className="lane-body">
-                {inLane.map((t) => <Card key={t.id} t={t} onOpen={onOpen} />)}
+                {inLane.map((t) => (
+                  <div key={t.id} className={fx[t.id] ?? ""}>
+                    <Card t={t} onOpen={onOpen} />
+                  </div>
+                ))}
               </div>
             </div>
           );
