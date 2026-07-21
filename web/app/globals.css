@@ -549,3 +549,24 @@ input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--gla
 #nextup{margin-bottom:20px}
 .lane-body{padding-top:12px}
 .gwrap:hover .card,#board.spotlighting .card.spot{transform-origin:center 70%}
+
+/* ---- aura v4: color lives INSIDE the card, clipped clean ---- */
+.gpanel{display:none !important}
+.gwrap .card{overflow:hidden;
+  background:
+    linear-gradient(135deg,
+      color-mix(in oklch,var(--g1) 26%,transparent),
+      color-mix(in oklch,var(--g2) 16%,transparent) 65%,transparent),
+    var(--glass)}
+.gwrap:hover .card,#board.spotlighting .gwrap:has(.card.spot) .card{
+  background:
+    linear-gradient(135deg,
+      color-mix(in oklch,var(--g1) 44%,transparent),
+      color-mix(in oklch,var(--g2) 30%,transparent) 70%,transparent),
+    var(--glass)}
+.lane-body{padding-bottom:16px}
+.gwrap{margin-bottom:0}
+
+/* ---- peek: readable, always ---- */
+#peek{background:color-mix(in oklch,var(--bg-surface-1) 96%,transparent)}
+[data-theme="dark"] #peek{background:oklch(.2 .004 230/94%)}
