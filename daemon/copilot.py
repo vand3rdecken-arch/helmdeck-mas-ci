@@ -26,6 +26,9 @@ Reply with ONLY JSON:
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
    {"type": "import_url", "url": "https://...", "client": "", "due": ""}  - fetch a page, agent derives a process from it
    {"type": "import_jira", "jql": "project = X AND status = 'To Do'"}  - pull Jira issues into backlog cards (needs settings.jira)
+   {"type": "build_integration", "name": "kebab-name", "spec": "what it should pull and map"}  - an AGENT writes the connector as a card; after the gate + human accept it becomes runnable. Chat never installs code directly.
+   {"type": "run_connector", "name": "<installed connector>"}  - run it now; items become backlog cards
+   {"type": "schedule_connector", "name": "...", "every_minutes": 60}  - or 0 to unschedule
  ]}
 
 configure may ONLY touch these keys (the flexible half of the workspace):
@@ -77,6 +80,14 @@ def _snapshot():
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "),
             (" last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")) if t.get("status") == "needs_you" else ""))
+    try:
+        import connectors as _c
+        cs = _c.list_connectors()
+        if cs:
+            lines.append("INSTALLED CONNECTORS: " + ", ".join(
+                "%s (%s)" % (c["name"], c["description"][:40]) for c in cs))
+    except Exception:
+        pass
     lines.append("PROCESSES:")
     for p in processes.list_processes():
         lines.append("- id=%s status=%s client=%s due=%s request=%s" % (
@@ -149,6 +160,32 @@ def _run_action(a, actor, role="operator"):
         threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
                          kwargs={"actor": actor}, daemon=True).start()
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "build_integration":
+        import connectors
+        name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]
+        repo = events.settings().get("default_repo")
+        if not repo:
+            return "build_integration failed: no default_repo preset"
+        t = sessions.new_track(repo, "connector-" + name,
+                               connectors.build_task(name, a.get("spec", "")),
+                               lane="working", actor=actor, priority="high")
+        tracks = sessions._load(); tt = sessions._find(tracks, t["id"])
+        tt["connector"] = name; sessions._save(tracks)
+        return ("integration card dispatched (%s) - the agent is writing the connector; "
+                "gate + your accept installs it" % t["id"])
+    if kind == "run_connector":
+        import connectors
+        made = connectors.run_connector(a.get("name", ""), actor=actor)
+        return "connector ran: %d new backlog cards" % len(made)
+    if kind == "schedule_connector":
+        mins = int(a.get("every_minutes") or 0)
+        sched = events.settings().get("connectors") or {}
+        if mins > 0:
+            sched[a.get("name", "")] = {"every_minutes": mins}
+        else:
+            sched.pop(a.get("name", ""), None)
+        events.save_settings({"connectors": sched})
+        return "connector schedule updated: %s" % json.dumps(sched)
     if kind == "import_url":
         import importers
         p2 = importers.url_import(a.get("url", ""), client=a.get("client", ""),
