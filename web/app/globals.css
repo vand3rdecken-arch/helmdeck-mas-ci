@@ -570,3 +570,6 @@ input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--gla
 /* ---- peek: readable, always ---- */
 #peek{background:color-mix(in oklch,var(--bg-surface-1) 96%,transparent)}
 [data-theme="dark"] #peek{background:oklch(.2 .004 230/94%)}
+
+/* fab: actually center the icon (svg baseline-aligns in a button otherwise) */
+#chatfab{display:grid;place-items:center;padding:0;line-height:0}
