@@ -334,7 +334,7 @@ var LANES=[["backlog","Backlog","var(--txt-tertiary)"],["working","Working","var
 var STATUS={queued:["Queued","var(--txt-tertiary)"],running:["Running","var(--ai)"],
             needs_you:["Needs you","var(--warn)"],submitted:["Submitted","var(--human)"],
             accepted:["Accepted","var(--ok)"],bounced:["Bounced","var(--danger)"]};
-var tracks=[],met=null,cur=null,view="board",filter="all";
+var tracks=[],met=null,cur=null,view="board",filter="all",lastSig='';
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function toast(m,ms){var t=$('toast');t.textContent=m;t.style.display='block';
@@ -417,8 +417,15 @@ function load(){
     else if(!$('chat').classList.contains('open'))$('chatfab').style.display='';
     if(isClient&&(view==='dash'||view==='settings')){view='board';location.hash='board'}
     renderCap();
-    // recordings view is interactive (expanded runs, playing video) - don't re-render it on poll
-    if(view!=='recs'||!document.querySelector('.run'))render();}).catch(function(){});
+    // Re-render ONLY when the data changed (stops the 5s blink), and never
+    // auto-rerender views with form state (settings/processes) or playing
+    // media (recordings) - those would eat your typing.
+    var sig=JSON.stringify(tracks)+JSON.stringify(met&&met.cards)+JSON.stringify(met&&met.capacity);
+    var interactive=(view==='settings'||view==='procs'||(view==='recs'&&document.querySelector('.run')));
+    var empty=!$('content').firstChild;
+    if(empty||( sig!==lastSig && !interactive )){lastSig=sig;render()}
+    else lastSig=sig;
+  }).catch(function(){});
 }
 function econOf(t){if(!met)return null;var c=null;met.cards.forEach(function(x){if(x.id===t.id)c=x});return c}
 function renderCap(){
