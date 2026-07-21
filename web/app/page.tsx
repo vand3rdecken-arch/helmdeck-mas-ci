@@ -159,7 +159,7 @@ function App() {
       {palOpen && <Palette onOpen={(t) => setPeek(t)} onNav={(v) => nav(v as View)} onClose={() => setPalOpen(false)} />}
       {peek && <Peek t={peek} onClose={() => setPeek(null)} />}
       {modal && <NewRequestModal onClose={() => setModal(false)} />}
-      {!isClient && me && <Chat open={chatOpen} setOpen={setChatOpen} />}
+      {!isClient && me && <Chat open={chatOpen} setOpen={setChatOpen} hideFab={!!peek} />}
       {toastMsg && <div id="toast">{toastMsg}</div>}
     </div>
   );
