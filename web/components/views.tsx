@@ -9,7 +9,8 @@ export function ListView({ filter, onOpen }: { filter: string; onOpen: (t: Track
   const tracks = filter.startsWith("client:") ? all.filter((t) => t.client === filter.slice(7)) : all;
   return (
     <div className="panel" style={{ padding: 0 }}>
-      {LANES.map(([key, name, color]) => {
+      {LANES.map(([key, defName, color]) => {
+        const name = met?.settings?.policy?.lane_labels?.[key] ?? defName;
         const inLane = tracks.filter((t) => (t.lane || "working") === key);
         if (!inLane.length) return null;
         return (

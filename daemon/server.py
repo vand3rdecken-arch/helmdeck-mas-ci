@@ -521,7 +521,7 @@ class H(BaseHTTPRequestHandler):
                 if not text:
                     return self._send(400, json.dumps({"error": "text required"}))
                 try:
-                    return self._send(200, json.dumps(copilot.chat(user["name"], text)))
+                    return self._send(200, json.dumps(copilot.chat(user["name"], text, role=user["role"])))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             # ---- processes: propose -> adjust -> accept into cards ----

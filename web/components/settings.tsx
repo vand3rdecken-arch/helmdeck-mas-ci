@@ -14,6 +14,11 @@ export default function SettingsView() {
   const [loaded, setLoaded] = useState(false);
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [uName, setUName] = useState(""); const [uPw, setUPw] = useState(""); const [uRole, setURole] = useState("operator");
+  const [autoAccept, setAutoAccept] = useState(false);
+  const [autoModes, setAutoModes] = useState<string[]>(["do", "prepare"]);
+  const [autoPrio, setAutoPrio] = useState("");
+  const [laneLabels, setLaneLabels] = useState<Record<string, string>>({
+    backlog: "Backlog", working: "Working", review: "Review", done: "Done" });
 
   useEffect(() => {
     if (s && !loaded) {
@@ -22,6 +27,10 @@ export default function SettingsView() {
       setT1(String(s.capacity.tariff.steer)); setT2(String(s.capacity.tariff.review)); setT3(String(s.capacity.tariff.bounce));
       setRegOpen(!!s.registration?.open); setRegCode(s.registration?.invite_code ?? "");
       setRegRole(s.registration?.default_role ?? "client");
+      setAutoAccept(!!s.policy?.auto_accept_green);
+      setAutoModes(s.policy?.auto_dispatch_modes ?? ["do", "prepare"]);
+      setAutoPrio(s.policy?.auto_dispatch_priority ?? "");
+      setLaneLabels({ backlog: "Backlog", working: "Working", review: "Review", done: "Done", ...(s.policy?.lane_labels ?? {}) });
       setLoaded(true);
     }
   }, [s, loaded]);
@@ -38,6 +47,12 @@ export default function SettingsView() {
         tariff: { steer: +t1 || 1, review: +t2 || 1, bounce: +t3 || 3 } },
     });
     toast("Settings saved"); refresh();
+  }
+  async function savePolicy() {
+    await post("/settings", { policy: { auto_accept_green: autoAccept,
+      auto_dispatch_modes: autoModes, auto_dispatch_priority: autoPrio,
+      lane_labels: laneLabels } });
+    toast("Policy saved"); refresh();
   }
   async function saveReg() {
     await post("/settings", { registration: { open: regOpen, invite_code: regCode.trim(), default_role: regRole } });
@@ -77,6 +92,44 @@ export default function SettingsView() {
         </div>
         <div style={{ marginTop: 14 }}>
           <button className="btn primary" onClick={save}>Save</button>
+        </div>
+      </div>
+      <div className="panel">
+        <h3>Automation policy — the flexible half of the loop</h3>
+        <div style={{ fontSize: 12, color: "var(--txt-tertiary)", marginBottom: 10 }}>
+          How work flows is configurable (also via the copilot chat). What makes it trustable —
+          auth, the audit trail, the gate itself, driver commands — is fixed in code.
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, margin: "6px 0", fontSize: 12.5, color: "var(--txt-primary)" }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={autoAccept}
+            onChange={(e) => setAutoAccept(e.target.checked)} />
+          Auto-accept on green gate (chain steps complete without a human; off = you accept everything)
+        </label>
+        <label>Which step modes may the chain start on its own?</label>
+        <div style={{ display: "flex", gap: 12, fontSize: 12.5, flexWrap: "wrap" }}>
+          {["do", "prepare", "cowork"].map((m) => (
+            <label key={m} style={{ display: "flex", alignItems: "center", gap: 5, margin: 0, color: "var(--txt-primary)" }}>
+              <input type="checkbox" style={{ width: "auto" }} checked={autoModes.includes(m)}
+                onChange={(e) => setAutoModes(e.target.checked ? [...autoModes, m] : autoModes.filter((x) => x !== m))} />
+              {m}
+            </label>
+          ))}
+        </div>
+        <label>Backlog self-dispatch (cards at/above this priority start themselves within WIP headroom)</label>
+        <select style={{ width: 180 }} value={autoPrio} onChange={(e) => setAutoPrio(e.target.value)}>
+          <option value="">never (default)</option>
+          <option value="urgent">urgent only</option>
+          <option value="high">high + urgent</option>
+        </select>
+        <label>Lane labels (rename the loop&apos;s states; semantics stay fixed)</label>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {(["backlog", "working", "review", "done"] as const).map((k) => (
+            <input key={k} style={{ width: 130 }} value={laneLabels[k] ?? ""} title={k}
+              onChange={(e) => setLaneLabels({ ...laneLabels, [k]: e.target.value })} />
+          ))}
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <button className="btn primary" onClick={savePolicy}>Save policy</button>
         </div>
       </div>
       {me?.role === "owner" && (
