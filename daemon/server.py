@@ -400,6 +400,10 @@ class H(BaseHTTPRequestHandler):
                     ts = [t for t in ts if t.get("client") == user["name"]]
                 return self._send(200, json.dumps(ts))
             # --- company instrumentation: settings + CEO dashboard ---
+            if p == "/processes":
+                import processes
+                return self._send(200, json.dumps(processes.list_processes(
+                    client=user["name"] if user["role"] == "client" else None)))
             if p == "/me":
                 return self._send(200, json.dumps({"name": user["name"], "role": user["role"]}))
             if p == "/settings":
@@ -502,9 +506,50 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps({"ok": True}))
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
-            if user["role"] == "client" and p not in ("/tracks/new",) \
+            if user["role"] == "client" and p not in ("/tracks/new", "/processes/new") \
                and not (p.startswith("/tracks/") and p.endswith("/steer")):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
+            # ---- processes: propose -> adjust -> accept into cards ----
+            if p == "/processes/new":
+                import processes
+                req = body.get("request")
+                if not req:
+                    return self._send(400, json.dumps({"error": "request required"}))
+                client = user["name"] if user["role"] == "client" else body.get("client", "")
+                return self._send(200, json.dumps(processes.create(
+                    req, client=client, due=body.get("due", ""), actor=user["name"])))
+            parts = p.strip("/").split("/")
+            if parts[0] == "processes" and len(parts) >= 3:
+                import processes, events
+                pid = parts[1]
+                try:
+                    if parts[2] == "step":
+                        act = body.get("action")
+                        idx = int(body.get("idx", -1))
+                        if act == "accept":
+                            repo = body.get("repo") or events.settings().get("default_repo")
+                            if not repo:
+                                return self._send(400, json.dumps({"error": "no default_repo preset"}))
+                            return self._send(200, json.dumps(
+                                processes.accept_step(pid, idx, repo, actor=user["name"])))
+                        if act == "update":
+                            return self._send(200, json.dumps(
+                                processes.update_step(pid, idx, body.get("patch") or {})))
+                        if act == "remove":
+                            return self._send(200, json.dumps(processes.remove_step(pid, idx)))
+                        if act == "add":
+                            return self._send(200, json.dumps(processes.add_step(
+                                pid, body.get("title", "new step"), body.get("mode", "do"))))
+                        if act == "accept_all":
+                            repo = body.get("repo") or events.settings().get("default_repo")
+                            pr = processes.get(pid)
+                            for i in range(len(pr["steps"])):
+                                if not pr["steps"][i].get("track"):
+                                    pr = processes.accept_step(pid, i, repo, actor=user["name"])
+                            return self._send(200, json.dumps(pr))
+                    return self._send(404, json.dumps({"error": "?"}))
+                except (RuntimeError, ValueError) as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if p == "/control/teach/start":
                 from teach import TeachSession
                 with _ctl_lock:
