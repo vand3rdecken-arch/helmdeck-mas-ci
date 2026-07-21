@@ -274,6 +274,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div class="adv" onclick="document.querySelectorAll('.advrow').forEach(function(r){r.classList.toggle('show')})">▸ advanced (repo / branch / value)</div>
   <div class="row advrow"><input id="m-repo" placeholder="repo path (default preset used if empty)"></div>
   <div class="row advrow"><input id="m-branch" placeholder="branch (auto from task if empty)"><input id="m-value" placeholder="value €" style="width:110px"></div>
+  <div class="row advrow"><select id="m-driver" style="flex:1"><option value="claude">driver: claude (code only)</option></select></div>
   <div class="foot"><button class="btn ghost" onclick="closeModal()">Cancel</button>
   <button class="btn primary" onclick="fileReq()">File to Backlog</button></div>
 </div></div>
@@ -291,16 +292,47 @@ function $(id){return document.getElementById(id)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function toast(m,ms){var t=$('toast');t.textContent=m;t.style.display='block';
   clearTimeout(t._h);t._h=setTimeout(function(){t.style.display='none'},ms||2600)}
-function fetchJSON(u,opt){return fetch(u,opt).then(function(r){return r.json()})}
+var TOKEN='';try{TOKEN=localStorage.sdToken||''}catch(e){}
+var ME=null;
+function fetchJSON(u,opt){
+  opt=opt||{};opt.headers=opt.headers||{};
+  if(TOKEN)opt.headers['Authorization']='Bearer '+TOKEN;
+  return fetch(u,opt).then(function(r){
+    if(r.status===401){askToken();throw new Error('auth')}
+    return r.json()})}
+function askToken(){
+  if(document.getElementById('tokmodal'))return;
+  var d=document.createElement('div');d.id='tokmodal';
+  d.style.cssText='position:fixed;inset:0;background:var(--backdrop);display:grid;place-items:center;z-index:40';
+  d.innerHTML='<div style="background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:12px;padding:20px;width:min(420px,90vw)">'
+    +'<h3 style="margin:0 0 6px;font-size:14px">Access token</h3>'
+    +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:10px">Printed by the daemon on startup (AUTH: owner token). Stored on this device.</div>'
+    +'<input id=tokin style="width:100%" placeholder="paste token">'
+    +'<div style="margin-top:12px;text-align:right"><button class="btn primary" id=tokgo>Unlock</button></div></div>';
+  document.body.appendChild(d);
+  d.querySelector('#tokgo').addEventListener('click',function(){
+    TOKEN=d.querySelector('#tokin').value.trim();
+    try{localStorage.sdToken=TOKEN}catch(e){}
+    d.remove();load()});
+}
 
 function load(){
-  Promise.all([fetchJSON('/tracks'),fetchJSON('/dashboard/data')]).then(function(rs){
-    tracks=rs[0];met=rs[1];renderCap();
+  var q=[fetchJSON('/tracks'),
+         fetchJSON('/dashboard/data').catch(function(){return null}),
+         ME?Promise.resolve(ME):fetchJSON('/me').catch(function(){return null})];
+  Promise.all(q).then(function(rs){
+    tracks=rs[0];met=rs[1];ME=rs[2];
+    if(ME&&ME.role==='client'){  // clients: board only
+      document.querySelectorAll('.navitem[data-view="dash"],.navitem[data-view="settings"]')
+        .forEach(function(n){n.style.display='none'});
+    }
+    renderCap();
     // recordings view is interactive (expanded runs, playing video) - don't re-render it on poll
-    if(view!=='recs'||!document.querySelector('.run'))render();});
+    if(view!=='recs'||!document.querySelector('.run'))render();}).catch(function(){});
 }
 function econOf(t){if(!met)return null;var c=null;met.cards.forEach(function(x){if(x.id===t.id)c=x});return c}
 function renderCap(){
+  if(!met){$('capline').textContent=ME?ME.name+' · client view':'';return}
   var c=met.capacity;
   $('capline').innerHTML='<b>'+c.wip+'/'+c.wip_limit+'</b> WIP · '+c.touches_today+'/'+c.touch_budget_day
     +' touches · headroom <b>'+c.headroom+'</b>';
@@ -401,6 +433,7 @@ function renderBoard(){
       c.innerHTML='<div class=cid>'+esc(t.branch)+' · '+t.turns+' turns</div>'
         +'<div class=title>'+esc(t.task)+'</div>'
         +'<div class=chips><span class=chip><span class=sdot style="background:'+st[1]+'"></span>'+st[0]+'</span>'
+        +(t.driver&&t.driver!=='claude'?'<span class=chip title="execution driver" style="color:var(--accent-txt)">🖥 '+esc(t.driver)+'</span>':'')
         +(e?'<span class=chip title="deliverable value">€'+e.value+'</span>'
            +'<span class=chip title="AI cost so far">AI $'+e.ai_cost.toFixed(2)+'</span>'
            +'<span class=chip title="your touch units">'+e.touches+'t</span>'
@@ -440,6 +473,7 @@ function openPeek(t){cur=t;
     '<span class=k>State</span><span><span class=chip><span class=sdot style="background:'+st[1]+'"></span>'+st[0]+'</span></span>'
     +'<span class=k>Repo</span><span style="font-size:12px">'+esc(t.repo)+'</span>'
     +'<span class=k>Session</span><span style="font-size:12px">'+(t.session_id||'not started')+'</span>'
+    +'<span class=k>Driver</span><span style="font-size:12px">'+esc(t.driver||'claude')+'</span>'
     +(e?'<span class=k>Economics</span><span>€'+e.value+' · AI $'+e.ai_cost.toFixed(2)+' · '+e.touches
       +' touches'+(e.mode?' · '+e.mode:'')+'</span>'
       +'<span class=k>Tokens</span><span>'+e.tokens_in+' in / '+e.tokens_out+' out'
@@ -460,7 +494,18 @@ function sendSteer(){var v=$('steer-box').value.trim();if(!v||!cur)return;
       setTimeout(function(){if(cur)openPeek(cur);load()},1500)})}
 
 /* ---------- new request ---------- */
-function openModal(){$('modal').classList.add('open');$('m-task').focus()}
+function openModal(){
+  var sel=$('m-driver');
+  if(met&&met.settings&&met.settings.drivers){
+    var cur2=sel.value;sel.innerHTML='';
+    Object.keys(met.settings.drivers).forEach(function(k){
+      var o=document.createElement('option');o.value=k;
+      var d=met.settings.drivers[k];
+      o.textContent='driver: '+k+(d.record?' (screen-recorded)':'')+(d.type!=='claude'?' ['+d.type+']':'');
+      sel.appendChild(o)});
+    if(cur2)sel.value=cur2;
+  }
+  $('modal').classList.add('open');$('m-task').focus()}
 function closeModal(){$('modal').classList.remove('open')}
 function fileReq(){
   var task=$('m-task').value.trim();if(!task){toast('Describe the task');return}
@@ -468,6 +513,7 @@ function fileReq(){
   if($('m-repo').value.trim())body.repo=$('m-repo').value.trim();
   if($('m-branch').value.trim())body.branch=$('m-branch').value.trim();
   if($('m-value').value.trim())body.value=parseFloat($('m-value').value);
+  if($('m-driver').value)body.driver=$('m-driver').value;
   fetchJSON('/tracks/new',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)}).then(function(r){
       if(r.error){toast(r.error,4000);return}
@@ -475,7 +521,8 @@ function fileReq(){
 
 /* ---------- dashboard ---------- */
 function renderDash(){
-  var m=met,cur=m.settings.currency==='EUR'?'€':'$';
+  if(!met){$('content').innerHTML='<div class=panel>no access</div>';return}
+  var m=met,cur=(m.settings&&m.settings.currency)==='USD'?'$':'€';
   var y=m.yield_first_pass,a=m.automation,T=m.totals,c=m.capacity;
   var pct=Math.min(100,Math.round(100*c.touches_today/(c.touch_budget_day||1)));
   var tiles=[[cur+T.value_delivered,'value delivered'],['$'+T.ai_spend.toFixed(2),'AI spend'],
@@ -489,6 +536,8 @@ function renderDash(){
     +'<div style="font-size:12.5px;color:var(--txt-secondary)">today '+c.touches_today+'/'+c.touch_budget_day
     +' touch units ('+pct+'%) · WIP '+c.wip+'/'+c.wip_limit+' · headroom <b style="color:var(--ok)">'+c.headroom+' cards</b></div>'
     +'<div class=meter><i style="width:'+pct+'%"></i></div>'
+    +(c.actors&&Object.keys(c.actors).length>1?'<div style="font-size:12px;color:var(--txt-secondary);margin:4px 0">'
+      +Object.keys(c.actors).map(function(a){return esc(a)+': '+c.actors[a]+'t'}).join(' · ')+'</div>':'')
     +'<div style="font-size:11.5px;color:var(--txt-tertiary)">'
     +(pct<80&&c.headroom>0?'Below capacity → intake more: marginal cost of one more card is tokens only.'
       :'At capacity → automate: fixing the top gate failure below frees the most headroom.')+'</div></div>';
