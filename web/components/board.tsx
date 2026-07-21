@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { post, Track } from "@/lib/api";
-import { LANES, STATUS, PRIO_ORD, useBoard } from "@/lib/store";
+import { LANES, STATUS, PRIO_ORD, useBoard, Spot } from "@/lib/store";
 import { IconBriefcase, IconCalendar, IconChain, IconMonitor, ModeIcon, MODE_LABEL } from "./icons";
 
 export function prioChip(t: Track) {
@@ -26,14 +26,20 @@ export function dueChip(t: Track) {
 }
 
 export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
-  const { met } = useBoard();
+  const { met, spot, setSpot } = useBoard();
+  const spotKey: Spot | null = t.process ? { type: "process", value: t.process }
+    : t.client ? { type: "client", value: t.client } : null;
+  const related = spot ? (spot.type === "client" ? t.client === spot.value : t.process === spot.value) : false;
+  const alive = t.status === "running";
   const e = met?.cards.find((x) => x.id === t.id);
   let maxA = 0.01, maxH = 1;
   met?.cards.forEach((x) => { if (x.ai_cost > maxA) maxA = x.ai_cost; if (x.touches > maxH) maxH = x.touches; });
   const st = STATUS[t.status] ?? [t.status, "var(--txt-tertiary)"];
   return (
-    <div className="card" draggable
+    <div className={`card${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
       onDragStart={(ev) => ev.dataTransfer.setData("text", t.id)}
+      onMouseEnter={() => spotKey && setSpot(spotKey)}
+      onMouseLeave={() => setSpot(null)}
       onClick={() => onOpen(t)}>
       <div className="cid">{t.branch} · {t.turns} turns</div>
       <div className="title">{t.task}</div>
@@ -105,14 +111,19 @@ function NextUp({ onOpen }: { onOpen: (t: Track) => void }) {
 }
 
 export default function BoardView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
-  const { tracks, met, toast, refresh } = useBoard();
+  const { tracks, met, toast, refresh, spot } = useBoard();
   const [dragLane, setDragLane] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const total = tracks.length || 1;
 
   async function drop(lane: string, ev: React.DragEvent) {
     ev.preventDefault();
     setDragLane(null);
     const id = ev.dataTransfer.getData("text");
     const res = await post<Track>(`/tracks/${id}/lane`, { lane });
+    if (!res?.gate_failed && (lane === "done" || lane === "review")) {
+      setFlash(lane); setTimeout(() => setFlash(null), 900);
+    }
     if (res?.gate_failed) {
       toast("GATE FAILED — bounced back: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
     } else {
@@ -124,7 +135,7 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
   return (
     <>
       <NextUp onOpen={onOpen} />
-      <div id="board">
+      <div id="board" className={spot ? "spotlighting" : ""}>
         {LANES.map(([key, defName, color]) => {
           const name = met?.settings?.policy?.lane_labels?.[key] ?? defName;
           let inLane = tracks.filter((t) => (t.lane || "working") === key &&
@@ -137,7 +148,7 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
               ((a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1));
           }
           return (
-            <div key={key} className={`lane${dragLane === key ? " drag" : ""}`}
+            <div key={key} className={`lane${dragLane === key ? " drag" : ""}${flash === key ? " flash" : ""}`}
               onDragOver={(e) => { e.preventDefault(); setDragLane(key); }}
               onDragLeave={() => setDragLane(null)}
               onDrop={(e) => drop(key, e)}>
@@ -145,6 +156,7 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
                 <span className="ldot" style={{ background: color }} />
                 <span className="lname">{name}</span>
                 <span className="lcount">{inLane.length}</span>
+                <span className="lprog"><i style={{ width: `${Math.round(100 * inLane.length / total)}%`, background: color }} /></span>
               </div>
               <div className="lane-body">
                 {inLane.map((t) => <Card key={t.id} t={t} onOpen={onOpen} />)}

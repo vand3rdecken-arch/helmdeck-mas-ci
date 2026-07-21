@@ -315,3 +315,51 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   box-shadow:var(--shadow-overlay),0 0 24px color-mix(in oklch,var(--accent) 18%,transparent);
   z-index:30;max-width:80vw;font-size:12.5px;animation:popin .16s ease}
 @media(max-width:760px){#side{display:none}}
+
+/* ---- relationship spotlight: hover a client/card, related work illuminates ---- */
+#board.spotlighting .card{opacity:.28;filter:saturate(.5) brightness(.85);transform:none}
+#board.spotlighting .card.spot{opacity:1;filter:none;transform:translateY(-3px) scale(1.015);
+  border-color:color-mix(in oklch,var(--accent) 60%,var(--glass-border));
+  box-shadow:0 10px 30px oklch(0 0 0/30%),0 0 0 1px color-mix(in oklch,var(--accent) 40%,transparent),
+    0 0 26px color-mix(in oklch,var(--accent) 22%,transparent)}
+.card{transition:transform .22s cubic-bezier(.2,.7,.3,1.2),box-shadow .22s,border-color .22s,
+  opacity .25s,filter .25s}
+
+/* ---- alive: an agent is working this card right now ---- */
+@property --spin{syntax:"<angle>";initial-value:0deg;inherits:false}
+.card.alive{position:relative}
+.card.alive::before{content:"";position:absolute;inset:-1.5px;border-radius:13px;z-index:-1;
+  background:conic-gradient(from var(--spin),transparent 0 72%,var(--ai) 82%,var(--accent-2) 90%,transparent 100%);
+  animation:orbit 2.8s linear infinite;
+  filter:blur(.5px)}
+@keyframes orbit{to{--spin:360deg}}
+.card.alive{box-shadow:0 0 18px color-mix(in oklch,var(--ai) 18%,transparent)}
+
+/* ---- lane header progress ---- */
+.lane-h{position:relative}
+.lprog{flex:1;height:3px;border-radius:2px;background:var(--bg-layer-1);margin-left:6px;overflow:hidden}
+.lprog i{display:block;height:100%;border-radius:2px;transition:width .4s cubic-bezier(.2,.7,.3,1)}
+
+/* ---- accept flash ---- */
+.lane.flash .lane-body{outline:2px solid color-mix(in oklch,var(--ok) 70%,transparent);outline-offset:2px;
+  animation:acceptflash .9s ease-out}
+@keyframes acceptflash{0%{box-shadow:0 0 0 0 color-mix(in oklch,var(--ok) 45%,transparent)}
+  100%{box-shadow:0 0 42px 8px transparent}}
+
+/* ---- command palette ---- */
+#palette{position:fixed;inset:0;background:var(--backdrop);z-index:50;display:grid;
+  place-items:start center;padding-top:16vh}
+#palcard{width:min(560px,92vw);background:color-mix(in oklch,var(--bg-surface-1) 84%,transparent);
+  backdrop-filter:blur(24px) saturate(1.35);-webkit-backdrop-filter:blur(24px) saturate(1.35);
+  border:1px solid var(--glass-border);border-radius:16px;box-shadow:var(--shadow-overlay);
+  overflow:hidden;animation:popin .16s cubic-bezier(.2,.7,.3,1.15)}
+#palcard input{width:100%;border:none;background:transparent;padding:15px 18px;font-size:15px;
+  border-bottom:1px solid var(--glass-border);border-radius:0;box-shadow:none}
+#pallist{max-height:340px;overflow-y:auto;padding:6px}
+.palrow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:9px;cursor:pointer;
+  font-size:13px;color:var(--txt-secondary)}
+.palrow .k{font-size:10.5px;color:var(--txt-tertiary);border:1px solid var(--glass-border);
+  border-radius:4px;padding:0 6px;margin-left:auto}
+.palrow.sel{background:linear-gradient(90deg,color-mix(in oklch,var(--accent) 18%,transparent),transparent);
+  color:var(--txt-primary)}
+.palhint{padding:8px 14px;font-size:11px;color:var(--txt-tertiary);border-top:1px solid var(--glass-border)}
