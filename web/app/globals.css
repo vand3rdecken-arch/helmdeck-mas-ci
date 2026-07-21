@@ -480,3 +480,31 @@ input,textarea,select{border-radius:10px;background:color-mix(in oklch,var(--gla
 #board.spotlighting .gwrap:has(.card.spot) .gpanel{transform:skewX(0);left:2%;width:96%;opacity:.30}
 #board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{opacity:.4}
 #board.spotlighting .gwrap:has(.card.dim) .gpanel{opacity:.05}
+
+/* ---- no visible scrollbars (scrolling still works everywhere) ---- */
+*{scrollbar-width:none;-ms-overflow-style:none}
+::-webkit-scrollbar{width:0;height:0;display:none}
+
+/* ---- aura v2: structure reaches BEYOND the card ---- */
+/* keep the skew (that's the structure), overhang the card's bottom-right;
+   the next card's glass plate blurs whatever pokes behind it. */
+.gpanel{top:14%;left:26%;width:62%;height:106%;transform:skewX(12deg);
+  opacity:.30;border-radius:14px}
+.gpanel.gblur{opacity:.34;filter:blur(22px)}
+.gwrap:hover .gpanel{transform:skewX(12deg) translateX(-6px);
+  left:14%;width:76%;height:116%;opacity:.5}
+.gwrap:hover .gpanel.gblur{opacity:.55}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel{
+  transform:skewX(12deg);left:14%;width:76%;height:114%;opacity:.46}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{opacity:.5}
+/* room for the overhang inside the scroll containers */
+.lane-body{padding:2px 8px 34px;overflow-x:visible}
+.gwrap{margin-bottom:6px}
+
+/* aura v2.1: showcase-grade vibrancy */
+.gpanel{opacity:.5}
+.gpanel.gblur{opacity:.6;filter:blur(26px)}
+.gwrap:hover .gpanel{opacity:.78}
+.gwrap:hover .gpanel.gblur{opacity:.9}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel{opacity:.72}
+#board.spotlighting .gwrap:has(.card.spot) .gpanel.gblur{opacity:.85}
