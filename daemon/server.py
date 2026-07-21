@@ -73,10 +73,13 @@ button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
        border:1px solid #2affc0;color:#2affc0;padding:8px 16px;border-radius:8px;display:none}
 </style>
 <h1>SwarmDeck — board</h1>
-<p class=hint>drag a card: → Working dispatches it · → Review submits it · → Done accepts it. Click a card to open &amp; steer. <a href="/recorder" style="color:#6fb2e8">recordings</a></p>
+<p class=hint>drag a card: → Working dispatches it · → Review runs the gate &amp; submits · → Done accepts. Click a card to open &amp; steer.
+  <a href="/recorder" style="color:#6fb2e8">recordings</a> · <a href="/dashboard" style="color:#6fb2e8">dashboard</a></p>
+<div id=cap class=hint style="margin:0 0 10px"></div>
 <div id=newrow>
   <input id=nrepo placeholder="repo path (C:\\...)"><input id=nbranch placeholder="branch">
   <input id=ntask placeholder="what needs doing (the request)">
+  <input id=nvalue placeholder="value €" style="width:70px">
   <button onclick="fileReq()">+ File request</button>
 </div>
 <div id=board></div>
@@ -91,10 +94,32 @@ button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
 "use strict";
 var LANES=[["backlog","Backlog"],["working","Working"],["review","Review"],["done","Done"]];
 var CLS={queued:"q",running:"run",needs_you:"needs",submitted:"sub",accepted:"acc"};
-var cur=null, tracks=[];
-function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';
-  setTimeout(function(){t.style.display='none'},2200)}
-function load(){fetch('/tracks').then(function(r){return r.json()}).then(function(ts){tracks=ts;render()})}
+var cur=null, tracks=[], met=null;
+function toast(m,ms){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';
+  setTimeout(function(){t.style.display='none'},ms||2200)}
+function load(){
+  fetch('/tracks').then(function(r){return r.json()}).then(function(ts){tracks=ts;render()});
+  fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){met=m;
+    var c=m.capacity;
+    document.getElementById('cap').innerHTML=
+      'capacity: <b style="color:'+(c.wip>=c.wip_limit?'#ffd166':'#7ef0b2')+'">'+c.wip+'/'+c.wip_limit+' WIP</b>'
+      +' · touches today '+c.touches_today+'/'+c.touch_budget_day
+      +' · headroom '+c.headroom+' cards'
+      +' &nbsp;&nbsp; <span style="color:#458cc7">■</span> AI $ · <span style="color:#a8842d">■</span> human touches';
+    render()});
+}
+function cardEcon(t){
+  if(!met)return '';
+  var c=null;met.cards.forEach(function(x){if(x.id===t.id)c=x});
+  if(!c)return '';
+  var maxA=0.01,maxH=1;met.cards.forEach(function(x){if(x.ai_cost>maxA)maxA=x.ai_cost;if(x.touches>maxH)maxH=x.touches});
+  var wa=Math.round(100*c.ai_cost/maxA), wh=Math.round(100*c.touches/maxH);
+  return '<div class=m>€'+c.value+' · AI $'+c.ai_cost.toFixed(2)+' · '+c.touches+' touch'+(c.touches===1?'':'es')
+    +(c.mode?' · '+c.mode:'')+'</div>'
+    +'<div title="AI $'+c.ai_cost.toFixed(2)+' vs '+c.touches+' human touch units" style="margin-top:4px">'
+    +'<div style="height:4px;border-radius:2px;background:#458cc7;width:'+Math.max(wa,2)+'%"></div>'
+    +'<div style="height:4px;border-radius:2px;background:#a8842d;width:'+Math.max(wh,2)+'%;margin-top:2px"></div></div>';
+}
 function render(){
   var b=document.getElementById('board');b.innerHTML='';
   LANES.forEach(function(L){
@@ -104,6 +129,8 @@ function render(){
     inLane.forEach(function(t){
       var c=document.createElement('div');c.className='card '+(CLS[t.status]||'');c.draggable=true;
       c.innerHTML='<b>'+esc(t.task).slice(0,70)+'</b><div class=m>'+esc(t.branch)+' · '+t.turns+' turns · '+esc(t.status)+'</div>'
+        +cardEcon(t)
+        +(t.gate_report?'<div class=r style="color:#ffd166">gate: '+esc(t.gate_report.join(' | ')).slice(0,160)+'</div>':'')
         +(t.last_reply?'<div class=r>'+esc(t.last_reply).slice(0,160)+'</div>':'');
       c.addEventListener('dragstart',function(e){e.dataTransfer.setData('text',t.id)});
       c.addEventListener('click',function(){openDrawer(t)});
@@ -115,8 +142,12 @@ function render(){
       e.preventDefault();lane.classList.remove('drag');
       var id=e.dataTransfer.getData('text');
       fetch('/tracks/'+id+'/lane',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({lane:L[0]})}).then(function(){
-          toast(L[0]==='working'?'dispatched — session starting':L[0]==='review'?'submitted for review':L[0]==='done'?'accepted':'queued');
+        body:JSON.stringify({lane:L[0]})}).then(function(r){return r.json()}).then(function(res){
+          if(res&&res.gate_failed){
+            toast('GATE FAILED — bounced back: '+(res.gate_report||[]).map(function(p){return p.split('\\n')[0]}).join(' | '),5000);
+          }else{
+            toast(L[0]==='working'?'dispatched — session starting':L[0]==='review'?'gate passed — submitted for review':L[0]==='done'?'accepted':'queued');
+          }
           setTimeout(load,600)});
     });
     b.appendChild(lane);
@@ -144,12 +175,87 @@ function sendSteer(){var v=document.getElementById('steerbox').value.trim();if(!
       setTimeout(function(){if(cur)openDrawer(cur);load()},1500)})}
 function fileReq(){
   var repo=document.getElementById('nrepo').value.trim(),br=document.getElementById('nbranch').value.trim(),
-      task=document.getElementById('ntask').value.trim();
+      task=document.getElementById('ntask').value.trim(),val=document.getElementById('nvalue').value.trim();
   if(!repo||!br||!task){toast('repo, branch and task needed');return}
   fetch('/tracks/new',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({repo:repo,branch:br,task:task,lane:'backlog'})}).then(function(){
+    body:JSON.stringify({repo:repo,branch:br,task:task,lane:'backlog',value:val?parseFloat(val):null})}).then(function(){
       toast('request filed to backlog');document.getElementById('ntask').value='';load()})}
 load();setInterval(load,5000);
+</script>"""
+
+DASH = """<!doctype html><meta charset=utf-8><title>SwarmDeck — dashboard</title>
+<style>
+body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
+h1{color:#7ef0b2;font-size:20px;margin:0 0 4px}.hint{color:#5d7488;font-size:12px;margin:0 0 16px}
+h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8fb0c9;margin:22px 0 8px}
+#tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.tile{background:#0e151d;border:1px solid #22303d;border-radius:12px;padding:12px 14px}
+.tile .v{font-size:24px;font-weight:700;color:#dfe9f2}.tile .l{font-size:11px;color:#8fb0c9;margin-top:2px}
+.meter{background:#111a24;border:1px solid #24303c;border-radius:6px;height:14px;overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;background:#a8842d;border-radius:4px}
+.bar{display:flex;align-items:center;gap:8px;margin:4px 0}
+.bar .lbl{width:280px;font:12px ui-monospace,monospace;color:#8fb0c9;text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .trk{flex:1}.bar .trk i{display:block;height:12px;border-radius:0 4px 4px 0;background:#458cc7}
+.bar .n{font:12px ui-monospace,monospace;color:#dfe9f2;width:30px}
+table{border-collapse:collapse;font-size:12.5px;width:100%}
+th,td{text-align:left;padding:5px 10px;border-bottom:1px solid #22303d}
+th{color:#8fb0c9;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+td.num,th.num{text-align:right;font-family:ui-monospace,monospace}
+.split{display:inline-block;width:110px;vertical-align:middle}
+.split i{display:block;height:4px;border-radius:2px}
+.leg{font-size:12px;color:#8fb0c9}.leg b{font-weight:400}
+a{color:#6fb2e8}
+</style>
+<h1>SwarmDeck — company dashboard</h1>
+<p class=hint>fixed-capacity humans, variable-cost AI. <a href="/">board</a> · <a href="/settings" onclick="alert('GET/POST /settings (JSON): capacity, prices, value_per_card');return false">settings</a></p>
+<div id=tiles></div>
+<h2>Capacity — take more work, or automate?</h2><div id=capbox class=tile style="max-width:520px"></div>
+<h2>Gate-failure histogram — what to fix in the harness next</h2><div id=gates></div>
+<h2>Work done: <span class=leg><b style="color:#458cc7">■</b> AI ($) · <b style="color:#a8842d">■</b> human (touch units)</span></h2>
+<div style="overflow-x:auto"><table id=cards></table></div>
+<script>
+"use strict";
+function esc(s){return String(s||'').replace(/</g,'&lt;')}
+fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){
+  var cur=m.settings.currency==='EUR'?'\\u20ac':'$';
+  var y=m.yield_first_pass,a=m.automation,T=m.totals;
+  var tiles=[
+    [cur+T.value_delivered,'value delivered'],
+    ['$'+T.ai_spend.toFixed(2),'AI spend'],
+    [cur+T.margin,'margin (value − AI)'],
+    [(y[1]? Math.round(100*y[0]/y[1])+'%':'—'),'first-pass yield ('+y[0]+'/'+y[1]+' gated)'],
+    [(a[1]? Math.round(100*a[0]/a[1])+'%':'—'),'automation rate ('+a[0]+'/'+a[1]+' done auto)'],
+    [cur+T.leverage_per_touch,'leverage: value per touch unit']];
+  document.getElementById('tiles').innerHTML=tiles.map(function(t){
+    return '<div class=tile><div class=v>'+t[0]+'</div><div class=l>'+t[1]+'</div></div>'}).join('');
+  var c=m.capacity,pct=Math.min(100,Math.round(100*c.touches_today/(c.touch_budget_day||1)));
+  document.getElementById('capbox').innerHTML=
+    '<div class=l style="color:#8fb0c9;font-size:12px">today: '+c.touches_today+'/'+c.touch_budget_day
+    +' touch units ('+pct+'% loaded) · WIP '+c.wip+'/'+c.wip_limit+' · headroom <b style="color:#7ef0b2">'
+    +c.headroom+' cards</b></div><div class=meter><i style="width:'+pct+'%"></i></div>'
+    +'<div class=l style="color:#5d7488;font-size:11px;margin-top:6px">'
+    +(pct<80&&c.headroom>0?'below capacity \\u2192 intake more work: marginal cost of one more card is tokens only'
+      :'at capacity \\u2192 don\\u2019t take more; automate: fix the top gate failure below to free headroom')+'</div>';
+  var g=m.gate_failures,gx=document.getElementById('gates');
+  if(!g.length){gx.innerHTML='<p class=hint>no gate failures recorded yet</p>'}
+  else{var mx=g[0][1];gx.innerHTML=g.map(function(kv){
+    return '<div class=bar title="'+esc(kv[0])+' \\u2014 '+kv[1]+' failures"><div class=lbl>'+esc(kv[0])
+      +'</div><div class=trk><i style="width:'+Math.max(3,Math.round(100*kv[1]/mx))+'%"></i></div><div class=n>'+kv[1]+'</div></div>'}).join('')}
+  var maxA=0.01,maxH=1;m.cards.forEach(function(x){if(x.ai_cost>maxA)maxA=x.ai_cost;if(x.touches>maxH)maxH=x.touches});
+  document.getElementById('cards').innerHTML=
+    '<tr><th>card</th><th>lane</th><th>model</th><th class=num>tokens in/out</th><th class=num>AI $</th>'
+    +'<th class=num>touches</th><th>split</th><th class=num>value</th><th class=num>margin</th><th>mode</th></tr>'
+    +m.cards.map(function(x){
+      var wa=Math.max(2,Math.round(100*x.ai_cost/maxA)),wh=Math.max(2,Math.round(100*x.touches/maxH));
+      return '<tr><td>'+esc(x.task)+'</td><td>'+x.lane+'</td><td>'+esc((x.models[0]||'\\u2014').replace('claude-',''))
+        +'</td><td class=num>'+x.tokens_in+'/'+x.tokens_out+'</td><td class=num>'+x.ai_cost.toFixed(2)
+        +'</td><td class=num>'+x.touches+'</td><td><span class=split title="AI $'+x.ai_cost.toFixed(2)+' vs '
+        +x.touches+' touch units"><i style="background:#458cc7;width:'+wa+'%"></i>'
+        +'<i style="background:#a8842d;width:'+wh+'%;margin-top:2px"></i></span></td>'
+        +'<td class=num>'+cur+x.value+'</td><td class=num>'+cur+(x.value-x.ai_cost).toFixed(2)
+        +'</td><td>'+(x.mode||'\\u2014')+'</td></tr>'}).join('');
+});
 </script>"""
 
 PAGE = """<!doctype html><meta charset=utf-8><title>SwarmDeck review</title>
@@ -232,6 +338,15 @@ class H(BaseHTTPRequestHandler):
             if p == "/tracks":
                 import sessions
                 return self._send(200, json.dumps(sessions.list_tracks()))
+            # --- company instrumentation: settings + CEO dashboard ---
+            if p == "/settings":
+                import events
+                return self._send(200, json.dumps(events.settings()))
+            if p == "/dashboard/data":
+                import events, sessions
+                return self._send(200, json.dumps(events.metrics(sessions.list_tracks())))
+            if p == "/dashboard":
+                return self._send(200, DASH, "text/html; charset=utf-8")
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "history":
                 import sessions
@@ -275,6 +390,9 @@ class H(BaseHTTPRequestHandler):
                 import swarm
                 _bg("demo", swarm.browser_demo)
                 return self._send(200, json.dumps({"started": "browser-demo"}))
+            if p == "/settings":
+                import events
+                return self._send(200, json.dumps(events.save_settings(body)))
             # --- orchestrator control ---
             if p == "/tracks/new":
                 import sessions
@@ -285,11 +403,13 @@ class H(BaseHTTPRequestHandler):
                 if lane == "backlog":   # filing a request is instant, no session
                     return self._send(200, json.dumps(sessions.new_track(
                         repo, branch, task, body.get("perm", sessions.DEFAULT_PERM),
-                        lane="backlog", client=body.get("client", ""))))
+                        lane="backlog", client=body.get("client", ""),
+                        value=body.get("value"))))
                 def go():
                     sessions.new_track(repo, branch, task,
                                        body.get("perm", sessions.DEFAULT_PERM),
-                                       lane="working", client=body.get("client", ""))
+                                       lane="working", client=body.get("client", ""),
+                                       value=body.get("value"))
                 _bg("track:new:" + branch, go)
                 return self._send(200, json.dumps({"started": branch}))
             parts = p.strip("/").split("/")
