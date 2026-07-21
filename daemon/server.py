@@ -176,7 +176,7 @@ function sendSteer(){var v=document.getElementById('steerbox').value.trim();if(!
 function fileReq(){
   var repo=document.getElementById('nrepo').value.trim(),br=document.getElementById('nbranch').value.trim(),
       task=document.getElementById('ntask').value.trim(),val=document.getElementById('nvalue').value.trim();
-  if(!repo||!br||!task){toast('repo, branch and task needed');return}
+  if(!task){toast('task needed (repo/branch optional if default_repo preset)');return}
   fetch('/tracks/new',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({repo:repo,branch:br,task:task,lane:'backlog',value:val?parseFloat(val):null})}).then(function(){
       toast('request filed to backlog');document.getElementById('ntask').value='';load()})}
@@ -295,6 +295,12 @@ class H(BaseHTTPRequestHandler):
         p = self.path.split("?")[0]
         try:
             if p == "/":
+                fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.html")
+                if os.path.exists(fp):   # the Plane-tokened app; read per request so edits are live
+                    with open(fp, "rb") as f:
+                        return self._send(200, f.read(), "text/html; charset=utf-8")
+                return self._send(200, BOARD, "text/html; charset=utf-8")
+            if p == "/classic":
                 return self._send(200, BOARD, "text/html; charset=utf-8")
             if p == "/recorder":
                 return self._send(200, PAGE, "text/html; charset=utf-8")
@@ -395,10 +401,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(events.save_settings(body)))
             # --- orchestrator control ---
             if p == "/tracks/new":
-                import sessions
-                repo = body.get("repo"); branch = body.get("branch"); task = body.get("task")
+                import sessions, events
+                repo = body.get("repo") or events.settings().get("default_repo")
+                branch = body.get("branch"); task = body.get("task")
+                if task and not branch:   # preset flow: task alone is enough
+                    branch = "req-" + "".join(ch if ch.isalnum() else "-" for ch in task.lower())[:24]
                 if not (repo and branch and task):
-                    return self._send(400, json.dumps({"error": "repo, branch, task required"}))
+                    return self._send(400, json.dumps({"error": "task required (+ repo unless default_repo is set in settings)"}))
                 lane = body.get("lane", "working")
                 if lane == "backlog":   # filing a request is instant, no session
                     return self._send(200, json.dumps(sessions.new_track(
