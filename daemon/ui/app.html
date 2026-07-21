@@ -372,10 +372,12 @@ function load(){
   Promise.all(q).then(function(rs){
     tracks=rs[0];met=rs[1];ME=rs[2];
     if(ME)$('whoami').innerHTML='<b style="color:var(--txt-secondary)">'+esc(ME.name)+'</b> · '+esc(ME.role);
-    if(ME&&ME.role==='client'){  // clients: board only
-      document.querySelectorAll('.navitem[data-view="dash"],.navitem[data-view="settings"]')
-        .forEach(function(n){n.style.display='none'});
-    }
+    // role-based nav: clients get board only. Set explicitly BOTH ways so
+    // switching accounts in the same tab restores the items.
+    var isClient=ME&&ME.role==='client';
+    document.querySelectorAll('.navitem[data-view="dash"],.navitem[data-view="settings"]')
+      .forEach(function(n){n.style.display=isClient?'none':''});
+    if(isClient&&(view==='dash'||view==='settings')){view='board';location.hash='board'}
     renderCap();
     // recordings view is interactive (expanded runs, playing video) - don't re-render it on poll
     if(view!=='recs'||!document.querySelector('.run'))render();}).catch(function(){});
