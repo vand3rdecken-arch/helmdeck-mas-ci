@@ -281,38 +281,40 @@ fetch('/runs').then(r=>r.json()).then(async runs=>{
 });
 </script>"""
 
-def ensure_owner():
-    """First-run auth bootstrap: mint the owner token, print it once."""
-    import events, secrets
-    s = events.settings()
-    if not s.get("users"):
-        tok = secrets.token_urlsafe(24)
-        events.save_settings({"users": [{"name": "owner", "token": tok, "role": "owner"}]})
-        print("AUTH: owner token created ->", tok)
-        print("      enter it once in the web app (it will prompt), or send")
-        print("      Authorization: Bearer <token> / ?token=<token>")
-    return events.settings()["users"]
-
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
-    # HTML shells are public (they contain no data); every data/control route
-    # needs a bearer token of a settings.json user. Role client only sees and
-    # steers cards filed under their own name.
-    OPEN = ("/", "/classic")
+    # HTML shells + the auth endpoints are public; every data/control route
+    # needs a logged-in session (cookie) or a per-user device token.
+    OPEN = ("/", "/classic", "/auth/state", "/auth/login", "/auth/logout", "/auth/setup")
+
+    def _sid(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "sd_session":
+                return v
+        return None
 
     def _user(self):
-        import events
+        import auth
         tok = ""
-        auth = self.headers.get("Authorization") or ""
-        if auth.startswith("Bearer "):
-            tok = auth[7:].strip()
+        h = self.headers.get("Authorization") or ""
+        if h.startswith("Bearer "):
+            tok = h[7:].strip()
         if not tok and "token=" in self.path:
             tok = self.path.split("token=")[1].split("&")[0]
-        for u in events.settings().get("users", []):
-            if u.get("token") and u["token"] == tok:
-                return u
-        return None
+        return auth.resolve(sid=self._sid(), token=tok or None)
+
+    def _send_cookie(self, code, body, sid=None, clear=False):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        if sid:
+            self.send_header("Set-Cookie",
+                "sd_session=%s; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000" % sid)
+        if clear:
+            self.send_header("Set-Cookie", "sd_session=; Path=/; Max-Age=0")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
 
     def _send(self, code, body, ctype="application/json"):
         self.send_response(code)
@@ -325,8 +327,21 @@ class H(BaseHTTPRequestHandler):
         p = self.path.split("?")[0]
         try:
             user = self._user()
+            if p == "/auth/state":
+                import auth
+                return self._send(200, json.dumps(
+                    {"setup_needed": not auth.list_users(), "user": user}))
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
+            if p == "/users":
+                import auth
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                return self._send(200, json.dumps([
+                    {"name": u["name"], "role": u["role"], "created": u.get("created"),
+                     "tokens": [{"label": t["label"], "token": t["token"],
+                                 "created": t.get("created")} for t in u.get("tokens", [])]}
+                    for u in auth.list_users()]))
             if p == "/":
                 fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.html")
                 if os.path.exists(fp):   # the Plane-tokened app; read per request so edits are live
@@ -418,9 +433,56 @@ class H(BaseHTTPRequestHandler):
         except ValueError:
             body = {}
         try:
+            import auth
             user = self._user()
+            # ---- auth endpoints (public) ----
+            if p == "/auth/setup":
+                if auth.list_users():
+                    return self._send(403, json.dumps({"error": "already set up"}))
+                try:
+                    auth.create_user(body.get("name", ""), body.get("password", ""), "owner")
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+                sid = auth.login(body["name"], body["password"])
+                return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+            if p == "/auth/login":
+                sid = auth.login(body.get("name", ""), body.get("password", ""))
+                if not sid:
+                    return self._send(401, json.dumps({"error": "wrong name or password"}))
+                return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+            if p == "/auth/logout":
+                if self._sid():
+                    auth.logout(self._sid())
+                return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
+            # ---- user management (owner only) ----
+            parts = p.strip("/").split("/")
+            if parts[0] == "users":
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                try:
+                    if len(parts) == 1:
+                        return self._send(200, json.dumps(auth.create_user(
+                            body.get("name", ""), body.get("password", ""),
+                            body.get("role", "operator"))))
+                    name, action = parts[1], parts[2] if len(parts) > 2 else ""
+                    if action == "password":
+                        auth.set_password(name, body.get("password", ""))
+                    elif action == "role":
+                        auth.set_role(name, body.get("role", ""))
+                    elif action == "tokens":
+                        return self._send(200, json.dumps(
+                            {"token": auth.issue_token(name, body.get("label", ""))}))
+                    elif action == "revoke":
+                        auth.revoke_token(name, body.get("token", ""))
+                    elif action == "delete":
+                        auth.delete_user(name)
+                    else:
+                        return self._send(404, json.dumps({"error": "?"}))
+                    return self._send(200, json.dumps({"ok": True}))
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if user["role"] == "client" and p not in ("/tracks/new",) \
                and not (p.startswith("/tracks/") and p.endswith("/steer")):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
@@ -514,7 +576,12 @@ class H(BaseHTTPRequestHandler):
             self._send(500, json.dumps({"error": str(e)}))
 
 def serve(port=8140):
-    ensure_owner()
+    import auth, events
+    if auth.migrate_legacy(events.settings().get("users")):
+        print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
+        print("      Set real passwords via the Users panel (owner).")
+    if not auth.list_users():
+        print("AUTH: no users yet - the web app will show the create-owner setup screen.")
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
 

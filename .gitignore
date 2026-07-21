@@ -17,3 +17,5 @@ daemon/plane_links.json
 daemon/plane_credentials.txt
 daemon/events.jsonl
 daemon/tracks.json
+daemon/users.json
+daemon/sessions.json
