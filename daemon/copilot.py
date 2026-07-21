@@ -33,6 +33,11 @@ configure may ONLY touch these keys (the flexible half of the workspace):
   policy.auto_dispatch_priority ""|"urgent"|"high" - backlog at/above this priority self-dispatches within WIP headroom
   capacity {wip_limit, touch_budget_day, tariff{steer,review,bounce}}
   value_per_card, default_repo, registration {open, invite_code, default_role}
+  currency "EUR"|"USD"
+  prices {<model-substring>: {in: $/Mtok, out: $/Mtok}, default: {...}} - AI cost table
+  dashboard {tiles: [...], panels: [...]} - what the economics dashboard shows, in order.
+    tiles vocabulary: value_delivered, ai_spend, margin, yield, automation, leverage
+    panels vocabulary: capacity, gates, work
 Everything else (auth, users, drivers, audit, the gate itself) is FIXED - refuse
 politely and explain it is part of the harness, not policy.
 
@@ -86,7 +91,8 @@ def _find_card(frag):
             or frag in t["task"].lower()]
     return hits[0] if len(hits) == 1 else (hits if hits else None)
 
-ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo", "registration"}
+ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
+                  "registration", "dashboard", "prices", "currency"}
 
 def _run_action(a, actor, role="operator"):
     import sessions, processes, events

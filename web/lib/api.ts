@@ -45,6 +45,7 @@ export interface Metrics {
     registration?: { open: boolean; invite_code: string; default_role: string };
     policy?: { lane_labels?: Record<string, string>; auto_dispatch_modes?: string[];
       auto_accept_green?: boolean; auto_dispatch_priority?: string };
+    dashboard?: { tiles?: string[]; panels?: string[] };
   };
   cards: EconCard[];
   capacity: { wip: number; wip_limit: number; touches_today: number;

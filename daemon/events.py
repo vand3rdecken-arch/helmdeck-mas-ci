@@ -42,6 +42,12 @@ DEFAULTS = {
     # with the invite code (owner shares it) and get default_role. open=True
     # drops the code requirement (LAN-trusted setups only).
     "registration": {"open": False, "invite_code": "", "default_role": "client"},
+    # DASHBOARD composition - which tiles/panels the CEO view shows, in order.
+    # tiles: value_delivered, ai_spend, margin, yield, automation, leverage
+    # panels: capacity, gates, work
+    "dashboard": {"tiles": ["value_delivered", "ai_spend", "margin",
+                            "yield", "automation", "leverage"],
+                  "panels": ["capacity", "gates", "work"]},
     # POLICY - the flexible half of the harness/loop split. Everything here is
     # workspace configuration the owner may change (incl. via the copilot):
     # how work flows. The FIXED half (auth, audit, gate-before-review, measured
