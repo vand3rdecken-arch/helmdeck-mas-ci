@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 /* ---- design tokens: Plane's system (packages/tailwind-config/variables.css), trimmed ---- */
 :root{
   --neutral-white:oklch(1 0 0);--neutral-100:oklch(.9848 .0003 230.66);--neutral-200:oklch(.9696 .0007 230.67);
