@@ -20,6 +20,10 @@ export default function SettingsView() {
   const [laneLabels, setLaneLabels] = useState<Record<string, string>>({
     backlog: "Backlog", working: "Working", review: "Review", done: "Done" });
   const [backdrop, setBackdrop] = useState("mesh");
+  const [chatRoles, setChatRoles] = useState<string[]>(["owner"]);
+  const [jBase, setJBase] = useState(""); const [jEmail, setJEmail] = useState("");
+  const [jToken, setJToken] = useState(""); const [jJql, setJJql] = useState("");
+  const [impUrl, setImpUrl] = useState(""); const [busyImp, setBusyImp] = useState(false);
 
   useEffect(() => {
     if (s && !loaded) {
@@ -33,6 +37,9 @@ export default function SettingsView() {
       setAutoPrio(s.policy?.auto_dispatch_priority ?? "");
       setLaneLabels({ backlog: "Backlog", working: "Working", review: "Review", done: "Done", ...(s.policy?.lane_labels ?? {}) });
       setBackdrop(s.appearance?.backdrop ?? "mesh");
+      setChatRoles(s.policy?.chat_configure_roles ?? ["owner"]);
+      setJBase(s.jira?.base ?? ""); setJEmail(s.jira?.email ?? "");
+      setJToken(s.jira?.api_token ?? ""); setJJql(s.jira?.default_jql ?? "");
       setLoaded(true);
     }
   }, [s, loaded]);
@@ -53,7 +60,7 @@ export default function SettingsView() {
   async function savePolicy() {
     await post("/settings", { policy: { auto_accept_green: autoAccept,
       auto_dispatch_modes: autoModes, auto_dispatch_priority: autoPrio,
-      lane_labels: laneLabels }, appearance: { backdrop } });
+      lane_labels: laneLabels, chat_configure_roles: chatRoles }, appearance: { backdrop } });
     toast("Policy saved"); refresh();
   }
   async function saveReg() {
@@ -127,6 +134,16 @@ export default function SettingsView() {
         <select style={{ width: 180 }} value={backdrop} onChange={(e) => setBackdrop(e.target.value)}>
           {["mesh", "aurora", "ember", "forest", "mono"].map((b) => <option key={b}>{b}</option>)}
         </select>
+        <label>Who may reconfigure the workspace from the copilot chat?</label>
+        <div style={{ display: "flex", gap: 12, fontSize: 12.5 }}>
+          {["owner", "operator"].map((r) => (
+            <label key={r} style={{ display: "flex", alignItems: "center", gap: 5, margin: 0, color: "var(--txt-primary)" }}>
+              <input type="checkbox" checked={chatRoles.includes(r)}
+                onChange={(e) => setChatRoles(e.target.checked ? [...chatRoles, r] : chatRoles.filter((x) => x !== r))} />
+              {r}
+            </label>
+          ))}
+        </div>
         <label>Lane labels (rename the loop&apos;s states; semantics stay fixed)</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(["backlog", "working", "review", "done"] as const).map((k) => (
@@ -136,6 +153,40 @@ export default function SettingsView() {
         </div>
         <div style={{ marginTop: 14 }}>
           <button className="btn primary" onClick={savePolicy}>Save policy</button>
+        </div>
+      </div>
+      <div className="panel">
+        <h3>Data flows — import work from other systems</h3>
+        <label>Jira Cloud (base URL · account email · API token · default JQL)</label>
+        <div className="inline">
+          <input placeholder="https://your.atlassian.net" style={{ width: 220 }} value={jBase} onChange={(e) => setJBase(e.target.value)} />
+          <input placeholder="email" style={{ width: 180 }} value={jEmail} onChange={(e) => setJEmail(e.target.value)} />
+          <input type="password" placeholder="API token" style={{ width: 160 }} value={jToken} onChange={(e) => setJToken(e.target.value)} />
+        </div>
+        <div className="inline" style={{ marginTop: 8 }}>
+          <input placeholder='JQL, e.g. project = ABC AND status = "To Do"' style={{ width: 380 }} value={jJql} onChange={(e) => setJJql(e.target.value)} />
+          <button className="btn ghost" onClick={async () => {
+            await post("/settings", { jira: { base: jBase.trim(), email: jEmail.trim(), api_token: jToken.trim(), default_jql: jJql.trim() } });
+            toast("Jira connection saved");
+          }}>Save connection</button>
+          <button className="btn primary" disabled={busyImp} onClick={async () => {
+            setBusyImp(true);
+            const r = await post<{ imported?: number; error?: string }>("/import/jira", { jql: jJql.trim() });
+            setBusyImp(false);
+            toast(r.error ? r.error : `Imported ${r.imported} issues into the backlog`, 5000);
+            refresh();
+          }}>Import now</button>
+        </div>
+        <label style={{ marginTop: 16 }}>From a web page (agent derives a process from the page&apos;s content)</label>
+        <div className="inline">
+          <input placeholder="https://..." style={{ width: 380 }} value={impUrl} onChange={(e) => setImpUrl(e.target.value)} />
+          <button className="btn primary" disabled={busyImp} onClick={async () => {
+            if (!impUrl.trim()) return;
+            setBusyImp(true);
+            const r = await post<{ id?: string; error?: string }>("/import/url", { url: impUrl.trim() });
+            setBusyImp(false);
+            toast(r.error ? r.error : "Imported — the agent is proposing steps (see Processes)", 5000);
+          }}>Import page</button>
         </div>
       </div>
       {me?.role === "owner" && (
