@@ -20,3 +20,4 @@ daemon/tracks.json
 daemon/users.json
 daemon/sessions.json
 daemon/processes.json
+daemon/copilot_sessions.json

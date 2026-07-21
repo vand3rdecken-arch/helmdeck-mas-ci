@@ -513,6 +513,17 @@ class H(BaseHTTPRequestHandler):
             if user["role"] == "client" and p not in ("/tracks/new", "/processes/new") \
                and not (p.startswith("/tracks/") and p.endswith("/steer")):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
+            if p == "/chat":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import copilot
+                text = body.get("text", "").strip()
+                if not text:
+                    return self._send(400, json.dumps({"error": "text required"}))
+                try:
+                    return self._send(200, json.dumps(copilot.chat(user["name"], text)))
+                except Exception as e:
+                    return self._send(500, json.dumps({"error": str(e)[:300]}))
             # ---- processes: propose -> adjust -> accept into cards ----
             if p == "/processes/new":
                 import processes
