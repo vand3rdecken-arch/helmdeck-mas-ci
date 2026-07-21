@@ -291,6 +291,29 @@ def steer(tid, text, perm=None, actor="owner"):
     _save(tracks)
     return t
 
+EDITABLE = ("task", "priority", "due", "value", "client", "driver")
+
+def update_track(tid, patch, actor="owner"):
+    """Edit a card's request fields after creation. Only benign fields -
+    lane/status/economics move through their own verbs."""
+    import events
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    changed = {}
+    for k in EDITABLE:
+        if k in patch and patch[k] is not None and patch[k] != t.get(k):
+            t[k] = float(patch[k]) if k == "value" else patch[k]
+            changed[k] = t[k]
+    if changed:
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _save(tracks)
+        events.emit("edit", tid, actor=actor, fields=changed)
+        from actionlog import ActionLog
+        ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
+    return t
+
 def history(tid):
     """The track's conversation as recorded steers/replies (the reviewable timeline)."""
     from actionlog import read_timeline

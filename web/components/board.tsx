@@ -34,7 +34,9 @@ function clientHues(key: string): [string, string] {
 }
 
 export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
-  const { met, spot, setSpot } = useBoard();
+  const { met, spot, setSpot, tracks } = useBoard();
+  const stepM = t.process ? t.branch.match(/-s(\d+)$/) : null;
+  const stepTotal = t.process ? tracks.filter((x) => x.process === t.process).length : 0;
   const [g1, g2] = t.client ? clientHues(t.client)
     : ["var(--accent)", "var(--accent-2)"];
   const spotKey: Spot | null = t.process ? { type: "process", value: t.process }
@@ -61,7 +63,11 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
         {prioChip(t)}{dueChip(t)}
         {t.mode && <span className="chip" title="execution mode"><ModeIcon mode={t.mode} />{MODE_LABEL[t.mode] ?? t.mode}</span>}
         {t.client && <span className="chip" title="client"><IconBriefcase />{t.client}</span>}
-        {t.process && <span className="chip" title={t.process_title} style={{ color: "var(--accent-txt)" }}><IconChain />process</span>}
+        {t.process && (
+          <span className="chip" title={t.process_title} style={{ color: "var(--accent-txt)" }}>
+            <IconChain />{stepM ? `step ${stepM[1]}/${stepTotal}` : "process"}
+          </span>
+        )}
         {t.driver && t.driver !== "claude" && (
           <span className="chip" title="execution driver" style={{ color: "var(--accent-txt)" }}><IconMonitor />{t.driver}</span>
         )}
