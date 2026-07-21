@@ -56,21 +56,29 @@ def _worktree_for(repo, branch):
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, _slug(branch))
 
-def _claude(cwd, prompt, session_id=None, perm=DEFAULT_PERM, timeout=600):
-    """One turn. Returns (session_id, result_text, meta). Resumes if session_id
-    given. Prompt goes over stdin (no arg-quoting); .cmd shim run via `cmd /c`.
-    meta carries the turn's economics straight from the CLI JSON: usage (token
-    counts), total_cost_usd, and the model ids that ran."""
-    cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "json", "--permission-mode", perm]
-    if session_id:
-        cmd += ["--resume", session_id]
-    r = subprocess.run(cmd, cwd=cwd, input=prompt, capture_output=True, text=True, timeout=timeout)
-    if not r.stdout.strip():
-        raise RuntimeError("claude no output: " + r.stderr.strip()[:300])
-    d = json.loads(r.stdout)
-    meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
-            "models": list((d.get("modelUsage") or {}).keys())}
-    return d.get("session_id"), d.get("result", ""), meta
+def _turn(t, prompt):
+    """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
+    but any agent runtime configured in settings. Handles the flight-recorder
+    hook: a driver with record:true gets its whole turn screen-captured into the
+    track's run_dir (screen.mp4 + live.jpg glance feed)."""
+    import drivers, events
+    name = t.get("driver") or "claude"
+    cfg = events.settings().get("drivers", {}).get(name) or {"type": "claude"}
+    rec = None
+    if cfg.get("record"):
+        try:
+            import wincap
+            rec = wincap.start(t["run_dir"])
+        except Exception as e:
+            print("recorder failed to start:", e)
+    try:
+        return drivers.run(cfg, t, prompt)
+    finally:
+        if rec:
+            import wincap
+            wincap.stop(rec)
+            from actionlog import ActionLog
+            ActionLog(t["run_dir"]).log("note", "screen recording captured for this turn")
 
 def _record_turn(t, meta):
     """Fold one turn's economics into the track and the event log."""
@@ -101,7 +109,8 @@ def list_tracks():
 def get_track(tid):
     return _find(_load(), tid)
 
-def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="", value=None):
+def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
+              value=None, driver="claude", actor="owner"):
     """File a request. lane=backlog stores it un-started (no worktree, no session);
     lane=working starts the branch session immediately. value = what the
     deliverable is worth (settings default when omitted) - set at intake so
@@ -116,12 +125,13 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="", 
          "client": client, "session_id": None, "perm": perm, "lane": "backlog",
          "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "value": float(value) if value else events.settings()["value_per_card"],
+         "driver": driver or "claude",
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
     from actionlog import ActionLog
     ActionLog(run_dir).log("note", "REQUEST filed: %s (branch %s)" % (task, branch))
-    events.emit("filed", tid, branch=branch, value=t["value"])
+    events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver=t["driver"])
     tracks.insert(0, t)
     _save(tracks)
     if lane == "working":
@@ -150,7 +160,7 @@ def _start(tid):
     events.emit("lane", tid, frm=t.get("lane"), to="working")
     t["worktree"] = wt; t["lane"] = "working"; t["status"] = "running"
     _save(tracks)
-    sid, result, meta = _claude(wt, t["task"], perm=t["perm"])
+    sid, result, meta = _turn(t, t["task"])
     log.log("reply", result[:2000])
     tracks = _load(); t = _find(tracks, tid)
     t["session_id"] = sid; t["turns"] = 1
@@ -189,7 +199,7 @@ def _gate(t):
                 problems.append("gate command failed (%s):\n%s" % (cmd[:80], out[-600:]))
     return (not problems), problems
 
-def move_lane(tid, lane):
+def move_lane(tid, lane, actor="owner"):
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
     ->done accepts (records the acceptance economics)."""
@@ -204,7 +214,7 @@ def move_lane(tid, lane):
     if lane == "working":
         # pulling a card back OUT of review is a human bounce - the reject touch
         if prev == "review":
-            events.emit("touch", tid, touch="bounce")
+            events.emit("touch", tid, touch="bounce", actor=actor)
             from actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "BOUNCED by owner - back to Working")
             t["status"] = "bounced"; t["lane"] = "working"
@@ -234,7 +244,7 @@ def move_lane(tid, lane):
         log.log("note", "GATE PASSED - SUBMITTED for review — diff: " + stat[:400])
         t["status"] = "submitted"
     elif lane == "done":
-        events.emit("touch", tid, touch="review")
+        events.emit("touch", tid, touch="review", actor=actor)
         te = [e for e in events.read_events() if e.get("track") == tid]
         mode = events._completion_mode(te, t.get("turns"))
         events.emit("done", tid, mode=mode, ai_cost=t.get("ai_cost", 0.0),
@@ -251,7 +261,7 @@ def move_lane(tid, lane):
     _save(tracks)
     return t
 
-def steer(tid, text, perm=None):
+def steer(tid, text, perm=None, actor="owner"):
     """Continue the track's session (resume — context preserved, NO history rebuild)."""
     tracks = _load()
     t = _find(tracks, tid)
@@ -261,7 +271,7 @@ def steer(tid, text, perm=None):
         _start(tid)                      # steering a backlog card dispatches it first
         tracks = _load(); t = _find(tracks, tid)
     import events
-    events.emit("touch", tid, touch="steer")
+    events.emit("touch", tid, touch="steer", actor=actor)
     if t["lane"] != "working":
         events.emit("lane", tid, frm=t["lane"], to="working")
     t["lane"] = "working"
@@ -269,8 +279,7 @@ def steer(tid, text, perm=None):
     log = ActionLog(t["run_dir"])
     log.log("steer", text)
     t["status"] = "running"; _save(tracks)
-    sid, result, meta = _claude(t["worktree"], text, session_id=t["session_id"],
-                                perm=perm or t.get("perm", DEFAULT_PERM))
+    sid, result, meta = _turn(t, text)
     log.log("reply", result[:2000])
     # session_id can rotate on resume; keep the latest so the next steer continues.
     t["session_id"] = sid or t["session_id"]

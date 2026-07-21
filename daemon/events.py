@@ -32,6 +32,16 @@ DEFAULTS = {
     "default_repo": "",
     "plane": {"base": "http://localhost:8090", "api_token": "", "workspace": "",
               "repos": {}, "default_repo": "", "poll_secs": 20},
+    # execution drivers (drivers.py): a card picks one by name. claude-desktop =
+    # Claude Code allowed to drive Windows/browser via windows-mcp, screen-recorded.
+    "drivers": {"claude": {"type": "claude"},
+                "claude-desktop": {"type": "claude",
+                                   "allowed_tools": ["mcp__windows-mcp__*"],
+                                   "record": True}},
+    # auth: every API call needs a bearer token of one of these users.
+    # roles: owner (everything) / operator (work, no settings) / client
+    # (file + comment + watch own cards only). Filled on first serve.
+    "users": [],
 }
 
 def settings():
@@ -140,6 +150,11 @@ def metrics(tracks):
                 fails[key] = fails.get(key, 0) + 1
     touches_today = sum(tariff.get(e.get("touch"), 1) for e in ev
                         if e["kind"] == "touch" and e["ts"][:10] == today)
+    actors = {}
+    for e in ev:
+        if e["kind"] == "touch" and e["ts"][:10] == today:
+            a = e.get("actor") or "owner"
+            actors[a] = actors.get(a, 0) + tariff.get(e.get("touch"), 1)
     wip = sum(1 for c in cards if c["lane"] == "working")
     value_done = sum(c["value"] for c in done)
     ai_all = sum(c["ai_cost"] for c in cards)
@@ -148,7 +163,7 @@ def metrics(tracks):
         "settings": s,
         "cards": cards,
         "capacity": {"wip": wip, "wip_limit": s["capacity"]["wip_limit"],
-                     "touches_today": touches_today,
+                     "touches_today": touches_today, "actors": actors,
                      "touch_budget_day": s["capacity"]["touch_budget_day"],
                      "headroom": max(0, s["capacity"]["wip_limit"] - wip)},
         "yield_first_pass": (sum(1 for ok in gated.values() if ok), len(gated)),

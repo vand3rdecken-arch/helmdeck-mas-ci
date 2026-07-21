@@ -281,8 +281,38 @@ fetch('/runs').then(r=>r.json()).then(async runs=>{
 });
 </script>"""
 
+def ensure_owner():
+    """First-run auth bootstrap: mint the owner token, print it once."""
+    import events, secrets
+    s = events.settings()
+    if not s.get("users"):
+        tok = secrets.token_urlsafe(24)
+        events.save_settings({"users": [{"name": "owner", "token": tok, "role": "owner"}]})
+        print("AUTH: owner token created ->", tok)
+        print("      enter it once in the web app (it will prompt), or send")
+        print("      Authorization: Bearer <token> / ?token=<token>")
+    return events.settings()["users"]
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+
+    # HTML shells are public (they contain no data); every data/control route
+    # needs a bearer token of a settings.json user. Role client only sees and
+    # steers cards filed under their own name.
+    OPEN = ("/", "/classic")
+
+    def _user(self):
+        import events
+        tok = ""
+        auth = self.headers.get("Authorization") or ""
+        if auth.startswith("Bearer "):
+            tok = auth[7:].strip()
+        if not tok and "token=" in self.path:
+            tok = self.path.split("token=")[1].split("&")[0]
+        for u in events.settings().get("users", []):
+            if u.get("token") and u["token"] == tok:
+                return u
+        return None
 
     def _send(self, code, body, ctype="application/json"):
         self.send_response(code)
@@ -294,6 +324,9 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         try:
+            user = self._user()
+            if p not in self.OPEN and not user:
+                return self._send(401, json.dumps({"error": "auth required"}))
             if p == "/":
                 fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.html")
                 if os.path.exists(fp):   # the Plane-tokened app; read per request so edits are live
@@ -343,19 +376,35 @@ class H(BaseHTTPRequestHandler):
             # --- orchestrator: branches/sessions (the Paseo half) ---
             if p == "/tracks":
                 import sessions
-                return self._send(200, json.dumps(sessions.list_tracks()))
+                ts = sessions.list_tracks()
+                if user["role"] == "client":   # clients see only their own cards
+                    ts = [t for t in ts if t.get("client") == user["name"]]
+                return self._send(200, json.dumps(ts))
             # --- company instrumentation: settings + CEO dashboard ---
+            if p == "/me":
+                return self._send(200, json.dumps({"name": user["name"], "role": user["role"]}))
             if p == "/settings":
                 import events
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(events.settings()))
             if p == "/dashboard/data":
                 import events, sessions
-                return self._send(200, json.dumps(events.metrics(sessions.list_tracks())))
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                m = events.metrics(sessions.list_tracks())
+                if user["role"] != "owner":
+                    m.pop("settings", None)
+                return self._send(200, json.dumps(m))
             if p == "/dashboard":
                 return self._send(200, DASH, "text/html; charset=utf-8")
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "history":
                 import sessions
+                if user["role"] == "client":
+                    t = sessions.get_track(parts[1])
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
                 return self._send(200, json.dumps(sessions.history(parts[1])))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
@@ -369,6 +418,12 @@ class H(BaseHTTPRequestHandler):
         except ValueError:
             body = {}
         try:
+            user = self._user()
+            if not user:
+                return self._send(401, json.dumps({"error": "auth required"}))
+            if user["role"] == "client" and p not in ("/tracks/new",) \
+               and not (p.startswith("/tracks/") and p.endswith("/steer")):
+                return self._send(403, json.dumps({"error": "clients can file and comment only"}))
             if p == "/control/teach/start":
                 from teach import TeachSession
                 with _ctl_lock:
@@ -398,6 +453,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"started": "browser-demo"}))
             if p == "/settings":
                 import events
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(events.save_settings(body)))
             # --- orchestrator control ---
             if p == "/tracks/new":
@@ -409,16 +466,21 @@ class H(BaseHTTPRequestHandler):
                 if not (repo and branch and task):
                     return self._send(400, json.dumps({"error": "task required (+ repo unless default_repo is set in settings)"}))
                 lane = body.get("lane", "working")
+                client = user["name"] if user["role"] == "client" else body.get("client", "")
+                driver = body.get("driver", "claude")
+                if user["role"] == "client":
+                    driver = "claude"   # clients don't pick desktop-driving agents
                 if lane == "backlog":   # filing a request is instant, no session
                     return self._send(200, json.dumps(sessions.new_track(
                         repo, branch, task, body.get("perm", sessions.DEFAULT_PERM),
-                        lane="backlog", client=body.get("client", ""),
-                        value=body.get("value"))))
+                        lane="backlog", client=client, value=body.get("value"),
+                        driver=driver, actor=user["name"])))
                 def go():
                     sessions.new_track(repo, branch, task,
                                        body.get("perm", sessions.DEFAULT_PERM),
-                                       lane="working", client=body.get("client", ""),
-                                       value=body.get("value"))
+                                       lane="working", client=client,
+                                       value=body.get("value"),
+                                       driver=driver, actor=user["name"])
                 _bg("track:new:" + branch, go)
                 return self._send(200, json.dumps({"started": branch}))
             parts = p.strip("/").split("/")
@@ -428,16 +490,23 @@ class H(BaseHTTPRequestHandler):
                 text = body.get("text")
                 if not text:
                     return self._send(400, json.dumps({"error": "text required"}))
-                _bg("track:steer:" + tid, lambda: sessions.steer(tid, text))
+                if user["role"] == "client":
+                    t = sessions.get_track(tid)
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
+                actor = user["name"]
+                _bg("track:steer:" + tid, lambda: sessions.steer(tid, text, actor=actor))
                 return self._send(200, json.dumps({"started": tid}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "lane":
                 import sessions
                 tid = parts[1]
                 lane = body.get("lane")
+                actor = user["name"]
                 if lane == "working":
-                    _bg("track:dispatch:" + tid, lambda: sessions.move_lane(tid, "working"))
+                    _bg("track:dispatch:" + tid,
+                        lambda: sessions.move_lane(tid, "working", actor=actor))
                     return self._send(200, json.dumps({"started": tid}))
-                return self._send(200, json.dumps(sessions.move_lane(tid, lane)))
+                return self._send(200, json.dumps(sessions.move_lane(tid, lane, actor=actor)))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass
@@ -445,6 +514,7 @@ class H(BaseHTTPRequestHandler):
             self._send(500, json.dumps({"error": str(e)}))
 
 def serve(port=8140):
+    ensure_owner()
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
 
