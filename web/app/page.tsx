@@ -74,6 +74,9 @@ function App() {
 
   const isClient = me?.role === "client";
   const isWork = view === "board" || view === "list" || view === "timeline";
+  useEffect(() => {
+    document.documentElement.dataset.backdrop = met?.settings?.appearance?.backdrop ?? "mesh";
+  }, [met?.settings?.appearance?.backdrop]);
   const clients = Object.entries(tracks.reduce<Record<string, number>>((acc, t) => {
     if (t.client) acc[t.client] = (acc[t.client] ?? 0) + 1;
     return acc;

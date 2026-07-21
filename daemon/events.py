@@ -42,6 +42,9 @@ DEFAULTS = {
     # with the invite code (owner shares it) and get default_role. open=True
     # drops the code requirement (LAN-trusted setups only).
     "registration": {"open": False, "invite_code": "", "default_role": "client"},
+    # APPEARANCE - ambient backdrop behind the glass (never carries data;
+    # card/status colors stay semantic). Chat-configurable.
+    "appearance": {"backdrop": "mesh"},   # mesh|aurora|ember|forest|mono
     # DASHBOARD composition - which tiles/panels the CEO view shows, in order.
     # tiles: value_delivered, ai_spend, margin, yield, automation, leverage
     # panels: capacity, gates, work
