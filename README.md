@@ -1,63 +1,79 @@
 # SwarmDeck
 
-Run a swarm of coding/browser/desktop agents on your PC — with a **flight recorder**: every
-action an agent (or you) takes in the browser or in Windows is logged as a timestamped step
-timeline and recorded as video. Review the timeline, drill into the footage, watch live from
-your glasses, or **teach** a task by doing it once yourself.
+**Work management where the workers are agents.** A merge of Jira (tickets,
+boards, clients), n8n (processes that chain and auto-advance), and UiPath
+(agents driving real software on real machines) — with Claude as the
+workforce and a **flight recorder** as the trust layer: every agent action is
+logged, screen-recorded, and auditable.
 
-## The two ways to define a task
+A client files a request in plain words. An agent proposes the step chain.
+Humans adjust, accept, and do only the steps that need a human — everything
+else dispatches itself, gets quality-gated, and lands as evidence-backed,
+per-card-priced work.
 
-1. **Describe → drive.** Write the task in words; an agent executes it with its own hands
-   (Playwright browser, Windows input). The run is recorded.
-2. **Demonstrate → learn.** Hit record, do the task yourself once, stop. The same recorder
-   captures your demonstration; the distiller turns it into a reusable **playbook**
-   (goal, steps, selectors, checkpoints) that agents execute later — recorded the same way,
-   so you can diff "what I showed" against "what it did".
+## The surfaces
 
-## Review model (locked decision)
+| Path | What it is |
+|---|---|
+| `daemon/` | **The brain + hands.** Python backend: board/orchestrator (cards = git branches with resumable Claude sessions), review gate, process chain, economics, auth, copilot, connectors, charter, checkpoints, recorder. API on `:8140` (plus a single-file fallback UI). |
+| `web/` | **The UI.** Next.js + TS on the Plane design-token system with a liquid-glass pass. Board / List / Timeline / Processes / Dashboard / Recordings / History / Settings, copilot chat, ⌘K palette, client auras + spotlight, live thumbnails. Proxies `/backend/*` to the daemon. |
+| `apk/` | Android hub (phone = auth/pairing/review per the APK rule). |
+| `glasses/` | Meta Ray-Ban Display viewer (live glance feed). |
+| `worker/` | Thin Cloudflare relay (rendezvous + newest frame). Never the brain. |
+| `plane-selfhost/` | Optional real Plane instance + bridge (`daemon/plane_bridge.py`) as an alternative client frontend. Dormant; needs Docker/WSL. |
 
-The **action timeline is the primary review artifact** — always captured, never optional
-(teach-mode depends on it; audit trails don't get off-switches). Video is the drill-down
-evidence behind each step. Glasses get the step feed + live glance; phone/desktop get full
-replay and scrubbing.
+## Quick start
 
-## Architecture — the APK rule
+```bash
+# backend (Python 3.12)
+cd daemon && pip install -r requirements.txt
+python swarm.py serve            # API on :8140
 
-**All important logic lives in the phone APK.** The phone is the hub: auth, pairing,
-recording index, playbook storage, review serving, decisions. The cloud worker is a thin
-relay (rendezvous + newest live frame + tiny signaling rows) — never the brain. The desktop
-daemon is hands + capture only; the glasses webapp is a pure viewer.
-
-```
-DESKTOP daemon (hands + capture)      PHONE APK (the brain)            GLASSES (viewer)
-────────────────────────────────      ─────────────────────            ────────────────
-agents: Playwright browser            auth + pairing secrets           track/step feed
-        + Windows input               recording & playbook index       "watch live" glance
-recorder: mp4 + action log            pulls recordings from daemon        │
-teach: your demo → log + video        review UI + player                  │
-   │                                     ▲                                │
-   └────── LAN (direct) ─────────────────┘                                │
-   └────── worker relay (thin: newest frame + rows) ──────────────────────┘
+# frontend
+cd web && npm install
+npm run dev -- --port 3300       # the UI
 ```
 
-## Layout
+First run shows a **create-owner** screen. Users, roles (owner / operator /
+client), invite-code self-registration, and per-user device tokens live in
+Settings.
 
-- `daemon/` — Python. Capture pipeline, teach recorder, distiller, swarm runner, local server.
-- `apk/` — Android hub (Kotlin; bootstrapped from the glass-companion architecture).
-- `worker/` — thin Cloudflare relay (not deployed until explicitly asked).
-- `glasses/` — viewer webapp (600×600, additive styling: bright accents on black).
+## Core concepts
 
-## Quick start (daemon)
+- **Card = branch = session.** Every request is a git branch in its own
+  worktree, bound to a resumable Claude Code session. Lanes are workflow
+  verbs: Backlog → Working (dispatches) → Review (**runs the quality gate**,
+  bounces with a punch list) → Done (accepts + records economics). Cards are
+  editable inline, archivable (reversible), deletable (owner; audit stays).
+- **Processes (the n8n half).** Describe a client request; an agent proposes
+  3–8 steps, each with an execution mode — do · prepare · cowork · teach ·
+  human. Accepted steps become chained cards: agent steps auto-run when the
+  previous step completes, human steps surface in the board's NEXT UP strip.
+  The pipeline view shows where the chain is.
+- **Drivers (the UiPath half).** Execution is pluggable per card: `claude`
+  (code), `claude-desktop` (windows-mcp drives Windows/browser; every turn
+  screen-recorded, live thumbnail on the card), `http` (any agent API),
+  `cmd`. Driver commands are fixed harness — never chat-configurable.
+- **Economics.** Humans are fixed capacity (touch units vs. daily budget);
+  AI is variable cost (tokens × price table per turn). Dashboard: value
+  delivered, margin, first-pass yield, automation rate, capacity gauge,
+  gate-failure histogram — composition configurable, **measurement never
+  stops**.
+- **Copilot chat** (`k`, model picker haiku·sonnet·opus). Steers everything
+  in natural language: cards, processes, workspace policy (per-role),
+  imports, connector builds. Each user's chat is a persistent, resumable
+  Claude session (`claude --resume <id>` works from a terminal).
+- **Connectors — integrations built by chatting.** "Build an integration
+  that pulls X" files a build card; an agent writes it, the gate checks it,
+  your accept installs it — then it's a sidebar tab (run / schedule /
+  rollback). Sandboxed, versioned, create-only toward the board.
+- **Audit (History view).** Three layers: the git branch tree (the work,
+  unfakeable), **system checkpoints** (every change to the software itself,
+  actor-attributed, reversibly restorable), and the append-only event log.
 
-```
-cd daemon
-pip install -r requirements.txt
-python swarm.py wincap-test          # 5s desktop capture -> recordings/<id>/screen.mp4
-python swarm.py browser-demo        # scripted browser run -> video + action log
-python swarm.py teach "name"        # record YOUR demo (Ctrl+Esc stops)
-python swarm.py distill <id>         # demo -> playbook via claude -p
-python swarm.py serve                # local index: recordings, timelines, live.jpg
-```
+## Safety model
 
-Recordings live in `daemon/recordings/<run-id>/` — `screen.mp4` / `browser.webm`,
-`actions.jsonl` (the timeline), `meta.json`. Keep-all retention (owner decision).
+See [ARCHITECTURE.md](ARCHITECTURE.md). In one line: **the harness is code,
+policy is data, and everything buildable walks the gate.** The capability
+charter (`GET /charter`) states what may be built here and is enforced at
+commission, install, and run time.
