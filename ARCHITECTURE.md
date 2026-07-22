@@ -81,7 +81,6 @@ web (Next.js :3300) ──proxy /backend/*──► daemon (Python :8140)
                                             ├─ auth.py       PBKDF2 users, cookie sessions, device tokens
                                             └─ wincap/actionlog/teach  flight recorder
 apk / glasses / worker: companion surfaces per the APK rule (thin, never the brain)
-plane_bridge.py: optional Plane frontend sync (dormant)
 ```
 
 Storage is JSON files (tracks/events/users/settings) — right for a

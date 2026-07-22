@@ -27,11 +27,8 @@ DEFAULTS = {
                "default": {"in": 3.0, "out": 15.0}},
     "value_per_card": 50.0,   # default deliverable value; per-card value overrides
     "currency": "EUR",
-    # preset repos: filing a ticket never needs a path typed. default_repo is
-    # the fallback; plane.repos maps a Plane project name -> repo path.
+    # preset repo: filing a ticket never needs a path typed (fallback repo).
     "default_repo": "",
-    "plane": {"base": "http://localhost:8090", "api_token": "", "workspace": "",
-              "repos": {}, "default_repo": "", "poll_secs": 20},
     # execution drivers (drivers.py): a card picks one by name. claude-desktop =
     # Claude Code allowed to drive Windows/browser via windows-mcp, screen-recorded.
     "drivers": {"claude": {"type": "claude"},

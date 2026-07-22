@@ -33,3 +33,4 @@ daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 plane-selfhost/.env
 plane-selfhost/*.env
+backups/
