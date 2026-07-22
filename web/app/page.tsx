@@ -131,6 +131,7 @@ function App() {
         </>}
         <div className={`navitem${isWork && filter === "all" ? " active" : ""}`} onClick={() => { nav("board"); setFilter("all"); }}>All work</div>
         <div className={`navitem${isWork && filter === "needs_you" ? " active" : ""}`} onClick={() => { nav("board"); setFilter("needs_you"); }}>Needs you</div>
+        <div className={`navitem${isWork && filter === "archived" ? " active" : ""}`} onClick={() => { nav("board"); setFilter("archived"); }}>Archive</div>
         <div className="foot">
           {me && <div style={{ marginBottom: 6 }}><b style={{ color: "var(--txt-secondary)" }}>{me.name}</b> · {me.role}</div>}
           <span style={{ cursor: "pointer" }} onClick={() => {

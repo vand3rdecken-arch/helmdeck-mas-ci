@@ -304,6 +304,39 @@ def steer(tid, text, perm=None, actor="owner"):
 
 EDITABLE = ("task", "priority", "due", "value", "client", "driver")
 
+def archive_track(tid, on=True, actor="owner"):
+    """Reversible: hides the card from work views; economics and audit stay."""
+    import events
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    t["archived"] = bool(on)
+    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _save(tracks)
+    events.emit("archive", tid, on=bool(on), actor=actor)
+    from actionlog import ActionLog
+    ActionLog(t["run_dir"]).log("note", ("ARCHIVED" if on else "UNARCHIVED") + " by " + actor)
+    return t
+
+def delete_track(tid, actor="owner"):
+    """Destructive but bounded: removes the card, its worktree and branch.
+    The audit trail is NOT deletable - events and the recording stay."""
+    import events
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    if t.get("worktree") and os.path.exists(t["worktree"]):
+        subprocess.run(["git", "-C", t["repo"], "worktree", "remove", "--force",
+                        t["worktree"]], capture_output=True, text=True)
+    if _branch_exists(t["repo"], t["branch"]):
+        subprocess.run(["git", "-C", t["repo"], "branch", "-D", t["branch"]],
+                       capture_output=True, text=True)
+    _save([x for x in tracks if x["id"] != tid])
+    events.emit("delete", tid, branch=t["branch"], task=t["task"][:80], actor=actor)
+    return {"deleted": tid}
+
 def update_track(tid, patch, actor="owner"):
     """Edit a card's request fields after creation. Only benign fields -
     lane/status/economics move through their own verbs."""

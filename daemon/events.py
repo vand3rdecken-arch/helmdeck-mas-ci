@@ -197,7 +197,8 @@ def metrics(tracks):
         if e["kind"] == "touch" and e["ts"][:10] == today:
             a = e.get("actor") or "owner"
             actors[a] = actors.get(a, 0) + tariff.get(e.get("touch"), 1)
-    wip = sum(1 for c in cards if c["lane"] == "working")
+    archived_ids = {t["id"] for t in tracks if t.get("archived")}
+    wip = sum(1 for c in cards if c["lane"] == "working" and c["id"] not in archived_ids)
     value_done = sum(c["value"] for c in done)
     ai_all = sum(c["ai_cost"] for c in cards)
     touch_all = sum(c["touches"] for c in cards) or 1

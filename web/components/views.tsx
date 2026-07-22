@@ -6,7 +6,8 @@ import { dueChip, prioChip } from "./board";
 
 export function ListView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
   const { tracks: all, met } = useBoard();
-  const tracks = filter.startsWith("client:") ? all.filter((t) => t.client === filter.slice(7)) : all;
+  const base = filter === "archived" ? all.filter((t) => t.archived) : all.filter((t) => !t.archived);
+  const tracks = filter.startsWith("client:") ? base.filter((t) => t.client === filter.slice(7)) : base;
   return (
     <div className="panel" style={{ padding: 0 }}>
       {LANES.map(([key, defName, color]) => {
@@ -49,7 +50,8 @@ const parseTs = (s?: string) => (s ? new Date(s.replace(" ", "T")).getTime() : n
 
 export function TimelineView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
   const { tracks: all } = useBoard();
-  const tracks = filter.startsWith("client:") ? all.filter((t) => t.client === filter.slice(7)) : all;
+  const base = filter === "archived" ? all.filter((t) => t.archived) : all.filter((t) => !t.archived);
+  const tracks = filter.startsWith("client:") ? base.filter((t) => t.client === filter.slice(7)) : base;
   const now = Date.now();
   const ts = tracks.map((t) => ({
     t,
