@@ -405,6 +405,51 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/checkpoints":
+                import checkpoints
+                return self._send(200, json.dumps(checkpoints.list_checkpoints()))
+            if p == "/history":
+                # the git audit trail: main line + every card branch's commits.
+                import subprocess, sessions, events
+                repo = events.settings().get("default_repo")
+                if not repo:
+                    return self._send(200, json.dumps({"main": [], "branches": []}))
+                def git(*args):
+                    r = subprocess.run(["git", "-C", repo, *args],
+                                       capture_output=True, text=True, timeout=20)
+                    return r.stdout.strip() if r.returncode == 0 else ""
+                def parse(log):
+                    out = []
+                    for line in log.splitlines():
+                        bits = line.split("")
+                        if len(bits) >= 4:
+                            out.append({"h": bits[0], "msg": bits[1][:100],
+                                        "author": bits[2], "date": bits[3]})
+                    return out
+                fmt = "--pretty=format:%h%s%an%ad"
+                head = git("rev-parse", "--abbrev-ref", "HEAD") or "main"
+                main = parse(git("log", "-n", "40", "--date=short", fmt, head))
+                tmap = {}
+                for t in sessions.list_tracks():
+                    tmap.setdefault(t["branch"], t)
+                branches = []
+                for br in git("branch", "--format=%(refname:short)").splitlines():
+                    br = br.strip()
+                    if not br or br == head:
+                        continue
+                    commits = parse(git("log", "--date=short", fmt, "-n", "20",
+                                        "%s..%s" % (head, br)))
+                    t = tmap.get(br)
+                    branches.append({
+                        "name": br, "commits": commits,
+                        "track": t["id"] if t else None,
+                        "task": t["task"][:70] if t else "",
+                        "lane": t.get("lane") if t else None,
+                        "client": t.get("client") if t else "",
+                    })
+                branches.sort(key=lambda b: (b["track"] is None, b["name"]))
+                return self._send(200, json.dumps(
+                    {"head": head, "main": main, "branches": branches[:40]}))
             if p == "/connectors":
                 import connectors
                 return self._send(200, json.dumps(connectors.list_connectors()))
@@ -545,6 +590,15 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "checkpoints" and parts[2] == "restore":
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import checkpoints
+                try:
+                    checkpoints.restore(parts[1], actor=user["name"])
+                    return self._send(200, json.dumps({"restored": parts[1]}))
+                except Exception as e:
+                    return self._send(400, json.dumps({"error": str(e)[:300]}))
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "rollback":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -649,7 +703,7 @@ class H(BaseHTTPRequestHandler):
                 import events
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(events.save_settings(body)))
+                return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
             # --- orchestrator control ---
             if p == "/tracks/new":
                 import sessions, events

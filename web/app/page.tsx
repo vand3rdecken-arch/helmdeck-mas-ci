@@ -14,9 +14,10 @@ import RecsView from "@/components/recs";
 import SettingsView from "@/components/settings";
 import Palette from "@/components/palette";
 import ConnectorView from "@/components/connector";
+import HistoryView from "@/components/history";
 
-type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "settings";
-const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "settings"];
+type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "history" | "settings";
+const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "history", "settings"];
 
 const ICONS: Record<string, React.ReactNode> = {
   board: <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5" /><rect x="14" y="3" width="7" height="11" rx="1.5" /></svg>,
@@ -102,6 +103,9 @@ function App() {
         <div className={`navitem${view === "procs" ? " active" : ""}`} onClick={() => nav("procs")}>{ICONS.procs}Processes</div>
         {!isClient && <div className={`navitem${view === "dash" ? " active" : ""}`} onClick={() => nav("dash")}>{ICONS.dash}Dashboard</div>}
         <div className={`navitem${view === "recs" ? " active" : ""}`} onClick={() => nav("recs")}>{ICONS.recs}Recordings</div>
+        <div className={`navitem${view === "history" ? " active" : ""}`} onClick={() => nav("history")}>
+          <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="12" r="2.5" /><path d="M6 8.5v7M8.5 6.8c4 .8 7 2.4 7 4.5M8.5 17.2c4-.8 7-2.4 7-4.5" /></svg>
+          History</div>
         {!isClient && <div className={`navitem${view === "settings" ? " active" : ""}`} onClick={() => nav("settings")}>{ICONS.settings}Settings</div>}
         <div className="sect">Views</div>
         {conns.length > 0 && <>
@@ -140,7 +144,7 @@ function App() {
       <div id="main">
         <div id="hdr">
           <span className="crumb">
-            {view.startsWith("conn:") ? "Connector · " + view.slice(5) : isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : "Settings"}
+            {view.startsWith("conn:") ? "Connector · " + view.slice(5) : isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : view === "history" ? "History" : "Settings"}
           </span>
           {isWork && (
             <span id="layouts">
@@ -164,6 +168,7 @@ function App() {
           {view === "procs" && <ProcsView onOpen={setPeek} />}
           {view === "dash" && <DashView />}
           {view === "recs" && <RecsView />}
+          {view === "history" && <HistoryView onOpen={setPeek} />}
           {view === "settings" && <SettingsView />}
           {view.startsWith("conn:") && (() => {
             const c = conns.find((x) => x.name === view.slice(5));

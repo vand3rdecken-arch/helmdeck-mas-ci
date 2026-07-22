@@ -133,7 +133,7 @@ def _run_action(a, actor, role="operator"):
         if bad:
             return "configure denied for fixed keys: %s (harness, not policy)" % ", ".join(sorted(bad))
         import events as _ev
-        _ev.save_settings(patch)
+        _ev.save_settings(patch, actor=actor, reason="via chat")
         _ev.emit("config", "-", actor=actor, patch=patch)
         return "policy updated: " + json.dumps(patch)[:300]
     if kind == "file_card":
