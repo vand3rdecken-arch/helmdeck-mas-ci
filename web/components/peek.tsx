@@ -43,7 +43,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
       text: v || "(see attachment)", model: opts.model, thinking: opts.thinking,
       attachments: opts.attachments, mode: opts.mode,
     });
-    toast("Steer sent — session resuming");
+    toast("Steer sent - session resuming");
     setTimeout(refresh, 1500);
   }
   async function stopTurn() {
@@ -72,7 +72,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             <button className="btn ghost" style={{ fontSize: 11, marginLeft: "auto" }}
               onClick={async () => {
                 await post(`/tracks/${t.id}/archive`, { on: !t.archived });
-                toast(t.archived ? "Unarchived" : "Archived — find it under Views › Archive");
+                toast(t.archived ? "Unarchived" : "Archived - find it under Views › Archive");
                 refresh(); if (!t.archived) onClose();
               }}>{t.archived ? "unarchive" : "archive"}</button>
           )}
@@ -89,7 +89,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
               onClick={async () => {
                 if (!confirm("Delete this card, its worktree and branch? The audit trail (events, recording) stays. This cannot be undone.")) return;
                 const r = await post<{ error?: string }>(`/tracks/${t.id}/delete`, {});
-                toast(r.error ?? "Deleted — audit trail kept", 4500);
+                toast(r.error ?? "Deleted - audit trail kept", 4500);
                 refresh(); onClose();
               }}>delete</button>
           )}
@@ -104,9 +104,9 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             margin: "12px 16px 4px", fontSize: 15, fontWeight: 600, lineHeight: 1.45,
             minHeight: 52, maxHeight: 300, resize: "vertical", overflowY: "auto",
           }}
-          title="the request — editable, saves on blur"
+          title="the request - editable, saves on blur"
         />
-        {/* primary properties — what a PM scans, Jira-style. diagnostics live
+        {/* primary properties - what a PM scans, Jira-style. diagnostics live
             under 'technical details' below (progressive disclosure). */}
         <div id="props">
           <span className="k">State</span>
@@ -132,7 +132,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           <span className="k">Client</span>
           <span>
             <input style={{ ...sel, width: 140 }} defaultValue={t.client ?? ""}
-              placeholder="—" onBlur={(ev) => ev.target.value.trim() !== (t.client ?? "") && edit({ client: ev.target.value.trim() })} />
+              placeholder="-" onBlur={(ev) => ev.target.value.trim() !== (t.client ?? "") && edit({ client: ev.target.value.trim() })} />
           </span>
         </div>
         {e && (
@@ -176,7 +176,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
                       return (
                         <div key={i} style={{ display: "flex", gap: 10, fontSize: 11.5, color: "var(--txt-secondary)", padding: "1.5px 0" }}>
                           <span style={{ color: "var(--txt-tertiary)", width: 84, flexShrink: 0 }}>{tu.ts?.slice(5, 16)}</span>
-                          <span style={{ width: 96, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{(tu.models?.[0] ?? "—").replace("claude-", "")}</span>
+                          <span style={{ width: 96, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{(tu.models?.[0] ?? "-").replace("claude-", "")}</span>
                           <span style={{ fontVariantNumeric: "tabular-nums" }}>{tin.toLocaleString()}/{(u.output_tokens ?? 0).toLocaleString()} · ${(tu.cost ?? 0).toFixed(3)}</span>
                         </div>
                       );
@@ -204,7 +204,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
         <Composer onSend={sendSteer} onStop={stopTurn} busy={t.status === "running"}
           draftKey={`swarm-draft:card:${t.id}`} modeOptions={modeOpts}
           context={lastIn ? { used: lastIn, total: 200000 } : undefined}
-          placeholder="Tell this worker what to do — its context continues, no rebuild"
+          placeholder="Tell this worker what to do - its context continues, no rebuild"
           slashCommands={[
             { name: "plan", hint: "plan before acting", insert: "Make a plan for: " },
             { name: "test", hint: "run tests, report failures", insert: "Run the tests and report any failures." },

@@ -14,13 +14,13 @@ interface ModelDef { id: string; label: string; desc?: string }
 // the model list is served by the daemon (curated Claude manifest + your
 // ~/.claude/settings.json) - fetched once and cached across composers.
 let MODEL_CACHE: ModelDef[] | null = null;
-// thinking levels — each maps to a real Claude Code budget keyword server-side
+// thinking levels - each maps to a real Claude Code budget keyword server-side
 const THINK: { id: string; short: string }[] = [
   { id: "", short: "" }, { id: "think", short: "think" },
   { id: "think-hard", short: "hard" }, { id: "ultrathink", short: "ultra" },
 ];
 
-// The shared chat composer — ported from Paseo (getpaseo/paseo), rebuilt for our
+// The shared chat composer - ported from Paseo (getpaseo/paseo), rebuilt for our
 // stack. Both the board copilot and the card steer render this ONE component, so
 // they can't drift. Functions: auto-grow input + draft, send / stop-while-running,
 // queue-while-busy (edit / send-now), image+file attach (pick·paste·drop) with
@@ -156,7 +156,7 @@ export default function Composer({
       onDrop={(e) => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }}>
 
       {queued && (
-        <div className="cmp-queued" title="queued — will send when the agent is free">
+        <div className="cmp-queued" title="queued - will send when the agent is free">
           <span className="cmp-qlabel">Queued</span>
           <span className="cmp-qtext" onClick={() => { write(queued.text); setQueued(null); }}>{queued.text || "(attachment)"}</span>
           <button className="cmp-qbtn" onClick={() => { const q = queued; setQueued(null); onSend(q.text, q.opts); }}>Send now</button>
@@ -204,7 +204,7 @@ export default function Composer({
         {!hideThinking && (
           <button className={"cmp-tool" + (thinkOn ? " on" : "")} onClick={() => {
             const i = THINK.findIndex((x) => x.id === thinking); setThinking(THINK[(i + 1) % THINK.length].id);
-          }} title="Thinking level — off · think · hard · ultra">
+          }} title="Thinking level - off · think · hard · ultra">
             <IconBrain size={15} />{thinkOn && <span className="cmp-toollabel">{thinkShort}</span>}
           </button>
         )}
@@ -212,12 +212,12 @@ export default function Composer({
           <button className="cmp-tool" onClick={() => {
             const i = modeOptions.findIndex((m) => m.id === mode);
             setMode(modeOptions[(i + 1) % modeOptions.length].id);
-          }} title="Agent mode — cycles the permission mode">
+          }} title="Agent mode - cycles the permission mode">
             <IconSliders size={15} /><span className="cmp-toollabel">{modeOptions.find((m) => m.id === mode)?.label}</span>
           </button>
         )}
         <select className="cmp-model" value={model} onChange={(e) => setModel(e.target.value)}
-          title="Model — Auto routes by task; the rest come from the Claude manifest + your ~/.claude/settings.json">
+          title="Model - Auto routes by task; the rest come from the Claude manifest + your ~/.claude/settings.json">
           <option value="auto">Auto</option>
           {models.map((m) => <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>)}
         </select>

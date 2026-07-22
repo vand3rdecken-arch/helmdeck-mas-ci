@@ -11,7 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The kanban board on the phone — same verbs as the desktop board. Lanes as tabs
+ * The kanban board on the phone - same verbs as the desktop board. Lanes as tabs
  * (a 4-column drag board doesn't fit a phone), cards per lane, tap a card for the
  * session view: history + steer + the lane verbs (Dispatch / Submit / Accept).
  * Under the hood it's the client-request structure; the user just sees a board.
@@ -82,7 +82,7 @@ class BoardActivity : AppCompatActivity() {
         val id = t.optString("id")
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 16, 40, 0) }
         val hist = TextView(this).apply { textSize = 13f; maxLines = 18 }
-        val steer = EditText(this).apply { hint = "steer — context continues, no rebuild" }
+        val steer = EditText(this).apply { hint = "steer - context continues, no rebuild" }
         box.addView(hist); box.addView(steer)
         val dlg = AlertDialog.Builder(this)
             .setTitle(t.optString("branch"))
@@ -90,7 +90,7 @@ class BoardActivity : AppCompatActivity() {
             .setPositiveButton("Steer") { _, _ ->
                 val txt = steer.text.toString().trim()
                 if (txt.isNotEmpty()) lifecycleScope.launch {
-                    try { DaemonClient.steerTrack(id, txt); toast("steer sent — session resuming") }
+                    try { DaemonClient.steerTrack(id, txt); toast("steer sent - session resuming") }
                     catch (e: Exception) { toast("daemon unreachable") }
                     refresh()
                 }

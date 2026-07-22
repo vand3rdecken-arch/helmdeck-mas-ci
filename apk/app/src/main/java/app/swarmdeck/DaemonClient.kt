@@ -27,7 +27,7 @@ object DaemonClient {
     suspend fun runs(): JSONArray = withContext(Dispatchers.IO) {
         http.newCall(req("/runs")).execute().use { r ->
             val idx = JSONArray(r.body!!.string())
-            HubStore.runIndex = idx   // hub caches the index — reviewable offline
+            HubStore.runIndex = idx   // hub caches the index - reviewable offline
             idx
         }
     }

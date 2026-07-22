@@ -1,4 +1,4 @@
-# SwarmDeck — acceptance (Define round, 2026-07-19)
+# SwarmDeck - acceptance (Define round, 2026-07-19)
 
 ## Definition (owner's answers)
 
@@ -6,7 +6,7 @@
 - v1 scope: **browser AND Windows both**.
 - Retention: **keep all** recordings.
 - **New repo, new app** (this repo), independent of glass-crud-harness.
-- **The APK rule: all important logic in the APK** — phone is the hub (auth, storage, index,
+- **The APK rule: all important logic in the APK** - phone is the hub (auth, storage, index,
   processing); cloud worker thin relay only; glasses pure viewer.
 - Task definition works **two ways**: describe→drive, and demonstrate→learn (record the owner's
   own PC actions once, distill into a playbook agents can run).
@@ -29,7 +29,7 @@
 ## Surface plan
 
 - **Glasses**: step feed per track + live glance (Herald-cast pattern). No video scrubbing.
-- **Phone (APK)**: the brain — pairing, index, review player, playbook library.
+- **Phone (APK)**: the brain - pairing, index, review player, playbook library.
 - **Desktop**: daemon + full review UI (timeline-first), teach-mode start/stop.
 
 ## Empty states

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SwarmDeck — surfaces, install &amp; UX</title>
+<title>SwarmDeck - surfaces, install &amp; UX</title>
 <style>
   :root{
     --bg:#0a0e13; --panel:#111a24; --panel2:#0e151d; --edge:#22303d;
@@ -99,7 +99,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Swarm<span class="k">Deck</span> — three surfaces, one recorder</h1>
+  <h1>Swarm<span class="k">Deck</span> - three surfaces, one recorder</h1>
   <p class="sub">A flight recorder for an agent swarm. The PC does the work and the capturing;
      the phone is the brain you carry; the glasses are a glance. Same recorder feeds all three.</p>
 
@@ -115,24 +115,24 @@
           <span class="dot" style="background:#27c93f"></span>
           <span style="margin-left:8px">localhost:8140</span></div>
         <div class="screen">
-          <h4>SwarmDeck — runs</h4>
+          <h4>SwarmDeck - runs</h4>
           <div class="run">
             <div class="m">20260719-092040 · agent · done · 5 steps</div>
             <ul class="steps">
-              <li><span class="t">1.5s</span>navigate — example.com</li>
-              <li><span class="t">1.7s</span>note — landed on page</li>
-              <li><span class="t">1.7s</span>click — 'More information' link</li>
-              <li class="flag"><span class="t">2.4s</span>⚑ flag — needs a look</li>
+              <li><span class="t">1.5s</span>navigate - example.com</li>
+              <li><span class="t">1.7s</span>note - landed on page</li>
+              <li><span class="t">1.7s</span>click - 'More information' link</li>
+              <li class="flag"><span class="t">2.4s</span>⚑ flag - needs a look</li>
             </ul>
             <div class="vid">screen.mp4 · drill-down evidence</div>
           </div>
           <div class="run">
             <div class="m">20260719-093140 · teach · done · demo</div>
-            <ul class="steps"><li><span class="t">0.0s</span>note — TEACH demo</li></ul>
+            <ul class="steps"><li><span class="t">0.0s</span>note - TEACH demo</li></ul>
           </div>
         </div>
       </div>
-      <div class="note"><b>Timeline first</b>, video second — scan ten agents in seconds, tap into footage only where it looks wrong.</div>
+      <div class="note"><b>Timeline first</b>, video second - scan ten agents in seconds, tap into footage only where it looks wrong.</div>
       <div class="note">Also the <b>daemon</b>: capture + control + serves this page. Runs from <code>run.bat</code>.</div>
     </div>
 
@@ -170,23 +170,23 @@
         <div class="lab">SWARMDECK · LIVE</div>
       </div>
       <div class="note"><b>No install, no typing.</b> A web URL opened once via the Meta AI app dev mode. Shows the newest frame + a step feed.</div>
-      <div class="note">Glance only — you never scrub video on the lens. Additive display: bright mint on black.</div>
+      <div class="note">Glance only - you never scrub video on the lens. Additive display: bright mint on black.</div>
     </div>
   </div>
 
   <!-- INSTALL -->
-  <p class="lead">Do you need an installer? — per surface</p>
+  <p class="lead">Do you need an installer? - per surface</p>
   <table>
     <tr><th>Surface</th><th>Install</th><th>How</th><th>Prereq</th></tr>
     <tr>
       <td><b>PC (daemon)</b></td>
-      <td class="yes">Yes — a run script</td>
+      <td class="yes">Yes - a run script</td>
       <td>Run <code>setup.bat</code> once, then <code>run.bat</code> to start. It prints the LAN address to pair.</td>
       <td>Python 3.10+ &amp; Edge (both already on this machine)</td>
     </tr>
     <tr>
       <td><b>Mobile (APK)</b></td>
-      <td class="yes">Yes — sideload once</td>
+      <td class="yes">Yes - sideload once</td>
       <td>Install <code>SwarmDeck-0.1-hub-debug.apk</code> via <code>adb install</code> or copy to phone &amp; tap. Built &amp; ready.</td>
       <td>Android 10+, "install unknown apps" on</td>
     </tr>
@@ -199,7 +199,7 @@
   </table>
 
   <!-- LOGIC / UX -->
-  <p class="lead">The logic &amp; UX — two ways in, one pipeline out</p>
+  <p class="lead">The logic &amp; UX - two ways in, one pipeline out</p>
   <div class="flow">
     <div class="card">
       <h4>1 · Describe → drive</h4>
@@ -226,11 +226,11 @@ agent replays it → recorded again</pre>
   </div>
   <div class="card" style="margin-top:16px">
     <h4 style="color:var(--amber)">The one rule that ties it together</h4>
-    <p class="note" style="border:0;padding:0">The <b>action timeline is always captured and is the primary review surface</b> — video is drill-down evidence keyed to it. An audit trail with an off-switch isn't an audit trail. That timeline is also the only view that fits the glasses, so it's what the swarm's status feed is built from.</p>
+    <p class="note" style="border:0;padding:0">The <b>action timeline is always captured and is the primary review surface</b> - video is drill-down evidence keyed to it. An audit trail with an off-switch isn't an audit trail. That timeline is also the only view that fits the glasses, so it's what the swarm's status feed is built from.</p>
   </div>
 
   <p class="foot">SwarmDeck v0.1 · PC daemon (verified) · mobile hub APK (built, 15&nbsp;MB) · glasses viewer ·
-     thin cloud relay (spec, not deployed). Cloud never holds recordings — the phone is the archive of record.</p>
+     thin cloud relay (spec, not deployed). Cloud never holds recordings - the phone is the archive of record.</p>
 </div>
 </body>
 </html>

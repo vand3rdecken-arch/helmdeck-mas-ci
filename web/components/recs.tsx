@@ -49,7 +49,7 @@ export default function RecsView() {
       <div className="panel" style={{ maxWidth: 560 }}>
         <h3>No recordings yet</h3>
         <div style={{ fontSize: 12.5, color: "var(--txt-secondary)" }}>
-          Record a demo (<b>swarm.py teach</b>), run a task, or dispatch a card — every agent run lands here
+          Record a demo (<b>swarm.py teach</b>), run a task, or dispatch a card - every agent run lands here
           as a step timeline with drill-down video.
         </div>
       </div>

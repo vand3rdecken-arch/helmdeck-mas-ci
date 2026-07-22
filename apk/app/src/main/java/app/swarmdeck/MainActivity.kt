@@ -62,7 +62,7 @@ class MainActivity : AppCompatActivity() {
                                     DaemonClient.teachStart(
                                         input.text.toString().ifBlank { "unnamed task" })
                                     teach.text = "Stop rec"
-                                    status.text = "recording your PC — do the task now"
+                                    status.text = "recording your PC - do the task now"
                                 }
                             }
                             .setNegativeButton("Cancel", null).show()
@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     try {
                         DaemonClient.demoTask()
-                        status.text = "browser demo started — watch Live"
+                        status.text = "browser demo started - watch Live"
                     } catch (e: Exception) { status.text = "daemon unreachable" }
                 }
             }
@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
                 renderIndex(DaemonClient.runs())
                 status.text = ""
             } catch (e: Exception) {
-                status.text = "daemon unreachable — showing cached index"
+                status.text = "daemon unreachable - showing cached index"
                 renderIndex(HubStore.runIndex)
             }
         }
@@ -118,7 +118,7 @@ class MainActivity : AppCompatActivity() {
             ids.add(m.optString("id"))
         }
         if (items.isEmpty()) {
-            items.add("No runs yet — record a demo or start a task on the desktop.")
+            items.add("No runs yet - record a demo or start a task on the desktop.")
         }
         list.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, items)
         list.setOnItemClickListener { _, _: View?, pos, _ ->

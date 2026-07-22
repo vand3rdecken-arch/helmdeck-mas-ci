@@ -134,15 +134,15 @@ function NextUp({ onOpen }: { onOpen: (t: Track) => void }) {
     .sort((a, b) => (PRIO_ORD[a.priority ?? "medium"] - PRIO_ORD[b.priority ?? "medium"]) || ((a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1));
   if (!items.length) return null;
   const why = (t: Track) =>
-    t.status === "bounced" ? "gate bounced — fix" :
+    t.status === "bounced" ? "gate bounced - fix" :
     t.status === "needs_you" ? "agent needs you" :
     t.mode === "human" ? "your step in the process" :
     t.mode === "teach" ? "demonstrate this once" :
-    t.mode === "cowork" ? "cowork — start together" : "next in process";
+    t.mode === "cowork" ? "cowork - start together" : "next in process";
   async function markDone(ev: React.MouseEvent, tid: string) {
     ev.stopPropagation();
     await post(`/tracks/${tid}/lane`, { lane: "done" });
-    toast("Step done — the chain advances");
+    toast("Step done - the chain advances");
     setTimeout(refresh, 600);
   }
   return (
@@ -227,9 +227,9 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
       setFlash(lane); setTimeout(() => setFlash(null), 900);
     }
     if (res?.gate_failed) {
-      toast("GATE FAILED — bounced back: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+      toast("GATE FAILED - bounced back: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
     } else {
-      toast(lane === "working" ? "Dispatched — session starting" : lane === "review" ? "Gate green — submitted" : lane === "done" ? "Accepted" : "Queued");
+      toast(lane === "working" ? "Dispatched - session starting" : lane === "review" ? "Gate green - submitted" : lane === "done" ? "Accepted" : "Queued");
     }
     setTimeout(refresh, 600);
   }

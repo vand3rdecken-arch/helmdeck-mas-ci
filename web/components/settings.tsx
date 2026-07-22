@@ -75,7 +75,7 @@ export default function SettingsView() {
   async function userAct(path: string, body: Record<string, unknown>, msg: string) {
     const r = await post<{ error?: string; token?: string }>(path, body);
     if (r.error) { toast(r.error, 3600); return; }
-    if (r.token) prompt("Device token — copy it now:", r.token);
+    if (r.token) prompt("Device token - copy it now:", r.token);
     else toast(msg);
     loadUsers();
   }
@@ -104,10 +104,10 @@ export default function SettingsView() {
         </div>
       </div>
       <div className="panel">
-        <h3>Automation policy — the flexible half of the loop</h3>
+        <h3>Automation policy - the flexible half of the loop</h3>
         <div style={{ fontSize: 12, color: "var(--txt-tertiary)", marginBottom: 10 }}>
-          How work flows is configurable (also via the copilot chat). What makes it trustable —
-          auth, the audit trail, the gate itself, driver commands — is fixed in code.
+          How work flows is configurable (also via the copilot chat). What makes it trustable -
+          auth, the audit trail, the gate itself, driver commands - is fixed in code.
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 7, margin: "6px 0", fontSize: 12.5, color: "var(--txt-primary)" }}>
           <input type="checkbox" checked={autoAccept}
@@ -130,7 +130,7 @@ export default function SettingsView() {
           <option value="urgent">urgent only</option>
           <option value="high">high + urgent</option>
         </select>
-        <label>Backdrop theme (ambient, behind the glass — data colors stay semantic)</label>
+        <label>Backdrop theme (ambient, behind the glass - data colors stay semantic)</label>
         <select style={{ width: 180 }} value={backdrop} onChange={async (e) => {
           const v = e.target.value;
           setBackdrop(v);
@@ -163,7 +163,7 @@ export default function SettingsView() {
         </div>
       </div>
       <div className="panel">
-        <h3>Data flows — import work from other systems</h3>
+        <h3>Data flows - import work from other systems</h3>
         <label>Jira Cloud (base URL · account email · API token · default JQL)</label>
         <div className="inline">
           <input placeholder="https://your.atlassian.net" style={{ width: 220 }} value={jBase} onChange={(e) => setJBase(e.target.value)} />
@@ -192,7 +192,7 @@ export default function SettingsView() {
             setBusyImp(true);
             const r = await post<{ id?: string; error?: string }>("/import/url", { url: impUrl.trim() });
             setBusyImp(false);
-            toast(r.error ? r.error : "Imported — the agent is proposing steps (see Processes)", 5000);
+            toast(r.error ? r.error : "Imported - the agent is proposing steps (see Processes)", 5000);
           }}>Import page</button>
         </div>
       </div>

@@ -26,7 +26,7 @@ Three nested loops:
 
 ## Fixed vs. flexible
 
-**Fixed — the harness (code, unreachable from chat/config):**
+**Fixed - the harness (code, unreachable from chat/config):**
 - auth, users, roles, sessions, device tokens
 - the audit trail: append-only events, non-optional recording, git history
 - gate-before-review; measured economics (display is configurable,
@@ -35,7 +35,7 @@ Three nested loops:
 - driver commands (what executes on the machine)
 - the capability charter core
 
-**Flexible — policy (data in `settings.json`, editable in Settings or via
+**Flexible - policy (data in `settings.json`, editable in Settings or via
 copilot, per `policy.chat_configure_roles`):**
 - lane labels; automation (`auto_dispatch_modes`, `auto_accept_green`,
   priority self-dispatch); capacity, tariffs, value, prices, currency
@@ -44,7 +44,7 @@ copilot, per `policy.chat_configure_roles`):**
 
 Every policy change creates a **checkpoint** (settings + connectors snapshot,
 actor-attributed) with reversible restore. Checkpoints roll back the machine,
-never history — work data is immutable record.
+never history - work data is immutable record.
 
 ## The trust pipeline for buildable things
 
@@ -83,7 +83,7 @@ web (Next.js :3300) ──proxy /backend/*──► daemon (Python :8140)
 apk / glasses / worker: companion surfaces per the APK rule (thin, never the brain)
 ```
 
-Storage is JSON files (tracks/events/users/settings) — right for a
+Storage is JSON files (tracks/events/users/settings) - right for a
 single-tenant daemon; the known upgrade path is per-track turn locks →
 SQLite → SSE push, none of which changes anything above the storage layer.
 

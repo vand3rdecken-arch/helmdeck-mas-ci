@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Windows screen capture via the imageio-ffmpeg bundled ffmpeg (no system install).
 One ffmpeg process, two outputs: screen.mp4 (the recording) and live.jpg (newest frame,
-overwritten ~1/s — the Herald-cast-style glance feed the APK/glasses viewer reads)."""
+overwritten ~1/s - the Herald-cast-style glance feed the APK/glasses viewer reads)."""
 import os, signal, subprocess
 import imageio_ffmpeg
 
@@ -27,7 +27,7 @@ def stop(proc):
     if proc.poll() is not None:
         return
     try:
-        proc.stdin.write(b"q")   # ffmpeg's own quit key — clean finalize
+        proc.stdin.write(b"q")   # ffmpeg's own quit key - clean finalize
         proc.stdin.flush()
         proc.wait(timeout=10)
     except Exception:

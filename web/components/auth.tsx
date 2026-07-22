@@ -48,7 +48,7 @@ export default function AuthGate() {
           <>
             <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Create the owner account</h3>
             <div style={{ fontSize: 12, color: "var(--txt-tertiary)", marginBottom: 12 }}>
-              First run — this account manages everything, including other users.
+              First run - this account manages everything, including other users.
             </div>
           </>
         ) : (

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Instrumented agent browser: Playwright drives Edge, records video natively, and every
 action goes through act() so the timeline and the footage share one clock. Agents use this
-instead of a raw browser — that's what makes their browser work auditable."""
+instead of a raw browser - that's what makes their browser work auditable."""
 import os
 from playwright.sync_api import sync_playwright
 from actionlog import ActionLog

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>SwarmDeck — what a card IS</title>
+<title>SwarmDeck - what a card IS</title>
 <style>
   :root{--bg:#0a0e13;--panel:#111a24;--panel2:#0e151d;--edge:#24303c;--ink:#e3edf6;
         --dim:#8fb0c9;--faint:#5d7488;--mint:#2affc0;--blue:#6fb2e8;--amber:#ffd166;
@@ -60,31 +60,31 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>A card is <b>a branch with a living session</b> — not a commit</h1>
+  <h1>A card is <b>a branch with a living session</b> - not a commit</h1>
   <p class="sub">One card = one deliverable. Commits are what the card <i>produces</i> along the way (many per card).</p>
 
-  <p class="lead">1 · What one card IS — four things bound together</p>
+  <p class="lead">1 · What one card IS - four things bound together</p>
   <div class="idrow">
     <div class="card">
       <b>Fix login redirect loop</b>
       <div class="m">fix/login-bug · 7 turns · needs_you</div>
-      <div class="r">"Found it — Safari drops the session cookie on 302. Patched, added a test. Ship it?"</div>
+      <div class="r">"Found it - Safari drops the session cookie on 302. Patched, added a test. Ship it?"</div>
     </div>
     <div class="eq">=</div>
     <div class="ids">
       <div class="id branch"><div class="t">git branch</div><div class="v">fix/login-bug</div>
-        <div class="d">the deliverable — where commits accumulate</div></div>
+        <div class="d">the deliverable - where commits accumulate</div></div>
       <div class="id sess"><div class="t">claude session</div><div class="v">session_id: 9823bb6b…</div>
-        <div class="d">the conversation — resumes, never rebuilt</div></div>
+        <div class="d">the conversation - resumes, never rebuilt</div></div>
       <div class="id wt"><div class="t">worktree</div><div class="v">swarmdeck-worktrees/fix-login-bug/</div>
-        <div class="d">its own folder — parallel cards can't collide</div></div>
+        <div class="d">its own folder - parallel cards can't collide</div></div>
       <div class="id rec"><div class="t">flight recording</div><div class="v">actions.jsonl + video</div>
-        <div class="d">every steer & reply — the receipts</div></div>
+        <div class="d">every steer & reply - the receipts</div></div>
     </div>
   </div>
   <p class="one">Select the card anywhere (desktop, phone, glasses) → you continue <code>session 9823bb6b</code> on <code>fix/login-bug</code> exactly where it left off. <b>1 card : 1 branch : 1 session : 1 recording : many commits.</b></p>
 
-  <p class="lead">2 · What a lane move DOES — the drag is the verb</p>
+  <p class="lead">2 · What a lane move DOES - the drag is the verb</p>
   <div class="lanes">
     <div class="lane l1"><span class="arrow">▶</span>
       <h3>Backlog</h3><div class="verb">request filed</div>
@@ -123,14 +123,14 @@
       <ul>
         <li>deliverable taken</li>
         <li>branch ready to <b>merge / PR</b></li>
-        <li>session kept — reopen<br>&nbsp;&nbsp;any time, context intact</li>
+        <li>session kept - reopen<br>&nbsp;&nbsp;any time, context intact</li>
         <li>recording archived</li>
       </ul>
       <div class="drag">= client structure: filed → dispatched → submitted → accepted</div>
     </div>
   </div>
 
-  <p class="lead">3 · Inside one card's life — session vs commits</p>
+  <p class="lead">3 · Inside one card's life - session vs commits</p>
   <div class="strip">
     <pre class="flow"><span class="n">card dispatched</span>
 <span class="s">steer 1</span> "fix the redirect loop"   → <span class="r">agent works</span> → <span class="c">commit a1f</span> "repro test"
@@ -141,12 +141,12 @@
     <div class="key"><span class="k1">■ steer (you)</span><span class="k2">■ session turn (agent)</span><span class="k3">■ commit (git)</span><span class="k4">■ deliverable</span></div>
   </div>
 
-  <div class="not"><b>So, not this:</b> a card per commit (too fine — you'd drown), or a card per repo (too coarse — one conversation about everything). A card is the unit you'd naturally review and accept: <b>one branch-sized piece of work with its own memory.</b></div>
+  <div class="not"><b>So, not this:</b> a card per commit (too fine - you'd drown), or a card per repo (too coarse - one conversation about everything). A card is the unit you'd naturally review and accept: <b>one branch-sized piece of work with its own memory.</b></div>
 
   <p class="lead">4 · Where HARNESS and LOOP fit</p>
   <div class="idrow" style="grid-template-columns:1fr 60px 1fr;align-items:start">
     <div class="strip" style="margin-top:0">
-      <h3 style="margin:0 0 4px;color:var(--blue);font-size:15px">HARNESS — belongs to the REPO</h3>
+      <h3 style="margin:0 0 4px;color:var(--blue);font-size:15px">HARNESS - belongs to the REPO</h3>
       <div class="key" style="margin:0 0 8px">the standing environment every card inherits through its worktree</div>
       <pre class="flow">repo/
 ├ <span class="b">CLAUDE.md / AGENTS.md</span>   <span class="n">the rules & runbook</span>
@@ -159,7 +159,7 @@
     </div>
     <div class="eq" style="padding-top:60px">+</div>
     <div class="strip" style="margin-top:0">
-      <h3 style="margin:0 0 4px;color:var(--amber);font-size:15px">LOOP — belongs to the CARD</h3>
+      <h3 style="margin:0 0 4px;color:var(--amber);font-size:15px">LOOP - belongs to the CARD</h3>
       <div class="key" style="margin:0 0 8px">two nested state machines, one per card</div>
       <pre class="flow"><span class="s">outer loop = the lanes</span>  <span class="n">(who has the ball)</span>
 backlog → working → review → done
@@ -173,10 +173,10 @@ define → build → verify → commit
 when its inner loop is green</span>  <span class="n">(gates passed)</span></pre>
     </div>
   </div>
-  <p class="one" style="max-width:980px">So your instinct is right, with one refinement each: the <b>harness</b> is not per-branch —
+  <p class="one" style="max-width:980px">So your instinct is right, with one refinement each: the <b>harness</b> is not per-branch -
   it's the repo's toolbox, rules and data context, and every branch <i>inherits</i> it by running inside a worktree of that repo.
   The <b>loop</b> is per-card, and it's two loops nested: the lanes are the outer workflow (ownership handoffs between you and the agent),
-  while the harness's own quality loop (define → build → verify → commit) runs <i>inside</i> the Working lane —
+  while the harness's own quality loop (define → build → verify → commit) runs <i>inside</i> the Working lane -
   and the submit-to-Review move is the gate where the inner loop must be green.</p>
 </div>
 </body>

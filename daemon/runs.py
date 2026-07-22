@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Run folders: recordings/<run-id>/ with meta.json, actions.jsonl, video files.
-Keep-all retention (owner decision) — nothing here ever deletes a run."""
+Keep-all retention (owner decision) - nothing here ever deletes a run."""
 import json, os, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))

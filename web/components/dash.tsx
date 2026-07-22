@@ -29,8 +29,8 @@ export default function DashView() {
     value_delivered: [cur + T.value_delivered, "value delivered"],
     ai_spend: ["$" + T.ai_spend.toFixed(2), "AI spend"],
     margin: [cur + T.margin, "margin (value − AI)"],
-    yield: [y1 ? Math.round(100 * y0 / y1) + "%" : "—", `first-pass yield (${y0}/${y1})`],
-    automation: [a1 ? Math.round(100 * a0 / a1) + "%" : "—", `automation rate (${a0}/${a1} auto)`],
+    yield: [y1 ? Math.round(100 * y0 / y1) + "%" : "-", `first-pass yield (${y0}/${y1})`],
+    automation: [a1 ? Math.round(100 * a0 / a1) + "%" : "-", `automation rate (${a0}/${a1} auto)`],
     leverage: [cur + T.leverage_per_touch, "value per touch unit"],
   };
   const tileKeys = (met.settings?.dashboard?.tiles ?? Object.keys(TILE)).filter((k) => TILE[k]);
@@ -85,7 +85,7 @@ export default function DashView() {
         </div>
       )}
       {panels.includes("capacity") && <div className="panel">
-        <h3>Capacity — take more work, or automate?</h3>
+        <h3>Capacity - take more work, or automate?</h3>
         <div style={{ fontSize: 12.5, color: "var(--txt-secondary)" }}>
           today {c.touches_today}/{c.touch_budget_day} touch units ({pct}%) · WIP {c.wip}/{c.wip_limit} · headroom{" "}
           <b style={{ color: "var(--ok)" }}>{c.headroom} cards</b>
@@ -103,14 +103,14 @@ export default function DashView() {
         </div>
         <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--glass-border)", lineHeight: 1.6 }}>
           <b style={{ color: "var(--txt-secondary)" }}>How to read this:</b>{" "}
-          <b>WIP</b> = cards in Working vs your limit — how many running agents you can supervise at once.{" "}
-          <b>Touch units</b> = your attention as currency (steer 1 · review 1 · bounce 3) against a daily budget — humans are fixed capacity, so attention is the scarce input, not minutes.{" "}
-          <b>Headroom</b> = WIP slots left: above zero, take more work (an extra card only costs tokens); at zero, don&apos;t hire your evening — automate the top gate failure instead.{" "}
+          <b>WIP</b> = cards in Working vs your limit - how many running agents you can supervise at once.{" "}
+          <b>Touch units</b> = your attention as currency (steer 1 · review 1 · bounce 3) against a daily budget - humans are fixed capacity, so attention is the scarce input, not minutes.{" "}
+          <b>Headroom</b> = WIP slots left: above zero, take more work (an extra card only costs tokens); at zero, don&apos;t hire your evening - automate the top gate failure instead.{" "}
           All three thresholds are policy: Settings, or tell the copilot.
         </div>
       </div>}
       {panels.includes("gates") && <div className="panel">
-        <h3>Gate failures — what to fix in the harness next</h3>
+        <h3>Gate failures - what to fix in the harness next</h3>
         {!met.gate_failures.length && <div style={{ color: "var(--txt-tertiary)", fontSize: 12.5 }}>none recorded yet</div>}
         {met.gate_failures.map(([k, n]) => (
           <div key={k} className="hbar">
@@ -122,7 +122,7 @@ export default function DashView() {
       </div>}
       {panels.includes("models") && met.ai_by_model && Object.keys(met.ai_by_model).length > 0 && (
         <div className="panel">
-          <h3>AI usage by model — what a unit of agent work costs</h3>
+          <h3>AI usage by model - what a unit of agent work costs</h3>
           <table>
             <thead><tr><th>model</th><th className="num">turns</th><th className="num">tokens in</th>
               <th className="num">tokens out</th><th className="num">total $</th><th className="num">avg $/turn</th></tr></thead>
@@ -145,7 +145,7 @@ export default function DashView() {
         </div>
       )}
       {panels.includes("work") && <div className="panel">
-        <h3>Work done — <span style={{ color: "var(--ai)" }}>■</span> AI ($) · <span style={{ color: "var(--human)" }}>■</span> human (touch units)</h3>
+        <h3>Work done - <span style={{ color: "var(--ai)" }}>■</span> AI ($) · <span style={{ color: "var(--human)" }}>■</span> human (touch units)</h3>
         <div style={{ overflowX: "auto" }}>
           <table>
             <thead>
@@ -157,7 +157,7 @@ export default function DashView() {
               {met.cards.map((x) => (
                 <tr key={x.id}>
                   <td>{x.task}</td><td>{x.lane}</td>
-                  <td>{(x.models[0] ?? "—").replace("claude-", "")}</td>
+                  <td>{(x.models[0] ?? "-").replace("claude-", "")}</td>
                   <td className="num">{x.tokens_in}/{x.tokens_out}</td>
                   <td className="num">{x.ai_cost.toFixed(2)}</td>
                   <td className="num">{x.touches}</td>
@@ -169,7 +169,7 @@ export default function DashView() {
                   </td>
                   <td className="num">{cur}{x.value}</td>
                   <td className="num">{cur}{(x.value - x.ai_cost).toFixed(2)}</td>
-                  <td>{x.mode ?? "—"}</td>
+                  <td>{x.mode ?? "-"}</td>
                 </tr>
               ))}
             </tbody>

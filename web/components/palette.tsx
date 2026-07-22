@@ -57,7 +57,7 @@ export default function Palette({ onOpen, onNav, onClose }: {
         if (e.key === "Escape") onClose();
       }}>
         <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="Search cards, jump to views — or  >  to command the copilot" />
+          placeholder="Search cards, jump to views - or  >  to command the copilot" />
         <div id="pallist">
           {items.map((it, i) => (
             <div key={i} className={`palrow${i === sel ? " sel" : ""}`}

@@ -98,7 +98,7 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
           <b>Board copilot</b> = talk <i>about</i> work (the manager). ·{" "}
           <b>Card chat</b> = talk <i>to</i> a worker (does the work). ·{" "}
           <b>Branch</b> = that worker&apos;s memory. · <b>Commits</b> = its saved states (the dots below). ·{" "}
-          <b>Fork</b> = start a new card from any state — nothing is ever overwritten.
+          <b>Fork</b> = start a new card from any state - nothing is ever overwritten.
         </div>
       </div>
       <div id="gantt">
@@ -129,16 +129,16 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
       </div>
       <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--txt-tertiary)" }}>
         every dot = a commit (hover it) · every row = a card&apos;s branch (click → the card) ·{" "}
-        row color = the card&apos;s lane · this comes straight from git — the audit trail nobody can redraw
+        row color = the card&apos;s lane · this comes straight from git - the audit trail nobody can redraw
       </div>
       <div className="panel" style={{ marginTop: 16, maxWidth: 860 }}>
-        <h3>Config checkpoints — every change to the software&apos;s settings &amp; connectors</h3>
+        <h3>Config checkpoints - every change to the software&apos;s settings &amp; connectors</h3>
         <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", margin: "-4px 0 10px" }}>
-          policy/settings and connector edits (not code — that&apos;s the git graph above).
+          policy/settings and connector edits (not code - that&apos;s the git graph above).
           Click a row to see exactly what changed.
         </div>
         {!cps.length && <div style={{ fontSize: 12.5, color: "var(--txt-tertiary)" }}>
-          none yet — the next settings change, connector install or template addition creates one</div>}
+          none yet - the next settings change, connector install or template addition creates one</div>}
         <table>
           <tbody>
             {cps.slice(0, 20).map((c) => {
@@ -158,9 +158,9 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
                     <button className="btn ghost" style={{ fontSize: 11 }} onClick={async (ev) => {
                       ev.stopPropagation();
                       if (!confirm(`Restore the workspace config to before "${c.reason}"?
-(Reversible — the current state is checkpointed first. Work data is untouched.)`)) return;
+(Reversible - the current state is checkpointed first. Work data is untouched.)`)) return;
                       const r = await post<{ error?: string }>(`/checkpoints/${c.id}/restore`, {});
-                      toast(r.error ?? "Restored — current state was checkpointed first", 5000);
+                      toast(r.error ?? "Restored - current state was checkpointed first", 5000);
                       loadCps(); refresh();
                     }}><IconUndo size={11} /> restore</button>
                   )}
@@ -196,7 +196,7 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
         </table>
       </div>
       <div className="panel" style={{ marginTop: 16, maxWidth: 860 }}>
-        <h3>Structural debt — load-bearing shortcuts the program knows about</h3>
+        <h3>Structural debt - load-bearing shortcuts the program knows about</h3>
         {debt.map((d) => (
           <div key={d.id} style={{ padding: "9px 0", borderBottom: "1px solid var(--glass-border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

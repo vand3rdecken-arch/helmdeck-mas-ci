@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Distiller: demonstration -> playbook. Feeds the demo's action timeline to a headless
 claude run and asks for an editable, agent-executable playbook. The playbook is TEXT the
-owner reviews before any agent runs it — that's the safety gate of demonstrate->learn."""
+owner reviews before any agent runs it - that's the safety gate of demonstrate->learn."""
 import json, os, subprocess, sys
 from actionlog import read_timeline
 from runs import REC, load_meta

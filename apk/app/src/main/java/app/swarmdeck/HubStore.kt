@@ -8,7 +8,7 @@ import org.json.JSONArray
 import java.io.File
 
 /**
- * The hub's memory — THE APK RULE lives here: pairing secret, daemon address, the recording
+ * The hub's memory - THE APK RULE lives here: pairing secret, daemon address, the recording
  * index, and downloaded recordings are all stored ON THE PHONE. The cloud never sees them.
  */
 object HubStore {
@@ -33,12 +33,12 @@ object HubStore {
         get() = prefs.getString("pairSecret", "") ?: ""
         set(v) { prefs.edit().putString("pairSecret", v).apply() }
 
-    /** Last repo path used when filing a request — saves phone typing. */
+    /** Last repo path used when filing a request - saves phone typing. */
     var lastRepo: String
         get() = prefs.getString("lastRepo", "") ?: ""
         set(v) { prefs.edit().putString("lastRepo", v).apply() }
 
-    /** Cached run index (JSON as served by the daemon /runs) — usable offline. */
+    /** Cached run index (JSON as served by the daemon /runs) - usable offline. */
     var runIndex: JSONArray
         get() = try { JSONArray(prefs.getString("runIndex", "[]")) } catch (e: Exception) { JSONArray() }
         set(v) { prefs.edit().putString("runIndex", v.toString()).apply() }
