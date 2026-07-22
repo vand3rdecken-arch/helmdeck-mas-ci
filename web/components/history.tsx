@@ -6,6 +6,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { get, post, Track } from "@/lib/api";
 import { laneColor, useBoard } from "@/lib/store";
+import { IconFork, IconUndo, IconChevron } from "./icons";
 
 interface Commit { h: string; msg: string; author: string; date: string }
 interface Branch { name: string; commits: Commit[]; track: string | null; task: string; lane: string | null; client: string }
@@ -69,7 +70,7 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
         {onFork && (
           <button className="btn ghost" style={{ fontSize: 10, padding: "1px 6px", flexShrink: 0 }}
             title="start a new card from this branch's state (append-only, source untouched)"
-            onClick={(ev) => { ev.stopPropagation(); onFork(); }}>⑂ fork</button>
+            onClick={(ev) => { ev.stopPropagation(); onFork(); }}><IconFork size={10} /> fork</button>
         )}
       </div>
       <div className="g-track" style={{ width: W, height: 40 }}>
@@ -149,7 +150,7 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
                 <td style={{ width: 150, fontSize: 12, color: "var(--txt-tertiary)" }}>{c.ts}</td>
                 <td style={{ width: 90 }}><b style={{ fontWeight: 600 }}>{c.actor}</b></td>
                 <td style={{ fontSize: 12.5 }}>
-                  <span style={{ color: "var(--txt-tertiary)", marginRight: 6 }}>{isOpen ? "▾" : "▸"}</span>
+                  <span style={{ color: "var(--txt-tertiary)", marginRight: 6, display: "inline-flex", verticalAlign: "middle" }}><IconChevron dir={isOpen ? "down" : "right"} size={11} /></span>
                   {c.reason}
                 </td>
                 <td style={{ textAlign: "right", width: 100 }}>
@@ -161,7 +162,7 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
                       const r = await post<{ error?: string }>(`/checkpoints/${c.id}/restore`, {});
                       toast(r.error ?? "Restored — current state was checkpointed first", 5000);
                       loadCps(); refresh();
-                    }}>↩ restore</button>
+                    }}><IconUndo size={11} /> restore</button>
                   )}
                 </td>
               </tr>

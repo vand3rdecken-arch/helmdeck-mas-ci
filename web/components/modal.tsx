@@ -2,13 +2,14 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
+import { IconBug, IconSparkle, IconMonitor, IconGlobe, IconSearch, IconChevron } from "./icons";
 
 const EXAMPLES = [
-  { label: "🐛 bug fix", task: "Fix: the dashboard capacity gauge shows 0% when touch budget is 0 — guard the division and show a hint instead.", driver: "claude" },
-  { label: "✨ feature", task: "Add a CSV export button to the dashboard work table (all columns, current filters applied).", driver: "claude" },
-  { label: "🖥 desktop task", task: "Open the invoice tool, export June as PDF into Downloads, and verify the file exists.", driver: "claude-desktop" },
-  { label: "🌐 browser task", task: "Go to the supplier portal, download the latest price list, and summarize what changed vs the file in data/prices.csv.", driver: "claude-desktop" },
-  { label: "🔍 research", task: "Read the three competitor changelogs linked in docs/watchlist.md and write a one-page summary of what shipped this month.", driver: "claude" },
+  { icon: IconBug, label: "bug fix", task: "Fix: the dashboard capacity gauge shows 0% when touch budget is 0 — guard the division and show a hint instead.", driver: "claude" },
+  { icon: IconSparkle, label: "feature", task: "Add a CSV export button to the dashboard work table (all columns, current filters applied).", driver: "claude" },
+  { icon: IconMonitor, label: "desktop task", task: "Open the invoice tool, export June as PDF into Downloads, and verify the file exists.", driver: "claude-desktop" },
+  { icon: IconGlobe, label: "browser task", task: "Go to the supplier portal, download the latest price list, and summarize what changed vs the file in data/prices.csv.", driver: "claude-desktop" },
+  { icon: IconSearch, label: "research", task: "Read the three competitor changelogs linked in docs/watchlist.md and write a one-page summary of what shipped this month.", driver: "claude" },
 ];
 
 export default function NewRequestModal({ onClose }: { onClose: () => void }) {
@@ -52,12 +53,15 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
       <div id="mcard">
         <h3>New request</h3>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-          {EXAMPLES.map((ex) => (
-            <button key={ex.label} className="btn ghost" style={{ fontSize: 11, padding: "2px 9px" }}
-              title={ex.task} onClick={() => { setTask(ex.task); setDriver(ex.driver); }}>
-              {ex.label}
-            </button>
-          ))}
+          {EXAMPLES.map((ex) => {
+            const Ic = ex.icon;
+            return (
+              <button key={ex.label} className="btn ghost" style={{ fontSize: 11, padding: "2px 9px" }}
+                title={ex.task} onClick={() => { setTask(ex.task); setDriver(ex.driver); }}>
+                <Ic size={12} />{ex.label}
+              </button>
+            );
+          })}
         </div>
         <textarea placeholder="What needs doing — that's all that's required. Repo comes from your preset."
           value={task} onChange={(e) => setTask(e.target.value)} autoFocus />
@@ -78,7 +82,8 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
             Fill them above, or click <b>File to Backlog</b> again to file as-is.
           </div>
         )}
-        <div className="adv" onClick={() => setAdv(!adv)}>▸ advanced (repo / branch / value / client / driver)</div>
+        <div className="adv" onClick={() => setAdv(!adv)} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <IconChevron dir={adv ? "down" : "right"} size={11} /> advanced (repo / branch / value / client / driver)</div>
         {adv && <>
           <div className="row"><input style={{ flex: 1 }} placeholder="repo path (default preset used if empty)" value={repo} onChange={(e) => setRepo(e.target.value)} /></div>
           <div className="row">

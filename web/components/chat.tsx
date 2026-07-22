@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { get, post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
-import { IconChat } from "./icons";
+import { IconChat, IconX } from "./icons";
 import Composer, { SendOpts } from "./composer";
 
 interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
@@ -55,7 +55,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
       <div className="ch">
         <b>Board copilot</b>
         <button className="x" style={{ marginLeft: "auto", color: "var(--txt-tertiary)", padding: "2px 8px" }}
-          onClick={() => setOpen(false)}>✕</button>
+          onClick={() => setOpen(false)}><IconX size={13} /></button>
       </div>
       <div id="chatlog" ref={logRef}>
         {msgs.map((m, i) => <div key={i} className={`cb ${m.cls}`}>{m.text}</div>)}

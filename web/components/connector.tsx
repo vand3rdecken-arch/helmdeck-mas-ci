@@ -4,6 +4,7 @@
 // Agents author data flows; the app authors pixels.
 import { useState } from "react";
 import { post, Track } from "@/lib/api";
+import { IconPlay, IconUndo } from "./icons";
 import { useBoard } from "@/lib/store";
 import { Card } from "./board";
 
@@ -41,7 +42,7 @@ export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; o
         <h3>Connector · {conn.name}</h3>
         <div style={{ fontSize: 13, color: "var(--txt-secondary)", marginBottom: 10 }}>{conn.description}</div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn primary" disabled={busy} onClick={runNow}>{busy ? "running…" : "▶ Run now"}</button>
+          <button className="btn primary" disabled={busy} onClick={runNow}>{busy ? "running…" : <><IconPlay size={12} /> Run now</>}</button>
           <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>every</span>
           <input type="number" style={{ width: 70 }} placeholder="—" value={mins} onChange={(e) => setMins(e.target.value)} />
           <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>minutes</span>
@@ -52,7 +53,7 @@ export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; o
               const r = await post<{ restored?: string; error?: string }>(`/connectors/${conn.name}/rollback`, {});
               toast(r.error ?? `Restored ${r.restored}`, 4500);
               refresh();
-            }}>↩ rollback ({conn.versions})</button>
+            }}><IconUndo size={12} /> rollback ({conn.versions})</button>
           )}
           <span style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginLeft: "auto" }}>
             last run: {conn.last_run ?? "never"}

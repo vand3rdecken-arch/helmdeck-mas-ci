@@ -89,12 +89,6 @@ export const STATUS: Record<string, [string, string]> = {
   accepted: ["Accepted", "var(--ok)"], bounced: ["Bounced", "var(--danger)"],
 };
 export const PRIO_ORD: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-export const MODE_ICON: Record<string, string> = {
-  do: "🤖 do", prepare: "✍ prepare", cowork: "🤝 cowork", teach: "🎓 teach", human: "👤 human",
-};
-export const MODE_EMOJI: Record<string, string> = {
-  do: "🤖", prepare: "✍", cowork: "🤝", teach: "🎓", human: "👤",
-};
 export function laneColor(l?: string) {
   return { backlog: "var(--txt-tertiary)", working: "var(--ai)", review: "var(--human)", done: "var(--ok)" }[l ?? ""] ?? "var(--txt-tertiary)";
 }
