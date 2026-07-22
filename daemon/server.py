@@ -541,10 +541,20 @@ class H(BaseHTTPRequestHandler):
                 if not text:
                     return self._send(400, json.dumps({"error": "text required"}))
                 try:
-                    return self._send(200, json.dumps(copilot.chat(user["name"], text, role=user["role"])))
+                    return self._send(200, json.dumps(copilot.chat(user["name"], text, role=user["role"], model=body.get("model", ""))))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "rollback":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import connectors, events
+                try:
+                    prev = connectors.rollback(parts[1])
+                    events.emit("connector", "-", action="rollback", name=parts[1], actor=user["name"])
+                    return self._send(200, json.dumps({"restored": prev}))
+                except Exception as e:
+                    return self._send(400, json.dumps({"error": str(e)[:300]}))
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "run":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))

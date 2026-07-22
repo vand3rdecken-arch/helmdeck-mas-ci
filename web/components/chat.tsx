@@ -14,6 +14,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
   }]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const hydrated = useRef(false);
 
@@ -36,7 +37,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     setMsgs((m) => [...m, { cls: "you", text: v }, { cls: "think", text: "thinking + acting…" }]);
     setBusy(true);
     try {
-      const r = await post<{ reply?: string; actions?: string[]; error?: string }>("/chat", { text: v });
+      const r = await post<{ reply?: string; actions?: string[]; error?: string }>("/chat", { text: v, model });
       setMsgs((m) => {
         const out = m.filter((x) => x.cls !== "think");
         if (r.error) return [...out, { cls: "bot" as const, text: "⚠ " + r.error }];
@@ -55,7 +56,13 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     <div id="chat">
       <div className="ch">
         <b>Board copilot</b>
-        <span style={{ fontSize: 11, color: "var(--txt-tertiary)", marginLeft: 8 }}>chat steers the board</span>
+        <select value={model} onChange={(e) => setModel(e.target.value)}
+          style={{ marginLeft: 10, fontSize: 11, padding: "1px 20px 1px 8px", height: 22 }}
+          title="model for this chat - haiku is fast/cheap, opus is deepest">
+          <option value="">sonnet (default)</option>
+          <option value="haiku">haiku · fast</option>
+          <option value="opus">opus · deep</option>
+        </select>
         <button className="x" style={{ marginLeft: "auto", color: "var(--txt-tertiary)", padding: "2px 8px" }}
           onClick={() => setOpen(false)}>✕</button>
       </div>

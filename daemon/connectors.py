@@ -19,7 +19,7 @@ Contract for a connector module:
 
 Scheduling: settings.connectors {name: {"every_minutes": N}} - the poller
 runs due connectors and files whatever they return."""
-import importlib.util, json, os, shutil, threading, time
+import importlib.util, json, os, shutil, subprocess, sys, threading, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CDIR = os.path.join(ROOT, "connectors")
@@ -44,14 +44,41 @@ def build_task(name, spec):
     return ("INTEGRATION BUILD: " + spec + "\n\n" +
             CONTRACT % {"name": pyname, "spec": spec, "pyname": pyname})
 
+VDIR = os.path.join(CDIR, "_versions")
+os.makedirs(VDIR, exist_ok=True)
+
+def _archive(name):
+    """Safeguard the current version before any overwrite - rollback fuel."""
+    cur = os.path.join(CDIR, name + ".py")
+    if os.path.exists(cur):
+        shutil.copy2(cur, os.path.join(VDIR, "%s.%s.py" % (name, time.strftime("%Y%m%d-%H%M%S"))))
+
+def versions(name):
+    pre = name + "."
+    return sorted(f for f in os.listdir(VDIR) if f.startswith(pre) and f.endswith(".py"))
+
+def rollback(name):
+    """Restore the previous version (current one is archived too, so a
+    rollback is itself reversible)."""
+    vs = versions(name)
+    if not vs:
+        raise RuntimeError("no previous version of " + name)
+    _archive(name)
+    prev = vs[-1]
+    shutil.copy2(os.path.join(VDIR, prev), os.path.join(CDIR, name + ".py"))
+    os.remove(os.path.join(VDIR, prev))
+    return prev
+
 def install_from_worktree(track):
-    """Called on accept of a connector card: copy its connectors/*.py live."""
+    """Called on accept of a connector card: copy its connectors/*.py live.
+    The existing version (if any) is archived first - originals are never lost."""
     src = os.path.join(track.get("worktree") or "", "connectors")
     if not os.path.isdir(src):
         return []
     installed = []
     for f in os.listdir(src):
         if f.endswith(".py") and not f.startswith("_"):
+            _archive(f[:-3])
             shutil.copy2(os.path.join(src, f), os.path.join(CDIR, f))
             installed.append(f)
     return installed
@@ -68,8 +95,25 @@ def list_connectors():
             desc = getattr(mod, "DESCRIPTION", "")
         except Exception as e:
             desc = "load error: %s" % str(e)[:80]
-        out.append({"name": name, "description": desc, "last_run": _state().get(name)})
+        out.append({"name": name, "description": desc, "last_run": _state().get(name),
+                    "versions": len(versions(name))})
     return out
+
+def _run_sandboxed(name, timeout=90):
+    """Run the connector in a SEPARATE python process: it cannot touch the
+    daemon's memory/board state, and a hang/crash cannot take the daemon down.
+    Only its JSON stdout comes back."""
+    code = ("import json,sys;sys.path.insert(0,%r);"
+            "import %s as m;print(json.dumps(m.run()))" % (CDIR, name))
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                       text=True, timeout=timeout, cwd=CDIR)
+    if r.returncode != 0:
+        raise RuntimeError("connector failed: " + (r.stderr or "").strip()[-300:])
+    line = (r.stdout or "").strip().splitlines()
+    items = json.loads(line[-1]) if line else []
+    if not isinstance(items, list):
+        raise RuntimeError("connector must return a list")
+    return items
 
 def _load(name):
     fp = os.path.join(CDIR, name + ".py")
@@ -95,8 +139,7 @@ def run_connector(name, actor="owner"):
     repo = events.settings().get("default_repo")
     if not repo:
         raise RuntimeError("no default_repo preset")
-    mod = _load(name)
-    items = mod.run() or []
+    items = _run_sandboxed(name)
     made = []
     for i, it in enumerate(items[:20]):
         if not it.get("task"):
