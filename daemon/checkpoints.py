@@ -49,6 +49,51 @@ def list_checkpoints():
             pass
     return out[:KEEP]
 
+def _read_settings(dpath):
+    try:
+        with open(os.path.join(dpath, "settings.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+def _flat(d, prefix=""):
+    """Flatten nested settings to dotted keys so a change reads like
+    'appearance.backdrop'. Lists/scalars are leaves."""
+    out = {}
+    for k, v in (d or {}).items():
+        key = prefix + str(k)
+        if isinstance(v, dict):
+            out.update(_flat(v, key + "."))
+        else:
+            out[key] = v
+    return out
+
+def _conn_files(dpath):
+    c = os.path.join(dpath, "connectors")
+    if not os.path.isdir(c):
+        return set()
+    skip = {"__pycache__", "_versions", "_state.json"}   # noise, not connectors
+    return {f for f in os.listdir(c) if f not in skip}
+
+def diff(cid):
+    """What actually changed AT this checkpoint. A checkpoint holds the state
+    BEFORE its change; the 'after' is the next checkpoint's snapshot, or the
+    live settings if this is the most recent one. Returns per-field
+    before -> after plus connector files added/removed."""
+    cid = os.path.basename(cid)
+    cids = sorted(os.listdir(CPDIR))            # chronological, oldest first
+    if cid not in cids:
+        raise RuntimeError("no such checkpoint: " + cid)
+    idx = cids.index(cid)
+    after_dir = os.path.join(CPDIR, cids[idx + 1]) if idx + 1 < len(cids) else ROOT
+    before, after = _read_settings(os.path.join(CPDIR, cid)), _read_settings(after_dir)
+    fb, fa = _flat(before), _flat(after)
+    fields = [{"key": k, "before": fb.get(k), "after": fa.get(k)}
+              for k in sorted(set(fb) | set(fa)) if fb.get(k) != fa.get(k)]
+    cb, ca = _conn_files(os.path.join(CPDIR, cid)), _conn_files(after_dir)
+    return {"id": cid, "settings": fields,
+            "connectors": {"added": sorted(ca - cb), "removed": sorted(cb - ca)}}
+
 def restore(cid, actor="owner"):
     """Roll the workspace config back to this checkpoint. Current state is
     checkpointed first - a restore can always be un-restored."""

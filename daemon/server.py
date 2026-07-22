@@ -440,6 +440,13 @@ class H(BaseHTTPRequestHandler):
             if p == "/checkpoints":
                 import checkpoints
                 return self._send(200, json.dumps(checkpoints.list_checkpoints()))
+            if p.startswith("/checkpoints/") and p.endswith("/diff"):
+                import checkpoints
+                cid = p[len("/checkpoints/"):-len("/diff")]
+                try:
+                    return self._send(200, json.dumps(checkpoints.diff(cid)))
+                except (RuntimeError, ValueError) as e:
+                    return self._send(404, json.dumps({"error": str(e)}))
             if p == "/history":
                 # the git audit trail: main line + every card branch's commits.
                 import subprocess, sessions, events
