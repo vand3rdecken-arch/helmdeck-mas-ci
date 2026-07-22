@@ -29,6 +29,7 @@ Reply with ONLY JSON:
    {"type": "import_jira", "jql": "project = X AND status = 'To Do'"}  - pull Jira issues into backlog cards (needs settings.jira)
    {"type": "build_integration", "name": "kebab-name", "spec": "what it should pull and map"}  - an AGENT writes the connector as a card; after the gate + human accept it becomes runnable. Chat never installs code directly.
    {"type": "run_connector", "name": "<installed connector>"}  - run it now; items become backlog cards
+   {"type": "rollback_connector", "name": "..."}  - restore the previous version (originals are always archived)
    {"type": "schedule_connector", "name": "...", "every_minutes": 60}  - or 0 to unschedule
  ]}
 
@@ -178,6 +179,11 @@ def _run_action(a, actor, role="operator"):
         import connectors
         made = connectors.run_connector(a.get("name", ""), actor=actor)
         return "connector ran: %d new backlog cards" % len(made)
+    if kind == "rollback_connector":
+        import connectors
+        prev = connectors.rollback(a.get("name", ""))
+        events.emit("connector", "-", action="rollback", name=a.get("name"), actor=actor)
+        return "rolled back %s to %s" % (a.get("name"), prev)
     if kind == "schedule_connector":
         mins = int(a.get("every_minutes") or 0)
         sched = events.settings().get("connectors") or {}
@@ -240,7 +246,10 @@ def history(user):
     return {"messages": _log().get(user, []),
             "session_id": _sessions().get(user)}
 
-def chat(user, message, role="operator"):
+CHAT_MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5",
+               "opus": "claude-opus-4-8"}
+
+def chat(user, message, role="operator", model=""):
     """One copilot turn for this user. Returns {reply, actions: [results]}."""
     sess = _sessions()
     sid = sess.get(user)
@@ -248,6 +257,8 @@ def chat(user, message, role="operator"):
         + _snapshot() + "\n\nUSER (%s): %s" % (user, message)
     cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "json",
            "--permission-mode", "plan"]
+    if model in CHAT_MODELS:   # whitelist only - no arbitrary model ids from the client
+        cmd += ["--model", CHAT_MODELS[model]]
     if sid:
         cmd += ["--resume", sid]
     r = subprocess.run(cmd, cwd=ROOT, input=prompt, capture_output=True,

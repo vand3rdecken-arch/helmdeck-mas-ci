@@ -7,7 +7,7 @@ import { post, Track } from "@/lib/api";
 import { useBoard } from "@/lib/store";
 import { Card } from "./board";
 
-export interface ConnectorInfo { name: string; description: string; last_run: string | null }
+export interface ConnectorInfo { name: string; description: string; last_run: string | null; versions?: number }
 
 export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; onOpen: (t: Track) => void }) {
   const { tracks, met, toast, refresh } = useBoard();
@@ -46,6 +46,14 @@ export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; o
           <input type="number" style={{ width: 70 }} placeholder="—" value={mins} onChange={(e) => setMins(e.target.value)} />
           <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>minutes</span>
           <button className="btn ghost" onClick={saveSchedule}>Save schedule</button>
+          {(conn.versions ?? 0) > 0 && (
+            <button className="btn ghost" onClick={async () => {
+              if (!confirm(`Roll ${conn.name} back to its previous version? (reversible - the current one gets archived too)`)) return;
+              const r = await post<{ restored?: string; error?: string }>(`/connectors/${conn.name}/rollback`, {});
+              toast(r.error ?? `Restored ${r.restored}`, 4500);
+              refresh();
+            }}>↩ rollback ({conn.versions})</button>
+          )}
           <span style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginLeft: "auto" }}>
             last run: {conn.last_run ?? "never"}
           </span>
