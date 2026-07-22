@@ -87,8 +87,15 @@ def settings():
             pass
     return s
 
+# A checkpoint marks REAL development - new integrations/runtimes, structural
+# policy, the target repo - not cosmetic settings tuning (backdrop, card value,
+# dashboard tiles). Only a patch touching one of these earns a restore point.
+# (Connector installs/rollbacks checkpoint via their own path in sessions.py.)
+SIGNIFICANT_SETTINGS = {"drivers", "policy", "registration", "default_repo", "connectors"}
+
 def save_settings(patch, actor="system", reason=""):
-    if patch:
+    significant = bool(reason) or (patch and any(k in SIGNIFICANT_SETTINGS for k in patch))
+    if patch and significant:
         try:
             import checkpoints
             checkpoints.create(actor=actor,
