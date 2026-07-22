@@ -8,6 +8,7 @@ import json, os, re, shutil, subprocess, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SESS = os.path.join(ROOT, "copilot_sessions.json")
+CHATLOG = os.path.join(ROOT, "copilot_log.json")
 CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
@@ -216,6 +217,29 @@ def _run_action(a, actor, role="operator"):
 def _branchless_slug_fix():
     pass  # new_track slugs empty branch to 'track'; acceptable
 
+def _log():
+    try:
+        with open(CHATLOG, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+def _append_log(user, entries):
+    d = _log()
+    d.setdefault(user, []).extend(entries)
+    d[user] = d[user][-80:]
+    tmp = CHATLOG + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, CHATLOG)
+
+def history(user):
+    """The user's persisted copilot transcript (the same Claude session the
+    backend resumes - session id in copilot_sessions.json, resumable even from
+    a terminal via `claude --resume <id>`)."""
+    return {"messages": _log().get(user, []),
+            "session_id": _sessions().get(user)}
+
 def chat(user, message, role="operator"):
     """One copilot turn for this user. Returns {reply, actions: [results]}."""
     sess = _sessions()
@@ -246,5 +270,8 @@ def chat(user, message, role="operator"):
             results.append(_run_action(a, user, role))
         except Exception as e:
             results.append("action failed: %s" % str(e)[:200])
+    _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")}]
+                + [{"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M")}]
+                + [{"cls": "act", "text": r} for r in results])
     return {"reply": out.get("reply", ""), "actions": results,
             "cost": d.get("total_cost_usd")}
