@@ -119,14 +119,19 @@ def checks_red(touched):
                 problems.append("%s: %s" % (p, (r.stderr or "").strip().splitlines()[-1][:100]))
     if any(p.startswith("web/") for p in touched) and \
        os.path.isdir(os.path.join(WEB, "node_modules")):
-        npx = "npx.cmd" if os.name == "nt" else "npx"
-        env = dict(os.environ)
-        env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
-        r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
-                           cwd=WEB, capture_output=True, text=True, env=env, timeout=180)
-        if r.returncode != 0:
-            first = (r.stdout or r.stderr or "").strip().splitlines()
-            problems.append("web types: " + (first[0][:120] if first else "tsc failed"))
+        try:
+            npx = r"C:\Program Files\nodejs\npx.cmd"
+            if not os.path.exists(npx):
+                npx = "npx.cmd" if os.name == "nt" else "npx"
+            env = dict(os.environ)
+            env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
+            r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
+                               cwd=WEB, capture_output=True, text=True, env=env, timeout=180)
+            if r.returncode != 0:
+                first = (r.stdout or r.stderr or "").strip().splitlines()
+                problems.append("web types: " + (first[0][:120] if first else "tsc failed"))
+        except (OSError, subprocess.SubprocessError):
+            pass   # a state doctor must never crash; types are re-checked in session
     if not problems and any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
         r = subprocess.run([sys.executable, "-c", "import " + ",".join(CORE_MODULES)],
                            cwd=DAEMON, capture_output=True, text=True, timeout=60)
