@@ -620,6 +620,12 @@ class H(BaseHTTPRequestHandler):
             if user["role"] == "client" and p not in ("/tracks/new", "/processes/new") \
                and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel"))):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
+            if p == "/tracks/reorder":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import sessions
+                ids = body.get("ids") or []
+                return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
             if p == "/chat":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))

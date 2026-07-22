@@ -25,7 +25,7 @@ export interface Track {
   id: string; repo: string; branch: string; worktree: string; task: string;
   client: string; session_id: string | null; perm: string; lane: string;
   status: string; turns: number; last_reply: string;
-  value: number; driver: string; priority?: string; due?: string;
+  value: number; driver: string; priority?: string; due?: string; rank?: number | null;
   ai_cost: number; tokens_in: number; tokens_out: number; models: string[];
   created: string; updated: string;
   mode?: string; process?: string; process_title?: string;
