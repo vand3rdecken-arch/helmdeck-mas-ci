@@ -2,11 +2,12 @@
 """Reset the board to a clean slate for testing - backup first, then wipe.
 
 A card is a DB row plus, if it ever started, a git branch + worktree (+commits
-on that branch, never on main) + a recording. This removes all of that. By
-default it KEEPS your login, settings, process templates and connectors, so you
-can log in and file fresh cards immediately. main is never touched.
+on that branch, never on main) + a recording. This removes all of that, plus the
+multi-step process templates. By default it KEEPS your login, settings and
+connectors, so you can log in and file fresh cards immediately. main is never
+touched.
 
-  py tools/reset.py --yes                 cards + audit + chat (keep config)
+  py tools/reset.py --yes                 cards + audit + chat + processes
   py tools/reset.py --yes --connectors    also clear connector import state
   py tools/reset.py --yes --factory       also wipe users + settings (blank)
 
@@ -83,6 +84,15 @@ def clear_chat():
             os.remove(p)
 
 
+def clear_processes():
+    """Remove the multi-step workflow templates + Plane link state - board
+    content, not config, so a clean slate drops them too."""
+    for f in ("processes.json", "plane_links.json"):
+        p = os.path.join(DAEMON, f)
+        if os.path.exists(p):
+            os.remove(p)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--yes", action="store_true", help="required - actually do it")
@@ -100,6 +110,7 @@ def main():
     clear_events(); print("cleared events (economics/audit)")
     clear_recordings(); print("cleared recordings")
     clear_chat(); print("cleared copilot chat history")
+    clear_processes(); print("cleared process templates + plane links")
 
     if a.connectors:
         import connectors
@@ -114,7 +125,7 @@ def main():
         print("wiped users + settings - you'll re-create the owner login on next launch")
 
     print("\ndone. kept: %s. restart the daemon."
-          % ("nothing (factory)" if a.factory else "login, settings, processes, connectors"))
+          % ("nothing (factory)" if a.factory else "login, settings, connectors"))
     return 0
 
 
