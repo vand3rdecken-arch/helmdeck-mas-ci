@@ -7,9 +7,15 @@ import {
 
 export interface Attach { name: string; data: string; mime: string }
 export interface SendOpts { model: string; thinking: string; attachments: Attach[]; mode?: string }
+export interface Usage { in: number; out: number; cost?: number }
+// onSend may return the turn's usage; the Composer then updates its own context
+// overview - so every chat gets the meter for free, no per-parent wiring.
+export type SendResult = void | { usage?: Usage };
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string }
 interface ModelDef { id: string; label: string; desc?: string }
+
+const CONTEXT_WINDOW = 200_000;      // default context window for the meter
 
 // the model list is served by the daemon (curated Claude manifest + your
 // ~/.claude/settings.json) - fetched once and cached across composers.
@@ -30,7 +36,7 @@ export default function Composer({
   onSend, onStop, busy, placeholder, draftKey, slashCommands, modeOptions, context,
   hideThinking, sendLabel, seed,
 }: {
-  onSend: (text: string, opts: SendOpts) => void | Promise<void>;
+  onSend: (text: string, opts: SendOpts) => SendResult | Promise<SendResult>;
   onStop?: () => void;
   busy?: boolean;
   placeholder?: string;
@@ -53,6 +59,7 @@ export default function Composer({
   const [slashHide, setSlashHide] = useState(false);
   const [drag, setDrag] = useState(false);
   const [models, setModels] = useState<ModelDef[]>(MODEL_CACHE ?? []);
+  const [ctx, setCtx] = useState<{ used: number; total: number; cost?: number } | null>(context ?? null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const flushing = useRef(false);
@@ -77,14 +84,26 @@ export default function Composer({
     if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 160) + "px"; }
   }, [text]);
 
+  // parent-driven context (e.g. a card feeding its last turn) seeds/overrides
+  useEffect(() => { if (context) setCtx(context); }, [context]);
+  // one path for every send: run onSend, then fold any returned usage into the
+  // context overview - so the meter works in ALL chats without per-parent wiring.
+  async function deliver(text: string, opts: SendOpts) {
+    const res = await onSend(text, opts);
+    const u = res && res.usage;
+    if (u && (u.in > 0 || u.out > 0)) {
+      setCtx((c) => ({ used: u.in, total: c?.total ?? CONTEXT_WINDOW, cost: (c?.cost ?? 0) + (u.cost ?? 0) }));
+    }
+  }
+
   // queue: when the agent frees up, send the held message
   useEffect(() => {
     if (!busy && queued && !flushing.current) {
       flushing.current = true;
-      Promise.resolve(onSend(queued.text, queued.opts)).finally(() => { flushing.current = false; });
+      Promise.resolve(deliver(queued.text, queued.opts)).finally(() => { flushing.current = false; });
       setQueued(null);
     }
-  }, [busy, queued, onSend]);
+  }, [busy, queued]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const matches = (() => {
     if (slashHide || !slashCommands) return [];
@@ -106,7 +125,7 @@ export default function Composer({
     if (!v && !atts.length) return;
     const opts = buildOpts();
     if (busy) setQueued({ text: v, opts });   // hold until the agent is free
-    else onSend(v, opts);
+    else deliver(v, opts);
     clearInput();
   }
   function acceptSlash(c: SlashCommand) { write(c.insert); setSlashHide(true); taRef.current?.focus(); }
@@ -147,7 +166,7 @@ export default function Composer({
 
   const thinkOn = thinking !== "";
   const thinkShort = THINK.find((x) => x.id === thinking)?.short ?? "";
-  const pct = context && context.total > 0 ? Math.min(100, Math.round((context.used / context.total) * 100)) : 0;
+  const pct = ctx && ctx.total > 0 ? Math.min(100, Math.round((ctx.used / ctx.total) * 100)) : 0;
 
   return (
     <div className={"composer" + (drag ? " drag" : "")}
@@ -159,7 +178,7 @@ export default function Composer({
         <div className="cmp-queued" title="queued - will send when the agent is free">
           <span className="cmp-qlabel">Queued</span>
           <span className="cmp-qtext" onClick={() => { write(queued.text); setQueued(null); }}>{queued.text || "(attachment)"}</span>
-          <button className="cmp-qbtn" onClick={() => { const q = queued; setQueued(null); onSend(q.text, q.opts); }}>Send now</button>
+          <button className="cmp-qbtn" onClick={() => { const q = queued; setQueued(null); deliver(q.text, q.opts); }}>Send now</button>
           <button className="cmp-chipx" onClick={() => setQueued(null)} aria-label="drop queued"><IconX size={12} /></button>
         </div>
       )}
@@ -222,14 +241,14 @@ export default function Composer({
           {models.map((m) => <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>)}
         </select>
 
-        {context && context.total > 0 && (() => {
+        {ctx && ctx.total > 0 && (() => {
           const R = 5.5, C = 2 * Math.PI * R;
           const ring = pct > 90 ? "var(--danger)" : pct >= 70 ? "var(--warn)" : "var(--accent-2)";
-          const cost = typeof context.cost === "number" && context.cost > 0
-            ? (context.cost < 0.01 ? "$" + context.cost.toFixed(4) : "$" + context.cost.toFixed(2)) : "";
+          const cost = typeof ctx.cost === "number" && ctx.cost > 0
+            ? (ctx.cost < 0.01 ? "$" + ctx.cost.toFixed(4) : "$" + ctx.cost.toFixed(2)) : "";
           return (
             <span className="cmp-meter"
-              title={`context ${context.used.toLocaleString()} / ${context.total.toLocaleString()} tokens (${pct}%)${cost ? " · session " + cost : ""}`}>
+              title={`context ${ctx.used.toLocaleString()} / ${ctx.total.toLocaleString()} tokens (${pct}%)${cost ? " · session " + cost : ""}`}>
               <svg width="14" height="14" viewBox="0 0 14 14">
                 <circle cx="7" cy="7" r={R} fill="none" stroke="var(--bg-surface-2)" strokeWidth="2" />
                 <circle cx="7" cy="7" r={R} fill="none" stroke={ring} strokeWidth="2" strokeLinecap="round"

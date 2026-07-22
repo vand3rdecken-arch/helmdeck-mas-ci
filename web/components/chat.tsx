@@ -39,12 +39,13 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
 
   if (me?.role === "client") return null;
 
-  async function send(v: string, opts: SendOpts) {
+  async function send(v: string, opts: SendOpts): Promise<{ usage?: Usage } | void> {
     if ((!v && !opts.attachments.length) || busy) return;
     setMsgs((m) => [...m, { cls: "you", text: v || "(attachment)" }, { cls: "think", text: "thinking + acting…" }]);
     setBusy(true);
     const ac = new AbortController();
     abortRef.current = ac;
+    let usage: Usage | undefined;
     try {
       const r = await post<{ reply?: string; actions?: string[]; error?: string; usage?: Usage }>("/chat",
         { text: v, model: opts.model, thinking: opts.thinking, attachments: opts.attachments }, ac.signal);
@@ -54,9 +55,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
         return [...out, { cls: "bot" as const, text: r.reply || "(done)" },
           ...(r.actions ?? []).map((a) => ({ cls: "act" as const, text: "⚙ " + a }))];
       });
-      if (r.usage && (r.usage.in > 0 || r.usage.out > 0)) {
-        setCtx((c) => ({ used: r.usage!.in, total: 200000, cost: (c?.cost ?? 0) + (r.usage!.cost ?? 0) }));
-      }
+      usage = r.usage;
       refresh();
     } catch {
       // aborted (Stop) or network error: drop the thinking bubble
@@ -64,6 +63,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     }
     abortRef.current = null;
     setBusy(false);
+    return usage ? { usage } : undefined;   // Composer folds this into the meter
   }
 
   function stop() {
