@@ -11,8 +11,8 @@ const STATE_STYLE: Record<string, [string, string, string]> = {
   done: ["var(--ok)", "color-mix(in oklch,var(--ok) 18%,transparent)", "done"],
   working: ["var(--ai)", "color-mix(in oklch,var(--ai) 18%,transparent)", "agent working"],
   ready: ["var(--warn)", "color-mix(in oklch,var(--warn) 20%,transparent)", "▶ up next"],
-  waiting: ["var(--border-strong)", "transparent", "waiting"],
-  proposed: ["var(--border-subtle)", "transparent", "proposed"],
+  waiting: ["var(--txt-tertiary)", "transparent", "waiting"],
+  proposed: ["var(--txt-tertiary)", "transparent", "proposed"],
 };
 
 function Pipeline({ p, onOpen }: { p: Process; onOpen: (t: Track) => void }) {
