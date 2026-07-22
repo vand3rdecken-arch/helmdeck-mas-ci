@@ -176,9 +176,9 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
         )}
         <div id="feed">
           {hist.map((r, i) =>
-            r.kind === "steer" ? <div key={i} className="f-steer">{r.detail}</div> :
-            r.kind === "reply" ? <div key={i} className="f-reply">{r.detail}</div> :
-            <div key={i} className="f-note">{r.detail}</div>
+            r.kind === "steer" ? <div key={i} className="cb you">{r.detail}</div> :
+            r.kind === "reply" ? <div key={i} className="cb bot">{r.detail}</div> :
+            <div key={i} className="cb sys">{r.detail}</div>
           )}
         </div>
         <div style={{ padding: "10px 16px 0", fontSize: 11, color: "var(--txt-tertiary)" }}>
