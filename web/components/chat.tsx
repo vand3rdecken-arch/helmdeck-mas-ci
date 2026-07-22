@@ -5,7 +5,8 @@ import { useBoard } from "@/lib/store";
 import { IconChat, IconX } from "./icons";
 import Composer, { SendOpts } from "./composer";
 
-interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
+interface Usage { in: number; out: number; cost?: number }
+interface Msg { cls: "you" | "bot" | "act" | "think"; text: string; usage?: Usage }
 
 export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpen: (b: boolean) => void; hideFab?: boolean }) {
   const { me, refresh } = useBoard();
@@ -16,6 +17,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
   const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const hydrated = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (hydrated.current || me?.role === "client") return;
@@ -33,20 +35,29 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     if ((!v && !opts.attachments.length) || busy) return;
     setMsgs((m) => [...m, { cls: "you", text: v || "(attachment)" }, { cls: "think", text: "thinking + acting…" }]);
     setBusy(true);
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
-      const r = await post<{ reply?: string; actions?: string[]; error?: string }>("/chat",
-        { text: v, model: opts.model, thinking: opts.thinking, attachments: opts.attachments });
+      const r = await post<{ reply?: string; actions?: string[]; error?: string; usage?: Usage }>("/chat",
+        { text: v, model: opts.model, thinking: opts.thinking, attachments: opts.attachments }, ac.signal);
       setMsgs((m) => {
         const out = m.filter((x) => x.cls !== "think");
         if (r.error) return [...out, { cls: "bot" as const, text: "⚠ " + r.error }];
-        return [...out, { cls: "bot" as const, text: r.reply || "(done)" },
+        return [...out, { cls: "bot" as const, text: r.reply || "(done)", usage: r.usage },
           ...(r.actions ?? []).map((a) => ({ cls: "act" as const, text: "⚙ " + a }))];
       });
       refresh();
     } catch {
+      // aborted (Stop) or network error: drop the thinking bubble
       setMsgs((m) => m.filter((x) => x.cls !== "think"));
     }
+    abortRef.current = null;
     setBusy(false);
+  }
+
+  function stop() {
+    abortRef.current?.abort();       // drop the in-flight request client-side
+    post("/chat/cancel", {});        // kill the copilot subprocess server-side
   }
 
   if (!open) return hideFab ? null : <button id="chatfab" title="Chat with the board (k)" onClick={() => setOpen(true)}><IconChat size={20} /></button>;
@@ -58,9 +69,19 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
           onClick={() => setOpen(false)}><IconX size={13} /></button>
       </div>
       <div id="chatlog" ref={logRef}>
-        {msgs.map((m, i) => <div key={i} className={`cb ${m.cls}`}>{m.text}</div>)}
+        {msgs.map((m, i) => (
+          <div key={i} className={`cb ${m.cls}`}>
+            {m.text}
+            {m.usage && (m.usage.in > 0 || m.usage.out > 0) && (
+              <div className="cb-usage">
+                {(m.usage.in + m.usage.out).toLocaleString()} tok · {m.usage.in.toLocaleString()} in / {m.usage.out.toLocaleString()} out
+                {typeof m.usage.cost === "number" ? ` · $${m.usage.cost.toFixed(3)}` : ""}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
-      <Composer onSend={send} busy={busy} draftKey="swarm-draft:board"
+      <Composer onSend={send} busy={busy} onStop={stop} draftKey="swarm-draft:board"
         placeholder="Tell the board what to do…"
         slashCommands={[
           { name: "file", hint: "file a new card", insert: "File a card: " },

@@ -264,8 +264,25 @@ def history(user):
     return {"messages": _log().get(user, []),
             "session_id": _sessions().get(user)}
 
+# live copilot subprocess per user, so the chat's Stop button can kill a turn.
+_running = {}
+_cancelled = set()
+
+
+def cancel(user):
+    """Stop this user's in-flight copilot turn (the chat Stop button)."""
+    _cancelled.add(user)
+    p = _running.get(user)
+    if p:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    return bool(p)
+
+
 def chat(user, message, role="operator", model="", thinking="", attachments=None):
-    """One copilot turn for this user. Returns {reply, actions: [results]}.
+    """One copilot turn for this user. Returns {reply, actions, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses)."""
     import turnopts
@@ -283,11 +300,22 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         cmd += ["--model", cli_model]
     if sid:
         cmd += ["--resume", sid]
-    r = subprocess.run(cmd, cwd=ROOT, input=prompt, capture_output=True,
-                       text=True, timeout=300)
-    if not r.stdout.strip():
-        raise RuntimeError("copilot no output: " + r.stderr.strip()[:200])
-    d = json.loads(r.stdout)
+    # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
+    # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
+    _cancelled.discard(user)
+    p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    _running[user] = p
+    try:
+        stdout, stderr = p.communicate(input=prompt, timeout=300)
+    finally:
+        _running.pop(user, None)
+    if user in _cancelled:                 # Stop was pressed
+        _cancelled.discard(user)
+        return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}
+    if not (stdout or "").strip():
+        raise RuntimeError("copilot no output: " + (stderr or "").strip()[:200])
+    d = json.loads(stdout)
     if d.get("session_id"):
         sess[user] = d["session_id"]
         _save_sessions(sess)
@@ -303,8 +331,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             results.append(_run_action(a, user, role))
         except Exception as e:
             results.append("action failed: %s" % str(e)[:200])
+    u = d.get("usage") or {}
+    usage = {"in": (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+                    + u.get("cache_creation_input_tokens", 0)),
+             "out": u.get("output_tokens", 0), "cost": d.get("total_cost_usd")}
     _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")}]
-                + [{"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M")}]
+                + [{"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
                 + [{"cls": "act", "text": r} for r in results])
     return {"reply": out.get("reply", ""), "actions": results,
-            "cost": d.get("total_cost_usd")}
+            "cost": d.get("total_cost_usd"), "usage": usage}

@@ -76,8 +76,10 @@ def _claude(cfg, t, prompt):
     timeout = cfg.get("timeout", 1800 if cfg.get("allowed_tools") else 600)
     tid = t["id"]
     _cancelled.discard(tid)
+    # encoding="utf-8" so claude's UTF-8 output isn't mangled to cp1252 mojibake
     p = subprocess.Popen(cmd, cwd=t["worktree"], stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, encoding="utf-8", errors="replace")
     _running[tid] = p
     try:
         out, err = p.communicate(input=prompt, timeout=timeout)
@@ -108,6 +110,7 @@ def _http(cfg, t, prompt):
 def _cmd(cfg, t, prompt):
     r = subprocess.run(cfg["command"], cwd=t.get("worktree") or ".", shell=True,
                        input=prompt, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace",
                        timeout=cfg.get("timeout", 1800))
     out = r.stdout.strip() or r.stderr.strip()
     return t.get("session_id"), out, {"usage": {}, "cost_usd": None, "models": []}
