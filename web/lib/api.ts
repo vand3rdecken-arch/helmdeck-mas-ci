@@ -10,11 +10,12 @@ export async function get<T = unknown>(path: string): Promise<T> {
   return r.json();
 }
 
-export async function post<T = unknown>(path: string, body?: unknown): Promise<T> {
+export async function post<T = unknown>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const r = await fetch(API + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
+    signal,
   });
   if (r.status === 401) throw new AuthRequired();
   return r.json();
