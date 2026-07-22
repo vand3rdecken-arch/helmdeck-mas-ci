@@ -349,6 +349,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .cmp-model{height:28px;font-size:12px;padding:0 24px 0 10px}
 .cmp-send{margin-left:auto;flex-shrink:0;height:30px;width:34px;padding:0;
   display:inline-flex;align-items:center;justify-content:center}
+.cmp-send.cmp-send-text{width:auto;padding:0 14px;font-weight:500}
 .cmp-stop{background:var(--bg-surface-2);border:1px solid var(--border-strong);color:var(--danger)}
 .cmp-stop:hover{background:var(--bg-transparent-hover)}
 .cmp-spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);

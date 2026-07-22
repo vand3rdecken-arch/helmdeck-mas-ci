@@ -3,6 +3,7 @@ import { useState } from "react";
 import { post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
 import { IconBug, IconSparkle, IconMonitor, IconGlobe, IconSearch, IconChevron } from "./icons";
+import Composer, { SendOpts } from "./composer";
 
 const EXAMPLES = [
   { icon: IconBug, label: "bug fix", task: "Fix: the dashboard capacity gauge shows 0% when touch budget is 0 — guard the division and show a hint instead.", driver: "claude" },
@@ -14,7 +15,6 @@ const EXAMPLES = [
 
 export default function NewRequestModal({ onClose }: { onClose: () => void }) {
   const { met, toast, refresh } = useBoard();
-  const [task, setTask] = useState("");
   const [priority, setPriority] = useState("medium");
   const [due, setDue] = useState("");
   const [repo, setRepo] = useState("");
@@ -23,20 +23,18 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
   const [client, setClient] = useState("");
   const [driver, setDriver] = useState("claude");
   const [adv, setAdv] = useState(false);
-  const [followup, setFollowup] = useState<string[] | null>(null);
+  const [seed, setSeed] = useState<{ text: string; key: number } | undefined>();
   const drivers = Object.keys(met?.settings?.drivers ?? { claude: {} });
 
-  async function file() {
-    const tv = task.trim();
+  // the composer's send IS "File to Backlog" - same principle as the chats,
+  // and the model + attachments chosen here ride along onto the card.
+  async function file(text: string, opts: SendOpts) {
+    const tv = text.trim();
     if (!tv) { toast("Describe the task"); return; }
-    if (followup === null) {
-      const asks: string[] = [];
-      if (tv.length < 25) asks.push("the task is very short — an agent works better with a sentence of context (what, where, what does done look like)");
-      if (!value.trim()) asks.push(`no value set — dashboard will use the €${met?.settings?.value_per_card ?? 50} default (margin/ROI will be generic)`);
-      if (!due) asks.push("no due date — the card won’t show risk on the timeline");
-      if (asks.length) { setFollowup(asks); if (!value.trim()) setAdv(true); return; }
-    }
-    const body: Record<string, unknown> = { task: tv, lane: "backlog", priority, due, driver };
+    const body: Record<string, unknown> = {
+      task: tv, lane: "backlog", priority, due, driver,
+      model: opts.model, attachments: opts.attachments,
+    };
     if (repo.trim()) body.repo = repo.trim();
     if (branch.trim()) body.branch = branch.trim();
     if (value.trim()) body.value = parseFloat(value);
@@ -57,14 +55,15 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
             const Ic = ex.icon;
             return (
               <button key={ex.label} className="btn ghost" style={{ fontSize: 11, padding: "2px 9px" }}
-                title={ex.task} onClick={() => { setTask(ex.task); setDriver(ex.driver); }}>
+                title={ex.task} onClick={() => { setSeed({ text: ex.task, key: (seed?.key ?? 0) + 1 }); setDriver(ex.driver); }}>
                 <Ic size={12} />{ex.label}
               </button>
             );
           })}
         </div>
-        <textarea placeholder="What needs doing — that's all that's required. Repo comes from your preset."
-          value={task} onChange={(e) => setTask(e.target.value)} autoFocus />
+        <Composer draftKey="swarm-draft:newreq" hideThinking sendLabel="File to Backlog"
+          seed={seed} onSend={file}
+          placeholder="What needs doing — that's all that's required. Attach a file, pick a model, then File." />
         <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
           <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: 130 }}>
             <option value="urgent">urgent</option><option value="high">high</option>
@@ -73,13 +72,11 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
           <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={{ width: 150 }} title="due date" />
           <span style={{ fontSize: 11, color: "var(--txt-tertiary)" }}>priority · due date</span>
         </div>
-        {followup && followup.length > 0 && (
-          <div id="m-followup">
-            <b style={{ color: "var(--warn)" }}>Before filing:</b>
-            <ul style={{ margin: "4px 0 4px 16px", padding: 0 }}>
-              {followup.map((a, i) => <li key={i}>{a}</li>)}
-            </ul>
-            Fill them above, or click <b>File to Backlog</b> again to file as-is.
+        {(!due || !value.trim()) && (
+          <div style={{ fontSize: 11, color: "var(--txt-tertiary)", marginTop: 6 }}>
+            tip: {[!due && "add a due date (shows risk on the timeline)",
+              !value.trim() && `set a value in advanced (else €${met?.settings?.value_per_card ?? 50} default)`]
+              .filter(Boolean).join(" · ")}
           </div>
         )}
         <div className="adv" onClick={() => setAdv(!adv)} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -103,7 +100,6 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
         </>}
         <div className="foot">
           <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={file}>File to Backlog</button>
         </div>
       </div>
     </div>
