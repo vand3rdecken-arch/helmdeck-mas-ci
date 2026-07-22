@@ -650,3 +650,23 @@ input[type="checkbox"]:checked::before{content:"";width:8px;height:8px;
 [data-theme="dark"]{color-scheme:dark}
 select option{background:var(--bg-surface-1);color:var(--txt-primary)}
 select optgroup{background:var(--bg-surface-1);color:var(--txt-tertiary)}
+
+/* ---- WHO DOES THE WORK - the loudest semantic axis on the board ----
+   blue = AI executes · amber = a human executes · split = together */
+.gwrap{position:relative}
+.execstripe{position:absolute;left:0;top:10px;bottom:10px;width:4px;z-index:2;
+  border-radius:0 3px 3px 0}
+.gwrap .card{padding-left:16px}
+.chip-exec-ai{background:color-mix(in oklch,var(--ai) 24%,transparent);
+  border-color:color-mix(in oklch,var(--ai) 45%,transparent);color:var(--txt-primary);font-weight:600}
+.chip-exec-human{background:color-mix(in oklch,var(--human) 26%,transparent);
+  border-color:color-mix(in oklch,var(--human) 50%,transparent);color:var(--txt-primary);font-weight:600}
+.chip-exec-both{background:linear-gradient(90deg,
+  color-mix(in oklch,var(--ai) 22%,transparent),
+  color-mix(in oklch,var(--human) 24%,transparent));
+  border-color:var(--border-strong);color:var(--txt-primary);font-weight:600}
+.splitbars i{height:5px}
+.splitbars .hb{margin-top:2px}
+#execlegend{display:flex;gap:14px;align-items:center;font-size:11px;color:var(--txt-tertiary);
+  margin-left:auto}
+#execlegend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
