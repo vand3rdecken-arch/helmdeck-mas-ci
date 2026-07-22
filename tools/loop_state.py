@@ -11,8 +11,10 @@ The loop:
     ANALYZE  workorder lacks '## Analysis' - architecture impact + debt delta:
              which modules/laws are touched, does a load-bearing shortcut ship
              (then register it in daemon/debt.py in the same change)?
-    EXECUTE  checks are red - build/fix until green:
-             touched daemon/*.py compile, web tsc clean, daemon modules import.
+    EXECUTE  checks are red - build/fix until green: touched daemon/*.py compile,
+             web tsc clean, daemon modules import, and DESIGN LINT passes
+             (tools/design_lint.py - the enforceable subset of the design skill:
+             color-scheme, no inline control sizing, tokens not hex, etc).
     TEST     checks green but workorder lacks '## Verified' - run the real
              thing (e2e/screenshot for UI - JUDGE it, don't just render it)
              and record what was verified.
@@ -138,6 +140,12 @@ def checks_red(touched):
                            cwd=DAEMON, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             problems.append("daemon wiring: " + (r.stderr or "").strip().splitlines()[-1][:120])
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import design_lint
+        problems += ["design: " + v for v in design_lint.lint(touched)]
+    except Exception:
+        pass   # never crash the doctor
     return problems
 
 
