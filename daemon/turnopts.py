@@ -10,11 +10,24 @@ routing, the thinking-mode directive, and attachment saving. Kept honest:
 - attachments are size/count-capped and written where the agent can read them;
   the prompt references them by path.
 """
-import base64, os, re
+import base64, json, os, re
 
-# whitelist: friendly key -> concrete model id passed to the driver
-MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5",
-          "opus": "claude-opus-4-8"}
+# Curated Claude model manifest - same source-of-truth idea as Paseo's
+# CLAUDE_MODEL_MANIFEST (packages/server/.../claude/model-manifest.ts): the
+# `claude` CLI has no "list models" API, so the base list is hand-maintained.
+# list_models() merges this with any custom models in the user's ~/.claude/
+# settings.json (exactly like Paseo's getClaudeModelsWithSettings).
+CLAUDE_MODELS = [
+    {"id": "claude-fable-5",    "label": "Fable 5",    "desc": "Most powerful"},
+    {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Latest · most capable", "default": True},
+    {"id": "claude-sonnet-5",   "label": "Sonnet 5",   "desc": "Best for everyday work"},
+    {"id": "claude-opus-4-7",   "label": "Opus 4.7",   "desc": "Previous release"},
+    {"id": "claude-opus-4-6",   "label": "Opus 4.6",   "desc": "Older · complex work"},
+    {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "desc": "Older everyday"},
+    {"id": "claude-haiku-4-5",  "label": "Haiku 4.5",  "desc": "Fastest · cheapest"},
+]
+# friendly aliases still resolve (older drafts / Auto internals)
+_ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-4-8"}
 
 # a turn "looks hard" if it's long, has attachments, or reads like real work
 _HARD = re.compile(r"\b(refactor|architect|debug|why|design|analy[sz]e|plan|"
@@ -22,24 +35,62 @@ _HARD = re.compile(r"\b(refactor|architect|debug|why|design|analy[sz]e|plan|"
 _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b", re.I)
 
 
+def _settings_models():
+    """Custom models from the user's ~/.claude/settings.json (model + the
+    ANTHROPIC_*_MODEL env keys) - the dynamic half of Paseo's list."""
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    try:
+        with open(os.path.join(cfg, "settings.json"), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return []
+    out, seen = [], set()
+    def add(v):
+        v = v.strip() if isinstance(v, str) else ""
+        if v and v not in seen:
+            seen.add(v); out.append({"id": v, "label": v, "desc": "from ~/.claude/settings.json"})
+    add(d.get("model"))
+    env = d.get("env") if isinstance(d.get("env"), dict) else {}
+    for k in ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+              "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL"):
+        add(env.get(k))
+    return out
+
+
+def list_models():
+    """The manifest + custom settings.json models, deduped (id order preserved)."""
+    models = [dict(m) for m in CLAUDE_MODELS]
+    ids = {m["id"] for m in models}
+    for m in _settings_models():
+        if m["id"] not in ids:
+            ids.add(m["id"]); models.append(m)
+    return models
+
+
+def _allowed_ids():
+    return {m["id"] for m in list_models()}
+
+
 def pick_model(text, has_attach=False):
-    """Auto routing (Paseo-style): cheap for trivial, deep for hard."""
+    """Auto routing: cheap for trivial, deep for hard. Returns a concrete id."""
     t = text or ""
     if has_attach or len(t) > 600 or "```" in t or _HARD.search(t):
-        return "opus"
+        return "claude-opus-4-8"
     if len(t) < 40 and not _HARD.search(t) and (_EASY.search(t) or "?" not in t):
-        return "haiku"
-    return "sonnet"
+        return "claude-haiku-4-5"
+    return "claude-sonnet-5"
 
 
 def resolve_model(model, text, has_attach=False):
-    """(cli_model_id_or_None, chosen_key). '' -> driver default (None).
-    'auto' -> heuristic. A known key -> that model. Unknown -> default."""
+    """(cli_model_id_or_None, chosen). '' -> driver default (None). 'auto' ->
+    heuristic. A known model id (manifest or settings.json) -> itself. Unknown ->
+    default. Server-side whitelist: arbitrary ids from the client are rejected."""
     if model == "auto":
-        key = pick_model(text, has_attach)
-        return MODELS[key], key
-    if model in MODELS:
-        return MODELS[model], model
+        mid = pick_model(text, has_attach)
+        return mid, mid
+    model = _ALIAS.get(model, model)
+    if model and model in _allowed_ids():
+        return model, model
     return None, ""  # default: let the driver/session default decide
 
 

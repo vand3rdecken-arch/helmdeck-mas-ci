@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { get } from "@/lib/api";
 import {
   IconPaperclip, IconBrain, IconArrowUp, IconStop, IconSliders, IconFile, IconX,
 } from "./icons";
@@ -8,10 +9,11 @@ export interface Attach { name: string; data: string; mime: string }
 export interface SendOpts { model: string; thinking: string; attachments: Attach[]; mode?: string }
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string }
+interface ModelDef { id: string; label: string; desc?: string }
 
-const MODELS: [string, string][] = [
-  ["auto", "Auto"], ["sonnet", "Sonnet"], ["haiku", "Haiku · fast"], ["opus", "Opus · deep"],
-];
+// the model list is served by the daemon (curated Claude manifest + your
+// ~/.claude/settings.json) - fetched once and cached across composers.
+let MODEL_CACHE: ModelDef[] | null = null;
 // thinking levels — each maps to a real Claude Code budget keyword server-side
 const THINK: { id: string; short: string }[] = [
   { id: "", short: "" }, { id: "think", short: "think" },
@@ -50,6 +52,7 @@ export default function Composer({
   const [slashIdx, setSlashIdx] = useState(0);
   const [slashHide, setSlashHide] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [models, setModels] = useState<ModelDef[]>(MODEL_CACHE ?? []);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const flushing = useRef(false);
@@ -64,6 +67,11 @@ export default function Composer({
   }
   // external injection (e.g. New Request example chips) - overrides the draft
   useEffect(() => { if (seed) write(seed.text); /* eslint-disable-next-line */ }, [seed?.key]);
+  // model list from the daemon (manifest + ~/.claude/settings.json), cached
+  useEffect(() => {
+    if (MODEL_CACHE) return;
+    get<ModelDef[]>("/models").then((m) => { MODEL_CACHE = m; setModels(m); }).catch(() => {});
+  }, []);
   useEffect(() => {
     const ta = taRef.current;
     if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 160) + "px"; }
@@ -209,8 +217,9 @@ export default function Composer({
           </button>
         )}
         <select className="cmp-model" value={model} onChange={(e) => setModel(e.target.value)}
-          title="Model — Auto routes by task, like Paseo">
-          {MODELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          title="Model — Auto routes by task; the rest come from the Claude manifest + your ~/.claude/settings.json">
+          <option value="auto">Auto</option>
+          {models.map((m) => <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>)}
         </select>
 
         {context && context.total > 0 && (
