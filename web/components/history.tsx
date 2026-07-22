@@ -16,7 +16,7 @@ interface Debt { id: string; title: string; status: string; what: string; why_it
 const DAY = 86400e3;
 
 export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) {
-  const { tracks, me, toast, refresh } = useBoard();
+  const { tracks, me, toast, refresh } = useBoard();  // fork uses toast/refresh
   const [h, setH] = useState<Hist | null>(null);
   const [cps, setCps] = useState<Checkpoint[]>([]);
   const [debt, setDebt] = useState<Debt[]>([]);
@@ -39,14 +39,21 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
   const W = days * pxday;
   const x = (t: number) => Math.round((t - min) / DAY * pxday + pxday / 2);
 
-  const Row = ({ label, sub, color, commits, onClick }: {
-    label: string; sub?: string; color: string; commits: Commit[]; onClick?: () => void;
+  const Row = ({ label, sub, color, commits, onClick, onFork }: {
+    label: string; sub?: string; color: string; commits: Commit[]; onClick?: () => void; onFork?: () => void;
   }) => (
     <div className="g-row" style={{ cursor: onClick ? "pointer" : "default" }} onClick={onClick}>
-      <div className="g-side" title={sub ?? label}>
-        <span className="ldot" style={{ background: color, marginRight: 7 }} />
-        {label}
-        {sub && <div style={{ fontSize: 10.5, color: "var(--txt-tertiary)", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+      <div className="g-side" title={sub ?? label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span className="ldot" style={{ background: color }} />
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+          {sub && <div style={{ fontSize: 10.5, color: "var(--txt-tertiary)", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+        </div>
+        {onFork && (
+          <button className="btn ghost" style={{ fontSize: 10, padding: "1px 6px", flexShrink: 0 }}
+            title="start a new card from this branch's state (append-only, source untouched)"
+            onClick={(ev) => { ev.stopPropagation(); onFork(); }}>⑂ fork</button>
+        )}
       </div>
       <div className="g-track" style={{ width: W, height: 40 }}>
         {commits.length > 1 && (
@@ -67,6 +74,15 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
 
   return (
     <>
+      <div className="panel" style={{ marginBottom: 12, maxWidth: 900, fontSize: 12.5, lineHeight: 1.7 }}>
+        <h3>How work is stored</h3>
+        <div style={{ color: "var(--txt-secondary)" }}>
+          <b>Board copilot</b> = talk <i>about</i> work (the manager). ·{" "}
+          <b>Card chat</b> = talk <i>to</i> a worker (does the work). ·{" "}
+          <b>Branch</b> = that worker&apos;s memory. · <b>Commits</b> = its saved states (the dots below). ·{" "}
+          <b>Fork</b> = start a new card from any state — nothing is ever overwritten.
+        </div>
+      </div>
       <div id="gantt">
         <div className="g-head">
           <div className="g-side">branch</div>
@@ -84,7 +100,12 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
             <Row key={b.name} label={b.name} color={laneColor(b.lane ?? undefined)}
               sub={b.task || undefined}
               commits={b.commits}
-              onClick={t ? () => onOpen(t) : undefined} />
+              onClick={t ? () => onOpen(t) : undefined}
+              onFork={b.track ? async () => {
+                const r = await post<{ id?: string; error?: string }>(`/tracks/${b.track}/fork`, {});
+                toast(r.error ?? "Forked - new card from this branch (source untouched)", 4500);
+                refresh();
+              } : undefined} />
           );
         })}
       </div>
