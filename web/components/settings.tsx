@@ -110,7 +110,7 @@ export default function SettingsView() {
           auth, the audit trail, the gate itself, driver commands — is fixed in code.
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 7, margin: "6px 0", fontSize: 12.5, color: "var(--txt-primary)" }}>
-          <input type="checkbox" style={{ width: "auto" }} checked={autoAccept}
+          <input type="checkbox" checked={autoAccept}
             onChange={(e) => setAutoAccept(e.target.checked)} />
           Auto-accept on green gate (chain steps complete without a human; off = you accept everything)
         </label>
@@ -118,7 +118,7 @@ export default function SettingsView() {
         <div style={{ display: "flex", gap: 12, fontSize: 12.5, flexWrap: "wrap" }}>
           {["do", "prepare", "cowork"].map((m) => (
             <label key={m} style={{ display: "flex", alignItems: "center", gap: 5, margin: 0, color: "var(--txt-primary)" }}>
-              <input type="checkbox" style={{ width: "auto" }} checked={autoModes.includes(m)}
+              <input type="checkbox" checked={autoModes.includes(m)}
                 onChange={(e) => setAutoModes(e.target.checked ? [...autoModes, m] : autoModes.filter((x) => x !== m))} />
               {m}
             </label>
@@ -131,7 +131,14 @@ export default function SettingsView() {
           <option value="high">high + urgent</option>
         </select>
         <label>Backdrop theme (ambient, behind the glass — data colors stay semantic)</label>
-        <select style={{ width: 180 }} value={backdrop} onChange={(e) => setBackdrop(e.target.value)}>
+        <select style={{ width: 180 }} value={backdrop} onChange={async (e) => {
+          const v = e.target.value;
+          setBackdrop(v);
+          document.documentElement.dataset.backdrop = v;   // instant preview
+          await post("/settings", { appearance: { backdrop: v } });
+          toast(`Backdrop: ${v}`);
+          refresh();
+        }}>
           {["mesh", "aurora", "ember", "forest", "mono"].map((b) => <option key={b}>{b}</option>)}
         </select>
         <label>Who may reconfigure the workspace from the copilot chat?</label>
