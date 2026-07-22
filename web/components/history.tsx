@@ -11,6 +11,7 @@ interface Commit { h: string; msg: string; author: string; date: string }
 interface Branch { name: string; commits: Commit[]; track: string | null; task: string; lane: string | null; client: string }
 interface Hist { head: string; main: Commit[]; branches: Branch[] }
 interface Checkpoint { id: string; actor: string; reason: string; ts: string }
+interface Debt { id: string; title: string; status: string; what: string; why_it_bites: string; trigger: string; fix: string }
 
 const DAY = 86400e3;
 
@@ -18,8 +19,13 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
   const { tracks, me, toast, refresh } = useBoard();
   const [h, setH] = useState<Hist | null>(null);
   const [cps, setCps] = useState<Checkpoint[]>([]);
+  const [debt, setDebt] = useState<Debt[]>([]);
   const loadCps = () => get<Checkpoint[]>("/checkpoints").then(setCps).catch(() => {});
-  useEffect(() => { get<Hist>("/history").then(setH).catch(() => {}); loadCps(); }, []);
+  useEffect(() => {
+    get<Hist>("/history").then(setH).catch(() => {});
+    loadCps();
+    get<Debt[]>("/debt").then(setDebt).catch(() => {});
+  }, []);
   if (!h) return <div style={{ color: "var(--txt-tertiary)", fontSize: 12.5 }}>reading the repository…</div>;
 
   const all = [...h.main, ...h.branches.flatMap((b) => b.commits)];
@@ -112,6 +118,30 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="panel" style={{ marginTop: 16, maxWidth: 860 }}>
+        <h3>Structural debt — load-bearing shortcuts the program knows about</h3>
+        {debt.map((d) => (
+          <div key={d.id} style={{ padding: "9px 0", borderBottom: "1px solid var(--glass-border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="chip" style={{
+                color: d.status === "paid" ? "var(--ok)" : d.status === "in_progress" ? "var(--ai)" : "var(--warn)" }}>
+                {d.status}
+              </span>
+              <b style={{ fontSize: 13 }}>{d.title}</b>
+              <span style={{ fontSize: 11.5, color: "var(--txt-tertiary)" }}>bites when: {d.trigger}</span>
+              {me?.role !== "client" && d.status === "open" && (
+                <button className="btn ghost" style={{ fontSize: 11, marginLeft: "auto" }} onClick={async () => {
+                  const r = await post<{ error?: string; id?: string }>(`/debt/${d.id}/fix`, {});
+                  toast(r.error ?? "Fix card filed to Backlog (high priority)", 4500);
+                  refresh();
+                }}>file fix card</button>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--txt-secondary)", marginTop: 3 }}>{d.why_it_bites}</div>
+            <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginTop: 2 }}>fix: {d.fix}</div>
+          </div>
+        ))}
       </div>
     </>
   );

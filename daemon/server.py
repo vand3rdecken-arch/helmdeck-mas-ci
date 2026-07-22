@@ -405,6 +405,9 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/debt":
+                import debt
+                return self._send(200, json.dumps(debt.list_debt()))
             if p == "/charter":
                 import charter, events
                 return self._send(200, json.dumps(
@@ -623,6 +626,17 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps({"cards": len(made)}))
                 except Exception as e:
                     return self._send(400, json.dumps({"error": str(e)[:300]}))
+            if len(parts) == 3 and parts[0] == "debt" and parts[2] == "fix":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import debt, sessions, events
+                item = next((d for d in debt.DEBT if d["id"] == parts[1]), None)
+                if not item:
+                    return self._send(404, json.dumps({"error": "unknown debt id"}))
+                repo = events.settings().get("default_repo")
+                t = sessions.new_track(repo, "debt-" + item["id"], debt.fix_task(item),
+                                       lane="backlog", actor=user["name"], priority="high")
+                return self._send(200, json.dumps(t))
             if p in ("/import/jira", "/import/url"):
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
