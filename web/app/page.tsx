@@ -156,7 +156,17 @@ function App() {
             </span>
           )}
           {c && (
-            <span id="capline">· <b>{c.wip}/{c.wip_limit}</b> WIP · {c.touches_today}/{c.touch_budget_day} touches · headroom <b>{c.headroom}</b></span>
+            <span id="capline">·{" "}
+              <span title={`Work in progress: ${c.wip} cards running of ${c.wip_limit} allowed (Settings > WIP limit). Agents you can meaningfully supervise at once.`}>
+                <b>{c.wip}/{c.wip_limit}</b> WIP
+              </span>{" · "}
+              <span title={`Your attention spent today: ${c.touches_today} touch units of ${c.touch_budget_day} budgeted. Tariff: steer 1, review 1, gate bounce 3 (Settings). Humans are fixed capacity - this is the meter.`}>
+                {c.touches_today}/{c.touch_budget_day} touches
+              </span>{" · "}
+              <span title={`Room for ${c.headroom} more cards (WIP limit minus running). Headroom > 0: take more work - marginal cost is tokens. Headroom 0: automate instead.`}>
+                headroom <b>{c.headroom}</b>
+              </span>
+            </span>
           )}
           {!c && me && <span id="capline">{me.name} · client view</span>}
           <span className="spacer" />

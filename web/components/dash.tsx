@@ -100,6 +100,13 @@ export default function DashView() {
             ? "Below capacity → intake more: marginal cost of one more card is tokens only."
             : "At capacity → automate: fixing the top gate failure below frees the most headroom."}
         </div>
+        <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--glass-border)", lineHeight: 1.6 }}>
+          <b style={{ color: "var(--txt-secondary)" }}>How to read this:</b>{" "}
+          <b>WIP</b> = cards in Working vs your limit — how many running agents you can supervise at once.{" "}
+          <b>Touch units</b> = your attention as currency (steer 1 · review 1 · bounce 3) against a daily budget — humans are fixed capacity, so attention is the scarce input, not minutes.{" "}
+          <b>Headroom</b> = WIP slots left: above zero, take more work (an extra card only costs tokens); at zero, don&apos;t hire your evening — automate the top gate failure instead.{" "}
+          All three thresholds are policy: Settings, or tell the copilot.
+        </div>
       </div>}
       {panels.includes("gates") && <div className="panel">
         <h3>Gate failures — what to fix in the harness next</h3>
