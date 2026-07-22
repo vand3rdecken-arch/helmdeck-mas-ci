@@ -347,11 +347,16 @@ class H(BaseHTTPRequestHandler):
                                  "created": t.get("created")} for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
             if p == "/":
-                fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.html")
-                if os.path.exists(fp):   # the Plane-tokened app; read per request so edits are live
-                    with open(fp, "rb") as f:
-                        return self._send(200, f.read(), "text/html; charset=utf-8")
-                return self._send(200, BOARD, "text/html; charset=utf-8")
+                return self._send(200,
+                    "<!doctype html><meta charset=utf-8><title>SwarmDeck</title>"
+                    "<body style=\"font:15px system-ui;background:#16181d;color:#eee;"
+                    "display:grid;place-items:center;height:100vh;margin:0\"><div>"
+                    "<h2>SwarmDeck API</h2><p>The app lives at "
+                    "<a style=\"color:#7cb5ff\" href=\"http://localhost:3300\">localhost:3300</a>"
+                    " (cd web &amp;&amp; npm run dev -- --port 3300).</p>"
+                    "<p style=\"color:#888\">Legacy fallback UI: <a style=\"color:#7cb5ff\" "
+                    "href=\"/classic\">/classic</a></p></div>",
+                    "text/html; charset=utf-8")
             if p == "/classic":
                 return self._send(200, BOARD, "text/html; charset=utf-8")
             if p == "/recorder":
@@ -405,6 +410,25 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/stream":
+                # SSE: push a version tick whenever board data changes - pays
+                # the polling debt. Client refetches on tick.
+                import db
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                last = db.current_version()
+                try:
+                    self.wfile.write(("data: %d" % last).encode() + b"\n\n")
+                    self.wfile.flush()
+                    while True:
+                        v = db.wait_version(last, timeout=25)
+                        self.wfile.write(("data: %d" % v).encode() + b"\n\n")
+                        self.wfile.flush()
+                        last = v
+                except (ConnectionAbortedError, BrokenPipeError, OSError):
+                    return
             if p == "/debt":
                 import debt
                 return self._send(200, json.dumps(debt.list_debt()))
@@ -814,6 +838,8 @@ class H(BaseHTTPRequestHandler):
             self._send(500, json.dumps({"error": str(e)}))
 
 def serve(port=8140):
+    import db
+    db.init()
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")

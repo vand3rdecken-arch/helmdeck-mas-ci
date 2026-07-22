@@ -48,8 +48,13 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refresh();
-    const iv = setInterval(refresh, 5000);
-    return () => clearInterval(iv);
+    // SSE: the daemon announces data changes; we refetch on tick.
+    const es = new EventSource("/backend/stream");
+    let t: ReturnType<typeof setTimeout> | undefined;
+    es.onmessage = () => { clearTimeout(t); t = setTimeout(refresh, 150); };
+    es.onerror = () => { /* auto-reconnects; fallback poll below covers gaps */ };
+    const iv = setInterval(refresh, 30000);   // safety net only
+    return () => { es.close(); clearInterval(iv); clearTimeout(t); };
   }, [refresh]);
 
   const toast = useCallback((msg: string, ms = 2600) => {

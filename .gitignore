@@ -24,3 +24,6 @@ daemon/copilot_sessions.json
 web/node_modules/
 web/.next/
 daemon/checkpoints/
+daemon/swarmdeck.db
+daemon/*.imported
+daemon/tracks.json.imported
