@@ -16,7 +16,8 @@ The loop:
              (tools/design_lint.py - the enforceable subset of the design skill:
              color-scheme, no inline control sizing, tokens not hex, etc).
     TEST     checks green but workorder lacks '## Verified' - run the real
-             thing (e2e/screenshot for UI - JUDGE it, don't just render it)
+             thing (e2e/screenshot for UI - JUDGE it, don't just render it;
+             UI also runs tools/adversarial_smoke.py = test it like an idiot)
              and record what was verified.
     CLEAN    hygiene broken - debt register malformed, or secret files
              (settings.json / users.json / *.db) tracked/staged.
@@ -224,8 +225,10 @@ def transitions():
         return t
 
     if not section_filled(wo, "## Verified"):
+        adv = (" Then idiot-test it: `py tools/adversarial_smoke.py` (does it BREAK, "
+               "not just render) and address findings." if ui_work else "")
         t.append(("TEST", "checks green but nothing verified - run the real thing "
-                  "(e2e; UI = screenshot and JUDGE) and fill '## Verified'." + design))
+                  "(e2e; UI = screenshot and JUDGE) and fill '## Verified'." + design + adv))
         return t
 
     hyg = hygiene_problems()
