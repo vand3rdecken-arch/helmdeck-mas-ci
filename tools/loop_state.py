@@ -154,7 +154,7 @@ def hygiene_problems():
     tracked = _git("ls-files").splitlines()
     for t in tracked:
         base = os.path.basename(t)
-        if base in SECRET_NAMES and "plane-selfhost" not in t and not t.startswith(".claude/"):
+        if (base in SECRET_NAMES or base.endswith(".env")) and not t.startswith(".claude/"):
             problems.append("secret file tracked: " + t)
     try:
         sys.path.insert(0, DAEMON)
