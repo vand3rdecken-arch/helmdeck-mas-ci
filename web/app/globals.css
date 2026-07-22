@@ -628,3 +628,17 @@ input[type="checkbox"]:checked{background:linear-gradient(135deg,var(--accent),v
 input[type="checkbox"]:checked::before{content:"";width:8px;height:8px;
   background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6L9 17l-5-5'/></svg>") center/contain no-repeat}
 #settings input[type="checkbox"]{width:15px;height:15px}
+
+/* ---- impeccable pass: overlays must never compete with content ----
+   (same law as the peek fix: glass at the edges, opacity where text lives) */
+#mcard{background:color-mix(in oklch,var(--bg-surface-1) 97%,transparent)}
+[data-theme="dark"] #mcard{background:oklch(.21 .004 230/96%)}
+#chat{background:color-mix(in oklch,var(--bg-surface-1) 95%,transparent)}
+[data-theme="dark"] #chat{background:oklch(.2 .004 230/94%)}
+#palcard{background:color-mix(in oklch,var(--bg-surface-1) 95%,transparent)}
+[data-theme="dark"] #palcard{background:oklch(.2 .004 230/94%)}
+
+/* strict pass: chat/palette overlays fully readable like the modal */
+#chat{background:color-mix(in oklch,var(--bg-surface-1) 98%,transparent)}
+[data-theme="dark"] #chat{background:oklch(.2 .004 230/97%)}
+[data-theme="dark"] #palcard{background:oklch(.2 .004 230/97%)}
