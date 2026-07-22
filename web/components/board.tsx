@@ -98,7 +98,7 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
 function NextUp({ onOpen }: { onOpen: (t: Track) => void }) {
   const { tracks, toast, refresh } = useBoard();
   const items = tracks
-    .filter((t) => t.lane !== "done" && (t.status === "needs_you" || t.status === "bounced" || (t.up_next && t.lane === "backlog")))
+    .filter((t) => !t.archived && t.lane !== "done" && (t.status === "needs_you" || t.status === "bounced" || (t.up_next && t.lane === "backlog")))
     .sort((a, b) => (PRIO_ORD[a.priority ?? "medium"] - PRIO_ORD[b.priority ?? "medium"]) || ((a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1));
   if (!items.length) return null;
   const why = (t: Track) =>
@@ -188,7 +188,8 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
         {LANES.map(([key, defName, color]) => {
           const name = met?.settings?.policy?.lane_labels?.[key] ?? defName;
           let inLane = tracks.filter((t) => (t.lane || "working") === key &&
-            (filter === "all" ||
+            (filter === "archived" ? !!t.archived : !t.archived) &&
+            (filter === "all" || filter === "archived" ||
              (filter === "needs_you" ? (t.status === "needs_you" || t.status === "bounced")
               : t.client === filter.slice(7))));
           if (key === "backlog") {

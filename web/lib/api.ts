@@ -30,6 +30,7 @@ export interface Track {
   created: string; updated: string;
   mode?: string; process?: string; process_title?: string;
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;
+  archived?: boolean;
 }
 export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;

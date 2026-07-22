@@ -5,7 +5,7 @@ import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
-  const { met, toast, refresh } = useBoard();
+  const { met, me, toast, refresh } = useBoard();
   const [hist, setHist] = useState<HistoryRow[]>([]);
   const [steer, setSteer] = useState("");
   const [task, setTask] = useState(t.task);
@@ -41,7 +41,24 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
       <div id="peek">
         <div className="ph">
           <span className="pid">{t.branch} · {t.id}</span>
-          <button className="x" onClick={onClose}>✕</button>
+          {me?.role !== "client" && (
+            <button className="btn ghost" style={{ fontSize: 11, marginLeft: "auto" }}
+              onClick={async () => {
+                await post(`/tracks/${t.id}/archive`, { on: !t.archived });
+                toast(t.archived ? "Unarchived" : "Archived — find it under Views › Archive");
+                refresh(); if (!t.archived) onClose();
+              }}>{t.archived ? "unarchive" : "archive"}</button>
+          )}
+          {me?.role === "owner" && (
+            <button className="btn ghost" style={{ fontSize: 11, color: "var(--danger)", borderColor: "var(--danger)" }}
+              onClick={async () => {
+                if (!confirm("Delete this card, its worktree and branch? The audit trail (events, recording) stays. This cannot be undone.")) return;
+                const r = await post<{ error?: string }>(`/tracks/${t.id}/delete`, {});
+                toast(r.error ?? "Deleted — audit trail kept", 4500);
+                refresh(); onClose();
+              }}>delete</button>
+          )}
+          <button className="x" style={{ marginLeft: me?.role === "client" ? "auto" : 0 }} onClick={onClose}>✕</button>
         </div>
         <textarea
           value={task}
