@@ -3,6 +3,7 @@
 // rest (no blink, no wiped inputs - the reason this port exists).
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AuthRequired, get, Me, Metrics, Track } from "./api";
+import type { ConnectorInfo } from "@/components/connector";
 
 export interface Spot { type: "client" | "process"; value: string }
 interface BoardState {
@@ -16,6 +17,7 @@ interface BoardState {
   toastMsg: string | null;
   spot: Spot | null;
   setSpot: (s: Spot | null) => void;
+  conns: ConnectorInfo[];
 }
 
 const Ctx = createContext<BoardState>(null as unknown as BoardState);
@@ -28,6 +30,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   const [authNeeded, setAuthNeeded] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [spot, setSpot] = useState<Spot | null>(null);
+  const [conns, setConns] = useState<ConnectorInfo[]>([]);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const refresh = useCallback(async () => {
@@ -36,6 +39,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       setTracks(ts);
       setAuthNeeded(false);
       try { setMet(await get<Metrics>("/dashboard/data")); } catch { setMet(null); }
+      try { setConns(await get<ConnectorInfo[]>("/connectors")); } catch { /* client role */ }
       if (!me) { try { setMe(await get<Me>("/me")); } catch { /* client-only */ } }
     } catch (e) {
       if (e instanceof AuthRequired) setAuthNeeded(true);
@@ -61,7 +65,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   return (
-    <Ctx.Provider value={{ tracks, met, me, authNeeded, setAuthed, refresh, toast, toastMsg, spot, setSpot }}>
+    <Ctx.Provider value={{ tracks, met, me, authNeeded, setAuthed, refresh, toast, toastMsg, spot, setSpot, conns }}>
       {children}
     </Ctx.Provider>
   );

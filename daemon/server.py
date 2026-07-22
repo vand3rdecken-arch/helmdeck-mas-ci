@@ -400,6 +400,11 @@ class H(BaseHTTPRequestHandler):
                     ts = [t for t in ts if t.get("client") == user["name"]]
                 return self._send(200, json.dumps(ts))
             # --- company instrumentation: settings + CEO dashboard ---
+            if p == "/chat/history":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import copilot
+                return self._send(200, json.dumps(copilot.history(user["name"])))
             if p == "/connectors":
                 import connectors
                 return self._send(200, json.dumps(connectors.list_connectors()))

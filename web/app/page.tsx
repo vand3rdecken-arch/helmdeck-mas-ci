@@ -13,6 +13,7 @@ import ProcsView from "@/components/procs";
 import RecsView from "@/components/recs";
 import SettingsView from "@/components/settings";
 import Palette from "@/components/palette";
+import ConnectorView from "@/components/connector";
 
 type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "settings";
 const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "settings"];
@@ -26,8 +27,8 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 
 function App() {
-  const { met, me, tracks, authNeeded, toastMsg, setSpot } = useBoard();
-  const [view, setView] = useState<View>("board");
+  const { met, me, tracks, authNeeded, toastMsg, setSpot, conns } = useBoard();
+  const [view, setView] = useState<string>("board");
   const [filter, setFilter] = useState<string>("all");
   const [peek, setPeek] = useState<Track | null>(null);
   const [modal, setModal] = useState(false);
@@ -37,14 +38,14 @@ function App() {
   // hash routing (linkable views, glasses-friendly)
   useEffect(() => {
     const apply = () => {
-      const h = location.hash.slice(1) as View;
-      if (VIEWS.includes(h)) setView(h);
+      const h = location.hash.slice(1);
+      if (VIEWS.includes(h as View) || h.startsWith("conn:")) setView(h);
     };
     apply();
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, []);
-  const nav = useCallback((v: View) => { setView(v); location.hash = v; }, []);
+  const nav = useCallback((v: string) => { setView(v); location.hash = v; }, []);
 
   // keep the peeked track fresh as polls come in
   useEffect(() => {
@@ -103,6 +104,16 @@ function App() {
         <div className={`navitem${view === "recs" ? " active" : ""}`} onClick={() => nav("recs")}>{ICONS.recs}Recordings</div>
         {!isClient && <div className={`navitem${view === "settings" ? " active" : ""}`} onClick={() => nav("settings")}>{ICONS.settings}Settings</div>}
         <div className="sect">Views</div>
+        {conns.length > 0 && <>
+          <div className="sect">Connectors</div>
+          {conns.map((c) => (
+            <div key={c.name} className={`navitem${view === "conn:" + c.name ? " active" : ""}`}
+              onClick={() => nav("conn:" + c.name)} title={c.description}>
+              <svg viewBox="0 0 24 24"><path d="M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0Z" /><path d="M12 17v4" /></svg>
+              {c.name}
+            </div>
+          ))}
+        </>}
         {clients.length > 0 && <>
           {clients.map(([name, count]) => (
             <div key={name} className={`navitem${isWork && filter === "client:" + name ? " active" : ""}`}
@@ -129,7 +140,7 @@ function App() {
       <div id="main">
         <div id="hdr">
           <span className="crumb">
-            {isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : "Settings"}
+            {view.startsWith("conn:") ? "Connector · " + view.slice(5) : isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : "Settings"}
           </span>
           {isWork && (
             <span id="layouts">
@@ -154,6 +165,10 @@ function App() {
           {view === "dash" && <DashView />}
           {view === "recs" && <RecsView />}
           {view === "settings" && <SettingsView />}
+          {view.startsWith("conn:") && (() => {
+            const c = conns.find((x) => x.name === view.slice(5));
+            return c ? <ConnectorView conn={c} onOpen={setPeek} /> : <div className="panel">connector not found</div>;
+          })()}
         </div>
       </div>
       {palOpen && <Palette onOpen={(t) => setPeek(t)} onNav={(v) => nav(v as View)} onClose={() => setPalOpen(false)} />}

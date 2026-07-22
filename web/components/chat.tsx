@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { post } from "@/lib/api";
+import { get, post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
 import { IconChat } from "./icons";
 
@@ -15,6 +15,15 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    if (hydrated.current || me?.role === "client") return;
+    hydrated.current = true;
+    get<{ messages: Msg[] }>("/chat/history").then((h) => {
+      if (h.messages?.length) setMsgs((m) => [...m, ...h.messages]);
+    }).catch(() => {});
+  }, [me]);
 
   useEffect(() => { logRef.current?.scrollTo(0, 1e9); }, [msgs]);
 
