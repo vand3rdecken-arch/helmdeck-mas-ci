@@ -15,6 +15,9 @@ import SettingsView from "@/components/settings";
 import Palette from "@/components/palette";
 import ConnectorView from "@/components/connector";
 import HistoryView from "@/components/history";
+import { IconGrid, IconList, IconTimeline, IconTheme } from "@/components/icons";
+
+const LAY_ICONS = { board: IconGrid, list: IconList, timeline: IconTimeline } as const;
 
 type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "history" | "settings";
 const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "history", "settings"];
@@ -134,11 +137,11 @@ function App() {
         <div className={`navitem${isWork && filter === "archived" ? " active" : ""}`} onClick={() => { nav("board"); setFilter("archived"); }}>Archive</div>
         <div className="foot">
           {me && <div style={{ marginBottom: 6 }}><b style={{ color: "var(--txt-secondary)" }}>{me.name}</b> · {me.role}</div>}
-          <span style={{ cursor: "pointer" }} onClick={() => {
+          <span style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => {
             const r = document.documentElement;
             r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark";
             try { localStorage.sdTheme = r.dataset.theme ?? "dark"; } catch { }
-          }}>◐ theme</span>{" · "}
+          }}><IconTheme size={13} /> theme</span>{" · "}
           <span style={{ cursor: "pointer" }} onClick={signOut}>sign out</span>
         </div>
       </nav>
@@ -149,10 +152,13 @@ function App() {
           </span>
           {isWork && (
             <span id="layouts">
-              {(["board", "list", "timeline"] as View[]).map((l, i) => (
-                <button key={l} className={`lay${view === l ? " active" : ""}`} title={l}
-                  onClick={() => nav(l)}>{["▦", "☰", "⧖"][i]}</button>
-              ))}
+              {(["board", "list", "timeline"] as View[]).map((l) => {
+                const Ic = LAY_ICONS[l as keyof typeof LAY_ICONS];
+                return (
+                  <button key={l} className={`lay${view === l ? " active" : ""}`} title={l}
+                    onClick={() => nav(l)}><Ic size={15} /></button>
+                );
+              })}
             </span>
           )}
           {c && (

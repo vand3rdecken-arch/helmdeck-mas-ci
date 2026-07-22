@@ -2,14 +2,15 @@
 import { useEffect, useRef, useState } from "react";
 import { post, Track } from "@/lib/api";
 import { LANES, STATUS, PRIO_ORD, useBoard, Spot } from "@/lib/store";
-import { IconBriefcase, IconCalendar, IconChain, IconMonitor, ModeIcon, MODE_LABEL } from "./icons";
+import { IconBriefcase, IconCalendar, IconChain, IconMonitor, IconWarn, IconPlay, IconCheck, ModeIcon, MODE_LABEL } from "./icons";
 import LiveThumb from "./live";
 
 export function prioChip(t: Track) {
   const p = t.priority ?? "medium";
   if (p === "medium") return null;
-  const map: Record<string, [string, string]> = {
-    urgent: ["⚠ urgent", "var(--danger)"], high: ["↑ high", "var(--warn)"], low: ["↓ low", "var(--txt-tertiary)"],
+  const map: Record<string, [React.ReactNode, string]> = {
+    urgent: [<><IconWarn size={11} /> urgent</>, "var(--danger)"],
+    high: ["↑ high", "var(--warn)"], low: ["↓ low", "var(--txt-tertiary)"],
   };
   const [label, color] = map[p] ?? [p, "var(--txt-tertiary)"];
   return <span className="chip" style={{ color }}>{label}</span>;
@@ -146,14 +147,14 @@ function NextUp({ onOpen }: { onOpen: (t: Track) => void }) {
   }
   return (
     <div id="nextup">
-      <b style={{ fontSize: 12, color: "var(--warn)" }}>▶ NEXT UP</b>
+      <b style={{ fontSize: 12, color: "var(--warn)", display: "inline-flex", alignItems: "center", gap: 4 }}><IconPlay size={11} /> NEXT UP</b>
       {items.slice(0, 4).map((t) => (
         <span key={t.id} className="nu" onClick={() => onOpen(t)}>
           <ModeIcon mode={t.mode} /> {t.task.replace(/^(PREPARE|COWORK|TEACH|HUMAN STEP)[^:]*: /, "").slice(0, 48)}
           <span className="why">{why(t)}</span>
           {t.mode === "human" && t.lane === "backlog" && (
             <button className="btn ghost" style={{ fontSize: 10.5, padding: "1px 7px" }}
-              onClick={(ev) => markDone(ev, t.id)}>✓ done</button>
+              onClick={(ev) => markDone(ev, t.id)}><IconCheck size={11} /> done</button>
           )}
         </span>
       ))}

@@ -3,6 +3,7 @@
 import { Track } from "@/lib/api";
 import { LANES, PRIO_ORD, STATUS, laneColor, useBoard } from "@/lib/store";
 import { dueChip, prioChip } from "./board";
+import { IconChain } from "./icons";
 
 export function ListView({ filter, onOpen }: { filter: string; onOpen: (t: Track) => void }) {
   const { tracks: all, met } = useBoard();
@@ -92,8 +93,8 @@ export function TimelineView({ filter, onOpen }: { filter: string; onOpen: (t: T
           const proc = t.process ?? null;
           const hdr = proc !== lastProc ? (lastProc = proc, proc ? (
             <div className="g-row" style={{ background: "var(--bg-layer-1)" }}>
-              <div className="g-side" style={{ color: "var(--accent-txt)" }}>
-                ⛓ {t.process_title ?? proc}{t.client ? ` · ${t.client}` : ""}
+              <div className="g-side" style={{ color: "var(--accent-txt)", display: "flex", alignItems: "center", gap: 5 }}>
+                <IconChain size={13} /> {t.process_title ?? proc}{t.client ? ` · ${t.client}` : ""}
               </div>
               <div className="g-track" style={{ width: W, height: 22 }} />
             </div>

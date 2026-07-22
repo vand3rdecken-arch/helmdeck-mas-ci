@@ -5,12 +5,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { get, post, Process, Track } from "@/lib/api";
 import { useBoard } from "@/lib/store";
-import { IconCheck, ModeIcon, MODE_LABEL, MODE_ICONS } from "./icons";
+import { IconCheck, IconCalendar, IconX, IconChevron, ModeIcon, MODE_LABEL, MODE_ICONS } from "./icons";
 
 const STATE_STYLE: Record<string, [string, string, string]> = {
   done: ["var(--ok)", "color-mix(in oklch,var(--ok) 18%,transparent)", "done"],
   working: ["var(--ai)", "color-mix(in oklch,var(--ai) 18%,transparent)", "agent working"],
-  ready: ["var(--warn)", "color-mix(in oklch,var(--warn) 20%,transparent)", "▶ up next"],
+  ready: ["var(--warn)", "color-mix(in oklch,var(--warn) 20%,transparent)", "up next"],
   waiting: ["var(--txt-tertiary)", "transparent", "waiting"],
   proposed: ["var(--txt-tertiary)", "transparent", "proposed"],
 };
@@ -48,8 +48,8 @@ function Pipeline({ p, onOpen }: { p: Process; onOpen: (t: Track) => void }) {
             {i < p.steps.length - 1 && (
               <div style={{
                 flex: "0 0 22px", height: 42, display: "flex", alignItems: "center",
-                justifyContent: "center", color: s.done ? "var(--ok)" : "var(--border-strong)", fontSize: 15,
-              }}>→</div>
+                justifyContent: "center", color: s.done ? "var(--ok)" : "var(--border-strong)",
+              }}><IconChevron dir="right" size={14} /></div>
             )}
           </span>
         );
@@ -116,7 +116,7 @@ export default function ProcsView({ onOpen }: { onOpen: (t: Track) => void }) {
             <b style={{ fontSize: 13.5, color: "var(--txt-primary)" }}>{p.request.slice(0, 90)}</b>
             <span className="chip">{p.status}</span>
             {p.client && <span className="chip">client: {p.client}</span>}
-            {p.due && <span className="chip">📅 {p.due}</span>}
+            {p.due && <span className="chip"><IconCalendar size={12} /> {p.due}</span>}
             {p.cost > 0 && <span className="chip">proposal AI ${p.cost.toFixed(2)}</span>}
           </div>
           <Pipeline p={p} onOpen={onOpen} />
@@ -134,13 +134,13 @@ export default function ProcsView({ onOpen }: { onOpen: (t: Track) => void }) {
               <input type="date" value={s.due ?? ""} style={{ width: 135 }}
                 onChange={(e) => stepAct(p.id, i, "update", { due: e.target.value })} />
               {s.track ? (
-                <span className="chip" style={{ color: "var(--ok)" }}>✔ card</span>
+                <span className="chip" style={{ color: "var(--ok)" }}><IconCheck size={11} /> card</span>
               ) : (
                 <>
                   <button className="btn ghost" style={{ fontSize: 11, padding: "2px 9px" }}
                     onClick={() => stepAct(p.id, i, "accept")}>Accept → card</button>
                   <button className="btn ghost" style={{ fontSize: 11, padding: "2px 7px" }}
-                    onClick={() => stepAct(p.id, i, "remove")}>✕</button>
+                    onClick={() => stepAct(p.id, i, "remove")}><IconX size={12} /></button>
                 </>
               )}
               {s.desc && (

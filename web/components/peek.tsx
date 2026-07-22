@@ -7,6 +7,7 @@ import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 import { executor } from "./board";
 import Composer, { SendOpts } from "./composer";
+import { IconX, IconFork, IconChevron } from "./icons";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
@@ -81,7 +82,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
                 const r = await post<{ id?: string; error?: string }>(`/tracks/${t.id}/fork`, {});
                 toast(r.error ?? "Forked - a new card starts from this state (source untouched)", 4500);
                 refresh();
-              }}>⑂ fork</button>
+              }}><IconFork size={11} /> fork</button>
           )}
           {me?.role === "owner" && (
             <button className="btn ghost" style={{ fontSize: 11, color: "var(--danger)", borderColor: "var(--danger)" }}
@@ -92,7 +93,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
                 refresh(); onClose();
               }}>delete</button>
           )}
-          <button className="x" style={{ marginLeft: me?.role === "client" ? "auto" : 0 }} onClick={onClose}>✕</button>
+          <button className="x" style={{ marginLeft: me?.role === "client" ? "auto" : 0 }} onClick={onClose}><IconX size={14} /></button>
         </div>
         <textarea
           ref={taRef}
@@ -150,7 +151,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
         )}
         <div style={{ padding: "8px 16px 0" }}>
           <button className="btn ghost" style={{ fontSize: 11 }} onClick={() => setDetails(!details)}>
-            {details ? "▾ technical details" : "▸ technical details"}
+            <IconChevron dir={details ? "down" : "right"} size={11} /> technical details
           </button>
           {details && (
             <div id="props" style={{ marginTop: 8, paddingBottom: 4 }}>

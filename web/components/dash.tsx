@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
+import { IconGear } from "./icons";
 
 const TILE_LABELS: Record<string, string> = {
   value_delivered: "Value delivered", ai_spend: "AI spend", margin: "Margin",
@@ -48,7 +49,7 @@ export default function DashView() {
       {me?.role === "owner" && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
           <button className="btn ghost" style={{ fontSize: 11.5 }} onClick={() => setEditing(!editing)}>
-            {editing ? "done" : "⚙ customize"}
+            {editing ? "done" : <><IconGear size={12} /> customize</>}
           </button>
         </div>
       )}

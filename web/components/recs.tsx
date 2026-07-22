@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { API, get, HistoryRow, Run } from "@/lib/api";
+import { IconChevron } from "./icons";
 
 function RunRow({ m }: { m: Run }) {
   const [open, setOpen] = useState(false);
@@ -16,7 +17,7 @@ function RunRow({ m }: { m: Run }) {
         <span className="rkind">{m.kind}</span>
         <span className="rt">{m.title}</span>
         <span className="rm">{m.id} · {m.status} · {m.steps ?? 0} steps</span>
-        <span className="chev">▸</span>
+        <span className="chev"><IconChevron dir="right" size={12} /></span>
       </div>
       {open && (
         <div className="run-body">

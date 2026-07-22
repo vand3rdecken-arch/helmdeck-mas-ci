@@ -74,6 +74,51 @@ export const IconX = (p: { size?: number }) => (
   <I {...p}><path d="M6 6l12 12M18 6 6 18" /></I>
 );
 
+/* new-request examples + view switcher + affordances (lucide, house style) */
+export const IconBug = (p: { size?: number }) => (
+  <I {...p}><path d="M8 6a4 4 0 0 1 8 0" /><rect x="7" y="8" width="10" height="10" rx="5" /><path d="M3 12h4M17 12h4M4 8l3 2M20 8l-3 2M4 17l3-1.5M20 17l-3-1.5M12 8v10" /></I>
+);
+export const IconSparkle = (p: { size?: number }) => (
+  <I {...p}><path d="M12 3l1.8 4.9L18.7 9l-4.9 1.8L12 15.7l-1.8-4.9L5.3 9l4.9-1.1Z" /><path d="M19 15l.7 2 .8-.7-.7 2 " /></I>
+);
+export const IconGlobe = (p: { size?: number }) => (
+  <I {...p}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18" /></I>
+);
+export const IconSearch = (p: { size?: number }) => (
+  <I {...p}><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></I>
+);
+export const IconChevron = ({ dir = "right", size }: { dir?: "right" | "down" | "up" | "left"; size?: number }) => {
+  const rot = { right: 0, down: 90, up: -90, left: 180 }[dir];
+  return <I size={size} style={{ transform: `rotate(${rot}deg)` }}><path d="m9 6 6 6-6 6" /></I>;
+};
+export const IconGear = (p: { size?: number }) => (
+  <I {...p}><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M5 5l2 2M17 17l2 2M2 12h3M19 12h3M5 19l2-2M17 7l2-2" /></I>
+);
+export const IconWarn = (p: { size?: number }) => (
+  <I {...p}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></I>
+);
+export const IconFork = (p: { size?: number }) => (
+  <I {...p}><circle cx="6" cy="5" r="2.2" /><circle cx="18" cy="5" r="2.2" /><circle cx="12" cy="19" r="2.2" /><path d="M6 7.2v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-2M12 12.2v4.6" /></I>
+);
+export const IconUndo = (p: { size?: number }) => (
+  <I {...p}><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-5" /></I>
+);
+export const IconPlay = (p: { size?: number }) => (
+  <I {...p}><path d="M7 4.5v15l12-7.5Z" /></I>
+);
+export const IconGrid = (p: { size?: number }) => (
+  <I {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></I>
+);
+export const IconList = (p: { size?: number }) => (
+  <I {...p}><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></I>
+);
+export const IconTimeline = (p: { size?: number }) => (
+  <I {...p}><path d="M3 5h11M3 12h16M3 19h8" /><circle cx="17" cy="5" r="2" /><circle cx="13" cy="19" r="2" /></I>
+);
+export const IconTheme = (p: { size?: number }) => (
+  <I {...p}><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none" /></I>
+);
+
 export const MODE_ICONS: Record<string, (p: { size?: number }) => React.ReactElement> = {
   do: IconBot, prepare: IconPen, cowork: IconUsers, teach: IconCap, human: IconUser,
 };
