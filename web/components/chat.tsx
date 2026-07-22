@@ -6,7 +6,7 @@ import { IconChat, IconX } from "./icons";
 import Composer, { SendOpts } from "./composer";
 
 interface Usage { in: number; out: number; cost?: number }
-interface Msg { cls: "you" | "bot" | "act" | "think"; text: string; usage?: Usage }
+interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
 
 export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpen: (b: boolean) => void; hideFab?: boolean }) {
   const { me, refresh } = useBoard();
@@ -15,6 +15,9 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     text: 'Hi - tell me what to do with the board. e.g. "file a card: fix the invoice export, due Friday, €120", "what needs me right now?", "move the contract draft to review".',
   }]);
   const [busy, setBusy] = useState(false);
+  // running context overview (Paseo-style): last turn's input tokens vs the
+  // context window, plus cumulative session cost.
+  const [ctx, setCtx] = useState<{ used: number; total: number; cost: number } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const hydrated = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -43,9 +46,12 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
       setMsgs((m) => {
         const out = m.filter((x) => x.cls !== "think");
         if (r.error) return [...out, { cls: "bot" as const, text: "⚠ " + r.error }];
-        return [...out, { cls: "bot" as const, text: r.reply || "(done)", usage: r.usage },
+        return [...out, { cls: "bot" as const, text: r.reply || "(done)" },
           ...(r.actions ?? []).map((a) => ({ cls: "act" as const, text: "⚙ " + a }))];
       });
+      if (r.usage && (r.usage.in > 0 || r.usage.out > 0)) {
+        setCtx((c) => ({ used: r.usage!.in, total: 200000, cost: (c?.cost ?? 0) + (r.usage!.cost ?? 0) }));
+      }
       refresh();
     } catch {
       // aborted (Stop) or network error: drop the thinking bubble
@@ -69,19 +75,9 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
           onClick={() => setOpen(false)}><IconX size={13} /></button>
       </div>
       <div id="chatlog" ref={logRef}>
-        {msgs.map((m, i) => (
-          <div key={i} className={`cb ${m.cls}`}>
-            {m.text}
-            {m.usage && (m.usage.in > 0 || m.usage.out > 0) && (
-              <div className="cb-usage">
-                {(m.usage.in + m.usage.out).toLocaleString()} tok · {m.usage.in.toLocaleString()} in / {m.usage.out.toLocaleString()} out
-                {typeof m.usage.cost === "number" ? ` · $${m.usage.cost.toFixed(3)}` : ""}
-              </div>
-            )}
-          </div>
-        ))}
+        {msgs.map((m, i) => <div key={i} className={`cb ${m.cls}`}>{m.text}</div>)}
       </div>
-      <Composer onSend={send} busy={busy} onStop={stop} draftKey="swarm-draft:board"
+      <Composer onSend={send} busy={busy} onStop={stop} context={ctx ?? undefined} draftKey="swarm-draft:board"
         placeholder="Tell the board what to do…"
         slashCommands={[
           { name: "file", hint: "file a new card", insert: "File a card: " },
