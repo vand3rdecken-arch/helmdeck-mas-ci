@@ -99,6 +99,15 @@ def _snapshot():
                 "%s (%s)" % (c["name"], c["description"][:40]) for c in cs))
     except Exception:
         pass
+    try:
+        import debt as _d
+        open_items = [d for d in _d.list_debt() if d["status"] != "paid"]
+        if open_items:
+            lines.append("STRUCTURAL DEBT (open, ordered): " + "; ".join(
+                "%s - %s (bites when: %s)" % (d["id"], d["title"], d["trigger"])
+                for d in open_items))
+    except Exception:
+        pass
     lines.append("PROCESSES:")
     for p in processes.list_processes():
         lines.append("- id=%s status=%s client=%s due=%s request=%s" % (
