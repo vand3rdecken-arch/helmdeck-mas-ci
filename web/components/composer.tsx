@@ -37,7 +37,7 @@ export default function Composer({
   draftKey: string;
   slashCommands?: SlashCommand[];
   modeOptions?: ModeOption[];
-  context?: { used: number; total: number };
+  context?: { used: number; total: number; cost?: number };
   hideThinking?: boolean;              // filing a request has no live turn to think in
   sendLabel?: string;                  // text send button instead of the arrow (e.g. "File to Backlog")
   seed?: { text: string; key: number };  // inject text from outside (example chips)
@@ -222,12 +222,23 @@ export default function Composer({
           {models.map((m) => <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>)}
         </select>
 
-        {context && context.total > 0 && (
-          <span className="cmp-meter" title={`context ~${context.used.toLocaleString()} / ${context.total.toLocaleString()} tokens`}>
-            <span className="cmp-meterbar"><span className="cmp-meterfill" style={{ width: pct + "%" }} /></span>
-            <span className="cmp-meterpct">{pct}%</span>
-          </span>
-        )}
+        {context && context.total > 0 && (() => {
+          const R = 5.5, C = 2 * Math.PI * R;
+          const ring = pct > 90 ? "var(--danger)" : pct >= 70 ? "var(--warn)" : "var(--accent-2)";
+          const cost = typeof context.cost === "number" && context.cost > 0
+            ? (context.cost < 0.01 ? "$" + context.cost.toFixed(4) : "$" + context.cost.toFixed(2)) : "";
+          return (
+            <span className="cmp-meter"
+              title={`context ${context.used.toLocaleString()} / ${context.total.toLocaleString()} tokens (${pct}%)${cost ? " · session " + cost : ""}`}>
+              <svg width="14" height="14" viewBox="0 0 14 14">
+                <circle cx="7" cy="7" r={R} fill="none" stroke="var(--bg-surface-2)" strokeWidth="2" />
+                <circle cx="7" cy="7" r={R} fill="none" stroke={ring} strokeWidth="2" strokeLinecap="round"
+                  strokeDasharray={C} strokeDashoffset={C * (1 - pct / 100)} transform="rotate(-90 7 7)" />
+              </svg>
+              <span className="cmp-meterpct">{pct}%{cost ? " · " + cost : ""}</span>
+            </span>
+          );
+        })()}
 
         {busy && onStop ? (
           <button className="btn cmp-send cmp-stop" onClick={onStop} title="Stop the running turn"><IconStop size={15} /></button>
