@@ -12,7 +12,7 @@ DEBT = [
     {
         "id": "turn-locks",
         "title": "No per-track turn locks",
-        "status": "open",
+        "status": "paid",
         "what": "Steers/dispatches run in threads with nothing serializing "
                 "turns per card.",
         "why_it_bites": "Two simultaneous turns on one card (user + chain, or "
@@ -27,7 +27,7 @@ DEBT = [
     {
         "id": "json-storage",
         "title": "JSON-file storage (tracks/events/users)",
-        "status": "open",
+        "status": "paid",
         "what": "Every save is read-modify-write of a whole file from "
                 "concurrent threads; the event log is re-parsed fully on "
                 "every dashboard request.",
@@ -41,7 +41,7 @@ DEBT = [
     {
         "id": "polling",
         "title": "5s polling instead of push (SSE)",
-        "status": "open",
+        "status": "paid",
         "what": "Every client refetches all board data every 5 seconds.",
         "why_it_bites": "Staleness between users, wasted requests, and the "
                         "class of re-render bugs that polling forces the UI "
@@ -68,7 +68,7 @@ DEBT = [
     {
         "id": "vanilla-fallback-ui",
         "title": "Legacy single-file UI still served at :8140",
-        "status": "open",
+        "status": "paid",
         "what": "The pre-Next fallback UI shares no code with web/ and drifts.",
         "why_it_bites": "Confusion (features missing there look like bugs) - "
                         "already caused one 'I don't see it' incident.",

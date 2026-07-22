@@ -16,20 +16,16 @@ DEFAULT_PERM = os.environ.get("SWARMDECK_PERM", "acceptEdits")
 CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
+import db as _db
+
 def _load():
-    if not os.path.exists(STORE):
-        return []
-    try:
-        with open(STORE, encoding="utf-8") as f:
-            return json.load(f)
-    except ValueError:
-        return []
+    return _db.tracks_all()
 
 def _save(tracks):
-    tmp = STORE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(tracks, f, indent=2)
-    os.replace(tmp, STORE)
+    _db.tracks_replace(tracks)
+
+def _save_track(t):
+    _db.track_put(t)
 
 def _find(tracks, tid):
     for t in tracks:
@@ -56,6 +52,16 @@ def _worktree_for(repo, branch):
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, _slug(branch))
 
+import threading as _threading
+_turn_locks = {}
+_turn_locks_guard = _threading.Lock()
+
+def _lock_for(tid):
+    with _turn_locks_guard:
+        if tid not in _turn_locks:
+            _turn_locks[tid] = _threading.Lock()
+        return _turn_locks[tid]
+
 def _turn(t, prompt):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
@@ -72,7 +78,8 @@ def _turn(t, prompt):
         except Exception as e:
             print("recorder failed to start:", e)
     try:
-        return drivers.run(cfg, t, prompt)
+        with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
+            return drivers.run(cfg, t, prompt)
     finally:
         if rec:
             import wincap
@@ -132,8 +139,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     from actionlog import ActionLog
     ActionLog(run_dir).log("note", "REQUEST filed: %s (branch %s)" % (task, branch))
     events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver=t["driver"])
-    tracks.insert(0, t)
-    _save(tracks)
+    _save_track(t)
     if lane == "working":
         t = _start(tid)
     return t
@@ -159,15 +165,15 @@ def _start(tid):
     import events
     events.emit("lane", tid, frm=t.get("lane"), to="working")
     t["worktree"] = wt; t["lane"] = "working"; t["status"] = "running"
-    _save(tracks)
+    _save_track(t)
     sid, result, meta = _turn(t, t["task"])
     log.log("reply", result[:2000])
-    tracks = _load(); t = _find(tracks, tid)
+    t = _db.track_get(tid) or t
     t["session_id"] = sid; t["turns"] = 1
     t["last_reply"] = result[:2000]; t["status"] = "needs_you"
     _record_turn(t, meta)
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save(tracks)
+    _save_track(t)
     return t
 
 # -- the review gate: work may only reach the client when it is green ----
@@ -219,7 +225,7 @@ def move_lane(tid, lane, actor="owner"):
             ActionLog(t["run_dir"]).log("note", "BOUNCED by owner - back to Working")
             t["status"] = "bounced"; t["lane"] = "working"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            _save(tracks)
+            _save_track(t)
             return t
         return _start(tid)   # idempotent: resumes position if already started
     from actionlog import ActionLog
@@ -233,7 +239,7 @@ def move_lane(tid, lane, actor="owner"):
             t["status"] = "bounced"; t["lane"] = "working"
             t["gate_report"] = problems
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            _save(tracks)
+            _save_track(t)
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
@@ -269,7 +275,7 @@ def move_lane(tid, lane, actor="owner"):
     events.emit("lane", tid, frm=prev, to=lane)
     t["lane"] = lane
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save(tracks)
+    _save_track(t)
     return t
 
 def steer(tid, text, perm=None, actor="owner"):
@@ -289,7 +295,7 @@ def steer(tid, text, perm=None, actor="owner"):
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("steer", text)
-    t["status"] = "running"; _save(tracks)
+    t["status"] = "running"; _save_track(t)
     sid, result, meta = _turn(t, text)
     log.log("reply", result[:2000])
     # session_id can rotate on resume; keep the latest so the next steer continues.
@@ -299,7 +305,7 @@ def steer(tid, text, perm=None, actor="owner"):
     t["status"] = "needs_you"
     _record_turn(t, meta)
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save(tracks)
+    _save_track(t)
     return t
 
 EDITABLE = ("task", "priority", "due", "value", "client", "driver")
@@ -313,7 +319,7 @@ def archive_track(tid, on=True, actor="owner"):
         raise RuntimeError("no such track: " + tid)
     t["archived"] = bool(on)
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save(tracks)
+    _save_track(t)
     events.emit("archive", tid, on=bool(on), actor=actor)
     from actionlog import ActionLog
     ActionLog(t["run_dir"]).log("note", ("ARCHIVED" if on else "UNARCHIVED") + " by " + actor)
@@ -333,7 +339,7 @@ def delete_track(tid, actor="owner"):
     if _branch_exists(t["repo"], t["branch"]):
         subprocess.run(["git", "-C", t["repo"], "branch", "-D", t["branch"]],
                        capture_output=True, text=True)
-    _save([x for x in tracks if x["id"] != tid])
+    _db.track_delete(tid)
     events.emit("delete", tid, branch=t["branch"], task=t["task"][:80], actor=actor)
     return {"deleted": tid}
 
@@ -352,7 +358,7 @@ def update_track(tid, patch, actor="owner"):
             changed[k] = t[k]
     if changed:
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _save(tracks)
+        _save_track(t)
         events.emit("edit", tid, actor=actor, fields=changed)
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))

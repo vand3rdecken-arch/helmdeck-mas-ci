@@ -108,6 +108,11 @@ def save_settings(patch, actor="system", reason=""):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(s, f, indent=2)
     os.replace(tmp, SET)
+    try:
+        import db
+        db.bump()
+    except Exception:
+        pass
     return s
 
 def emit(kind, track, **fields):
@@ -118,16 +123,8 @@ def emit(kind, track, **fields):
     return row
 
 def read_events():
-    if not os.path.exists(EV):
-        return []
-    out = []
-    with open(EV, encoding="utf-8") as f:
-        for line in f:
-            try:
-                out.append(json.loads(line))
-            except ValueError:
-                pass
-    return out
+    import db
+    return db.events_all()
 
 def price_turn(models, usage, cost_usd=None):
     """Dollar cost of one session turn. CLI-reported total wins; else price the
