@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.12 tools/loop_state.py --stop-hook",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.12 tools/loop_state.py --session-start",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
