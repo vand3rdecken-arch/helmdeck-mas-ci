@@ -405,6 +405,11 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/charter":
+                import charter, events
+                return self._send(200, json.dumps(
+                    {"core": charter.CHARTER,
+                     "house_rules": (events.settings().get("policy") or {}).get("house_rules", "")}))
             if p == "/checkpoints":
                 import checkpoints
                 return self._send(200, json.dumps(checkpoints.list_checkpoints()))

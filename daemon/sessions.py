@@ -256,10 +256,14 @@ def move_lane(tid, lane, actor="owner"):
         if t.get("connector"):
             import connectors, checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))
-            inst = connectors.install_from_worktree(t)
-            if inst:
-                log.log("note", "CONNECTOR INSTALLED: " + ", ".join(inst))
-                events.emit("connector", tid, action="installed", files=inst)
+            try:
+                inst = connectors.install_from_worktree(t)
+                if inst:
+                    log.log("note", "CONNECTOR INSTALLED: " + ", ".join(inst))
+                    events.emit("connector", tid, action="installed", files=inst)
+            except RuntimeError as e:
+                log.log("note", str(e)[:400])
+                events.emit("connector", tid, action="charter_blocked", detail=str(e)[:300])
     elif lane == "backlog":
         t["status"] = "queued"
     events.emit("lane", tid, frm=prev, to=lane)

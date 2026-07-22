@@ -75,12 +75,21 @@ def install_from_worktree(track):
     src = os.path.join(track.get("worktree") or "", "connectors")
     if not os.path.isdir(src):
         return []
-    installed = []
+    import charter
+    installed, blocked = [], []
     for f in os.listdir(src):
         if f.endswith(".py") and not f.startswith("_"):
+            with open(os.path.join(src, f), encoding="utf-8", errors="replace") as fh:
+                code = fh.read()
+            hits = charter.screen_source(code)
+            if hits:
+                blocked.append("%s (%s)" % (f, "; ".join(hits)))
+                continue
             _archive(f[:-3])
             shutil.copy2(os.path.join(src, f), os.path.join(CDIR, f))
             installed.append(f)
+    if blocked:
+        raise RuntimeError("CHARTER BLOCKED: " + " | ".join(blocked))
     return installed
 
 def list_connectors():
