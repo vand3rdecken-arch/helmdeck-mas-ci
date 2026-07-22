@@ -33,6 +33,14 @@ function clientHues(key: string): [string, string] {
   return [`oklch(.72 .27 ${h1})`, `oklch(.65 .29 ${h2})`];
 }
 
+export function executor(t: Track): "ai" | "human" | "both" {
+  if (t.mode === "human" || t.mode === "teach") return "human";
+  if (t.mode === "cowork") return "both";
+  return "ai";   // do/prepare and all plain driver cards: an agent does the work
+}
+const EXEC_COLOR = { ai: "var(--ai)", human: "var(--human)",
+  both: "linear-gradient(180deg, var(--ai) 50%, var(--human) 50%)" } as const;
+
 export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
   const { met, spot, setSpot, tracks } = useBoard();
   const stepM = t.process ? t.branch.match(/-s(\d+)$/) : null;
@@ -51,7 +59,9 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
     <div className="gwrap" style={{ "--g1": g1, "--g2": g2 } as React.CSSProperties}>
       <span className="gpanel" aria-hidden />
       <span className="gpanel gblur" aria-hidden />
-      <div className={`card${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
+      <span className="execstripe" aria-hidden
+        style={{ background: EXEC_COLOR[executor(t)] }} />
+      <div className={`card exec-${executor(t)}${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
         onDragStart={(ev) => ev.dataTransfer.setData("text", t.id)}
         onMouseEnter={() => spotKey && setSpot(spotKey)}
         onMouseLeave={() => setSpot(null)}
@@ -61,7 +71,11 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
       <div className="chips">
         <span className="chip"><span className="sdot" style={{ background: st[1] }} />{st[0]}</span>
         {prioChip(t)}{dueChip(t)}
-        {t.mode && <span className="chip" title="execution mode"><ModeIcon mode={t.mode} />{MODE_LABEL[t.mode] ?? t.mode}</span>}
+        {t.mode && MODE_LABEL[t.mode] && (
+          <span className={`chip chip-exec-${executor(t)}`} title="execution mode">
+            <ModeIcon mode={t.mode} />{MODE_LABEL[t.mode] ?? t.mode}
+          </span>
+        )}
         {t.client && <span className="chip" title="client"><IconBriefcase />{t.client}</span>}
         {t.process && (
           <span className="chip" title={t.process_title} style={{ color: "var(--accent-txt)" }}>
@@ -75,7 +89,12 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
           <span className="chip" title="deliverable value">€{e.value}</span>
           <span className="chip" title="AI cost so far">AI ${e.ai_cost.toFixed(2)}</span>
           <span className="chip" title="your touch units">{e.touches}t</span>
-          {e.mode && <span className="chip">{e.mode}</span>}
+          {e.mode && (
+            <span className={`chip ${e.mode === "auto" ? "chip-exec-ai" : "chip-exec-human"}`}
+              title={e.mode === "auto" ? "completed by AI alone" : "a human helped"}>
+              {e.mode === "auto" ? "auto · AI" : "assisted · human"}
+            </span>
+          )}
         </>}
       </div>
       {e && (e.ai_cost > 0 || e.touches > 0) && (
@@ -184,6 +203,13 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
   return (
     <>
       <NextUp onOpen={onOpen} />
+      <div style={{ display: "flex", marginBottom: 8 }}>
+        <span id="execlegend">
+          <span><span className="sw" style={{ background: "var(--ai)" }} />AI executes</span>
+          <span><span className="sw" style={{ background: "var(--human)" }} />human executes</span>
+          <span><span className="sw" style={{ background: "linear-gradient(180deg,var(--ai) 50%,var(--human) 50%)" }} />together</span>
+        </span>
+      </div>
       <div id="board" className={spot ? "spotlighting" : ""}>
         {LANES.map(([key, defName, color]) => {
           const name = met?.settings?.policy?.lane_labels?.[key] ?? defName;
