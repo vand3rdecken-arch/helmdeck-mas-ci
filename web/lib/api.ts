@@ -56,6 +56,7 @@ export interface Metrics {
   yield_first_pass: [number, number];
   automation: [number, number];
   gate_failures: [string, number][];
+  ai_by_model?: Record<string, { turns: number; cost: number; tok_in: number; tok_out: number; avg_cost_per_turn: number }>;
   totals: { value_delivered: number; ai_spend: number; margin: number;
     leverage_per_touch: number };
 }

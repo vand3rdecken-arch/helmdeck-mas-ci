@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { get, post, HistoryRow, Track } from "@/lib/api";
+
+interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
 import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
   const [hist, setHist] = useState<HistoryRow[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [steer, setSteer] = useState("");
   const [task, setTask] = useState(t.task);
   const e = met?.cards.find((x) => x.id === t.id);
@@ -16,6 +19,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   useEffect(() => { setTask(t.task); }, [t.id, t.task]);
   useEffect(() => {
     get<HistoryRow[]>(`/tracks/${t.id}/history`).then(setHist).catch(() => setHist([]));
+    get<Turn[]>(`/tracks/${t.id}/turns`).then(setTurns).catch(() => setTurns([]));
   }, [t.id, t.updated]);
 
   async function edit(patch: Record<string, unknown>) {
@@ -106,6 +110,30 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             <span>{e.tokens_in} in / {e.tokens_out} out{e.models.length ? ` · ${e.models.join(", ")}` : ""}</span>
           </>}
         </div>
+        {turns.length > 0 && (
+          <div style={{ padding: "8px 16px 0" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--txt-tertiary)", marginBottom: 4 }}>
+              AI usage · {turns.length} turn{turns.length > 1 ? "s" : ""} · $
+              {turns.reduce((a, x) => a + (x.cost ?? 0), 0).toFixed(3)}
+            </div>
+            {turns.map((tu, i) => {
+              const u = tu.usage ?? {};
+              const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+              return (
+                <div key={i} style={{ display: "flex", gap: 10, fontSize: 11.5, color: "var(--txt-secondary)", padding: "1.5px 0" }}>
+                  <span style={{ color: "var(--txt-tertiary)", width: 100, flexShrink: 0 }}>{tu.ts?.slice(5, 16)}</span>
+                  <span style={{ width: 150, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {(tu.models?.[0] ?? "—").replace("claude-", "")}
+                  </span>
+                  <span style={{ width: 130, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                    {tin.toLocaleString()} in / {(u.output_tokens ?? 0).toLocaleString()} out
+                  </span>
+                  <span style={{ fontVariantNumeric: "tabular-nums" }}>${(tu.cost ?? 0).toFixed(3)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {t.status === "running" && met?.settings?.drivers?.[t.driver]?.record && (
           <div style={{ padding: "10px 16px 0" }}><LiveThumb trackId={t.id} big /></div>
         )}

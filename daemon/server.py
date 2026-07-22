@@ -523,6 +523,16 @@ class H(BaseHTTPRequestHandler):
                     with open(fp, "rb") as f:
                         return self._send(200, f.read(), "image/jpeg")
                 return self._send(404, b"no live frame", "text/plain")
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "turns":
+                # per-card AI usage: every turn's model, tokens, cost
+                import events, sessions
+                if user["role"] == "client":
+                    t = sessions.get_track(parts[1])
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
+                turns = [e for e in events.read_events()
+                         if e.get("kind") == "turn" and e.get("track") == parts[1]]
+                return self._send(200, json.dumps(turns))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "history":
                 import sessions
                 if user["role"] == "client":

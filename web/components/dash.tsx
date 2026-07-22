@@ -8,7 +8,7 @@ const TILE_LABELS: Record<string, string> = {
   yield: "First-pass yield", automation: "Automation rate", leverage: "Leverage per touch",
 };
 const PANEL_LABELS: Record<string, string> = {
-  capacity: "Capacity gauge", gates: "Gate failures", work: "Work table",
+  capacity: "Capacity gauge", gates: "Gate failures", models: "AI usage by model", work: "Work table",
 };
 
 export default function DashView() {
@@ -33,7 +33,7 @@ export default function DashView() {
     leverage: [cur + T.leverage_per_touch, "value per touch unit"],
   };
   const tileKeys = (met.settings?.dashboard?.tiles ?? Object.keys(TILE)).filter((k) => TILE[k]);
-  const panels = met.settings?.dashboard?.panels ?? ["capacity", "gates", "work"];
+  const panels = met.settings?.dashboard?.panels ?? ["capacity", "gates", "models", "work"];
   const gmax = met.gate_failures[0]?.[1] ?? 1;
   const actors = Object.entries(c.actors ?? {});
   async function toggle(kind: "tiles" | "panels", key: string) {
@@ -112,6 +112,30 @@ export default function DashView() {
           </div>
         ))}
       </div>}
+      {panels.includes("models") && met.ai_by_model && Object.keys(met.ai_by_model).length > 0 && (
+        <div className="panel">
+          <h3>AI usage by model — what a unit of agent work costs</h3>
+          <table>
+            <thead><tr><th>model</th><th className="num">turns</th><th className="num">tokens in</th>
+              <th className="num">tokens out</th><th className="num">total $</th><th className="num">avg $/turn</th></tr></thead>
+            <tbody>
+              {Object.entries(met.ai_by_model).map(([m, b]) => (
+                <tr key={m}>
+                  <td>{m.replace("claude-", "")}</td>
+                  <td className="num">{b.turns}</td>
+                  <td className="num">{b.tok_in.toLocaleString()}</td>
+                  <td className="num">{b.tok_out.toLocaleString()}</td>
+                  <td className="num">{b.cost.toFixed(2)}</td>
+                  <td className="num">{b.avg_cost_per_turn.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginTop: 8 }}>
+            avg $/turn is your quoting number: estimated turns × avg cost ≈ the AI price of a future card.
+          </div>
+        </div>
+      )}
       {panels.includes("work") && <div className="panel">
         <h3>Work done — <span style={{ color: "var(--ai)" }}>■</span> AI ($) · <span style={{ color: "var(--human)" }}>■</span> human (touch units)</h3>
         <div style={{ overflowX: "auto" }}>
