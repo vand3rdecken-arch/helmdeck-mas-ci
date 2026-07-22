@@ -187,6 +187,21 @@ def metrics(tracks):
             for r in e.get("problems", ["unknown"]):
                 key = r.split("\n")[0][:60]
                 fails[key] = fails.get(key, 0) + 1
+    # AI usage by model - the quoting table: what a unit of agent work costs
+    by_model = {}
+    for e in ev:
+        if e["kind"] != "turn":
+            continue
+        u = e.get("usage") or {}
+        for m in (e.get("models") or ["unknown"]):
+            b = by_model.setdefault(m, {"turns": 0, "cost": 0.0, "tok_in": 0, "tok_out": 0})
+            b["turns"] += 1
+            b["cost"] += e.get("cost") or 0.0
+            b["tok_in"] += u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)                 + u.get("cache_read_input_tokens", 0)
+            b["tok_out"] += u.get("output_tokens", 0)
+    for b in by_model.values():
+        b["cost"] = round(b["cost"], 4)
+        b["avg_cost_per_turn"] = round(b["cost"] / b["turns"], 4) if b["turns"] else 0
     touches_today = sum(tariff.get(e.get("touch"), 1) for e in ev
                         if e["kind"] == "touch" and e["ts"][:10] == today)
     actors = {}
@@ -209,6 +224,7 @@ def metrics(tracks):
         "yield_first_pass": (sum(1 for ok in gated.values() if ok), len(gated)),
         "automation": (sum(1 for c in done if c["mode"] == "auto"), len(done)),
         "gate_failures": sorted(fails.items(), key=lambda kv: -kv[1]),
+        "ai_by_model": dict(sorted(by_model.items(), key=lambda kv: -kv[1]["cost"])),
         "totals": {"value_delivered": round(value_done, 2),
                    "ai_spend": round(ai_all, 4),
                    "margin": round(value_done - ai_all, 2),
