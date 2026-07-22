@@ -5,11 +5,13 @@ import { get, post, HistoryRow, Track } from "@/lib/api";
 interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
 import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
+import { executor } from "./board";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
   const [hist, setHist] = useState<HistoryRow[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [details, setDetails] = useState(false);
   const [steer, setSteer] = useState("");
   const [task, setTask] = useState(t.task);
   const e = met?.cards.find((x) => x.id === t.id);
@@ -44,7 +46,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
       <div id="backdrop" onClick={onClose} />
       <div id="peek">
         <div className="ph">
-          <span className="pid">{t.branch} · {t.id}</span>
+          <span className="pid">{t.branch}</span>
           {me?.role !== "client" && (
             <button className="btn ghost" style={{ fontSize: 11, marginLeft: "auto" }}
               onClick={async () => {
@@ -74,9 +76,16 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           }}
           title="the request — editable, saves on blur"
         />
+        {/* primary properties — what a PM scans, Jira-style. diagnostics live
+            under 'technical details' below (progressive disclosure). */}
         <div id="props">
           <span className="k">State</span>
           <span><span className="chip"><span className="sdot" style={{ background: st[1] }} />{st[0]}</span></span>
+          <span className="k">Work by</span>
+          <span>
+            <span className={`exectag et-${executor(t)}`}><span className="edot" />
+              {executor(t) === "ai" ? "AI" : executor(t) === "human" ? "You" : "AI + You"}</span>
+          </span>
           <span className="k">Priority</span>
           <span>
             <select style={sel} value={t.priority ?? "medium"} onChange={(ev) => edit({ priority: ev.target.value })}>
@@ -95,45 +104,59 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             <input style={{ ...sel, width: 140 }} defaultValue={t.client ?? ""}
               placeholder="—" onBlur={(ev) => ev.target.value.trim() !== (t.client ?? "") && edit({ client: ev.target.value.trim() })} />
           </span>
-          <span className="k">Driver</span>
-          <span>
-            <select style={sel} value={t.driver ?? "claude"} onChange={(ev) => edit({ driver: ev.target.value })}>
-              {drivers.map((d) => <option key={d}>{d}</option>)}
-            </select>
-          </span>
-          <span className="k">Repo</span><span style={{ fontSize: 12 }}>{t.repo}</span>
-          <span className="k">Session</span><span style={{ fontSize: 12 }}>{t.session_id ?? "not started"}</span>
-          {e && <>
-            <span className="k">Economics</span>
-            <span>€{e.value} · AI ${e.ai_cost.toFixed(2)} · {e.touches} touches{e.mode ? ` · ${e.mode}` : ""}</span>
-            <span className="k">Tokens</span>
-            <span>{e.tokens_in} in / {e.tokens_out} out{e.models.length ? ` · ${e.models.join(", ")}` : ""}</span>
-          </>}
         </div>
-        {turns.length > 0 && (
-          <div style={{ padding: "8px 16px 0" }}>
-            <div style={{ fontSize: 10.5, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--txt-tertiary)", marginBottom: 4 }}>
-              AI usage · {turns.length} turn{turns.length > 1 ? "s" : ""} · $
-              {turns.reduce((a, x) => a + (x.cost ?? 0), 0).toFixed(3)}
-            </div>
-            {turns.map((tu, i) => {
-              const u = tu.usage ?? {};
-              const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-              return (
-                <div key={i} style={{ display: "flex", gap: 10, fontSize: 11.5, color: "var(--txt-secondary)", padding: "1.5px 0" }}>
-                  <span style={{ color: "var(--txt-tertiary)", width: 100, flexShrink: 0 }}>{tu.ts?.slice(5, 16)}</span>
-                  <span style={{ width: 150, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {(tu.models?.[0] ?? "—").replace("claude-", "")}
-                  </span>
-                  <span style={{ width: 130, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                    {tin.toLocaleString()} in / {(u.output_tokens ?? 0).toLocaleString()} out
-                  </span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>${(tu.cost ?? 0).toFixed(3)}</span>
-                </div>
-              );
-            })}
+        {e && (
+          <div style={{ padding: "0 16px 12px", fontSize: 12.5, display: "flex", gap: 8, flexWrap: "wrap",
+            alignItems: "center", borderBottom: "1px solid var(--glass-border)" }}>
+            <span title="deliverable value">€{e.value}</span>
+            <span style={{ color: "var(--txt-tertiary)" }}>·</span>
+            <span title="AI cost" style={{ color: "var(--ai)" }}>AI ${e.ai_cost.toFixed(2)}</span>
+            <span style={{ color: "var(--txt-tertiary)" }}>·</span>
+            <span title="margin = value − AI cost"><b>margin €{(e.value - e.ai_cost).toFixed(2)}</b></span>
+            <span style={{ color: "var(--txt-tertiary)" }}>·</span>
+            <span title="your touch units" style={{ color: "var(--human)" }}>{e.touches} touch{e.touches === 1 ? "" : "es"}</span>
+            {e.mode && <><span style={{ color: "var(--txt-tertiary)" }}>·</span>
+              <span>{e.mode === "auto" ? "auto · AI" : "assisted"}</span></>}
           </div>
         )}
+        <div style={{ padding: "8px 16px 0" }}>
+          <button className="btn ghost" style={{ fontSize: 11 }} onClick={() => setDetails(!details)}>
+            {details ? "▾ technical details" : "▸ technical details"}
+          </button>
+          {details && (
+            <div id="props" style={{ marginTop: 8, paddingBottom: 4 }}>
+              <span className="k">Driver</span>
+              <span>
+                <select style={sel} value={t.driver ?? "claude"} onChange={(ev) => edit({ driver: ev.target.value })}>
+                  {drivers.map((d) => <option key={d}>{d}</option>)}
+                </select>
+              </span>
+              <span className="k">Repo</span><span style={{ fontSize: 12, wordBreak: "break-all" }}>{t.repo}</span>
+              <span className="k">Session</span>
+              <span style={{ fontSize: 12, wordBreak: "break-all", color: "var(--txt-tertiary)" }}>{t.session_id ?? "not started"}</span>
+              {e && <><span className="k">Tokens</span>
+                <span style={{ fontSize: 12 }}>{e.tokens_in.toLocaleString()} in / {e.tokens_out.toLocaleString()} out{e.models.length ? ` · ${e.models.join(", ")}` : ""}</span></>}
+              {turns.length > 0 && (
+                <>
+                  <span className="k">AI turns</span>
+                  <span>
+                    {turns.map((tu, i) => {
+                      const u = tu.usage ?? {};
+                      const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+                      return (
+                        <div key={i} style={{ display: "flex", gap: 10, fontSize: 11.5, color: "var(--txt-secondary)", padding: "1.5px 0" }}>
+                          <span style={{ color: "var(--txt-tertiary)", width: 84, flexShrink: 0 }}>{tu.ts?.slice(5, 16)}</span>
+                          <span style={{ width: 96, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{(tu.models?.[0] ?? "—").replace("claude-", "")}</span>
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{tin.toLocaleString()}/{(u.output_tokens ?? 0).toLocaleString()} · ${(tu.cost ?? 0).toFixed(3)}</span>
+                        </div>
+                      );
+                    })}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         {t.status === "running" && met?.settings?.drivers?.[t.driver]?.record && (
           <div style={{ padding: "10px 16px 0" }}><LiveThumb trackId={t.id} big /></div>
         )}
