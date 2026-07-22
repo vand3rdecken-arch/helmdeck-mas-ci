@@ -3,7 +3,7 @@
 // forking below it, commits as dots on a shared time axis. Click a branch ->
 // its card; hover a dot -> the commit. What happened, who did it, when -
 // straight from the repository, unfakeable.
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { get, post, Track } from "@/lib/api";
 import { laneColor, useBoard } from "@/lib/store";
 
@@ -11,7 +11,17 @@ interface Commit { h: string; msg: string; author: string; date: string }
 interface Branch { name: string; commits: Commit[]; track: string | null; task: string; lane: string | null; client: string }
 interface Hist { head: string; main: Commit[]; branches: Branch[] }
 interface Checkpoint { id: string; actor: string; reason: string; ts: string }
+interface CpField { key: string; before: unknown; after: unknown }
+interface CpDiff { id: string; settings: CpField[]; connectors: { added: string[]; removed: string[] } }
 interface Debt { id: string; title: string; status: string; what: string; why_it_bites: string; trigger: string; fix: string }
+
+// render a settings value for the diff, compactly and readably
+function val(v: unknown): string {
+  if (v === null || v === undefined) return "(unset)";
+  if (typeof v === "string") return v === "" ? '""' : v;
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
 
 const DAY = 86400e3;
 
@@ -20,7 +30,14 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
   const [h, setH] = useState<Hist | null>(null);
   const [cps, setCps] = useState<Checkpoint[]>([]);
   const [debt, setDebt] = useState<Debt[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [diffs, setDiffs] = useState<Record<string, CpDiff>>({});
   const loadCps = () => get<Checkpoint[]>("/checkpoints").then(setCps).catch(() => {});
+  function toggleDiff(id: string) {
+    if (open === id) { setOpen(null); return; }
+    setOpen(id);
+    if (!diffs[id]) get<CpDiff>(`/checkpoints/${id}/diff`).then((d) => setDiffs((m) => ({ ...m, [id]: d }))).catch(() => {});
+  }
   useEffect(() => {
     get<Hist>("/history").then(setH).catch(() => {});
     loadCps();
@@ -114,19 +131,31 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
         row color = the card&apos;s lane · this comes straight from git — the audit trail nobody can redraw
       </div>
       <div className="panel" style={{ marginTop: 16, maxWidth: 860 }}>
-        <h3>System checkpoints — every change to the software itself</h3>
+        <h3>Config checkpoints — every change to the software&apos;s settings &amp; connectors</h3>
+        <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", margin: "-4px 0 10px" }}>
+          policy/settings and connector edits (not code — that&apos;s the git graph above).
+          Click a row to see exactly what changed.
+        </div>
         {!cps.length && <div style={{ fontSize: 12.5, color: "var(--txt-tertiary)" }}>
           none yet — the next settings change, connector install or template addition creates one</div>}
         <table>
           <tbody>
-            {cps.slice(0, 20).map((c) => (
-              <tr key={c.id}>
+            {cps.slice(0, 20).map((c) => {
+              const d = diffs[c.id];
+              const isOpen = open === c.id;
+              return (
+              <Fragment key={c.id}>
+              <tr style={{ cursor: "pointer" }} onClick={() => toggleDiff(c.id)}>
                 <td style={{ width: 150, fontSize: 12, color: "var(--txt-tertiary)" }}>{c.ts}</td>
                 <td style={{ width: 90 }}><b style={{ fontWeight: 600 }}>{c.actor}</b></td>
-                <td style={{ fontSize: 12.5 }}>{c.reason}</td>
+                <td style={{ fontSize: 12.5 }}>
+                  <span style={{ color: "var(--txt-tertiary)", marginRight: 6 }}>{isOpen ? "▾" : "▸"}</span>
+                  {c.reason}
+                </td>
                 <td style={{ textAlign: "right", width: 100 }}>
                   {me?.role === "owner" && (
-                    <button className="btn ghost" style={{ fontSize: 11 }} onClick={async () => {
+                    <button className="btn ghost" style={{ fontSize: 11 }} onClick={async (ev) => {
+                      ev.stopPropagation();
                       if (!confirm(`Restore the workspace config to before "${c.reason}"?
 (Reversible — the current state is checkpointed first. Work data is untouched.)`)) return;
                       const r = await post<{ error?: string }>(`/checkpoints/${c.id}/restore`, {});
@@ -136,7 +165,32 @@ export default function HistoryView({ onOpen }: { onOpen: (t: Track) => void }) 
                   )}
                 </td>
               </tr>
-            ))}
+              {isOpen && (
+                <tr>
+                  <td colSpan={4} style={{ padding: "2px 0 12px 20px" }}>
+                    {!d ? <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>reading diff…</span>
+                     : (d.settings.length === 0 && !d.connectors.added.length && !d.connectors.removed.length)
+                       ? <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>no field-level change recorded (or it was the very first snapshot)</span>
+                       : (
+                      <div style={{ fontSize: 12, fontFamily: "var(--mono, ui-monospace, monospace)", lineHeight: 1.7 }}>
+                        {d.settings.map((f) => (
+                          <div key={f.key}>
+                            <span style={{ color: "var(--txt-secondary)" }}>{f.key}</span>{": "}
+                            <span style={{ color: "var(--danger)" }}>{val(f.before)}</span>
+                            <span style={{ color: "var(--txt-tertiary)" }}>{" → "}</span>
+                            <span style={{ color: "var(--ok)" }}>{val(f.after)}</span>
+                          </div>
+                        ))}
+                        {d.connectors.added.map((n) => <div key={"a" + n}><span style={{ color: "var(--ok)" }}>+ connector {n}</span></div>)}
+                        {d.connectors.removed.map((n) => <div key={"r" + n}><span style={{ color: "var(--danger)" }}>− connector {n}</span></div>)}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
