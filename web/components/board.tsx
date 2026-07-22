@@ -41,6 +41,14 @@ export function executor(t: Track): "ai" | "human" | "both" {
 const EXEC_COLOR = { ai: "var(--ai)", human: "var(--human)",
   both: "linear-gradient(180deg, var(--ai) 50%, var(--human) 50%)" } as const;
 
+// order within a lane: a manual rank (drag to reorder) wins; cards never ranked
+// fall back to the computed priority -> due order. 'policy is data' - so is order.
+export function laneSort(a: Track, b: Track) {
+  return ((a.rank ?? 1e9) - (b.rank ?? 1e9))
+    || (PRIO_ORD[a.priority ?? "medium"] - PRIO_ORD[b.priority ?? "medium"])
+    || ((a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1);
+}
+
 export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
   const { met, spot, setSpot, tracks } = useBoard();
   const stepM = t.process ? t.branch.match(/-s(\d+)$/) : null;
@@ -159,6 +167,8 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
   const [dragLane, setDragLane] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [fx, setFx] = useState<Record<string, string>>({});
+  const [dnd, setDnd] = useState<{ id: string; lane: string } | null>(null);
+  const [over, setOver] = useState<{ id: string; pos: "before" | "after" } | null>(null);
   const prevRef = useRef<Record<string, { status: string; lane: string }>>({});
   const total = tracks.length || 1;
 
@@ -188,10 +198,29 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
     }
   }, [tracks]);
 
+  // persist a lane's new manual order (drag to reorder within a lane)
+  async function reorder(orderedIds: string[]) {
+    setDnd(null); setOver(null);
+    await post("/tracks/reorder", { ids: orderedIds });
+    setTimeout(refresh, 150);
+  }
+  // drop a dragged card at a position relative to a target card in the same lane
+  function dropOnCard(lane: string, laneCards: Track[], targetId: string, ev: React.DragEvent) {
+    if (!dnd || dnd.lane !== lane || dnd.id === targetId) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const ids = laneCards.map((c) => c.id).filter((x) => x !== dnd.id);
+    let idx = ids.indexOf(targetId);
+    if (over?.id === targetId && over.pos === "after") idx += 1;
+    ids.splice(idx, 0, dnd.id);
+    reorder(ids);
+  }
+
   async function drop(lane: string, ev: React.DragEvent) {
     ev.preventDefault();
     setDragLane(null);
     const id = ev.dataTransfer.getData("text");
+    const card = tracks.find((x) => x.id === id);
+    if (card && (card.lane || "working") === lane) return;  // same lane = reorder, handled per-card
     const res = await post<Track>(`/tracks/${id}/lane`, { lane });
     if (!res?.gate_failed && (lane === "done" || lane === "review")) {
       setFlash(lane); setTimeout(() => setFlash(null), 900);
@@ -215,11 +244,7 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
             (filter === "all" || filter === "archived" ||
              (filter === "needs_you" ? (t.status === "needs_you" || t.status === "bounced")
               : t.client === filter.slice(7))));
-          if (key === "backlog") {
-            inLane = [...inLane].sort((a, b) =>
-              (PRIO_ORD[a.priority ?? "medium"] - PRIO_ORD[b.priority ?? "medium"]) ||
-              ((a.due ?? "9999") < (b.due ?? "9999") ? -1 : 1));
-          }
+          inLane = [...inLane].sort(laneSort);
           return (
             <div key={key} className={`lane${dragLane === key ? " drag" : ""}${flash === key ? " flash" : ""}`}
               onDragOver={(e) => { e.preventDefault(); setDragLane(key); }}
@@ -233,7 +258,17 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
               </div>
               <div className="lane-body">
                 {inLane.map((t) => (
-                  <div key={t.id} className={fx[t.id] ?? ""}>
+                  <div key={t.id}
+                    className={`card-slot ${fx[t.id] ?? ""}${over?.id === t.id ? ` ins-${over.pos}` : ""}`}
+                    onDragStart={() => setDnd({ id: t.id, lane: key })}
+                    onDragEnd={() => { setDnd(null); setOver(null); }}
+                    onDragOver={(e) => {
+                      if (!dnd || dnd.lane !== key || dnd.id === t.id) return;
+                      e.preventDefault(); e.stopPropagation();
+                      const r = e.currentTarget.getBoundingClientRect();
+                      setOver({ id: t.id, pos: e.clientY < r.top + r.height / 2 ? "before" : "after" });
+                    }}
+                    onDrop={(e) => dropOnCard(key, inLane, t.id, e)}>
                     <Card t={t} onOpen={onOpen} />
                   </div>
                 ))}

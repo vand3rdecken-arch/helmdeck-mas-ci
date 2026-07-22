@@ -139,6 +139,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
          "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "value": float(value) if value else events.settings()["value_per_card"],
          "driver": driver or "claude", "priority": priority or "medium", "due": due or "",
+         "rank": None,
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -328,6 +329,21 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save_track(t)
     return t
+
+def reorder(ids, actor="owner"):
+    """Persist manual card order. rank = position in the given (single-lane)
+    ordered id list; the board sorts by rank first, so this overrides the
+    computed priority/due order - 'policy is data', order is now data too."""
+    tracks = _load()
+    changed = 0
+    for i, tid in enumerate(ids):
+        t = _find(tracks, tid)
+        if t and t.get("rank") != i:
+            t["rank"] = i
+            _save_track(t)
+            changed += 1
+    return {"reordered": changed}
+
 
 def cancel_turn(tid, actor="owner"):
     """Stop a running turn (the composer's Stop button). Kills the driver
