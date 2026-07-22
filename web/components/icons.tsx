@@ -48,6 +48,32 @@ export const IconCheck = (p: { size?: number }) => (
   <I {...p}><path d="M20 6 9 17l-5-5" /></I>
 );
 
+/* composer (ported from Paseo's lucide set, drawn in our house style) */
+export const IconPaperclip = (p: { size?: number }) => (
+  <I {...p}><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4l8-8" /></I>
+);
+export const IconBrain = (p: { size?: number }) => (
+  <I {...p}><path d="M9.5 4.5a2.5 2.5 0 0 0-2.4 3.1A2.5 2.5 0 0 0 5 12a2.5 2.5 0 0 0 1.5 4.3A2.5 2.5 0 0 0 9.5 20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-1.5Z" /><path d="M14.5 4.5a2.5 2.5 0 0 1 2.4 3.1A2.5 2.5 0 0 1 19 12a2.5 2.5 0 0 1-1.5 4.3A2.5 2.5 0 0 1 14.5 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-1.5Z" /></I>
+);
+export const IconArrowUp = (p: { size?: number }) => (
+  <I {...p}><path d="M12 20V5M6 11l6-6 6 6" /></I>
+);
+export const IconStop = (p: { size?: number }) => (
+  <I {...p}><rect x="6" y="6" width="12" height="12" rx="2" /></I>
+);
+export const IconSliders = (p: { size?: number }) => (
+  <I {...p}><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="14" cy="18" r="2" /></I>
+);
+export const IconImage = (p: { size?: number }) => (
+  <I {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m21 16-4.5-4.5L5 20" /></I>
+);
+export const IconFile = (p: { size?: number }) => (
+  <I {...p}><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /></I>
+);
+export const IconX = (p: { size?: number }) => (
+  <I {...p}><path d="M6 6l12 12M18 6 6 18" /></I>
+);
+
 export const MODE_ICONS: Record<string, (p: { size?: number }) => React.ReactElement> = {
   do: IconBot, prepare: IconPen, cowork: IconUsers, teach: IconCap, human: IconUser,
 };

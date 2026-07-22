@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { get, post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
 import { IconChat } from "./icons";
+import Composer, { SendOpts } from "./composer";
 
 interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
 
@@ -12,9 +13,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     cls: "bot",
     text: 'Hi — tell me what to do with the board. e.g. "file a card: fix the invoice export, due Friday, €120", "what needs me right now?", "move the contract draft to review".',
   }]);
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [model, setModel] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const hydrated = useRef(false);
 
@@ -30,14 +29,13 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
 
   if (me?.role === "client") return null;
 
-  async function send() {
-    const v = text.trim();
-    if (!v || busy) return;
-    setText("");
-    setMsgs((m) => [...m, { cls: "you", text: v }, { cls: "think", text: "thinking + acting…" }]);
+  async function send(v: string, opts: SendOpts) {
+    if ((!v && !opts.attachments.length) || busy) return;
+    setMsgs((m) => [...m, { cls: "you", text: v || "(attachment)" }, { cls: "think", text: "thinking + acting…" }]);
     setBusy(true);
     try {
-      const r = await post<{ reply?: string; actions?: string[]; error?: string }>("/chat", { text: v, model });
+      const r = await post<{ reply?: string; actions?: string[]; error?: string }>("/chat",
+        { text: v, model: opts.model, thinking: opts.thinking, attachments: opts.attachments });
       setMsgs((m) => {
         const out = m.filter((x) => x.cls !== "think");
         if (r.error) return [...out, { cls: "bot" as const, text: "⚠ " + r.error }];
@@ -56,25 +54,20 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     <div id="chat">
       <div className="ch">
         <b>Board copilot</b>
-        <select value={model} onChange={(e) => setModel(e.target.value)}
-          style={{ marginLeft: 10, fontSize: 11, padding: "1px 20px 1px 8px", height: 22 }}
-          title="model for this chat - haiku is fast/cheap, opus is deepest">
-          <option value="">sonnet (default)</option>
-          <option value="haiku">haiku · fast</option>
-          <option value="opus">opus · deep</option>
-        </select>
         <button className="x" style={{ marginLeft: "auto", color: "var(--txt-tertiary)", padding: "2px 8px" }}
           onClick={() => setOpen(false)}>✕</button>
       </div>
       <div id="chatlog" ref={logRef}>
         {msgs.map((m, i) => <div key={i} className={`cb ${m.cls}`}>{m.text}</div>)}
       </div>
-      <div className="crow">
-        <textarea id="chatbox" placeholder="Tell the board what to do…" value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
-        <button className="btn primary" disabled={busy} onClick={send}>Send</button>
-      </div>
+      <Composer onSend={send} busy={busy} draftKey="swarm-draft:board"
+        placeholder="Tell the board what to do…"
+        slashCommands={[
+          { name: "file", hint: "file a new card", insert: "File a card: " },
+          { name: "next", hint: "what needs me right now?", insert: "What needs me right now?" },
+          { name: "move", hint: "move a card to a lane", insert: "Move " },
+          { name: "digest", hint: "summarize the board", insert: "Give me a short digest of the board — what's in flight, what's blocked, what's done." },
+        ]} />
     </div>
   );
 }

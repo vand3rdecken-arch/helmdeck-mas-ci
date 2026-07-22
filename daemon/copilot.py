@@ -264,19 +264,23 @@ def history(user):
     return {"messages": _log().get(user, []),
             "session_id": _sessions().get(user)}
 
-CHAT_MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5",
-               "opus": "claude-opus-4-8"}
-
-def chat(user, message, role="operator", model=""):
-    """One copilot turn for this user. Returns {reply, actions: [results]}."""
+def chat(user, message, role="operator", model="", thinking="", attachments=None):
+    """One copilot turn for this user. Returns {reply, actions: [results]}.
+    model/thinking/attachments come from the shared composer and resolve through
+    turnopts (same whitelist + Auto routing the card chat uses)."""
+    import turnopts
     sess = _sessions()
     sid = sess.get(user)
+    paths = turnopts.save_attachments(os.path.join(ROOT, ".copilot_attachments", user),
+                                      attachments)
+    cli_model, _ = turnopts.resolve_model(model, message, bool(paths))
+    body = turnopts.augment_prompt(message, thinking, paths)
     prompt = SYSTEM + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-        + _snapshot() + "\n\nUSER (%s): %s" % (user, message)
+        + _snapshot() + "\n\nUSER (%s): %s" % (user, body)
     cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "json",
            "--permission-mode", "plan"]
-    if model in CHAT_MODELS:   # whitelist only - no arbitrary model ids from the client
-        cmd += ["--model", CHAT_MODELS[model]]
+    if cli_model:              # whitelist only - no arbitrary model ids from the client
+        cmd += ["--model", cli_model]
     if sid:
         cmd += ["--resume", sid]
     r = subprocess.run(cmd, cwd=ROOT, input=prompt, capture_output=True,

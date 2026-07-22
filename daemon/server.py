@@ -618,7 +618,7 @@ class H(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
             if user["role"] == "client" and p not in ("/tracks/new", "/processes/new") \
-               and not (p.startswith("/tracks/") and p.endswith("/steer")):
+               and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel"))):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
             if p == "/chat":
                 if user["role"] == "client":
@@ -628,7 +628,9 @@ class H(BaseHTTPRequestHandler):
                 if not text:
                     return self._send(400, json.dumps({"error": "text required"}))
                 try:
-                    return self._send(200, json.dumps(copilot.chat(user["name"], text, role=user["role"], model=body.get("model", ""))))
+                    return self._send(200, json.dumps(copilot.chat(
+                        user["name"], text, role=user["role"], model=body.get("model", ""),
+                        thinking=body.get("thinking", ""), attachments=body.get("attachments"))))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
@@ -838,8 +840,23 @@ class H(BaseHTTPRequestHandler):
                     if not t or t.get("client") != user["name"]:
                         return self._send(403, json.dumps({"error": "not your card"}))
                 actor = user["name"]
-                _bg("track:steer:" + tid, lambda: sessions.steer(tid, text, actor=actor))
+                model = body.get("model", "")
+                thinking = body.get("thinking", "")          # level string, "" = off
+                attachments = body.get("attachments")
+                # clients steer their own card but can't escalate the permission mode
+                mode = body.get("mode") if user["role"] != "client" else None
+                _bg("track:steer:" + tid, lambda: sessions.steer(
+                    tid, text, actor=actor, model=model, thinking=thinking,
+                    attachments=attachments, mode=mode))
                 return self._send(200, json.dumps({"started": tid}))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "cancel":
+                import sessions
+                tid = parts[1]
+                if user["role"] == "client":
+                    t = sessions.get_track(tid)
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
+                return self._send(200, json.dumps(sessions.cancel_turn(tid, actor=user["name"])))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "lane":
                 import sessions
                 tid = parts[1]
