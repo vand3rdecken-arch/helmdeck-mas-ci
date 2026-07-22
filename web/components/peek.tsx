@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { get, post, HistoryRow, Track } from "@/lib/api";
 
 interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
@@ -14,11 +14,16 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   const [details, setDetails] = useState(false);
   const [steer, setSteer] = useState("");
   const [task, setTask] = useState(t.task);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const e = met?.cards.find((x) => x.id === t.id);
   const st = STATUS[t.status] ?? [t.status, "var(--txt-tertiary)"];
   const drivers = Object.keys(met?.settings?.drivers ?? { claude: {} });
 
   useEffect(() => { setTask(t.task); }, [t.id, t.task]);
+  useEffect(() => {   // grow the title box to fit the full task (no hidden scroll)
+    const ta = taRef.current;
+    if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 300) + "px"; }
+  }, [task]);
   useEffect(() => {
     get<HistoryRow[]>(`/tracks/${t.id}/history`).then(setHist).catch(() => setHist([]));
     get<Turn[]>(`/tracks/${t.id}/turns`).then(setTurns).catch(() => setTurns([]));
@@ -75,12 +80,13 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           <button className="x" style={{ marginLeft: me?.role === "client" ? "auto" : 0 }} onClick={onClose}>✕</button>
         </div>
         <textarea
+          ref={taRef}
           value={task}
           onChange={(ev) => setTask(ev.target.value)}
           onBlur={() => task.trim() && task !== t.task && edit({ task: task.trim() })}
           style={{
-            margin: "12px 16px 4px", fontSize: 15, fontWeight: 600, lineHeight: 1.4,
-            minHeight: 96, resize: "vertical",
+            margin: "12px 16px 4px", fontSize: 15, fontWeight: 600, lineHeight: 1.45,
+            minHeight: 52, maxHeight: 300, resize: "vertical", overflowY: "auto",
           }}
           title="the request — editable, saves on blur"
         />

@@ -71,7 +71,7 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
         </span>
         <span className="cid">{t.branch} · {t.turns} turns</span>
       </div>
-      <div className="title">{t.task}</div>
+      <div className="title" title={t.task}>{t.task.split("\n")[0]}</div>
       <div className="chips">
         <span className="chip"><span className="sdot" style={{ background: st[1] }} />{st[0]}</span>
         {prioChip(t)}{dueChip(t)}
