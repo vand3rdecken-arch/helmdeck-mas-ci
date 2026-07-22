@@ -16,9 +16,11 @@ The loop:
              (tools/design_lint.py - the enforceable subset of the design skill:
              color-scheme, no inline control sizing, tokens not hex, etc).
     TEST     checks green but workorder lacks '## Verified' - run the real
-             thing (e2e/screenshot for UI - JUDGE it, don't just render it;
-             UI also runs tools/adversarial_smoke.py = test it like an idiot)
-             and record what was verified.
+             thing (e2e/screenshot for UI - JUDGE it, don't just render it),
+             AND adversarial-test the specific feature you built (write its
+             own break-it cases per .claude/skills/adversarial-test - a
+             principle applied per feature, not a canned suite), and record
+             what was verified.
     CLEAN    hygiene broken - debt register malformed, or secret files
              (settings.json / users.json / *.db) tracked/staged.
     COMMIT   loop complete and edits gone quiet - propose the commit; on a
@@ -225,8 +227,9 @@ def transitions():
         return t
 
     if not section_filled(wo, "## Verified"):
-        adv = (" Then idiot-test it: `py tools/adversarial_smoke.py` (does it BREAK, "
-               "not just render) and address findings." if ui_work else "")
+        adv = (" Then adversarial-test THIS feature (not a generic walk): apply "
+               ".claude/skills/adversarial-test - list how a careless/hostile user "
+               "breaks the thing you just built, try each, record pass/fail in Verified.")
         t.append(("TEST", "checks green but nothing verified - run the real thing "
                   "(e2e; UI = screenshot and JUDGE) and fill '## Verified'." + design + adv))
         return t
