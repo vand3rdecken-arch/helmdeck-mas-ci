@@ -642,3 +642,11 @@ input[type="checkbox"]:checked::before{content:"";width:8px;height:8px;
 #chat{background:color-mix(in oklch,var(--bg-surface-1) 98%,transparent)}
 [data-theme="dark"] #chat{background:oklch(.2 .004 230/97%)}
 [data-theme="dark"] #palcard{background:oklch(.2 .004 230/97%)}
+
+/* ---- native widget internals follow color-scheme, not our CSS.
+   Without this, select popups / date pickers render LIGHT inside dark mode -
+   the one surface screenshots can't capture. ---- */
+:root{color-scheme:light}
+[data-theme="dark"]{color-scheme:dark}
+select option{background:var(--bg-surface-1);color:var(--txt-primary)}
+select optgroup{background:var(--bg-surface-1);color:var(--txt-tertiary)}
