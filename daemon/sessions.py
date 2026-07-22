@@ -72,6 +72,7 @@ def _turn(t, prompt, model=None, perm=None):
     import drivers, events
     name = t.get("driver") or "claude"
     cfg = events.settings().get("drivers", {}).get(name) or {"type": "claude"}
+    model = model or t.get("model")      # card's chosen model (from New Request) unless overridden
     if model:
         cfg = {**cfg, "model": model}
     if perm:
@@ -123,23 +124,28 @@ def get_track(tid):
     return _find(_load(), tid)
 
 def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
-              value=None, driver="claude", actor="owner", priority="medium", due=""):
+              value=None, driver="claude", actor="owner", priority="medium", due="",
+              model="", attachments=None):
     """File a request. lane=backlog stores it un-started (no worktree, no session);
     lane=working starts the branch session immediately. value = what the
     deliverable is worth (settings default when omitted) - set at intake so
     margin is computable at acceptance."""
-    import events
+    import events, turnopts
     repo = os.path.abspath(repo)
     tracks = _load()
     tid = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(branch)
     run_dir = os.path.join(REC, tid)
     os.makedirs(run_dir, exist_ok=True)
+    # attachments filed with the request are saved now; the first run reads them.
+    # model chosen in the composer becomes the card's execution model (Auto too).
+    att_paths = turnopts.save_attachments(run_dir, attachments)
+    cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths))
     t = {"id": tid, "repo": repo, "branch": branch, "worktree": "", "task": task,
          "client": client, "session_id": None, "perm": perm, "lane": "backlog",
          "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "value": float(value) if value else events.settings()["value_per_card"],
          "driver": driver or "claude", "priority": priority or "medium", "due": due or "",
-         "rank": None,
+         "rank": None, "model": cli_model or "", "attachments": att_paths,
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -173,7 +179,10 @@ def _start(tid):
     events.emit("lane", tid, frm=t.get("lane"), to="working")
     t["worktree"] = wt; t["lane"] = "working"; t["status"] = "running"
     _save_track(t)
-    sid, result, meta = _turn(t, t["task"])
+    prompt = t["task"]
+    if t.get("attachments"):             # files filed with the request
+        prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
+    sid, result, meta = _turn(t, prompt)
     log.log("reply", result[:2000])
     t = _db.track_get(tid) or t
     t["session_id"] = sid; t["turns"] = 1

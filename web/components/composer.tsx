@@ -26,6 +26,7 @@ const THINK: { id: string; short: string }[] = [
 // meter, and a slash-command popover.
 export default function Composer({
   onSend, onStop, busy, placeholder, draftKey, slashCommands, modeOptions, context,
+  hideThinking, sendLabel, seed,
 }: {
   onSend: (text: string, opts: SendOpts) => void | Promise<void>;
   onStop?: () => void;
@@ -35,6 +36,9 @@ export default function Composer({
   slashCommands?: SlashCommand[];
   modeOptions?: ModeOption[];
   context?: { used: number; total: number };
+  hideThinking?: boolean;              // filing a request has no live turn to think in
+  sendLabel?: string;                  // text send button instead of the arrow (e.g. "File to Backlog")
+  seed?: { text: string; key: number };  // inject text from outside (example chips)
 }) {
   const [text, setText] = useState("");
   const [model, setModel] = useState("auto");
@@ -58,6 +62,8 @@ export default function Composer({
     setText(v); setSlashHide(false);
     try { v ? localStorage.setItem(draftKey, v) : localStorage.removeItem(draftKey); } catch { /* ignore */ }
   }
+  // external injection (e.g. New Request example chips) - overrides the draft
+  useEffect(() => { if (seed) write(seed.text); /* eslint-disable-next-line */ }, [seed?.key]);
   useEffect(() => {
     const ta = taRef.current;
     if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 160) + "px"; }
@@ -187,11 +193,13 @@ export default function Composer({
         <button className="cmp-tool" title="Attach image or file" onClick={() => fileRef.current?.click()}>
           <IconPaperclip size={15} />
         </button>
-        <button className={"cmp-tool" + (thinkOn ? " on" : "")} onClick={() => {
-          const i = THINK.findIndex((x) => x.id === thinking); setThinking(THINK[(i + 1) % THINK.length].id);
-        }} title="Thinking level — off · think · hard · ultra">
-          <IconBrain size={15} />{thinkOn && <span className="cmp-toollabel">{thinkShort}</span>}
-        </button>
+        {!hideThinking && (
+          <button className={"cmp-tool" + (thinkOn ? " on" : "")} onClick={() => {
+            const i = THINK.findIndex((x) => x.id === thinking); setThinking(THINK[(i + 1) % THINK.length].id);
+          }} title="Thinking level — off · think · hard · ultra">
+            <IconBrain size={15} />{thinkOn && <span className="cmp-toollabel">{thinkShort}</span>}
+          </button>
+        )}
         {modeOptions && modeOptions.length > 1 && (
           <button className="cmp-tool" onClick={() => {
             const i = modeOptions.findIndex((m) => m.id === mode);
@@ -215,8 +223,9 @@ export default function Composer({
         {busy && onStop ? (
           <button className="btn cmp-send cmp-stop" onClick={onStop} title="Stop the running turn"><IconStop size={15} /></button>
         ) : (
-          <button className="btn primary cmp-send" disabled={busy} onClick={fire} title="Send (Enter)">
-            {busy ? <span className="cmp-spin" /> : <IconArrowUp size={16} />}
+          <button className={"btn primary cmp-send" + (sendLabel ? " cmp-send-text" : "")}
+            disabled={busy} onClick={fire} title={sendLabel ?? "Send (Enter)"}>
+            {busy ? <span className="cmp-spin" /> : sendLabel ? sendLabel : <IconArrowUp size={16} />}
           </button>
         )}
       </div>

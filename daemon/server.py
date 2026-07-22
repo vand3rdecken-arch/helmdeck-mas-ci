@@ -786,13 +786,15 @@ class H(BaseHTTPRequestHandler):
                 driver = body.get("driver", "claude")
                 if user["role"] == "client":
                     driver = "claude"   # clients don't pick desktop-driving agents
+                model = body.get("model", "")
+                attachments = body.get("attachments")
                 if lane == "backlog":   # filing a request is instant, no session
                     return self._send(200, json.dumps(sessions.new_track(
                         repo, branch, task, body.get("perm", sessions.DEFAULT_PERM),
                         lane="backlog", client=client, value=body.get("value"),
                         driver=driver, actor=user["name"],
                         priority=body.get("priority", "medium"),
-                        due=body.get("due", ""))))
+                        due=body.get("due", ""), model=model, attachments=attachments)))
                 def go():
                     sessions.new_track(repo, branch, task,
                                        body.get("perm", sessions.DEFAULT_PERM),
@@ -800,7 +802,7 @@ class H(BaseHTTPRequestHandler):
                                        value=body.get("value"),
                                        driver=driver, actor=user["name"],
                                        priority=body.get("priority", "medium"),
-                                       due=body.get("due", ""))
+                                       due=body.get("due", ""), model=model, attachments=attachments)
                 _bg("track:new:" + branch, go)
                 return self._send(200, json.dumps({"started": branch}))
             parts = p.strip("/").split("/")
