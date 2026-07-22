@@ -59,20 +59,24 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
     <div className="gwrap" style={{ "--g1": g1, "--g2": g2 } as React.CSSProperties}>
       <span className="gpanel" aria-hidden />
       <span className="gpanel gblur" aria-hidden />
-      <span className="execstripe" aria-hidden
-        style={{ background: EXEC_COLOR[executor(t)] }} />
-      <div className={`card exec-${executor(t)}${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
+      <div className={`card${spot ? (related ? " spot" : " dim") : ""}${alive ? " alive" : ""}`} draggable
         onDragStart={(ev) => ev.dataTransfer.setData("text", t.id)}
         onMouseEnter={() => spotKey && setSpot(spotKey)}
         onMouseLeave={() => setSpot(null)}
         onClick={() => onOpen(t)}>
-      <div className="cid">{t.branch} · {t.turns} turns</div>
+      <div className="chead">
+        <span className={`exectag et-${executor(t)}`} title="who does this work">
+          <span className="edot" />
+          {executor(t) === "ai" ? "AI" : executor(t) === "human" ? "You" : "AI + You"}
+        </span>
+        <span className="cid">{t.branch} · {t.turns} turns</span>
+      </div>
       <div className="title">{t.task}</div>
       <div className="chips">
         <span className="chip"><span className="sdot" style={{ background: st[1] }} />{st[0]}</span>
         {prioChip(t)}{dueChip(t)}
         {t.mode && MODE_LABEL[t.mode] && (
-          <span className={`chip chip-exec-${executor(t)}`} title="execution mode">
+          <span className="chip" title="execution mode">
             <ModeIcon mode={t.mode} />{MODE_LABEL[t.mode] ?? t.mode}
           </span>
         )}
@@ -203,13 +207,6 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
   return (
     <>
       <NextUp onOpen={onOpen} />
-      <div style={{ display: "flex", marginBottom: 8 }}>
-        <span id="execlegend">
-          <span><span className="sw" style={{ background: "var(--ai)" }} />AI executes</span>
-          <span><span className="sw" style={{ background: "var(--human)" }} />human executes</span>
-          <span><span className="sw" style={{ background: "linear-gradient(180deg,var(--ai) 50%,var(--human) 50%)" }} />together</span>
-        </span>
-      </div>
       <div id="board" className={spot ? "spotlighting" : ""}>
         {LANES.map(([key, defName, color]) => {
           const name = met?.settings?.policy?.lane_labels?.[key] ?? defName;
