@@ -62,14 +62,20 @@ def _lock_for(tid):
             _turn_locks[tid] = _threading.Lock()
         return _turn_locks[tid]
 
-def _turn(t, prompt):
+def _turn(t, prompt, model=None, perm=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
     hook: a driver with record:true gets its whole turn screen-captured into the
-    track's run_dir (screen.mp4 + live.jpg glance feed)."""
+    track's run_dir (screen.mp4 + live.jpg glance feed). Per-turn `model` and
+    `perm` overrides (from the chat composer's model + mode controls) win over
+    the driver's configured values."""
     import drivers, events
     name = t.get("driver") or "claude"
     cfg = events.settings().get("drivers", {}).get(name) or {"type": "claude"}
+    if model:
+        cfg = {**cfg, "model": model}
+    if perm:
+        cfg = {**cfg, "perm": perm}
     rec = None
     if cfg.get("record"):
         try:
@@ -278,8 +284,17 @@ def move_lane(tid, lane, actor="owner"):
     _save_track(t)
     return t
 
-def steer(tid, text, perm=None, actor="owner", source="you"):
-    """Continue the track's session (resume — context preserved, NO history rebuild)."""
+MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
+
+
+def steer(tid, text, perm=None, actor="owner", source="you",
+          model="", thinking="", attachments=None, mode=None):
+    """Continue the track's session (resume — context preserved, NO history rebuild).
+    model/thinking/attachments come from the chat composer: model is resolved
+    through the whitelist (incl. Auto), attachments are saved into the worktree
+    for the agent to read, and the augmented prompt (thinking directive +
+    attachment refs) is what the driver sees - but the AUDIT logs the human's
+    original text, not the augmentation."""
     tracks = _load()
     t = _find(tracks, tid)
     if not t:
@@ -287,7 +302,7 @@ def steer(tid, text, perm=None, actor="owner", source="you"):
     if not t.get("session_id"):
         _start(tid)                      # steering a backlog card dispatches it first
         tracks = _load(); t = _find(tracks, tid)
-    import events
+    import events, turnopts
     events.emit("touch", tid, touch="steer", actor=actor)
     if t["lane"] != "working":
         events.emit("lane", tid, frm=t["lane"], to="working")
@@ -296,9 +311,13 @@ def steer(tid, text, perm=None, actor="owner", source="you"):
     log = ActionLog(t["run_dir"])
     if source and source != "you":
         log.log("note", "DELEGATED by %s -> this card's worker" % source)
-    log.log("steer", text)
+    log.log("steer", text)               # audit the human's words, not the augmented prompt
     t["status"] = "running"; _save_track(t)
-    sid, result, meta = _turn(t, text)
+    paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)
+    cli_model, _ = turnopts.resolve_model(model, text, bool(paths))
+    prompt = turnopts.augment_prompt(text, thinking, paths)
+    perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
+    sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
     log.log("reply", result[:2000])
     # session_id can rotate on resume; keep the latest so the next steer continues.
     t["session_id"] = sid or t["session_id"]
@@ -309,6 +328,20 @@ def steer(tid, text, perm=None, actor="owner", source="you"):
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save_track(t)
     return t
+
+def cancel_turn(tid, actor="owner"):
+    """Stop a running turn (the composer's Stop button). Kills the driver
+    subprocess; the turn returns as '(cancelled)'. Audit records it."""
+    import drivers, events
+    killed = drivers.cancel(tid)
+    if killed:
+        events.emit("touch", tid, touch="cancel", actor=actor)
+        t = get_track(tid)
+        if t:
+            from actionlog import ActionLog
+            ActionLog(t["run_dir"]).log("note", "turn CANCELLED by %s" % actor)
+    return {"cancelled": killed}
+
 
 EDITABLE = ("task", "priority", "due", "value", "client", "driver")
 

@@ -35,6 +35,25 @@ import urllib.request
 CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
+# live subprocesses by track id, so the composer's Stop button can really kill a
+# running turn (not just look like it). cancel() terminates; the driver returns a
+# clean "(cancelled)" turn rather than raising.
+_running = {}
+_cancelled = set()
+
+
+def cancel(tid):
+    """Terminate the track's in-flight turn if one is running. Idempotent."""
+    _cancelled.add(tid)
+    p = _running.get(tid)
+    if p:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    return bool(p)
+
+
 def run(cfg, t, prompt):
     kind = cfg.get("type", "claude")
     if kind == "claude":
@@ -55,11 +74,22 @@ def _claude(cfg, t, prompt):
     if t.get("session_id"):
         cmd += ["--resume", t["session_id"]]
     timeout = cfg.get("timeout", 1800 if cfg.get("allowed_tools") else 600)
-    r = subprocess.run(cmd, cwd=t["worktree"], input=prompt,
-                       capture_output=True, text=True, timeout=timeout)
-    if not r.stdout.strip():
-        raise RuntimeError("claude no output: " + r.stderr.strip()[:300])
-    d = json.loads(r.stdout)
+    tid = t["id"]
+    _cancelled.discard(tid)
+    p = subprocess.Popen(cmd, cwd=t["worktree"], stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    _running[tid] = p
+    try:
+        out, err = p.communicate(input=prompt, timeout=timeout)
+    finally:
+        _running.pop(tid, None)
+    if tid in _cancelled:                 # Stop was pressed - clean, not an error
+        _cancelled.discard(tid)
+        return t.get("session_id"), "(turn cancelled by you)", \
+            {"usage": {}, "cost_usd": None, "models": []}
+    if not (out or "").strip():
+        raise RuntimeError("claude no output: " + (err or "").strip()[:300])
+    d = json.loads(out)
     meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
             "models": list((d.get("modelUsage") or {}).keys())}
     return d.get("session_id"), d.get("result", ""), meta

@@ -6,13 +6,13 @@ interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_t
 import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 import { executor } from "./board";
+import Composer, { SendOpts } from "./composer";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
   const [hist, setHist] = useState<HistoryRow[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [details, setDetails] = useState(false);
-  const [steer, setSteer] = useState("");
   const [task, setTask] = useState(t.task);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const e = met?.cards.find((x) => x.id === t.id);
@@ -36,14 +36,29 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
     refresh();
   }
 
-  async function sendSteer() {
-    const v = steer.trim();
-    if (!v) return;
-    await post(`/tracks/${t.id}/steer`, { text: v });
-    setSteer("");
+  async function sendSteer(v: string, opts: SendOpts) {
+    if (!v && !opts.attachments.length) return;
+    await post(`/tracks/${t.id}/steer`, {
+      text: v || "(see attachment)", model: opts.model, thinking: opts.thinking,
+      attachments: opts.attachments, mode: opts.mode,
+    });
     toast("Steer sent — session resuming");
     setTimeout(refresh, 1500);
   }
+  async function stopTurn() {
+    await post(`/tracks/${t.id}/cancel`, {});
+    toast("Stopping the turn…");
+    setTimeout(refresh, 800);
+  }
+
+  // context-window meter: how full the session is, from the last turn's input tokens
+  const lastIn = turns.length ? (() => {
+    const u = turns[turns.length - 1].usage ?? {};
+    return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+  })() : 0;
+  const modeOpts = (t.perm === "plan"
+    ? [{ id: "plan", label: "Plan" }, { id: "acceptEdits", label: "Edit" }]
+    : [{ id: "acceptEdits", label: "Edit" }, { id: "plan", label: "Plan" }]);
 
   const sel = { width: "auto", fontSize: 12 } as const;
   return (
@@ -185,11 +200,16 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           Talk to this card&apos;s <b style={{ color: "var(--txt-secondary)" }}>worker</b>
           {t.session_id ? ` · session ${t.session_id.slice(0, 8)}…` : " · not started yet"}
         </div>
-        <div id="steer-row">
-          <textarea id="steer-box" placeholder="Tell this worker what to do — its context continues, no rebuild"
-            value={steer} onChange={(e2) => setSteer(e2.target.value)} />
-          <button className="btn primary" onClick={sendSteer}>Send</button>
-        </div>
+        <Composer onSend={sendSteer} onStop={stopTurn} busy={t.status === "running"}
+          draftKey={`swarm-draft:card:${t.id}`} modeOptions={modeOpts}
+          context={lastIn ? { used: lastIn, total: 200000 } : undefined}
+          placeholder="Tell this worker what to do — its context continues, no rebuild"
+          slashCommands={[
+            { name: "plan", hint: "plan before acting", insert: "Make a plan for: " },
+            { name: "test", hint: "run tests, report failures", insert: "Run the tests and report any failures." },
+            { name: "diff", hint: "summarize current changes", insert: "Summarize the current diff on this branch." },
+            { name: "commit", hint: "commit the work", insert: "Commit the current work with a clear message." },
+          ]} />
       </div>
     </>
   );
