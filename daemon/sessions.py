@@ -278,7 +278,7 @@ def move_lane(tid, lane, actor="owner"):
     _save_track(t)
     return t
 
-def steer(tid, text, perm=None, actor="owner"):
+def steer(tid, text, perm=None, actor="owner", source="you"):
     """Continue the track's session (resume — context preserved, NO history rebuild)."""
     tracks = _load()
     t = _find(tracks, tid)
@@ -294,6 +294,8 @@ def steer(tid, text, perm=None, actor="owner"):
     t["lane"] = "working"
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
+    if source and source != "you":
+        log.log("note", "DELEGATED by %s -> this card's worker" % source)
     log.log("steer", text)
     t["status"] = "running"; _save_track(t)
     sid, result, meta = _turn(t, text)
@@ -362,6 +364,44 @@ def update_track(tid, patch, actor="owner"):
         events.emit("edit", tid, actor=actor, fields=changed)
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
+    return t
+
+def fork_track(tid, from_ref="", actor="owner"):
+    """Fork a NEW card from this card's state (its branch tip, or a specific
+    commit hash). Append-only: creates a new branch/worktree/session off the
+    ref; the source card is never modified. The forked worktree carries the
+    code exactly as of `ref`."""
+    import events
+    src = get_track(tid)
+    if not src:
+        raise RuntimeError("no such card: " + tid)
+    repo = src["repo"]
+    ref = (from_ref or "").strip() or src["branch"]
+    new_id = time.strftime("%Y%m%d-%H%M%S") + "-fork"
+    branch = "fork-" + _slug(src["branch"])[:20] + "-" + new_id.split("-")[0][-4:]
+    wt = _worktree_for(repo, branch)
+    if os.path.exists(wt):
+        raise RuntimeError("fork worktree already exists")
+    _git(repo, "worktree", "add", wt, "-b", branch, ref)
+    run_dir = os.path.join(REC, new_id)
+    os.makedirs(run_dir, exist_ok=True)
+    short = (from_ref[:8] + " of ") if from_ref else ""
+    t = {"id": new_id, "repo": repo, "branch": branch, "worktree": wt,
+         "task": "Forked from %s%s:\n\n%s" % (short, src["branch"], src["task"]),
+         "client": src.get("client", ""), "session_id": None,
+         "perm": src.get("perm", DEFAULT_PERM), "lane": "backlog",
+         "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
+         "value": src.get("value", 0), "driver": src.get("driver", "claude"),
+         "priority": src.get("priority", "medium"), "due": src.get("due", ""),
+         "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
+         "forked_from": tid, "forked_ref": from_ref or "tip",
+         "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+         "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
+    from actionlog import ActionLog
+    ActionLog(run_dir).log("note", "FORKED from card %s (%s%s) by %s" % (
+        tid, short or "tip of ", src["branch"], actor))
+    _save_track(t)
+    events.emit("fork", new_id, source_card=tid, ref=from_ref or "tip", actor=actor)
     return t
 
 def history(tid):

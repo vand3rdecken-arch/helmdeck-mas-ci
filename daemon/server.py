@@ -798,6 +798,15 @@ class H(BaseHTTPRequestHandler):
                         parts[1], on=bool(body.get("on", True)), actor=user["name"])))
                 except RuntimeError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "fork":
+                import sessions
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                try:
+                    return self._send(200, json.dumps(sessions.fork_track(
+                        parts[1], from_ref=body.get("ref", ""), actor=user["name"])))
+                except RuntimeError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "delete":
                 import sessions
                 if user["role"] != "owner":

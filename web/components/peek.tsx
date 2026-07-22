@@ -55,6 +55,14 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
                 refresh(); if (!t.archived) onClose();
               }}>{t.archived ? "unarchive" : "archive"}</button>
           )}
+          {me?.role !== "client" && (
+            <button className="btn ghost" style={{ fontSize: 11 }} title="start a new card from this card's current state - the source is never touched"
+              onClick={async () => {
+                const r = await post<{ id?: string; error?: string }>(`/tracks/${t.id}/fork`, {});
+                toast(r.error ?? "Forked - a new card starts from this state (source untouched)", 4500);
+                refresh();
+              }}>⑂ fork</button>
+          )}
           {me?.role === "owner" && (
             <button className="btn ghost" style={{ fontSize: 11, color: "var(--danger)", borderColor: "var(--danger)" }}
               onClick={async () => {
@@ -167,8 +175,12 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             <div key={i} className="f-note">{r.detail}</div>
           )}
         </div>
+        <div style={{ padding: "10px 16px 0", fontSize: 11, color: "var(--txt-tertiary)" }}>
+          Talk to this card&apos;s <b style={{ color: "var(--txt-secondary)" }}>worker</b>
+          {t.session_id ? ` · session ${t.session_id.slice(0, 8)}…` : " · not started yet"}
+        </div>
         <div id="steer-row">
-          <textarea id="steer-box" placeholder="Steer this session — context continues, no rebuild"
+          <textarea id="steer-box" placeholder="Tell this worker what to do — its context continues, no rebuild"
             value={steer} onChange={(e2) => setSteer(e2.target.value)} />
           <button className="btn primary" onClick={sendSteer}>Send</button>
         </div>

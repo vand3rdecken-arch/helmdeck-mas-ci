@@ -178,7 +178,7 @@ def _run_action(a, actor, role="operator"):
             return "moved %s -> %s" % (t["branch"], a["lane"])
         import threading
         threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
-                         kwargs={"actor": actor}, daemon=True).start()
+                         kwargs={"actor": actor, "source": "board copilot"}, daemon=True).start()
         return "steer sent to %s (agent working in background)" % t["branch"]
     if kind == "build_integration":
         import connectors
