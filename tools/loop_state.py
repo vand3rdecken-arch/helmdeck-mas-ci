@@ -204,14 +204,19 @@ def transitions():
                   "impact + debt delta (register shortcuts in daemon/debt.py)."))
         return t
 
+    ui_work = any(p.startswith("web/") for p in touched)
+    design = (" DESIGN MODE: apply .claude/skills/impeccable (read its SKILL.md "
+              "before writing UI; tokens + laws in web/app/globals.css win on "
+              "conflict)." if ui_work and os.path.isdir(
+                  os.path.join(ROOT, ".claude", "skills", "impeccable")) else "")
     red = checks_red(touched)
     if red:
-        t.append(("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2])))
+        t.append(("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2]) + design))
         return t
 
     if not section_filled(wo, "## Verified"):
         t.append(("TEST", "checks green but nothing verified - run the real thing "
-                  "(e2e; UI = screenshot and JUDGE) and fill '## Verified'."))
+                  "(e2e; UI = screenshot and JUDGE) and fill '## Verified'." + design))
         return t
 
     hyg = hygiene_problems()
