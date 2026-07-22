@@ -254,7 +254,8 @@ def move_lane(tid, lane, actor="owner"):
                 (mode, t.get("ai_cost", 0.0), t.get("value")))
         t["status"] = "accepted"; t["mode"] = mode
         if t.get("connector"):
-            import connectors
+            import connectors, checkpoints
+            checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))
             inst = connectors.install_from_worktree(t)
             if inst:
                 log.log("note", "CONNECTOR INSTALLED: " + ", ".join(inst))

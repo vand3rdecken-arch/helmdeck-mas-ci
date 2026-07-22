@@ -90,7 +90,14 @@ def settings():
             pass
     return s
 
-def save_settings(patch):
+def save_settings(patch, actor="system", reason=""):
+    if patch:
+        try:
+            import checkpoints
+            checkpoints.create(actor=actor,
+                               reason=reason or ("changed: " + ", ".join(sorted(patch))))
+        except Exception as e:
+            print("checkpoint failed:", e)
     s = settings()
     for k, v in (patch or {}).items():
         if isinstance(v, dict) and isinstance(s.get(k), dict):
