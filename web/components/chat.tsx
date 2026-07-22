@@ -11,7 +11,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
   const { me, refresh } = useBoard();
   const [msgs, setMsgs] = useState<Msg[]>([{
     cls: "bot",
-    text: 'Hi — tell me what to do with the board. e.g. "file a card: fix the invoice export, due Friday, €120", "what needs me right now?", "move the contract draft to review".',
+    text: 'Hi - tell me what to do with the board. e.g. "file a card: fix the invoice export, due Friday, €120", "what needs me right now?", "move the contract draft to review".',
   }]);
   const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -66,7 +66,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
           { name: "file", hint: "file a new card", insert: "File a card: " },
           { name: "next", hint: "what needs me right now?", insert: "What needs me right now?" },
           { name: "move", hint: "move a card to a lane", insert: "Move " },
-          { name: "digest", hint: "summarize the board", insert: "Give me a short digest of the board — what's in flight, what's blocked, what's done." },
+          { name: "digest", hint: "summarize the board", insert: "Give me a short digest of the board - what's in flight, what's blocked, what's done." },
         ]} />
     </div>
   );

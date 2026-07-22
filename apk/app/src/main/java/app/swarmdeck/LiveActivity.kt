@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Live glance: refresh the daemon's newest frame ~1/s while this screen is open.
- * Same "newest frame only" philosophy as the Herald cast relay — no stream state,
+ * Same "newest frame only" philosophy as the Herald cast relay - no stream state,
  * nothing stored, dies silently when no run is active.
  */
 class LiveActivity : AppCompatActivity() {
@@ -22,7 +22,7 @@ class LiveActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         HubStore.init(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val label = TextView(this).apply { text = "LIVE — what the swarm is doing"; setPadding(32, 48, 32, 8) }
+        val label = TextView(this).apply { text = "LIVE - what the swarm is doing"; setPadding(32, 48, 32, 8) }
         val img = ImageView(this)
         root.addView(label)
         root.addView(img, LinearLayout.LayoutParams(-1, -1))
@@ -35,7 +35,7 @@ class LiveActivity : AppCompatActivity() {
                     val bytes = DaemonClient.liveFrame()
                     if (bytes != null) {
                         img.setImageBitmap(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
-                        label.text = "LIVE — what the swarm is doing"
+                        label.text = "LIVE - what the swarm is doing"
                     } else {
                         label.text = "no agent is on the desk right now"
                     }

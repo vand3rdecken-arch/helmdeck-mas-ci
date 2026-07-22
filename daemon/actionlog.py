@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """The always-on action timeline. One JSONL file per run; every actor (agent wrapper,
 teach-mode hooks, windows driver) appends timestamped steps through this. The timeline is
-the PRIMARY review artifact — video is drill-down evidence keyed to these timestamps."""
+the PRIMARY review artifact - video is drill-down evidence keyed to these timestamps."""
 import json, os, time, threading
 
 class ActionLog:

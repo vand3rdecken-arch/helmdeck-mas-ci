@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Teach mode: record the OWNER doing a task once. Screen video (wincap) + input events
-(pynput) + foreground-window changes — the demonstration an agent learns a playbook from.
+(pynput) + foreground-window changes - the demonstration an agent learns a playbook from.
 
 Click coordinates alone don't teach much; the foreground-window title at each moment is
 what gives the distiller context ('clicked in "Checkout – Edge"'). Keystrokes are batched
 into readable chunks. Two ways to stop: Ctrl+Esc at the keyboard, or TeachSession.stop()
-(the phone's stop button via the control API — same capabilities on mobile)."""
+(the phone's stop button via the control API - same capabilities on mobile)."""
 import ctypes, threading
 from pynput import mouse, keyboard
 import wincap
@@ -102,7 +102,7 @@ class TeachSession:
 def record_demo(title):
     """CLI path: record until Ctrl+Esc."""
     s = TeachSession(title).start()
-    print("RECORDING '%s' — do the task now. Ctrl+Esc to stop." % title)
+    print("RECORDING '%s' - do the task now. Ctrl+Esc to stop." % title)
     s.stopped.wait()
     print("saved:", s.run_dir)
     return s.rid, s.run_dir

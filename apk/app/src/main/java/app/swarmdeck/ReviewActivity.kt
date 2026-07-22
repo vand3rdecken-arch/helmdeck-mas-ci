@@ -9,7 +9,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Timeline-first review (locked decision): the step list leads, video is drill-down.
- * The video is DOWNLOADED into phone storage before playing — the phone is the archive
+ * The video is DOWNLOADED into phone storage before playing - the phone is the archive
  * of record (APK rule), so a reviewed run survives the desktop deleting anything.
  */
 class ReviewActivity : AppCompatActivity() {
@@ -43,7 +43,7 @@ class ReviewActivity : AppCompatActivity() {
                 if (pb != null) {
                     playbook.text = pb
                 } else {
-                    playbook.text = "not distilled yet — distilling now (check back in ~1 min)"
+                    playbook.text = "not distilled yet - distilling now (check back in ~1 min)"
                     try { DaemonClient.distill(runId) } catch (e: Exception) {
                         playbook.text = "daemon unreachable"
                     }
@@ -58,13 +58,13 @@ class ReviewActivity : AppCompatActivity() {
                 for (i in 0 until tl.length()) {
                     val s = tl.getJSONObject(i)
                     val mark = if (s.optString("kind") == "flag") "⚑ " else ""
-                    items.add("%s%.1fs  %s — %s".format(
+                    items.add("%s%.1fs  %s - %s".format(
                         mark, s.optDouble("t"), s.optString("kind"), s.optString("detail")))
                 }
                 steps.adapter = ArrayAdapter(this@ReviewActivity,
                     android.R.layout.simple_list_item_1, items)
             } catch (e: Exception) {
-                title.text = "$runId — timeline unavailable (${e.message})"
+                title.text = "$runId - timeline unavailable (${e.message})"
             }
         }
         load.setOnClickListener {

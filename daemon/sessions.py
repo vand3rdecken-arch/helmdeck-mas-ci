@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""The orchestrator — SwarmDeck's Paseo half. A TRACK is a git branch, isolated in its own
+"""The orchestrator - SwarmDeck's Paseo half. A TRACK is a git branch, isolated in its own
 worktree, bound to a RESUMABLE coding session (Claude Code --resume <session_id>). You select
 a track and continue its context; history is never rebuilt. Each steer is recorded into the
 flight recorder (actionlog) so what the session did stays reviewable.
 
 Store: tracks.json (one list). Worktrees: <repo>/../swarmdeck-worktrees/<branch>.
-Permission mode is per-track and defaults to acceptEdits — the worktree is the blast-radius
+Permission mode is per-track and defaults to acceptEdits - the worktree is the blast-radius
 control. Escalate a track to bypassPermissions only deliberately (owner decision)."""
 import json, os, re, shutil, subprocess, time
 from runs import REC
@@ -263,7 +263,7 @@ def move_lane(tid, lane, actor="owner"):
             stat = _git(t["worktree"], "diff", "--stat", "HEAD") or "(all committed)"
         except Exception:
             stat = "?"
-        log.log("note", "GATE PASSED - SUBMITTED for review — diff: " + stat[:400])
+        log.log("note", "GATE PASSED - SUBMITTED for review - diff: " + stat[:400])
         t["status"] = "submitted"
     elif lane == "done":
         events.emit("touch", tid, touch="review", actor=actor)
@@ -299,7 +299,7 @@ MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
 
 def steer(tid, text, perm=None, actor="owner", source="you",
           model="", thinking="", attachments=None, mode=None):
-    """Continue the track's session (resume — context preserved, NO history rebuild).
+    """Continue the track's session (resume - context preserved, NO history rebuild).
     model/thinking/attachments come from the chat composer: model is resolved
     through the whitelist (incl. Auto), attachments are saved into the worktree
     for the agent to read, and the augmented prompt (thinking directive +

@@ -72,7 +72,7 @@ button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111a24;
        border:1px solid #2affc0;color:#2affc0;padding:8px 16px;border-radius:8px;display:none}
 </style>
-<h1>SwarmDeck — board</h1>
+<h1>SwarmDeck - board</h1>
 <p class=hint>drag a card: → Working dispatches it · → Review runs the gate &amp; submits · → Done accepts. Click a card to open &amp; steer.
   <a href="/recorder" style="color:#6fb2e8">recordings</a> · <a href="/dashboard" style="color:#6fb2e8">dashboard</a></p>
 <div id=cap class=hint style="margin:0 0 10px"></div>
@@ -86,7 +86,7 @@ button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
 <div id=drawer>
   <h3 id=dtitle></h3><div id=dmeta></div>
   <div id=hist></div>
-  <div id=steerrow><input id=steerbox placeholder="steer this session — context continues, no rebuild">
+  <div id=steerrow><input id=steerbox placeholder="steer this session - context continues, no rebuild">
     <button onclick="sendSteer()">Send</button><button class=sec onclick="closeDrawer()">Close</button></div>
 </div>
 <div id=toast></div>
@@ -144,9 +144,9 @@ function render(){
       fetch('/tracks/'+id+'/lane',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({lane:L[0]})}).then(function(r){return r.json()}).then(function(res){
           if(res&&res.gate_failed){
-            toast('GATE FAILED — bounced back: '+(res.gate_report||[]).map(function(p){return p.split('\\n')[0]}).join(' | '),5000);
+            toast('GATE FAILED - bounced back: '+(res.gate_report||[]).map(function(p){return p.split('\\n')[0]}).join(' | '),5000);
           }else{
-            toast(L[0]==='working'?'dispatched — session starting':L[0]==='review'?'gate passed — submitted for review':L[0]==='done'?'accepted':'queued');
+            toast(L[0]==='working'?'dispatched - session starting':L[0]==='review'?'gate passed - submitted for review':L[0]==='done'?'accepted':'queued');
           }
           setTimeout(load,600)});
     });
@@ -171,7 +171,7 @@ function closeDrawer(){document.getElementById('drawer').classList.remove('open'
 function sendSteer(){var v=document.getElementById('steerbox').value.trim();if(!v||!cur)return;
   fetch('/tracks/'+cur.id+'/steer',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({text:v})}).then(function(){
-      document.getElementById('steerbox').value='';toast('steer sent — session resuming');
+      document.getElementById('steerbox').value='';toast('steer sent - session resuming');
       setTimeout(function(){if(cur)openDrawer(cur);load()},1500)})}
 function fileReq(){
   var repo=document.getElementById('nrepo').value.trim(),br=document.getElementById('nbranch').value.trim(),
@@ -183,7 +183,7 @@ function fileReq(){
 load();setInterval(load,5000);
 </script>"""
 
-DASH = """<!doctype html><meta charset=utf-8><title>SwarmDeck — dashboard</title>
+DASH = """<!doctype html><meta charset=utf-8><title>SwarmDeck - dashboard</title>
 <style>
 body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
 h1{color:#7ef0b2;font-size:20px;margin:0 0 4px}.hint{color:#5d7488;font-size:12px;margin:0 0 16px}
@@ -207,11 +207,11 @@ td.num,th.num{text-align:right;font-family:ui-monospace,monospace}
 .leg{font-size:12px;color:#8fb0c9}.leg b{font-weight:400}
 a{color:#6fb2e8}
 </style>
-<h1>SwarmDeck — company dashboard</h1>
+<h1>SwarmDeck - company dashboard</h1>
 <p class=hint>fixed-capacity humans, variable-cost AI. <a href="/">board</a> · <a href="/settings" onclick="alert('GET/POST /settings (JSON): capacity, prices, value_per_card');return false">settings</a></p>
 <div id=tiles></div>
-<h2>Capacity — take more work, or automate?</h2><div id=capbox class=tile style="max-width:520px"></div>
-<h2>Gate-failure histogram — what to fix in the harness next</h2><div id=gates></div>
+<h2>Capacity - take more work, or automate?</h2><div id=capbox class=tile style="max-width:520px"></div>
+<h2>Gate-failure histogram - what to fix in the harness next</h2><div id=gates></div>
 <h2>Work done: <span class=leg><b style="color:#458cc7">■</b> AI ($) · <b style="color:#a8842d">■</b> human (touch units)</span></h2>
 <div style="overflow-x:auto"><table id=cards></table></div>
 <script>
@@ -224,8 +224,8 @@ fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){
     [cur+T.value_delivered,'value delivered'],
     ['$'+T.ai_spend.toFixed(2),'AI spend'],
     [cur+T.margin,'margin (value − AI)'],
-    [(y[1]? Math.round(100*y[0]/y[1])+'%':'—'),'first-pass yield ('+y[0]+'/'+y[1]+' gated)'],
-    [(a[1]? Math.round(100*a[0]/a[1])+'%':'—'),'automation rate ('+a[0]+'/'+a[1]+' done auto)'],
+    [(y[1]? Math.round(100*y[0]/y[1])+'%':'-'),'first-pass yield ('+y[0]+'/'+y[1]+' gated)'],
+    [(a[1]? Math.round(100*a[0]/a[1])+'%':'-'),'automation rate ('+a[0]+'/'+a[1]+' done auto)'],
     [cur+T.leverage_per_touch,'leverage: value per touch unit']];
   document.getElementById('tiles').innerHTML=tiles.map(function(t){
     return '<div class=tile><div class=v>'+t[0]+'</div><div class=l>'+t[1]+'</div></div>'}).join('');
@@ -265,17 +265,17 @@ h1{color:#7ef0b2}.run{border:1px solid #24303c;border-radius:10px;padding:12px 1
 .steps li{padding:2px 0;border-left:3px solid #24303c;padding-left:10px;margin:2px 0;font-family:monospace;font-size:13px}
 .steps li.flag{border-color:#ffd166;background:#2a2410}.t{color:#5d7284;margin-right:8px}
 video{max-width:640px;display:block;margin-top:8px}</style>
-<h1>SwarmDeck — runs</h1><div id=out>loading…</div>
+<h1>SwarmDeck - runs</h1><div id=out>loading…</div>
 <script>
 fetch('/runs').then(r=>r.json()).then(async runs=>{
   const out=document.getElementById('out');out.innerHTML='';
-  if(!runs.length){out.textContent='No runs yet — record a demo (swarm.py teach) or start a task (swarm.py browser-demo).';return}
+  if(!runs.length){out.textContent='No runs yet - record a demo (swarm.py teach) or start a task (swarm.py browser-demo).';return}
   for(const m of runs){
     const d=document.createElement('div');d.className='run';
     const tl=await fetch('/runs/'+m.id+'/timeline').then(r=>r.json()).catch(()=>[]);
     d.innerHTML='<b>'+m.title+'</b> <span class=k>'+m.id+' · '+m.kind+' · '+m.status+' · '+tl.length+' steps</span>'
       +'<ul class=steps>'+tl.map(s=>'<li'+(s.kind==='flag'?' class=flag':'')+'><span class=t>'
-      +s.t.toFixed(1)+'s</span>'+s.kind+' — '+s.detail+'</li>').join('')+'</ul>'
+      +s.t.toFixed(1)+'s</span>'+s.kind+' - '+s.detail+'</li>').join('')+'</ul>'
       +'<video controls preload=none src="/runs/'+m.id+'/video"></video>';
     out.appendChild(d)}
 });

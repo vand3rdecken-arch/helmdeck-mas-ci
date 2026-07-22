@@ -81,7 +81,7 @@ export default function ProcsView({ onOpen }: { onOpen: (t: Track) => void }) {
     const r = await post<{ error?: string }>("/processes/new", { request: v, client: client.trim(), due });
     if (r.error) { toast(r.error, 3600); return; }
     setReq("");
-    toast("Filed — agent is proposing steps");
+    toast("Filed - agent is proposing steps");
     setTimeout(loadProcs, 1500);
   }
 
@@ -97,7 +97,7 @@ export default function ProcsView({ onOpen }: { onOpen: (t: Track) => void }) {
       <div className="panel" style={{ maxWidth: 760 }}>
         <h3>New process</h3>
         <div style={{ fontSize: 12, color: "var(--txt-tertiary)", marginBottom: 8 }}>
-          Describe the client request in plain words — an agent proposes the step sequence, you adjust,
+          Describe the client request in plain words - an agent proposes the step sequence, you adjust,
           each accepted step becomes a card and the chain runs them in order.
         </div>
         <textarea style={{ width: "100%", height: 64 }} value={req} onChange={(e) => setReq(e.target.value)}

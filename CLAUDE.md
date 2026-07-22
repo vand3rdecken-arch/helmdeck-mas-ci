@@ -1,4 +1,4 @@
-# SwarmDeck — agent runbook
+# SwarmDeck - agent runbook
 
 Read `ARCHITECTURE.md` first: **the harness is code, policy is data**, and
 everything buildable walks charter → card → gate → accept.
@@ -21,7 +21,7 @@ well-formed → propose the commit when work goes quiet).
 - New load-bearing shortcut? Register it in `daemon/debt.py` in the same
   commit. Paying debt: file the fix card, flip status to `paid`, keep it listed.
 - Secrets (`settings.json`, `users.json`, `swarmdeck.db`, tokens) are
-  git-ignored — never commit them.
+  git-ignored - never commit them.
 - UI changes: screenshot and JUDGE (readability, centering, theming,
   collisions), don't just confirm rendering. The owner reviews UI hard.
 

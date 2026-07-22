@@ -22,7 +22,7 @@ export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; o
     setBusy(true);
     const r = await post<{ cards?: number; error?: string }>(`/connectors/${conn.name}/run`, {});
     setBusy(false);
-    toast(r.error ?? `Ran — ${r.cards} new backlog cards`, 4500);
+    toast(r.error ?? `Ran - ${r.cards} new backlog cards`, 4500);
     refresh();
   }
   async function saveSchedule() {
@@ -44,7 +44,7 @@ export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; o
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn primary" disabled={busy} onClick={runNow}>{busy ? "running…" : <><IconPlay size={12} /> Run now</>}</button>
           <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>every</span>
-          <input type="number" style={{ width: 70 }} placeholder="—" value={mins} onChange={(e) => setMins(e.target.value)} />
+          <input type="number" style={{ width: 70 }} placeholder="-" value={mins} onChange={(e) => setMins(e.target.value)} />
           <span style={{ fontSize: 12, color: "var(--txt-tertiary)" }}>minutes</span>
           <button className="btn ghost" onClick={saveSchedule}>Save schedule</button>
           {(conn.versions ?? 0) > 0 && (
@@ -66,7 +66,7 @@ export default function ConnectorView({ conn, onOpen }: { conn: ConnectorInfo; o
       </div>
       <div className="panel" style={{ maxWidth: 760 }}>
         <h3>Cards produced ({produced.length})</h3>
-        {!produced.length && <div style={{ fontSize: 12.5, color: "var(--txt-tertiary)" }}>none yet — run it</div>}
+        {!produced.length && <div style={{ fontSize: 12.5, color: "var(--txt-tertiary)" }}>none yet - run it</div>}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 10 }}>
           {produced.slice(0, 12).map((t) => <Card key={t.id} t={t} onOpen={onOpen} />)}
         </div>

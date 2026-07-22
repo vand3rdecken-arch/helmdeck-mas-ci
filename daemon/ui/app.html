@@ -292,7 +292,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div id="props"></div>
   <div id="feed"></div>
   <div id="steer-row">
-    <textarea id="steer-box" placeholder="Steer this session — context continues, no rebuild"></textarea>
+    <textarea id="steer-box" placeholder="Steer this session - context continues, no rebuild"></textarea>
     <button class="btn primary" onclick="sendSteer()">Send</button>
   </div>
 </div>
@@ -300,7 +300,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <div id="modal"><div id="mcard">
   <h3>New request</h3>
   <div id="m-examples" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
-  <textarea id="m-task" placeholder="What needs doing — that's all that's required. Repo comes from your preset."></textarea>
+  <textarea id="m-task" placeholder="What needs doing - that's all that's required. Repo comes from your preset."></textarea>
   <div class="row" style="align-items:center">
     <select id="m-priority" style="width:130px">
       <option value="urgent">urgent</option><option value="high">high</option>
@@ -321,7 +321,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <div id="chat">
   <div class="ch"><b>Board copilot</b><span style="font-size:11px;color:var(--txt-tertiary);margin-left:8px">chat steers the board</span>
     <button class="x" onclick="toggleChat(false)" style="margin-left:auto;color:var(--txt-tertiary);padding:2px 8px">✕</button></div>
-  <div id="chatlog"><div class="cb bot">Hi — tell me what to do with the board. e.g. <i>"file a card: fix the invoice export, due Friday, €120"</i>, <i>"what needs me right now?"</i>, <i>"move the contract draft to review"</i>, <i>"steer the draft card: use the 2026 template"</i>.</div></div>
+  <div id="chatlog"><div class="cb bot">Hi - tell me what to do with the board. e.g. <i>"file a card: fix the invoice export, due Friday, €120"</i>, <i>"what needs me right now?"</i>, <i>"move the contract draft to review"</i>, <i>"steer the draft card: use the 2026 template"</i>.</div></div>
   <div class="crow"><textarea id="chatbox" placeholder="Tell the board what to do…"></textarea>
     <button class="btn primary" id="chatsend" onclick="sendChat()">Send</button></div>
 </div>
@@ -358,7 +358,7 @@ function authGate(){
     d.innerHTML='<div style="background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:14px;padding:26px;width:min(380px,90vw)">'
       +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><span style="width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px">S</span><b style="font-size:15px">SwarmDeck</b></div>'
       +(setup?'<h3 style="margin:0 0 4px;font-size:14px">Create the owner account</h3>'
-        +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:12px">First run — this account manages everything, including other users.</div>'
+        +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:12px">First run - this account manages everything, including other users.</div>'
        :'<div style="display:flex;gap:14px;margin-bottom:12px;font-size:13px;font-weight:600">'
         +'<span id=tab-in style="cursor:pointer;border-bottom:2px solid var(--accent);padding-bottom:3px">Sign in</span>'
         +(st.registration?'<span id=tab-up style="cursor:pointer;color:var(--txt-tertiary);padding-bottom:3px">Create account</span>':'')
@@ -492,7 +492,7 @@ function pipeClick(pid,i){
 function renderProcs(){
   var host=$('content');
   host.innerHTML='<div class=panel style="max-width:760px"><h3>New process</h3>'
-    +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:8px">Describe the client request in plain words — an agent proposes the step sequence, you adjust, each accepted step becomes a card.</div>'
+    +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:8px">Describe the client request in plain words - an agent proposes the step sequence, you adjust, each accepted step becomes a card.</div>'
     +'<textarea id=pr-req style="width:100%;height:64px" placeholder="e.g. Client Meier needs the Q3 contract document approved: draft it from the template, get legal wording checked, send to the client for signature, archive the signed copy."></textarea>'
     +'<div style="display:flex;gap:8px;margin-top:8px;align-items:center">'
     +'<input id=pr-client placeholder="client (optional)" style="width:150px">'
@@ -537,7 +537,7 @@ function newProc(){
   var req=$('pr-req').value.trim();if(!req){toast('Describe the request');return}
   post('/processes/new',{request:req,client:$('pr-client').value.trim(),due:$('pr-due').value})
   .then(function(r){if(r.error){toast(r.error,3600);return}
-    $('pr-req').value='';toast('Filed — agent is proposing steps');
+    $('pr-req').value='';toast('Filed - agent is proposing steps');
     setTimeout(loadProcs,1500);var iv=setInterval(function(){
       if(view!=='procs'){clearInterval(iv);return}loadProcs()},4000);
     setTimeout(function(){clearInterval(iv)},120000)});
@@ -648,9 +648,9 @@ function nextUpStrip(){
   if(!items.length)return '';
   return '<div id=nextup><b style="font-size:12px;color:var(--warn)">▶ NEXT UP</b>'
     +items.slice(0,4).map(function(t){
-      var why=t.status==='bounced'?'gate bounced — fix':t.status==='needs_you'?'agent needs you'
+      var why=t.status==='bounced'?'gate bounced - fix':t.status==='needs_you'?'agent needs you'
         :t.mode==='human'?'your step in the process':t.mode==='teach'?'demonstrate this once'
-        :t.mode==='cowork'?'cowork — start together':'next in process';
+        :t.mode==='cowork'?'cowork - start together':'next in process';
       return '<span class=nu data-id="'+t.id+'">'+(t.mode?MODE_EMOJI[t.mode]||'':'')+' '
         +esc(t.task.replace(/^(PREPARE|COWORK|TEACH|HUMAN STEP)[^:]*: /,'')).slice(0,48)
         +' <span class=why>'+why+'</span>'
@@ -661,7 +661,7 @@ function nextUpStrip(){
 }
 function markDone(tid){
   post('/tracks/'+tid+'/lane',{lane:'done'}).then(function(){
-    toast('Step done — the chain advances');setTimeout(load,600)})}
+    toast('Step done - the chain advances');setTimeout(load,600)})}
 function renderBoard(){
   var host=$('content');host.innerHTML=nextUpStrip()+'<div id=board></div>';
   host.querySelectorAll('#nextup .nu').forEach(function(n){
@@ -714,8 +714,8 @@ function renderBoard(){
       fetchJSON('/tracks/'+id+'/lane',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({lane:L[0]})}).then(function(res){
           if(res&&res.gate_failed)
-            toast('Gate failed — bounced: '+(res.gate_report||[]).map(function(p){return p.split('\n')[0]}).join(' | '),5200);
-          else toast(L[0]==='working'?'Dispatched — session starting':L[0]==='review'?'Gate green — submitted':L[0]==='done'?'Accepted':'Queued');
+            toast('Gate failed - bounced: '+(res.gate_report||[]).map(function(p){return p.split('\n')[0]}).join(' | '),5200);
+          else toast(L[0]==='working'?'Dispatched - session starting':L[0]==='review'?'Gate green - submitted':L[0]==='done'?'Accepted':'Queued');
           setTimeout(load,600)});
     });
     b.appendChild(lane);
@@ -748,12 +748,12 @@ function closePeek(){$('peek').classList.remove('open');$('backdrop').style.disp
 function sendSteer(){var v=$('steer-box').value.trim();if(!v||!cur)return;
   fetchJSON('/tracks/'+cur.id+'/steer',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({text:v})}).then(function(){
-      $('steer-box').value='';toast('Steer sent — session resuming');
+      $('steer-box').value='';toast('Steer sent - session resuming');
       setTimeout(function(){if(cur)openPeek(cur);load()},1500)})}
 
 /* ---------- new request ---------- */
 var EXAMPLES=[
-  {label:'🐛 bug fix',task:'Fix: the dashboard capacity gauge shows 0% when touch budget is 0 — guard the division and show a hint instead.',driver:'claude'},
+  {label:'🐛 bug fix',task:'Fix: the dashboard capacity gauge shows 0% when touch budget is 0 - guard the division and show a hint instead.',driver:'claude'},
   {label:'✨ feature',task:'Add a CSV export button to the dashboard work table (all columns, current filters applied).',driver:'claude'},
   {label:'🖥 desktop task',task:'Open the invoice tool, export June as PDF into Downloads, and verify the file exists.',driver:'claude-desktop'},
   {label:'🌐 browser task',task:'Go to the supplier portal, download the latest price list, and summarize what changed vs the file in data/prices.csv.',driver:'claude-desktop'},
@@ -785,9 +785,9 @@ function fileReq(){
   // follow-up pass: catch what the dashboard would otherwise fill with defaults
   if(!fileArmed){
     var asks=[];
-    if(task.length<25)asks.push('the task is very short — an agent works better with a sentence of context (what, where, what does done look like)');
-    if(!$('m-value').value.trim())asks.push('no value set — dashboard will use the €'+((met&&met.settings)?met.settings.value_per_card:50)+' default (margin/ROI will be generic)');
-    if(!$('m-due').value)asks.push('no due date — the card won’t show risk on the timeline');
+    if(task.length<25)asks.push('the task is very short - an agent works better with a sentence of context (what, where, what does done look like)');
+    if(!$('m-value').value.trim())asks.push('no value set - dashboard will use the €'+((met&&met.settings)?met.settings.value_per_card:50)+' default (margin/ROI will be generic)');
+    if(!$('m-due').value)asks.push('no due date - the card won’t show risk on the timeline');
     if(asks.length){
       fileArmed=true;
       $('m-followup').style.display='block';
@@ -817,12 +817,12 @@ function renderDash(){
   var pct=Math.min(100,Math.round(100*c.touches_today/(c.touch_budget_day||1)));
   var tiles=[[cur+T.value_delivered,'value delivered'],['$'+T.ai_spend.toFixed(2),'AI spend'],
     [cur+T.margin,'margin (value − AI)'],
-    [y[1]?Math.round(100*y[0]/y[1])+'%':'—','first-pass yield ('+y[0]+'/'+y[1]+')'],
-    [a[1]?Math.round(100*a[0]/a[1])+'%':'—','automation rate ('+a[0]+'/'+a[1]+' auto)'],
+    [y[1]?Math.round(100*y[0]/y[1])+'%':'-','first-pass yield ('+y[0]+'/'+y[1]+')'],
+    [a[1]?Math.round(100*a[0]/a[1])+'%':'-','automation rate ('+a[0]+'/'+a[1]+' auto)'],
     [cur+T.leverage_per_touch,'value per touch unit']];
   var h='<div id=tiles>'+tiles.map(function(t){
     return '<div class=tile><div class=v>'+t[0]+'</div><div class=l>'+t[1]+'</div></div>'}).join('')+'</div>';
-  h+='<div class=panel><h3>Capacity — take more work, or automate?</h3>'
+  h+='<div class=panel><h3>Capacity - take more work, or automate?</h3>'
     +'<div style="font-size:12.5px;color:var(--txt-secondary)">today '+c.touches_today+'/'+c.touch_budget_day
     +' touch units ('+pct+'%) · WIP '+c.wip+'/'+c.wip_limit+' · headroom <b style="color:var(--ok)">'+c.headroom+' cards</b></div>'
     +'<div class=meter><i style="width:'+pct+'%"></i></div>'
@@ -831,23 +831,23 @@ function renderDash(){
     +'<div style="font-size:11.5px;color:var(--txt-tertiary)">'
     +(pct<80&&c.headroom>0?'Below capacity → intake more: marginal cost of one more card is tokens only.'
       :'At capacity → automate: fixing the top gate failure below frees the most headroom.')+'</div></div>';
-  h+='<div class=panel><h3>Gate failures — what to fix in the harness next</h3>';
+  h+='<div class=panel><h3>Gate failures - what to fix in the harness next</h3>';
   if(!m.gate_failures.length)h+='<div style="color:var(--txt-tertiary);font-size:12.5px">none recorded yet</div>';
   else{var mx=m.gate_failures[0][1];
     h+=m.gate_failures.map(function(kv){return '<div class=hbar><div class=lbl title="'+esc(kv[0])+'">'+esc(kv[0])
       +'</div><div class=trk><i style="width:'+Math.max(3,Math.round(100*kv[1]/mx))+'%"></i></div><div class=n>'+kv[1]+'</div></div>'}).join('')}
   h+='</div>';
   var maxA=0.01,maxH=1;m.cards.forEach(function(x){if(x.ai_cost>maxA)maxA=x.ai_cost;if(x.touches>maxH)maxH=x.touches});
-  h+='<div class=panel><h3>Work done — <span style="color:var(--ai)">■</span> AI ($) · <span style="color:var(--human)">■</span> human (touch units)</h3>'
+  h+='<div class=panel><h3>Work done - <span style="color:var(--ai)">■</span> AI ($) · <span style="color:var(--human)">■</span> human (touch units)</h3>'
     +'<div style="overflow-x:auto"><table><tr><th>card</th><th>lane</th><th>model</th><th class=num>tok in/out</th>'
     +'<th class=num>AI $</th><th class=num>touches</th><th>split</th><th class=num>value</th><th class=num>margin</th><th>mode</th></tr>'
     +m.cards.map(function(x){
       var wa=Math.max(2,Math.round(100*x.ai_cost/maxA)),wh=Math.max(2,Math.round(100*x.touches/maxH));
-      return '<tr><td>'+esc(x.task)+'</td><td>'+x.lane+'</td><td>'+esc((x.models[0]||'—').replace('claude-',''))
+      return '<tr><td>'+esc(x.task)+'</td><td>'+x.lane+'</td><td>'+esc((x.models[0]||'-').replace('claude-',''))
       +'</td><td class=num>'+x.tokens_in+'/'+x.tokens_out+'</td><td class=num>'+x.ai_cost.toFixed(2)
       +'</td><td class=num>'+x.touches+'</td><td><span class=msplit><i style="background:var(--ai);width:'+wa+'%"></i>'
       +'<i style="background:var(--human);width:'+wh+'%;margin-top:2px"></i></span></td><td class=num>'+cur+x.value
-      +'</td><td class=num>'+cur+(x.value-x.ai_cost).toFixed(2)+'</td><td>'+(x.mode||'—')+'</td></tr>'}).join('')
+      +'</td><td class=num>'+cur+(x.value-x.ai_cost).toFixed(2)+'</td><td>'+(x.mode||'-')+'</td></tr>'}).join('')
     +'</table></div></div>';
   $('content').innerHTML=h;
 }
@@ -859,7 +859,7 @@ function renderRecs(){
   fetchJSON('/runs').then(function(runs){
     if(!runs.length){host.innerHTML='<div class=panel style="max-width:560px">'
       +'<h3>No recordings yet</h3><div style="font-size:12.5px;color:var(--txt-secondary)">'
-      +'Record a demo (<b>swarm.py teach</b>), run a task, or dispatch a card — every agent run lands here '
+      +'Record a demo (<b>swarm.py teach</b>), run a task, or dispatch a card - every agent run lands here '
       +'as a step timeline with drill-down video.</div></div>';return}
     host.innerHTML=runs.map(function(m,i){
       return '<div class=run data-id="'+esc(m.id)+'">'
@@ -947,7 +947,7 @@ function resetPw(n){var p=prompt('New password for '+n+' (8+ chars):');if(!p)ret
 function newTok(n){var l=prompt('Token label (e.g. glasses, apk):','device');if(l===null)return;
   post('/users/'+n+'/tokens',{label:l}).then(function(x){
     if(x.error){toast(x.error,3600);return}
-    prompt('Device token for '+n+' — copy it now (shown once here, also visible to owner in this panel):',x.token);loadUsers()})}
+    prompt('Device token for '+n+' - copy it now (shown once here, also visible to owner in this panel):',x.token);loadUsers()})}
 function revokeTok(n,t){post('/users/'+n+'/revoke',{token:t}).then(function(){toast('Token revoked');loadUsers()})}
 function delUser(n){if(!confirm('Delete user '+n+'? Their sessions and tokens die immediately.'))return;
   post('/users/'+n+'/delete').then(function(x){toast(x.error||'User deleted');loadUsers()})}

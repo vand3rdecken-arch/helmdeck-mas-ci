@@ -6,7 +6,7 @@ import { IconBug, IconSparkle, IconMonitor, IconGlobe, IconSearch, IconChevron }
 import Composer, { SendOpts } from "./composer";
 
 const EXAMPLES = [
-  { icon: IconBug, label: "bug fix", task: "Fix: the dashboard capacity gauge shows 0% when touch budget is 0 — guard the division and show a hint instead.", driver: "claude" },
+  { icon: IconBug, label: "bug fix", task: "Fix: the dashboard capacity gauge shows 0% when touch budget is 0 - guard the division and show a hint instead.", driver: "claude" },
   { icon: IconSparkle, label: "feature", task: "Add a CSV export button to the dashboard work table (all columns, current filters applied).", driver: "claude" },
   { icon: IconMonitor, label: "desktop task", task: "Open the invoice tool, export June as PDF into Downloads, and verify the file exists.", driver: "claude-desktop" },
   { icon: IconGlobe, label: "browser task", task: "Go to the supplier portal, download the latest price list, and summarize what changed vs the file in data/prices.csv.", driver: "claude-desktop" },
@@ -63,7 +63,7 @@ export default function NewRequestModal({ onClose }: { onClose: () => void }) {
         </div>
         <Composer draftKey="swarm-draft:newreq" hideThinking sendLabel="File to Backlog"
           seed={seed} onSend={file}
-          placeholder="What needs doing — that's all that's required. Attach a file, pick a model, then File." />
+          placeholder="What needs doing - that's all that's required. Attach a file, pick a model, then File." />
         <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
           <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: 130 }}>
             <option value="urgent">urgent</option><option value="high">high</option>
