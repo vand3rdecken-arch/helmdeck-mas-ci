@@ -25,8 +25,13 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
   useEffect(() => {
     if (hydrated.current || me?.role === "client") return;
     hydrated.current = true;
-    get<{ messages: Msg[] }>("/chat/history").then((h) => {
+    get<{ messages: (Msg & { usage?: Usage })[] }>("/chat/history").then((h) => {
       if (h.messages?.length) setMsgs((m) => [...m, ...h.messages]);
+      // seed the context overview from history so it shows on open, not only
+      // after the next reply: last turn's tokens + summed session cost.
+      const used = [...(h.messages ?? [])].reverse().find((x) => x.usage && (x.usage.in > 0 || x.usage.out > 0))?.usage;
+      const cost = (h.messages ?? []).reduce((s, x) => s + (x.usage?.cost ?? 0), 0);
+      if (used) setCtx({ used: used.in, total: 200000, cost });
     }).catch(() => {});
   }, [me]);
 
