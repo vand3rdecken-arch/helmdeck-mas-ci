@@ -47,7 +47,8 @@ WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 CORE_MODULES = ["db", "events", "sessions", "drivers", "processes", "copilot",
                 "connectors", "charter", "checkpoints", "auth", "importers",
                 "debt", "server"]
-SECRET_NAMES = ("settings.json", "users.json", "swarmdeck.db", "copilot_log.json",
+SECRET_NAMES = ("settings.json", "users.json", "swarmdeck.db", "swarmdeck.db-wal",
+                "swarmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
 
 WORKORDER_TEMPLATE = """# Workorder
