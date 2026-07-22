@@ -27,3 +27,5 @@ daemon/checkpoints/
 daemon/swarmdeck.db
 daemon/*.imported
 daemon/tracks.json.imported
+.loop/
+daemon/copilot_log.json

@@ -1,25 +1,34 @@
 # -*- coding: utf-8 -*-
-"""SwarmDeck's build loop as an explicit STATE MACHINE - the same loop control
-as the glass harness, states fitted to this repo. Computed from disk, never
-from memory of the conversation.
+"""SwarmDeck's build loop - the FORWARD work loop a request travels through,
+enforced the glass-harness way (states computed from artifacts on disk, Stop
+hook blocks resting mid-loop, SessionStart re-orients fresh context).
 
-States (agent-actionable first):
+The loop:
 
-    COMPILE  a touched daemon/*.py fails py_compile - fix it
-    TYPES    web/ touched and `tsc --noEmit` fails - fix it
-    VERIFY   a touched daemon module fails to import (wiring broken) - fix it
-    DEBT     daemon/debt.py register malformed (bad status/missing keys) - fix it
-    WIP      uncommitted files with RECENT edits (< SWARM_WIP_MINUTES, default 30)
-             - someone is mid-work: serve the request, do NOT push a commit
-    COMMIT   uncommitted files gone quiet - propose the commit (user gate)
-    DONE     nothing actionable
+    ALIGN    work started (dirty tree) but no .loop/workorder.md - write it:
+             what the request is, and does it fit the repo philosophy
+             (CLAUDE.md laws + daemon/charter.py)? Refuse or adjust if not.
+    ANALYZE  workorder lacks '## Analysis' - architecture impact + debt delta:
+             which modules/laws are touched, does a load-bearing shortcut ship
+             (then register it in daemon/debt.py in the same change)?
+    EXECUTE  checks are red - build/fix until green:
+             touched daemon/*.py compile, web tsc clean, daemon modules import.
+    TEST     checks green but workorder lacks '## Verified' - run the real
+             thing (e2e/screenshot for UI - JUDGE it, don't just render it)
+             and record what was verified.
+    CLEAN    hygiene broken - debt register malformed, or secret files
+             (settings.json / users.json / *.db) tracked/staged.
+    COMMIT   loop complete and edits gone quiet - propose the commit; on a
+             clean tree the workorder is archived to .loop/history/.
+    WIP      (overlay, never blocks) recent edits mid-flight - serve the user.
+    DONE     clean tree, no open workorder.
 
 Usage:
     python tools/loop_state.py                  # table + THE next action
-    python tools/loop_state.py --stop-hook      # Claude Code Stop hook (blocks once)
-    python tools/loop_state.py --session-start  # prints state into fresh context
+    python tools/loop_state.py --stop-hook      # Stop hook (blocks once)
+    python tools/loop_state.py --session-start  # orientation for fresh context
 
-Never fails (exit 0 always) - a state doctor, not a gate."""
+Never fails (exit 0) - a state doctor, not a gate."""
 import json, os, subprocess, sys, time
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -31,11 +40,32 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DAEMON = os.path.join(ROOT, "daemon")
 WEB = os.path.join(ROOT, "web")
+LOOPDIR = os.path.join(ROOT, ".loop")
+WORKORDER = os.path.join(LOOPDIR, "workorder.md")
 WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 
 CORE_MODULES = ["db", "events", "sessions", "drivers", "processes", "copilot",
                 "connectors", "charter", "checkpoints", "auth", "importers",
                 "debt", "server"]
+SECRET_NAMES = ("settings.json", "users.json", "swarmdeck.db", "copilot_log.json",
+                "plane_credentials.txt", "sessions.json")
+
+WORKORDER_TEMPLATE = """# Workorder
+
+## Request
+<what the user asked for, in one or two sentences>
+
+## Alignment
+<does it fit CLAUDE.md laws + the charter? yes / adjusted-because / refused-because>
+
+## Analysis
+<architecture impact: modules touched, laws grazed, debt delta (register in
+daemon/debt.py if a shortcut ships)>
+
+## Verified
+<what was actually run/judged: checks, e2e, screenshots (UI = judged, not
+just rendered)>
+"""
 
 
 def _git(*args):
@@ -47,7 +77,9 @@ def dirty_files():
     out = []
     for line in _git("status", "--porcelain").splitlines():
         if len(line) > 3:
-            out.append(line[3:].strip().strip('"'))
+            p = line[3:].strip().strip('"')
+            if not p.startswith(".loop/"):
+                out.append(p)
     return out
 
 
@@ -60,96 +92,146 @@ def newest_mtime(paths):
     return newest
 
 
-def check_compile(touched):
-    bad = []
+def workorder():
+    try:
+        with open(WORKORDER, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def section_filled(text, header):
+    """True if the section under `header` has real content (not the template stub)."""
+    if header not in text:
+        return False
+    body = text.split(header, 1)[1].split("\n## ", 1)[0]
+    body = body.replace("\n", " ").strip()
+    return len(body) > 10 and not body.startswith("<")
+
+
+def checks_red(touched):
+    problems = []
     for p in touched:
         if p.startswith("daemon/") and p.endswith(".py"):
             r = subprocess.run([sys.executable, "-m", "py_compile",
                                 os.path.join(ROOT, p)], capture_output=True, text=True)
             if r.returncode != 0:
-                bad.append("%s: %s" % (p, (r.stderr or "").strip().splitlines()[-1][:120]))
-    return bad
+                problems.append("%s: %s" % (p, (r.stderr or "").strip().splitlines()[-1][:100]))
+    if any(p.startswith("web/") for p in touched) and \
+       os.path.isdir(os.path.join(WEB, "node_modules")):
+        npx = "npx.cmd" if os.name == "nt" else "npx"
+        env = dict(os.environ)
+        env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
+        r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
+                           cwd=WEB, capture_output=True, text=True, env=env, timeout=180)
+        if r.returncode != 0:
+            first = (r.stdout or r.stderr or "").strip().splitlines()
+            problems.append("web types: " + (first[0][:120] if first else "tsc failed"))
+    if not problems and any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
+        r = subprocess.run([sys.executable, "-c", "import " + ",".join(CORE_MODULES)],
+                           cwd=DAEMON, capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            problems.append("daemon wiring: " + (r.stderr or "").strip().splitlines()[-1][:120])
+    return problems
 
 
-def check_types(touched):
-    if not any(p.startswith("web/") for p in touched):
-        return []
-    if not os.path.isdir(os.path.join(WEB, "node_modules")):
-        return []
-    npx = "npx.cmd" if os.name == "nt" else "npx"
-    env = dict(os.environ)
-    env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
-    r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
-                       cwd=WEB, capture_output=True, text=True, env=env, timeout=180)
-    if r.returncode != 0:
-        lines = (r.stdout or r.stderr or "").strip().splitlines()
-        return [lines[0][:160] if lines else "tsc failed"]
-    return []
-
-
-def check_imports(touched):
-    if not any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
-        return []
-    code = "import " + ",".join(CORE_MODULES)
-    r = subprocess.run([sys.executable, "-c", code], cwd=DAEMON,
-                       capture_output=True, text=True, timeout=60)
-    if r.returncode != 0:
-        return [(r.stderr or "").strip().splitlines()[-1][:160]]
-    return []
-
-
-def check_debt():
+def hygiene_problems():
+    problems = []
+    tracked = _git("ls-files").splitlines()
+    for t in tracked:
+        base = os.path.basename(t)
+        if base in SECRET_NAMES and "plane-selfhost" not in t and not t.startswith(".claude/"):
+            problems.append("secret file tracked: " + t)
     try:
         sys.path.insert(0, DAEMON)
-        import importlib
-        import debt as _d
+        import importlib, debt as _d
         importlib.reload(_d)
-        problems = []
         for item in _d.DEBT:
+            if item.get("status") not in ("open", "in_progress", "paid"):
+                problems.append("debt register: %s bad status" % item.get("id"))
             for k in ("id", "title", "status", "what", "why_it_bites", "trigger", "fix"):
                 if k not in item:
-                    problems.append("%s missing %s" % (item.get("id", "?"), k))
-            if item.get("status") not in ("open", "in_progress", "paid"):
-                problems.append("%s has bad status %r" % (item.get("id"), item.get("status")))
-        return problems
+                    problems.append("debt register: %s missing %s" % (item.get("id", "?"), k))
     except Exception as e:
-        return ["debt.py unreadable: %s" % str(e)[:120]]
+        problems.append("debt.py unreadable: %s" % str(e)[:100])
+    return problems
+
+
+def archive_workorder():
+    wo = workorder()
+    if wo is None:
+        return
+    hist = os.path.join(LOOPDIR, "history")
+    os.makedirs(hist, exist_ok=True)
+    dst = os.path.join(hist, time.strftime("%Y%m%d-%H%M%S") + ".md")
+    os.replace(WORKORDER, dst)
 
 
 def transitions():
-    """Ordered (STATE, action) list; first entry is THE next action."""
-    t = []
+    """Ordered (STATE, action); first is THE next action."""
     touched = dirty_files()
-    if touched:
-        bad = check_compile(touched)
-        if bad:
-            t.append(("COMPILE", "fix: " + " | ".join(bad[:2])))
-        tbad = check_types(touched)
-        if tbad:
-            t.append(("TYPES", "fix web types: " + tbad[0]))
-        ibad = check_imports(touched)
-        if ibad:
-            t.append(("VERIFY", "daemon wiring broken: " + ibad[0]))
-    dbad = check_debt()
-    if dbad:
-        t.append(("DEBT", "repair daemon/debt.py register: " + "; ".join(dbad[:2])))
-    if touched and not t:
-        quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60
-        if quiet:
-            t.append(("COMMIT", "%d uncommitted file(s) gone quiet - propose a commit "
-                      "(don't just stop): %s" % (len(touched), ", ".join(touched[:4]))))
-        else:
-            t.append(("WIP", "recent uncommitted edits (%d files) - mid-work, serve the "
-                      "request, don't force a commit" % len(touched)))
+    wo = workorder()
+
+    if not touched:
+        if wo is not None:            # loop finished by a commit - close the book
+            archive_workorder()
+        return []
+
+    t = []
+    if wo is None:
+        os.makedirs(LOOPDIR, exist_ok=True)
+        t.append(("ALIGN", "work in flight without a workorder - create .loop/workorder.md "
+                  "(template written) and fill '## Request' + '## Alignment': does this fit "
+                  "CLAUDE.md laws + the charter? Refuse or adjust if not."))
+        try:
+            if not os.path.exists(WORKORDER):
+                with open(WORKORDER, "w", encoding="utf-8") as f:
+                    f.write(WORKORDER_TEMPLATE)
+        except OSError:
+            pass
+        return t
+    if not (section_filled(wo, "## Request") and section_filled(wo, "## Alignment")):
+        t.append(("ALIGN", "fill '## Request' + '## Alignment' in .loop/workorder.md - "
+                  "the request vs repo philosophy (CLAUDE.md laws, charter)."))
+        return t
+    if not section_filled(wo, "## Analysis"):
+        t.append(("ANALYZE", "fill '## Analysis' in .loop/workorder.md - architecture "
+                  "impact + debt delta (register shortcuts in daemon/debt.py)."))
+        return t
+
+    red = checks_red(touched)
+    if red:
+        t.append(("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2])))
+        return t
+
+    if not section_filled(wo, "## Verified"):
+        t.append(("TEST", "checks green but nothing verified - run the real thing "
+                  "(e2e; UI = screenshot and JUDGE) and fill '## Verified'."))
+        return t
+
+    hyg = hygiene_problems()
+    if hyg:
+        t.append(("CLEAN", " | ".join(hyg[:2])))
+        return t
+
+    quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60
+    if quiet:
+        t.append(("COMMIT", "loop complete, %d file(s) quiet - propose the commit "
+                  "(workorder archives on clean tree): %s"
+                  % (len(touched), ", ".join(touched[:4]))))
+    else:
+        t.append(("WIP", "loop complete, edits still fresh (%d files) - serve the user; "
+                  "propose the commit when work goes quiet" % len(touched)))
     return t
 
 
 def print_table():
     t = transitions()
     if not t:
-        print("[loop_state] DONE - repo at a resting state (clean tree, checks green).")
+        print("[loop_state] DONE - clean tree, no open workorder. Loop: "
+              "ALIGN > ANALYZE > EXECUTE > TEST > CLEAN > COMMIT.")
         return
-    print("[loop_state] states:")
+    print("[loop_state] loop position:")
     for st, act in t:
         print("  %-8s %s" % (st, act))
     print("NEXT: %s -> %s" % t[0])
@@ -162,13 +244,13 @@ def stop_hook():
         payload = {}
     if payload.get("stop_hook_active"):
         return
-    t = [x for x in transitions() if x[0] != "WIP"]   # WIP never blocks a stop
+    t = [x for x in transitions() if x[0] != "WIP"]
     if not t:
         return
     st, act = t[0]
     print(json.dumps({
         "decision": "block",
-        "reason": "[loop_state] The build loop is not at a resting state: %s - %s. "
+        "reason": "[loop_state] The build loop is not at a resting state: %s - %s "
                   "Do this now if it needs no user input; if you are genuinely blocked "
                   "on the user (or a check stayed red after ~3 fix attempts), say exactly "
                   "what you need and stop. Full picture: python tools/loop_state.py" % (st, act)
@@ -176,10 +258,11 @@ def stop_hook():
 
 
 def session_start():
-    print("[loop_state] Session (re)start - build-loop state recomputed from disk:")
+    print("[loop_state] Session (re)start - loop position recomputed from disk:")
     print_table()
-    print("Rule: if the next action needs no user input, do it now; stop only at DONE "
-          "or a genuine user gate (commit approval, product decisions).")
+    print("Rule: ALIGN before code, ANALYZE before building, TEST means judged not "
+          "rendered, COMMIT closes the loop. If the next action needs no user input, "
+          "do it now.")
 
 
 if __name__ == "__main__":
