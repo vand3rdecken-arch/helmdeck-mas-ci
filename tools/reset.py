@@ -85,12 +85,11 @@ def clear_chat():
 
 
 def clear_processes():
-    """Remove the multi-step workflow templates + Plane link state - board
-    content, not config, so a clean slate drops them too."""
-    for f in ("processes.json", "plane_links.json"):
-        p = os.path.join(DAEMON, f)
-        if os.path.exists(p):
-            os.remove(p)
+    """Remove the multi-step workflow templates - board content, not config,
+    so a clean slate drops them too."""
+    p = os.path.join(DAEMON, "processes.json")
+    if os.path.exists(p):
+        os.remove(p)
 
 
 def main():
@@ -110,7 +109,7 @@ def main():
     clear_events(); print("cleared events (economics/audit)")
     clear_recordings(); print("cleared recordings")
     clear_chat(); print("cleared copilot chat history")
-    clear_processes(); print("cleared process templates + plane links")
+    clear_processes(); print("cleared process templates")
 
     if a.connectors:
         import connectors

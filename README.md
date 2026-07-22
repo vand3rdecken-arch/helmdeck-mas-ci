@@ -20,7 +20,6 @@ per-card-priced work.
 | `apk/` | Android hub (phone = auth/pairing/review per the APK rule). |
 | `glasses/` | Meta Ray-Ban Display viewer (live glance feed). |
 | `worker/` | Thin Cloudflare relay (rendezvous + newest frame). Never the brain. |
-| `plane-selfhost/` | Optional real Plane instance + bridge (`daemon/plane_bridge.py`) as an alternative client frontend. Dormant; needs Docker/WSL. |
 
 ## Quick start
 
