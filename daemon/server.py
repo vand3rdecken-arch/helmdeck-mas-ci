@@ -437,6 +437,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(
                     {"core": charter.CHARTER,
                      "house_rules": (events.settings().get("policy") or {}).get("house_rules", "")}))
+            if p == "/models":
+                import turnopts
+                return self._send(200, json.dumps(turnopts.list_models()))
             if p == "/checkpoints":
                 import checkpoints
                 return self._send(200, json.dumps(checkpoints.list_checkpoints()))
