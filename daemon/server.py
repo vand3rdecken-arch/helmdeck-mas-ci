@@ -555,6 +555,15 @@ class H(BaseHTTPRequestHandler):
                     if not t or t.get("client") != user["name"]:
                         return self._send(403, json.dumps({"error": "not your card"}))
                 return self._send(200, json.dumps(sessions.history(parts[1])))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "transcript":
+                # the Paseo-style agent view: every turn's text + tool calls,
+                # read straight from the session's Claude Code transcript
+                import sessions, claude_sessions
+                t = sessions.get_track(parts[1])
+                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+                    return self._send(403, json.dumps({"error": "not your card"}))
+                sid = (t or {}).get("session_id")
+                return self._send(200, json.dumps(claude_sessions.read_transcript(sid) if sid else []))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass

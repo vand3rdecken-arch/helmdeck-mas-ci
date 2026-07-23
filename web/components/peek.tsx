@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { get, post, HistoryRow, Track } from "@/lib/api";
 
 interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
+interface Step { role: string; kind: "text" | "thinking" | "tool" | "result"; text?: string; tool?: string }
 import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 import { executor } from "./board";
@@ -12,6 +13,7 @@ import { IconX, IconFork, IconChevron, IconExpand, IconShrink } from "./icons";
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
   const [hist, setHist] = useState<HistoryRow[]>([]);
+  const [trans, setTrans] = useState<Step[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [details, setDetails] = useState(false);
   const [full, setFull] = useState(false);
@@ -29,6 +31,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   useEffect(() => {
     get<HistoryRow[]>(`/tracks/${t.id}/history`).then(setHist).catch(() => setHist([]));
     get<Turn[]>(`/tracks/${t.id}/turns`).then(setTurns).catch(() => setTurns([]));
+    get<Step[]>(`/tracks/${t.id}/transcript`).then(setTrans).catch(() => setTrans([]));
   }, [t.id, t.updated]);
 
   async function edit(patch: Record<string, unknown>) {
@@ -58,9 +61,11 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
     const u = turns[turns.length - 1].usage ?? {};
     return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
   })() : 0;
-  const modeOpts = (t.perm === "plan"
-    ? [{ id: "plan", label: "Plan" }, { id: "acceptEdits", label: "Edit" }]
-    : [{ id: "acceptEdits", label: "Edit" }, { id: "plan", label: "Plan" }]);
+  // Full = bypassPermissions: the agent may run anything (Bash, windows-mcp,
+  // Chrome, git) with no prompts - owner only; the worktree is the blast radius.
+  const modeBase = [{ id: "acceptEdits", label: "Edit" }, { id: "plan", label: "Plan" },
+    ...(me?.role === "owner" ? [{ id: "bypassPermissions", label: "Full" }] : [])];
+  const modeOpts = [...modeBase.filter((m) => m.id === t.perm), ...modeBase.filter((m) => m.id !== t.perm)];
 
   const sel = { width: "auto", fontSize: 12 } as const;
   return (
@@ -195,7 +200,20 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           <div style={{ padding: "10px 16px 0" }}><LiveThumb trackId={t.id} big /></div>
         )}
         <div id="feed">
-          {hist.map((r, i) =>
+          {/* Paseo-style: every turn - the agent's text, thinking and each tool
+              call/result, straight from the session transcript. Falls back to the
+              steer/reply log until the session has run. */}
+          {trans.length ? trans.map((s, i) =>
+            s.kind === "tool" ? (
+              <div key={i} className="cb tool"><b>{s.tool}</b>{s.text ? " " + s.text : ""}</div>
+            ) : s.kind === "result" ? (
+              <div key={i} className="cb res">{s.text}</div>
+            ) : s.kind === "thinking" ? (
+              <div key={i} className="cb tk">{s.text}</div>
+            ) : (
+              <div key={i} className={`cb ${s.role === "user" ? "you" : "bot"}`}>{s.text}</div>
+            )
+          ) : hist.map((r, i) =>
             r.kind === "steer" ? <div key={i} className="cb you">{r.detail}</div> :
             r.kind === "reply" ? <div key={i} className="cb bot">{r.detail}</div> :
             <div key={i} className="cb sys">{r.detail}</div>
