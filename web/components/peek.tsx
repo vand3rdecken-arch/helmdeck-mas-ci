@@ -22,6 +22,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   const [val, setVal] = useState(String(t.value ?? ""));
   const [clientV, setClientV] = useState(t.client ?? "");
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
   const e = met?.cards.find((x) => x.id === t.id);
   const st = STATUS[t.status] ?? [t.status, "var(--txt-tertiary)"];
   const drivers = Object.keys(met?.settings?.drivers ?? { claude: {} });
@@ -31,6 +32,12 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   // real field changed - so live polling never wipes what you're typing.
   useEffect(() => { setVal(String(t.value ?? "")); }, [t.id, t.value]);
   useEffect(() => { setClientV(t.client ?? ""); }, [t.id, t.client]);
+  // keep the feed pinned to the newest message (like a chat), as transcript/
+  // history loads and grows.
+  useEffect(() => {
+    const f = feedRef.current;
+    if (f) f.scrollTop = f.scrollHeight;
+  }, [trans, hist]);
   function saveVal() { const n = parseFloat(val); if (!isNaN(n) && n !== t.value) edit({ value: n }); }
   function saveClient() { if (clientV.trim() !== (t.client ?? "")) edit({ client: clientV.trim() }); }
   useEffect(() => {   // grow the title box to fit the full task (no hidden scroll)
@@ -210,7 +217,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
         {t.status === "running" && met?.settings?.drivers?.[t.driver]?.record && (
           <div style={{ padding: "10px 16px 0" }}><LiveThumb trackId={t.id} big /></div>
         )}
-        <div id="feed">
+        <div id="feed" ref={feedRef}>
           {/* Paseo-style: every turn - the agent's text, thinking and each tool
               call/result, straight from the session transcript. Falls back to the
               steer/reply log until the session has run. */}
