@@ -1,0 +1,52 @@
+appId: work.21stgen.swarmdeck
+productName: SwarmDeck
+directories:
+  output: release
+# only the Electron shell goes in the asar; the daemon + built UI are shipped as
+# plain resources so the app can spawn them (Python daemon, Next standalone server)
+files:
+  - main.js
+  - package.json
+extraResources:
+  # the Python daemon source (the brain + runner). Secrets and per-user data are
+  # NEVER bundled - they are created fresh on the user's machine at first run.
+  - from: ../daemon
+    to: daemon
+    filter:
+      - "**/*"
+      - "!**/__pycache__/**"
+      - "!*.db"
+      - "!*.db-*"
+      - "!settings.json"
+      - "!users.json"
+      - "!tracks.json"
+      - "!events.jsonl"
+      - "!processes.json"
+      - "!copilot_log.json"
+      - "!copilot_sessions.json"
+      - "!plane_links.json"
+      - "!recordings/**"
+      - "!checkpoints/**"
+      - "!.attachments/**"
+      - "!.copilot_attachments/**"
+  # the Next.js standalone server (self-contained: server.js + minimal node_modules)
+  - from: ../web/.next/standalone
+    to: web
+  - from: ../web/.next/static
+    to: web/.next/static
+  - from: ../web/public
+    to: web/public
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "SwarmDeck-Setup-${version}-${arch}.${ext}"
+  # add assets/icon.ico (>=256px) to brand the installer; default Electron icon
+  # is used until then.
+  # icon: assets/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: SwarmDeck
