@@ -4,6 +4,7 @@ import { get, post } from "@/lib/api";
 import { useBoard } from "@/lib/store";
 import { IconChat, IconX } from "./icons";
 import Composer, { SendOpts } from "./composer";
+import Markdown from "./markdown";
 
 interface Usage { in: number; out: number; cost?: number }
 interface Msg { cls: "you" | "bot" | "act" | "think"; text: string }
@@ -80,7 +81,11 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
           onClick={() => setOpen(false)}><IconX size={13} /></button>
       </div>
       <div id="chatlog" ref={logRef}>
-        {msgs.map((m, i) => <div key={i} className={`cb ${m.cls}`}>{m.text}</div>)}
+        {msgs.map((m, i) => (
+          <div key={i} className={`cb ${m.cls}`}>
+            {m.cls === "bot" ? <Markdown>{m.text}</Markdown> : m.text}
+          </div>
+        ))}
       </div>
       <Composer onSend={send} busy={busy} onStop={stop} context={ctx ?? undefined} draftKey="swarm-draft:board"
         placeholder="Tell the board what to do…"
