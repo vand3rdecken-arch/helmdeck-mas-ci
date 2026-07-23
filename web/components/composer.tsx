@@ -34,7 +34,7 @@ const THINK: { id: string; short: string }[] = [
 // meter, and a slash-command popover.
 export default function Composer({
   onSend, onStop, busy, placeholder, draftKey, slashCommands, modeOptions, context,
-  hideThinking, sendLabel, seed,
+  hideThinking, sendLabel, seed, allowEmpty,
 }: {
   onSend: (text: string, opts: SendOpts) => SendResult | Promise<SendResult>;
   onStop?: () => void;
@@ -47,6 +47,7 @@ export default function Composer({
   hideThinking?: boolean;              // filing a request has no live turn to think in
   sendLabel?: string;                  // text send button instead of the arrow (e.g. "File to Backlog")
   seed?: { text: string; key: number };  // inject text from outside (example chips)
+  allowEmpty?: boolean;                // let send fire with no text (e.g. "Continue session")
 }) {
   const [text, setText] = useState("");
   const [model, setModel] = useState("auto");
@@ -122,7 +123,7 @@ export default function Composer({
   }
   function fire() {
     const v = text.trim();
-    if (!v && !atts.length) return;
+    if (!v && !atts.length && !allowEmpty) return;
     const opts = buildOpts();
     if (busy) setQueued({ text: v, opts });   // hold until the agent is free
     else deliver(v, opts);
