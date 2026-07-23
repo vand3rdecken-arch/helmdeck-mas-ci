@@ -182,8 +182,10 @@ a{color:var(--accent-txt);text-decoration:none}
   border-left:1px solid var(--glass-border);box-shadow:var(--shadow-overlay);z-index:10;
   display:flex;flex-direction:column;animation:slidein .22s cubic-bezier(.2,.7,.3,1);
   transition:width .2s cubic-bezier(.2,.7,.3,1)}
-/* fullscreen card: fill the viewport */
-#peek.full{width:100vw;left:0;border-left:none}
+/* fullscreen card: fill the viewport, content centered in a readable column */
+#peek.full{width:100vw;left:0;border-left:none;align-items:center}
+#peek.full > *{width:100%;max-width:920px}
+#peek.full > #feed{flex:1}
 @keyframes slidein{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
 #peek .ph{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border-subtle)}
 #peek .ph .pid{font-size:12px;color:var(--txt-tertiary);font-weight:600}
@@ -199,20 +201,20 @@ a{color:var(--accent-txt);text-decoration:none}
 .cb.sys{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-tertiary);
   font-size:11px;padding:2px 4px;border-radius:0}
 /* transcript rows (Paseo agent view): tool calls, results, thinking */
-.cb.tool{align-self:stretch;max-width:100%;
-  background:color-mix(in oklch,var(--accent) 14%,var(--bg-surface-1));
+.cb.tool{align-self:stretch;max-width:100%;box-sizing:border-box;background:var(--bg-layer-1);
   border-radius:7px;border-left:3px solid var(--accent);padding:6px 11px;font-size:12px;
+  line-height:1.5;min-height:28px;display:flex;align-items:center;
   font-family:var(--mono,ui-monospace,monospace);color:var(--txt-primary);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cb.tool b{color:var(--accent-txt);margin-right:8px;font-weight:700}
+.cb.tool b{color:var(--accent-txt);margin-right:8px;font-weight:700;flex-shrink:0}
 /* result: one readable muted line under its tool call, never a dark block */
-.cb.res{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-secondary);
-  font-size:11px;font-family:var(--mono,ui-monospace,monospace);padding:1px 11px 4px 14px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb.res{align-self:stretch;max-width:100%;box-sizing:border-box;background:transparent;
+  color:var(--txt-secondary);font-size:11px;line-height:1.5;font-family:var(--mono,ui-monospace,monospace);
+  padding:1px 11px 3px 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cb.res::before{content:"\21B3  ";color:var(--txt-tertiary)}
-.cb.tk{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-tertiary);
-  font-size:11px;font-style:italic;padding:2px 11px;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;opacity:.85}
+.cb.tk{align-self:stretch;max-width:100%;box-sizing:border-box;background:transparent;
+  color:var(--txt-tertiary);font-size:11px;line-height:1.5;font-style:italic;padding:2px 11px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}
 .f-steer{color:var(--txt-primary);background:var(--bg-layer-1);border-radius:8px;padding:7px 11px;margin:8px 0 4px;font-weight:500}
 .f-steer::before{content:"you";display:block;font-size:10.5px;color:var(--txt-tertiary);font-weight:600;margin-bottom:2px}
 .f-reply{white-space:pre-wrap;padding:4px 2px 10px;color:var(--txt-secondary)}
