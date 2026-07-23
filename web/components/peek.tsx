@@ -7,13 +7,14 @@ import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 import { executor } from "./board";
 import Composer, { SendOpts } from "./composer";
-import { IconX, IconFork, IconChevron } from "./icons";
+import { IconX, IconFork, IconChevron, IconExpand, IconShrink } from "./icons";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
   const [hist, setHist] = useState<HistoryRow[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [details, setDetails] = useState(false);
+  const [full, setFull] = useState(false);
   const [task, setTask] = useState(t.task);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const e = met?.cards.find((x) => x.id === t.id);
@@ -65,7 +66,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   return (
     <>
       <div id="backdrop" onClick={onClose} />
-      <div id="peek">
+      <div id="peek" className={full ? "full" : ""}>
         <div className="ph">
           <span className="pid">{t.branch}</span>
           {me?.role !== "client" && (
@@ -93,7 +94,10 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
                 refresh(); onClose();
               }}>delete</button>
           )}
-          <button className="x" style={{ marginLeft: me?.role === "client" ? "auto" : 0 }} onClick={onClose}><IconX size={14} /></button>
+          <button className="x" style={{ marginLeft: me?.role === "client" ? "auto" : 0 }}
+            title={full ? "Exit fullscreen" : "Fullscreen"} onClick={() => setFull((v) => !v)}>
+            {full ? <IconShrink size={14} /> : <IconExpand size={14} />}</button>
+          <button className="x" onClick={onClose}><IconX size={14} /></button>
         </div>
         <textarea
           ref={taRef}

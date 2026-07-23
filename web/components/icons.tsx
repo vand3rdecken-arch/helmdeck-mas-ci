@@ -73,6 +73,12 @@ export const IconFile = (p: { size?: number }) => (
 export const IconX = (p: { size?: number }) => (
   <I {...p}><path d="M6 6l12 12M18 6 6 18" /></I>
 );
+export const IconExpand = (p: { size?: number }) => (
+  <I {...p}><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" /></I>
+);
+export const IconShrink = (p: { size?: number }) => (
+  <I {...p}><path d="M8 3v5H3M21 8h-5V3M3 16h5v5M16 21v-5h5" /></I>
+);
 
 /* new-request examples + view switcher + affordances (lucide, house style) */
 export const IconBug = (p: { size?: number }) => (
