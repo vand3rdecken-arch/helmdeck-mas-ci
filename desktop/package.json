@@ -1,0 +1,17 @@
+{
+  "name": "swarmdeck-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SwarmDeck desktop app (Electron wrapper) - runs the daemon + UI as one Windows program",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:web": "npm --prefix ../web run build",
+    "dist": "npm run build:web && electron-builder --config electron-builder.yml",
+    "dist:win": "npm run build:web && electron-builder --win --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
