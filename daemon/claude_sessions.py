@@ -105,7 +105,7 @@ def _find_transcript(session_id):
     return None
 
 
-def _tail_lines(path, max_bytes=500_000):
+def _tail_lines(path, max_bytes=1_200_000):
     """Read only the last ~max_bytes so a huge transcript doesn't blow up polls."""
     size = os.path.getsize(path)
     with open(path, "rb") as f:
@@ -125,7 +125,7 @@ def _tool_summary(inp):
     return ", ".join(list(inp.keys())[:3])
 
 
-def read_transcript(session_id, limit=160):
+def read_transcript(session_id, limit=400):
     """Parse a session's jsonl into ordered steps for the card's agent view:
     each is {role, kind: text|thinking|tool|result, text?, tool?}. Human steers,
     the agent's replies, and every tool call/result - like Paseo's turn view."""
