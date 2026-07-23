@@ -173,7 +173,9 @@ def metrics(tracks):
         te = by_track.get(t["id"], [])
         touches = sum(tariff.get(e.get("touch"), 1) for e in te if e["kind"] == "touch")
         ai = t.get("ai_cost", 0.0)
-        value = t.get("value") or s["value_per_card"]
+        # a value of 0 is valid (free/internal card) - don't treat it as "unset"
+        value = t.get("value")
+        value = s["value_per_card"] if value is None else value
         mode = _completion_mode(te, t.get("turns")) if t.get("lane") == "done" else None
         cards.append({"id": t["id"], "task": t["task"][:60], "branch": t["branch"],
                       "lane": t.get("lane"), "ai_cost": round(ai, 4), "touches": touches,
