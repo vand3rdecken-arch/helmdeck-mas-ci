@@ -159,7 +159,7 @@ def run_connector(name, actor="owner"):
             actor="connector:" + name,
             priority=it.get("priority") if it.get("priority") in
                 ("urgent", "high", "medium", "low") else "medium",
-            due=str(it.get("due") or ""), value=it.get("value") or None)
+            due=str(it.get("due") or ""), value=it.get("value"))  # 0 is valid; new_track resolves None
         made.append(t["id"])
     st = _state(); st[name] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_state(st)
     events.emit("import", "-", source="connector:" + name, count=len(made), actor=actor)
