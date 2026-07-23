@@ -15,18 +15,20 @@ import SettingsView from "@/components/settings";
 import Palette from "@/components/palette";
 import ConnectorView from "@/components/connector";
 import HistoryView from "@/components/history";
+import SessionsView from "@/components/sessions";
 import { IconGrid, IconList, IconTimeline, IconTheme } from "@/components/icons";
 
 const LAY_ICONS = { board: IconGrid, list: IconList, timeline: IconTimeline } as const;
 
-type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "history" | "settings";
-const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "history", "settings"];
+type View = "board" | "list" | "timeline" | "procs" | "dash" | "recs" | "sessions" | "history" | "settings";
+const VIEWS: View[] = ["board", "list", "timeline", "procs", "dash", "recs", "sessions", "history", "settings"];
 
 const ICONS: Record<string, React.ReactNode> = {
   board: <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5" /><rect x="14" y="3" width="7" height="11" rx="1.5" /></svg>,
   procs: <svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2" /><circle cx="12" cy="12" r="2.2" /><circle cx="19" cy="18" r="2.2" /><path d="M7 7l3 3M14 13l3 3" /></svg>,
   dash: <svg viewBox="0 0 24 24"><path d="M3 12h5l2-7 4 14 2-7h5" /></svg>,
   recs: <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /></svg>,
+  sessions: <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 8v4l3 2" /></svg>,
   settings: <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" /></svg>,
 };
 
@@ -106,6 +108,7 @@ function App() {
         <div className={`navitem${view === "procs" ? " active" : ""}`} onClick={() => nav("procs")}>{ICONS.procs}Processes</div>
         {!isClient && <div className={`navitem${view === "dash" ? " active" : ""}`} onClick={() => nav("dash")}>{ICONS.dash}Dashboard</div>}
         <div className={`navitem${view === "recs" ? " active" : ""}`} onClick={() => nav("recs")}>{ICONS.recs}Recordings</div>
+        {!isClient && <div className={`navitem${view === "sessions" ? " active" : ""}`} onClick={() => nav("sessions")}>{ICONS.sessions}Sessions</div>}
         <div className={`navitem${view === "history" ? " active" : ""}`} onClick={() => nav("history")}>
           <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="12" r="2.5" /><path d="M6 8.5v7M8.5 6.8c4 .8 7 2.4 7 4.5M8.5 17.2c4-.8 7-2.4 7-4.5" /></svg>
           History</div>
@@ -148,7 +151,7 @@ function App() {
       <div id="main">
         <div id="hdr">
           <span className="crumb">
-            {view.startsWith("conn:") ? "Connector · " + view.slice(5) : isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : view === "history" ? "History" : "Settings"}
+            {view.startsWith("conn:") ? "Connector · " + view.slice(5) : isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : view === "sessions" ? "Sessions" : view === "history" ? "History" : "Settings"}
           </span>
           {isWork && (
             <span id="layouts">
@@ -185,6 +188,7 @@ function App() {
           {view === "procs" && <ProcsView onOpen={setPeek} />}
           {view === "dash" && <DashView />}
           {view === "recs" && <RecsView />}
+          {view === "sessions" && <SessionsView onOpen={setPeek} />}
           {view === "history" && <HistoryView onOpen={setPeek} />}
           {view === "settings" && <SettingsView />}
           {view.startsWith("conn:") && (() => {

@@ -32,7 +32,7 @@ export interface Track {
   mode?: string; process?: string; process_title?: string;
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;
   archived?: boolean;
-  forked_from?: string; forked_ref?: string;
+  forked_from?: string; forked_ref?: string; adopted?: boolean;
 }
 export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;
