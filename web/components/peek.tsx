@@ -18,12 +18,20 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   const [details, setDetails] = useState(false);
   const [full, setFull] = useState(false);
   const [task, setTask] = useState(t.task);
+  const [val, setVal] = useState(String(t.value ?? ""));
+  const [clientV, setClientV] = useState(t.client ?? "");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const e = met?.cards.find((x) => x.id === t.id);
   const st = STATUS[t.status] ?? [t.status, "var(--txt-tertiary)"];
   const drivers = Object.keys(met?.settings?.drivers ?? { claude: {} });
 
   useEffect(() => { setTask(t.task); }, [t.id, t.task]);
+  // keep value/client in sync when the card updates from polls, but only when the
+  // real field changed - so live polling never wipes what you're typing.
+  useEffect(() => { setVal(String(t.value ?? "")); }, [t.id, t.value]);
+  useEffect(() => { setClientV(t.client ?? ""); }, [t.id, t.client]);
+  function saveVal() { const n = parseFloat(val); if (!isNaN(n) && n !== t.value) edit({ value: n }); }
+  function saveClient() { if (clientV.trim() !== (t.client ?? "")) edit({ client: clientV.trim() }); }
   useEffect(() => {   // grow the title box to fit the full task (no hidden scroll)
     const ta = taRef.current;
     if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 300) + "px"; }
@@ -135,13 +143,15 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           <span><input type="date" style={sel} value={t.due ?? ""} onChange={(ev) => edit({ due: ev.target.value })} /></span>
           <span className="k">Value</span>
           <span>
-            <input type="number" style={{ ...sel, width: 90 }} defaultValue={t.value}
-              onBlur={(ev) => parseFloat(ev.target.value) !== t.value && edit({ value: parseFloat(ev.target.value) || t.value })} />
+            <input type="number" style={{ ...sel, width: 90 }} value={val}
+              onChange={(ev) => setVal(ev.target.value)} onBlur={saveVal}
+              onKeyDown={(ev) => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
           </span>
           <span className="k">Client</span>
           <span>
-            <input style={{ ...sel, width: 140 }} defaultValue={t.client ?? ""}
-              placeholder="-" onBlur={(ev) => ev.target.value.trim() !== (t.client ?? "") && edit({ client: ev.target.value.trim() })} />
+            <input style={{ ...sel, width: 140 }} value={clientV} placeholder="-"
+              onChange={(ev) => setClientV(ev.target.value)} onBlur={saveClient}
+              onKeyDown={(ev) => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
           </span>
         </div>
         {e && (
