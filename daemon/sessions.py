@@ -339,6 +339,57 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     _save_track(t)
     return t
 
+def _current_branch(repo):
+    r = subprocess.run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
+    """Bring an existing Claude Code session (from ~/.claude) onto the board.
+      mode="continue": wrap it IN PLACE as a card - no new branch/worktree; the
+        card's steer resumes the exact session (`claude --resume`) in its own cwd.
+      mode="fork": open a NEW branch + worktree from that repo with a fresh
+        session, seeded with the original's starting request (source untouched).
+    No git commit is made either way - tracking is the card's audit trail; a fork
+    creates a branch pointer, real commits come only when the agent commits code."""
+    import events
+    cwd = os.path.abspath(cwd)
+    if not os.path.isdir(cwd):
+        raise RuntimeError("session working dir not found: " + cwd)
+    short = (session_id or "sess")[:8]
+
+    if mode == "fork":
+        task = ("Fork of a prior Claude Code session in this repo. Original "
+                "starting request:\n\n" + (first or "(unknown)")
+                + "\n\nContinue that line of work here.")
+        t = new_track(cwd, "fork-" + short, task, lane="backlog", actor=actor)
+        tracks = _load(); tt = _find(tracks, t["id"])
+        if tt:
+            tt["forked_from"] = session_id; _save_track(tt); t = tt
+        return t
+
+    # continue: a card that IS the existing session, running in its own cwd
+    tid = time.strftime("%Y%m%d-%H%M%S") + "-adopt-" + short
+    run_dir = os.path.join(REC, tid); os.makedirs(run_dir, exist_ok=True)
+    branch = _current_branch(cwd) or "(no git)"
+    t = {"id": tid, "repo": cwd, "branch": branch, "worktree": cwd,
+         "task": (first or "Continued Claude Code session")[:400],
+         "client": "", "session_id": session_id, "perm": DEFAULT_PERM,
+         "lane": "working", "status": "needs_you", "turns": 0, "run_dir": run_dir,
+         "last_reply": "", "value": events.settings()["value_per_card"],
+         "driver": "claude", "priority": "medium", "due": "", "rank": None,
+         "model": "", "attachments": [], "adopted": True,
+         "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
+         "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+         "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
+    from actionlog import ActionLog
+    ActionLog(run_dir).log("note", "ADOPTED Claude session %s (cwd %s)" % (session_id, cwd))
+    events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver="claude")
+    _save_track(t)
+    return t
+
+
 def reorder(ids, actor="owner"):
     """Persist manual card order. rank = position in the given (single-lane)
     ordered id list; the board sorts by rank first, so this overrides the

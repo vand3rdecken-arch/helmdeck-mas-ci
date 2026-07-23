@@ -440,6 +440,11 @@ class H(BaseHTTPRequestHandler):
             if p == "/models":
                 import turnopts
                 return self._send(200, json.dumps(turnopts.list_models()))
+            if p == "/sessions/claude":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import claude_sessions
+                return self._send(200, json.dumps(claude_sessions.list_sessions()))
             if p == "/checkpoints":
                 import checkpoints
                 return self._send(200, json.dumps(checkpoints.list_checkpoints()))
@@ -641,6 +646,17 @@ class H(BaseHTTPRequestHandler):
                 import sessions
                 ids = body.get("ids") or []
                 return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
+            if p == "/sessions/claude/adopt":
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import sessions
+                try:
+                    return self._send(200, json.dumps(sessions.adopt_session(
+                        body.get("session_id", ""), body.get("cwd", ""),
+                        mode=body.get("mode", "continue"), first=body.get("first", ""),
+                        actor=user["name"])))
+                except (RuntimeError, ValueError) as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if p == "/chat":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
