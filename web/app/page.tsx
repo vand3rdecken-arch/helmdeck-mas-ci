@@ -40,6 +40,7 @@ function App() {
   const [modal, setModal] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [palOpen, setPalOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);   // mobile sidebar drawer
 
   // hash routing (linkable views, glasses-friendly)
   useEffect(() => {
@@ -51,7 +52,7 @@ function App() {
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, []);
-  const nav = useCallback((v: string) => { setView(v); location.hash = v; }, []);
+  const nav = useCallback((v: string) => { setView(v); location.hash = v; setNavOpen(false); }, []);
 
   // keep the peeked track fresh as polls come in
   useEffect(() => {
@@ -101,7 +102,8 @@ function App() {
 
   const c = met?.capacity;
   return (
-    <div id="app">
+    <div id="app" className={navOpen ? "nav-open" : ""}>
+      <div id="navscrim" onClick={() => setNavOpen(false)} />
       <nav id="side">
         <div id="logo"><span className="dot">S</span> SwarmDeck</div>
         <div className={`navitem${isWork ? " active" : ""}`} onClick={() => nav("board")}>{ICONS.board}Board</div>
@@ -150,6 +152,10 @@ function App() {
       </nav>
       <div id="main">
         <div id="hdr">
+          <button id="navtoggle" aria-label="Menu" onClick={() => setNavOpen((v) => !v)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
           <span className="crumb">
             {view.startsWith("conn:") ? "Connector · " + view.slice(5) : isWork && filter.startsWith("client:") ? "Board · " + filter.slice(7) : isWork ? "Board" : view === "dash" ? "Dashboard" : view === "recs" ? "Recordings" : view === "procs" ? "Processes" : view === "sessions" ? "Sessions" : view === "history" ? "History" : "Settings"}
           </span>
