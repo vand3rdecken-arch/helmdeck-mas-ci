@@ -73,6 +73,12 @@ export const IconFile = (p: { size?: number }) => (
 export const IconX = (p: { size?: number }) => (
   <I {...p}><path d="M6 6l12 12M18 6 6 18" /></I>
 );
+export const IconTerminal = (p: { size?: number }) => (
+  <I {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M13 15h4" /></I>
+);
+export const IconCopy = (p: { size?: number }) => (
+  <I {...p}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></I>
+);
 export const IconExpand = (p: { size?: number }) => (
   <I {...p}><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" /></I>
 );
