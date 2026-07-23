@@ -88,3 +88,86 @@ def list_sessions(limit=MAX):
             })
     out.sort(key=lambda s: s["mtime"], reverse=True)
     return out[:limit]
+
+
+# --- full turn-by-turn transcript of a session (the Paseo agent view) --------
+_TOOL_KEYS = ("command", "file_path", "path", "url", "pattern", "query",
+              "prompt", "description", "notebook_path", "old_string")
+
+
+def _find_transcript(session_id):
+    if not session_id or not os.path.isdir(PROJECTS):
+        return None
+    for proj in os.listdir(PROJECTS):
+        cand = os.path.join(PROJECTS, proj, session_id + ".jsonl")
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+def _tail_lines(path, max_bytes=500_000):
+    """Read only the last ~max_bytes so a huge transcript doesn't blow up polls."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        if size > max_bytes:
+            f.seek(size - max_bytes)
+        data = f.read()
+    lines = data.decode("utf-8", "replace").split("\n")
+    return lines[1:] if size > max_bytes else lines   # drop the partial first line
+
+
+def _tool_summary(inp):
+    inp = inp or {}
+    for k in _TOOL_KEYS:
+        v = inp.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:160]
+    return ", ".join(list(inp.keys())[:3])
+
+
+def read_transcript(session_id, limit=160):
+    """Parse a session's jsonl into ordered steps for the card's agent view:
+    each is {role, kind: text|thinking|tool|result, text?, tool?}. Human steers,
+    the agent's replies, and every tool call/result - like Paseo's turn view."""
+    path = _find_transcript(session_id)
+    if not path:
+        return []
+    steps = []
+    for line in _tail_lines(path):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = __import__("json").loads(line)
+        except ValueError:
+            continue
+        if d.get("type") not in ("user", "assistant"):
+            continue
+        m = d.get("message")
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role") or d.get("type")
+        content = m.get("content")
+        if isinstance(content, str):
+            if content.strip():
+                steps.append({"role": role, "kind": "text", "text": content.strip()[:4000]})
+            continue
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            pt = part.get("type")
+            if pt == "text" and (part.get("text") or "").strip():
+                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:4000]})
+            elif pt == "thinking" and (part.get("thinking") or "").strip():
+                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:1200]})
+            elif pt == "tool_use":
+                steps.append({"role": role, "kind": "tool", "tool": part.get("name") or "tool",
+                              "text": _tool_summary(part.get("input"))})
+            elif pt == "tool_result":
+                c = part.get("content")
+                txt = c if isinstance(c, str) else (
+                    " ".join(p.get("text", "") for p in c if isinstance(p, dict)) if isinstance(c, list) else "")
+                steps.append({"role": "user", "kind": "result", "text": (txt or "").strip()[:600]})
+    return steps[-limit:]
