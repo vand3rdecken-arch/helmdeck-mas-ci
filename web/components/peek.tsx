@@ -9,6 +9,7 @@ import LiveThumb from "./live";
 import { executor } from "./board";
 import Composer, { SendOpts } from "./composer";
 import { IconX, IconFork, IconChevron, IconExpand, IconShrink } from "./icons";
+import Markdown from "./markdown";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
@@ -220,12 +221,14 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
               <div key={i} className="cb res">{s.text}</div>
             ) : s.kind === "thinking" ? (
               <div key={i} className="cb tk">{s.text}</div>
+            ) : s.role === "user" ? (
+              <div key={i} className="cb you">{s.text}</div>
             ) : (
-              <div key={i} className={`cb ${s.role === "user" ? "you" : "bot"}`}>{s.text}</div>
+              <div key={i} className="cb bot"><Markdown>{s.text || ""}</Markdown></div>
             )
           ) : hist.map((r, i) =>
             r.kind === "steer" ? <div key={i} className="cb you">{r.detail}</div> :
-            r.kind === "reply" ? <div key={i} className="cb bot">{r.detail}</div> :
+            r.kind === "reply" ? <div key={i} className="cb bot"><Markdown>{r.detail}</Markdown></div> :
             <div key={i} className="cb sys">{r.detail}</div>
           )}
         </div>
