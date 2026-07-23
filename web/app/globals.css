@@ -384,6 +384,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   color:var(--txt-secondary);cursor:default;background:var(--bg-surface-2);
   border:1px solid var(--border-subtle);border-radius:999px;padding:2px 9px 2px 6px}
 .cmp-meterpct{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sess-pick:hover{background:var(--bg-transparent-hover)}
 
 /* slash-command autocomplete popover */
 .cmp-slash{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:5;
