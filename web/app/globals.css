@@ -199,18 +199,20 @@ a{color:var(--accent-txt);text-decoration:none}
 .cb.sys{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-tertiary);
   font-size:11px;padding:2px 4px;border-radius:0}
 /* transcript rows (Paseo agent view): tool calls, results, thinking */
-.cb.tool{align-self:stretch;max-width:100%;background:var(--bg-layer-1);border-radius:7px;
-  border-left:2px solid var(--accent);padding:5px 10px;font-size:11.5px;
+.cb.tool{align-self:stretch;max-width:100%;
+  background:color-mix(in oklch,var(--accent) 14%,var(--bg-surface-1));
+  border-radius:7px;border-left:3px solid var(--accent);padding:6px 11px;font-size:12px;
   font-family:var(--mono,ui-monospace,monospace);color:var(--txt-primary);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cb.tool b{color:var(--accent-txt);margin-right:7px;font-weight:600}
-.cb.res{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-tertiary);
-  font-size:10.5px;font-family:var(--mono,ui-monospace,monospace);padding:2px 10px 6px 12px;
-  border-left:2px solid var(--border-subtle);margin-left:1px;
-  white-space:pre-wrap;max-height:60px;overflow:hidden}
+.cb.tool b{color:var(--accent-txt);margin-right:8px;font-weight:700}
+/* result: one readable muted line under its tool call, never a dark block */
+.cb.res{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-secondary);
+  font-size:11px;font-family:var(--mono,ui-monospace,monospace);padding:1px 11px 4px 14px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb.res::before{content:"\21B3  ";color:var(--txt-tertiary)}
 .cb.tk{align-self:stretch;max-width:100%;background:transparent;color:var(--txt-tertiary);
-  font-size:11px;font-style:italic;padding:2px 10px;white-space:pre-wrap;
-  max-height:66px;overflow:hidden;opacity:.85}
+  font-size:11px;font-style:italic;padding:2px 11px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;opacity:.85}
 .f-steer{color:var(--txt-primary);background:var(--bg-layer-1);border-radius:8px;padding:7px 11px;margin:8px 0 4px;font-weight:500}
 .f-steer::before{content:"you";display:block;font-size:10.5px;color:var(--txt-tertiary);font-weight:600;margin-bottom:2px}
 .f-reply{white-space:pre-wrap;padding:4px 2px 10px;color:var(--txt-secondary)}
