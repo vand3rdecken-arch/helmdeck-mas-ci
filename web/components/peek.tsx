@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { get, post, HistoryRow, Track } from "@/lib/api";
 
 interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
-interface Step { role: string; kind: "text" | "thinking" | "tool" | "result"; text?: string; tool?: string }
 import { STATUS, useBoard } from "@/lib/store";
 import LiveThumb from "./live";
 import { executor } from "./board";
 import Composer, { SendOpts } from "./composer";
 import { IconX, IconFork, IconChevron, IconExpand, IconShrink } from "./icons";
 import Markdown from "./markdown";
+import Transcript, { Step } from "./transcript";
 
 export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) {
   const { met, me, toast, refresh } = useBoard();
@@ -49,6 +49,15 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
     get<Turn[]>(`/tracks/${t.id}/turns`).then(setTurns).catch(() => setTurns([]));
     get<Step[]>(`/tracks/${t.id}/transcript`).then(setTrans).catch(() => setTrans([]));
   }, [t.id, t.updated]);
+  // live: while a turn runs, poll the transcript so it grows in real time
+  // (a streaming approximation - new tool calls / text appear as they land)
+  useEffect(() => {
+    if (t.status !== "running") return;
+    const iv = setInterval(() => {
+      get<Step[]>(`/tracks/${t.id}/transcript`).then(setTrans).catch(() => {});
+    }, 1500);
+    return () => clearInterval(iv);
+  }, [t.id, t.status]);
 
   async function edit(patch: Record<string, unknown>) {
     const r = await post<{ error?: string }>(`/tracks/${t.id}/update`, patch);
@@ -221,19 +230,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           {/* Paseo-style: every turn - the agent's text, thinking and each tool
               call/result, straight from the session transcript. Falls back to the
               steer/reply log until the session has run. */}
-          {trans.length ? trans.map((s, i) =>
-            s.kind === "tool" ? (
-              <div key={i} className="cb tool"><b>{s.tool}</b>{s.text ? " " + s.text : ""}</div>
-            ) : s.kind === "result" ? (
-              <div key={i} className="cb res">{s.text}</div>
-            ) : s.kind === "thinking" ? (
-              <div key={i} className="cb tk">{s.text}</div>
-            ) : s.role === "user" ? (
-              <div key={i} className="cb you">{s.text}</div>
-            ) : (
-              <div key={i} className="cb bot"><Markdown>{s.text || ""}</Markdown></div>
-            )
-          ) : hist.map((r, i) =>
+          {trans.length ? <Transcript steps={trans} /> : hist.map((r, i) =>
             r.kind === "steer" ? <div key={i} className="cb you">{r.detail}</div> :
             r.kind === "reply" ? <div key={i} className="cb bot"><Markdown>{r.detail}</Markdown></div> :
             <div key={i} className="cb sys">{r.detail}</div>

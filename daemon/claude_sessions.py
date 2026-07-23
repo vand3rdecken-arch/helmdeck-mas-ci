@@ -125,32 +125,66 @@ def _tool_summary(inp):
     return ", ".join(list(inp.keys())[:3])
 
 
+def _short_ts(iso):
+    return iso.split("T")[1][:5] if isinstance(iso, str) and "T" in iso else ""
+
+
+def _result_text(part):
+    c = part.get("content")
+    if isinstance(c, str):
+        return c.strip()
+    if isinstance(c, list):
+        return " ".join(p.get("text", "") for p in c if isinstance(p, dict)).strip()
+    return ""
+
+
 def read_transcript(session_id, limit=400):
-    """Parse a session's jsonl into ordered steps for the card's agent view:
-    each is {role, kind: text|thinking|tool|result, text?, tool?}. Human steers,
-    the agent's replies, and every tool call/result - like Paseo's turn view."""
+    """Parse a session's jsonl into ordered steps for the card's agent view -
+    the full Paseo-style turn view. Steps:
+      {kind:text|thinking, role, text, ts}
+      {kind:tool, tool, text(summary), result, ok, ts}   (tool_use paired to its result)
+      {kind:todos, todos:[{content,status}], ts}          (from TodoWrite)
+      {kind:plan, text, ts}                                (from ExitPlanMode)
+    """
     path = _find_transcript(session_id)
     if not path:
         return []
-    steps = []
+    parsed = []
     for line in _tail_lines(path):
         line = line.strip()
         if not line:
             continue
         try:
-            d = __import__("json").loads(line)
+            parsed.append(json.loads(line))
         except ValueError:
             continue
+
+    # pass 1: tool_use_id -> result, so each tool call carries its own output
+    results = {}
+    for d in parsed:
+        m = d.get("message")
+        c = m.get("content") if isinstance(m, dict) else None
+        if not isinstance(c, list):
+            continue
+        for part in c:
+            if isinstance(part, dict) and part.get("type") == "tool_result":
+                results[part.get("tool_use_id")] = {
+                    "text": _result_text(part)[:2500], "ok": not part.get("is_error")}
+
+    # pass 2: emit steps in order
+    steps = []
+    for d in parsed:
         if d.get("type") not in ("user", "assistant"):
             continue
         m = d.get("message")
         if not isinstance(m, dict):
             continue
         role = m.get("role") or d.get("type")
+        ts = _short_ts(d.get("timestamp"))
         content = m.get("content")
         if isinstance(content, str):
             if content.strip():
-                steps.append({"role": role, "kind": "text", "text": content.strip()[:4000]})
+                steps.append({"role": role, "kind": "text", "text": content.strip()[:8000], "ts": ts})
             continue
         if not isinstance(content, list):
             continue
@@ -159,15 +193,24 @@ def read_transcript(session_id, limit=400):
                 continue
             pt = part.get("type")
             if pt == "text" and (part.get("text") or "").strip():
-                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:4000]})
+                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:8000], "ts": ts})
             elif pt == "thinking" and (part.get("thinking") or "").strip():
-                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:1200]})
+                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:2500], "ts": ts})
             elif pt == "tool_use":
-                steps.append({"role": role, "kind": "tool", "tool": part.get("name") or "tool",
-                              "text": _tool_summary(part.get("input"))})
-            elif pt == "tool_result":
-                c = part.get("content")
-                txt = c if isinstance(c, str) else (
-                    " ".join(p.get("text", "") for p in c if isinstance(p, dict)) if isinstance(c, list) else "")
-                steps.append({"role": "user", "kind": "result", "text": (txt or "").strip()[:600]})
+                name = part.get("name") or "tool"
+                inp = part.get("input") if isinstance(part.get("input"), dict) else {}
+                if name == "TodoWrite":
+                    todos = [{"content": str(td.get("content", ""))[:220], "status": str(td.get("status", ""))}
+                             for td in (inp.get("todos") or []) if isinstance(td, dict)]
+                    if todos:
+                        steps.append({"kind": "todos", "todos": todos, "ts": ts})
+                    continue
+                if name == "ExitPlanMode":
+                    steps.append({"kind": "plan", "text": str(inp.get("plan", ""))[:8000], "ts": ts})
+                    continue
+                res = results.get(part.get("id")) or {}
+                steps.append({"role": role, "kind": "tool", "tool": name,
+                              "text": _tool_summary(inp), "result": res.get("text", "")[:2500],
+                              "ok": res.get("ok", True), "ts": ts})
+            # tool_result already folded into its tool step in pass 1
     return steps[-limit:]
