@@ -144,6 +144,53 @@ def test_autocommit_commits_dirty_worktree():
     check(not sessions._autocommit({"worktree": repo, "id": "tac"}), "clean worktree -> nothing to commit")
 
 
+def test_harness_side_conflict_resolution():
+    # The paradox fix: the HARNESS merges main into the card's branch (in the
+    # worktree), turning the conflict into editable MARKERS - the agent never runs
+    # a git-merge. Resolve by editing -> autocommit completes it -> lands clean.
+    repo = new_repo()
+    wt = tempfile.mkdtemp(); os.rmdir(wt)
+    git(repo, "branch", "feat")
+    git(repo, "worktree", "add", wt, "feat")
+    with open(os.path.join(wt, "base.txt"), "w") as f:
+        f.write("branch's take\n")
+    git(wt, "add", "-A"); git(wt, "commit", "-m", "branch edit")
+    with open(os.path.join(repo, "base.txt"), "w") as f:      # main diverges on same file
+        f.write("main's take\n")
+    git(repo, "add", "-A"); git(repo, "commit", "-m", "main edit")
+    t = {"repo": repo, "branch": "feat", "worktree": wt, "id": "tcr"}
+
+    ok, kind, _ = sessions._merge_to_main(t)
+    check(not ok and kind == "conflict", "diverged edits -> conflict first (kind=%s)" % kind)
+    res = sessions._pull_main_into_branch(t)
+    check(res.startswith("markers"), "harness pulls main into the branch -> editable markers (%s)" % res[:30])
+    check("<<<<<<<" in open(os.path.join(wt, "base.txt")).read(), "conflict markers now in the WORKTREE file (editable)")
+    # agent 'resolves' by plain editing (no git-merge)
+    with open(os.path.join(wt, "base.txt"), "w") as f:
+        f.write("merged: main's take + branch's take\n")
+    ac = sessions._autocommit(t)
+    check(ac is True, "editing + autocommit completes the merge (ac=%s)" % ac)
+    ok2, kind2, _ = sessions._merge_to_main(t)
+    check(ok2 and kind2 == "merged", "now lands clean on main (kind=%s)" % kind2)
+    check("merged: main" in open(os.path.join(repo, "base.txt")).read(), "resolved content on main")
+
+
+def test_autocommit_refuses_unresolved_markers():
+    repo = new_repo()
+    wt = tempfile.mkdtemp(); os.rmdir(wt)
+    git(repo, "branch", "feat2")
+    git(repo, "worktree", "add", wt, "feat2")
+    with open(os.path.join(wt, "base.txt"), "w") as f:
+        f.write("branch\n")
+    git(wt, "add", "-A"); git(wt, "commit", "-m", "b")
+    with open(os.path.join(repo, "base.txt"), "w") as f:
+        f.write("main\n")
+    git(repo, "add", "-A"); git(repo, "commit", "-m", "m")
+    t = {"repo": repo, "branch": "feat2", "worktree": wt, "id": "tmk"}
+    sessions._pull_main_into_branch(t)                        # leaves markers, unresolved
+    check(sessions._autocommit(t) == "markers", "autocommit refuses to commit unresolved markers")
+
+
 def test_merge_event_signature_no_collision():
     # Regression: move_lane('done') does events.emit("merge", tid, ok=, outcome=,
     # detail=). A field named 'kind' here collides with emit's positional `kind`
@@ -164,6 +211,8 @@ if __name__ == "__main__":
     test_conflict_reports_files_and_aborts()
     test_on_card_branch_guard()
     test_autocommit_commits_dirty_worktree()
+    test_harness_side_conflict_resolution()
+    test_autocommit_refuses_unresolved_markers()
     test_merge_event_signature_no_collision()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)

@@ -399,22 +399,56 @@ def _merge_to_main(t):
             "reiche neu ein (der Worktree bleibt die sichere Sandbox)." % files)
 
 
+def _git_try(repo, *args):
+    """Run git, return (returncode, stdout, stderr) without raising."""
+    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
 def _autocommit(t):
-    """Clean up + commit any uncommitted worktree work on the card's OWN branch,
-    so finishing a card never dead-ends on 'uncommitted changes' - the agent's
-    work in the worktree becomes a real commit that can be merged. Returns True if
-    it committed. `git add -A` respects .gitignore (secrets/junk stay out)."""
+    """Clean up + commit uncommitted worktree work on the card's OWN branch (also
+    COMPLETES a conflict merge the harness set up), so finishing never dead-ends on
+    'uncommitted changes'. `git add -A` respects .gitignore. Returns:
+      True     - committed
+      False    - nothing to commit
+      "markers"- unresolved conflict markers remain; caller must bounce."""
     wt = t.get("worktree")
     if not wt or not os.path.isdir(wt):
         return False
-    try:
-        if not _git(wt, "status", "--porcelain"):
-            return False
-        _git(wt, "add", "-A")
-        _git(wt, "commit", "-m", "SwarmDeck: finalize %s" % t.get("id", ""))
-        return True
-    except Exception:
+    merging = _git_try(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] == 0
+    rc, dirty, _ = _git_try(wt, "status", "--porcelain")
+    if rc != 0 or (not dirty and not merging):
         return False
+    if _git_try(wt, "add", "-A")[0] != 0:
+        return False
+    # refuse to commit if conflict markers are still in the staged content
+    chk = subprocess.run(["git", "-C", wt, "diff", "--cached", "--check"],
+                         capture_output=True, text=True)
+    if "conflict marker" in (chk.stdout or "").lower():
+        return "markers"
+    if _git_try(wt, "commit", "-m", "SwarmDeck: finalize %s" % t.get("id", ""))[0] != 0:
+        return False
+    return True
+
+
+def _pull_main_into_branch(t):
+    """Harness-side conflict resolution: merge main INTO the card's branch, in the
+    card's worktree (the daemon has full git access; the agent never runs a merge).
+    Either git auto-resolves it, or it leaves standard conflict MARKERS in the
+    worktree files - which the agent/owner then resolves by plain EDITING (allowed
+    in acceptEdits), never a git-merge. Returns "resolved" | "markers:<files>" |
+    "error:<msg>"."""
+    wt = t.get("worktree"); repo = t.get("repo")
+    if not wt or not os.path.isdir(wt) or not repo:
+        return "error:no worktree"
+    rc, mainbranch, err = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    if rc != 0:
+        return "error:%s" % err
+    rc, _out, _err = _git_try(wt, "merge", mainbranch, "--no-edit")
+    if rc == 0:
+        return "resolved"
+    files = _git_try(wt, "diff", "--name-only", "--diff-filter=U")[1]
+    return "markers:" + (files or _err[:150])
 
 
 def _repo_hook(t, kind):
@@ -475,7 +509,19 @@ def move_lane(tid, lane, actor="owner"):
         # classify & merge to main, deploy, accept. gate-before-merge is kept
         # (LAW). Every problem BOUNCES with a clear reason + resolve path, never a
         # silent dead-end. The card lands in Done on success.
-        if _autocommit(t):
+        ac = _autocommit(t)
+        if ac == "markers":
+            msg = ("Konfliktmarkierungen sind noch im Worktree offen. Steuere den Agenten: "
+                   "'loese die Konfliktmarkierungen (<<<<<<< / >>>>>>>) in den Dateien' - "
+                   "nur editieren - und reiche dann neu ein.")
+            log.log("note", "CONFLICT MARKERS OPEN - bounced: " + msg[:200])
+            t["status"] = "bounced"; t["lane"] = "working"
+            t["merge_report"] = msg; t["merge_kind"] = "conflict"
+            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+            import notify; notify.card_event(t, "bounced")
+            t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
+            return t
+        if ac is True:
             log.log("note", "COMMITTED worktree changes on the branch before merge")
         # the repo's own quality gate (swarmdeck.gate command). The committed
         # check now trivially passes because we just committed.
@@ -493,6 +539,20 @@ def move_lane(tid, lane, actor="owner"):
         _repo_hook(t, "preview")   # best-effort try-it surface before it lands
         # classify + merge to main - conflict/blocked bounces with the resolve path
         accept_ok, kind, mergemsg = _merge_to_main(t)
+        if not accept_ok and kind == "conflict":
+            # HARNESS-side resolve: pull main INTO the card's branch so resolving is
+            # an EDIT task, not an (impossible) agent merge. Auto-resolved -> retry
+            # the landing; otherwise leave editable markers + a clear instruction.
+            res = _pull_main_into_branch(t)
+            if res == "resolved":
+                log.log("note", "AUTO-RESOLVED: merged main into the branch, retrying")
+                accept_ok, kind, mergemsg = _merge_to_main(t)
+            elif res.startswith("markers"):
+                files = res.split(":", 1)[1]
+                mergemsg = ("Der Harness hat main in deinen Branch geholt - die Konflikte "
+                            "stehen jetzt als Markierungen im Worktree (%s). Steuere den Agenten: "
+                            "'loese die Konfliktmarkierungen in diesen Dateien' (nur editieren). "
+                            "Danach neu auf Review - der Harness committet und mergt dann selbst." % files)
         events.emit("merge", tid, ok=accept_ok, outcome=kind, detail=mergemsg[:300])
         if not accept_ok:
             log.log("note", "MERGE %s - nicht abgenommen: %s" % (kind.upper(), mergemsg[:400]))
