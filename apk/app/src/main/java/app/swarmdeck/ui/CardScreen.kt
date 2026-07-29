@@ -72,7 +72,14 @@ fun CardScreen(
                         text = e, tool = null, result = null, ok = true,
                         running = false, streaming = false, ts = null, todos = emptyList())
                 }
-                steps = fresh
+                // weave in the actionlog's lifecycle events (dispatched / gate / merge /
+                // deploy / bounce) so the phone feed reads like the desktop's unified one
+                val notes = runCatching { DaemonClient.history(t.id) }.getOrDefault(emptyList())
+                    .filter { it.kind == "note" && it.detail.isNotBlank() }
+                    .map { app.swarmdeck.Step(kind = "system", role = null, text = it.detail,
+                        tool = null, result = null, ok = true, running = false, streaming = false,
+                        ts = it.ts.ifEmpty { null }, todos = emptyList()) }
+                steps = mergeFeed(fresh, notes)
                 t = DaemonClient.tracks().firstOrNull { it.id == t.id } ?: t
             } catch (_: Exception) { }
             // pin-to-newest only while the chat tab is showing - never yank the
@@ -247,6 +254,26 @@ fun CardScreen(
             containerColor = Tok.surface1
         )
     }
+}
+
+/** Interleave the agent transcript with the actionlog's lifecycle events by
+ *  timestamp - the phone's version of the desktop's unified card feed. steer/reply
+ *  already live in the transcript, so only 'note' rows are injected. */
+private fun mergeFeed(trans: List<app.swarmdeck.Step>, notes: List<app.swarmdeck.Step>): List<app.swarmdeck.Step> {
+    if (trans.isEmpty() || notes.isEmpty()) return trans
+    var last = ""
+    val T = ArrayList<Pair<app.swarmdeck.Step, String>>(trans.size)
+    for (s in trans) { s.ts?.let { last = it }; T.add(s to (s.ts ?: last)) }
+    val out = ArrayList<app.swarmdeck.Step>(trans.size + notes.size)
+    var i = 0; var j = 0
+    while (i < T.size && j < notes.size) {
+        val nt = notes[j].ts ?: ""
+        if (nt.isNotEmpty() && nt < T[i].second) { out.add(notes[j]); j++ }
+        else { out.add(T[i].first); i++ }
+    }
+    while (i < T.size) { out.add(T[i].first); i++ }
+    while (j < notes.size) { out.add(notes[j]); j++ }
+    return out
 }
 
 /**

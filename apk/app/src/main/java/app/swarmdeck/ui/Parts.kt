@@ -145,6 +145,20 @@ fun StepRow(s: Step) {
             }
         }
         "thinking" -> ThinkingRow(s)
+        "system" -> {   // lifecycle event woven into the feed (dispatched/gate/merge/deploy/bounce)
+            val txt = s.text ?: ""
+            val bad = Regex("FAIL|BOUNC|KONFLIKT|conflict", RegexOption.IGNORE_CASE).containsMatchIn(txt)
+            val good = Regex("MERGED|ACCEPTED|GATE PASSED|DISPATCHED|COMMITTED|CONNECTOR|REDUNDANT",
+                RegexOption.IGNORE_CASE).containsMatchIn(txt)
+            val col = if (bad) Tok.danger else if (good) Tok.ok else Tok.txtTertiary
+            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp, horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("● ", fontSize = 10.sp, color = col)
+                Text(txt, fontSize = 11.5.sp, color = if (bad || good) Tok.txtSecondary else Tok.txtTertiary,
+                    modifier = Modifier.weight(1f))
+                s.ts?.let { Spacer(Modifier.width(6.dp)); Text(it, fontSize = 10.sp, color = Tok.txtTertiary) }
+            }
+        }
         else -> MessageBubble(s)
     }
 }
