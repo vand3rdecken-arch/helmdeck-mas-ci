@@ -72,13 +72,14 @@ function App() {
         if (e.key === "Escape") { setPeek(null); setModal(false); }
         return;
       }
-      if (e.key === "c" && view === "board") setModal(true);
-      if (e.key === "k") setChatOpen((o) => !o);
+      // No bare single-letter shortcuts (they fired on any keypress, incl.
+      // Ctrl+C). New Request and Chat have their own buttons; only the
+      // conventional Ctrl+K (palette) and Escape stay.
       if (e.key === "Escape") { setPeek(null); setModal(false); setChatOpen(false); setPalOpen(false); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [view]);
+  }, []);
 
   const isClient = me?.role === "client";
   const isWork = view === "board" || view === "list" || view === "timeline";

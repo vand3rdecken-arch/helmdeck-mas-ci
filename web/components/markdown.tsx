@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import CodeBlock from "./codeblock";
 
 // Markdown -> React for the chat, no dependency. Covers exactly what a coding
 // agent emits (the same element set Paseo's markdown styles cover): fenced code
@@ -32,6 +33,57 @@ function inline(text: string, kp: string): React.ReactNode[] {
   return out;
 }
 
+const LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+
+// gather a contiguous list region into flat items with indent depth
+function listRegion(lines: string[], start: number) {
+  const items: { indent: number; ordered: boolean; text: string }[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const m = LIST_RE.exec(lines[i]);
+    if (!m) {
+      if (!lines[i].trim() && i + 1 < lines.length && LIST_RE.test(lines[i + 1])) { i++; continue; }
+      break;
+    }
+    items.push({ indent: m[1].replace(/\t/g, "  ").length, ordered: /\d/.test(m[2]), text: m[3] });
+    i++;
+  }
+  return { items, next: i };
+}
+
+// recursive nested list (arbitrary depth) with task-list checkboxes
+function renderList(items: { indent: number; ordered: boolean; text: string }[],
+                   pos: { i: number }, indent: number, keyGen: () => string): React.ReactNode {
+  const lis: React.ReactNode[] = [];
+  let ordered = false, first = true;
+  while (pos.i < items.length && items[pos.i].indent >= indent) {
+    const it = items[pos.i];
+    if (it.indent > indent) break;                 // belongs to a shallower call
+    if (first) { ordered = it.ordered; first = false; }
+    pos.i++;
+    let children: React.ReactNode = null;
+    if (pos.i < items.length && items[pos.i].indent > indent) {
+      children = renderList(items, pos, items[pos.i].indent, keyGen);
+    }
+    const k = keyGen();
+    const task = /^\[([ xX])\]\s+(.*)$/.exec(it.text);
+    if (task) {
+      lis.push(
+        <li key={k} className="md-task">
+          <input type="checkbox" checked={task[1].toLowerCase() === "x"} readOnly />
+          <span>{inline(task[2], k)}</span>{children}
+        </li>);
+    } else {
+      lis.push(<li key={k}>{inline(it.text, k)}{children}</li>);
+    }
+  }
+  return ordered
+    ? <ol key={keyGen()} className="md-ol">{lis}</ol>
+    : <ul key={keyGen()} className="md-ul">{lis}</ul>;
+}
+
+const cells = (row: string) => row.replace(/^\s*\|?|\|?\s*$/g, "").split("|").map((c) => c.trim());
+
 function parse(src: string): React.ReactNode[] {
   const lines = (src || "").replace(/\r\n/g, "\n").split("\n");
   const blocks: React.ReactNode[] = [];
@@ -49,9 +101,7 @@ function parse(src: string): React.ReactNode[] {
       i++;
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) buf.push(lines[i++]);
       i++; // closing fence
-      blocks.push(
-        <pre key={key()} className="md-cb"><code data-lang={lang}>{buf.join("\n")}</code></pre>,
-      );
+      blocks.push(<CodeBlock key={key()} code={buf.join("\n")} lang={lang} />);
       continue;
     }
 
@@ -78,25 +128,27 @@ function parse(src: string): React.ReactNode[] {
       continue;
     }
 
-    // unordered list
-    if (/^\s*[-*+]\s+/.test(line)) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
-        const item = lines[i].replace(/^\s*[-*+]\s+/, "");
-        items.push(<li key={key()}>{inline(item, key())}</li>); i++;
-      }
-      blocks.push(<ul key={key()} className="md-ul">{items}</ul>);
+    // GFM table: a header row of pipes followed by a |---|---| separator
+    if (line.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:-]*-[-\s:|]*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+      const head = cells(line);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { rows.push(cells(lines[i])); i++; }
+      blocks.push(
+        <table key={key()} className="md-table">
+          <thead><tr>{head.map((c, j) => <th key={j}>{inline(c, key())}</th>)}</tr></thead>
+          <tbody>{rows.map((r, ri) => (
+            <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] ?? "", key())}</td>)}</tr>
+          ))}</tbody>
+        </table>);
       continue;
     }
 
-    // ordered list
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        const item = lines[i].replace(/^\s*\d+\.\s+/, "");
-        items.push(<li key={key()}>{inline(item, key())}</li>); i++;
-      }
-      blocks.push(<ol key={key()} className="md-ol">{items}</ol>);
+    // list (unordered/ordered, nested, task-list) - unified recursive parser
+    if (LIST_RE.test(line)) {
+      const { items, next } = listRegion(lines, i);
+      blocks.push(renderList(items, { i: 0 }, items[0].indent, key));
+      i = next;
       continue;
     }
 
