@@ -133,6 +133,26 @@ DEBT = [
                "as a fallback when the start time can't be read.",
         "order": 8,
     },
+    {
+        "id": "accept-merge-base-branch",
+        "title": "Accept merges into the checkout's CURRENT branch, ff-agnostic",
+        "status": "open",
+        "what": "move_lane('done') now merges the card branch via _merge_to_main, "
+                "but into whatever branch t['repo'] currently has checked out "
+                "(assumed to be the base/main) rather than a base branch RECORDED "
+                "on the card at dispatch. It also always --no-ff and does not push.",
+        "why_it_bites": "If the owner leaves the main checkout on a different "
+                        "branch, an accept would merge into the wrong target (the "
+                        "guard only refuses detached HEAD or the card branch "
+                        "itself). No push means 'deployed' still depends on a "
+                        "deploy hook to publish.",
+        "trigger": "a repo whose cards fork from a non-default base, or a checkout "
+                   "parked on a feature branch at accept time",
+        "fix": "Record base_branch on the card at dispatch; merge into THAT "
+               "(checking it out / using a dedicated integration worktree), offer "
+               "ff-only vs --no-ff by policy, and push when the repo is remote.",
+        "order": 9,
+    },
 ]
 
 def list_debt():
