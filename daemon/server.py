@@ -1191,6 +1191,10 @@ def serve(port=8140):
         print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
     atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
+    import sessions
+    zombies = sessions.sweep_zombies()   # running-flagged cards whose turn died with the old daemon
+    if zombies:
+        print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
