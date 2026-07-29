@@ -83,7 +83,7 @@ export interface Process {
   steps: Step[]; cost: number; created: string; error?: string;
 }
 export interface Me { name: string; role: string }
-export interface HistoryRow { kind: string; detail: string; t?: number }
+export interface HistoryRow { kind: string; detail: string; ts?: string; t?: number }
 export interface Run { id: string; title: string; kind: string; status: string; steps?: number }
 export interface UserRow {
   name: string; role: string; created?: string;
