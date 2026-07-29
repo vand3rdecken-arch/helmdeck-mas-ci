@@ -575,6 +575,14 @@ def move_lane(tid, lane, actor="owner"):
     if not t:
         raise RuntimeError("no such track: " + tid)
     prev = t.get("lane")
+    # record the human's board move in the card's own feed (chat), so a drag to
+    # Review/Done/Working/Backlog reads alongside the agent's work, not just in the
+    # global event log. The lane-specific handlers below add the outcome detail.
+    if t.get("run_dir") and prev != lane:
+        from actionlog import ActionLog as _AL
+        _lane_label = {"backlog": "Backlog", "working": "In Arbeit", "review": "Review", "done": "Done"}
+        _AL(t["run_dir"]).log("note", "→ verschoben nach %s von %s"
+                              % (_lane_label.get(lane, lane), actor))
     if lane == "working":
         # pulling a card back OUT of review is a human bounce - the reject touch
         if prev == "review":
