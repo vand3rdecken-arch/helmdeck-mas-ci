@@ -169,6 +169,96 @@ def cancel(tid):
     return False
 
 
+# --- idle eviction + shutdown (Paseo: collectIdleAgents / closeAllAgents) ----
+# A card holds ONE persistent worker, but keeping ALL touched cards' workers
+# alive forever would leak memory on a busy board. So, like Paseo, a worker only
+# lives for a short idle window after its last turn; the sweeper tree-kills it,
+# and the next steer transparently respawns + `--resume`s (conversation is on
+# disk, keyed by session id). There is deliberately NO concurrency cap - as in
+# Paseo, live worker count is bounded by this idle eviction, not a semaphore.
+
+_IDLE_TTL_DEFAULT = 300.0      # seconds a worker may sit idle before it's reaped
+_SWEEP_INTERVAL = 30.0
+_sweeper_started = False
+
+
+def _idle_ttl():
+    try:
+        import events
+        v = events.settings().get("idle_session_ttl_s")
+        if v:
+            return float(v)
+    except Exception:
+        pass
+    return _IDLE_TTL_DEFAULT
+
+
+def sweep_idle(ttl=None):
+    """One eviction pass: tree-kill sessions idle longer than ttl. A session mid-
+    turn is protected (its _turn_lock is held, so try-acquire fails). Returns the
+    list of evicted track ids."""
+    ttl = _idle_ttl() if ttl is None else ttl
+    now = _time.time()
+    evicted = []
+    with _sessions_guard:
+        for tid, s in list(_sessions.items()):
+            if now - s.last_used < ttl:
+                continue
+            # only reap a session with no turn in flight - non-blocking acquire
+            if not s._turn_lock.acquire(blocking=False):
+                continue
+            try:
+                if s._cur is not None:
+                    continue
+                del _sessions[tid]
+                evicted.append((tid, s))
+            finally:
+                s._turn_lock.release()
+    for tid, s in evicted:
+        try:
+            s.kill()
+        except Exception:
+            pass
+    return [tid for tid, _ in evicted]
+
+
+def start_idle_sweeper(interval=None):
+    """Start the background idle-eviction loop (idempotent)."""
+    global _sweeper_started
+    if _sweeper_started:
+        return
+    _sweeper_started = True
+    iv = _SWEEP_INTERVAL if interval is None else interval
+
+    def loop():
+        while True:
+            _time.sleep(iv)
+            try:
+                gone = sweep_idle()
+                if gone:
+                    print("DRIVERS: reaped %d idle agent session(s): %s"
+                          % (len(gone), ", ".join(gone)))
+            except Exception as e:
+                print("idle sweep error:", e)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def shutdown_all():
+    """Tree-kill every live session - registered for daemon shutdown so a clean
+    stop doesn't orphan worker trees (complements reap_orphans on the next boot).
+    Conversations survive: each card resumes by session id on the next steer."""
+    with _sessions_guard:
+        items = list(_sessions.items())
+        _sessions.clear()
+    for tid, s in items:
+        try:
+            s.kill()
+        except Exception:
+            pass
+    return len(items)
+
+
 def _env(cfg):
     """The environment the agent's shell inherits.
 
@@ -279,6 +369,7 @@ class _ClaudeSession:
         self._alive = False
         self._cur = None                 # current turn's mutable state, or None
         self._turn_lock = threading.Lock()  # one turn at a time on this session
+        self.last_used = _time.time()    # for the idle sweeper (Paseo idle TTL)
         self._spawn()
 
     # -- lifecycle -------------------------------------------------------
@@ -392,51 +483,58 @@ class _ClaudeSession:
     # -- one turn: push a message, wait bounded for its result ----------
     def run_turn(self, prompt, run_dir):
         with self._turn_lock:
-            _cancelled.discard(self.tid)
-            if not self.alive():
-                # session died (crash/cancel/opts-restart) - respawn & --resume.
-                _tree_kill(self.proc)
-                self._spawn()
-            live_path = os.path.join(run_dir, "live_partial.txt")
-            sid_path = os.path.join(run_dir, "live_session.txt")
-            _rm(live_path); _rm(sid_path)
-            cur = {"parts": [], "result": None, "session_id": self.session_id,
-                   "done": threading.Event(), "live_path": live_path,
-                   "sid_path": sid_path, "last_flush": 0.0}
-            self._cur = cur
-            msg = json.dumps({"type": "user",
-                              "message": {"role": "user", "content": prompt}})
+            self.last_used = _time.time()      # mark active so the idle sweeper skips us
             try:
-                self.proc.stdin.write(msg + "\n")
-                self.proc.stdin.flush()
-            except Exception as e:
-                self._cur = None
-                self.kill()
-                raise RuntimeError("claude session write failed: %s" % e)
-            timeout = self.cfg.get("timeout", 1800 if self.cfg.get("allowed_tools") else 600)
-            finished = cur["done"].wait(timeout)
-            self._cur = None
-            _rm(live_path); _rm(sid_path)
+                return self._run_turn_locked(prompt, run_dir)
+            finally:
+                self.last_used = _time.time()
 
-            if self.tid in _cancelled:            # Stop was pressed - clean, not error
-                _cancelled.discard(self.tid)
-                return self.session_id, "(turn cancelled by you)", \
-                    {"usage": {}, "cost_usd": None, "models": []}
-            if not finished:
-                # hung turn: tree-kill the session; the next steer resumes it.
-                self.kill()
-                raise RuntimeError(
-                    "claude turn exceeded %ss - session killed; steer again to resume. %s"
-                    % (timeout, "".join(self.err_tail).strip()[-200:]))
-            d = cur["result"]
-            if not d:
-                # pump ended with no result: the process died mid-turn.
-                self.kill()
-                raise RuntimeError("claude stream ended with no result: "
-                                   + "".join(self.err_tail).strip()[:300])
-            meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
-                    "models": list((d.get("modelUsage") or {}).keys())}
-            return self.session_id or d.get("session_id"), d.get("result", ""), meta
+    def _run_turn_locked(self, prompt, run_dir):
+        _cancelled.discard(self.tid)
+        if not self.alive():
+            # session died (crash/cancel/opts-restart/idle-evict) - respawn & --resume.
+            _tree_kill(self.proc)
+            self._spawn()
+        live_path = os.path.join(run_dir, "live_partial.txt")
+        sid_path = os.path.join(run_dir, "live_session.txt")
+        _rm(live_path); _rm(sid_path)
+        cur = {"parts": [], "result": None, "session_id": self.session_id,
+               "done": threading.Event(), "live_path": live_path,
+               "sid_path": sid_path, "last_flush": 0.0}
+        self._cur = cur
+        msg = json.dumps({"type": "user",
+                          "message": {"role": "user", "content": prompt}})
+        try:
+            self.proc.stdin.write(msg + "\n")
+            self.proc.stdin.flush()
+        except Exception as e:
+            self._cur = None
+            self.kill()
+            raise RuntimeError("claude session write failed: %s" % e)
+        timeout = self.cfg.get("timeout", 1800 if self.cfg.get("allowed_tools") else 600)
+        finished = cur["done"].wait(timeout)
+        self._cur = None
+        _rm(live_path); _rm(sid_path)
+
+        if self.tid in _cancelled:            # Stop was pressed - clean, not error
+            _cancelled.discard(self.tid)
+            return self.session_id, "(turn cancelled by you)", \
+                {"usage": {}, "cost_usd": None, "models": []}
+        if not finished:
+            # hung turn: tree-kill the session; the next steer resumes it.
+            self.kill()
+            raise RuntimeError(
+                "claude turn exceeded %ss - session killed; steer again to resume. %s"
+                % (timeout, "".join(self.err_tail).strip()[-200:]))
+        d = cur["result"]
+        if not d:
+            # pump ended with no result: the process died mid-turn.
+            self.kill()
+            raise RuntimeError("claude stream ended with no result: "
+                               + "".join(self.err_tail).strip()[:300])
+        meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
+                "models": list((d.get("modelUsage") or {}).keys())}
+        return self.session_id or d.get("session_id"), d.get("result", ""), meta
 
 
 def _flush_cur(cur):

@@ -1185,10 +1185,12 @@ class H(BaseHTTPRequestHandler):
 def serve(port=8140):
     import db
     db.init()
-    import drivers
+    import drivers, atexit
     reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
     if reaped:
         print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
+    drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
+    atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
@@ -1202,7 +1204,10 @@ def serve(port=8140):
     import nightshift
     nightshift.start()         # idle-time worker - no-op until settings.nightshift.enabled
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
-    ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    try:
+        ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    finally:
+        drivers.shutdown_all()   # tree-kill live worker sessions on stop (Ctrl-C included)
 
 if __name__ == "__main__":
     serve()
