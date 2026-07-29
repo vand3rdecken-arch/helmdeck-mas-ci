@@ -83,7 +83,9 @@ fun CardScreen(
                     .filter { it.kind == "note" && it.detail.isNotBlank() }
                     .map { app.swarmdeck.Step(kind = "system", role = null, text = it.detail,
                         tool = null, result = null, ok = true, running = false, streaming = false,
-                        ts = it.ts.ifEmpty { null }, todos = emptyList()) }
+                        // note ts is HH:MM:SS but transcript ts is HH:MM - truncate so
+                        // they interleave by minute instead of all notes at the bottom
+                        ts = it.ts.take(5).ifEmpty { null }, todos = emptyList()) }
                 steps = mergeFeed(fresh, notes)
                 t = DaemonClient.tracks().firstOrNull { it.id == t.id } ?: t
             } catch (_: Exception) { }
