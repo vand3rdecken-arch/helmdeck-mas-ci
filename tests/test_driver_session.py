@@ -1,0 +1,118 @@
+# -*- coding: utf-8 -*-
+"""Headless tests for the persistent stream-json driver session (drivers.py).
+
+Proves the three contracts the Paseo port must hold, without the real CLI:
+  1. reuse   - two turns run through ONE persistent process (pid stable).
+  2. bounded - a hung turn is killed at the timeout and run_turn RETURNS
+               (raises) instead of blocking forever - the old deadlock.
+  3. cancel  - Stop unblocks the turn cleanly and tree-kills the session.
+
+Uses the fake_claude.cmd stand-in via the drivers.CLAUDE seam. Self-sandboxing:
+its own pid-file + temp run dirs, no daemon, no board state."""
+import os, sys, time, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+sys.path.insert(0, DAEMON)
+
+import drivers
+
+# Generate the fake-CLI wrapper with the ABSOLUTE python path (the bare `py`
+# launcher isn't guaranteed on a spawned process's PATH). The driver's
+# cmd /s /c wrapping handles the spaces in this path.
+_WRAP = os.path.join(tempfile.mkdtemp(), "fake_claude.cmd")
+with open(_WRAP, "w", encoding="utf-8") as _f:
+    _f.write('@echo off\r\n"%s" "%s" %%*\r\n'
+             % (sys.executable, os.path.join(HERE, "fake_claude.py")))
+drivers.CLAUDE = _WRAP
+drivers._PIDFILE = os.path.join(tempfile.mkdtemp(), "driver_pids.json")
+
+_fails = []
+
+
+def check(cond, msg):
+    print(("  ok  " if cond else "  FAIL ") + msg)
+    if not cond:
+        _fails.append(msg)
+
+
+def _track(tid):
+    return {"id": tid, "worktree": os.getcwd(),
+            "run_dir": tempfile.mkdtemp(), "session_id": None}
+
+
+def test_reuse():
+    cfg = {"type": "claude", "timeout": 15}
+    t = _track("t-reuse")
+    s = drivers._get_session(cfg, t)
+    sid, res, meta = s.run_turn("hello", t["run_dir"])
+    check(res == "echo:hello", "turn 1 echoes input (got %r)" % res)
+    check(sid == "fake-session-123", "session_id captured from init")
+    check(meta.get("cost_usd") == 0.001, "economics parsed from result event")
+    pid1 = s.proc.pid
+    sid2, res2, meta2 = s.run_turn("again", t["run_dir"])
+    check(res2 == "echo:again", "turn 2 echoes input (got %r)" % res2)
+    check(s.proc.pid == pid1, "SAME process served both turns (persistent session)")
+    drivers.cancel("t-reuse")
+    check(not s.alive(), "session dead after cancel")
+
+
+def test_timeout_is_bounded():
+    os.environ["FAKE_HANG"] = "1"
+    try:
+        cfg = {"type": "claude", "timeout": 2}
+        t = _track("t-hang")
+        s = drivers._get_session(cfg, t)
+        start = time.time()
+        raised = ""
+        try:
+            s.run_turn("hang", t["run_dir"])
+        except RuntimeError as e:
+            raised = str(e)
+        elapsed = time.time() - start
+        check("exceeded" in raised, "hung turn raised a timeout (got %r)" % raised[:60])
+        check(elapsed < 8, "run_turn RETURNED near the 2s timeout (%.1fs) - no deadlock" % elapsed)
+        check(not s.alive(), "session tree-killed after timeout")
+    finally:
+        os.environ.pop("FAKE_HANG", None)
+
+
+def test_cancel_clean():
+    cfg = {"type": "claude", "timeout": 15}
+    t = _track("t-cancel")
+    s = drivers._get_session(cfg, t)
+    # run one turn so a live session exists, then cancel returns clean state
+    s.run_turn("hi", t["run_dir"])
+    drivers._cancelled.discard("t-cancel")
+    # a cancelled in-flight turn returns the sentinel, not an exception
+    import threading
+    result = {}
+
+    def go():
+        try:
+            os.environ["FAKE_HANG"] = "1"
+            s2 = drivers._get_session({"type": "claude", "timeout": 30},
+                                      {"id": "t-cancel2", "worktree": os.getcwd(),
+                                       "run_dir": tempfile.mkdtemp(), "session_id": None})
+            result["r"] = s2.run_turn("hang", tempfile.mkdtemp())
+        except Exception as e:
+            result["err"] = str(e)
+
+    th = threading.Thread(target=go)
+    th.start()
+    time.sleep(2)
+    drivers.cancel("t-cancel2")
+    th.join(timeout=10)
+    os.environ.pop("FAKE_HANG", None)
+    check(not th.is_alive(), "cancel unblocked the waiting turn")
+    r = result.get("r")
+    check(bool(r) and r[1] == "(turn cancelled by you)",
+          "cancelled turn returns clean sentinel (got %r)" % (r[1] if r else result.get("err")))
+
+
+if __name__ == "__main__":
+    test_reuse()
+    test_timeout_is_bounded()
+    test_cancel_clean()
+    print("OK" if not _fails else "FAILED: %d" % len(_fails))
+    sys.exit(1 if _fails else 0)

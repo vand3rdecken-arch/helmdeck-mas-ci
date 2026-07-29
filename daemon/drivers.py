@@ -35,33 +35,138 @@ import urllib.request
 CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
-# live subprocesses by track id, so the composer's Stop button can really kill a
-# running turn (not just look like it). cancel() terminates; the driver returns a
-# clean "(cancelled)" turn rather than raising.
-_running = {}
+# Persistent Claude sessions by track id - modelled on Paseo's provider/claude
+# agent (see _paseo_src packages/server/.../claude/agent.ts). A card holds ONE
+# long-lived `claude --input-format stream-json` process across turns: a steer is
+# a message PUSHED onto its stdin, a background pump thread owns the single stdout
+# reader, and every teardown TREE-KILLS the whole process tree (claude + MCP/node
+# children) the way Paseo's terminateWithTreeKill does - so a stalled turn can
+# never hold a lock forever and killed daemons never leak orphan claude.exe.
+_sessions = {}
+_sessions_guard = threading.Lock()
 _cancelled = set()
+
+# --- process-tree kill + orphan reaping (Paseo: utils/tree-kill.ts) ---------
+
+def _tree_kill(proc):
+    """Take the whole process tree down. `proc` is the `cmd /c claude` wrapper,
+    so terminate() alone leaves the real claude/node child (and its MCP children)
+    running - taskkill /T /F on Windows reaps the tree immediately."""
+    if proc is None:
+        return
+    try:
+        if proc.poll() is not None:
+            _forget_pid(proc.pid)
+            return
+    except Exception:
+        pass
+    pid = proc.pid
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           capture_output=True, timeout=10)
+        else:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                proc.kill()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    _forget_pid(pid)
+
+
+_PIDFILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "driver_pids.json")
+_pid_lock = threading.Lock()
+
+
+def _read_pids():
+    try:
+        with open(_PIDFILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _write_pids(pids):
+    try:
+        tmp = _PIDFILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(pids, f)
+        os.replace(tmp, _PIDFILE)
+    except Exception:
+        pass
+
+
+def _record_pid(pid):
+    with _pid_lock:
+        pids = _read_pids()
+        if pid not in pids:
+            pids.append(pid)
+            _write_pids(pids)
+
+
+def _forget_pid(pid):
+    with _pid_lock:
+        pids = [x for x in _read_pids() if x != pid]
+        _write_pids(pids)
+
+
+def _is_agent_pid(pid):
+    """Guard against PID reuse: only reap a recorded pid if it is still a
+    claude/node/cmd image (the tree we spawn), never some unrelated process that
+    inherited the number after the old daemon died."""
+    if os.name != "nt":
+        return True
+    try:
+        r = subprocess.run(["tasklist", "/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"],
+                           capture_output=True, text=True, timeout=10)
+        img = (r.stdout or "").lower()
+        return any(n in img for n in ("claude", "node", "cmd.exe"))
+    except Exception:
+        return False
+
+
+def reap_orphans():
+    """On daemon start, tree-kill driver processes left running by a PREVIOUS
+    daemon (crash/restart) so orphaned claude+MCP trees don't accumulate. Only
+    PIDs WE recorded in driver_pids.json are touched - never a blanket
+    claude.exe kill that would hit the desktop's own Claude Code session."""
+    with _pid_lock:
+        pids = _read_pids()
+        _write_pids([])
+    killed = 0
+    for pid in pids:
+        try:
+            if not _is_agent_pid(pid):
+                continue
+            if os.name == "nt":
+                r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                                   capture_output=True, timeout=10)
+                if r.returncode == 0:
+                    killed += 1
+            else:
+                os.kill(pid, 9)
+                killed += 1
+        except Exception:
+            pass
+    return killed
 
 
 def cancel(tid):
-    """Terminate the track's in-flight turn if one is running. Idempotent.
-    Kills the whole process TREE - `p` is the `cmd /c claude` wrapper, so
-    p.terminate() alone leaves the real claude/node child running (a ~10s+
-    stop). taskkill /T /F on Windows takes the tree down immediately."""
+    """Stop the track's in-flight turn (composer Stop). Unblocks the waiting turn
+    with a clean '(cancelled)' and tree-kills the session; the next steer respawns
+    and `--resume`s the session id, so no conversation is lost. Idempotent."""
     _cancelled.add(tid)
-    p = _running.get(tid)
-    if p:
-        try:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)],
-                               capture_output=True, timeout=10)
-            else:
-                p.terminate()
-        except Exception:
-            try:
-                p.terminate()
-            except Exception:
-                pass
-    return bool(p)
+    with _sessions_guard:
+        s = _sessions.get(tid)
+    if s:
+        s.cancel()
+        return True
+    return False
 
 
 def _env(cfg):
@@ -118,144 +223,259 @@ _CARD_BRIEF = (
     "must change (a setting, a secret, a decision)."
 )
 
-def _claude(cfg, t, prompt):
-    # stream-json so the turn streams token-by-token: the session_id arrives in
-    # the first `system/init` event (so the UI can stream from turn 1) and text
-    # deltas are written to run_dir/live_partial.txt as they land. The final
-    # `result` event carries the SAME fields as the old buffered json
-    # (result/total_cost_usd/usage/modelUsage) - economics & the gate are
-    # unaffected: we read them from that one event exactly as before.
-    cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "stream-json",
-           "--include-partial-messages", "--verbose",
-           "--permission-mode", cfg.get("perm", t.get("perm", "acceptEdits")),
-           "--append-system-prompt", _CARD_BRIEF]
-    if cfg.get("model"):
-        cmd += ["--model", cfg["model"]]
-    for pat in cfg.get("allowed_tools") or []:
-        cmd += ["--allowedTools", pat]
-    if t.get("session_id"):
-        cmd += ["--resume", t["session_id"]]
-        # An adopted card still pointing at its SOURCE session must not write
-        # into the desktop's live conversation: fork into a fresh session id
-        # on the first steer. Afterwards the ids differ and this never fires.
-        if t.get("adopted_source") and t.get("adopted_source") == t["session_id"]:
-            cmd += ["--fork-session"]
-    timeout = cfg.get("timeout", 1800 if cfg.get("allowed_tools") else 600)
-    tid = t["id"]
-    _cancelled.discard(tid)
-    run_dir = t.get("run_dir") or "."
-    live_path = os.path.join(run_dir, "live_partial.txt")
-    sid_path = os.path.join(run_dir, "live_session.txt")
-    for pth in (live_path, sid_path):
-        try:
-            if os.path.exists(pth):
-                os.remove(pth)
-        except OSError:
-            pass
-    p = subprocess.Popen(cmd, cwd=t["worktree"], stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         env=_env(cfg),
-                         text=True, encoding="utf-8", errors="replace", bufsize=1)
-    _running[tid] = p
-    err_tail = []
+def _cmd_line(argv):
+    """Windows can't spawn a .cmd/.bat directly (claude ships as claude.cmd), so
+    we route through cmd.exe. `cmd /c "<a>" "<b>"` is a TRAP: cmd strips the
+    outermost quote pair, so a spaced executable path (C:\\Program Files\\...)
+    breaks the moment the last arg is also quoted. `cmd /s /c "<whole line>"`
+    strips ONLY the wrapping quotes and runs the inner verbatim - the documented-
+    correct form. On non-Windows, return the argv list unchanged."""
+    if os.name != "nt":
+        return argv
+    return 'cmd /s /c "%s"' % subprocess.list2cmdline(argv)
 
-    def _drain_err():
+
+def _write(path, text):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        pass
+
+
+def _rm(path):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def _opts_sig(cfg, t):
+    """The launch options that, if changed, require a fresh query (Paseo's
+    queryRestartNeeded). A steer with a different model/mode/tool-grant can't be
+    fed to a process already launched with the old ones."""
+    return (cfg.get("perm", t.get("perm", "acceptEdits")),
+            cfg.get("model") or t.get("model") or "",
+            tuple(cfg.get("allowed_tools") or []))
+
+
+class _ClaudeSession:
+    """One long-lived `claude` stream-json process for a card, reused across
+    turns. Faithful port of Paseo's persistent SDK query: turns are messages
+    pushed onto stdin, a single pump thread drains stdout, and teardown always
+    tree-kills. run_turn() is BOUNDED (kills on timeout) so it can never hold the
+    caller's per-card lock forever - the deadlock the old per-turn Popen caused."""
+
+    def __init__(self, cfg, t):
+        self.tid = t["id"]
+        self.cfg = cfg
+        self.worktree = t.get("worktree") or "."
+        self.sig = _opts_sig(cfg, t)
+        self.session_id = t.get("session_id")
+        self.adopted_source = t.get("adopted_source")
+        self.proc = None
+        self.err_tail = []
+        self._alive = False
+        self._cur = None                 # current turn's mutable state, or None
+        self._turn_lock = threading.Lock()  # one turn at a time on this session
+        self._spawn()
+
+    # -- lifecycle -------------------------------------------------------
+    def _spawn(self):
+        argv = [CLAUDE, "-p",
+                "--output-format", "stream-json", "--input-format", "stream-json",
+                "--include-partial-messages", "--verbose",
+                "--permission-mode", self.cfg.get("perm", "acceptEdits"),
+                "--append-system-prompt", _CARD_BRIEF]
+        if self.cfg.get("model"):
+            argv += ["--model", self.cfg["model"]]
+        for pat in self.cfg.get("allowed_tools") or []:
+            argv += ["--allowedTools", pat]
+        if self.session_id:
+            argv += ["--resume", self.session_id]
+            # An adopted card still pointing at its SOURCE session must not write
+            # into the desktop's live conversation: fork into a fresh session id
+            # on the first turn. Afterwards the ids differ and this never fires.
+            if self.adopted_source and self.adopted_source == self.session_id:
+                argv += ["--fork-session"]
+        self.proc = subprocess.Popen(_cmd_line(argv), cwd=self.worktree,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, env=_env(self.cfg),
+                                     text=True, encoding="utf-8", errors="replace",
+                                     bufsize=1)
+        _record_pid(self.proc.pid)
+        self.err_tail = []
+        self._alive = True
+        threading.Thread(target=self._drain_err, daemon=True).start()
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def alive(self):
         try:
-            for ln in p.stderr:
-                err_tail.append(ln)
-                if len(err_tail) > 40:
-                    del err_tail[0]
+            return self._alive and self.proc is not None and self.proc.poll() is None
+        except Exception:
+            return False
+
+    def cancel(self):
+        """Unblock the waiting turn as '(cancelled)' and tree-kill the tree."""
+        cur = self._cur
+        if cur and not cur["done"].is_set():
+            cur["done"].set()
+        self.kill()
+
+    def kill(self):
+        self._alive = False
+        _tree_kill(self.proc)
+
+    # -- pump: the single stdout reader (Paseo's query pump) -------------
+    def _drain_err(self):
+        try:
+            for ln in self.proc.stderr:
+                self.err_tail.append(ln)
+                if len(self.err_tail) > 40:
+                    del self.err_tail[0]
         except Exception:
             pass
 
-    def _feed_in():
+    def _pump(self):
         try:
-            p.stdin.write(prompt)
+            for line in self.proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                self._on_event(ev)
         except Exception:
             pass
         finally:
+            # stdout closed => process exited. Unblock any turn waiting on it so
+            # run_turn returns (with no result) instead of hanging to its timeout.
+            self._alive = False
+            cur = self._cur
+            if cur and not cur["done"].is_set():
+                cur["done"].set()
+
+    def _on_event(self, ev):
+        cur = self._cur
+        typ = ev.get("type")
+        if typ == "system":
+            sid = ev.get("session_id")
+            if sid:
+                self.session_id = sid
+                if cur:
+                    cur["session_id"] = sid
+                    _write(cur["sid_path"], sid)
+        elif typ == "result":
+            if cur:
+                cur["result"] = ev
+                cur["done"].set()
+        elif typ == "assistant":
+            # a full assistant message landed in the session .jsonl - clear the
+            # live partial so the transcript (read from .jsonl) shows it instead.
+            if cur:
+                cur["parts"].clear()
+                _flush_cur(cur)
+        elif typ == "stream_event":
+            e = ev.get("event") or {}
+            if e.get("type") == "content_block_delta" and cur:
+                dl = e.get("delta") or {}
+                if dl.get("type") == "text_delta":
+                    cur["parts"].append(dl.get("text", ""))
+                    now = _time.time()
+                    if now - cur["last_flush"] > 0.15:
+                        cur["last_flush"] = now
+                        _flush_cur(cur)
+
+    # -- one turn: push a message, wait bounded for its result ----------
+    def run_turn(self, prompt, run_dir):
+        with self._turn_lock:
+            _cancelled.discard(self.tid)
+            if not self.alive():
+                # session died (crash/cancel/opts-restart) - respawn & --resume.
+                _tree_kill(self.proc)
+                self._spawn()
+            live_path = os.path.join(run_dir, "live_partial.txt")
+            sid_path = os.path.join(run_dir, "live_session.txt")
+            _rm(live_path); _rm(sid_path)
+            cur = {"parts": [], "result": None, "session_id": self.session_id,
+                   "done": threading.Event(), "live_path": live_path,
+                   "sid_path": sid_path, "last_flush": 0.0}
+            self._cur = cur
+            msg = json.dumps({"type": "user",
+                              "message": {"role": "user", "content": prompt}})
             try:
-                p.stdin.close()
+                self.proc.stdin.write(msg + "\n")
+                self.proc.stdin.flush()
+            except Exception as e:
+                self._cur = None
+                self.kill()
+                raise RuntimeError("claude session write failed: %s" % e)
+            timeout = self.cfg.get("timeout", 1800 if self.cfg.get("allowed_tools") else 600)
+            finished = cur["done"].wait(timeout)
+            self._cur = None
+            _rm(live_path); _rm(sid_path)
+
+            if self.tid in _cancelled:            # Stop was pressed - clean, not error
+                _cancelled.discard(self.tid)
+                return self.session_id, "(turn cancelled by you)", \
+                    {"usage": {}, "cost_usd": None, "models": []}
+            if not finished:
+                # hung turn: tree-kill the session; the next steer resumes it.
+                self.kill()
+                raise RuntimeError(
+                    "claude turn exceeded %ss - session killed; steer again to resume. %s"
+                    % (timeout, "".join(self.err_tail).strip()[-200:]))
+            d = cur["result"]
+            if not d:
+                # pump ended with no result: the process died mid-turn.
+                self.kill()
+                raise RuntimeError("claude stream ended with no result: "
+                                   + "".join(self.err_tail).strip()[:300])
+            meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
+                    "models": list((d.get("modelUsage") or {}).keys())}
+            return self.session_id or d.get("session_id"), d.get("result", ""), meta
+
+
+def _flush_cur(cur):
+    try:
+        with open(cur["live_path"], "w", encoding="utf-8") as f:
+            f.write("".join(cur["parts"]))
+    except OSError:
+        pass
+
+
+def _get_session(cfg, t):
+    """Get the card's live session, or (re)spawn one. A changed opts signature
+    (model/mode/tools) or a dead process forces a fresh query, resuming the same
+    conversation via the track's session_id."""
+    tid = t["id"]
+    sig = _opts_sig(cfg, t)
+    with _sessions_guard:
+        s = _sessions.get(tid)
+        if s is not None and (s.sig != sig or not s.alive()):
+            try:
+                s.kill()
             except Exception:
                 pass
+            s = None
+        if s is None:
+            s = _ClaudeSession(cfg, t)
+            _sessions[tid] = s
+        return s
 
-    threading.Thread(target=_drain_err, daemon=True).start()
-    threading.Thread(target=_feed_in, daemon=True).start()
 
-    session_id = t.get("session_id")
-    result_obj = None
-    parts = []
-    last_flush = [0.0]
+def _claude(cfg, t, prompt):
+    # A card holds ONE long-lived stream-json process across turns (Paseo's
+    # persistent query). The session_id arrives in the first `system/init` event
+    # and text deltas stream to run_dir/live_partial.txt; the `result` event
+    # carries the SAME economics fields as before (result/total_cost_usd/usage/
+    # modelUsage) so the gate and metrics are unchanged.
+    s = _get_session(cfg, t)
+    return s.run_turn(prompt, t.get("run_dir") or ".")
 
-    def _flush():
-        try:
-            with open(live_path, "w", encoding="utf-8") as f:
-                f.write("".join(parts))
-        except OSError:
-            pass
-
-    try:
-        for line in p.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                ev = json.loads(line)
-            except ValueError:
-                continue
-            typ = ev.get("type")
-            if typ == "system":
-                sid = ev.get("session_id")
-                if sid and sid != session_id:
-                    session_id = sid
-                    try:
-                        with open(sid_path, "w", encoding="utf-8") as f:
-                            f.write(session_id)
-                    except OSError:
-                        pass
-            elif typ == "result":
-                result_obj = ev
-            elif typ == "assistant":
-                # a full assistant message just landed in the session .jsonl -
-                # clear the live partial so the transcript (read from .jsonl)
-                # shows it instead, with no double render.
-                parts.clear()
-                _flush()
-            elif typ == "stream_event":
-                e = ev.get("event") or {}
-                if e.get("type") == "content_block_delta":
-                    dl = e.get("delta") or {}
-                    if dl.get("type") == "text_delta":
-                        parts.append(dl.get("text", ""))
-                        now = _time.time()
-                        if now - last_flush[0] > 0.15:
-                            last_flush[0] = now
-                            _flush()
-        p.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            p.kill()
-        except Exception:
-            pass
-    finally:
-        _running.pop(tid, None)
-        for pth in (live_path, sid_path):
-            try:
-                if os.path.exists(pth):
-                    os.remove(pth)
-            except OSError:
-                pass
-
-    if tid in _cancelled:                 # Stop was pressed - clean, not an error
-        _cancelled.discard(tid)
-        return session_id, "(turn cancelled by you)", \
-            {"usage": {}, "cost_usd": None, "models": []}
-    if not result_obj:
-        raise RuntimeError("claude stream: no result event: " + "".join(err_tail).strip()[:300])
-    d = result_obj
-    meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
-            "models": list((d.get("modelUsage") or {}).keys())}
-    return session_id or d.get("session_id"), d.get("result", ""), meta
 
 def _http(cfg, t, prompt):
     body = {"track": t["id"], "worktree": t.get("worktree", ""),

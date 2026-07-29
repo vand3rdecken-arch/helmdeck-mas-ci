@@ -21,8 +21,45 @@ DEBT = [
                         "orphaned, last_reply can be overwritten.",
         "trigger": "second concurrent user, or heavy chain automation",
         "fix": "threading.Lock per track id around _turn(); queue + visible "
-               "'agent busy' state.",
+               "'agent busy' state. NOTE: the lock alone DEADLOCKED - it wrapped "
+               "an unbounded stdout read, so a stalled turn held it forever and "
+               "every later steer hung. Superseded by the persistent stream-json "
+               "session port (drivers._ClaudeSession, Paseo's model): run_turn is "
+               "now BOUNDED (tree-kill on timeout) so the lock always releases.",
         "order": 1,
+    },
+    {
+        "id": "session-restart-on-optchange",
+        "title": "Model/mode/tool change kills & resumes the session (no control plane)",
+        "status": "open",
+        "what": "drivers._ClaudeSession keeps one persistent `claude` process per "
+                "card, but a steer whose model/permission-mode/allowed-tools "
+                "differ from the running process tree-kills it and respawns with "
+                "`--resume`. Stop (cancel) does the same. Paseo instead uses the "
+                "SDK control plane (query.interrupt / setPermissionMode) to change "
+                "these in place on the live query.",
+        "why_it_bites": "A respawn re-pays session init/context cost and briefly "
+                        "drops streaming; rapid model-toggling churns processes.",
+        "trigger": "owner flipping model/mode often mid-conversation on one card",
+        "fix": "Speak the stream-json control protocol (control_request: interrupt, "
+               "set_permission_mode) on the existing stdin instead of respawning.",
+        "order": 7,
+    },
+    {
+        "id": "orphan-reap-pid-reuse",
+        "title": "Startup orphan reap trusts a recorded PID list",
+        "status": "open",
+        "what": "drivers.reap_orphans() tree-kills PIDs recorded in "
+                "driver_pids.json by a prior daemon. It guards against PID reuse "
+                "with a tasklist image-name check (claude/node/cmd), but that is "
+                "best-effort, not an identity match.",
+        "why_it_bites": "A recycled PID that happens to be an unrelated node/cmd "
+                        "process could be killed; a very fast reuse into claude.exe "
+                        "of a DIFFERENT session could hit the desktop's own agent.",
+        "trigger": "daemon crash-restart on a busy machine with heavy PID churn",
+        "fix": "Record (pid, create_time) or a per-process marker env var and only "
+               "reap on an exact identity match.",
+        "order": 8,
     },
     {
         "id": "json-storage",
