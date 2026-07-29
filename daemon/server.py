@@ -2,7 +2,8 @@
 """Local review/index + CONTROL server. The APK is a full-capability client (owner
 decision: mobile = same capabilities), so besides pulling it can drive:
 
-  GET  /runs, /runs/<id>/timeline, /runs/<id>/video, /runs/<id>/playbook, /live.jpg, /
+  GET  /runs, /runs/<id>/timeline, /runs/<id>/video, /runs/<id>/playbook, /live.jpg
+  GET  / (+ /classic, /recorder, /dashboard) -> 302 to the Next app (no UI here)
   POST /control/teach/start   {"title": "..."}      arm a demo recording on the PC
   POST /control/teach/stop                          finalize it (phone stop button)
   POST /control/distill       {"id": "<run-id>"}    demo -> playbook (background)
@@ -38,256 +39,23 @@ def _active_live():
                 return p
     return None
 
-BOARD = """<!doctype html><meta charset=utf-8><title>SwarmDeck board</title>
-<style>
-body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
-h1{color:#7ef0b2;font-size:20px;margin:0 0 4px} .hint{color:#5d7488;font-size:12px;margin:0 0 14px}
-#board{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start}
-.lane{background:#0e151d;border:1px solid #22303d;border-radius:12px;padding:10px;min-height:220px}
-.lane h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8fb0c9;margin:2px 4px 10px}
-.lane h2 .n{color:#5d7488;font-weight:400}
-.lane.drag{outline:2px dashed #2affc0;outline-offset:-4px}
-.card{background:#111a24;border:1px solid #24303c;border-left:3px solid #6fb2e8;border-radius:9px;
-      padding:9px 11px;margin-bottom:9px;cursor:grab}
-.card.needs{border-left-color:#ffd166}.card.run{border-left-color:#6fb2e8}
-.card.sub{border-left-color:#b78ef7}.card.acc{border-left-color:#2affc0}.card.q{border-left-color:#5d7488}
-.card b{display:block;font-size:13.5px;margin-bottom:2px}
-.card .m{font:11px ui-monospace,monospace;color:#5d7488}
-.card .r{font-size:12px;color:#8fb0c9;margin-top:5px;max-height:54px;overflow:hidden}
-#drawer{position:fixed;top:0;right:-560px;width:540px;height:100%;background:#0e151d;
-        border-left:1px solid #22303d;transition:right .2s;padding:18px;box-sizing:border-box;
-        display:flex;flex-direction:column}
-#drawer.open{right:0}
-#drawer h3{color:#7ef0b2;margin:0 0 2px}#dmeta{font:11px ui-monospace,monospace;color:#5d7488;margin-bottom:10px}
-#hist{flex:1;overflow-y:auto;border:1px solid #22303d;border-radius:8px;padding:10px;font-size:12.5px}
-.h-steer{color:#ffd166;margin:8px 0 2px}.h-reply{color:#dfe9f2;white-space:pre-wrap;margin:2px 0 8px}
-.h-note{color:#5d7488;font:11px ui-monospace,monospace;margin:6px 0}
-#steerrow{display:flex;gap:8px;margin-top:10px}
-#steerbox{flex:1;background:#111a24;border:1px solid #24303c;border-radius:8px;color:#dfe9f2;padding:9px;font:13px system-ui}
-button{background:rgba(42,255,192,.1);border:1px solid #2affc0;color:#2affc0;border-radius:8px;
-       padding:8px 14px;font:600 13px system-ui;cursor:pointer}
-button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
-#newrow{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-#newrow input{background:#111a24;border:1px solid #24303c;border-radius:8px;color:#dfe9f2;padding:8px;font:12.5px ui-monospace,monospace}
-#nrepo{width:300px}#nbranch{width:160px}#ntask{flex:1;min-width:220px}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111a24;
-       border:1px solid #2affc0;color:#2affc0;padding:8px 16px;border-radius:8px;display:none}
-</style>
-<h1>SwarmDeck - board</h1>
-<p class=hint>drag a card: → Working dispatches it · → Review runs the gate &amp; submits · → Done accepts. Click a card to open &amp; steer.
-  <a href="/recorder" style="color:#6fb2e8">recordings</a> · <a href="/dashboard" style="color:#6fb2e8">dashboard</a></p>
-<div id=cap class=hint style="margin:0 0 10px"></div>
-<div id=newrow>
-  <input id=nrepo placeholder="repo path (C:\\...)"><input id=nbranch placeholder="branch">
-  <input id=ntask placeholder="what needs doing (the request)">
-  <input id=nvalue placeholder="value €" style="width:70px">
-  <button onclick="fileReq()">+ File request</button>
-</div>
-<div id=board></div>
-<div id=drawer>
-  <h3 id=dtitle></h3><div id=dmeta></div>
-  <div id=hist></div>
-  <div id=steerrow><input id=steerbox placeholder="steer this session - context continues, no rebuild">
-    <button onclick="sendSteer()">Send</button><button class=sec onclick="closeDrawer()">Close</button></div>
-</div>
-<div id=toast></div>
-<script>
-"use strict";
-var LANES=[["backlog","Backlog"],["working","Working"],["review","Review"],["done","Done"]];
-var CLS={queued:"q",running:"run",needs_you:"needs",submitted:"sub",accepted:"acc"};
-var cur=null, tracks=[], met=null;
-function toast(m,ms){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';
-  setTimeout(function(){t.style.display='none'},ms||2200)}
-function load(){
-  fetch('/tracks').then(function(r){return r.json()}).then(function(ts){tracks=ts;render()});
-  fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){met=m;
-    var c=m.capacity;
-    document.getElementById('cap').innerHTML=
-      'capacity: <b style="color:'+(c.wip>=c.wip_limit?'#ffd166':'#7ef0b2')+'">'+c.wip+'/'+c.wip_limit+' WIP</b>'
-      +' · touches today '+c.touches_today+'/'+c.touch_budget_day
-      +' · headroom '+c.headroom+' cards'
-      +' &nbsp;&nbsp; <span style="color:#458cc7">■</span> AI $ · <span style="color:#a8842d">■</span> human touches';
-    render()});
-}
-function cardEcon(t){
-  if(!met)return '';
-  var c=null;met.cards.forEach(function(x){if(x.id===t.id)c=x});
-  if(!c)return '';
-  var maxA=0.01,maxH=1;met.cards.forEach(function(x){if(x.ai_cost>maxA)maxA=x.ai_cost;if(x.touches>maxH)maxH=x.touches});
-  var wa=Math.round(100*c.ai_cost/maxA), wh=Math.round(100*c.touches/maxH);
-  return '<div class=m>€'+c.value+' · AI $'+c.ai_cost.toFixed(2)+' · '+c.touches+' touch'+(c.touches===1?'':'es')
-    +(c.mode?' · '+c.mode:'')+'</div>'
-    +'<div title="AI $'+c.ai_cost.toFixed(2)+' vs '+c.touches+' human touch units" style="margin-top:4px">'
-    +'<div style="height:4px;border-radius:2px;background:#458cc7;width:'+Math.max(wa,2)+'%"></div>'
-    +'<div style="height:4px;border-radius:2px;background:#a8842d;width:'+Math.max(wh,2)+'%;margin-top:2px"></div></div>';
-}
-function render(){
-  var b=document.getElementById('board');b.innerHTML='';
-  LANES.forEach(function(L){
-    var lane=document.createElement('div');lane.className='lane';lane.dataset.lane=L[0];
-    var inLane=tracks.filter(function(t){return (t.lane||'working')===L[0]});
-    lane.innerHTML='<h2>'+L[1]+' <span class=n>'+inLane.length+'</span></h2>';
-    inLane.forEach(function(t){
-      var c=document.createElement('div');c.className='card '+(CLS[t.status]||'');c.draggable=true;
-      c.innerHTML='<b>'+esc(t.task).slice(0,70)+'</b><div class=m>'+esc(t.branch)+' · '+t.turns+' turns · '+esc(t.status)+'</div>'
-        +cardEcon(t)
-        +(t.gate_report?'<div class=r style="color:#ffd166">gate: '+esc(t.gate_report.join(' | ')).slice(0,160)+'</div>':'')
-        +(t.last_reply?'<div class=r>'+esc(t.last_reply).slice(0,160)+'</div>':'');
-      c.addEventListener('dragstart',function(e){e.dataTransfer.setData('text',t.id)});
-      c.addEventListener('click',function(){openDrawer(t)});
-      lane.appendChild(c);
-    });
-    lane.addEventListener('dragover',function(e){e.preventDefault();lane.classList.add('drag')});
-    lane.addEventListener('dragleave',function(){lane.classList.remove('drag')});
-    lane.addEventListener('drop',function(e){
-      e.preventDefault();lane.classList.remove('drag');
-      var id=e.dataTransfer.getData('text');
-      fetch('/tracks/'+id+'/lane',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({lane:L[0]})}).then(function(r){return r.json()}).then(function(res){
-          if(res&&res.gate_failed){
-            toast('GATE FAILED - bounced back: '+(res.gate_report||[]).map(function(p){return p.split('\\n')[0]}).join(' | '),5000);
-          }else{
-            toast(L[0]==='working'?'dispatched - session starting':L[0]==='review'?'gate passed - submitted for review':L[0]==='done'?'accepted':'queued');
-          }
-          setTimeout(load,600)});
-    });
-    b.appendChild(lane);
-  });
-}
-function esc(s){return String(s||'').replace(/</g,'&lt;')}
-function openDrawer(t){cur=t;
-  document.getElementById('dtitle').textContent=t.task.slice(0,80);
-  document.getElementById('dmeta').textContent=t.branch+' · '+t.repo+' · session '+(t.session_id||'not started');
-  document.getElementById('drawer').classList.add('open');
-  fetch('/tracks/'+t.id+'/history').then(function(r){return r.json()}).then(function(h){
-    var el=document.getElementById('hist');
-    el.innerHTML=h.map(function(r){
-      if(r.kind==='steer')return '<div class=h-steer>▸ '+esc(r.detail)+'</div>';
-      if(r.kind==='reply')return '<div class=h-reply>'+esc(r.detail)+'</div>';
-      return '<div class=h-note>'+esc(r.detail)+'</div>';
-    }).join('');
-    el.scrollTop=el.scrollHeight;});
-}
-function closeDrawer(){document.getElementById('drawer').classList.remove('open');cur=null}
-function sendSteer(){var v=document.getElementById('steerbox').value.trim();if(!v||!cur)return;
-  fetch('/tracks/'+cur.id+'/steer',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:v})}).then(function(){
-      document.getElementById('steerbox').value='';toast('steer sent - session resuming');
-      setTimeout(function(){if(cur)openDrawer(cur);load()},1500)})}
-function fileReq(){
-  var repo=document.getElementById('nrepo').value.trim(),br=document.getElementById('nbranch').value.trim(),
-      task=document.getElementById('ntask').value.trim(),val=document.getElementById('nvalue').value.trim();
-  if(!task){toast('task needed (repo/branch optional if default_repo preset)');return}
-  fetch('/tracks/new',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({repo:repo,branch:br,task:task,lane:'backlog',value:val?parseFloat(val):null})}).then(function(){
-      toast('request filed to backlog');document.getElementById('ntask').value='';load()})}
-load();setInterval(load,5000);
-</script>"""
+# The daemon serves no UI. The Next app (web/, default http://localhost:3300)
+# is the only frontend; the old HTML paths 302 there so stale bookmarks keep
+# working. Override the target with settings.web_url when web/ is hosted
+# elsewhere.
+LEGACY_UI = ("/", "/classic", "/recorder", "/dashboard")
 
-DASH = """<!doctype html><meta charset=utf-8><title>SwarmDeck - dashboard</title>
-<style>
-body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
-h1{color:#7ef0b2;font-size:20px;margin:0 0 4px}.hint{color:#5d7488;font-size:12px;margin:0 0 16px}
-h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8fb0c9;margin:22px 0 8px}
-#tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.tile{background:#0e151d;border:1px solid #22303d;border-radius:12px;padding:12px 14px}
-.tile .v{font-size:24px;font-weight:700;color:#dfe9f2}.tile .l{font-size:11px;color:#8fb0c9;margin-top:2px}
-.meter{background:#111a24;border:1px solid #24303c;border-radius:6px;height:14px;overflow:hidden;margin-top:6px}
-.meter i{display:block;height:100%;background:#a8842d;border-radius:4px}
-.bar{display:flex;align-items:center;gap:8px;margin:4px 0}
-.bar .lbl{width:280px;font:12px ui-monospace,monospace;color:#8fb0c9;text-align:right;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar .trk{flex:1}.bar .trk i{display:block;height:12px;border-radius:0 4px 4px 0;background:#458cc7}
-.bar .n{font:12px ui-monospace,monospace;color:#dfe9f2;width:30px}
-table{border-collapse:collapse;font-size:12.5px;width:100%}
-th,td{text-align:left;padding:5px 10px;border-bottom:1px solid #22303d}
-th{color:#8fb0c9;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
-td.num,th.num{text-align:right;font-family:ui-monospace,monospace}
-.split{display:inline-block;width:110px;vertical-align:middle}
-.split i{display:block;height:4px;border-radius:2px}
-.leg{font-size:12px;color:#8fb0c9}.leg b{font-weight:400}
-a{color:#6fb2e8}
-</style>
-<h1>SwarmDeck - company dashboard</h1>
-<p class=hint>fixed-capacity humans, variable-cost AI. <a href="/">board</a> · <a href="/settings" onclick="alert('GET/POST /settings (JSON): capacity, prices, value_per_card');return false">settings</a></p>
-<div id=tiles></div>
-<h2>Capacity - take more work, or automate?</h2><div id=capbox class=tile style="max-width:520px"></div>
-<h2>Gate-failure histogram - what to fix in the harness next</h2><div id=gates></div>
-<h2>Work done: <span class=leg><b style="color:#458cc7">■</b> AI ($) · <b style="color:#a8842d">■</b> human (touch units)</span></h2>
-<div style="overflow-x:auto"><table id=cards></table></div>
-<script>
-"use strict";
-function esc(s){return String(s||'').replace(/</g,'&lt;')}
-fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){
-  var cur=m.settings.currency==='EUR'?'\\u20ac':'$';
-  var y=m.yield_first_pass,a=m.automation,T=m.totals;
-  var tiles=[
-    [cur+T.value_delivered,'value delivered'],
-    ['$'+T.ai_spend.toFixed(2),'AI spend'],
-    [cur+T.margin,'margin (value − AI)'],
-    [(y[1]? Math.round(100*y[0]/y[1])+'%':'-'),'first-pass yield ('+y[0]+'/'+y[1]+' gated)'],
-    [(a[1]? Math.round(100*a[0]/a[1])+'%':'-'),'automation rate ('+a[0]+'/'+a[1]+' done auto)'],
-    [cur+T.leverage_per_touch,'leverage: value per touch unit']];
-  document.getElementById('tiles').innerHTML=tiles.map(function(t){
-    return '<div class=tile><div class=v>'+t[0]+'</div><div class=l>'+t[1]+'</div></div>'}).join('');
-  var c=m.capacity,pct=Math.min(100,Math.round(100*c.touches_today/(c.touch_budget_day||1)));
-  document.getElementById('capbox').innerHTML=
-    '<div class=l style="color:#8fb0c9;font-size:12px">today: '+c.touches_today+'/'+c.touch_budget_day
-    +' touch units ('+pct+'% loaded) · WIP '+c.wip+'/'+c.wip_limit+' · headroom <b style="color:#7ef0b2">'
-    +c.headroom+' cards</b></div><div class=meter><i style="width:'+pct+'%"></i></div>'
-    +'<div class=l style="color:#5d7488;font-size:11px;margin-top:6px">'
-    +(pct<80&&c.headroom>0?'below capacity \\u2192 intake more work: marginal cost of one more card is tokens only'
-      :'at capacity \\u2192 don\\u2019t take more; automate: fix the top gate failure below to free headroom')+'</div>';
-  var g=m.gate_failures,gx=document.getElementById('gates');
-  if(!g.length){gx.innerHTML='<p class=hint>no gate failures recorded yet</p>'}
-  else{var mx=g[0][1];gx.innerHTML=g.map(function(kv){
-    return '<div class=bar title="'+esc(kv[0])+' \\u2014 '+kv[1]+' failures"><div class=lbl>'+esc(kv[0])
-      +'</div><div class=trk><i style="width:'+Math.max(3,Math.round(100*kv[1]/mx))+'%"></i></div><div class=n>'+kv[1]+'</div></div>'}).join('')}
-  var maxA=0.01,maxH=1;m.cards.forEach(function(x){if(x.ai_cost>maxA)maxA=x.ai_cost;if(x.touches>maxH)maxH=x.touches});
-  document.getElementById('cards').innerHTML=
-    '<tr><th>card</th><th>lane</th><th>model</th><th class=num>tokens in/out</th><th class=num>AI $</th>'
-    +'<th class=num>touches</th><th>split</th><th class=num>value</th><th class=num>margin</th><th>mode</th></tr>'
-    +m.cards.map(function(x){
-      var wa=Math.max(2,Math.round(100*x.ai_cost/maxA)),wh=Math.max(2,Math.round(100*x.touches/maxH));
-      return '<tr><td>'+esc(x.task)+'</td><td>'+x.lane+'</td><td>'+esc((x.models[0]||'\\u2014').replace('claude-',''))
-        +'</td><td class=num>'+x.tokens_in+'/'+x.tokens_out+'</td><td class=num>'+x.ai_cost.toFixed(2)
-        +'</td><td class=num>'+x.touches+'</td><td><span class=split title="AI $'+x.ai_cost.toFixed(2)+' vs '
-        +x.touches+' touch units"><i style="background:#458cc7;width:'+wa+'%"></i>'
-        +'<i style="background:#a8842d;width:'+wh+'%;margin-top:2px"></i></span></td>'
-        +'<td class=num>'+cur+x.value+'</td><td class=num>'+cur+(x.value-x.ai_cost).toFixed(2)
-        +'</td><td>'+(x.mode||'\\u2014')+'</td></tr>'}).join('');
-});
-</script>"""
-
-PAGE = """<!doctype html><meta charset=utf-8><title>SwarmDeck review</title>
-<style>body{font:15px/1.5 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:24px}
-h1{color:#7ef0b2}.run{border:1px solid #24303c;border-radius:10px;padding:12px 16px;margin:12px 0}
-.k{color:#8fb6d9;font-family:monospace}.steps{margin:8px 0 0;padding-left:0;list-style:none}
-.steps li{padding:2px 0;border-left:3px solid #24303c;padding-left:10px;margin:2px 0;font-family:monospace;font-size:13px}
-.steps li.flag{border-color:#ffd166;background:#2a2410}.t{color:#5d7284;margin-right:8px}
-video{max-width:640px;display:block;margin-top:8px}</style>
-<h1>SwarmDeck - runs</h1><div id=out>loading…</div>
-<script>
-fetch('/runs').then(r=>r.json()).then(async runs=>{
-  const out=document.getElementById('out');out.innerHTML='';
-  if(!runs.length){out.textContent='No runs yet - record a demo (swarm.py teach) or start a task (swarm.py browser-demo).';return}
-  for(const m of runs){
-    const d=document.createElement('div');d.className='run';
-    const tl=await fetch('/runs/'+m.id+'/timeline').then(r=>r.json()).catch(()=>[]);
-    d.innerHTML='<b>'+m.title+'</b> <span class=k>'+m.id+' · '+m.kind+' · '+m.status+' · '+tl.length+' steps</span>'
-      +'<ul class=steps>'+tl.map(s=>'<li'+(s.kind==='flag'?' class=flag':'')+'><span class=t>'
-      +s.t.toFixed(1)+'s</span>'+s.kind+' - '+s.detail+'</li>').join('')+'</ul>'
-      +'<video controls preload=none src="/runs/'+m.id+'/video"></video>';
-    out.appendChild(d)}
-});
-</script>"""
+def _web_url():
+    import events
+    return (events.settings().get("web_url") or "http://localhost:3300").rstrip("/")
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
-    # HTML shells + the auth endpoints are public; every data/control route
-    # needs a logged-in session (cookie) or a per-user device token.
-    OPEN = ("/", "/classic", "/auth/state", "/auth/login", "/auth/logout",
+    # Legacy UI paths redirect before auth (no data behind them); the auth
+    # endpoints are public; every data/control route needs a logged-in
+    # session (cookie) or a per-user device token.
+    OPEN = ("/auth/state", "/auth/login", "/auth/logout",
             "/auth/setup", "/auth/register", "/glance")
 
     def _sid(self):
@@ -335,6 +103,17 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         try:
+            if p in LEGACY_UI:
+                web = _web_url()
+                self.send_response(302)
+                self.send_header("Location", web + "/")
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(
+                    ("<!doctype html><meta charset=utf-8><title>SwarmDeck</title>"
+                     "<p>SwarmDeck lives at <a href=\"%s/\">%s</a>.</p>"
+                     % (web, web)).encode("utf-8"))
+                return
             user = self._user()
             if p == "/auth/state":
                 import auth, events
@@ -378,21 +157,6 @@ class H(BaseHTTPRequestHandler):
                      "tokens": [{"label": t["label"], "token": t["token"],
                                  "created": t.get("created")} for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
-            if p == "/":
-                return self._send(200,
-                    "<!doctype html><meta charset=utf-8><title>SwarmDeck</title>"
-                    "<body style=\"font:15px system-ui;background:#16181d;color:#eee;"
-                    "display:grid;place-items:center;height:100vh;margin:0\"><div>"
-                    "<h2>SwarmDeck API</h2><p>The app lives at "
-                    "<a style=\"color:#7cb5ff\" href=\"http://localhost:3300\">localhost:3300</a>"
-                    " (cd web &amp;&amp; npm run dev -- --port 3300).</p>"
-                    "<p style=\"color:#888\">Legacy fallback UI: <a style=\"color:#7cb5ff\" "
-                    "href=\"/classic\">/classic</a></p></div>",
-                    "text/html; charset=utf-8")
-            if p == "/classic":
-                return self._send(200, BOARD, "text/html; charset=utf-8")
-            if p == "/recorder":
-                return self._send(200, PAGE, "text/html; charset=utf-8")
             if p == "/runs":
                 runs = list_runs()
                 for m in runs:
@@ -650,8 +414,6 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     m.pop("settings", None)
                 return self._send(200, json.dumps(m))
-            if p == "/dashboard":
-                return self._send(200, DASH, "text/html; charset=utf-8")
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "live":
                 # the card's own glance feed: newest frame while its agent's
