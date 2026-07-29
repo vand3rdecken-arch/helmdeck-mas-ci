@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -108,7 +109,20 @@ fun CardScreen(
                                     showMenu = false
                                     scope.launch {
                                         runCatching { DaemonClient.moveLane(t.id, lane) }
-                                            .onSuccess { toast("Moved to $lane"); onChanged() }
+                                            .onSuccess { res ->
+                                                // Review == Abnahme: the finish may bounce (gate/merge)
+                                                // and stay on Review - show WHY, don't fake "Moved".
+                                                val landed = res.optString("lane", lane)
+                                                val msg = when {
+                                                    res.optBoolean("gate_failed") -> "Gate offen - bleibt auf Review: " +
+                                                        (res.optJSONArray("gate_report")?.optString(0)?.substringBefore("\n") ?: "")
+                                                    res.optBoolean("merge_failed") -> "Kann nicht landen - bleibt auf Review: " +
+                                                        res.optString("merge_report").substringBefore("\n")
+                                                    landed == "done" -> "Fertig → nach main gemergt"
+                                                    else -> "Verschoben nach $landed"
+                                                }
+                                                toast(msg); onChanged()
+                                            }
                                             .onFailure { toast(it.message ?: "failed") }
                                     }
                                 })
@@ -203,8 +217,10 @@ fun CardScreen(
                 item {
                     Panel(Modifier.testTag("cardDescription")) {
                         SectionLabel("description")
-                        Text(t.description?.ifBlank { null } ?: t.task,
-                            fontSize = 14.sp, color = Tok.txtPrimary)
+                        SelectionContainer {   // long-press to select + copy
+                            Text(t.description?.ifBlank { null } ?: t.task,
+                                fontSize = 14.sp, color = Tok.txtPrimary)
+                        }
                     }
                 }
                 // the newest agent reply as a digest, so you know where things
@@ -214,7 +230,9 @@ fun CardScreen(
                 if (!lastReply.isNullOrBlank()) item {
                     Panel {
                         SectionLabel("latest from the worker")
-                        Text(lastReply, fontSize = 13.sp, color = Tok.txtSecondary, maxLines = 12)
+                        SelectionContainer {
+                            Text(lastReply, fontSize = 13.sp, color = Tok.txtSecondary, maxLines = 12)
+                        }
                         TextButton(onClick = { cardTab = 1 }) {
                             Text("open the chat ›", fontSize = 12.sp, color = Tok.accent)
                         }
