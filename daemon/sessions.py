@@ -560,6 +560,38 @@ def cancel_turn(tid, actor="owner"):
     return {"cancelled": killed}
 
 
+ZOMBIE_NOTE = "daemon restarted mid-turn - resend the last instruction"
+
+def sweep_zombies():
+    """Startup pass: a daemon that dies mid-turn leaves cards flagged
+    status=running with no owning worker - cancel returns false, the phone
+    watches a card that will never move again. Flip every such track to
+    bounced with a visible note (gate_report is the bounce-reason channel
+    both UIs already render), audit it, and push - so the owner learns the
+    instruction was lost instead of staring at a frozen card."""
+    import drivers, events, notify
+    from actionlog import ActionLog
+    swept = []
+    for t in _load():
+        if t.get("status") != "running" or drivers.has_session(t["id"]):
+            continue
+        t["status"] = "bounced"
+        t["gate_report"] = [ZOMBIE_NOTE]
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _save_track(t)
+        try:
+            ActionLog(t["run_dir"]).log("note", "ZOMBIE SWEEP - " + ZOMBIE_NOTE)
+        except Exception:
+            pass
+        events.emit("bounce", t["id"], reason="daemon_restart", actor="daemon")
+        try:
+            notify.card_event(t, "bounced")
+        except Exception as e:
+            print("sweep_zombies: push failed for %s: %s" % (t["id"], e))
+        swept.append(t["id"])
+    return swept
+
+
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
             "project_id", "billing", "rate")
 # project_id may be explicitly cleared (unassign from a project) - unlike the
