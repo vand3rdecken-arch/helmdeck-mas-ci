@@ -461,6 +461,45 @@ def _pull_main_into_branch(t):
     return "markers:" + (files or _err[:150])
 
 
+def _classify_merge(t):
+    """DRY-RUN of the merge - what a Done WOULD do, without landing anything. Used
+    by Review to rest the card on the board with a verdict. Returns (kind, message):
+      already_merged / redundant_uncommitted - nothing to land (redundant)
+      mergeable  - N commits merge cleanly
+      conflict   - would conflict with main (names the files)
+      blocked    - detached / on the card branch / no repo
+    Leaves the main checkout exactly as found."""
+    repo = t.get("repo"); branch = t.get("branch"); wt = t.get("worktree")
+    if not repo or not os.path.isdir(repo):
+        return "blocked", "kein Repo-Checkout zum Mergen"
+    if not branch:
+        return "blocked", "keine Branch"
+    rc, cur, err = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    if rc != 0:
+        return "blocked", "kein git-Checkout: %s" % err
+    if cur == "HEAD":
+        return "blocked", "main-Checkout ist detached"
+    if cur == branch:
+        return "blocked", "main-Checkout steht auf dem Karten-Branch (%s)" % branch
+    rc, ahead, _ = _git_try(repo, "rev-list", "--count", "HEAD..%s" % branch)
+    ahead = int(ahead or "0") if rc == 0 else 0
+    if ahead == 0:
+        dirty = _git_try(wt, "status", "--porcelain")[1] if wt and os.path.isdir(wt) else ""
+        if dirty:
+            return "redundant_uncommitted", ("Redundant: committet nichts Neues (schon in main); "
+                                             "%d uncommittete Aenderung(en) wuerden beim Abschluss committet." % len(dirty.splitlines()))
+        return "already_merged", "Redundant: die Arbeit ist bereits vollstaendig in main."
+    # dry-run the merge, then undo it (main left exactly as found)
+    rc, _o, _e = _git_try(repo, "merge", "--no-commit", "--no-ff", branch)
+    conflicts = _git_try(repo, "diff", "--name-only", "--diff-filter=U")[1]
+    _git_try(repo, "merge", "--abort")
+    if rc == 0:
+        return "mergeable", "Bereit: %d Commit(s) mergen sauber nach main." % ahead
+    return "conflict", ("Konflikt mit main - dieselben Stellen geaendert. Dateien:\n%s\n"
+                        "Beim Abschluss holt der Harness main in den Branch; loese die "
+                        "Markierungen (editieren)." % (conflicts or _e[:150]))
+
+
 def _repo_hook(t, kind):
     """Owner-defined per-repo hook, policy in settings:
       "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
@@ -515,10 +554,10 @@ def move_lane(tid, lane, actor="owner"):
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     if lane in ("review", "done"):
-        # Review == Abnahme: ONE finish action - clean up + commit, gate, then
-        # classify & merge to main, deploy, accept. gate-before-merge is kept
-        # (LAW). Every problem BOUNCES with a clear reason + resolve path, never a
-        # silent dead-end. The card lands in Done on success.
+        # Two verbs sharing one prep: clean up + commit, then the gate. REVIEW then
+        # CLASSIFIES the merge (dry-run) and RESTS on Review showing the verdict -
+        # a deliberate drag to DONE actually merges + deploys. gate-before-merge LAW
+        # kept. Any problem keeps the card on Review with a clear reason.
         ac = _autocommit(t)
         if ac == "markers":
             msg = ("Konfliktmarkierungen sind noch im Worktree offen. Steuere den Agenten: "
@@ -546,6 +585,18 @@ def move_lane(tid, lane, actor="owner"):
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
+        if lane == "review":
+            # PREVIEW ONLY: say what a Done would do; the card RESTS on Review.
+            kind, msg = _classify_merge(t)
+            events.emit("merge", tid, ok=(kind not in ("conflict", "blocked")),
+                        outcome=kind, detail="preview: " + msg[:200])
+            log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
+            t.pop("merge_report", None)
+            t["merge_kind"] = kind; t["review_report"] = msg
+            t["status"] = "submitted"; t["lane"] = "review"
+            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+            return dict(t, review_preview=True, merge_kind=kind)
+        # lane == "done": LAND it
         _repo_hook(t, "preview")   # best-effort try-it surface before it lands
         # classify + merge to main - conflict/blocked bounces with the resolve path
         accept_ok, kind, mergemsg = _merge_to_main(t)
