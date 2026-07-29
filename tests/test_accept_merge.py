@@ -131,6 +131,17 @@ def test_on_card_branch_guard():
     check(not ok and kind == "blocked", "checkout ON the card branch -> blocked (kind=%s)" % kind)
 
 
+def test_merge_event_signature_no_collision():
+    # Regression: move_lane('done') does events.emit("merge", tid, ok=, outcome=,
+    # detail=). A field named 'kind' here collides with emit's positional `kind`
+    # param and crashed EVERY accept (TypeError). Guard the exact call shape.
+    import events
+    events.EV = os.path.join(tempfile.mkdtemp(), "events.jsonl")   # isolate the append
+    row = events.emit("merge", "t-sig", ok=True, outcome="merged", detail="x")
+    check(row.get("kind") == "merge" and row.get("outcome") == "merged",
+          "merge event emits with ok/outcome/detail - no kind= collision")
+
+
 if __name__ == "__main__":
     test_happy_merge_lands()
     test_redundant_already_merged()
@@ -139,5 +150,6 @@ if __name__ == "__main__":
     test_dirty_conflicting_file_bounces()
     test_conflict_reports_files_and_aborts()
     test_on_card_branch_guard()
+    test_merge_event_signature_no_collision()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)
