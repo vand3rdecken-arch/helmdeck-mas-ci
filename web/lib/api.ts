@@ -24,6 +24,8 @@ export async function post<T = unknown>(path: string, body?: unknown, signal?: A
 /* ---- daemon types (the shapes tracks.json / events.py serve) ---- */
 export interface Track {
   id: string; repo: string; branch: string; worktree: string; task: string;
+  description?: string; attachments?: string[];
+  billing?: "fixed" | "tm" | "none"; rate?: number | null; project_id?: string | null;
   client: string; session_id: string | null; perm: string; lane: string;
   status: string; turns: number; last_reply: string;
   value: number; driver: string; priority?: string; due?: string; rank?: number | null;
@@ -38,6 +40,13 @@ export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;
   touches: number; value: number; mode: string | null; models: string[];
   tokens_in: number; tokens_out: number;
+  billing?: "fixed" | "tm" | "none"; rate?: number | null;
+  billed?: number; margin?: number; time_seconds?: number;
+}
+export interface Sow {
+  id: string; name: string; client: string; status?: string; due?: string;
+  cards: number; done: number; hours: number; billed: number;
+  ai_cost: number; margin: number; all_done: boolean;
 }
 export interface Metrics {
   settings?: {
@@ -49,10 +58,12 @@ export interface Metrics {
     policy?: { lane_labels?: Record<string, string>; auto_dispatch_modes?: string[];
       auto_accept_green?: boolean; auto_dispatch_priority?: string; chat_configure_roles?: string[] };
     jira?: { base: string; email: string; api_token: string; default_jql: string };
+    relay?: { url?: string; room?: string; phone_pub?: string };
     dashboard?: { tiles?: string[]; panels?: string[] };
     appearance?: { backdrop?: string };
   };
   cards: EconCard[];
+  sows: Sow[];
   capacity: { wip: number; wip_limit: number; touches_today: number;
     touch_budget_day: number; headroom: number; actors?: Record<string, number> };
   yield_first_pass: [number, number];
