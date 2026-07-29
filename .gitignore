@@ -30,6 +30,7 @@ daemon/tracks.json.imported
 .loop/
 daemon/copilot_log.json
 daemon/driver_pids.json
+daemon/nightshift/state.json
 daemon/restart_stdout.log
 daemon/restart_stderr.log
 daemon/swarmdeck.db-wal
