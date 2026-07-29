@@ -65,6 +65,10 @@ fun CardScreen(
     // poll the transcript so a running turn streams in, like the desktop SSE feed
     LaunchedEffect(track.id) {
         while (true) {
+            // follow the newest message ONLY if the reader is already at the bottom -
+            // otherwise scrolling up to read gets yanked back down every poll
+            val wasAtBottom = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                ?.let { it.index >= steps.size - 1 } ?: true
             try {
                 var fresh = DaemonClient.transcript(t.id)
                 echo?.let { e ->
@@ -83,9 +87,10 @@ fun CardScreen(
                 steps = mergeFeed(fresh, notes)
                 t = DaemonClient.tracks().firstOrNull { it.id == t.id } ?: t
             } catch (_: Exception) { }
-            // pin-to-newest only while the chat tab is showing - never yank the
-            // overview around
-            if (cardTab == 1 && steps.isNotEmpty()) listState.animateScrollToItem(steps.size - 1)
+            // pin-to-newest only while the chat tab is showing AND the reader was
+            // already at the bottom - so reading up is never yanked back down
+            if (cardTab == 1 && steps.isNotEmpty() && wasAtBottom)
+                listState.animateScrollToItem(steps.size - 1)
             delay(if (t.status == "running") 1500 else 5000)
         }
     }
