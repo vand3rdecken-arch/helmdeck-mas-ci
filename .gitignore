@@ -33,6 +33,7 @@ daemon/driver_pids.json
 daemon/nightshift/state.json
 daemon/restart_stdout.log
 daemon/restart_stderr.log
+web/devserver.log
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 plane-selfhost/.env
