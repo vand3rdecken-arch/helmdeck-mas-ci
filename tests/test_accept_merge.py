@@ -131,6 +131,19 @@ def test_on_card_branch_guard():
     check(not ok and kind == "blocked", "checkout ON the card branch -> blocked (kind=%s)" % kind)
 
 
+def test_autocommit_commits_dirty_worktree():
+    # Review==Abnahme: finishing a card commits its uncommitted worktree work on
+    # the branch (so it never dead-ends on 'uncommitted changes').
+    repo = new_repo()                                    # doubles as the worktree
+    with open(os.path.join(repo, "new.txt"), "w") as f:
+        f.write("agent's uncommitted work\n")
+    committed = sessions._autocommit({"worktree": repo, "id": "tac"})
+    check(committed, "dirty worktree -> autocommit makes a commit")
+    check(git(repo, "status", "--porcelain") == "", "worktree clean after autocommit")
+    check("finalize" in git(repo, "log", "-1", "--format=%s"), "commit message marks the finalize")
+    check(not sessions._autocommit({"worktree": repo, "id": "tac"}), "clean worktree -> nothing to commit")
+
+
 def test_merge_event_signature_no_collision():
     # Regression: move_lane('done') does events.emit("merge", tid, ok=, outcome=,
     # detail=). A field named 'kind' here collides with emit's positional `kind`
@@ -150,6 +163,7 @@ if __name__ == "__main__":
     test_dirty_conflicting_file_bounces()
     test_conflict_reports_files_and_aborts()
     test_on_card_branch_guard()
+    test_autocommit_commits_dirty_worktree()
     test_merge_event_signature_no_collision()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)

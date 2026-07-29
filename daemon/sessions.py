@@ -399,6 +399,24 @@ def _merge_to_main(t):
             "reiche neu ein (der Worktree bleibt die sichere Sandbox)." % files)
 
 
+def _autocommit(t):
+    """Clean up + commit any uncommitted worktree work on the card's OWN branch,
+    so finishing a card never dead-ends on 'uncommitted changes' - the agent's
+    work in the worktree becomes a real commit that can be merged. Returns True if
+    it committed. `git add -A` respects .gitignore (secrets/junk stay out)."""
+    wt = t.get("worktree")
+    if not wt or not os.path.isdir(wt):
+        return False
+    try:
+        if not _git(wt, "status", "--porcelain"):
+            return False
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-m", "SwarmDeck: finalize %s" % t.get("id", ""))
+        return True
+    except Exception:
+        return False
+
+
 def _repo_hook(t, kind):
     """Owner-defined per-repo hook, policy in settings:
       "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
@@ -452,44 +470,36 @@ def move_lane(tid, lane, actor="owner"):
         return _start(tid)   # idempotent: resumes position if already started
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
-    if lane == "review":
+    if lane in ("review", "done"):
+        # Review == Abnahme: ONE finish action - clean up + commit, gate, then
+        # classify & merge to main, deploy, accept. gate-before-merge is kept
+        # (LAW). Every problem BOUNCES with a clear reason + resolve path, never a
+        # silent dead-end. The card lands in Done on success.
+        if _autocommit(t):
+            log.log("note", "COMMITTED worktree changes on the branch before merge")
+        # the repo's own quality gate (swarmdeck.gate command). The committed
+        # check now trivially passes because we just committed.
         ok, problems = _gate(t)
         events.emit("gate", tid, ok=ok, problems=problems)
         if not ok:
             punch = " | ".join(p.split("\n")[0] for p in problems)
             log.log("note", "GATE FAILED - bounced with punch list: " + punch[:400])
-            t["status"] = "bounced"; t["lane"] = "working"
-            t["gate_report"] = problems
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            _save_track(t)
-            import notify
-            notify.card_event(t, "bounced")
+            t["status"] = "bounced"; t["lane"] = "working"; t["gate_report"] = problems
+            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+            import notify; notify.card_event(t, "bounced")
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
-        try:
-            stat = _git(t["worktree"], "diff", "--stat", "HEAD") or "(all committed)"
-        except Exception:
-            stat = "?"
-        log.log("note", "GATE PASSED - SUBMITTED for review - diff: " + stat[:400])
-        t["status"] = "submitted"
-        _repo_hook(t, "preview")   # spin up the try-it-before-merge surface
-    elif lane == "done":
-        # accept = LAND it: CLASSIFY, then merge/close with a CLEAR reason - never
-        # a silent bounce or a silent "accepted". A real conflict bounces with the
-        # conflicting files + resolve path; a redundant card is closed while saying
-        # so; real work is merged to main. THEN deploy.
+        _repo_hook(t, "preview")   # best-effort try-it surface before it lands
+        # classify + merge to main - conflict/blocked bounces with the resolve path
         accept_ok, kind, mergemsg = _merge_to_main(t)
         events.emit("merge", tid, ok=accept_ok, outcome=kind, detail=mergemsg[:300])
         if not accept_ok:
-            # conflict / blocked -> bounce, but SAY WHY (rendered in the card feed)
             log.log("note", "MERGE %s - nicht abgenommen: %s" % (kind.upper(), mergemsg[:400]))
             t["status"] = "bounced"; t["lane"] = "working"
             t["merge_report"] = mergemsg; t["merge_kind"] = kind
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            _save_track(t)
-            import notify
-            notify.card_event(t, "bounced")
+            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+            import notify; notify.card_event(t, "bounced")
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = kind
             return t
         t.pop("merge_report", None); t["merge_kind"] = kind
@@ -517,6 +527,7 @@ def move_lane(tid, lane, actor="owner"):
             except RuntimeError as e:
                 log.log("note", str(e)[:400])
                 events.emit("connector", tid, action="charter_blocked", detail=str(e)[:300])
+        lane = "done"   # Review == Abnahme: a finished card lands in Done
     elif lane == "backlog":
         t["status"] = "queued"
     events.emit("lane", tid, frm=prev, to=lane)
