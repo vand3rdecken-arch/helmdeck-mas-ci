@@ -34,3 +34,10 @@ daemon/swarmdeck.db-shm
 plane-selfhost/.env
 plane-selfhost/*.env
 backups/
+
+# local credentials - never commit
+.env
+*.env
+!.env.example
+google-services.json
+fcm_service_account.json
