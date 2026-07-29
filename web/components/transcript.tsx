@@ -13,7 +13,7 @@ export interface ToolDetail {
 }
 export interface Step {
   role?: string;
-  kind: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction";
+  kind: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system";
   text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; ts?: string;
   streaming?: boolean;
   todos?: { content: string; status: string }[];
@@ -203,6 +203,18 @@ export default function Transcript({ steps, onRewind }: { steps: Step[]; onRewin
         if (s.kind === "compaction") return (
           <div key={i} className="compact-mark"><span>⟳ Context compacted{s.ts ? ` · ${s.ts}` : ""}</span></div>
         );
+        if (s.kind === "system") {
+          // lifecycle event from the actionlog (dispatched, gate, merge, deploy,
+          // accepted, bounced) woven into the same feed as the agent's turns.
+          const good = /\b(MERGED|ACCEPTED|GATE PASSED|DEPLOY HOOK OK|DISPATCHED|CONNECTOR INSTALLED)\b/.test(s.text || "");
+          const bad = /\b(FAILED|BOUNCED|conflict)\b/i.test(s.text || "");
+          return (
+            <div key={i} className={"tl-event" + (bad ? " bad" : good ? " good" : "")}>
+              <span className="tl-dot" /><span className="tl-text">{s.text}</span>
+              {s.ts && <span className="tl-ts">{s.ts}</span>}
+            </div>
+          );
+        }
         if (s.kind === "tool") return <ToolCard key={i} s={s} />;
         if (s.kind === "todos") return <Todos key={i} s={s} />;
         if (s.kind === "plan") return <div key={i} className="plancard"><div className="plancard-h">Plan</div><Collapsible><Markdown>{s.text || ""}</Markdown></Collapsible></div>;

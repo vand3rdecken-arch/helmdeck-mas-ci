@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { get, post, HistoryRow, Track } from "@/lib/api";
 
 interface Turn { ts: string; cost?: number; models?: string[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
@@ -86,6 +86,30 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
     ]);
     setPending((p) => p.filter((e) => !seen.has((e.text ?? "").trim())));
   }, [trans, hist]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // One unified feed for EVERY card (automation, review, normal alike): the
+  // agent's turns (transcript) woven together with the actionlog's lifecycle
+  // events (dispatched, gate, MERGED -> main, deployed, accepted, bounced) by
+  // timestamp - so the card reads as one story: command -> agent logs -> merged
+  // -> deployed. steer/reply already live in the transcript, so only 'note'
+  // lifecycle rows are injected (no duplicate messages).
+  const feed = useMemo<Step[]>(() => {
+    if (!trans.length) return trans;
+    const notes: Step[] = hist
+      .filter((r) => r.kind === "note" && (r.detail ?? "").trim())
+      .map((r) => ({ kind: "system", text: r.detail, ts: r.ts }));
+    if (!notes.length) return trans;
+    // forward-fill ts so every transcript step has a comparable time
+    let last = "";
+    const T = trans.map((s) => { if (s.ts) last = s.ts; return { s, ts: s.ts || last }; });
+    const out: Step[] = []; let i = 0, j = 0;
+    while (i < T.length && j < notes.length) {
+      if ((notes[j].ts ?? "") && (notes[j].ts ?? "") < T[i].ts) out.push(notes[j++]);
+      else out.push(T[i++].s);
+    }
+    while (i < T.length) out.push(T[i++].s);
+    while (j < notes.length) out.push(notes[j++]);
+    return out;
+  }, [trans, hist]);
   function saveVal() { const n = parseFloat(val); if (!isNaN(n) && n !== t.value) edit({ value: n }); }
   function saveRate() { const n = parseFloat(rateV); if (!isNaN(n) && n !== t.rate) edit({ rate: n }); }
   function saveClient() { if (clientV.trim() !== (t.client ?? "")) edit({ client: clientV.trim() }); }
@@ -373,7 +397,7 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
           {/* Paseo-style: every turn - the agent's text, thinking and each tool
               call/result, straight from the session transcript. Falls back to the
               steer/reply log until the session has run. */}
-          {trans.length ? <Transcript steps={trans} onRewind={(txt) => setRestore({ text: txt, key: restore.key + 1 })} /> : hist.map((r, i) =>
+          {trans.length ? <Transcript steps={feed} onRewind={(txt) => setRestore({ text: txt, key: restore.key + 1 })} /> : hist.map((r, i) =>
             r.kind === "steer" ? <div key={i} className="cb you">{r.detail}</div> :
             r.kind === "reply" ? <div key={i} className="cb bot"><Markdown>{r.detail}</Markdown></div> :
             <div key={i} className="cb sys">{r.detail}</div>
