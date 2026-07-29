@@ -814,6 +814,9 @@ class H(BaseHTTPRequestHandler):
                     branch = "req-" + "".join(ch if ch.isalnum() else "-" for ch in task.lower())[:24]
                 if not (repo and branch and task):
                     return self._send(400, json.dumps({"error": "task required (+ repo unless default_repo is set in settings)"}))
+                if not sessions.is_git_repo(repo):
+                    return self._send(400, json.dumps(
+                        {"error": "repo is not a git repository: " + repo}))
                 lane = body.get("lane", "working")
                 client = user["name"] if user["role"] == "client" else body.get("client", "")
                 driver = body.get("driver", "claude")
