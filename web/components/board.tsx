@@ -122,6 +122,12 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
             gate: {t.gate_report.join(" | ").slice(0, 140)}
           </div>
         )}
+        {t.merge_report && !t.gate_report && (
+          <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--danger)" }}>
+            {t.merge_kind === "conflict" ? "Merge-Konflikt: " : "Merge: "}
+            {t.merge_report.split("\n")[0].slice(0, 140)}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -222,14 +228,27 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
     const id = ev.dataTransfer.getData("text");
     const card = tracks.find((x) => x.id === id);
     if (card && (card.lane || "working") === lane) return;  // same lane = reorder, handled per-card
+    // Review == Abnahme: both do the full finish (clean up + commit, gate, merge,
+    // deploy) and the card lands in Done.
+    const finishing = lane === "review" || lane === "done";
     const res = await post<Track>(`/tracks/${id}/lane`, { lane });
-    if (!res?.gate_failed && (lane === "done" || lane === "review")) {
-      setFlash(lane); setTimeout(() => setFlash(null), 900);
+    const bounced = res?.gate_failed || res?.merge_failed;
+    if (!bounced && finishing) {
+      setFlash("done"); setTimeout(() => setFlash(null), 900);
     }
     if (res?.gate_failed) {
-      toast("GATE FAILED - bounced back: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+      toast("GATE offen - bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+    } else if (res?.merge_failed) {
+      // say WHY it can't land yet (conflict / blocked); the card stays on Review
+      const why = (res.merge_report ?? "").split("\n")[0];
+      toast((res.merge_kind === "conflict" ? "MERGE-KONFLIKT - bleibt auf Review: " : "Kann nicht landen - bleibt auf Review: ") + why, 6000);
+    } else if (finishing) {
+      // finished + landed: real merge vs closing a redundant card
+      toast(res?.merge_kind === "merged" ? "Fertig → committet & nach main gemergt"
+        : (res?.merge_kind === "already_merged" || res?.merge_kind === "redundant_uncommitted")
+          ? "Redundant - war schon in main, Karte geschlossen" : "Abgenommen");
     } else {
-      toast(lane === "working" ? "Dispatched - session starting" : lane === "review" ? "Gate green - submitted" : lane === "done" ? "Accepted" : "Queued");
+      toast(lane === "working" ? "Dispatched - session starting" : "Queued");
     }
     setTimeout(refresh, 600);
   }

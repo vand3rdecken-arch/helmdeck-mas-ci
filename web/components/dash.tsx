@@ -9,7 +9,8 @@ const TILE_LABELS: Record<string, string> = {
   yield: "First-pass yield", automation: "Automation rate", leverage: "Leverage per touch",
 };
 const PANEL_LABELS: Record<string, string> = {
-  capacity: "Capacity gauge", gates: "Gate failures", models: "AI usage by model", work: "Work table",
+  sows: "SoW margin", capacity: "Capacity gauge", gates: "Gate failures",
+  models: "AI usage by model", work: "Work table",
 };
 
 export default function DashView() {
@@ -34,7 +35,7 @@ export default function DashView() {
     leverage: [cur + T.leverage_per_touch, "value per touch unit"],
   };
   const tileKeys = (met.settings?.dashboard?.tiles ?? Object.keys(TILE)).filter((k) => TILE[k]);
-  const panels = met.settings?.dashboard?.panels ?? ["capacity", "gates", "models", "work"];
+  const panels = met.settings?.dashboard?.panels ?? ["sows", "capacity", "gates", "models", "work"];
   const gmax = met.gate_failures[0]?.[1] ?? 1;
   const actors = Object.entries(c.actors ?? {});
   async function toggle(kind: "tiles" | "panels", key: string) {
@@ -84,6 +85,51 @@ export default function DashView() {
           ))}
         </div>
       )}
+      {panels.includes("sows") && <div className="panel">
+        <h3>SoW margin - one process = one statement of work</h3>
+        {!met.sows?.length && <div style={{ color: "var(--txt-tertiary)", fontSize: 12.5 }}>
+          No process-grouped work yet. A process (Processes view) groups its cards into one SoW;
+          per-card billing (fixed price / time &amp; material / none) rolls up here.
+        </div>}
+        {!!met.sows?.length && <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr><th>statement of work</th><th>client</th><th>status</th><th className="num">cards</th>
+                <th className="num">hours</th><th className="num">billed</th>
+                <th className="num">AI $</th><th className="num">margin</th></tr>
+            </thead>
+            <tbody>
+              {met.sows.map((sw) => (
+                <tr key={sw.id}>
+                  <td title={sw.name}>{sw.name}</td>
+                  <td>{sw.client || "-"}</td>
+                  <td>{sw.all_done ? "delivered" : `${sw.done}/${sw.cards} done`}</td>
+                  <td className="num">{sw.cards}</td>
+                  <td className="num">{sw.hours.toFixed(1)}</td>
+                  <td className="num">{cur}{sw.billed.toFixed(2)}</td>
+                  <td className="num">{sw.ai_cost.toFixed(2)}</td>
+                  <td className="num" style={{ color: sw.margin >= 0 ? "var(--ok)" : "var(--danger)", fontWeight: 600 }}>
+                    {cur}{sw.margin.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 600, borderTop: "1px solid var(--glass-border)" }}>
+                <td>total ({met.sows.length} SoW{met.sows.length === 1 ? "" : "s"})</td><td /><td />
+                <td className="num">{met.sows.reduce((a, s) => a + s.cards, 0)}</td>
+                <td className="num">{met.sows.reduce((a, s) => a + s.hours, 0).toFixed(1)}</td>
+                <td className="num">{cur}{met.sows.reduce((a, s) => a + s.billed, 0).toFixed(2)}</td>
+                <td className="num">{met.sows.reduce((a, s) => a + s.ai_cost, 0).toFixed(2)}</td>
+                <td className="num">{cur}{met.sows.reduce((a, s) => a + s.margin, 0).toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div style={{ fontSize: 11.5, color: "var(--txt-tertiary)", marginTop: 8 }}>
+            <b>billed</b> = recognized revenue: fixed price counts on delivery, time &amp; material accrues with worked hours, none = internal.
+            <b> margin</b> = billed − AI cost. Touch units stay separate (capacity, below), never billing.
+          </div>
+        </div>}
+      </div>}
       {panels.includes("capacity") && <div className="panel">
         <h3>Capacity - take more work, or automate?</h3>
         <div style={{ fontSize: 12.5, color: "var(--txt-secondary)" }}>
@@ -167,8 +213,9 @@ export default function DashView() {
                       <i style={{ background: "var(--human)", width: `${Math.max(2, Math.round(100 * x.touches / maxH))}%`, marginTop: 2 }} />
                     </span>
                   </td>
-                  <td className="num">{cur}{x.value}</td>
-                  <td className="num">{cur}{(x.value - x.ai_cost).toFixed(2)}</td>
+                  <td className="num" title={x.billing === "tm" ? `time & material @ ${cur}${x.rate ?? 0}/h` : x.billing === "none" ? "internal / unbilled" : "fixed price"}>
+                    {cur}{(x.billed ?? x.value).toFixed(2)}{x.billing === "tm" ? " ~" : ""}</td>
+                  <td className="num">{cur}{(x.margin ?? (x.value - x.ai_cost)).toFixed(2)}</td>
                   <td>{x.mode ?? "-"}</td>
                 </tr>
               ))}

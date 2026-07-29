@@ -73,6 +73,9 @@ export const IconFile = (p: { size?: number }) => (
 export const IconX = (p: { size?: number }) => (
   <I {...p}><path d="M6 6l12 12M18 6 6 18" /></I>
 );
+export const IconMic = (p: { size?: number }) => (
+  <I {...p}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" /></I>
+);
 export const IconTerminal = (p: { size?: number }) => (
   <I {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M13 15h4" /></I>
 );

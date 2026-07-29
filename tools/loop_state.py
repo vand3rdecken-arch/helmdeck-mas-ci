@@ -184,6 +184,49 @@ def archive_workorder():
     os.replace(WORKORDER, dst)
 
 
+# each shippable artifact vs ONLY the source that feeds it - so a web change
+# doesn't flag the APK (whose Kotlin is untouched) as stale, and vice versa.
+ARTIFACT_SRC = {
+    "desktop/release/SwarmDeck-Setup-0.2.0-x64.exe": ("daemon", "web/app", "web/components", "web/lib"),
+    # the shippable Android artifact is the SIGNED release build (debug is only
+    # a local convenience build and is never distributed)
+    "apk/app/build/outputs/apk/release/app-release.apk": ("apk/app/src",),
+    "glasses/dist/swarmdeck-glasses.zip": ("glasses/index.html", "glasses/styles.css", "glasses/app.js"),
+}
+_SKIP = ("node_modules", ".next", "__pycache__", os.sep + "build", os.sep + "dist")
+# only SOURCE files count - not the running daemon's data (events.jsonl,
+# swarmdeck.db, settings.json, ...), which would otherwise flag every artifact
+# stale on each turn.
+_CODE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".kt", ".kts")
+
+
+def _src_mtime(srcs):
+    paths = []
+    for s in srcs:
+        sp = os.path.join(ROOT, s)
+        if os.path.isdir(sp):
+            for root, _, files in os.walk(sp):
+                if any(x in root for x in _SKIP):
+                    continue
+                paths.extend(os.path.join(root, f) for f in files if f.endswith(_CODE_EXT))
+        elif os.path.exists(sp):
+            paths.append(sp)
+    return newest_mtime(paths)
+
+
+def build_stale():
+    """True if a shippable artifact is missing or older than ITS OWN source - so
+    the loop nudges `build_all` before it rests. Only checked once work has gone
+    quiet, so it never runs on every keystroke."""
+    for art, srcs in ARTIFACT_SRC.items():
+        ap = os.path.join(ROOT, art)
+        if not os.path.exists(ap):
+            return True
+        if _src_mtime(srcs) > os.path.getmtime(ap):
+            return True
+    return False
+
+
 def transitions():
     """Ordered (STATE, action); first is THE next action."""
     touched = dirty_files()
@@ -240,6 +283,11 @@ def transitions():
         return t
 
     quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60
+    if quiet and build_stale():
+        t.append(("BUILD", "work verified & quiet, but shippable artifacts are stale - run "
+                  "`bash tools/build_all.sh` to rebuild installer + APK + glasses from "
+                  "current source (or `win`/`apk`/`glasses` for one), THEN propose the commit."))
+        return t
     if quiet:
         t.append(("COMMIT", "loop complete, %d file(s) quiet - propose the commit "
                   "(workorder archives on clean tree): %s"
@@ -254,7 +302,7 @@ def print_table():
     t = transitions()
     if not t:
         print("[loop_state] DONE - clean tree, no open workorder. Loop: "
-              "ALIGN > ANALYZE > EXECUTE > TEST > CLEAN > COMMIT.")
+              "ALIGN > ANALYZE > EXECUTE > TEST > CLEAN > BUILD > COMMIT.")
         return
     print("[loop_state] loop position:")
     for st, act in t:

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { get } from "@/lib/api";
 import {
-  IconPaperclip, IconBrain, IconArrowUp, IconStop, IconSliders, IconFile, IconX,
+  IconPaperclip, IconBrain, IconArrowUp, IconStop, IconSliders, IconFile, IconX, IconMic,
 } from "./icons";
 
 export interface Attach { name: string; data: string; mime: string }
@@ -64,6 +64,15 @@ export default function Composer({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const flushing = useRef(false);
+  // dictation (speech-to-text) via the browser's Web Speech API - no dependency,
+  // no server round-trip. Only shown when the browser supports it.
+  const recRef = useRef<{ stop: () => void } | null>(null);
+  const [listening, setListening] = useState(false);
+  const [srOk, setSrOk] = useState(false);
+  useEffect(() => {
+    const w = window as unknown as { webkitSpeechRecognition?: unknown; SpeechRecognition?: unknown };
+    if (w.webkitSpeechRecognition || w.SpeechRecognition) setSrOk(true);
+  }, []);
 
   // draft persistence, per surface (board / each card)
   useEffect(() => {
@@ -75,6 +84,27 @@ export default function Composer({
   }
   // external injection (e.g. New Request example chips) - overrides the draft
   useEffect(() => { if (seed) write(seed.text); /* eslint-disable-next-line */ }, [seed?.key]);
+  function toggleDictation() {
+    if (listening) { recRef.current?.stop(); return; }
+    const w = window as unknown as { webkitSpeechRecognition?: new () => never; SpeechRecognition?: new () => never };
+    const SR = w.webkitSpeechRecognition || w.SpeechRecognition;
+    if (!SR) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec: any = new (SR as any)();
+    rec.continuous = true; rec.interimResults = true;
+    rec.lang = navigator.language || "en-US";
+    const base = text ? text.replace(/\s*$/, "") + " " : "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      let s = "";
+      for (let i = 0; i < e.results.length; i++) s += e.results[i][0].transcript;
+      write(base + s);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => { setListening(false); recRef.current = null; };
+    recRef.current = rec; setListening(true);
+    try { rec.start(); } catch { setListening(false); }
+  }
   // model list from the daemon (manifest + ~/.claude/settings.json), cached
   useEffect(() => {
     if (MODEL_CACHE) return;
@@ -221,6 +251,12 @@ export default function Composer({
         <button className="cmp-tool" title="Attach image or file" onClick={() => fileRef.current?.click()}>
           <IconPaperclip size={15} />
         </button>
+        {srOk && (
+          <button className={"cmp-tool" + (listening ? " on rec" : "")} onClick={toggleDictation}
+            title={listening ? "Stop dictation" : "Dictate - speech to text"}>
+            <IconMic size={15} />
+          </button>
+        )}
         {!hideThinking && (
           <button className={"cmp-tool" + (thinkOn ? " on" : "")} onClick={() => {
             const i = THINK.findIndex((x) => x.id === thinking); setThinking(THINK[(i + 1) % THINK.length].id);

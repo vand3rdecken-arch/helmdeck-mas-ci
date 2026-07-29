@@ -27,6 +27,23 @@ DEFAULTS = {
                "default": {"in": 3.0, "out": 15.0}},
     "value_per_card": 50.0,   # default deliverable value; per-card value overrides
     "currency": "EUR",
+    # read-only bearer token for the Meta Ray-Ban Display glance webapp (glasses/).
+    # empty = the /glance endpoint is OFF. Owner sets it; it does NOT grant any
+    # write access or touch the session-cookie auth - a scoped read-only surface.
+    "glance_token": "",
+    # Un-versioned files copied into every new worktree. A worktree holds only
+    # TRACKED files, so git-ignored local toolchain config (SDK paths, local
+    # env) would be missing and builds that work by hand fail inside a card.
+    # Signing material is intentionally NOT here - add it only if you want
+    # agents to be able to sign releases.
+    "worktree_seed": ["apk/local.properties", "local.properties"],
+    # zero-knowledge reverse-tunnel relay (relay/relay.py + e2ee.py) so the
+    # mobile app reaches this daemon over the internet without port-forwarding
+    # and end-to-end encrypted. url = where the owner hosts the relay (HTTPS);
+    # room = public routing id; sk = this daemon's Curve25519 secret (generated
+    # at pairing); phone_pub = the paired phone's public key (TOFU-pinned).
+    # Empty url = OFF (LAN only).
+    "relay": {"url": "", "room": "", "sk": "", "phone_pub": ""},
     # preset repo: filing a ticket never needs a path typed (fallback repo).
     "default_repo": "",
     # execution drivers (drivers.py): a card picks one by name. claude-desktop =
@@ -47,7 +64,7 @@ DEFAULTS = {
     # panels: capacity, gates, work
     "dashboard": {"tiles": ["value_delivered", "ai_spend", "margin",
                             "yield", "automation", "leverage"],
-                  "panels": ["capacity", "gates", "work"]},
+                  "panels": ["sows", "capacity", "gates", "work"]},
     # POLICY - the flexible half of the harness/loop split. Everything here is
     # workspace configuration the owner may change (incl. via the copilot):
     # how work flows. The FIXED half (auth, audit, gate-before-review, measured
@@ -148,6 +165,26 @@ def price_turn(models, usage, cost_usd=None):
 
 # -- dashboard math ------------------------------------------------------
 
+def time_in_work(track_events, running_now=False):
+    """Real elapsed seconds the card spent in the 'working' lane - paired from
+    lane-change events (to='working' ... the next lane change), not the touch-
+    count tariff (that stays a separate human-capacity/utilization signal).
+    This is the real "hours" a time & material project bills against."""
+    from datetime import datetime
+    fmt = "%Y-%m-%d %H:%M:%S"
+    secs = 0.0
+    start = None
+    for e in sorted((e for e in track_events if e["kind"] == "lane"), key=lambda x: x["ts"]):
+        ts = datetime.strptime(e["ts"], fmt)
+        if e.get("to") == "working":
+            start = ts
+        elif start is not None:
+            secs += (ts - start).total_seconds()
+            start = None
+    if start is not None and running_now:
+        secs += (datetime.strptime(time.strftime(fmt), fmt) - start).total_seconds()
+    return secs
+
 def _completion_mode(track_events, turns):
     """auto = accepted with zero human touches beyond acceptance (one dispatch
     turn, no steers, no bounces). assisted = you steered or it bounced."""
@@ -172,14 +209,30 @@ def metrics(tracks):
     for t in tracks:
         te = by_track.get(t["id"], [])
         touches = sum(tariff.get(e.get("touch"), 1) for e in te if e["kind"] == "touch")
+        secs = time_in_work(te, running_now=t.get("lane") == "working")
+        hours = secs / 3600.0
         ai = t.get("ai_cost", 0.0)
         # a value of 0 is valid (free/internal card) - don't treat it as "unset"
         value = t.get("value")
         value = s["value_per_card"] if value is None else value
+        # per-card billing -> recognized revenue (`billed`). Touch units are NOT
+        # billing (they measure human capacity); billing is fixed price or T&M
+        # hours, or none. fixed recognizes on 'done'; tm accrues with worked time.
+        billing = t.get("billing") or "fixed"
+        rate = t.get("rate")
+        if billing == "none":
+            billed = 0.0
+        elif billing == "tm":
+            billed = round(hours * (rate or 0.0), 2)
+        else:   # fixed
+            billed = value if t.get("lane") == "done" else 0.0
         mode = _completion_mode(te, t.get("turns")) if t.get("lane") == "done" else None
         cards.append({"id": t["id"], "task": t["task"][:60], "branch": t["branch"],
                       "lane": t.get("lane"), "ai_cost": round(ai, 4), "touches": touches,
-                      "value": value, "mode": mode, "models": t.get("models", []),
+                      "time_seconds": round(secs, 1), "project_id": t.get("project_id"),
+                      "value": value, "billing": billing, "rate": rate,
+                      "billed": round(billed, 2), "margin": round(billed - ai, 2),
+                      "mode": mode, "models": t.get("models", []),
                       "tokens_in": t.get("tokens_in", 0), "tokens_out": t.get("tokens_out", 0)})
 
     done = [c for c in cards if c["lane"] == "done"]
@@ -217,12 +270,52 @@ def metrics(tracks):
             actors[a] = actors.get(a, 0) + tariff.get(e.get("touch"), 1)
     archived_ids = {t["id"] for t in tracks if t.get("archived")}
     wip = sum(1 for c in cards if c["lane"] == "working" and c["id"] not in archived_ids)
-    value_done = sum(c["value"] for c in done)
+
+    # -- SoW rollup: one process = one SoW = the billing unit ---------------
+    # a PROCESS (processes.py) groups its accepted steps' cards into one client
+    # engagement; the SoW's margin is the sum of its cards' per-card `billed`
+    # minus their AI cost. Cards not in any process bill standalone (still in
+    # `cards`). This replaces the old separate projects.py billing wrapper -
+    # billing now lives on the card, the process is just the grouping.
+    import processes as _processes
+    track_proc, proc_meta = {}, {}
+    for p in _processes.list_processes():
+        proc_meta[p["id"]] = {"name": (p.get("request") or p["id"])[:70],
+                              "client": p.get("client", ""), "status": p.get("status"),
+                              "due": p.get("due", "")}
+        for st in p.get("steps", []):
+            if st.get("track"):
+                track_proc[st["track"]] = p["id"]
+    sow_agg = {}
+    for c in cards:
+        pid = track_proc.get(c["id"])
+        if not pid:
+            continue
+        r = sow_agg.setdefault(pid, {"billed": 0.0, "ai_cost": 0.0, "hours": 0.0,
+                                     "cards": 0, "done": 0})
+        r["billed"] += c["billed"]; r["ai_cost"] += c["ai_cost"]
+        r["hours"] += c["time_seconds"] / 3600.0; r["cards"] += 1
+        r["done"] += 1 if c["lane"] == "done" else 0
+    sows = []
+    for pid, r in sow_agg.items():
+        m = proc_meta.get(pid, {})
+        sows.append({"id": pid, "name": m.get("name", pid), "client": m.get("client", ""),
+                     "status": m.get("status"), "due": m.get("due", ""),
+                     "cards": r["cards"], "done": r["done"], "hours": round(r["hours"], 2),
+                     "billed": round(r["billed"], 2), "ai_cost": round(r["ai_cost"], 4),
+                     "margin": round(r["billed"] - r["ai_cost"], 2),
+                     "all_done": r["cards"] > 0 and r["done"] == r["cards"]})
+    sows.sort(key=lambda x: -x["margin"])
+
+    # company totals from per-card recognized revenue (billing-aware), so the
+    # SoW rollup and the totals never double-count.
+    value_done = sum(c["billed"] for c in cards)
     ai_all = sum(c["ai_cost"] for c in cards)
     touch_all = sum(c["touches"] for c in cards) or 1
     return {
         "settings": s,
         "cards": cards,
+        "sows": sows,
         "capacity": {"wip": wip, "wip_limit": s["capacity"]["wip_limit"],
                      "touches_today": touches_today, "actors": actors,
                      "touch_budget_day": s["capacity"]["touch_budget_day"],

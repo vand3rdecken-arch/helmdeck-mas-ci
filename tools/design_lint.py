@@ -78,6 +78,15 @@ def lint(touched):
             line = src[line_start:m.start()]
             if "//" in line or "/*" in line:
                 continue
+            # Auditable escape hatch: a literal that is NOT a themeable UI color
+            # (e.g. a QR code's black/white modules, a canvas pixel) may opt out
+            # with `design-lint-allow: <reason>` on the same or preceding line.
+            # The reason is required so the exception stays honest and greppable.
+            # (`lint:hex-ok` above is the terse variant for the same intent.)
+            prev_start = src.rfind("\n", 0, max(line_start - 1, 0)) + 1
+            window = src[prev_start:(line_end if line_end != -1 else len(src))]
+            if re.search(r'design-lint-allow:\s*\S', window):
+                continue
             problems.append("%s: hardcoded color %s - use a design token "
                             "(var(--...)), not a literal hex (intentional "
                             "literals: annotate the line with `lint:hex-ok`)."
