@@ -128,6 +128,15 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
             {t.merge_report.split("\n")[0].slice(0, 140)}
           </div>
         )}
+        {t.review_report && t.lane === "review" && !t.gate_report && (
+          <div style={{ marginTop: 7, fontSize: 11.5,
+            color: t.merge_kind === "conflict" ? "var(--danger)"
+              : t.merge_kind === "mergeable" ? "var(--ok)" : "var(--txt-tertiary)" }}>
+            {t.merge_kind === "mergeable" ? "✓ bereit → auf Done ziehen zum Landen"
+              : t.merge_kind === "conflict" ? "⚠ " + t.review_report.split("\n")[0].slice(0, 120)
+              : t.review_report.split("\n")[0].slice(0, 130)}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -228,25 +237,31 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
     const id = ev.dataTransfer.getData("text");
     const card = tracks.find((x) => x.id === id);
     if (card && (card.lane || "working") === lane) return;  // same lane = reorder, handled per-card
-    // Review == Abnahme: both do the full finish (clean up + commit, gate, merge,
-    // deploy) and the card lands in Done.
-    const finishing = lane === "review" || lane === "done";
+    // Review = PREVIEW (rests on Review with a verdict), Done = LAND (merge+deploy).
     const res = await post<Track>(`/tracks/${id}/lane`, { lane });
-    const bounced = res?.gate_failed || res?.merge_failed;
-    if (!bounced && finishing) {
-      setFlash("done"); setTimeout(() => setFlash(null), 900);
-    }
-    if (res?.gate_failed) {
-      toast("GATE offen - bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
-    } else if (res?.merge_failed) {
-      // say WHY it can't land yet (conflict / blocked); the card stays on Review
-      const why = (res.merge_report ?? "").split("\n")[0];
-      toast((res.merge_kind === "conflict" ? "MERGE-KONFLIKT - bleibt auf Review: " : "Kann nicht landen - bleibt auf Review: ") + why, 6000);
-    } else if (finishing) {
-      // finished + landed: real merge vs closing a redundant card
-      toast(res?.merge_kind === "merged" ? "Fertig → committet & nach main gemergt"
-        : (res?.merge_kind === "already_merged" || res?.merge_kind === "redundant_uncommitted")
-          ? "Redundant - war schon in main, Karte geschlossen" : "Abgenommen");
+    if (lane === "review") {
+      if (res?.gate_failed) {
+        toast("Gate rot - bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+      } else {
+        const k = res?.merge_kind;
+        const verdict = k === "mergeable" ? "✓ bereit zu mergen"
+          : (k === "already_merged" || k === "redundant_uncommitted") ? "redundant - schon in main"
+          : k === "conflict" ? "⚠ Konflikt mit main" : "geprüft";
+        toast(`Review: ${verdict} — zum Landen auf Done ziehen`, 5200);
+      }
+    } else if (lane === "done") {
+      const bounced = res?.gate_failed || res?.merge_failed;
+      if (!bounced) { setFlash("done"); setTimeout(() => setFlash(null), 900); }
+      if (res?.gate_failed) {
+        toast("GATE offen - bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+      } else if (res?.merge_failed) {
+        const why = (res.merge_report ?? "").split("\n")[0];
+        toast((res.merge_kind === "conflict" ? "MERGE-KONFLIKT - bleibt auf Review: " : "Kann nicht landen - bleibt auf Review: ") + why, 6000);
+      } else {
+        toast(res?.merge_kind === "merged" ? "Fertig → committet & nach main gemergt"
+          : (res?.merge_kind === "already_merged" || res?.merge_kind === "redundant_uncommitted")
+            ? "Redundant - war schon in main, Karte geschlossen" : "Abgenommen");
+      }
     } else {
       toast(lane === "working" ? "Dispatched - session starting" : "Queued");
     }
