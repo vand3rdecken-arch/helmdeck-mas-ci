@@ -62,6 +62,13 @@ function App() {
     }
   }, [tracks, peek]);
 
+  // Jira-style: a card open => board stays visible beside the panel (body.has-peek
+  // reflows #main + drops the dimming backdrop). See globals.css.
+  useEffect(() => {
+    document.body.classList.toggle("has-peek", !!peek);
+    return () => document.body.classList.remove("has-peek");
+  }, [peek]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
