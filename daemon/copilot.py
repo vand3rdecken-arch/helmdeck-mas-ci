@@ -20,7 +20,9 @@ Reply with ONLY JSON:
 {"reply": "short helpful answer for the user",
  "actions": [ ...zero or more of:
    {"type": "file_card", "task": "...", "value": 50, "due": "YYYY-MM-DD", "priority": "urgent|high|medium|low", "driver": "claude|claude-desktop", "dispatch": false}
-   {"type": "move", "card": "<id or unique branch/task fragment>", "lane": "backlog|working|review|done"}
+   {"type": "move", "card": "<id or unique branch/task fragment>", "lane": "backlog|working|review|done"}  (admin: policy.chat_admin_roles)
+   {"type": "delete", "card": "<id or fragment>"}  - permanently remove a card (admin: policy.chat_admin_roles)
+   {"type": "archive", "card": "<id or fragment>"}  - archive a card out of the board (admin: policy.chat_admin_roles)
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
@@ -165,17 +167,32 @@ def _run_action(a, actor, role="operator"):
                                actor=actor, priority=a.get("priority", "medium"),
                                due=a.get("due", ""))
         return "filed card %s (%s)" % (t["id"], t["lane"])
-    if kind in ("move", "steer"):
+    if kind in ("move", "steer", "delete", "archive"):
         t = _find_card(a.get("card", ""))
         if t is None:
             return "%s failed: no card matches '%s'" % (kind, a.get("card"))
         if isinstance(t, list):
             return "%s failed: '%s' is ambiguous (%d matches)" % (kind, a.get("card"), len(t))
+        # admin gate: MOVING / DELETING / ARCHIVING a card is a structural change -
+        # only authorized roles may (policy.chat_admin_roles, default owner+operator).
+        # steer stays open (clients steer their own cards).
+        if kind in ("move", "delete", "archive"):
+            admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+            if role not in admin_roles:
+                return "%s denied: needs role %s (you are '%s')" % (kind, "/".join(admin_roles), role)
         if kind == "move":
             r = sessions.move_lane(t["id"], a["lane"], actor=actor)
             if r.get("gate_failed"):
                 return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", []))[:200])
+            if r.get("merge_failed"):
+                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), (r.get("merge_report") or "")[:200])
             return "moved %s -> %s" % (t["branch"], a["lane"])
+        if kind == "delete":
+            sessions.delete_track(t["id"], actor=actor)
+            return "deleted card %s (%s)" % (t["branch"], t["id"])
+        if kind == "archive":
+            sessions.archive_track(t["id"], on=True, actor=actor)
+            return "archived card %s" % t["branch"]
         import threading
         threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
                          kwargs={"actor": actor, "source": "board copilot"}, daemon=True).start()
