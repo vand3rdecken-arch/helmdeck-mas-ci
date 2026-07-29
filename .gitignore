@@ -30,6 +30,8 @@ daemon/tracks.json.imported
 .loop/
 daemon/copilot_log.json
 daemon/driver_pids.json
+daemon/restart_stdout.log
+daemon/restart_stderr.log
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 plane-selfhost/.env
