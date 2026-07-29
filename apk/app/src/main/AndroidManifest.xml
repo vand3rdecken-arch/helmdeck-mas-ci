@@ -2,20 +2,61 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- self-update: hand a downloaded, same-key-signed APK to the system installer -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="SwarmDeck"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Material3.Dark.NoActionBar"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <!-- cleartext: the daemon is a LAN peer (http://pc-ip:8140); pairing secret gates it -->
-        <activity android:name=".MainActivity" android:exported="true">
+        <!-- backup off: the pairing store is sealed with a Keystore key that is
+             NOT backed up. Restoring the ciphertext without its key made every
+             read throw AEADBadTagException and crashed the app on launch. -->
+        <activity android:name=".MainActivity" android:exported="true"
+                  android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Pairing QR as a VERIFIED App Link. Phone camera apps refuse to
+                 open custom schemes, but they do open https - and Android routes
+                 it straight into this app once /.well-known/assetlinks.json on
+                 the relay host proves ownership (autoVerify). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                      android:host="141.144.227.105.sslip.io"
+                      android:pathPrefix="/pair" />
+            </intent-filter>
+            <!-- fallback: the custom scheme still works if opened directly -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="swarmdeck" android:host="pair" />
+            </intent-filter>
         </activity>
-        <activity android:name=".ReviewActivity" />
-        <activity android:name=".LiveActivity" />
-        <activity android:name=".BoardActivity" />
+<!-- board/review/live are Compose screens inside MainActivity now -->
+        <!-- decrypts sealed FCM data messages and shows card notifications -->
+        <service android:name=".PushService" android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- exposes the downloaded update APK to the system installer, nothing else -->
+        <provider android:name="androidx.core.content.FileProvider"
+                  android:authorities="app.swarmdeck.fileprovider"
+                  android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                       android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

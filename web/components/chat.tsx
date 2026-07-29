@@ -72,7 +72,7 @@ export default function Chat({ open, setOpen, hideFab }: { open: boolean; setOpe
     post("/chat/cancel", {});        // kill the copilot subprocess server-side
   }
 
-  if (!open) return hideFab ? null : <button id="chatfab" title="Chat with the board (k)" onClick={() => setOpen(true)}><IconChat size={20} /></button>;
+  if (!open) return hideFab ? null : <button id="chatfab" title="Chat with the board" onClick={() => setOpen(true)}><IconChat size={20} /></button>;
   return (
     <div id="chat">
       <div className="ch">

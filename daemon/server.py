@@ -10,6 +10,7 @@ decision: mobile = same capabilities), so besides pulling it can drive:
   GET  /control/state                               {"teach": <run-id>|null, "busy": [...]}
 """
 import json, os, threading
+from urllib.parse import unquote, parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from actionlog import read_timeline
 from runs import REC, list_runs
@@ -287,7 +288,7 @@ class H(BaseHTTPRequestHandler):
     # HTML shells + the auth endpoints are public; every data/control route
     # needs a logged-in session (cookie) or a per-user device token.
     OPEN = ("/", "/classic", "/auth/state", "/auth/login", "/auth/logout",
-            "/auth/setup", "/auth/register")
+            "/auth/setup", "/auth/register", "/glance")
 
     def _sid(self):
         for part in (self.headers.get("Cookie") or "").split(";"):
@@ -304,7 +305,14 @@ class H(BaseHTTPRequestHandler):
             tok = h[7:].strip()
         if not tok and "token=" in self.path:
             tok = self.path.split("token=")[1].split("&")[0]
-        return auth.resolve(sid=self._sid(), token=tok or None)
+        u = auth.resolve(sid=self._sid(), token=tok or None)
+        if u and self.command == "POST":
+            # presence signal for the idle-time worker. POSTs only: a GET can
+            # be the board's auto-refresh in a forgotten browser tab, but a
+            # POST is a human doing something - steering, filing, configuring.
+            import nightshift
+            nightshift.touch()
+        return u
 
     def _send_cookie(self, code, body, sid=None, clear=False):
         self.send_response(code)
@@ -335,6 +343,30 @@ class H(BaseHTTPRequestHandler):
                     {"setup_needed": not auth.list_users(), "user": user,
                      "registration": bool(reg.get("open") or reg.get("invite_code")),
                      "registration_open": bool(reg.get("open"))}))
+            if p == "/glance":
+                # read-only glance surface for the Meta Ray-Ban Display webapp
+                # (glasses/). Token-gated, cross-origin (CORS on via _send). No
+                # write access, no session-cookie coupling - additive, not a
+                # weakening of auth. Off unless settings.glance_token is set.
+                import events, sessions
+                tok = events.settings().get("glance_token") or ""
+                given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+                m = events.metrics(sessions.list_tracks())
+                ny = [{"id": t["id"], "task": (t.get("task") or "")[:70],
+                       "client": t.get("client", ""), "status": t.get("status")}
+                      for t in sessions.list_tracks()
+                      if t.get("status") == "needs_you" and not t.get("archived")]
+                return self._send(200, json.dumps({
+                    "needs_you": ny,
+                    "econ": {"needs_you": len(ny), "wip": m["capacity"]["wip"],
+                             "wip_limit": m["capacity"]["wip_limit"],
+                             "headroom": m["capacity"]["headroom"],
+                             "margin": m["totals"]["margin"],
+                             "currency": m["settings"].get("currency", "EUR")},
+                    "sows": [{"name": (s["name"] or "")[:40], "margin": s["margin"]}
+                             for s in m.get("sows", [])[:5]]}))
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             if p == "/users":
@@ -391,6 +423,43 @@ class H(BaseHTTPRequestHandler):
                             with open(fp, "rb") as f:
                                 return self._send(200, f.read(), ct)
                     return self._send(404, b"no video", "text/plain")
+                if what == "videochunk":
+                    # Ranged, base64-in-JSON slices of the recording. The mobile
+                    # app reaches the daemon through an end-to-end encrypted
+                    # relay that carries TEXT frames, so a raw binary stream
+                    # cannot pass; slicing keeps recordings watchable on the
+                    # phone without weakening the tunnel or loading a whole
+                    # video into memory.
+                    import base64 as _b64, transcode
+                    q = parse_qs(urlparse(self.path).query)
+                    try:
+                        off = max(0, int((q.get("offset") or ["0"])[0]))
+                        ln = int((q.get("len") or ["262144"])[0])
+                    except ValueError:
+                        return self._send(400, json.dumps({"error": "bad offset/len"}))
+                    ln = max(1, min(ln, 1_048_576))          # 1 MiB ceiling per slice
+                    # A phone or a 600x600 glasses display cannot use a full
+                    # desktop capture; serving a small rendition cuts the bytes
+                    # that have to cross the relay by roughly an order of
+                    # magnitude. Made once on THIS machine, then cached.
+                    profile = (q.get("profile") or ["mobile"])[0]
+                    for name, ct in (("screen.mp4", "video/mp4"), ("browser.webm", "video/webm")):
+                        fp = os.path.join(d, name)
+                        if not os.path.exists(fp):
+                            continue
+                        fp = transcode.variant(fp, profile)
+                        if fp.endswith(".mp4"):
+                            ct = "video/mp4"
+                        size = os.path.getsize(fp)
+                        with open(fp, "rb") as f:
+                            f.seek(off)
+                            blob = f.read(ln)
+                        return self._send(200, json.dumps({
+                            "size": size, "mime": ct, "offset": off,
+                            "profile": profile, "scaled": transcode.available(),
+                            "eof": off + len(blob) >= size,
+                            "data": _b64.b64encode(blob).decode()}))
+                    return self._send(404, json.dumps({"error": "no video"}))
             if p == "/control/state":
                 with _ctl_lock:
                     s = _ctl["teach"]
@@ -404,6 +473,11 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] == "client":   # clients see only their own cards
                     ts = [t for t in ts if t.get("client") == user["name"]]
                 return self._send(200, json.dumps(ts))
+            if p == "/projects":
+                import projects
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                return self._send(200, json.dumps(projects.list_projects()))
             # --- company instrumentation: settings + CEO dashboard ---
             if p == "/chat/history":
                 if user["role"] == "client":
@@ -427,6 +501,54 @@ class H(BaseHTTPRequestHandler):
                         self.wfile.write(("data: %d" % v).encode() + b"\n\n")
                         self.wfile.flush()
                         last = v
+                except (ConnectionAbortedError, BrokenPipeError, OSError):
+                    return
+            if p.startswith("/tracks/") and p.endswith("/stream"):
+                # per-card SSE: push the live turn transcript as the agent works.
+                # Claude Code writes the session .jsonl live, so we watch it and
+                # emit the parsed transcript whenever it grows - real streaming,
+                # no client poll, same shape as the board /stream above.
+                import sessions, claude_sessions, time as _t
+                tid = p[len("/tracks/"):-len("/stream")]
+                t = sessions.get_track(tid)
+                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+                    return self._send(403, json.dumps({"error": "not your card"}))
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+
+                # Tick whenever EITHER the session .jsonl grows OR the driver's
+                # live_partial.txt grows (token streaming within a block, before
+                # it's flushed to the .jsonl). session_id is resolved fresh each
+                # loop so streaming starts on turn 1 (sidecar) too. The client
+                # refetches the (transcript + live partial) on each tick.
+                run_dir = (t or {}).get("run_dir") or ""
+                live_path = os.path.join(run_dir, "live_partial.txt") if run_dir else None
+
+                def combined():
+                    s2 = claude_sessions.live_session_id(t)
+                    jp = claude_sessions._find_transcript(s2) if s2 else None
+                    js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
+                    ls = os.path.getsize(live_path) if live_path and os.path.exists(live_path) else 0
+                    return js + ls
+
+                def tick(v):
+                    self.wfile.write(("data: %d" % v).encode() + b"\n\n")
+                    self.wfile.flush()
+                try:
+                    last = combined()
+                    tick(last)
+                    idle = 0
+                    while True:
+                        _t.sleep(0.3)
+                        size = combined()
+                        if size != last:
+                            last = size
+                            tick(size)
+                            idle = 0
+                        elif (idle := idle + 1) >= 45:   # ~13.5s keep-alive
+                            self.wfile.write(b": ping\n\n"); self.wfile.flush(); idle = 0
                 except (ConnectionAbortedError, BrokenPipeError, OSError):
                     return
             if p == "/debt":
@@ -515,6 +637,11 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(events.settings()))
+            if p == "/nightshift":
+                import nightshift
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                return self._send(200, json.dumps(nightshift.status()))
             if p == "/dashboard/data":
                 import events, sessions
                 if user["role"] == "client":
@@ -562,8 +689,40 @@ class H(BaseHTTPRequestHandler):
                 t = sessions.get_track(parts[1])
                 if user["role"] == "client" and (not t or t.get("client") != user["name"]):
                     return self._send(403, json.dumps({"error": "not your card"}))
-                sid = (t or {}).get("session_id")
-                return self._send(200, json.dumps(claude_sessions.read_transcript(sid) if sid else []))
+                return self._send(200, json.dumps(claude_sessions.read_transcript_live(t)))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "checkpoints":
+                import sessions
+                t = sessions.get_track(parts[1])
+                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+                    return self._send(403, json.dumps({"error": "not your card"}))
+                return self._send(200, json.dumps(sessions.list_checkpoints(parts[1])))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "attachments":
+                import sessions
+                t = sessions.get_track(parts[1])
+                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+                    return self._send(403, json.dumps({"error": "not your card"}))
+                out = []
+                for fp in (t or {}).get("attachments") or []:
+                    try:
+                        out.append({"name": os.path.basename(fp),
+                                    "size": os.path.getsize(fp) if os.path.exists(fp) else 0})
+                    except OSError:
+                        pass
+                return self._send(200, json.dumps(out))
+            if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "attachment":
+                import sessions, mimetypes
+                t = sessions.get_track(parts[1])
+                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+                    return self._send(403, b"not your card", "text/plain")
+                name = unquote(parts[3])
+                # only serve a file the card actually references (no path escape)
+                match = next((fp for fp in (t or {}).get("attachments") or []
+                             if os.path.basename(fp) == name), None)
+                if not match or not os.path.exists(match):
+                    return self._send(404, b"no such attachment", "text/plain")
+                ctype = mimetypes.guess_type(match)[0] or "application/octet-stream"
+                with open(match, "rb") as f:
+                    return self._send(200, f.read(), ctype)
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass
@@ -655,6 +814,20 @@ class H(BaseHTTPRequestHandler):
                 import sessions
                 ids = body.get("ids") or []
                 return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
+            if p == "/relay/pair":
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import relay_client, auth
+                pay = relay_client.pairing_payload()
+                # a fresh device token so the phone authenticates through the
+                # encrypted tunnel (carried as Bearer inside the sealed request).
+                pay["device_token"] = auth.issue_token(user["name"], "phone (relay)")
+                return self._send(200, json.dumps(pay))
+            if p == "/relay/unpair":
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import relay_client
+                return self._send(200, json.dumps(relay_client.unpair()))
             if p == "/sessions/claude/adopt":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -805,6 +978,25 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
+            if p == "/push/register":
+                # the phone announces its FCM token (arrives through the E2EE
+                # relay like every call); the daemon then pushes sealed data
+                # messages to exactly this device
+                import events
+                tok = (body.get("token") or "").strip()
+                if not tok:
+                    return self._send(400, json.dumps({"error": "token required"}))
+                events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
+                return self._send(200, json.dumps({"registered": True}))
+            if p == "/nightshift/plan":
+                # "plan before I go to sleep": scouts run in the background,
+                # the plan lands in daemon/nightshift/plan-<day>.json.
+                import nightshift
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                _bg("nightshift:plan", lambda: nightshift.make_plan(actor=user["name"]))
+                return self._send(200, json.dumps({"planning": True,
+                                                   "repos": nightshift.cfg()["repos"]}))
             # --- orchestrator control ---
             if p == "/tracks/new":
                 import sessions, events
@@ -827,7 +1019,10 @@ class H(BaseHTTPRequestHandler):
                         lane="backlog", client=client, value=body.get("value"),
                         driver=driver, actor=user["name"],
                         priority=body.get("priority", "medium"),
-                        due=body.get("due", ""), model=model, attachments=attachments)))
+                        due=body.get("due", ""), model=model, attachments=attachments,
+                        project_id=body.get("project_id"),
+                        description=body.get("description", ""),
+                        billing=body.get("billing", "fixed"), rate=body.get("rate"))))
                 def go():
                     sessions.new_track(repo, branch, task,
                                        body.get("perm", sessions.DEFAULT_PERM),
@@ -835,10 +1030,42 @@ class H(BaseHTTPRequestHandler):
                                        value=body.get("value"),
                                        driver=driver, actor=user["name"],
                                        priority=body.get("priority", "medium"),
-                                       due=body.get("due", ""), model=model, attachments=attachments)
+                                       due=body.get("due", ""), model=model, attachments=attachments,
+                                       project_id=body.get("project_id"),
+                                       description=body.get("description", ""),
+                                       billing=body.get("billing", "fixed"), rate=body.get("rate"))
                 _bg("track:new:" + branch, go)
                 return self._send(200, json.dumps({"started": branch}))
+            if p == "/projects":
+                import projects
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                try:
+                    return self._send(200, json.dumps(projects.new_project(
+                        body.get("name"), body.get("billing"), client=body.get("client", ""),
+                        fixed_price=body.get("fixed_price"), rate=body.get("rate"),
+                        actor=user["name"])))
+                except (ValueError, TypeError) as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "projects" and parts[2] == "update":
+                import projects
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                try:
+                    return self._send(200, json.dumps(
+                        projects.update_project(parts[1], body, actor=user["name"])))
+                except (RuntimeError, ValueError) as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+            if len(parts) == 3 and parts[0] == "projects" and parts[2] == "delete":
+                import projects
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                try:
+                    return self._send(200, json.dumps(
+                        projects.delete_project(parts[1], actor=user["name"])))
+                except RuntimeError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "archive":
                 import sessions
                 if user["role"] == "client":
@@ -876,6 +1103,40 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(
                         sessions.update_track(parts[1], body, actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "rewind":
+                import sessions
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                try:
+                    return self._send(200, json.dumps(
+                        sessions.rewind_files(parts[1], body.get("commit", ""), actor=user["name"])))
+                except (RuntimeError, ValueError) as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "attach":
+                import sessions
+                tid = parts[1]
+                if user["role"] == "client":
+                    t = sessions.get_track(tid)
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
+                try:
+                    return self._send(200, json.dumps(
+                        sessions.add_attachments(tid, body.get("attachments"), actor=user["name"])))
+                except RuntimeError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+            if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "attach" \
+                    and parts[3] == "remove":
+                import sessions
+                tid = parts[1]
+                if user["role"] == "client":
+                    t = sessions.get_track(tid)
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
+                try:
+                    return self._send(200, json.dumps(
+                        sessions.remove_attachment(tid, body.get("name", ""), actor=user["name"])))
+                except RuntimeError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "steer":
                 import sessions
@@ -924,17 +1185,33 @@ class H(BaseHTTPRequestHandler):
 def serve(port=8140):
     import db
     db.init()
+    import drivers, atexit
+    reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
+    if reaped:
+        print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
+    drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
+    atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
+    import sessions
+    zombies = sessions.sweep_zombies()   # running-flagged cards whose turn died with the old daemon
+    if zombies:
+        print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
-    import processes, connectors
+    import processes, connectors, relay_client
     processes.start_chain_poller()
     connectors.start_scheduler()
+    relay_client.start(port)   # reverse tunnel for mobile - idle until settings.relay is set
+    import nightshift
+    nightshift.start()         # idle-time worker - no-op until settings.nightshift.enabled
     print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
-    ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    try:
+        ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    finally:
+        drivers.shutdown_all()   # tree-kill live worker sessions on stop (Ctrl-C included)
 
 if __name__ == "__main__":
     serve()

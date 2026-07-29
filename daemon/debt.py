@@ -21,7 +21,11 @@ DEBT = [
                         "orphaned, last_reply can be overwritten.",
         "trigger": "second concurrent user, or heavy chain automation",
         "fix": "threading.Lock per track id around _turn(); queue + visible "
-               "'agent busy' state.",
+               "'agent busy' state. NOTE: the lock alone DEADLOCKED - it wrapped "
+               "an unbounded stdout read, so a stalled turn held it forever and "
+               "every later steer hung. Superseded by the persistent stream-json "
+               "session port (drivers._ClaudeSession, Paseo's model): run_turn is "
+               "now BOUNDED (tree-kill on timeout) so the lock always releases.",
         "order": 1,
     },
     {
@@ -76,6 +80,78 @@ DEBT = [
         "fix": "Replace with a redirect page to the Next app once the Next "
                "app is served in production mode.",
         "order": 5,
+    },
+    {
+        "id": "nightshift-limit-sniff",
+        "title": "Night shift detects usage limits by string-matching replies",
+        "status": "paid",
+        "what": "nightshift._limit_hit() greps the card's last_reply for "
+                "'usage limit'/'rate limit' instead of reading a structured "
+                "error from the driver.",
+        "why_it_bites": "A rephrased CLI error means the night shift keeps "
+                        "starting cards into a dead quota; a false match in a "
+                        "legitimate reply stops it early.",
+        "trigger": "Claude CLI changing its limit wording, or a card whose "
+                   "reply merely mentions rate limits",
+        "fix": "PAID: drivers surfaces the stream-json result event's subtype/"
+               "is_error/errors into meta; _record_turn stores last_subtype/"
+               "last_error on the track; _limit_hit reads those STRUCTURED fields "
+               "first (prose grep only for legacy turns). Remaining: match the "
+               "exact usage-limit subtype string once observed from a real limit.",
+        "order": 6,
+    },
+    {
+        "id": "session-restart-on-optchange",
+        "title": "Model/mode/tool change kills & resumes the session (no control plane)",
+        "status": "paid",
+        "what": "A steer with a different model/permission-mode/allowed-tools than "
+                "the running process tree-killed it and respawned; Stop hard-killed.",
+        "why_it_bites": "A respawn re-pays session init/context cost and briefly "
+                        "drops streaming; rapid model-toggling churns processes.",
+        "trigger": "owner flipping model/mode often mid-conversation on one card",
+        "fix": "PAID: drivers._ClaudeSession speaks the CLI's stream-json control "
+               "plane (verified against the real binary): model/mode changes apply "
+               "LIVE via set_model / set_permission_mode; Stop sends a soft "
+               "interrupt first (process stays alive, resumable) and only "
+               "tree-kills as a fallback. Only an allowed-tools change (no live "
+               "control subtype) or a failed control op still forces a respawn.",
+        "order": 7,
+    },
+    {
+        "id": "orphan-reap-pid-reuse",
+        "title": "Startup orphan reap trusted a bare recorded PID list",
+        "status": "paid",
+        "what": "reap_orphans() tree-killed PIDs recorded by a prior daemon, "
+                "guarded only by a tasklist image-name check (claude/node/cmd).",
+        "why_it_bites": "A recycled PID that happens to be an unrelated node/cmd "
+                        "process could be killed after a crash-restart.",
+        "trigger": "daemon crash-restart on a busy machine with heavy PID churn",
+        "fix": "PAID: driver_pids.json now records (pid -> spawn epoch); reap_orphans "
+               "matches the OS-reported process start time (PowerShell Get-Process "
+               "StartTime) against the recorded spawn within 6s - a recycled pid "
+               "shows a later start and is skipped. Image-name guard remains only "
+               "as a fallback when the start time can't be read.",
+        "order": 8,
+    },
+    {
+        "id": "accept-merge-base-branch",
+        "title": "Accept merges into the checkout's CURRENT branch, ff-agnostic",
+        "status": "open",
+        "what": "move_lane('done') now merges the card branch via _merge_to_main, "
+                "but into whatever branch t['repo'] currently has checked out "
+                "(assumed to be the base/main) rather than a base branch RECORDED "
+                "on the card at dispatch. It also always --no-ff and does not push.",
+        "why_it_bites": "If the owner leaves the main checkout on a different "
+                        "branch, an accept would merge into the wrong target (the "
+                        "guard only refuses detached HEAD or the card branch "
+                        "itself). No push means 'deployed' still depends on a "
+                        "deploy hook to publish.",
+        "trigger": "a repo whose cards fork from a non-default base, or a checkout "
+                   "parked on a feature branch at accept time",
+        "fix": "Record base_branch on the card at dispatch; merge into THAT "
+               "(checking it out / using a dedicated integration worktree), offer "
+               "ff-only vs --no-ff by policy, and push when the repo is remote.",
+        "order": 9,
     },
 ]
 

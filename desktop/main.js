@@ -12,6 +12,14 @@ const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
 
+// A broken-pipe write on stdout/stderr surfaces as an uncaught EPIPE; in a
+// packaged GUI build that pops the fatal "A JavaScript error occurred" dialog
+// and quits. Swallow EPIPE specifically; let anything else propagate.
+process.on("uncaughtException", (e) => {
+  if (e && e.code === "EPIPE") return;
+  throw e;
+});
+
 const DAEMON_PORT = 8140;
 const WEB_PORT = 3300;
 let daemon = null, web = null, win = null, failed = false;
@@ -38,7 +46,19 @@ function resolvePython() {
   return win ? { cmd: "py", args: ["-3.12"] } : { cmd: "python3", args: [] };
 }
 
-function log(tag, buf) { process.stdout.write("[" + tag + "] " + buf); }
+// Best-effort logging. In a packaged GUI app stdout may be a closed/broken
+// pipe; a synchronous write then throws EPIPE, and an uncaught EPIPE in the
+// main process crashes the whole app ("A JavaScript error occurred..."). Never
+// let a log line take the process down - swallow write errors.
+function log(tag, buf) {
+  try { process.stdout.write("[" + tag + "] " + buf); } catch { /* broken pipe / closed stdout - ignore */ }
+}
+
+// Belt-and-suspenders: if the stdout/stderr streams themselves emit EPIPE
+// asynchronously (or any stray error), don't let it become fatal.
+for (const s of [process.stdout, process.stderr]) {
+  if (s && typeof s.on === "function") s.on("error", () => { /* ignore pipe errors */ });
+}
 
 function fail(msg) {
   if (failed) return;

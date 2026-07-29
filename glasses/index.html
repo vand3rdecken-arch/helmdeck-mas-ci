@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no">
+  <meta name="description" content="Glanceable SwarmDeck ops view for Meta Ray-Ban Display: cards that need you, capacity and SoW margin at a glance.">
+  <meta name="mrbd-web-app-capable" content="yes">
+  <title>SwarmDeck Glance</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Home / glance -->
+    <div id="home" class="screen">
+      <header class="header">
+        <h1>SwarmDeck</h1>
+        <span class="header-meta" id="conn-dot" title="connection">•</span>
+      </header>
+      <div class="content">
+        <div class="hero" id="hero-needs">
+          <div class="hero-num" id="needs-num">–</div>
+          <div class="hero-label">need you</div>
+        </div>
+        <div class="statrow">
+          <div class="stat"><span class="stat-v" id="stat-wip">–</span><span class="stat-l">WIP</span></div>
+          <div class="stat"><span class="stat-v" id="stat-head">–</span><span class="stat-l">headroom</span></div>
+          <div class="stat"><span class="stat-v" id="stat-margin">–</span><span class="stat-l">margin</span></div>
+        </div>
+      </div>
+      <nav class="nav-bar">
+        <button class="nav-item focusable primary" data-action="open-needs">Needs you</button>
+        <button class="nav-item focusable" data-action="open-sow">SoW</button>
+        <button class="nav-item focusable" data-action="open-settings">⚙</button>
+      </nav>
+    </div>
+
+    <!-- Needs-you list -->
+    <div id="needs" class="screen hidden">
+      <header class="header">
+        <button class="back-btn focusable" data-action="back">&#8592;</button>
+        <h1>Needs you</h1>
+        <span class="header-meta" id="needs-count"></span>
+      </header>
+      <div class="content">
+        <div class="list-container" id="needs-list"></div>
+      </div>
+      <nav class="nav-bar">
+        <button class="nav-item focusable" data-action="refresh">Refresh</button>
+      </nav>
+    </div>
+
+    <!-- Card detail -->
+    <div id="detail" class="screen hidden">
+      <header class="header">
+        <button class="back-btn focusable" data-action="back">&#8592;</button>
+        <h1>Card</h1>
+      </header>
+      <div class="content">
+        <div class="detail-task" id="detail-task">–</div>
+        <div class="detail-meta" id="detail-meta"></div>
+      </div>
+    </div>
+
+    <!-- SoW margin -->
+    <div id="sow" class="screen hidden">
+      <header class="header">
+        <button class="back-btn focusable" data-action="back">&#8592;</button>
+        <h1>SoW margin</h1>
+      </header>
+      <div class="content">
+        <div class="list-container" id="sow-list"></div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="settings" class="screen hidden">
+      <header class="header">
+        <button class="back-btn focusable" data-action="back">&#8592;</button>
+        <h1>Connect</h1>
+      </header>
+      <div class="content">
+        <label class="field-label" for="cfg-base">Daemon URL</label>
+        <input id="cfg-base" class="field focusable" type="url" inputmode="url"
+          placeholder="https://swarm.example.ts.net:8140" autocomplete="off">
+        <label class="field-label" for="cfg-token">Glance token</label>
+        <input id="cfg-token" class="field focusable" type="text"
+          placeholder="paste from Settings" autocomplete="off">
+        <div class="field-hint">Owner sets the token in SwarmDeck Settings. Read-only.</div>
+      </div>
+      <nav class="nav-bar">
+        <button class="nav-item focusable primary" data-action="save-settings">Save &amp; connect</button>
+      </nav>
+    </div>
+
+    <!-- transient status line -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
