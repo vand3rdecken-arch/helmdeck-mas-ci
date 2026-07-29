@@ -29,39 +29,6 @@ DEBT = [
         "order": 1,
     },
     {
-        "id": "session-restart-on-optchange",
-        "title": "Model/mode/tool change kills & resumes the session (no control plane)",
-        "status": "open",
-        "what": "drivers._ClaudeSession keeps one persistent `claude` process per "
-                "card, but a steer whose model/permission-mode/allowed-tools "
-                "differ from the running process tree-kills it and respawns with "
-                "`--resume`. Stop (cancel) does the same. Paseo instead uses the "
-                "SDK control plane (query.interrupt / setPermissionMode) to change "
-                "these in place on the live query.",
-        "why_it_bites": "A respawn re-pays session init/context cost and briefly "
-                        "drops streaming; rapid model-toggling churns processes.",
-        "trigger": "owner flipping model/mode often mid-conversation on one card",
-        "fix": "Speak the stream-json control protocol (control_request: interrupt, "
-               "set_permission_mode) on the existing stdin instead of respawning.",
-        "order": 7,
-    },
-    {
-        "id": "orphan-reap-pid-reuse",
-        "title": "Startup orphan reap trusts a recorded PID list",
-        "status": "open",
-        "what": "drivers.reap_orphans() tree-kills PIDs recorded in "
-                "driver_pids.json by a prior daemon. It guards against PID reuse "
-                "with a tasklist image-name check (claude/node/cmd), but that is "
-                "best-effort, not an identity match.",
-        "why_it_bites": "A recycled PID that happens to be an unrelated node/cmd "
-                        "process could be killed; a very fast reuse into claude.exe "
-                        "of a DIFFERENT session could hit the desktop's own agent.",
-        "trigger": "daemon crash-restart on a busy machine with heavy PID churn",
-        "fix": "Record (pid, create_time) or a per-process marker env var and only "
-               "reap on an exact identity match.",
-        "order": 8,
-    },
-    {
         "id": "json-storage",
         "title": "JSON-file storage (tracks/events/users)",
         "status": "paid",
@@ -117,7 +84,7 @@ DEBT = [
     {
         "id": "nightshift-limit-sniff",
         "title": "Night shift detects usage limits by string-matching replies",
-        "status": "open",
+        "status": "paid",
         "what": "nightshift._limit_hit() greps the card's last_reply for "
                 "'usage limit'/'rate limit' instead of reading a structured "
                 "error from the driver.",
@@ -126,9 +93,45 @@ DEBT = [
                         "legitimate reply stops it early.",
         "trigger": "Claude CLI changing its limit wording, or a card whose "
                    "reply merely mentions rate limits",
-        "fix": "Have drivers._claude() surface the stream-json result error "
-               "type as a structured track field; night shift reads that.",
+        "fix": "PAID: drivers surfaces the stream-json result event's subtype/"
+               "is_error/errors into meta; _record_turn stores last_subtype/"
+               "last_error on the track; _limit_hit reads those STRUCTURED fields "
+               "first (prose grep only for legacy turns). Remaining: match the "
+               "exact usage-limit subtype string once observed from a real limit.",
         "order": 6,
+    },
+    {
+        "id": "session-restart-on-optchange",
+        "title": "Model/mode/tool change kills & resumes the session (no control plane)",
+        "status": "paid",
+        "what": "A steer with a different model/permission-mode/allowed-tools than "
+                "the running process tree-killed it and respawned; Stop hard-killed.",
+        "why_it_bites": "A respawn re-pays session init/context cost and briefly "
+                        "drops streaming; rapid model-toggling churns processes.",
+        "trigger": "owner flipping model/mode often mid-conversation on one card",
+        "fix": "PAID: drivers._ClaudeSession speaks the CLI's stream-json control "
+               "plane (verified against the real binary): model/mode changes apply "
+               "LIVE via set_model / set_permission_mode; Stop sends a soft "
+               "interrupt first (process stays alive, resumable) and only "
+               "tree-kills as a fallback. Only an allowed-tools change (no live "
+               "control subtype) or a failed control op still forces a respawn.",
+        "order": 7,
+    },
+    {
+        "id": "orphan-reap-pid-reuse",
+        "title": "Startup orphan reap trusted a bare recorded PID list",
+        "status": "paid",
+        "what": "reap_orphans() tree-killed PIDs recorded by a prior daemon, "
+                "guarded only by a tasklist image-name check (claude/node/cmd).",
+        "why_it_bites": "A recycled PID that happens to be an unrelated node/cmd "
+                        "process could be killed after a crash-restart.",
+        "trigger": "daemon crash-restart on a busy machine with heavy PID churn",
+        "fix": "PAID: driver_pids.json now records (pid -> spawn epoch); reap_orphans "
+               "matches the OS-reported process start time (PowerShell Get-Process "
+               "StartTime) against the recorded spawn within 6s - a recycled pid "
+               "shows a later start and is skipped. Image-name guard remains only "
+               "as a fallback when the start time can't be read.",
+        "order": 8,
     },
 ]
 

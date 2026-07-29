@@ -29,7 +29,7 @@ The default settings ship "claude" and "claude-desktop" (windows-mcp allowed +
 screen recording on). Point a card at "claude-desktop" and its agent can drive
 apps/browser on this PC with the whole turn recorded - the flight-recorder
 promise, now per-card."""
-import json, os, shutil, subprocess, threading, time as _time
+import json, os, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
 
 CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
@@ -84,11 +84,16 @@ _pid_lock = threading.Lock()
 
 
 def _read_pids():
+    """driver_pids.json maps "<pid>" -> spawn epoch. Tolerates the legacy plain
+    list format (no timestamps) by converting it to timestamp-less entries."""
     try:
         with open(_PIDFILE, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except Exception:
-        return []
+        return {}
+    if isinstance(data, list):
+        return {str(p): None for p in data}
+    return {str(k): v for k, v in (data or {}).items()}
 
 
 def _write_pids(pids):
@@ -101,24 +106,38 @@ def _write_pids(pids):
         pass
 
 
-def _record_pid(pid):
+def _record_pid(pid, spawn_time=None):
     with _pid_lock:
         pids = _read_pids()
-        if pid not in pids:
-            pids.append(pid)
-            _write_pids(pids)
+        pids[str(pid)] = spawn_time
+        _write_pids(pids)
 
 
 def _forget_pid(pid):
     with _pid_lock:
-        pids = [x for x in _read_pids() if x != pid]
-        _write_pids(pids)
+        pids = _read_pids()
+        if pids.pop(str(pid), "absent") != "absent":
+            _write_pids(pids)
+
+
+def _proc_start_epoch(pid):
+    """OS-reported start time (UTC epoch seconds) of a live pid, or None."""
+    if os.name != "nt":
+        return None
+    try:
+        ps = ("$p=Get-Process -Id %d -ErrorAction Stop;"
+              "[int64]($p.StartTime.ToUniversalTime()-(Get-Date '1970-01-01')).TotalSeconds"
+              % pid)
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True, timeout=10)
+        out = (r.stdout or "").strip()
+        return float(out) if out.lstrip("-").isdigit() else None
+    except Exception:
+        return None
 
 
 def _is_agent_pid(pid):
-    """Guard against PID reuse: only reap a recorded pid if it is still a
-    claude/node/cmd image (the tree we spawn), never some unrelated process that
-    inherited the number after the old daemon died."""
+    """Weaker fallback guard: the pid is still a claude/node/cmd image."""
     if os.name != "nt":
         return True
     try:
@@ -130,18 +149,30 @@ def _is_agent_pid(pid):
         return False
 
 
+def _is_ours(pid, spawn_time):
+    """Pid-reuse-safe identity check. If we recorded a spawn time AND the OS can
+    report this pid's start time, require them to MATCH (a recycled pid would show
+    a later start time). Only when the start time is unavailable do we fall back
+    to the weaker claude/node/cmd image guard."""
+    started = _proc_start_epoch(pid)
+    if started is not None and spawn_time:
+        return abs(started - float(spawn_time)) <= 6.0
+    return _is_agent_pid(pid)
+
+
 def reap_orphans():
     """On daemon start, tree-kill driver processes left running by a PREVIOUS
     daemon (crash/restart) so orphaned claude+MCP trees don't accumulate. Only
-    PIDs WE recorded in driver_pids.json are touched - never a blanket
-    claude.exe kill that would hit the desktop's own Claude Code session."""
+    PIDs WE recorded (and that pass the pid-reuse identity check) are touched -
+    never a blanket claude.exe kill that would hit the desktop's own session."""
     with _pid_lock:
-        pids = _read_pids()
-        _write_pids([])
+        rec = _read_pids()
+        _write_pids({})
     killed = 0
-    for pid in pids:
+    for pid_s, spawn in rec.items():
         try:
-            if not _is_agent_pid(pid):
+            pid = int(pid_s)
+            if not _is_ours(pid, spawn):
                 continue
             if os.name == "nt":
                 r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
@@ -370,6 +401,8 @@ class _ClaudeSession:
         self._cur = None                 # current turn's mutable state, or None
         self._turn_lock = threading.Lock()  # one turn at a time on this session
         self.last_used = _time.time()    # for the idle sweeper (Paseo idle TTL)
+        self._ctrl = {}                  # request_id -> {"ev":Event,"resp":dict} (control plane)
+        self.spawn_time = 0.0            # wall-clock at spawn, for pid-reuse-safe reaping
         self._spawn()
 
     # -- lifecycle -------------------------------------------------------
@@ -395,7 +428,8 @@ class _ClaudeSession:
                                      stderr=subprocess.PIPE, env=_env(self.cfg),
                                      text=True, encoding="utf-8", errors="replace",
                                      bufsize=1)
-        _record_pid(self.proc.pid)
+        self.spawn_time = _time.time()
+        _record_pid(self.proc.pid, self.spawn_time)
         self.err_tail = []
         self._alive = True
         threading.Thread(target=self._drain_err, daemon=True).start()
@@ -407,16 +441,89 @@ class _ClaudeSession:
         except Exception:
             return False
 
-    def cancel(self):
-        """Unblock the waiting turn as '(cancelled)' and tree-kill the tree."""
+    def cancel(self, grace=8.0):
+        """Stop the in-flight turn, Paseo-style: send a SOFT `interrupt` control
+        request first (claude ends the turn cleanly and emits a terminal result,
+        so the process stays alive for the next steer), and only HARD tree-kill as
+        a fallback if the turn doesn't wind down within `grace`."""
+        _cancelled.add(self.tid)   # so run_turn returns the clean '(cancelled)' sentinel
         cur = self._cur
-        if cur and not cur["done"].is_set():
-            cur["done"].set()
-        self.kill()
+        if not self.alive() or cur is None:
+            # nothing running - just make sure any waiter is released, then kill
+            if cur and not cur["done"].is_set():
+                cur["done"].set()
+            self.kill()
+            return
+        sent = self._send_control("interrupt")
+        if not sent:
+            self.kill()
+            return
+        # watchdog: if the soft interrupt didn't terminate the turn, kill the tree
+        def _fallback():
+            c = cur
+            if not c["done"].wait(grace):
+                if not c["done"].is_set():
+                    c["done"].set()
+                self.kill()
+        threading.Thread(target=_fallback, daemon=True).start()
 
     def kill(self):
         self._alive = False
         _tree_kill(self.proc)
+
+    # -- control plane (Paseo: query.interrupt / setModel / setPermissionMode) --
+    def _send_control(self, subtype, **fields):
+        """Fire a control_request onto the live stdin. Returns the request_id, or
+        None if the write failed."""
+        req_id = "sd-" + uuid.uuid4().hex[:12]
+        self._ctrl[req_id] = {"ev": threading.Event(), "resp": None}
+        body = {"type": "control_request", "request_id": req_id,
+                "request": dict({"subtype": subtype}, **fields)}
+        try:
+            self.proc.stdin.write(json.dumps(body) + "\n")
+            self.proc.stdin.flush()
+            return req_id
+        except Exception:
+            self._ctrl.pop(req_id, None)
+            return None
+
+    def _control(self, subtype, timeout=3.0, **fields):
+        """Send a control_request and wait for its control_response. Returns True
+        on subtype:success (Paseo's awaitWithTimeout is likewise 3s)."""
+        req_id = self._send_control(subtype, **fields)
+        if not req_id:
+            return False
+        slot = self._ctrl.get(req_id)
+        ok = slot["ev"].wait(timeout) if slot else False
+        resp = (slot or {}).get("resp") or {}
+        self._ctrl.pop(req_id, None)
+        return bool(ok) and resp.get("subtype") == "success"
+
+    def apply_opts(self, cfg, t):
+        """Adopt a steer's model/permission-mode change on the LIVE process via
+        the control plane instead of respawning (Paseo's setModel/setPermissionMode).
+        A tool-grant change or a failed control op needs a fresh query -> False so
+        the caller respawns; True means the live session now matches the new opts."""
+        new_sig = _opts_sig(cfg, t)
+        if new_sig == self.sig:
+            self.cfg = cfg            # non-launch opts (e.g. timeout) may still differ
+            return True
+        if not self.alive():
+            return False
+        old_perm, old_model, old_tools = self.sig
+        new_perm, new_model, new_tools = new_sig
+        if new_tools != old_tools:
+            return False              # allowed-tools grant can't change live - restart
+        ok = True
+        if new_model != old_model:
+            ok = ok and self._control("set_model", model=(cfg.get("model") or "default"))
+        if ok and new_perm != old_perm:
+            ok = ok and self._control("set_permission_mode", mode=new_perm)
+        if not ok:
+            return False
+        self.cfg = cfg
+        self.sig = new_sig
+        return True
 
     # -- pump: the single stdout reader (Paseo's query pump) -------------
     def _drain_err(self):
@@ -452,6 +559,13 @@ class _ClaudeSession:
     def _on_event(self, ev):
         cur = self._cur
         typ = ev.get("type")
+        if typ == "control_response":
+            resp = ev.get("response") or {}
+            slot = self._ctrl.get(resp.get("request_id"))
+            if slot:
+                slot["resp"] = resp
+                slot["ev"].set()
+            return
         if typ == "system":
             sid = ev.get("session_id")
             if sid:
@@ -533,7 +647,11 @@ class _ClaudeSession:
             raise RuntimeError("claude stream ended with no result: "
                                + "".join(self.err_tail).strip()[:300])
         meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
-                "models": list((d.get("modelUsage") or {}).keys())}
+                "models": list((d.get("modelUsage") or {}).keys()),
+                # structured failure signal read straight off the result event
+                # (Paseo branches on subtype instead of grepping the prose reply).
+                "subtype": d.get("subtype"), "is_error": bool(d.get("is_error")),
+                "error": _result_error(d)}
         return self.session_id or d.get("session_id"), d.get("result", ""), meta
 
 
@@ -545,20 +663,36 @@ def _flush_cur(cur):
         pass
 
 
+def _result_error(d):
+    """A structured error string off a result event, or "" for a clean turn. The
+    CLI carries either an `errors` array or an error `result` body on failure
+    subtypes; success turns have neither."""
+    if not d.get("is_error") and d.get("subtype") in (None, "success"):
+        return ""
+    errs = d.get("errors")
+    if isinstance(errs, list) and errs:
+        return "; ".join(str(e) for e in errs)[:500]
+    return (d.get("result") or d.get("subtype") or "error")[:500]
+
+
 def _get_session(cfg, t):
-    """Get the card's live session, or (re)spawn one. A changed opts signature
-    (model/mode/tools) or a dead process forces a fresh query, resuming the same
-    conversation via the track's session_id."""
+    """Get the card's live session, or (re)spawn one. A model/permission-mode
+    change is applied LIVE via the control plane (Paseo's setModel/setPermissionMode);
+    only a tool-grant change, a failed control op, or a dead process forces a fresh
+    query, resuming the same conversation via the track's session_id."""
     tid = t["id"]
     sig = _opts_sig(cfg, t)
     with _sessions_guard:
         s = _sessions.get(tid)
-        if s is not None and (s.sig != sig or not s.alive()):
-            try:
-                s.kill()
-            except Exception:
-                pass
-            s = None
+        if s is not None:
+            if not s.alive():
+                s = None
+            elif s.sig != sig and not s.apply_opts(cfg, t):
+                try:
+                    s.kill()
+                except Exception:
+                    pass
+                s = None
         if s is None:
             s = _ClaudeSession(cfg, t)
             _sessions[tid] = s

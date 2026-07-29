@@ -209,7 +209,15 @@ def _board_idle(c):
 
 
 def _limit_hit(track):
-    """The flat-plan budget signal: the driver ran into a usage limit."""
+    """The flat-plan budget signal: the driver ran into a usage limit. Prefer the
+    STRUCTURED error the driver surfaced from the stream-json result event
+    (track.last_subtype / last_error); fall back to the prose reply only when a
+    turn predates that field (legacy tracks)."""
+    subtype = (track.get("last_subtype") or "").lower()
+    if subtype:
+        err = (track.get("last_error") or "").lower()
+        return ("limit" in subtype or "usage limit" in err or "rate limit" in err
+                or "limit reached" in err)
     txt = (track.get("last_reply") or "").lower()
     return "usage limit" in txt or "rate limit" in txt or "limit reached" in txt
 
