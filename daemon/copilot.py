@@ -298,10 +298,12 @@ def cancel(user):
     return bool(p)
 
 
-def chat(user, message, role="operator", model="", thinking="", attachments=None):
+def chat(user, message, role="operator", model="", thinking="", attachments=None, card=None):
     """One copilot turn for this user. Returns {reply, actions, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
-    turnopts (same whitelist + Auto routing the card chat uses)."""
+    turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
+    a card the user is currently viewing, so 'this card' / 'it' resolves to it -
+    the same free agent, reachable from within a card."""
     import turnopts
     sess = _sessions()
     sid = sess.get(user)
@@ -309,8 +311,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                       attachments)
     cli_model, _ = turnopts.resolve_model(model, message, bool(paths))
     body = turnopts.augment_prompt(message, thinking, paths)
+    focus = ""
+    if card:
+        ct = _find_card(card)
+        if ct and not isinstance(ct, list):
+            focus = ("\n\nCURRENT CARD (the user is viewing this - resolve 'this card' / 'it' "
+                     "to it; a plain work instruction means steer it): %s | %s | %s"
+                     % (ct["id"], ct.get("branch"), (ct.get("task") or "")[:80]))
     prompt = SYSTEM + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-        + _snapshot() + "\n\nUSER (%s): %s" % (user, body)
+        + _snapshot() + focus + "\n\nUSER (%s): %s" % (user, body)
     cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "json",
            "--permission-mode", "plan"]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
