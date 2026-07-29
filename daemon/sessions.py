@@ -320,6 +320,56 @@ def _gate(t):
                 problems.append("gate command failed (%s):\n%s" % (cmd[:80], out[-600:]))
     return (not problems), problems
 
+def _merge_to_main(t):
+    """Land an accepted card: merge its branch into the repo's MAIN checkout.
+    This is the payoff of the charter walk - accept = the work reaches main. Runs
+    in t['repo'] (the daemon's checkout, which holds the secrets the worktree
+    never sees), NOT in the agent's worktree. Returns (ok, message).
+
+    Guards so we never corrupt the main checkout: the checkout must be on a real
+    branch (not detached, not the card branch itself) and CLEAN; a conflicting
+    merge is aborted. A branch already contained in HEAD is treated as merged
+    (idempotent - re-accepting is safe)."""
+    repo = t.get("repo"); branch = t.get("branch")
+    if not repo or not os.path.isdir(repo):
+        return False, "card has no repo checkout to merge into"
+    if not branch:
+        return False, "card has no branch"
+    try:
+        cur = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    except Exception as e:
+        return False, "repo is not a git checkout: %s" % e
+    if cur == "HEAD":
+        return False, "main checkout is in detached HEAD - checkout the base branch first"
+    if cur == branch:
+        return False, "main checkout is ON the card branch (%s) - switch it to the base branch" % branch
+    # already merged? merge-base --is-ancestor exits 0 when branch is in HEAD.
+    try:
+        subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", branch, "HEAD"],
+                       capture_output=True, check=True)
+        return True, "already merged into %s" % cur
+    except Exception:
+        pass
+    dirty = ""
+    try:
+        dirty = _git(repo, "status", "--porcelain")
+    except Exception as e:
+        return False, "cannot read repo status: %s" % e
+    if dirty:
+        return False, ("main checkout '%s' has uncommitted changes - commit or stash "
+                       "before accepting:\n%s" % (cur, dirty[:300]))
+    try:
+        out = _git(repo, "merge", "--no-ff", branch, "-m",
+                   "SwarmDeck accept: %s (%s)" % (branch, t.get("id", "")))
+        return True, out or ("merged %s into %s" % (branch, cur))
+    except Exception as e:
+        try:
+            _git(repo, "merge", "--abort")
+        except Exception:
+            pass
+        return False, "merge conflict - resolve on the branch, re-review, re-accept:\n%s" % str(e)[:400]
+
+
 def _repo_hook(t, kind):
     """Owner-defined per-repo hook, policy in settings:
       "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
@@ -396,6 +446,23 @@ def move_lane(tid, lane, actor="owner"):
         t["status"] = "submitted"
         _repo_hook(t, "preview")   # spin up the try-it-before-merge surface
     elif lane == "done":
+        # accept = LAND it: merge the card's branch into main, THEN deploy. A
+        # merge that can't land cleanly bounces the card (like a failed gate) -
+        # never a silent "accepted" that never reached main.
+        merged, mergemsg = _merge_to_main(t)
+        events.emit("merge", tid, ok=merged, detail=mergemsg[:300])
+        if not merged:
+            log.log("note", "MERGE FAILED - not accepted: " + mergemsg[:400])
+            t["status"] = "bounced"; t["lane"] = "working"
+            t["merge_report"] = mergemsg
+            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _save_track(t)
+            import notify
+            notify.card_event(t, "bounced")
+            t = dict(t); t["merge_failed"] = True
+            return t
+        t.pop("merge_report", None)
+        log.log("note", "MERGED -> " + mergemsg[:300])
         events.emit("touch", tid, touch="review", actor=actor)
         te = [e for e in events.read_events() if e.get("track") == tid]
         mode = events._completion_mode(te, t.get("turns"))
@@ -405,7 +472,7 @@ def move_lane(tid, lane, actor="owner"):
         log.log("note", "ACCEPTED (%s) - AI $%.4f, value %s" %
                 (mode, t.get("ai_cost", 0.0), t.get("value")))
         t["status"] = "accepted"; t["mode"] = mode
-        _repo_hook(t, "deploy")    # daemon-side, with the secrets agents never see
+        _repo_hook(t, "deploy")    # daemon-side (post-merge), with the secrets agents never see
         if t.get("connector"):
             import connectors, checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))
