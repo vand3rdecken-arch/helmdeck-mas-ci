@@ -200,6 +200,14 @@ def cancel(tid):
     return False
 
 
+def has_session(tid):
+    """True while this daemon holds a live worker session for the track. A track
+    flagged status=running WITHOUT one is a zombie - its turn died with a prior
+    daemon process (see sessions.sweep_zombies)."""
+    with _sessions_guard:
+        return tid in _sessions
+
+
 # --- idle eviction + shutdown (Paseo: collectIdleAgents / closeAllAgents) ----
 # A card holds ONE persistent worker, but keeping ALL touched cards' workers
 # alive forever would leak memory on a busy board. So, like Paseo, a worker only
