@@ -849,7 +849,8 @@ class H(BaseHTTPRequestHandler):
                 try:
                     return self._send(200, json.dumps(copilot.chat(
                         user["name"], text, role=user["role"], model=body.get("model", ""),
-                        thinking=body.get("thinking", ""), attachments=body.get("attachments"))))
+                        thinking=body.get("thinking", ""), attachments=body.get("attachments"),
+                        card=body.get("card"))))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")

@@ -19,6 +19,9 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   // resumes and writes it to the session transcript. Reconciled away once the
   // real transcript (or history) contains that text - so no duplicate, no flicker.
   const [pending, setPending] = useState<Step[]>([]);
+  // card chat mode + the free-agent (copilot) conversation about this card
+  const [agentMode, setAgentMode] = useState(false);
+  const [agentMsgs, setAgentMsgs] = useState<{ role: string; text: string; ts?: string }[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [details, setDetails] = useState(false);
   const [full, setFull] = useState(false);
@@ -96,7 +99,9 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
     if (!trans.length) return trans;
     const notes: Step[] = hist
       .filter((r) => r.kind === "note" && (r.detail ?? "").trim())
-      .map((r) => ({ kind: "system", text: r.detail, ts: r.ts }));
+      // note ts is HH:MM:SS but transcript ts is HH:MM - truncate so the string
+      // compare interleaves by minute instead of dumping all notes at the bottom
+      .map((r) => ({ kind: "system", text: r.detail, ts: (r.ts ?? "").slice(0, 5) }));
     if (!notes.length) return trans;
     // forward-fill ts so every transcript step has a comparable time
     let last = "";
@@ -165,8 +170,23 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
   async function sendSteer(v: string, opts: SendOpts) {
     if (!v && !opts.attachments.length) return;
     const echo = v || (opts.attachments.length ? "(see attachment)" : "");
-    // show it instantly - don't wait for the round-trip
     const hhmm = new Date().toTimeString().slice(0, 5);
+    // AGENT mode: talk to the free board agent (copilot) about THIS card - it can
+    // move/delete/archive/steer/anything you're allowed. Worker mode: steer the
+    // card's own worker directly (fast, the default).
+    if (agentMode) {
+      setAgentMsgs((m) => [...m, { role: "user", text: echo, ts: hhmm }]);
+      try {
+        const r = await post<{ reply?: string; error?: string }>("/chat",
+          { text: v, model: opts.model, thinking: opts.thinking, card: t.id });
+        setAgentMsgs((m) => [...m, { role: "agent", text: r.reply || r.error || "(no reply)", ts: new Date().toTimeString().slice(0, 5) }]);
+      } catch {
+        setAgentMsgs((m) => [...m, { role: "agent", text: "(agent send failed)", ts: hhmm }]);
+      }
+      setTimeout(refresh, 800);
+      return;
+    }
+    // show it instantly - don't wait for the round-trip
     setPending((p) => [...p, { kind: "text", role: "user", text: echo, ts: hhmm }]);
     try {
       await post(`/tracks/${t.id}/steer`, {
@@ -406,20 +426,35 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
             <div key={"pend" + i} className="cb you pending">{s.text}
               {s.ts && <span className="cb-ts">{s.ts} · sending…</span>}</div>
           ))}
+          {agentMsgs.map((m, i) => (
+            m.role === "user"
+              ? <div key={"ag" + i} className="cb you">{m.text}{m.ts && <span className="cb-ts">{m.ts} · agent</span>}</div>
+              : <div key={"ag" + i} className="cb bot cb-md" style={{ borderLeft: "2px solid var(--accent)" }}>
+                  <Markdown>{m.text}</Markdown>{m.ts && <span className="cb-ts">agent · {m.ts}</span>}</div>
+          ))}
         </div>
         {!atBottom && (
           <button className="feed-jump" title="Scroll to bottom" onClick={jumpToBottom}>
             <IconChevron dir="down" size={16} />
           </button>
         )}
-        <div style={{ padding: "10px 16px 0", fontSize: 11, color: "var(--txt-tertiary)" }}>
-          Talk to this card&apos;s <b style={{ color: "var(--txt-secondary)" }}>worker</b>
-          {t.session_id ? ` · session ${t.session_id.slice(0, 8)}…` : " · not started yet"}
+        <div style={{ padding: "10px 16px 0", fontSize: 11, color: "var(--txt-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
+          <button className="btn ghost" style={{ fontSize: 11, padding: "2px 9px",
+            ...(agentMode ? {} : { color: "var(--accent)", borderColor: "var(--accent)" }) }}
+            onClick={() => setAgentMode(false)}>Worker</button>
+          <button className="btn ghost" style={{ fontSize: 11, padding: "2px 9px",
+            ...(agentMode ? { color: "var(--accent)", borderColor: "var(--accent)" } : {}) }}
+            onClick={() => setAgentMode(true)}>Agent</button>
+          <span style={{ marginLeft: 4 }}>
+            {agentMode ? "freier Board-Agent – verschieben/löschen/alles (berechtigt)"
+              : (t.session_id ? `steuert den Worker · session ${t.session_id.slice(0, 8)}…` : "steuert den Worker · noch nicht gestartet")}
+          </span>
         </div>
-        <Composer onSend={sendSteer} onStop={stopTurn} busy={t.status === "running"}
+        <Composer onSend={sendSteer} onStop={stopTurn} busy={t.status === "running" && !agentMode}
           draftKey={`swarm-draft:card:${t.id}`} modeOptions={modeOpts} seed={restore}
           context={lastIn ? { used: lastIn, total: 200000 } : undefined}
-          placeholder="Tell this worker what to do - its context continues, no rebuild"
+          placeholder={agentMode ? "Sag dem Agenten was zu tun ist - z.B. 'verschiebe diese Karte nach done', 'lösche sie'"
+            : "Tell this worker what to do - its context continues, no rebuild"}
           slashCommands={[
             { name: "plan", hint: "plan before acting", insert: "Make a plan for: " },
             { name: "test", hint: "run tests, report failures", insert: "Run the tests and report any failures." },
