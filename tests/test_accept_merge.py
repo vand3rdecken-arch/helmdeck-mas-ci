@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Headless tests for accept-merges-to-main (sessions._merge_to_main).
+"""Headless tests for accept-classify-and-merge (sessions._merge_to_main).
 
-Accepting a card must LAND its branch in the repo, or bounce cleanly if it can't.
-Self-sandboxing: throwaway git repos in temp dirs, no daemon, no board state."""
+Accepting a card must CLASSIFY it and say why: redundant (already in main) ->
+close it; real work -> merge; conflict -> bounce with the conflicting files and a
+resolve path, leaving main exactly as found. Self-sandboxing: throwaway git repos."""
 import os, sys, subprocess, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,86 +50,94 @@ def branch_with_commit(repo, branch, fname, content):
 def test_happy_merge_lands():
     repo = new_repo()
     branch_with_commit(repo, "card-a", "feature.txt", "hello\n")
-    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-a", "id": "t1"})
-    check(ok, "clean merge reported ok (%r)" % msg[:50])
+    ok, kind, msg = sessions._merge_to_main({"repo": repo, "branch": "card-a", "id": "t1"})
+    check(ok and kind == "merged", "real work -> kind=merged, accept ok (%s)" % kind)
     check(os.path.exists(os.path.join(repo, "feature.txt")), "branch's file now on main")
-    check("card-a" in git(repo, "log", "--oneline"), "merge commit references the card branch")
     check(git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main", "still on main after merge")
 
 
-def test_idempotent_already_merged():
+def test_redundant_already_merged():
     repo = new_repo()
     branch_with_commit(repo, "card-b", "f.txt", "x\n")
     sessions._merge_to_main({"repo": repo, "branch": "card-b", "id": "t2"})
-    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-b", "id": "t2"})
-    check(ok and "already merged" in msg, "re-accepting an already-merged branch is a no-op ok (%r)" % msg[:40])
+    ok, kind, msg = sessions._merge_to_main({"repo": repo, "branch": "card-b", "id": "t2"})
+    check(ok and kind == "already_merged", "already-in-main -> redundant, close (kind=%s)" % kind)
+    check("edundant" in msg or "bereits" in msg, "message says it was redundant")
+
+
+def test_redundant_uncommitted_warns():
+    # branch already in main (nothing to land) BUT the worktree still has
+    # uncommitted changes -> accept/close, and WARN they were not included.
+    repo = new_repo()
+    branch_with_commit(repo, "card-r", "f.txt", "x\n")
+    sessions._merge_to_main({"repo": repo, "branch": "card-r", "id": "t2b"})
+    with open(os.path.join(repo, "base.txt"), "w") as f:
+        f.write("uncommitted redundant edit\n")
+    ok, kind, msg = sessions._merge_to_main(
+        {"repo": repo, "branch": "card-r", "worktree": repo, "id": "t2b"})
+    check(ok and kind == "redundant_uncommitted", "redundant + dirty worktree -> close with warning (kind=%s)" % kind)
+    check("uncommittet" in msg.lower() or "NICHT" in msg, "message warns uncommitted changes were dropped")
 
 
 def test_dirty_unrelated_file_still_merges():
-    # a real project repo (scraper) keeps tracked runtime output perpetually
-    # 'modified'. The merge doesn't touch those files, so it must STILL land.
     repo = new_repo()
     branch_with_commit(repo, "card-c", "feature.txt", "x\n")   # branch touches feature.txt only
     with open(os.path.join(repo, "base.txt"), "w") as f:
         f.write("runtime output, uncommitted\n")               # dirty an UNRELATED file
-    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-c", "id": "t3"})
-    check(ok, "merge lands despite a dirty tree when the merge is unrelated (%r)" % msg[:50])
-    check(os.path.exists(os.path.join(repo, "feature.txt")), "branch file merged in")
+    ok, kind, msg = sessions._merge_to_main({"repo": repo, "branch": "card-c", "id": "t3"})
+    check(ok and kind == "merged", "merge lands despite unrelated dirty tree (kind=%s)" % kind)
     check("runtime output" in open(os.path.join(repo, "base.txt")).read(),
           "the pre-existing dirty change is preserved (not clobbered)")
 
 
 def test_dirty_conflicting_file_bounces():
-    # if the merge WOULD touch a file that is dirty, git refuses - we must bounce
-    # and leave the tree exactly as found.
     repo = new_repo()
     git(repo, "checkout", "-b", "card-c2")
     with open(os.path.join(repo, "base.txt"), "w") as f:
-        f.write("branch change to base\n")            # branch edits base.txt
+        f.write("branch change to base\n")
     git(repo, "add", "-A"); git(repo, "commit", "-m", "edit base")
     git(repo, "checkout", "main")
     with open(os.path.join(repo, "base.txt"), "w") as f:
-        f.write("uncommitted local edit to base\n")    # SAME file dirty, uncommitted
-    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-c2", "id": "t3b"})
-    check(not ok, "merge that would clobber an uncommitted file is refused")
-    check(git(repo, "status", "--porcelain") != "", "the local edit is still there (not lost)")
+        f.write("uncommitted local edit to base\n")
+    ok, kind, msg = sessions._merge_to_main({"repo": repo, "branch": "card-c2", "id": "t3b"})
+    check(not ok and kind == "conflict", "merge that would clobber a dirty file -> conflict (kind=%s)" % kind)
     check("uncommitted local edit" in open(os.path.join(repo, "base.txt")).read(),
           "dirty file content preserved after the refused merge")
 
 
-def test_conflict_bounces_and_aborts():
+def test_conflict_reports_files_and_aborts():
     repo = new_repo()
-    # branch edits base.txt one way...
     git(repo, "checkout", "-b", "card-d")
     with open(os.path.join(repo, "base.txt"), "w") as f:
         f.write("branch version\n")
     git(repo, "add", "-A"); git(repo, "commit", "-m", "branch edit")
     git(repo, "checkout", "main")
-    # ...main edits the SAME file the other way and commits (clean tree, real conflict)
     with open(os.path.join(repo, "base.txt"), "w") as f:
         f.write("main version\n")
     git(repo, "add", "-A"); git(repo, "commit", "-m", "main edit")
     head_before = git(repo, "rev-parse", "HEAD")
-    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-d", "id": "t4"})
-    check(not ok, "conflicting merge is refused")
-    check("conflict" in msg.lower(), "message says conflict (%r)" % msg[:50])
+    ok, kind, msg = sessions._merge_to_main({"repo": repo, "branch": "card-d", "id": "t4"})
+    check(not ok and kind == "conflict", "diverged edits -> conflict (kind=%s)" % kind)
+    check("base.txt" in msg, "conflict message names the conflicting file")
+    check("merge main" in msg.lower() or "loese" in msg.lower(), "message gives a resolve path")
     check(git(repo, "rev-parse", "HEAD") == head_before, "main HEAD unchanged (merge aborted)")
-    check(git(repo, "status", "--porcelain") == "", "main tree clean after abort - not left mid-merge")
+    check(git(repo, "status", "--porcelain") == "", "main tree clean after abort")
 
 
 def test_on_card_branch_guard():
     repo = new_repo()
-    git(repo, "checkout", "-b", "card-e")   # leave the checkout ON the card branch
-    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-e", "id": "t5"})
-    check(not ok and "card branch" in msg, "refuses to merge when checkout is ON the card branch")
+    git(repo, "checkout", "-b", "card-e")   # checkout left ON the card branch
+    ok, kind, msg = sessions._merge_to_main({"repo": repo, "branch": "card-e", "id": "t5"})
+    check(not ok and kind == "blocked", "checkout ON the card branch -> blocked (kind=%s)" % kind)
 
 
 if __name__ == "__main__":
     test_happy_merge_lands()
-    test_idempotent_already_merged()
+    test_redundant_already_merged()
+    test_redundant_uncommitted_warns()
     test_dirty_unrelated_file_still_merges()
     test_dirty_conflicting_file_bounces()
-    test_conflict_bounces_and_aborts()
+    test_conflict_reports_files_and_aborts()
     test_on_card_branch_guard()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)

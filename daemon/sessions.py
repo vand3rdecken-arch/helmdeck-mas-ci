@@ -321,55 +321,82 @@ def _gate(t):
     return (not problems), problems
 
 def _merge_to_main(t):
-    """Land an accepted card: merge its branch into the repo's MAIN checkout.
-    This is the payoff of the charter walk - accept = the work reaches main. Runs
-    in t['repo'] (the daemon's checkout, which holds the secrets the worktree
-    never sees), NOT in the agent's worktree. Returns (ok, message).
+    """Land an accepted card: CLASSIFY it, then merge its branch into the repo's
+    MAIN checkout. Runs in t['repo'] (the daemon's checkout, which holds the
+    secrets the worktree never sees), NOT in the agent's worktree.
 
-    Guards so we never corrupt the main checkout: the checkout must be on a real
-    branch (not detached, not the card branch itself); a merge that can't apply is
-    aborted and reported. A branch already contained in HEAD is treated as merged
-    (idempotent - re-accepting is safe).
+    Returns (accept_ok, kind, message):
+      accept_ok True  -> the card may be accepted/closed:
+        already_merged        - branch's work is already fully in main (redundant
+                                / superseded); nothing to land.
+        redundant_uncommitted - same, but the worktree still holds uncommitted
+                                changes that were therefore NOT included (warned).
+        merged                - real commits landed on main.
+      accept_ok False -> the card is bounced with a clear reason:
+        conflict              - branch conflicts with main; the conflicting files
+                                and a resolve path are reported. Main is left
+                                exactly as found (merge --abort).
+        blocked               - can't even attempt (no repo / detached / on branch).
 
-    We do NOT pre-refuse a dirty tree: real project repos (e.g. a scraper) keep
-    tracked runtime output that is perpetually 'modified', and git can merge into
-    such a tree just fine as long as the merge doesn't touch those files. We let
-    git decide - it refuses on its own ('would be overwritten' / conflict) and we
-    surface that, so an accept only bounces when the merge genuinely can't land."""
-    repo = t.get("repo"); branch = t.get("branch")
+    A dirty tree is NOT pre-refused: real project repos keep tracked runtime output
+    perpetually 'modified' and git merges into them fine unless the merge touches
+    those files - so we let git decide."""
+    repo = t.get("repo"); branch = t.get("branch"); wt = t.get("worktree")
     if not repo or not os.path.isdir(repo):
-        return False, "card has no repo checkout to merge into"
+        return False, "blocked", "card has no repo checkout to merge into"
     if not branch:
-        return False, "card has no branch"
+        return False, "blocked", "card has no branch"
     try:
         cur = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     except Exception as e:
-        return False, "repo is not a git checkout: %s" % e
+        return False, "blocked", "repo is not a git checkout: %s" % e
     if cur == "HEAD":
-        return False, "main checkout is in detached HEAD - checkout the base branch first"
+        return False, "blocked", "main checkout is in detached HEAD - checkout the base branch first"
     if cur == branch:
-        return False, "main checkout is ON the card branch (%s) - switch it to the base branch" % branch
-    # already merged? merge-base --is-ancestor exits 0 when branch is in HEAD.
+        return False, "blocked", "main checkout is ON the card branch (%s) - switch it to the base branch" % branch
+    # how many committed commits does the branch add that main lacks?
     try:
-        subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", branch, "HEAD"],
-                       capture_output=True, check=True)
-        return True, "already merged into %s" % cur
-    except Exception:
-        pass
-    try:
-        out = _git(repo, "merge", "--no-ff", branch, "-m",
-                   "SwarmDeck accept: %s (%s)" % (branch, t.get("id", "")))
-        return True, out or ("merged %s into %s" % (branch, cur))
+        ahead = int(_git(repo, "rev-list", "--count", "HEAD..%s" % branch) or "0")
     except Exception as e:
-        # git wouldn't land it (conflict, or would clobber a dirty file the merge
-        # touches). Leave the checkout exactly as we found it.
+        return False, "blocked", "cannot compare branch to main: %s" % e
+    if ahead == 0:
+        # branch content already in main -> nothing to land (redundant/superseded)
+        dirty = ""
+        if wt and os.path.isdir(wt):
+            try:
+                dirty = _git(wt, "status", "--porcelain")
+            except Exception:
+                dirty = ""
+        if dirty:
+            n = len(dirty.splitlines())
+            return True, "redundant_uncommitted", (
+                "Redundant: der Branch bringt nichts Neues nach main - die Arbeit ist "
+                "bereits enthalten. %d uncommittete Worktree-Aenderung(en) wurden NICHT "
+                "uebernommen (nie committet); falls noch gebraucht: committen und neu "
+                "einreichen:\n%s" % (n, dirty[:200]))
+        return True, "already_merged", (
+            "Redundant/erledigt: die Arbeit ist bereits vollstaendig in main - nichts zu mergen.")
+    # real work to land
+    try:
+        _git(repo, "merge", "--no-ff", branch, "-m",
+             "SwarmDeck accept: %s (%s)" % (branch, t.get("id", "")))
+        return True, "merged", "%d Commit(s) sauber nach main (%s) gemergt." % (ahead, cur)
+    except Exception as e:
+        conflicts = ""
         try:
-            _git(repo, "merge", "--abort")
+            conflicts = _git(repo, "diff", "--name-only", "--diff-filter=U")
         except Exception:
             pass
-        return False, ("merge could not land (conflict, or it would overwrite "
-                       "uncommitted changes) - resolve on the branch, re-review, "
-                       "re-accept:\n%s" % str(e)[:400])
+        try:
+            _git(repo, "merge", "--abort")   # leave main exactly as found
+        except Exception:
+            pass
+        files = conflicts or (str(e)[:200])
+        return False, "conflict", (
+            "Merge-Konflikt mit main - main hat sich weiterbewegt und aendert dieselben "
+            "Stellen. Konfliktdateien:\n%s\nAufloesen: steuere den Agenten mit "
+            "\"merge main in deinen Branch und loese die Konflikte, dann committen\" und "
+            "reiche neu ein (der Worktree bleibt die sichere Sandbox)." % files)
 
 
 def _repo_hook(t, kind):
@@ -448,23 +475,27 @@ def move_lane(tid, lane, actor="owner"):
         t["status"] = "submitted"
         _repo_hook(t, "preview")   # spin up the try-it-before-merge surface
     elif lane == "done":
-        # accept = LAND it: merge the card's branch into main, THEN deploy. A
-        # merge that can't land cleanly bounces the card (like a failed gate) -
-        # never a silent "accepted" that never reached main.
-        merged, mergemsg = _merge_to_main(t)
-        events.emit("merge", tid, ok=merged, detail=mergemsg[:300])
-        if not merged:
-            log.log("note", "MERGE FAILED - not accepted: " + mergemsg[:400])
+        # accept = LAND it: CLASSIFY, then merge/close with a CLEAR reason - never
+        # a silent bounce or a silent "accepted". A real conflict bounces with the
+        # conflicting files + resolve path; a redundant card is closed while saying
+        # so; real work is merged to main. THEN deploy.
+        accept_ok, kind, mergemsg = _merge_to_main(t)
+        events.emit("merge", tid, ok=accept_ok, kind=kind, detail=mergemsg[:300])
+        if not accept_ok:
+            # conflict / blocked -> bounce, but SAY WHY (rendered in the card feed)
+            log.log("note", "MERGE %s - nicht abgenommen: %s" % (kind.upper(), mergemsg[:400]))
             t["status"] = "bounced"; t["lane"] = "working"
-            t["merge_report"] = mergemsg
+            t["merge_report"] = mergemsg; t["merge_kind"] = kind
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _save_track(t)
             import notify
             notify.card_event(t, "bounced")
-            t = dict(t); t["merge_failed"] = True
+            t = dict(t); t["merge_failed"] = True; t["merge_kind"] = kind
             return t
-        t.pop("merge_report", None)
-        log.log("note", "MERGED -> " + mergemsg[:300])
+        t.pop("merge_report", None); t["merge_kind"] = kind
+        _NOTE = {"merged": "MERGED -> main", "already_merged": "REDUNDANT (bereits in main) - geschlossen",
+                 "redundant_uncommitted": "REDUNDANT (bereits in main; uncommittete Aenderungen ignoriert) - geschlossen"}
+        log.log("note", "%s: %s" % (_NOTE.get(kind, "ACCEPTED"), mergemsg[:280]))
         events.emit("touch", tid, touch="review", actor=actor)
         te = [e for e in events.read_events() if e.get("track") == tid]
         mode = events._completion_mode(te, t.get("turns"))

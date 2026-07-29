@@ -33,6 +33,7 @@ export interface Track {
   created: string; updated: string;
   mode?: string; process?: string; process_title?: string;
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;
+  merge_failed?: boolean; merge_kind?: string; merge_report?: string;
   archived?: boolean;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
 }

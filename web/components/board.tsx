@@ -122,6 +122,12 @@ export function Card({ t, onOpen }: { t: Track; onOpen: (t: Track) => void }) {
             gate: {t.gate_report.join(" | ").slice(0, 140)}
           </div>
         )}
+        {t.merge_report && !t.gate_report && (
+          <div style={{ marginTop: 7, fontSize: 11.5, color: "var(--danger)" }}>
+            {t.merge_kind === "conflict" ? "Merge-Konflikt: " : "Merge: "}
+            {t.merge_report.split("\n")[0].slice(0, 140)}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -223,13 +229,23 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
     const card = tracks.find((x) => x.id === id);
     if (card && (card.lane || "working") === lane) return;  // same lane = reorder, handled per-card
     const res = await post<Track>(`/tracks/${id}/lane`, { lane });
-    if (!res?.gate_failed && (lane === "done" || lane === "review")) {
+    const bounced = res?.gate_failed || res?.merge_failed;
+    if (!bounced && (lane === "done" || lane === "review")) {
       setFlash(lane); setTimeout(() => setFlash(null), 900);
     }
     if (res?.gate_failed) {
       toast("GATE FAILED - bounced back: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+    } else if (res?.merge_failed) {
+      // say WHY the accept bounced (conflict / blocked), first line of the report
+      const why = (res.merge_report ?? "").split("\n")[0];
+      toast((res.merge_kind === "conflict" ? "MERGE-KONFLIKT - zurück: " : "Nicht abgenommen - zurück: ") + why, 6000);
+    } else if (lane === "done") {
+      // accepted: distinguish a real merge from closing a redundant card
+      toast(res?.merge_kind === "merged" ? "Abgenommen → nach main gemergt"
+        : (res?.merge_kind === "already_merged" || res?.merge_kind === "redundant_uncommitted")
+          ? "Redundant - war schon in main, Karte geschlossen" : "Abgenommen");
     } else {
-      toast(lane === "working" ? "Dispatched - session starting" : lane === "review" ? "Gate green - submitted" : lane === "done" ? "Accepted" : "Queued");
+      toast(lane === "working" ? "Dispatched - session starting" : lane === "review" ? "Gate green - submitted" : "Queued");
     }
     setTimeout(refresh, 600);
   }
