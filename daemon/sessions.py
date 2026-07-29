@@ -308,7 +308,13 @@ def _gate(t):
             problems.append("uncommitted changes:\n" + dirty[:400])
     except Exception as e:
         problems.append("git status failed: %s" % e)
-    gate_file = os.path.join(wt, "swarmdeck.gate")
+    # The gate command is defined by the REPO (main) - authoritative, so EVERY
+    # card is verified with the current gate even on an old branch - and it is run
+    # by the DAEMON (full command access), so the agent's permission mode never
+    # blocks the tests. Fall back to the worktree's own gate file if main has none.
+    gate_file = os.path.join(t.get("repo") or wt, "swarmdeck.gate")
+    if not os.path.exists(gate_file):
+        gate_file = os.path.join(wt, "swarmdeck.gate")
     if os.path.exists(gate_file):
         with open(gate_file, encoding="utf-8") as f:
             cmd = f.read().strip()
