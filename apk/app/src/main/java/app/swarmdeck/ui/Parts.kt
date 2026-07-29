@@ -68,18 +68,30 @@ fun TrackCard(t: Track, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) 
             .then(if (onLongClick != null)
                 Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
             else Modifier.clickable(onClick = onClick))
-            .background(Tok.surface1, RoundedCornerShape(12.dp))
-            // a FINISHED card must be as loud as a working one: green edge =
-            // "done, waiting for you", red edge = "failed, look at me"
+            // tint the whole card so a card that responded / bounced POPS out of
+            // the neutral mass at a glance (fixes "all cards look the same")
+            .background(when (t.status) {
+                "needs_you" -> Tok.ok.copy(alpha = .10f)
+                "bounced" -> Tok.danger.copy(alpha = .10f)
+                else -> Tok.surface1
+            }, RoundedCornerShape(12.dp))
             .border(
-                width = if (t.status == "needs_you" || t.status == "bounced") 1.5.dp else 1.dp,
+                width = if (t.status == "needs_you" || t.status == "bounced") 2.dp else 1.dp,
                 color = when (t.status) {
-                    "needs_you" -> Tok.ok.copy(alpha = .55f)
-                    "bounced" -> Tok.danger.copy(alpha = .55f)
+                    "needs_you" -> Tok.ok.copy(alpha = .7f)
+                    "bounced" -> Tok.danger.copy(alpha = .7f)
                     else -> Tok.glassBorder
                 }, shape = RoundedCornerShape(12.dp))
             .padding(12.dp)
     ) {
+        // unmistakable "this card is waiting for YOU" banner
+        if (t.status == "needs_you" || t.status == "bounced") {
+            val isNeeds = t.status == "needs_you"
+            Text(if (isNeeds) "● Antwort da – tippen" else "● abgelehnt – ansehen",
+                fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
+                color = if (isNeeds) Tok.ok else Tok.danger)
+            Spacer(Modifier.height(6.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Chip(if (t.workBy == "human") "HUMAN" else "AI",
                 if (t.workBy == "human") Tok.human else Tok.ai, filled = true)
