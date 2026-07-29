@@ -637,7 +637,13 @@ def sweep_zombies():
     watches a card that will never move again. Flip every such track to
     bounced with a visible note (gate_report is the bounce-reason channel
     both UIs already render), audit it, and push - so the owner learns the
-    instruction was lost instead of staring at a frozen card."""
+    instruction was lost instead of staring at a frozen card.
+
+    (Paseo silently idles a resumed agent, but we can't: session_id is written
+    AFTER the steer completes, so a killed turn leaves the card pointing at the
+    pre-steer session — a silent resume would execute a lost instruction or
+    redrive an already-committed turn. Surfacing the loss is safer for async
+    push-notification-driven ownership.)"""
     import drivers, events, notify
     from actionlog import ActionLog
     swept = []
