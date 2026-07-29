@@ -65,14 +65,23 @@ def lint(touched):
                                 "custom-control CSS (collapses)." % (p, m.group(1)))
 
         # R4: hardcoded colors in component code (tokens exist for a reason).
-        #     Allow in globals.css (the token definitions live there).
+        #     Allow in globals.css (the token definitions live there). A line
+        #     may opt out with a `lint:hex-ok` marker for literals that MUST
+        #     stay device-absolute (e.g. QR fg/bg black/white to scan).
         for m in re.finditer(r'#[0-9a-fA-F]{6}\b', src):
+            line_start = src.rfind("\n", 0, m.start()) + 1
+            line_end = src.find("\n", m.end())
+            full_line = src[line_start:line_end if line_end != -1 else len(src)]
+            if "lint:hex-ok" in full_line:
+                continue
             # skip if inside a comment line
-            line = src[:m.start()].rsplit("\n", 1)[-1]
+            line = src[line_start:m.start()]
             if "//" in line or "/*" in line:
                 continue
             problems.append("%s: hardcoded color %s - use a design token "
-                            "(var(--...)), not a literal hex." % (p, m.group(0)))
+                            "(var(--...)), not a literal hex (intentional "
+                            "literals: annotate the line with `lint:hex-ok`)."
+                            % (p, m.group(0)))
             break   # one flag per file is enough signal
 
         # R5: arbitrary high z-index literal (no semantic scale).
