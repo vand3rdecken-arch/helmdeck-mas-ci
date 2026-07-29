@@ -64,14 +64,36 @@ def test_idempotent_already_merged():
     check(ok and "already merged" in msg, "re-accepting an already-merged branch is a no-op ok (%r)" % msg[:40])
 
 
-def test_dirty_main_bounces():
+def test_dirty_unrelated_file_still_merges():
+    # a real project repo (scraper) keeps tracked runtime output perpetually
+    # 'modified'. The merge doesn't touch those files, so it must STILL land.
     repo = new_repo()
-    branch_with_commit(repo, "card-c", "f.txt", "x\n")
+    branch_with_commit(repo, "card-c", "feature.txt", "x\n")   # branch touches feature.txt only
     with open(os.path.join(repo, "base.txt"), "w") as f:
-        f.write("locally edited, uncommitted\n")   # dirty the main checkout
+        f.write("runtime output, uncommitted\n")               # dirty an UNRELATED file
     ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-c", "id": "t3"})
-    check(not ok, "dirty main checkout refuses the merge")
-    check("uncommitted" in msg, "message explains the dirty tree (%r)" % msg[:50])
+    check(ok, "merge lands despite a dirty tree when the merge is unrelated (%r)" % msg[:50])
+    check(os.path.exists(os.path.join(repo, "feature.txt")), "branch file merged in")
+    check("runtime output" in open(os.path.join(repo, "base.txt")).read(),
+          "the pre-existing dirty change is preserved (not clobbered)")
+
+
+def test_dirty_conflicting_file_bounces():
+    # if the merge WOULD touch a file that is dirty, git refuses - we must bounce
+    # and leave the tree exactly as found.
+    repo = new_repo()
+    git(repo, "checkout", "-b", "card-c2")
+    with open(os.path.join(repo, "base.txt"), "w") as f:
+        f.write("branch change to base\n")            # branch edits base.txt
+    git(repo, "add", "-A"); git(repo, "commit", "-m", "edit base")
+    git(repo, "checkout", "main")
+    with open(os.path.join(repo, "base.txt"), "w") as f:
+        f.write("uncommitted local edit to base\n")    # SAME file dirty, uncommitted
+    ok, msg = sessions._merge_to_main({"repo": repo, "branch": "card-c2", "id": "t3b"})
+    check(not ok, "merge that would clobber an uncommitted file is refused")
+    check(git(repo, "status", "--porcelain") != "", "the local edit is still there (not lost)")
+    check("uncommitted local edit" in open(os.path.join(repo, "base.txt")).read(),
+          "dirty file content preserved after the refused merge")
 
 
 def test_conflict_bounces_and_aborts():
@@ -104,7 +126,8 @@ def test_on_card_branch_guard():
 if __name__ == "__main__":
     test_happy_merge_lands()
     test_idempotent_already_merged()
-    test_dirty_main_bounces()
+    test_dirty_unrelated_file_still_merges()
+    test_dirty_conflicting_file_bounces()
     test_conflict_bounces_and_aborts()
     test_on_card_branch_guard()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
