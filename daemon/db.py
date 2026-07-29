@@ -43,6 +43,8 @@ def init():
     c = conn()
     c.execute("""CREATE TABLE IF NOT EXISTS tracks(
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS projects(
+        id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, kind TEXT, track TEXT, data TEXT)""")
@@ -113,6 +115,27 @@ def tracks_replace(tracks):
         for t in tracks:
             c.execute("INSERT INTO tracks(id,data) VALUES(?,?)",
                       (t["id"], json.dumps(t)))
+    bump()
+
+# -- projects -------------------------------------------------------------
+
+def projects_all():
+    rows = conn().execute("SELECT data FROM projects ORDER BY id DESC").fetchall()
+    return [json.loads(r[0]) for r in rows]
+
+def project_get(pid):
+    r = conn().execute("SELECT data FROM projects WHERE id=?", (pid,)).fetchone()
+    return json.loads(r[0]) if r else None
+
+def project_put(p):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO projects(id,data) VALUES(?,?)",
+                  (p["id"], json.dumps(p)))
+    bump()
+
+def project_delete(pid):
+    with conn() as c:
+        c.execute("DELETE FROM projects WHERE id=?", (pid,))
     bump()
 
 # -- events --------------------------------------------------------------

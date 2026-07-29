@@ -42,6 +42,75 @@ def _git(repo, *args):
         raise RuntimeError("git %s: %s" % (" ".join(args), r.stderr.strip()))
     return r.stdout.strip()
 
+def _checkpoint(worktree):
+    """A rewindable anchor for the worktree's CURRENT state - a dangling commit
+    that snapshots ALL files (tracked AND untracked, minus .gitignore), built in
+    a TEMP index so neither history nor the real index is touched. (git stash
+    create skips untracked files, which are exactly the ones an agent creates -
+    so it can't be used here.) Rewinding restores files from this commit."""
+    import tempfile
+    # a git worktree's .git is a FILE, so the temp index must live OUTSIDE the
+    # worktree (a normal repo would tolerate .git/, a worktree won't).
+    fd, idx = tempfile.mkstemp(suffix=".ckptindex")
+    os.close(fd)
+    try:
+        env = dict(os.environ, GIT_INDEX_FILE=idx)
+
+        def g(*a, check=True):
+            r = subprocess.run(["git", "-C", worktree, *a], env=env,
+                               capture_output=True, text=True)
+            if check and r.returncode != 0:
+                raise RuntimeError(r.stderr.strip())
+            return r.stdout.strip()
+
+        head = _git(worktree, "rev-parse", "HEAD")
+        g("read-tree", head)               # seed temp index from HEAD
+        g("add", "-A")                     # stage every worktree file into it
+        tree = g("write-tree")
+        # commit-tree uses the object db, not the index - real env is fine
+        commit = _git(worktree, "commit-tree", tree, "-p", head, "-m", "swarmdeck checkpoint")
+        return commit or None
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(idx)
+        except OSError:
+            pass
+
+def _seed_worktree(repo, wt):
+    """Copy the un-versioned files a build needs into a fresh worktree.
+
+    A worktree only contains TRACKED files, so anything git-ignored is missing -
+    and that is exactly where local toolchain config lives (local.properties
+    points at the Android SDK, .env holds local settings). Without them a card
+    cannot build what the same repo builds fine by hand.
+
+    Configure in settings.json; defaults deliberately carry NO signing material,
+    because handing an agent a release keystore should be a decision, not a
+    side effect:
+
+        "worktree_seed": ["apk/local.properties", ".env"]
+    """
+    import events
+    patterns = events.settings().get("worktree_seed")
+    if patterns is None:
+        patterns = ["apk/local.properties", "local.properties"]
+    copied = []
+    for rel in patterns:
+        src = os.path.join(repo, rel)
+        if not os.path.isfile(src):
+            continue
+        dst = os.path.join(wt, rel)
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+            copied.append(rel)
+        except OSError:
+            pass
+    return copied
+
+
 def _branch_exists(repo, branch):
     r = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", branch],
                        capture_output=True, text=True)
@@ -107,6 +176,14 @@ def _record_turn(t, meta):
         if m not in t.setdefault("models", []):
             t["models"].append(m)
     events.emit("turn", t["id"], cost=round(cost, 6), usage=u, models=meta.get("models") or [])
+    # per-turn rewind anchor: snapshot the worktree so a message can be rewound
+    # to (files restored to this point) later. Non-fatal if git isn't available.
+    if t.get("worktree") and os.path.isdir(t["worktree"]):
+        cp = _checkpoint(t["worktree"])
+        if cp:
+            t.setdefault("checkpoints", []).append(
+                {"turn": t.get("turns"), "commit": cp,
+                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": (t.get("last_reply") or "")[:80]})
 
 # -- lanes: the kanban IS the company structure, just relabeled ----------
 # backlog = request filed (client needs ABC; nothing started, no session yet)
@@ -125,11 +202,14 @@ def get_track(tid):
 
 def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
               value=None, driver="claude", actor="owner", priority="medium", due="",
-              model="", attachments=None):
+              model="", attachments=None, project_id=None, billing="fixed", rate=None,
+              description=""):
     """File a request. lane=backlog stores it un-started (no worktree, no session);
     lane=working starts the branch session immediately. value = what the
     deliverable is worth (settings default when omitted) - set at intake so
-    margin is computable at acceptance."""
+    margin is computable at acceptance. project_id assigns the card to a
+    fixed-price/T&M project (projects.py); its own `value` then stops feeding
+    the totals - the project's billing does (events.metrics)."""
     import events, turnopts
     repo = os.path.abspath(repo)
     tracks = _load()
@@ -141,11 +221,21 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     att_paths = turnopts.save_attachments(run_dir, attachments)
     cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths))
     t = {"id": tid, "repo": repo, "branch": branch, "worktree": "", "task": task,
+         # task = the one-line title (Jira summary); description = the long body
+         # (Jira/Plane description). Both editable; the agent reads title+desc+files.
+         "description": description or "",
          "client": client, "session_id": None, "perm": perm, "lane": "backlog",
          "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "value": float(value) if value is not None else events.settings()["value_per_card"],
          "driver": driver or "claude", "priority": priority or "medium", "due": due or "",
          "rank": None, "model": cli_model or "", "attachments": att_paths,
+         "project_id": project_id or None,
+         # billing (per card): fixed = `value` is the agreed price, recognized on
+         # done; tm = worked hours (time_in_work) x `rate`, accrues live; none =
+         # internal/unbilled (contributes 0). A card is billed on its own; a
+         # process groups cards into one SoW rollup (events.metrics).
+         "billing": billing if billing in ("fixed", "tm", "none") else "fixed",
+         "rate": float(rate) if rate is not None else None,
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -171,6 +261,7 @@ def _start(tid):
             _git(t["repo"], "worktree", "add", wt, t["branch"])
         else:
             _git(t["repo"], "worktree", "add", wt, "-b", t["branch"])
+        _seed_worktree(t["repo"], wt)
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "DISPATCHED -> branch %s" % t["branch"])
@@ -180,6 +271,8 @@ def _start(tid):
     t["worktree"] = wt; t["lane"] = "working"; t["status"] = "running"
     _save_track(t)
     prompt = t["task"]
+    if t.get("description"):              # the long-form body (Jira-style)
+        prompt += "\n\n" + t["description"]
     if t.get("attachments"):             # files filed with the request
         prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
     sid, result, meta = _turn(t, prompt)
@@ -190,6 +283,8 @@ def _start(tid):
     _record_turn(t, meta)
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save_track(t)
+    import notify
+    notify.card_event(t, "needs_you")
     return t
 
 # -- the review gate: work may only reach the client when it is green ----
@@ -220,6 +315,34 @@ def _gate(t):
                 out = (r.stdout + "\n" + r.stderr).strip()
                 problems.append("gate command failed (%s):\n%s" % (cmd[:80], out[-600:]))
     return (not problems), problems
+
+def _repo_hook(t, kind):
+    """Owner-defined per-repo hook, policy in settings:
+      "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
+    preview runs in the WORKTREE when a card reaches Review (try it before
+    merging); deploy runs in the MAIN REPO after accept - by the daemon, which
+    is the only party holding secrets. Output lands on the card (last_reply
+    stays the agent's - hooks log to the actionlog + a hook field)."""
+    import events, subprocess
+    hooks = (events.settings().get("repo_hooks") or {}).get(t.get("repo") or "", {})
+    cmd = (hooks or {}).get(kind, "").strip()
+    if not cmd:
+        return None
+    cwd = t.get("worktree") if kind == "preview" else t.get("repo")
+    from actionlog import ActionLog
+    log = ActionLog(t["run_dir"])
+    log.log("note", "%s HOOK: %s" % (kind.upper(), cmd))
+    try:
+        r = subprocess.run(cmd, cwd=cwd or ".", shell=True, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=1800)
+        out = ((r.stdout or "") + ("\n" + r.stderr if r.stderr else "")).strip()
+        ok = r.returncode == 0
+    except Exception as e:
+        out, ok = str(e), False
+    log.log("note", "%s HOOK %s: %s" % (kind.upper(), "OK" if ok else "FAILED", out[-800:]))
+    t[kind + "_hook"] = {"ok": ok, "tail": out[-1500:]}
+    return ok
+
 
 def move_lane(tid, lane, actor="owner"):
     """The board move is the workflow verb: ->working dispatches, ->review submits
@@ -256,6 +379,8 @@ def move_lane(tid, lane, actor="owner"):
             t["gate_report"] = problems
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _save_track(t)
+            import notify
+            notify.card_event(t, "bounced")
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
@@ -265,6 +390,7 @@ def move_lane(tid, lane, actor="owner"):
             stat = "?"
         log.log("note", "GATE PASSED - SUBMITTED for review - diff: " + stat[:400])
         t["status"] = "submitted"
+        _repo_hook(t, "preview")   # spin up the try-it-before-merge surface
     elif lane == "done":
         events.emit("touch", tid, touch="review", actor=actor)
         te = [e for e in events.read_events() if e.get("track") == tid]
@@ -275,6 +401,7 @@ def move_lane(tid, lane, actor="owner"):
         log.log("note", "ACCEPTED (%s) - AI $%.4f, value %s" %
                 (mode, t.get("ai_cost", 0.0), t.get("value")))
         t["status"] = "accepted"; t["mode"] = mode
+        _repo_hook(t, "deploy")    # daemon-side, with the secrets agents never see
         if t.get("connector"):
             import connectors, checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))
@@ -337,6 +464,8 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     _record_turn(t, meta)
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save_track(t)
+    import notify
+    notify.card_event(t, "needs_you")
     return t
 
 def _current_branch(repo):
@@ -357,6 +486,11 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
     cwd = os.path.abspath(cwd)
     if not os.path.isdir(cwd):
         raise RuntimeError("session working dir not found: " + cwd)
+    # one session = one card (the Paseo invariant). Two cards sharing a
+    # session id would both mirror the same ever-growing conversation.
+    for ex in _load():
+        if ex.get("session_id") == session_id and ex.get("lane") != "done":
+            raise RuntimeError("session already on the board as card " + ex["id"])
     short = (session_id or "sess")[:8]
 
     if mode == "fork":
@@ -380,6 +514,9 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
          "last_reply": "", "value": events.settings()["value_per_card"],
          "driver": "claude", "priority": "medium", "due": "", "rank": None,
          "model": "", "attachments": [], "adopted": True,
+         # remembered so the first steer forks AWAY from the source session
+         # instead of writing into the desktop's live conversation
+         "adopted_source": session_id,
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -419,7 +556,11 @@ def cancel_turn(tid, actor="owner"):
     return {"cancelled": killed}
 
 
-EDITABLE = ("task", "priority", "due", "value", "client", "driver")
+EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
+            "project_id", "billing", "rate")
+# project_id may be explicitly cleared (unassign from a project) - unlike the
+# other fields, "" / null is a meaningful value here, not "leave unset".
+CLEARABLE = ("project_id",)
 
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
@@ -464,9 +605,15 @@ def update_track(tid, patch, actor="owner"):
         raise RuntimeError("no such track: " + tid)
     changed = {}
     for k in EDITABLE:
-        if k in patch and patch[k] is not None and patch[k] != t.get(k):
-            t[k] = float(patch[k]) if k == "value" else patch[k]
-            changed[k] = t[k]
+        if k not in patch:
+            continue
+        v = patch[k] or None if k in CLEARABLE else patch[k]
+        if k not in CLEARABLE and v is None:
+            continue
+        if v == t.get(k):
+            continue
+        t[k] = float(v) if k in ("value", "rate") and v is not None else v
+        changed[k] = t[k]
     if changed:
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _save_track(t)
@@ -474,6 +621,72 @@ def update_track(tid, patch, actor="owner"):
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
     return t
+
+def add_attachments(tid, attachments, actor="owner"):
+    """Attach files (PDF etc.) to an existing card, Jira/Plane-style. Saved into
+    the card's run_dir/.attachments and appended to the card's file list; the
+    worker sees them on its next turn (prompt lists attached files)."""
+    import turnopts, events
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    new_paths = turnopts.save_attachments(t["run_dir"], attachments)
+    if new_paths:
+        t["attachments"] = (t.get("attachments") or []) + new_paths
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _save_track(t)
+        events.emit("edit", tid, actor=actor, fields={"attachments": len(new_paths)})
+        from actionlog import ActionLog
+        ActionLog(t["run_dir"]).log("note", "%s attached %d file(s)" % (actor, len(new_paths)))
+    return t
+
+def remove_attachment(tid, name, actor="owner"):
+    """Detach a file from the card by its basename (leaves the file on disk -
+    append-only audit; the card just stops referencing it)."""
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    before = t.get("attachments") or []
+    t["attachments"] = [p for p in before if os.path.basename(p) != name]
+    if len(t["attachments"]) != len(before):
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _save_track(t)
+    return t
+
+def list_checkpoints(tid):
+    """The per-turn rewind anchors recorded for this card (newest last)."""
+    t = _find(_load(), tid)
+    return (t or {}).get("checkpoints") or []
+
+def rewind_files(tid, commit, actor="owner"):
+    """Restore the worktree's FILES to a recorded checkpoint (reversible: the
+    current state is snapshotted first, and git keeps the objects). Only a
+    checkpoint this card recorded is accepted - never an arbitrary ref. The
+    session/conversation is NOT touched; use fork for a fresh line from here."""
+    t = _find(_load(), tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    wt = t.get("worktree")
+    if not wt or not os.path.isdir(wt):
+        raise RuntimeError("no worktree for this card")
+    valid = {c.get("commit") for c in (t.get("checkpoints") or [])}
+    if commit not in valid:
+        raise RuntimeError("unknown checkpoint for this card")
+    undo = _checkpoint(wt)                 # safety anchor of the current state
+    _git(wt, "checkout", commit, "--", ".")
+    if undo:
+        t.setdefault("checkpoints", []).append(
+            {"turn": t.get("turns"), "commit": undo,
+             "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": "(pre-rewind snapshot)"})
+        _save_track(t)
+    import events
+    events.emit("rewind", tid, commit=commit[:12], undo=(undo or "")[:12], actor=actor)
+    from actionlog import ActionLog
+    ActionLog(t["run_dir"]).log("note", "REWOUND files to %s (undo %s) by %s"
+                                % (commit[:8], (undo or "?")[:8], actor))
+    return {"ok": True, "undo": undo}
 
 def fork_track(tid, from_ref="", actor="owner"):
     """Fork a NEW card from this card's state (its branch tip, or a specific
