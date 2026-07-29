@@ -1,6 +1,7 @@
 package app.swarmdeck.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -52,6 +53,9 @@ fun CardScreen(
     var model by remember { mutableStateOf("auto") }
     var thinking by remember { mutableStateOf("off") }
     var models by remember { mutableStateOf<List<String>>(emptyList()) }
+    // card chat mode + the free-agent (copilot) conversation about this card
+    var agentMode by remember(track.id) { mutableStateOf(false) }
+    var agentMsgs by remember(track.id) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }  // role to text
 
     LaunchedEffect(Unit) {
         runCatching {
@@ -160,10 +164,23 @@ fun CardScreen(
         },
         bottomBar = {
             if (cardTab == 1) Column(Modifier.background(Tok.surface1).padding(10.dp)) {
+                // Worker (direct steer) vs Agent (free copilot: move/delete/anything)
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                    listOf(false to "Worker", true to "Agent").forEach { (mode, label) ->
+                        val on = agentMode == mode
+                        Text(label, fontSize = 12.sp,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (on) Tok.accent else Tok.txtTertiary,
+                            modifier = Modifier.clickable { agentMode = mode }.padding(horizontal = 8.dp, vertical = 3.dp))
+                    }
+                    Text(if (agentMode) "frei: verschieben/löschen/alles" else "steuert den Worker",
+                        fontSize = 11.sp, color = Tok.txtTertiary)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = draft, onValueChange = { draft = it },
-                        placeholder = { Text("Tell this worker what to do…", fontSize = 13.sp) },
+                        placeholder = { Text(if (agentMode) "z.B. 'verschiebe diese Karte nach done', 'lösche sie'" else "Tell this worker what to do…", fontSize = 13.sp) },
                         modifier = Modifier.weight(1f), maxLines = 4,
                         colors = fieldColors()
                     )
@@ -171,6 +188,17 @@ fun CardScreen(
                     Button(
                         onClick = {
                             val text = draft.trim(); if (text.isEmpty()) return@Button
+                            if (agentMode) {   // free board agent (copilot) about THIS card
+                                agentMsgs = agentMsgs + ("user" to text); draft = ""; sending = true
+                                scope.launch {
+                                    runCatching { DaemonClient.chat(text, card = t.id) }
+                                        .onSuccess { r -> agentMsgs = agentMsgs + ("agent" to
+                                            r.optString("reply").ifBlank { r.optString("error").ifBlank { "(no reply)" } }) }
+                                        .onFailure { agentMsgs = agentMsgs + ("agent" to "(send failed)") }
+                                    sending = false; onChanged()
+                                }
+                                return@Button
+                            }
                             sending = true; echo = text; draft = ""
                             scope.launch {
                                 runCatching { DaemonClient.steer(t.id, text,
@@ -259,8 +287,21 @@ fun CardScreen(
                 Modifier.fillMaxSize(), state = listState,
                 contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                if (steps.isEmpty()) item { EmptyNote("No transcript yet - send the first instruction below.") }
+                if (steps.isEmpty() && agentMsgs.isEmpty()) item { EmptyNote("No transcript yet - send the first instruction below.") }
                 items(steps.size) { i -> StepRow(steps[i]) }
+                // the free-agent (copilot) conversation about this card, inline
+                items(agentMsgs.size) { i ->
+                    val (role, txt) = agentMsgs[i]
+                    if (role == "user") StepRow(app.swarmdeck.Step("text", "user", txt, null, null, true, false, false, null, emptyList()))
+                    else Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Column(Modifier.weight(1f)
+                            .background(Tok.surface1, RoundedCornerShape(12.dp))
+                            .padding(start = 8.dp).padding(10.dp)) {
+                            Text("agent", fontSize = 10.sp, color = Tok.accent, fontWeight = FontWeight.SemiBold)
+                            Markdown(txt)
+                        }
+                    }
+                }
             }
         }
     }

@@ -265,7 +265,8 @@ object DaemonClient {
     // ---- copilot chat --------------------------------------------------------
     /** {messages:[{cls,text,ts,usage}], session_id} - usage feeds the context meter */
     suspend fun chatHistory(): JSONObject = getObj("/chat/history")
-    suspend fun chat(text: String): JSONObject = post("/chat", JSONObject().put("text", text))
+    suspend fun chat(text: String, card: String? = null): JSONObject =
+        post("/chat", JSONObject().put("text", text).apply { card?.let { put("card", it) } })
 
     // ---- control (desktop recorder) -------------------------------------------
     suspend fun state(): JSONObject = getObj("/control/state")
