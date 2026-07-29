@@ -480,7 +480,7 @@ def move_lane(tid, lane, actor="owner"):
         # conflicting files + resolve path; a redundant card is closed while saying
         # so; real work is merged to main. THEN deploy.
         accept_ok, kind, mergemsg = _merge_to_main(t)
-        events.emit("merge", tid, ok=accept_ok, kind=kind, detail=mergemsg[:300])
+        events.emit("merge", tid, ok=accept_ok, outcome=kind, detail=mergemsg[:300])
         if not accept_ok:
             # conflict / blocked -> bounce, but SAY WHY (rendered in the card feed)
             log.log("note", "MERGE %s - nicht abgenommen: %s" % (kind.upper(), mergemsg[:400]))
