@@ -1185,6 +1185,10 @@ class H(BaseHTTPRequestHandler):
 def serve(port=8140):
     import db
     db.init()
+    import drivers
+    reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
+    if reaped:
+        print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
