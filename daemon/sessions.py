@@ -327,9 +327,15 @@ def _merge_to_main(t):
     never sees), NOT in the agent's worktree. Returns (ok, message).
 
     Guards so we never corrupt the main checkout: the checkout must be on a real
-    branch (not detached, not the card branch itself) and CLEAN; a conflicting
-    merge is aborted. A branch already contained in HEAD is treated as merged
-    (idempotent - re-accepting is safe)."""
+    branch (not detached, not the card branch itself); a merge that can't apply is
+    aborted and reported. A branch already contained in HEAD is treated as merged
+    (idempotent - re-accepting is safe).
+
+    We do NOT pre-refuse a dirty tree: real project repos (e.g. a scraper) keep
+    tracked runtime output that is perpetually 'modified', and git can merge into
+    such a tree just fine as long as the merge doesn't touch those files. We let
+    git decide - it refuses on its own ('would be overwritten' / conflict) and we
+    surface that, so an accept only bounces when the merge genuinely can't land."""
     repo = t.get("repo"); branch = t.get("branch")
     if not repo or not os.path.isdir(repo):
         return False, "card has no repo checkout to merge into"
@@ -350,24 +356,20 @@ def _merge_to_main(t):
         return True, "already merged into %s" % cur
     except Exception:
         pass
-    dirty = ""
-    try:
-        dirty = _git(repo, "status", "--porcelain")
-    except Exception as e:
-        return False, "cannot read repo status: %s" % e
-    if dirty:
-        return False, ("main checkout '%s' has uncommitted changes - commit or stash "
-                       "before accepting:\n%s" % (cur, dirty[:300]))
     try:
         out = _git(repo, "merge", "--no-ff", branch, "-m",
                    "SwarmDeck accept: %s (%s)" % (branch, t.get("id", "")))
         return True, out or ("merged %s into %s" % (branch, cur))
     except Exception as e:
+        # git wouldn't land it (conflict, or would clobber a dirty file the merge
+        # touches). Leave the checkout exactly as we found it.
         try:
             _git(repo, "merge", "--abort")
         except Exception:
             pass
-        return False, "merge conflict - resolve on the branch, re-review, re-accept:\n%s" % str(e)[:400]
+        return False, ("merge could not land (conflict, or it would overwrite "
+                       "uncommitted changes) - resolve on the branch, re-review, "
+                       "re-accept:\n%s" % str(e)[:400])
 
 
 def _repo_hook(t, kind):
