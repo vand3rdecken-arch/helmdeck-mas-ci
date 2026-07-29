@@ -319,8 +319,12 @@ def _gate(t):
         with open(gate_file, encoding="utf-8") as f:
             cmd = f.read().strip()
         if cmd:
+            # Run in the worktree (cwd = the code under test), but expose the MAIN
+            # checkout as %SWARMDECK_REPO% so the gate can invoke the CURRENT gate
+            # script from main - old branches don't carry tools/run_gate.py.
+            genv = dict(os.environ, SWARMDECK_REPO=t.get("repo") or wt)
             r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True,
-                               text=True, timeout=600)
+                               text=True, timeout=600, env=genv)
             if r.returncode != 0:
                 out = (r.stdout + "\n" + r.stderr).strip()
                 problems.append("gate command failed (%s):\n%s" % (cmd[:80], out[-600:]))
