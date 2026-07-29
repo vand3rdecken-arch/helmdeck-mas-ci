@@ -29,16 +29,21 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
 
     private val pairedFromIntent = mutableStateOf(0)
+    // a card id from a tapped push notification (PushService puts "track" extra) -
+    // AppRoot opens that card once the board has loaded.
+    private val openTrackFromIntent = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         HubStore.init(this)
         consumePairingIntent(intent)
-        setContent { SwarmTheme { AppRoot(pairedFromIntent.value) } }
+        openTrackFromIntent.value = intent?.getStringExtra("track")?.ifBlank { null }
+        setContent { SwarmTheme { AppRoot(pairedFromIntent.value, openTrackFromIntent) } }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent); consumePairingIntent(intent)
+        intent.getStringExtra("track")?.ifBlank { null }?.let { openTrackFromIntent.value = it }
     }
 
     /** A scanned pairing QR (https app link, or the swarmdeck:// fallback). */
@@ -57,7 +62,7 @@ private enum class Tab(val label: String) { BOARD("Board"), NEEDS("Needs you"), 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(pairNonce: Int = 0) {
+fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.MutableState<String?>? = null) {
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(Tab.BOARD) }
     var moreView by remember { mutableStateOf<String?>(null) }   // processes|history|chat|settings
@@ -73,6 +78,13 @@ fun AppRoot(pairNonce: Int = 0) {
 
     val toast: (String) -> Unit = { toastMsg = it }
     LaunchedEffect(toastMsg) { if (toastMsg != null) { delay(2600); toastMsg = null } }
+
+    // deep-link from a tapped push notification: open that card once it's loaded
+    val pendingTrack = openTrackState?.value
+    LaunchedEffect(pendingTrack, tracks) {
+        val id = pendingTrack ?: return@LaunchedEffect
+        tracks.firstOrNull { it.id == id }?.let { open = it; tab = Tab.BOARD; openTrackState?.value = null }
+    }
 
     // self-update: one silent check per app start against the relay host
     val ctx = androidx.compose.ui.platform.LocalContext.current
