@@ -514,8 +514,8 @@ def move_lane(tid, lane, actor="owner"):
             msg = ("Konfliktmarkierungen sind noch im Worktree offen. Steuere den Agenten: "
                    "'loese die Konfliktmarkierungen (<<<<<<< / >>>>>>>) in den Dateien' - "
                    "nur editieren - und reiche dann neu ein.")
-            log.log("note", "CONFLICT MARKERS OPEN - bounced: " + msg[:200])
-            t["status"] = "bounced"; t["lane"] = "working"
+            log.log("note", "CONFLICT MARKERS OPEN - stays on Review to resolve: " + msg[:200])
+            t["status"] = "bounced"; t["lane"] = "review"   # stay on Review, not back to Working
             t["merge_report"] = msg; t["merge_kind"] = "conflict"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
@@ -529,8 +529,8 @@ def move_lane(tid, lane, actor="owner"):
         events.emit("gate", tid, ok=ok, problems=problems)
         if not ok:
             punch = " | ".join(p.split("\n")[0] for p in problems)
-            log.log("note", "GATE FAILED - bounced with punch list: " + punch[:400])
-            t["status"] = "bounced"; t["lane"] = "working"; t["gate_report"] = problems
+            log.log("note", "GATE FAILED - stays on Review to fix: " + punch[:400])
+            t["status"] = "bounced"; t["lane"] = "review"; t["gate_report"] = problems   # stay on Review
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
             t = dict(t); t["gate_failed"] = True
@@ -555,8 +555,8 @@ def move_lane(tid, lane, actor="owner"):
                             "Danach neu auf Review - der Harness committet und mergt dann selbst." % files)
         events.emit("merge", tid, ok=accept_ok, outcome=kind, detail=mergemsg[:300])
         if not accept_ok:
-            log.log("note", "MERGE %s - nicht abgenommen: %s" % (kind.upper(), mergemsg[:400]))
-            t["status"] = "bounced"; t["lane"] = "working"
+            log.log("note", "MERGE %s - stays on Review to resolve: %s" % (kind.upper(), mergemsg[:400]))
+            t["status"] = "bounced"; t["lane"] = "review"   # stay on Review, not back to Working
             t["merge_report"] = mergemsg; t["merge_kind"] = kind
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
@@ -616,9 +616,12 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         tracks = _load(); t = _find(tracks, tid)
     import events, turnopts
     events.emit("touch", tid, touch="steer", actor=actor)
-    if t["lane"] != "working":
+    # A card on Review that's being resolved (e.g. steering the agent to fix a
+    # conflict) STAYS on Review - steering no longer demotes it to Working. Any
+    # other lane (backlog/done) still means "back to active work".
+    if t["lane"] not in ("working", "review"):
         events.emit("lane", tid, frm=t["lane"], to="working")
-    t["lane"] = "working"
+        t["lane"] = "working"
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     if source and source != "you":

@@ -237,11 +237,11 @@ export default function BoardView({ filter, onOpen }: { filter: string; onOpen: 
       setFlash("done"); setTimeout(() => setFlash(null), 900);
     }
     if (res?.gate_failed) {
-      toast("GATE FAILED - zurück: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
+      toast("GATE offen - bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | "), 5200);
     } else if (res?.merge_failed) {
-      // say WHY it bounced (conflict / blocked), first line of the report
+      // say WHY it can't land yet (conflict / blocked); the card stays on Review
       const why = (res.merge_report ?? "").split("\n")[0];
-      toast((res.merge_kind === "conflict" ? "MERGE-KONFLIKT - zurück: " : "Nicht abgenommen - zurück: ") + why, 6000);
+      toast((res.merge_kind === "conflict" ? "MERGE-KONFLIKT - bleibt auf Review: " : "Kann nicht landen - bleibt auf Review: ") + why, 6000);
     } else if (finishing) {
       // finished + landed: real merge vs closing a redundant card
       toast(res?.merge_kind === "merged" ? "Fertig → committet & nach main gemergt"
