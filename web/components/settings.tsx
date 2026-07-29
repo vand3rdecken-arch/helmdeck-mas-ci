@@ -24,6 +24,17 @@ export default function SettingsView() {
   const [jBase, setJBase] = useState(""); const [jEmail, setJEmail] = useState("");
   const [jToken, setJToken] = useState(""); const [jJql, setJJql] = useState("");
   const [impUrl, setImpUrl] = useState(""); const [busyImp, setBusyImp] = useState(false);
+  const [relayUrl, setRelayUrl] = useState("");
+  const [nsOn, setNsOn] = useState(false);
+  const [nsWindow, setNsWindow] = useState("01:00-07:00");
+  const [nsRepos, setNsRepos] = useState("");
+  const [nsMax, setNsMax] = useState("3");
+  const [nsBusy, setNsBusy] = useState(false);
+  const [nsPlan, setNsPlan] = useState<{ made?: string; repos?: Record<string, { items: { title: string; priority: string }[]; error?: string | null }> } | null>(null);
+  const [nsReport, setNsReport] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<{ url: string; room: string; daemon_pub: string; device_token: string } | null>(null);
+  const [pairCopied, setPairCopied] = useState(false);
+  const [qr, setQr] = useState("");
 
   useEffect(() => {
     if (s && !loaded) {
@@ -40,6 +51,10 @@ export default function SettingsView() {
       setChatRoles(s.policy?.chat_configure_roles ?? ["owner"]);
       setJBase(s.jira?.base ?? ""); setJEmail(s.jira?.email ?? "");
       setJToken(s.jira?.api_token ?? ""); setJJql(s.jira?.default_jql ?? "");
+      setRelayUrl(s.relay?.url ?? "");
+      const ns = (s as { nightshift?: { enabled?: boolean; window?: string; repos?: string[]; max_cards?: number } }).nightshift;
+      setNsOn(!!ns?.enabled); setNsWindow(ns?.window ?? "01:00-07:00");
+      setNsRepos((ns?.repos ?? []).join("\n")); setNsMax(String(ns?.max_cards ?? 3));
       setLoaded(true);
     }
   }, [s, loaded]);
@@ -79,6 +94,54 @@ export default function SettingsView() {
     else toast(msg);
     loadUsers();
   }
+
+  async function saveRelay() {
+    await post("/settings", { relay: { url: relayUrl.trim() } });
+    toast("Relay URL saved"); refresh();
+  }
+  async function pairPhone() {
+    const r = await post<{ error?: string; url: string; room: string; daemon_pub: string; device_token: string }>("/relay/pair", {});
+    if (r.error) { toast(r.error, 3600); return; }
+    setPairing(r); setPairCopied(false);
+  }
+  async function unpairPhone() {
+    await post("/relay/unpair", {});
+    setPairing(null); toast("Phone unpaired - pair again to connect a new phone");
+  }
+  // Full payload for the copy/paste path (carries the relay url).
+  const pairCode = pairing
+    ? btoa(JSON.stringify({ u: pairing.url, r: pairing.room, k: pairing.daemon_pub, t: pairing.device_token }))
+    : "";
+  // The QR omits the url - the link's own origin IS the relay, so the app
+  // derives it. A shorter payload means a less dense symbol, which phone
+  // cameras (and scanners generally) lock onto far more reliably.
+  // base64URL (-,_ and no padding) so the value survives a URL without any
+  // percent-escapes - plain base64 would inflate +,/,= into %2B,%2F,%3D and
+  // make the symbol noticeably denser.
+  const qrCode = pairing
+    ? btoa(JSON.stringify({ r: pairing.room, k: pairing.daemon_pub, t: pairing.device_token }))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    : "";
+  // The QR must carry an https link, not a custom scheme: phone camera apps
+  // refuse to open swarmdeck:// (they just show the raw text). As a verified
+  // Android App Link (assetlinks.json on the relay host) https opens the app
+  // directly; without the app installed it lands on a help page.
+  const pairLink = pairing && qrCode
+    ? `${pairing.url.replace(/\/$/, "")}/pair?c=${qrCode}`
+    : "";
+  useEffect(() => {
+    if (!pairLink) { setQr(""); return; }
+    let alive = true;
+    import("qrcode").then((QR) =>
+      // render at high resolution (downscaled by CSS) so the dense symbol stays
+      // crisp; ECC "M" survives glare/angle better than "L" at scan time
+      QR.toDataURL(pairLink, { errorCorrectionLevel: "M", margin: 4, width: 760,
+        // design-lint-allow: QR modules must be true black/white to scan; not a themeable UI color
+        color: { dark: "#000000", light: "#ffffff" } })
+        .then((d) => { if (alive) setQr(d); })
+        .catch(() => { if (alive) setQr(""); }));
+    return () => { alive = false; };
+  }, [pairLink]);
 
   if (!s) return <div className="panel">owner only</div>;
   return (
@@ -196,6 +259,112 @@ export default function SettingsView() {
           }}>Import page</button>
         </div>
       </div>
+      {me?.role === "owner" && (
+        <div className="panel">
+          <h3>Night shift - proactive idle-time work</h3>
+          <p className="hint">While you sleep, a scout plans improvements per repo and works them as
+            ordinary cards through the gate - nothing merges itself, results wait in Review.
+            On a flat plan this uses quota that would otherwise expire.</p>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, margin: "6px 0", fontSize: 12.5, color: "var(--txt-primary)" }}>
+            <input type="checkbox" checked={nsOn} onChange={(e) => setNsOn(e.target.checked)} />
+            enabled
+          </label>
+          <label>Work window: &quot;always&quot; = whenever the board is idle (recommended on a flat plan), or a range like 01:00-07:00 · max cards per day</label>
+          <div className="inline">
+            <input style={{ width: 130 }} value={nsWindow} onChange={(e) => setNsWindow(e.target.value)} placeholder="always" />
+            <input type="number" style={{ width: 70 }} value={nsMax} onChange={(e) => setNsMax(e.target.value)} />
+          </div>
+          <label>Repo folders (one absolute path per line - ORDER is precedence: the top repo gets the push first)</label>
+          <textarea style={{ width: "100%", minHeight: 90, fontFamily: "monospace", fontSize: 12 }}
+            value={nsRepos} onChange={(e) => setNsRepos(e.target.value)}
+            placeholder={"C:\\Users\\you\\Downloads\\myrepo"} />
+          <div className="inline" style={{ marginTop: 10 }}>
+            <button className="btn primary" onClick={async () => {
+              await post("/settings", { nightshift: { enabled: nsOn, window: nsWindow.trim(),
+                repos: nsRepos.split("\n").map((r) => r.trim()).filter(Boolean),
+                max_cards: parseInt(nsMax) || 3 } });
+              toast("Night shift saved"); refresh();
+            }}>Save</button>
+            <button className="btn" disabled={nsBusy} onClick={async () => {
+              setNsBusy(true);
+              await post("/nightshift/plan", {});
+              toast("Scouts are planning - check back in a few minutes", 5000);
+              setTimeout(async () => {
+                try { setNsPlan((await get<{ plan: typeof nsPlan }>("/nightshift")).plan); }
+                finally { setNsBusy(false); }
+              }, 90_000);
+            }}>{nsBusy ? "planning…" : "Plan now (before sleep)"}</button>
+            <button className="btn ghost" onClick={async () => {
+              const r = await get<{ plan: typeof nsPlan; report: string | null }>("/nightshift");
+              setNsPlan(r.plan); setNsReport(r.report);
+            }}>Show plan &amp; report</button>
+          </div>
+          {nsPlan?.repos && (
+            <div style={{ marginTop: 10, fontSize: 12.5 }}>
+              <div className="hint">Plan from {nsPlan.made}</div>
+              {Object.entries(nsPlan.repos).map(([repo, block]) => (
+                <div key={repo} style={{ margin: "6px 0" }}>
+                  <b style={{ fontSize: 12 }}>{repo.split(/[\\/]/).pop()}</b>
+                  {block.error && <span style={{ color: "var(--danger)" }}> — {block.error}</span>}
+                  {block.items.map((it, i) => (
+                    <div key={i} style={{ color: "var(--txt-secondary)", paddingLeft: 10 }}>
+                      · [{it.priority}] {it.title}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+          {nsReport && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ fontSize: 12.5, cursor: "pointer", color: "var(--txt-secondary)" }}>
+                Last shift report</summary>
+              <pre style={{ fontSize: 11.5, whiteSpace: "pre-wrap", color: "var(--txt-secondary)",
+                background: "var(--surface-1, rgba(255,255,255,.04))", padding: 10, borderRadius: 8 }}>
+                {nsReport}</pre>
+            </details>
+          )}
+        </div>
+      )}
+      {me?.role === "owner" && (
+        <div className="panel">
+          <h3>Mobile app - pair a phone (end-to-end encrypted)</h3>
+          <p className="hint">The phone reaches this daemon over the internet through your relay
+            (host <code>relay/relay.py</code> behind HTTPS). Traffic is NaCl-box encrypted end to end -
+            the relay only sees ciphertext.</p>
+          <label>Relay URL (where you host the relay, HTTPS)</label>
+          <div className="row">
+            <input value={relayUrl} onChange={(e) => setRelayUrl(e.target.value)}
+              placeholder="https://relay.example.com" />
+            <button className="btn" onClick={saveRelay}>Save</button>
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button className="btn primary" onClick={pairPhone} disabled={!relayUrl.trim()}>
+              Pair phone</button>
+            {(pairing || s.relay?.phone_pub) && (
+              <button className="btn" onClick={unpairPhone}>Unpair</button>)}
+            {s.relay?.phone_pub && !pairing && <span className="hint">A phone is currently paired.</span>}
+          </div>
+          {pairing && (
+            <div className="pairbox">
+              <div className="hint"><b>Scan this with the phone.</b> It opens SwarmDeck with the
+                pairing already filled in. The code carries a one-time device token, so treat this
+                QR like a password - don&apos;t let anyone else photograph it.</div>
+              {qr
+                ? <img className="pairqr" src={qr} alt="Pairing QR code" />
+                : <div className="hint">generating QR…</div>}
+              <details className="pairfallback">
+                <summary>No camera? Copy the code instead</summary>
+                <textarea className="paircode" readOnly value={pairCode}
+                  onFocus={(e) => e.currentTarget.select()} />
+                <button className="btn" onClick={() => {
+                  navigator.clipboard.writeText(pairCode); setPairCopied(true);
+                  setTimeout(() => setPairCopied(false), 1500);
+                }}>{pairCopied ? "Copied" : "Copy pairing code"}</button>
+              </details>
+            </div>
+          )}
+        </div>
+      )}
       {me?.role === "owner" && (
         <div className="panel">
           <h3>Users</h3>
