@@ -47,6 +47,15 @@ def _branch_exists(repo, branch):
                        capture_output=True, text=True)
     return r.returncode == 0
 
+def is_git_repo(path):
+    """Intake check: dispatch needs `git worktree add`, so a non-repo path must
+    be rejected when the card is filed, not discovered mid-dispatch."""
+    if not path or not os.path.isdir(path):
+        return False
+    r = subprocess.run(["git", "-C", path, "rev-parse", "--git-dir"],
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
 def _worktree_for(repo, branch):
     base = os.path.abspath(os.path.join(repo, "..", "swarmdeck-worktrees"))
     os.makedirs(base, exist_ok=True)
@@ -157,6 +166,24 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
         t = _start(tid)
     return t
 
+def _dispatch_failed(t, e):
+    """Dispatch runs on a background thread, so an uncaught exception is
+    invisible - the card must carry the error itself: status=bounced,
+    the failure in last_reply, a note in the flight recorder, an event."""
+    import events
+    err = "DISPATCH FAILED: %s" % e
+    from actionlog import ActionLog
+    try:
+        ActionLog(t["run_dir"]).log("note", err[:2000])
+    except Exception:
+        pass
+    events.emit("error", t["id"], where="dispatch", detail=str(e)[:600])
+    cur = _db.track_get(t["id"]) or t
+    cur["status"] = "bounced"
+    cur["last_reply"] = err[:2000]
+    cur["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _save_track(cur)
+
 def _start(tid):
     """Dispatch a backlog request: create the worktree + open its coding session."""
     tracks = _load()
@@ -165,6 +192,14 @@ def _start(tid):
         raise RuntimeError("no such track: " + tid)
     if t["session_id"]:
         return t
+    try:
+        return _start_inner(t)
+    except Exception as e:
+        _dispatch_failed(t, e)
+        raise
+
+def _start_inner(t):
+    tid = t["id"]
     wt = _worktree_for(t["repo"], t["branch"])
     if not os.path.exists(wt):
         if _branch_exists(t["repo"], t["branch"]):
