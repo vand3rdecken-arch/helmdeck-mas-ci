@@ -77,6 +77,22 @@ DEBT = [
                "app is served in production mode.",
         "order": 5,
     },
+    {
+        "id": "nightshift-limit-sniff",
+        "title": "Night shift detects usage limits by string-matching replies",
+        "status": "open",
+        "what": "nightshift._limit_hit() greps the card's last_reply for "
+                "'usage limit'/'rate limit' instead of reading a structured "
+                "error from the driver.",
+        "why_it_bites": "A rephrased CLI error means the night shift keeps "
+                        "starting cards into a dead quota; a false match in a "
+                        "legitimate reply stops it early.",
+        "trigger": "Claude CLI changing its limit wording, or a card whose "
+                   "reply merely mentions rate limits",
+        "fix": "Have drivers._claude() surface the stream-json result error "
+               "type as a structured track field; night shift reads that.",
+        "order": 6,
+    },
 ]
 
 def list_debt():
