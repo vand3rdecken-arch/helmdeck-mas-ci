@@ -166,6 +166,10 @@ def _turn(t, prompt, model=None, perm=None):
 def _record_turn(t, meta):
     """Fold one turn's economics into the track and the event log."""
     import events
+    # structured failure signal off the driver's result event (not the prose
+    # reply) - the night shift reads this instead of grepping last_reply.
+    t["last_subtype"] = meta.get("subtype")
+    t["last_error"] = meta.get("error") or ""
     u = meta.get("usage") or {}
     cost = events.price_turn(meta.get("models"), u, meta.get("cost_usd"))
     t["ai_cost"] = round(t.get("ai_cost", 0.0) + cost, 6)
