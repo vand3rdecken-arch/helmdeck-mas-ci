@@ -1,39 +1,22 @@
 {
   "hooks": {
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "py -3.12 tools/loop_state.py --stop-hook",
-            "timeout": 60
-          }
-        ]
-      }
+      { "hooks": [ { "type": "command", "command": "py -3.12 tools/loop_state.py --stop-hook", "timeout": 60 } ] }
     ],
     "SessionStart": [
-      {
-        "matcher": "startup|resume|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "py -3.12 tools/loop_state.py --session-start",
-            "timeout": 60
-          }
-        ]
-      }
+      { "matcher": "startup|resume|compact",
+        "hooks": [ { "type": "command", "command": "py -3.12 tools/loop_state.py --session-start", "timeout": 60 } ] }
     ],
     "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "py -3.12 tools/design_hook.py",
-            "timeout": 60
-          }
-        ]
-      }
+      { "matcher": "Edit|Write|MultiEdit",
+        "hooks": [ { "type": "command", "command": "py -3.12 tools/design_hook.py", "timeout": 60 } ] }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash deploy/push_ntfy.sh*)",
+      "Bash(bash deploy/push_relay.sh*)",
+      "Bash(bash deploy/cloudflare_tunnel.sh*)"
     ]
   }
 }
