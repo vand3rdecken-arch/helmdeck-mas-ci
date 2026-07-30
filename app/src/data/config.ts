@@ -28,8 +28,14 @@ const DEFAULTS: Persisted = {
   relayUrl: "", room: "", daemonPub: "", mySec: "", myPub: "",
 };
 
+const isWeb = Platform.OS === "web";
+
 async function persist(s: Persisted) {
-  try { await SecureStore.setItemAsync(KEY, JSON.stringify(s)); } catch { /* web / unavailable */ }
+  const json = JSON.stringify(s);
+  try {
+    if (isWeb) globalThis.localStorage?.setItem(KEY, json);
+    else await SecureStore.setItemAsync(KEY, json);
+  } catch { /* unavailable */ }
 }
 
 export const useConfig = create<ConfigState>((set, get) => ({
@@ -56,8 +62,17 @@ export const useConfig = create<ConfigState>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const raw = await SecureStore.getItemAsync(KEY);
-      if (raw) set({ ...JSON.parse(raw) });
+      if (isWeb) {
+        // Desktop (Electron) hands the daemon URL + a device token via the URL
+        // hash (#cfg=base64{baseUrl,token}) on first load; otherwise localStorage.
+        const hash = globalThis.location?.hash ?? "";
+        const m = /[#&]cfg=([^&]+)/.exec(hash);
+        if (m) get().set(JSON.parse(atob(decodeURIComponent(m[1]))));
+        else { const raw = globalThis.localStorage?.getItem(KEY); if (raw) set({ ...JSON.parse(raw) }); }
+      } else {
+        const raw = await SecureStore.getItemAsync(KEY);
+        if (raw) set({ ...JSON.parse(raw) });
+      }
     } catch { /* ignore */ }
     set({ hydrated: true });
   },

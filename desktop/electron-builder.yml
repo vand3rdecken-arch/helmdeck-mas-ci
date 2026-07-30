@@ -29,13 +29,10 @@ extraResources:
       - "!checkpoints/**"
       - "!.attachments/**"
       - "!.copilot_attachments/**"
-  # the Next.js standalone server (self-contained: server.js + minimal node_modules)
-  - from: ../web/.next/standalone
-    to: web
-  - from: ../web/.next/static
-    to: web/.next/static
-  - from: ../web/public
-    to: web/public
+  # the single Expo web export (static SPA) that main.js serves locally - one
+  # codebase for phone/web/desktop, replacing the old Next.js standalone server.
+  - from: ../app/dist
+    to: app-dist
 win:
   target:
     - target: nsis
