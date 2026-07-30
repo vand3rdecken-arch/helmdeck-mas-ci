@@ -103,7 +103,7 @@ export default function CardScreen() {
               <KVRow k="Branch" v={k.branch || "—"} />
               <KVRow k="Repo" v={k.repo || "—"} />
               <KVRow k="Turns" v={`${k.turns}`} />
-              <KVRow k="Tokens" v={`${k.tokens_in}/${k.tokens_out}`} />
+              <KVRow k="Tokens" v={`${k.tokens_in ?? 0}/${k.tokens_out ?? 0}`} />
               {k.value ? <KVRow k="Value" v={`€${k.value}`} /> : null}
               {k.due ? <KVRow k="Due" v={k.due} /> : null}
             </Panel>
