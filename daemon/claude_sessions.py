@@ -195,7 +195,16 @@ def _tool_detail(name, inp):
 
 
 def _short_ts(iso):
-    return iso.split("T")[1][:5] if isinstance(iso, str) and "T" in iso else ""
+    # The session .jsonl timestamps are UTC (…Z); the actionlog uses LOCAL time.
+    # Convert to local + HH:MM:SS so the transcript and the woven lifecycle notes
+    # sort together (a 2h skew + minute-only granularity was scrambling the feed).
+    if not isinstance(iso, str) or "T" not in iso:
+        return ""
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone().strftime("%H:%M:%S")
+    except Exception:
+        return iso.split("T")[1][:8]
 
 
 def _result_text(part):
