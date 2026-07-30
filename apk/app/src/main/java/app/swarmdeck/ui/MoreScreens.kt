@@ -295,3 +295,108 @@ fun LoadingNote() {
         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Tok.accent)
     }
 }
+
+/** Automation & loop - what the harness is doing on its own: the build-loop
+ *  state machine (with where it currently sits), the night-shift, the policy
+ *  gates, and the repos. Same data as the desktop Settings > Automation panel. */
+@Composable
+fun AutomationScreen(toast: (String) -> Unit) {
+    var data by remember { mutableStateOf<JSONObject?>(null) }
+    var err by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching { DaemonClient.automation() }.onSuccess { data = it; err = null }
+            .onFailure { err = it.message }
+    }
+    val d = data
+    if (err != null) { EmptyNote("Could not load automation: $err"); return }
+    if (d == null) { LoadingNote(); return }
+
+    // where the build loop currently sits (first transition = current state)
+    val cur = d.optJSONArray("loop_current") ?: JSONArray()
+    val curState = if (cur.length() > 0) cur.optJSONObject(0)?.optString("state") ?: "" else ""
+    val curAction = if (cur.length() > 0) cur.optJSONObject(0)?.optString("action") ?: "" else ""
+    val ns = d.optJSONObject("nightshift") ?: JSONObject()
+    val nsCfg = ns.optJSONObject("config") ?: JSONObject()
+    val tonight = ns.optJSONObject("tonight") ?: JSONObject()
+    val pol = d.optJSONObject("policy") ?: JSONObject()
+    val repos = d.optJSONArray("repos") ?: JSONArray()
+
+    androidx.compose.foundation.text.selection.SelectionContainer {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // --- build loop -------------------------------------------------
+            item {
+                Panel {
+                    Text("Build-Loop", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = Tok.txtPrimary)
+                    Spacer(Modifier.height(2.dp))
+                    Text(if (curState.isNotEmpty()) "jetzt: $curState" else "Zustand unbekannt",
+                        fontSize = 12.sp, color = Tok.accent, fontWeight = FontWeight.Medium)
+                    if (curAction.isNotEmpty()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(curAction, fontSize = 12.sp, color = Tok.txtSecondary)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val states = d.optJSONArray("loop_states") ?: JSONArray()
+                    for (i in 0 until states.length()) {
+                        val st = states.optJSONObject(i) ?: continue
+                        val name = st.optString("state"); val here = name == curState
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text(if (here) "▸ $name" else name, fontSize = 12.sp,
+                                fontWeight = if (here) FontWeight.Bold else FontWeight.Medium,
+                                color = if (here) Tok.accent else Tok.txtSecondary,
+                                modifier = Modifier.width(88.dp))
+                            Text(st.optString("desc"), fontSize = 11.5.sp, color = Tok.txtTertiary,
+                                modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            // --- night shift ------------------------------------------------
+            item {
+                Panel {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Night-shift", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            color = Tok.txtPrimary, modifier = Modifier.weight(1f))
+                        val on = nsCfg.optBoolean("enabled", false)
+                        Chip(if (on) "an" else "aus", if (on) Tok.ok else Tok.txtTertiary, filled = on)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    KVRow("Fenster", nsCfg.optString("window").ifEmpty { "always" })
+                    KVRow("Idle-Gate", "${nsCfg.optInt("idle_minutes", 20)} min")
+                    KVRow("Max/Nacht", nsCfg.optInt("max_cards", 3).toString())
+                    val started = tonight.optJSONArray("started")?.length() ?: 0
+                    KVRow("Heute gestartet", started.toString(),
+                        if (started > 0) Tok.accent else Tok.txtPrimary)
+                    if (tonight.optBoolean("limit_hit", false))
+                        KVRow("Usage-Limit", "erreicht - pausiert ~5h", Tok.warn)
+                }
+            }
+            // --- policy gates ----------------------------------------------
+            item {
+                Panel {
+                    Text("Policy", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = Tok.txtPrimary)
+                    Spacer(Modifier.height(6.dp))
+                    KVRow("Auto-accept grün", if (pol.optBoolean("auto_accept_green", false)) "ja" else "nein")
+                    KVRow("Auto-dispatch", pol.optJSONArray("auto_dispatch_modes")?.let {
+                        (0 until it.length()).joinToString(", ") { i -> it.optString(i) } }?.ifEmpty { "-" } ?: "-")
+                    KVRow("Chat-Admin", pol.optJSONArray("chat_admin_roles")?.let {
+                        (0 until it.length()).joinToString(", ") { i -> it.optString(i) } }?.ifEmpty { "owner" } ?: "owner")
+                }
+            }
+            // --- repos ------------------------------------------------------
+            item {
+                Panel {
+                    Text("Repos (${repos.length()})", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = Tok.txtPrimary)
+                    Spacer(Modifier.height(4.dp))
+                    if (repos.length() == 0) Text("keine konfiguriert", fontSize = 12.sp, color = Tok.txtTertiary)
+                    for (i in 0 until repos.length())
+                        Text(repos.optString(i), fontSize = 11.5.sp, color = Tok.txtSecondary,
+                            modifier = Modifier.padding(vertical = 1.dp))
+                }
+            }
+        }
+    }
+}

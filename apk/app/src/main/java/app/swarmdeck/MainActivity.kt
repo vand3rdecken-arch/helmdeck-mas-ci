@@ -191,6 +191,7 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 moreView == "connectors"-> ConnectorsScreen(toast)
                 moreView == "workspace" -> WorkspaceHistoryScreen(toast)
                 moreView == "debt"      -> DebtScreen(toast)
+                moreView == "automation"-> AutomationScreen(toast)
                 moreView == "import"    -> ImportScreen(toast) { reload++ }
                 moreView == "history"   -> HistoryScreen()
                 moreView == "chat"      -> ChatScreen(toast)
@@ -291,6 +292,7 @@ private fun MoreMenu(go: (String) -> Unit) {
                "connectors" to "Connectors - scheduled feeds",
                "users" to "Users - accounts, roles, device tokens",
                "workspace" to "Workspace history - restore a past config",
+               "automation" to "Automation & loop - build-loop state, night-shift, policy, repos",
                "debt" to "Debt register - shortcuts we owe",
                "settings" to "Settings - pairing and connection").forEach { (key, label) ->
             Panel(Modifier.testTag("more_$key")) {

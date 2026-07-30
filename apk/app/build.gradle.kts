@@ -24,8 +24,8 @@ android {
         applicationId = "app.swarmdeck"
         minSdk = 29
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.8-copyable"
+        versionCode = 19
+        versionName = "1.9-automation"
         // required for connectedAndroidTest - without it the device cannot find
         // the instrumentation and the run dies with "Process crashed"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
