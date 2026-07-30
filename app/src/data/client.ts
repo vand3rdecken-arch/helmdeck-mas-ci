@@ -93,5 +93,15 @@ export const api = {
   runs: () => req<any[]>("GET", "/runs"),
   claudeSessions: () => req<any[]>("GET", "/sessions/claude"),
   gitHistory: () => req<any[]>("GET", "/history"),
+
+  // settings / users / connectors
+  settings: () => req<Record<string, any>>("GET", "/settings"),
+  saveSettings: (patch: Record<string, unknown>) => req("POST", "/settings", patch),
+  users: () => req<import("./types").UserRow[]>("GET", "/users"),
+  setRole: (name: string, role: string) => req("POST", `/users/${name}/role`, { role }),
+  issueToken: (name: string, label: string) => req<{ token: string }>("POST", `/users/${name}/tokens`, { label }),
+  connectors: () => req<any[]>("GET", "/connectors"),
+  runConnector: (name: string) => req("POST", `/connectors/${name}/run`),
+  rollbackConnector: (name: string) => req("POST", `/connectors/${name}/rollback`),
 };
 

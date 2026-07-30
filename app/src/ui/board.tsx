@@ -97,11 +97,30 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
   );
 }
 
+function TimelineRows({ tracks, onOpen }: { tracks: Track[]; onOpen: (id: string) => void }) {
+  const t = useTheme();
+  const items = tracks
+    .filter((k) => k.lane !== "done")
+    .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.created ?? "").localeCompare(b.created ?? ""));
+  if (items.length === 0) return <Empty text="Nichts terminiert." />;
+  return (
+    <View style={{ gap: 4 }}>
+      {items.map((k) => (
+        <Pressable key={k.id} onPress={() => onOpen(k.id)} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
+          <Text style={{ color: k.due ? t.human : t.txtTertiary, fontSize: 11, width: 84 }}>{k.due ?? "—"}</Text>
+          <Dot color={statusColor(t, k.status)} />
+          <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) => void }) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: 6 }}>
-      {[["board", "Board"], ["list", "Liste"]].map(([key, lbl]) => {
+      {[["board", "Board"], ["list", "Liste"], ["timeline", "Timeline"]].map(([key, lbl]) => {
         const on = layout === key;
         return (
           <Pressable key={key} onPress={() => onSet(key)}
@@ -156,6 +175,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       {filter === "needs_you" ? (
         shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
           shown.map((k) => <Card key={k.id} k={k} onMove={onMove} />)
+      ) : layout === "timeline" ? (
+        <TimelineRows tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} />
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane);

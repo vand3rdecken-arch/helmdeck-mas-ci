@@ -63,9 +63,11 @@ export default function MoreTab() {
           {([
             ["automation", "Automation & loop", "git-branch-outline"],
             ["processes", "Processes", "git-network-outline"],
+            ["connectors", "Connectors", "sync-outline"],
             ["history", "History", "time-outline"],
             ["sessions", "Sessions", "chatbubbles-outline"],
             ["recordings", "Recordings", "videocam-outline"],
+            ["settings", "Settings", "settings-outline"],
           ] as const).map(([route, label, icon], i) => (
             <Pressable key={route} onPress={() => router.push(`/${route}`)}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
