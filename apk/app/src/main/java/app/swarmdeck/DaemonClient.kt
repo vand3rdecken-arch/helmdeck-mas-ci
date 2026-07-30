@@ -256,6 +256,10 @@ object DaemonClient {
         return out.toList()
     }
 
+    // ---- automation / loop / night-shift ------------------------------------
+    /** {nightshift:{...}, policy:{...}, repos:[...], loop_states:[...], loop_current:{...}} */
+    suspend fun automation(): JSONObject = getObj("/automation")
+
     // ---- settings / models / me ---------------------------------------------
     suspend fun settings(): JSONObject = getObj("/settings")
     suspend fun saveSettings(patch: JSONObject): JSONObject = post("/settings", patch)
