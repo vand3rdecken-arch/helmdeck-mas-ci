@@ -84,12 +84,45 @@ function NextUp({ items }: { items: Track[] }) {
   );
 }
 
+function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable onPress={onOpen} onLongPress={onMove} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
+      <Dot color={statusColor(t, k.status)} />
+      <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
+      {k.priority && k.priority !== "medium" ? <Text style={{ color: k.priority === "urgent" ? t.danger : t.warn, fontSize: 10.5 }}>{k.priority}</Text> : null}
+      {k.ai_cost > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>${k.ai_cost.toFixed(2)}</Text> : null}
+      {k.updated ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.updated}</Text> : null}
+    </Pressable>
+  );
+}
+
+function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) => void }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: "row", gap: 6 }}>
+      {[["board", "Board"], ["list", "Liste"]].map(([key, lbl]) => {
+        const on = layout === key;
+        return (
+          <Pressable key={key} onPress={() => onSet(key)}
+            style={{ backgroundColor: on ? t.accent + "29" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
+              borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
+            <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12, fontWeight: "500" }}>{lbl}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topInset?: number }) {
   const t = useTheme();
+  const router = useRouter();
   const label = useLaneLabels();
   const qc = useQueryClient();
-  const { data, isLoading, error, refetch } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 5000 });
+  const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 5000 });
   const [busy, setBusy] = useState(false);
+  const [layout, setLayout] = useState("board");
 
   const shown = (data ?? []).filter((k) => (filter === "needs_you" ? k.status === "needs_you" : true));
 
@@ -118,6 +151,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
       {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar – läuft SwarmDeck?</Text> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
+      {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? <NextUp items={nextUp} /> : null}
       {filter === "needs_you" ? (
         shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
@@ -132,7 +166,10 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
                 <Text style={{ color: t.txtSecondary, fontSize: 13, fontWeight: "600" }}>{label(lane)}</Text>
                 <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{inLane.length}</Text>
               </View>
-              {inLane.length === 0 ? <Empty text="leer" /> : inLane.map((k) => <Card key={k.id} k={k} onMove={onMove} />)}
+              {inLane.length === 0 ? <Empty text="leer" /> :
+                inLane.map((k) => layout === "list"
+                  ? <LRow key={k.id} k={k} onOpen={() => router.push(`/card/${k.id}`)} onMove={() => onMove(k)} />
+                  : <Card key={k.id} k={k} onMove={onMove} />)}
             </View>
           );
         })
