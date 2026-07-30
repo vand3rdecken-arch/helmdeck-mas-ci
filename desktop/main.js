@@ -24,10 +24,14 @@ const DAEMON_PORT = 8140;
 const WEB_PORT = 3300;
 let daemon = null, web = null, win = null, failed = false;
 
-// packaged: resources/{daemon,web}; dev: repo ../{daemon,web}
+// packaged: resources/{daemon,app-dist}; dev: repo ../{daemon,app/dist}
 const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
-const daemonDir = path.join(root, app.isPackaged ? "daemon" : "daemon");
-const webDir = path.join(root, app.isPackaged ? "web" : "web");
+const daemonDir = path.join(root, "daemon");
+// The UI is now the single Expo/React-Native web export (expo export --platform
+// web), replacing the old Next.js server. Same static SPA that ships to the
+// phone/web; the desktop just serves it locally and points it at the daemon.
+const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__dirname, "..", "app", "dist");
+let desktopToken = "";
 
 // find a working Python 3: probe candidates with `--version` and use the first
 // that runs, so we don't depend on `py` alone being on PATH.
@@ -80,25 +84,42 @@ function startDaemon() {
       + "the `claude` CLI is available.\n\n" + e.message));
 }
 
+// Mint a device token from the local daemon so the served Expo web UI can talk
+// to it with the same Bearer-token auth the phone uses (no daemon auth weakening,
+// no cookie coupling). Best-effort: the UI still loads if this fails (shows the
+// connect screen). Owner-scoped, same-machine only.
+function mintDesktopToken() {
+  const { spawnSync } = require("child_process");
+  const py = resolvePython();
+  try {
+    const r = spawnSync(py.cmd,
+      [...py.args, "-c", "import auth,sys; sys.stdout.write(auth.issue_token('owner','desktop'))"],
+      { cwd: daemonDir, shell: process.platform === "win32", windowsHide: true, encoding: "utf8" });
+    if (r.status === 0 && r.stdout) desktopToken = r.stdout.trim();
+  } catch { /* leave empty */ }
+}
+
+// Serve the exported SPA locally with index.html fallback for client-side routes.
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+  ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml",
+  ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".ico": "image/x-icon", ".map": "application/json" };
 function startWeb() {
-  if (app.isPackaged) {
-    // run the Next standalone server using Electron's own bundled Node runtime
-    // (ELECTRON_RUN_AS_NODE) - no separate Node install required on the PC.
-    const server = path.join(webDir, "server.js");
-    web = spawn(process.execPath, [server], {
-      cwd: webDir, windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PORT: String(WEB_PORT), HOSTNAME: "127.0.0.1" },
+  const fs = require("fs");
+  web = http.createServer((req, res) => {
+    let p = decodeURIComponent(req.url.split("?")[0].split("#")[0]);
+    let file = path.join(appDistDir, p);
+    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      const idx = path.join(appDistDir, p, "index.html");
+      file = fs.existsSync(idx) ? idx : path.join(appDistDir, "index.html"); // SPA fallback
+    }
+    fs.readFile(file, (err, buf) => {
+      if (err) { res.writeHead(404); return res.end("not found"); }
+      res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
+      res.end(buf);
     });
-  } else {
-    // dev: the repo's Next dev server. shell:true is required on Windows to
-    // spawn npm.cmd (a batch file) - bare spawn throws EINVAL on newer Node.
-    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-    web = spawn(npm, ["run", "dev", "--", "--port", String(WEB_PORT)],
-      { cwd: webDir, env: { ...process.env }, windowsHide: true, shell: process.platform === "win32" });
-  }
-  web.stdout.on("data", (d) => log("web", d));
-  web.stderr.on("data", (d) => log("web", d));
+  });
   web.on("error", (e) => fail("Could not start the UI server.\n\n" + e.message));
+  web.listen(WEB_PORT, "127.0.0.1");
 }
 
 function waitForWeb(cb, tries = 90) {
@@ -117,7 +138,10 @@ function createWindow() {
     icon: path.join(__dirname, "assets", "icon.ico"),   // taskbar/window: the fanned-card mark
     autoHideMenuBar: true, webPreferences: { contextIsolation: true },
   });
-  win.loadURL("http://localhost:" + WEB_PORT);
+  // hand the Expo web app the daemon URL + a device token via the URL hash, so
+  // it connects with Bearer auth exactly like the phone (config.ts reads #cfg).
+  const cfg = Buffer.from(JSON.stringify({ baseUrl: "http://localhost:" + DAEMON_PORT, token: desktopToken })).toString("base64");
+  win.loadURL("http://localhost:" + WEB_PORT + "/#cfg=" + encodeURIComponent(cfg));
   // open external links in the real browser, not a new Electron window
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   win.on("closed", () => { win = null; });
@@ -155,6 +179,7 @@ if (!app.requestSingleInstanceLock()) {
       } catch { /* non-fatal: startup registration is a convenience, not required */ }
     }
     startDaemon();
+    mintDesktopToken();   // issue a device token for the served web UI
     startWeb();
     waitForWeb(createWindow);
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0 && !failed) createWindow(); });
