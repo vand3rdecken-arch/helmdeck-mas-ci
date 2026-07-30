@@ -81,16 +81,29 @@ fun CardScreen(
                         text = e, tool = null, result = null, ok = true,
                         running = false, streaming = false, ts = null, todos = emptyList())
                 }
-                // weave in the actionlog's lifecycle events (dispatched / gate / merge /
-                // deploy / bounce) so the phone feed reads like the desktop's unified one
-                val notes = runCatching { DaemonClient.history(t.id) }.getOrDefault(emptyList())
-                    .filter { it.kind == "note" && it.detail.isNotBlank() }
-                    .map { app.swarmdeck.Step(kind = "system", role = null, text = it.detail,
-                        tool = null, result = null, ok = true, running = false, streaming = false,
-                        // note ts is HH:MM:SS but transcript ts is HH:MM - truncate so
-                        // they interleave by minute instead of all notes at the bottom
+                val hist = runCatching { DaemonClient.history(t.id) }.getOrDefault(emptyList())
+                    .filter { it.detail.isNotBlank() }
+                steps = if (fresh.isEmpty()) {
+                    // no session transcript yet (never ran, or the turn was killed) -
+                    // render the full actionlog story (request/dispatch/steer/reply/
+                    // lifecycle) so the card is NEVER blank on mobile, matching the
+                    // desktop's history fallback
+                    hist.map { r ->
+                        app.swarmdeck.Step(
+                            kind = if (r.kind == "steer" || r.kind == "reply") "text" else "system",
+                            role = when (r.kind) { "steer" -> "user"; "reply" -> "assistant"; else -> null },
+                            text = r.detail, tool = null, result = null, ok = true, running = false,
+                            streaming = false, ts = r.ts.take(5).ifEmpty { null }, todos = emptyList())
+                    }
+                } else {
+                    // weave the actionlog's lifecycle notes into the live transcript.
+                    // note ts is HH:MM:SS but transcript ts is HH:MM - truncate to match.
+                    val notes = hist.filter { it.kind == "note" }.map { app.swarmdeck.Step(
+                        kind = "system", role = null, text = it.detail, tool = null, result = null,
+                        ok = true, running = false, streaming = false,
                         ts = it.ts.take(5).ifEmpty { null }, todos = emptyList()) }
-                steps = mergeFeed(fresh, notes)
+                    mergeFeed(fresh, notes)
+                }
                 t = DaemonClient.tracks().firstOrNull { it.id == t.id } ?: t
             } catch (_: Exception) { }
             // pin-to-newest only while the chat tab is showing AND the reader was
