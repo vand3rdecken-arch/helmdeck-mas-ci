@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -41,6 +42,29 @@ object Tok {
     val human       = Color(0xFFC99B2E)   // --human
 
     val glassBorder = Color(0x17FFFFFF)   // --glass-border (white 9%)
+    // --glass: a translucent panel fill (dark theme oklch(.21 .003 230/62%)).
+    // Semi-opaque so the ambient glow backdrop shows through = the desktop's
+    // frosted look, approximated without a real backdrop blur (not available
+    // pre-Android-12). Panels/cards/bars paint with this over the glow.
+    val glass       = Color(0xB81C1E1F)   // ~72% alpha over #1C1E1F
+    val glassStrong = Color(0xD11A1C1D)   // ~82% for bars that need more cover
+}
+
+/** The desktop's ambient backdrop (globals.css body::before): three soft radial
+ *  glows - accent-blue top-left, purple top-right, blue bottom - over the canvas.
+ *  This is the single biggest reason the flat phone looked unlike the desktop. */
+fun androidx.compose.ui.Modifier.glowBackdrop() = this.drawBehind {
+    drawRect(Tok.canvas)
+    val d = maxOf(size.width, size.height)
+    drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
+        listOf(Tok.accent.copy(alpha = .22f), androidx.compose.ui.graphics.Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width * .12f, size.height * -.06f), radius = d * .55f))
+    drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
+        listOf(Tok.accent2.copy(alpha = .20f), androidx.compose.ui.graphics.Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width * .96f, size.height * .08f), radius = d * .50f))
+    drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
+        listOf(Tok.accent.copy(alpha = .16f), androidx.compose.ui.graphics.Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width * .55f, size.height * 1.10f), radius = d * .60f))
 }
 
 /** Lane colours match the desktop board dots 1:1 (web/lib/store.tsx:81-84):
