@@ -114,6 +114,7 @@ function createWindow() {
   if (failed) return;
   win = new BrowserWindow({
     width: 1360, height: 900, title: "SwarmDeck", backgroundColor: "#0b0f14",
+    icon: path.join(__dirname, "assets", "icon.ico"),   // taskbar/window: the fanned-card mark
     autoHideMenuBar: true, webPreferences: { contextIsolation: true },
   });
   win.loadURL("http://localhost:" + WEB_PORT);

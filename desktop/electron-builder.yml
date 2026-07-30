@@ -42,11 +42,12 @@ win:
       arch:
         - x64
   artifactName: "SwarmDeck-Setup-${version}-${arch}.${ext}"
-  # add assets/icon.ico (>=256px) to brand the installer; default Electron icon
-  # is used until then.
-  # icon: assets/icon.ico
+  # the fanned-card mark (tools/make_icon.py) - same glyph as the phone launcher
+  icon: assets/icon.ico
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   shortcutName: SwarmDeck
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
