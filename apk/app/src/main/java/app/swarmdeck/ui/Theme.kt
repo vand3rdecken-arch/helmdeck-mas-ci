@@ -66,7 +66,8 @@ fun androidx.compose.ui.Modifier.glowBackdrop() = this.drawBehind {
             center = androidx.compose.ui.geometry.Offset(size.width * x, size.height * y), radius = d * r))
     glow(Tok.accent,  .26f, .06f, -.04f, .60f)   // blue, top-left
     glow(Tok.accent2, .22f, .98f,  .04f, .52f)   // purple, top-right
-    glow(Tok.accent,  .16f, .55f, 1.02f, .60f)   // blue, low-centre -> under the glass nav
+    glow(Tok.accent2, .26f, .30f, 1.04f, .55f)   // purple, bottom-left  -> under the glass nav
+    glow(Tok.accent,  .24f, .80f, 1.02f, .50f)   // blue, bottom-right   -> under the glass nav
 }
 
 /** Lane colours match the desktop board dots 1:1 (web/lib/store.tsx:81-84):

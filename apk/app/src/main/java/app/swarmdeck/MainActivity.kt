@@ -161,8 +161,18 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TopAppBar(
+                modifier = Modifier
+                    .hazeEffect(hazeState) {          // glass: blurs the board scrolling up under it
+                        blurRadius = 24.dp
+                        backgroundColor = Tok.canvas
+                        tints = listOf(HazeTint(Tok.surface1.copy(alpha = .35f)))
+                    }
+                    .drawBehind {                    // light edge along the bottom of the bar
+                        drawRect(Tok.glassBorder, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+                    },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Tok.surface1, titleContentColor = Tok.txtPrimary),
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent, titleContentColor = Tok.txtPrimary),
                 title = {
                     Text(moreView?.replaceFirstChar { it.uppercase() } ?: tab.label,
                         fontSize = 17.sp, modifier = Modifier.testTag("screenTitle"))
@@ -208,10 +218,10 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
         // Content is the haze SOURCE and bleeds under the (glass) bottom bar, so
         // the bar has something to blur. Only the top bar's height is padded out;
         // the board scrolls under the nav, non-board screens get a bottom inset.
-        Box(Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()).hazeSource(hazeState)) {
-          val underNav = DaemonClient.configured() && moreView == null && (tab == Tab.BOARD || tab == Tab.NEEDS)
-          Box(if (underNav) Modifier.fillMaxSize()
-              else Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding())) {
+        Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+          val underBars = DaemonClient.configured() && moreView == null && (tab == Tab.BOARD || tab == Tab.NEEDS)
+          Box(if (underBars) Modifier.fillMaxSize()
+              else Modifier.fillMaxSize().padding(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())) {
             if (!DaemonClient.configured()) {
                 SettingsScreen(toast) { reload++ }
             } else when {
@@ -229,9 +239,10 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 moreView == "settings"  -> SettingsScreen(toast) { reload++ }
                 tab == Tab.BOARD -> BoardScreen(tracks, metrics, laneLabels, null,
                     onOpen = { open = it }, onNew = { showNew = true },
-                    onChat = { chatOpen = true })
+                    onChat = { chatOpen = true }, topInset = pad.calculateTopPadding())
                 tab == Tab.NEEDS -> BoardScreen(tracks, null, laneLabels, "needs_you",
                     onOpen = { open = it }, onNew = { showNew = true },
+                    topInset = pad.calculateTopPadding(),
                     onChat = { chatOpen = true })
                 tab == Tab.DASH  -> DashboardScreen(toast)
                 tab == Tab.MORE  -> MoreMenu { moreView = it }
@@ -240,7 +251,8 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
             loadErr?.let {
                 Surface(color = Tok.surface2, shadowElevation = 4.dp,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp, start = 12.dp, end = 12.dp)) {
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .padding(top = pad.calculateTopPadding() + 8.dp, start = 12.dp, end = 12.dp)) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -257,7 +269,8 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
             update?.let { u ->
                 Surface(color = Tok.surface2, shadowElevation = 6.dp,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .padding(start = 12.dp, end = 12.dp, bottom = pad.calculateBottomPadding() + 12.dp)
                         .testTag("updateBanner")) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,

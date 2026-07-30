@@ -40,6 +40,7 @@ fun BoardScreen(
     onOpen: (Track) -> Unit,
     onNew: () -> Unit,
     onChat: (() -> Unit)? = null,
+    topInset: androidx.compose.ui.unit.Dp = 0.dp,   // board scrolls under the glass top bar
 ) {
     val lanes = listOf("backlog", "working", "review", "done")
     // long-press a card -> move it without opening it (the phone's drag&drop)
@@ -53,7 +54,7 @@ fun BoardScreen(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 128.dp),  // clear the stacked FABs
+            contentPadding = PaddingValues(12.dp, 8.dp + topInset, 12.dp, 128.dp),  // top: clear glass bar; bottom: clear FABs
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             metrics?.let { m ->
