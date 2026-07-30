@@ -11,6 +11,11 @@ import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material3.*
+import androidx.compose.ui.draw.drawBehind
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +85,7 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
     var showNew by remember { mutableStateOf(false) }
     var chatOpen by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
+    val hazeState = remember { HazeState() }   // links the scrolling content to the glass nav
 
     val toast: (String) -> Unit = { toastMsg = it }
     LaunchedEffect(toastMsg) { if (toastMsg != null) { delay(2600); toastMsg = null } }
@@ -167,7 +173,17 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 })
         },
         bottomBar = {
-            NavigationBar(containerColor = Tok.surface1) {
+            NavigationBar(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                modifier = Modifier
+                    .hazeEffect(hazeState) {          // REAL backdrop blur of the board scrolling under
+                        blurRadius = 24.dp
+                        backgroundColor = Tok.canvas
+                        tint = HazeTint(Tok.surface1.copy(alpha = .35f))
+                    }
+                    .drawBehind {                    // thin light edge = the glass catching light
+                        drawRect(Tok.glassBorder, size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+                    }) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = tab == t && moreView == null,
@@ -189,7 +205,13 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
             }
         }
     ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
+        // Content is the haze SOURCE and bleeds under the (glass) bottom bar, so
+        // the bar has something to blur. Only the top bar's height is padded out;
+        // the board scrolls under the nav, non-board screens get a bottom inset.
+        Box(Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()).hazeSource(hazeState)) {
+          val underNav = DaemonClient.configured() && moreView == null && (tab == Tab.BOARD || tab == Tab.NEEDS)
+          Box(if (underNav) Modifier.fillMaxSize()
+              else Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding())) {
             if (!DaemonClient.configured()) {
                 SettingsScreen(toast) { reload++ }
             } else when {
@@ -214,6 +236,7 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 tab == Tab.DASH  -> DashboardScreen(toast)
                 tab == Tab.MORE  -> MoreMenu { moreView = it }
             }
+          }  // end inner inset Box
             loadErr?.let {
                 Surface(color = Tok.surface2, shadowElevation = 4.dp,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
