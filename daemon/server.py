@@ -642,6 +642,42 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(nightshift.status()))
+            if p == "/automation":
+                # everything about the auto-working machinery in one place: the
+                # night shift (is it on, repos, limits, tonight's plan), the policy
+                # (auto-dispatch/accept), and the build-loop state machine + where
+                # it currently sits - so the UI can expose "what is the harness doing".
+                import events, nightshift, os as _os, sys as _sys
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                s = events.settings(); pol = s.get("policy") or {}
+                loop_states = [
+                    ["ALIGN", "Arbeit begonnen - Workorder schreiben (passt es zu Gesetzen + Charter?)"],
+                    ["ANALYZE", "Architektur-Impact + Debt-Delta klaeren, bevor gebaut wird"],
+                    ["EXECUTE", "Checks rot - bauen/fixen bis gruen (py_compile, tsc, design-lint)"],
+                    ["TEST", "verifizieren statt nur rendern - adversarial testen"],
+                    ["CLEAN", "aufraeumen, Debt-Register gepflegt halten"],
+                    ["BUILD", "stale Artefakte neu bauen (Installer / APK / glasses)"],
+                    ["COMMIT", "Loop fertig + ruhig - Commit vorschlagen"],
+                    ["DONE", "sauberer Baum, kein offener Workorder"],
+                ]
+                current = []
+                try:
+                    _sys.path.insert(0, _os.path.join(
+                        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools"))
+                    import loop_state
+                    current = [{"state": st, "action": ac} for st, ac in (loop_state.transitions() or [])]
+                except Exception as e:
+                    current = [{"state": "?", "action": "loop_state: %s" % str(e)[:120]}]
+                return self._send(200, json.dumps({
+                    "nightshift": nightshift.status(),
+                    "policy": {k: pol.get(k) for k in ("auto_dispatch_modes", "auto_dispatch_priority",
+                              "auto_accept_green", "chat_admin_roles", "chat_configure_roles")},
+                    "repos": (s.get("nightshift") or {}).get("repos") or [],
+                    "default_repo": s.get("default_repo"),
+                    "loop_states": [{"state": st, "desc": d} for st, d in loop_states],
+                    "loop_current": current,
+                }))
             if p == "/dashboard/data":
                 import events, sessions
                 if user["role"] == "client":
