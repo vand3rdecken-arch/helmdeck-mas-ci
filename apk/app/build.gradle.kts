@@ -24,8 +24,8 @@ android {
         applicationId = "app.swarmdeck"
         minSdk = 29
         targetSdk = 34
-        versionCode = 25
-        versionName = "2.5-polish"
+        versionCode = 26
+        versionName = "2.6-glassblur"
         // required for connectedAndroidTest - without it the device cannot find
         // the instrumentation and the run dies with "Process crashed"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -81,6 +81,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    // real backdrop blur for the glass bottom bar (Compose has no backdrop-filter).
+    // 1.2.2 is the last line built against Compose 1.7 (our BOM); 1.3+ needs 1.8.
+    implementation("dev.chrisbanes.haze:haze:1.2.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
     // instrumented E2E tests

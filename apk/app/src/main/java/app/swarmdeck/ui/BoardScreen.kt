@@ -139,7 +139,8 @@ fun BoardScreen(
         // The copilot belongs ON the board, like the desktop's floating button -
         // asking about the work should not require digging through a menu.
         Column(
-            Modifier.align(Alignment.BottomEnd).padding(18.dp),
+            // sit clear of the glass bottom nav the board now scrolls beneath
+            Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 96.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
