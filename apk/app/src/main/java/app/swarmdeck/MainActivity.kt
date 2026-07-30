@@ -292,20 +292,21 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
 
 @Composable
 private fun MoreMenu(go: (String) -> Unit) {
-    // 11 entries never fit a phone screen - the menu must scroll
+    // Ordered to mirror the desktop sidebar's priority: the primary work
+    // surfaces first (processes/recordings/sessions/history), then feeds, then
+    // the settings-group. Board copilot is the FAB (like web), not a menu row.
     Column(Modifier.fillMaxSize()
         .verticalScroll(androidx.compose.foundation.rememberScrollState())
         .padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("sessions" to "Sessions - continue a Claude Code conversation",
-               "processes" to "Processes - chains, steps, new definitions",
+        listOf("processes" to "Processes - chains, steps, new definitions",
                "recordings" to "Recordings - flight-recorder runs",
+               "sessions" to "Sessions - continue a Claude Code conversation",
                "history" to "History - the git audit trail",
-               "chat" to "Board copilot - ask about the work",
-               "import" to "Import - pull work in from Jira or a page",
                "connectors" to "Connectors - scheduled feeds",
+               "import" to "Import - pull work in from Jira or a page",
+               "automation" to "Automation & loop - build-loop state, night-shift, policy, repos",
                "users" to "Users - accounts, roles, device tokens",
                "workspace" to "Workspace history - restore a past config",
-               "automation" to "Automation & loop - build-loop state, night-shift, policy, repos",
                "debt" to "Debt register - shortcuts we owe",
                "settings" to "Settings - pairing and connection").forEach { (key, label) ->
             Panel(Modifier.testTag("more_$key")) {
