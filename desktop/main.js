@@ -92,8 +92,8 @@ function mintDesktopToken() {
   const { spawnSync } = require("child_process");
   const py = resolvePython();
   try {
-    const r = spawnSync(py.cmd,
-      [...py.args, "-c", "import auth,sys; sys.stdout.write(auth.issue_token('owner','desktop'))"],
+    // a helper script (not `-c`) so Windows shell quoting can't mangle it
+    const r = spawnSync(py.cmd, [...py.args, "mint_token.py", "owner", "desktop"],
       { cwd: daemonDir, shell: process.platform === "win32", windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && r.stdout) desktopToken = r.stdout.trim();
   } catch { /* leave empty */ }

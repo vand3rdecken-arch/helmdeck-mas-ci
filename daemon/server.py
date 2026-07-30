@@ -329,8 +329,21 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.end_headers()
         self.wfile.write(body if isinstance(body, bytes) else body.encode("utf-8"))
+
+    def do_OPTIONS(self):
+        # CORS preflight: a cross-origin fetch carrying an Authorization header
+        # (the Expo web build hitting the daemon from a different port) sends an
+        # OPTIONS preflight first. Auth is still enforced on the real request -
+        # this only tells the browser the request is permitted.
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
 
     def do_GET(self):
         p = self.path.split("?")[0]
