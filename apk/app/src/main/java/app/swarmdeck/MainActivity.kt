@@ -146,11 +146,12 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
     }
 
     Scaffold(
-        containerColor = Tok.canvas,
+        modifier = Modifier.glowBackdrop(),   // the desktop's ambient glow behind everything
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Tok.surface1, titleContentColor = Tok.txtPrimary),
+                    containerColor = Tok.glass, titleContentColor = Tok.txtPrimary),
                 title = {
                     Text(moreView?.replaceFirstChar { it.uppercase() } ?: tab.label,
                         fontSize = 17.sp, modifier = Modifier.testTag("screenTitle"))
@@ -161,7 +162,7 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 })
         },
         bottomBar = {
-            NavigationBar(containerColor = Tok.surface1) {
+            NavigationBar(containerColor = Tok.glassStrong) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = tab == t && moreView == null,

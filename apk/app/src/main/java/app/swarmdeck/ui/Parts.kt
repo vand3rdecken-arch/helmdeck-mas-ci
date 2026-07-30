@@ -55,7 +55,7 @@ fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> 
     Column(
         modifier
             .fillMaxWidth()
-            .background(Tok.surface1, RoundedCornerShape(14.dp))
+            .background(Tok.glass, RoundedCornerShape(14.dp))   // frosted, glow shows through
             .border(1.dp, Tok.glassBorder, RoundedCornerShape(14.dp))
             .padding(14.dp),
         content = content
@@ -84,7 +84,7 @@ fun TrackCard(t: Track, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) 
             .background(when (t.status) {
                 "needs_you" -> Tok.ok.copy(alpha = .10f)
                 "bounced" -> Tok.danger.copy(alpha = .10f)
-                else -> Tok.surface1
+                else -> Tok.glass
             }, RoundedCornerShape(12.dp))
             .border(
                 width = if (t.status == "needs_you" || t.status == "bounced") 2.dp else 1.dp,
