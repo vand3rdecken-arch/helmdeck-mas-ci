@@ -29,6 +29,37 @@ object DaemonClient {
 
     class ApiError(val status: Int, val body: String) : Exception("HTTP $status: ${body.take(200)}")
 
+    /** Turn a raw throwable (network exception or ApiError with a JSON body)
+     *  into ONE short, human German line. The board used to print the raw
+     *  "HTTP 503: {\"error\":...}" in a corner, which reads as a crash. The
+     *  most common real case - desktop app open but its relay bridge silent -
+     *  gets a plain-language hint instead of a status code. */
+    fun humanError(t: Throwable?): String {
+        if (t is ApiError) {
+            val srv = runCatching { JSONObject(t.body).optString("error") }.getOrNull().orEmpty()
+            return when {
+                t.status == 503 || srv.contains("no daemon connected") ->
+                    "Desktop nicht erreichbar - läuft SwarmDeck auf dem Desktop?"
+                t.status == 504 || srv.contains("no response") || srv.contains("offline or slow") ->
+                    "Desktop antwortet nicht - ist die App offen und wach?"
+                t.status == 401 || t.status == 403 ->
+                    "Nicht angemeldet - bitte in Einstellungen neu koppeln."
+                srv.isNotBlank() -> srv                       // server already spoke plainly (e.g. 409)
+                else -> "Fehler ${t.status}"
+            }
+        }
+        val m = t?.message.orEmpty()
+        return when {
+            m.contains("timeout", true) || m.contains("timed out", true) ->
+                "Zeitüberschreitung - Desktop oder Netz nicht erreichbar."
+            m.contains("Unable to resolve host", true) || m.contains("UnknownHost", true) ||
+                m.contains("Failed to connect", true) || m.contains("ConnectException", true) ->
+                "Keine Verbindung - bist du online?"
+            m.isBlank() -> "Verbindung fehlgeschlagen."
+            else -> m.take(90)
+        }
+    }
+
     private fun relayMode() = HubStore.relayUrl.isNotEmpty() && HubStore.room.isNotEmpty()
     fun configured() = relayMode() || HubStore.daemonUrl.isNotEmpty()
 
