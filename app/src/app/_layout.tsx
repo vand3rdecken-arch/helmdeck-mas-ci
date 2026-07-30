@@ -5,14 +5,38 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import * as Notifications from "expo-notifications";
+import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { queryClient } from "@/data/query";
 import { useConfig } from "@/data/config";
+import { presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 
+function usePushWiring() {
+  const router = useRouter();
+  useEffect(() => {
+    (async () => {
+      await useConfig.getState().hydrate();
+      if (useConfig.getState().relayMode()) registerForPush();
+    })();
+    // foreground: decrypt sealed data pushes and present them locally
+    const recv = Notifications.addNotificationReceivedListener((n) => {
+      const data = n.request.content.data as Record<string, string>;
+      if (data?.cipher) presentDecrypted(data);
+    });
+    // tap: deep-link to the card
+    const resp = Notifications.addNotificationResponseReceivedListener((r) => {
+      const track = (r.notification.request.content.data as { track?: string })?.track;
+      if (track) router.push(`/card/${track}`);
+    });
+    return () => { recv.remove(); resp.remove(); };
+  }, [router]);
+}
+
 export default function RootLayout() {
-  useEffect(() => { useConfig.getState().hydrate(); }, []);
+  usePushWiring();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
