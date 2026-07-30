@@ -56,15 +56,17 @@ object Tok {
 fun androidx.compose.ui.Modifier.glowBackdrop() = this.drawBehind {
     drawRect(Tok.canvas)
     val d = maxOf(size.width, size.height)
-    // Subtle and top-weighted: two faint corner glows only, so the CANVAS gets
-    // a hint of ambient colour while the (solid) cards stay crisp on top. Kept
-    // low - a stronger/see-through version reads as a muddy wash, not glass.
-    drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
-        listOf(Tok.accent.copy(alpha = .13f), androidx.compose.ui.graphics.Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(size.width * .08f, size.height * -.04f), radius = d * .48f))
-    drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
-        listOf(Tok.accent2.copy(alpha = .11f), androidx.compose.ui.graphics.Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(size.width * .98f, size.height * .02f), radius = d * .42f))
+    // Glass needs something to refract: on pure black the frosted nav shows
+    // nothing. Now that the nav does a REAL blur (which keeps colour from going
+    // muddy), the ambient glow can be present - three richer radial glows,
+    // including one low-centre so the glass bar has colour to blur.
+    fun glow(color: androidx.compose.ui.graphics.Color, a: Float, x: Float, y: Float, r: Float) =
+        drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
+            listOf(color.copy(alpha = a), androidx.compose.ui.graphics.Color.Transparent),
+            center = androidx.compose.ui.geometry.Offset(size.width * x, size.height * y), radius = d * r))
+    glow(Tok.accent,  .26f, .06f, -.04f, .60f)   // blue, top-left
+    glow(Tok.accent2, .22f, .98f,  .04f, .52f)   // purple, top-right
+    glow(Tok.accent,  .16f, .55f, 1.02f, .60f)   // blue, low-centre -> under the glass nav
 }
 
 /** Lane colours match the desktop board dots 1:1 (web/lib/store.tsx:81-84):
