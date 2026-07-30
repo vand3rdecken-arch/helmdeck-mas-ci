@@ -78,6 +78,21 @@ def latest_plan():
         return None
 
 
+def latest_report():
+    """The most recent morning report (report-*.md), or None. status() surfaces it;
+    it was referenced but never defined, which 500'd /nightshift + /automation."""
+    if not os.path.isdir(PLANS):
+        return None
+    reps = sorted(f for f in os.listdir(PLANS) if f.startswith("report-"))
+    if not reps:
+        return None
+    try:
+        with open(os.path.join(PLANS, reps[-1]), encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 # -- PLAN: the pre-sleep scout ---------------------------------------------
 
 _SCOUT_PROMPT = """You are the night-shift scout for the repository at hand. READ ONLY - change nothing.

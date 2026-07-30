@@ -31,6 +31,15 @@ export default function SettingsView() {
   const [nsMax, setNsMax] = useState("3");
   const [nsBusy, setNsBusy] = useState(false);
   const [nsPlan, setNsPlan] = useState<{ made?: string; repos?: Record<string, { items: { title: string; priority: string }[]; error?: string | null }> } | null>(null);
+  // live "what is the harness doing" - loop state machine + night-shift status
+  const [auto, setAuto] = useState<{
+    loop_states?: { state: string; desc: string }[];
+    loop_current?: { state: string; action: string }[];
+    repos?: string[];
+    nightshift?: { config?: { enabled?: boolean; window?: string; repos?: string[]; max_cards?: number; idle_minutes?: number }; tonight?: { started?: string[]; limit_hit?: boolean } };
+    policy?: Record<string, unknown>;
+  } | null>(null);
+  useEffect(() => { get<typeof auto>("/automation").then(setAuto).catch(() => setAuto(null)); }, []);
   const [nsReport, setNsReport] = useState<string | null>(null);
   const [pairing, setPairing] = useState<{ url: string; room: string; daemon_pub: string; device_token: string } | null>(null);
   const [pairCopied, setPairCopied] = useState(false);
@@ -146,6 +155,42 @@ export default function SettingsView() {
   if (!s) return <div className="panel">owner only</div>;
   return (
     <div id="settings">
+      {auto && (
+        <div className="panel">
+          <h3>Automation &amp; loop - what the harness is doing</h3>
+          <div style={{ fontSize: 12, color: "var(--txt-tertiary)", marginBottom: 10 }}>
+            The build loop (states computed from disk) and the night shift (auto-working when idle).
+          </div>
+          <label>Loop state{auto.loop_current?.length ? ` - now: ${auto.loop_current[0].state}` : " - DONE (clean, resting)"}</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "4px 0 8px" }}>
+            {(auto.loop_states ?? []).map((st) => {
+              const on = auto.loop_current?.[0]?.state === st.state;
+              return <span key={st.state} title={st.desc} style={{
+                fontSize: 11, padding: "3px 9px", borderRadius: 999,
+                border: `1px solid ${on ? "var(--accent)" : "var(--glass-border)"}`,
+                color: on ? "var(--accent)" : "var(--txt-tertiary)",
+                background: on ? "color-mix(in oklch,var(--accent) 12%,transparent)" : "transparent",
+                fontWeight: on ? 600 : 400 }}>{st.state}</span>;
+            })}
+          </div>
+          {auto.loop_current?.[0] && (
+            <div style={{ fontSize: 12, color: "var(--txt-secondary)", marginBottom: 10 }}>
+              → {auto.loop_current[0].action}
+            </div>
+          )}
+          <label>Night shift</label>
+          <div style={{ fontSize: 12.5, color: "var(--txt-primary)", marginBottom: 4 }}>
+            {auto.nightshift?.config?.enabled ? "● läuft" : "○ aus"} · window {auto.nightshift?.config?.window ?? "?"} ·
+            max {auto.nightshift?.config?.max_cards ?? "?"}/Nacht · idle {auto.nightshift?.config?.idle_minutes ?? "?"} min ·
+            heute gestartet {auto.nightshift?.tonight?.started?.length ?? 0}
+            {auto.nightshift?.tonight?.limit_hit ? " · ⚠ usage limit" : ""}
+          </div>
+          <label>Repos ({auto.repos?.length ?? 0})</label>
+          <div style={{ fontSize: 12, color: "var(--txt-tertiary)", wordBreak: "break-all" }}>
+            {(auto.repos ?? []).map((r) => r.split(/[\\/]/).pop()).join(" · ") || "keine"}
+          </div>
+        </div>
+      )}
       <div className="panel">
         <h3>Business settings</h3>
         <label>Default repo (tickets need no path when set)</label>
