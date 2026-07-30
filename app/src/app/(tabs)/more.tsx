@@ -12,9 +12,12 @@ export default function MoreTab() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { baseUrl, token, set } = useConfig();
+  const { baseUrl, token, set, applyPairing, relayMode } = useConfig();
   const [url, setUrl] = useState(baseUrl);
   const [tok, setTok] = useState(token);
+  const [pair, setPair] = useState("");
+  const [pairMsg, setPairMsg] = useState("");
+  const paired = relayMode();
 
   const field = { color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle,
     borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13 } as const;
@@ -26,8 +29,25 @@ export default function MoreTab() {
       </Text>
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120, gap: 10 }}>
         <Panel>
-          <SectionLabel text="connection" />
-          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>Daemon URL (LAN/Relay) + Device-Token.</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <SectionLabel text="pair with a desktop" />
+            <Text style={{ color: paired ? t.ok : t.txtTertiary, fontSize: 11 }}>{paired ? "● gekoppelt (Relay)" : "nicht gekoppelt"}</Text>
+          </View>
+          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>
+            Desktop: Settings → Mobile app → Pair phone. Code hier einfügen.
+          </Text>
+          <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" multiline
+            placeholder="Pairing-Code / Link" placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
+          <View style={{ height: 8 }} />
+          <Pressable onPress={() => { const ok = applyPairing(pair); setPairMsg(ok ? "Gekoppelt – verschlüsselt über Relay." : "Kein gültiger Code."); if (ok) setPair(""); }}
+            style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center" }}>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>Pair</Text>
+          </Pressable>
+          {pairMsg ? <Text style={{ color: pairMsg.startsWith("Gekoppelt") ? t.ok : t.danger, fontSize: 12, marginTop: 6 }}>{pairMsg}</Text> : null}
+        </Panel>
+        <Panel>
+          <SectionLabel text="direct lan (optional)" />
+          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>Nur im selben Netz ohne Relay. Daemon URL + Device-Token.</Text>
           <TextInput value={url} onChangeText={setUrl} autoCapitalize="none" placeholder="http://10.0.2.2:8140"
             placeholderTextColor={t.txtPlaceholder} style={field} />
           <View style={{ height: 8 }} />
