@@ -99,9 +99,9 @@ export default function Peek({ t, onClose }: { t: Track; onClose: () => void }) 
     if (!trans.length) return trans;
     const notes: Step[] = hist
       .filter((r) => r.kind === "note" && (r.detail ?? "").trim())
-      // note ts is HH:MM:SS but transcript ts is HH:MM - truncate so the string
-      // compare interleaves by minute instead of dumping all notes at the bottom
-      .map((r) => ({ kind: "system", text: r.detail, ts: (r.ts ?? "").slice(0, 5) }));
+      // both transcript ts and note ts are now local HH:MM:SS, so they interleave
+      // precisely by the second (was: 2h UTC skew + minute-only granularity)
+      .map((r) => ({ kind: "system", text: r.detail, ts: r.ts }));
     if (!notes.length) return trans;
     // forward-fill ts so every transcript step has a comparable time
     let last = "";

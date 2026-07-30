@@ -93,7 +93,7 @@ fun CardScreen(
                             kind = if (r.kind == "steer" || r.kind == "reply") "text" else "system",
                             role = when (r.kind) { "steer" -> "user"; "reply" -> "assistant"; else -> null },
                             text = r.detail, tool = null, result = null, ok = true, running = false,
-                            streaming = false, ts = r.ts.take(5).ifEmpty { null }, todos = emptyList())
+                            streaming = false, ts = r.ts.ifEmpty { null }, todos = emptyList())
                     }
                 } else {
                     // weave the actionlog's lifecycle notes into the live transcript.
@@ -101,7 +101,7 @@ fun CardScreen(
                     val notes = hist.filter { it.kind == "note" }.map { app.swarmdeck.Step(
                         kind = "system", role = null, text = it.detail, tool = null, result = null,
                         ok = true, running = false, streaming = false,
-                        ts = it.ts.take(5).ifEmpty { null }, todos = emptyList()) }
+                        ts = it.ts.ifEmpty { null }, todos = emptyList()) }
                     mergeFeed(fresh, notes)
                 }
                 t = DaemonClient.tracks().firstOrNull { it.id == t.id } ?: t
