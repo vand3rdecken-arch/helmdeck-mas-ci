@@ -24,6 +24,7 @@ data class Track(
     val turns: Int,
     val sessionId: String?,
     val workBy: String?,
+    val mode: String?,
     val updated: String?,
     val lastReply: String?,
 ) {
@@ -47,6 +48,7 @@ data class Track(
             turns = o.optInt("turns", 0),
             sessionId = o.optString("session_id").ifEmpty { null },
             workBy = o.optString("work_by").ifEmpty { null },
+            mode = o.optString("mode").ifEmpty { null },
             updated = o.optString("updated").ifEmpty { null },
             lastReply = o.optString("last_reply").ifEmpty { null },
         )

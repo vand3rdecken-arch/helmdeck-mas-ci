@@ -257,8 +257,9 @@ fun CardScreen(
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        t.status?.let { Chip(it.replace('_', ' '), statusColor(it), filled = true) }
+                        t.status?.let { Chip(it.replace('_', ' '), statusColor(it)) }
                         Chip(t.lane, laneColor(t.lane))
+                        t.mode?.let { Chip(executorLabel(it), executorColor(it)) }
                         if (t.aiCost > 0) Chip("AI $%.2f".format(t.aiCost))
                     }
                 }
