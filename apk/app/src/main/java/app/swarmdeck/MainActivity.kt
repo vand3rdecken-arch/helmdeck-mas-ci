@@ -5,6 +5,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Analytics
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -151,7 +156,7 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Tok.glass, titleContentColor = Tok.txtPrimary),
+                    containerColor = Tok.surface1, titleContentColor = Tok.txtPrimary),
                 title = {
                     Text(moreView?.replaceFirstChar { it.uppercase() } ?: tab.label,
                         fontSize = 17.sp, modifier = Modifier.testTag("screenTitle"))
@@ -162,15 +167,18 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 })
         },
         bottomBar = {
-            NavigationBar(containerColor = Tok.glassStrong) {
+            NavigationBar(containerColor = Tok.surface1) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = tab == t && moreView == null,
                         onClick = { tab = t; moreView = null },
                         label = { Text(t.label, fontSize = 11.sp) },
-                        icon = { Text(when (t) {
-                            Tab.BOARD -> "▤"; Tab.NEEDS -> "!"; Tab.DASH -> "◷"; Tab.MORE -> "⋯" },
-                            fontSize = 16.sp) },
+                        icon = { Icon(when (t) {
+                            Tab.BOARD -> Icons.Outlined.ViewColumn
+                            Tab.NEEDS -> Icons.Outlined.NotificationsNone
+                            Tab.DASH  -> Icons.Outlined.Analytics
+                            Tab.MORE  -> Icons.Outlined.MoreHoriz },
+                            contentDescription = t.label, modifier = Modifier.size(20.dp)) },
                         modifier = Modifier.testTag("tab_${t.name}"),
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Tok.accent, selectedTextColor = Tok.accent,

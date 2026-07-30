@@ -56,15 +56,15 @@ object Tok {
 fun androidx.compose.ui.Modifier.glowBackdrop() = this.drawBehind {
     drawRect(Tok.canvas)
     val d = maxOf(size.width, size.height)
+    // Subtle and top-weighted: two faint corner glows only, so the CANVAS gets
+    // a hint of ambient colour while the (solid) cards stay crisp on top. Kept
+    // low - a stronger/see-through version reads as a muddy wash, not glass.
     drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
-        listOf(Tok.accent.copy(alpha = .22f), androidx.compose.ui.graphics.Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(size.width * .12f, size.height * -.06f), radius = d * .55f))
+        listOf(Tok.accent.copy(alpha = .13f), androidx.compose.ui.graphics.Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width * .08f, size.height * -.04f), radius = d * .48f))
     drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
-        listOf(Tok.accent2.copy(alpha = .20f), androidx.compose.ui.graphics.Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(size.width * .96f, size.height * .08f), radius = d * .50f))
-    drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
-        listOf(Tok.accent.copy(alpha = .16f), androidx.compose.ui.graphics.Color.Transparent),
-        center = androidx.compose.ui.geometry.Offset(size.width * .55f, size.height * 1.10f), radius = d * .60f))
+        listOf(Tok.accent2.copy(alpha = .11f), androidx.compose.ui.graphics.Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width * .98f, size.height * .02f), radius = d * .42f))
 }
 
 /** Lane colours match the desktop board dots 1:1 (web/lib/store.tsx:81-84):
