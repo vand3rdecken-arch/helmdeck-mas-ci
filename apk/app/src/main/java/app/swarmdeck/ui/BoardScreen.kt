@@ -50,7 +50,7 @@ fun BoardScreen(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 88.dp),
+            contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 128.dp),  // clear the stacked FABs
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             metrics?.let { m ->
