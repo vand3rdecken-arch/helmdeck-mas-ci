@@ -43,18 +43,40 @@ object Tok {
     val glassBorder = Color(0x17FFFFFF)   // --glass-border (white 9%)
 }
 
-/** Lane colours match the board's dots on the desktop. */
+/** Lane colours match the desktop board dots 1:1 (web/lib/store.tsx:81-84):
+ *  working is --ai (blue), review is --human (gold) - NOT accent/warn. */
 fun laneColor(lane: String): Color = when (lane) {
     "backlog" -> Tok.txtTertiary
-    "working" -> Tok.accent
-    "review"  -> Tok.warn
+    "working" -> Tok.ai
+    "review"  -> Tok.human
     "done"    -> Tok.ok
     else      -> Tok.txtTertiary
 }
 
+/** Who does the work - same rule as the desktop (web board.tsx:37-40):
+ *  returns "ai" | "human" | "both" from the card's mode. */
+fun executor(mode: String?): String = when (mode) {
+    "human", "teach" -> "human"
+    "cowork"         -> "both"
+    else             -> "ai"
+}
+
+fun executorLabel(mode: String?) = when (executor(mode)) {
+    "human" -> "You"; "both" -> "AI + You"; else -> "AI"
+}
+
+fun executorColor(mode: String?) = when (executor(mode)) {
+    "human" -> Tok.human; "both" -> Tok.ai; else -> Tok.ai
+}
+
+/** Status colours match the desktop 1:1 (web/lib/store.tsx:87-89). */
 fun statusColor(status: String?): Color = when (status) {
-    "running"   -> Tok.accent
+    "queued"    -> Tok.txtTertiary
+    "running"   -> Tok.ai
     "needs_you" -> Tok.warn
+    "submitted" -> Tok.human
+    "accepted"  -> Tok.ok
+    "bounced"   -> Tok.danger
     "done"      -> Tok.ok
     "failed"    -> Tok.danger
     else        -> Tok.txtTertiary

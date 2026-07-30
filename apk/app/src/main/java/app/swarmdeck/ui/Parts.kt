@@ -28,15 +28,26 @@ import androidx.compose.ui.unit.sp
 import app.swarmdeck.Step
 import app.swarmdeck.Track
 
-/** Small pill used for lane / status / billing, matching the desktop chips. */
+/** The desktop chip, 1:1 (web globals.css .chip): a 5px rounded RECTANGLE on
+ *  bg-surface-2 with a subtle border, neutral secondary text, and a small
+ *  colored status dot - NOT a colored pill. `filled` keeps a tinted-emphasis
+ *  variant for the few "state" chips (automation on, debt paid). */
 @Composable
 fun Chip(text: String, color: Color = Tok.txtTertiary, filled: Boolean = false) {
-    Box(
+    val showDot = color != Tok.txtTertiary   // neutral chips (AI$, client) carry no dot
+    Row(
         Modifier
-            .background(if (filled) color.copy(alpha = .18f) else Color.Transparent, RoundedCornerShape(999.dp))
-            .border(1.dp, color.copy(alpha = if (filled) .35f else .28f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    ) { Text(text, fontSize = 11.sp, color = color, maxLines = 1) }
+            .background(if (filled) color.copy(alpha = .16f) else Tok.surface2, RoundedCornerShape(5.dp))
+            .border(1.dp, if (filled) color.copy(alpha = .38f) else Tok.borderSubtle, RoundedCornerShape(5.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        if (showDot) Box(Modifier.size(7.dp)
+            .background(color, androidx.compose.foundation.shape.CircleShape))
+        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+            color = if (filled) color else Tok.txtSecondary, maxLines = 1)
+    }
 }
 
 @Composable
@@ -93,8 +104,7 @@ fun TrackCard(t: Track, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) 
             Spacer(Modifier.height(6.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Chip(if (t.workBy == "human") "HUMAN" else "AI",
-                if (t.workBy == "human") Tok.human else Tok.ai, filled = true)
+            Chip(executorLabel(t.mode), executorColor(t.mode), filled = true)
             Spacer(Modifier.width(6.dp))
             Text(t.branch ?: "(no git)", fontSize = 11.sp, color = Tok.txtTertiary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -125,9 +135,10 @@ fun TrackCard(t: Track, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) 
             t.priority?.let {
                 if (it != "medium")           // medium is the default = noise
                     Chip(it, when (it) { "urgent" -> Tok.danger; "high" -> Tok.warn
-                        else -> Tok.txtTertiary }, filled = true)
+                        else -> Tok.txtTertiary })
             }
-            t.status?.let { Chip(it.replace('_', ' '), statusColor(it), filled = true) }
+            t.status?.let { Chip(it.replace('_', ' '), statusColor(it)) }
+            t.due?.let { if (it.isNotEmpty()) Chip("due $it") }
             if (t.aiCost > 0) Chip("AI $%.2f".format(t.aiCost))
             t.client?.let { if (it.isNotEmpty()) Chip(it) }
         }
