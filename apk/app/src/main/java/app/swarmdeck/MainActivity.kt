@@ -129,7 +129,7 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
             if (DaemonClient.configured()) {
                 runCatching { DaemonClient.tracks() }
                     .onSuccess { tracks = it; loadErr = null }
-                    .onFailure { loadErr = it.message }
+                    .onFailure { loadErr = DaemonClient.humanError(it) }
                 runCatching { DaemonClient.metrics() }.onSuccess { metrics = it }
                 runCatching { DaemonClient.settings() }.onSuccess { s ->
                     val p = s.optJSONObject("policy")?.optJSONObject("lane_labels")
@@ -206,8 +206,21 @@ fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.Mutable
                 tab == Tab.MORE  -> MoreMenu { moreView = it }
             }
             loadErr?.let {
-                Text("offline: ${it.take(70)}", fontSize = 11.sp, color = Tok.danger,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
+                Surface(color = Tok.surface2, shadowElevation = 4.dp,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp, start = 12.dp, end = 12.dp)) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(8.dp).background(Tok.warn,
+                            androidx.compose.foundation.shape.CircleShape))
+                        Text(it, fontSize = 12.5.sp, color = Tok.txtPrimary,
+                            modifier = Modifier.weight(1f, fill = false))
+                        TextButton(onClick = { reload++ }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                            Text("Erneut", fontSize = 12.5.sp, color = Tok.accent)
+                        }
+                    }
+                }
             }
             update?.let { u ->
                 Surface(color = Tok.surface2, shadowElevation = 6.dp,
