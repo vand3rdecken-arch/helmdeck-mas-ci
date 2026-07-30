@@ -7,6 +7,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -145,13 +148,15 @@ fun BoardScreen(
                     onClick = it,
                     containerColor = Tok.surface2, contentColor = Tok.accent,
                     modifier = Modifier.testTag("chatFab")
-                ) { Text("‹›", fontSize = 15.sp) }
+                ) { Icon(Icons.Outlined.ChatBubbleOutline,
+                    contentDescription = "Board-Chat", modifier = Modifier.size(18.dp)) }
             }
             FloatingActionButton(
                 onClick = onNew,
-                containerColor = Tok.accent,
+                containerColor = Tok.accent, contentColor = androidx.compose.ui.graphics.Color.White,
                 modifier = Modifier.testTag("newCardFab")
-            ) { Text("+", fontSize = 24.sp) }
+            ) { Icon(Icons.Outlined.Add,
+                contentDescription = "Neue Karte", modifier = Modifier.size(24.dp)) }
         }
     }
 }
