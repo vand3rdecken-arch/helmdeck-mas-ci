@@ -1,28 +1,49 @@
 import { useConfig } from "./config";
+import { open, seal } from "./e2ee";
 import type { Track, Metrics, Me } from "./types";
 
 export class AuthRequired extends Error {}
 
-// The daemon speaks Bearer-token auth uniformly (daemon/auth.py); we no longer
-// rely on the web's same-origin cookie. Reads baseUrl+token live from the store
-// so re-pairing / re-pointing takes effect without reconstructing a client.
-function headers(): Record<string, string> {
+function authHeaders(): Record<string, string> {
   const { token } = useConfig.getState();
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (token) h.Authorization = `Bearer ${token}`;
   return h;
 }
 
-async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const { baseUrl } = useConfig.getState();
-  const r = await fetch(baseUrl + path, {
-    method,
-    headers: headers(),
-    body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
-    signal,
+// Relay path: seal {method,path,headers,body} to the daemon's pubkey, POST it to
+// the relay room, open the sealed {status,headers,body} reply. Byte-compatible
+// with daemon/relay_client.py + e2ee.py. The relay only ever sees ciphertext.
+async function relayReq(method: string, path: string, bodyStr: string): Promise<{ status: number; body: string }> {
+  const { relayUrl, room, daemonPub, mySec, myPub } = useConfig.getState();
+  const inner = JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr });
+  const cipher = seal(inner, mySec, daemonPub);
+  const r = await fetch(`${relayUrl}/relay?room=${room}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pub: myPub, cipher }),
   });
-  if (r.status === 401) throw new AuthRequired();
-  const txt = await r.text();
+  if (!r.ok) throw new Error(r.status === 503 ? "Desktop nicht erreichbar" : `relay ${r.status}`);
+  const out = JSON.parse(await r.text());
+  if (!out.cipher) throw new Error("Desktop antwortet nicht");
+  const resp = JSON.parse(open(out.cipher, mySec, daemonPub));
+  return { status: resp.status ?? 200, body: resp.body ?? "" };
+}
+
+async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const cfg = useConfig.getState();
+  const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
+  let status: number, txt: string;
+  if (cfg.relayMode()) {
+    ({ status, body: txt } = await relayReq(method, path, bodyStr));
+  } else {
+    const r = await fetch(cfg.baseUrl + path, {
+      method, headers: authHeaders(),
+      body: method === "GET" ? undefined : bodyStr, signal,
+    });
+    status = r.status; txt = await r.text();
+  }
+  if (status === 401) throw new AuthRequired();
   return (txt ? JSON.parse(txt) : {}) as T;
 }
 

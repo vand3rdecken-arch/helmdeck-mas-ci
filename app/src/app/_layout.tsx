@@ -5,11 +5,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { useEffect } from "react";
 import { queryClient } from "@/data/query";
+import { useConfig } from "@/data/config";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 
 export default function RootLayout() {
+  useEffect(() => { useConfig.getState().hydrate(); }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
