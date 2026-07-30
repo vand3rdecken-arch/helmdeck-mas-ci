@@ -131,12 +131,34 @@ function killTree(proc) {
 }
 function cleanup() { killTree(daemon); killTree(web); daemon = web = null; }
 
-app.whenReady().then(() => {
-  startDaemon();
-  startWeb();
-  waitForWeb(createWindow);
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0 && !failed) createWindow(); });
-});
+// Single-instance lock: the daemon is the phone's ONLY way in (it holds the
+// relay bridge). A second launch would spawn a SECOND daemon on the same room,
+// and the two would fight over every phone frame - so refuse to start twice and
+// just focus the window that already owns the port.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+    else if (!failed) createWindow();
+  });
+
+  app.whenReady().then(() => {
+    // Auto-start at login so the daemon + relay bridge are up whenever the
+    // machine is - otherwise the phone shows "Desktop nicht erreichbar" until
+    // someone opens the app by hand. Only the packaged build registers itself
+    // (a dev `electron .` run must not wire the dev binary into startup).
+    if (app.isPackaged) {
+      try {
+        app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: [] });
+      } catch { /* non-fatal: startup registration is a convenience, not required */ }
+    }
+    startDaemon();
+    startWeb();
+    waitForWeb(createWindow);
+    app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0 && !failed) createWindow(); });
+  });
+}
 
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", cleanup);
