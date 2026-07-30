@@ -250,7 +250,7 @@ fun CardScreen(
                         color = if (cardTab == 1) Tok.accent else Tok.txtTertiary) })
             }
 
-            if (cardTab == 0) LazyColumn(
+            if (cardTab == 0) SelectionContainer { LazyColumn(   // all overview text long-press-copyable
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -265,10 +265,8 @@ fun CardScreen(
                 item {
                     Panel(Modifier.testTag("cardDescription")) {
                         SectionLabel("description")
-                        SelectionContainer {   // long-press to select + copy
-                            Text(t.description?.ifBlank { null } ?: t.task,
-                                fontSize = 14.sp, color = Tok.txtPrimary)
-                        }
+                        Text(t.description?.ifBlank { null } ?: t.task,
+                            fontSize = 14.sp, color = Tok.txtPrimary)
                     }
                 }
                 // the newest agent reply as a digest, so you know where things
@@ -278,9 +276,7 @@ fun CardScreen(
                 if (!lastReply.isNullOrBlank()) item {
                     Panel {
                         SectionLabel("latest from the worker")
-                        SelectionContainer {
-                            Text(lastReply, fontSize = 13.sp, color = Tok.txtSecondary, maxLines = 12)
-                        }
+                        Text(lastReply, fontSize = 13.sp, color = Tok.txtSecondary, maxLines = 12)
                         TextButton(onClick = { cardTab = 1 }) {
                             Text("open the chat ›", fontSize = 12.sp, color = Tok.accent)
                         }
@@ -295,7 +291,7 @@ fun CardScreen(
                             .onFailure { toast(it.message ?: "save failed") }
                     }
                 } }
-            }
+            } }
             else LazyColumn(
                 Modifier.fillMaxSize(), state = listState,
                 contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)
