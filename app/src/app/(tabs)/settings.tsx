@@ -71,6 +71,7 @@ export default function Settings() {
 
   // ---- pairing ----
   const [pairCode, setPairCode] = useState("");
+  const [pairLink, setPairLink] = useState("");
   const [qr, setQr] = useState("");
   const [pairBusy, setPairBusy] = useState(false);
   const [relayUrl, setRelayUrl] = useState("");
@@ -197,6 +198,7 @@ export default function Settings() {
       // own origin. Same mechanism the old SwarmDeck app used.
       const qrPayload = util.encodeBase64(util.decodeUTF8(JSON.stringify({ r: r.room, k: r.daemon_pub, t: r.device_token })));
       const link = `${(r.url ?? "").replace(/\/$/, "")}/pair?c=${qrPayload}`;
+      setPairLink(link);              // tap-to-pair link — send to the phone, no QR scan
       setQr(await qrDataUrl(link));   // real on web/desktop, "" on native (phone scans)
     } catch (e) { fail(e); } finally { setPairBusy(false); }
   }
@@ -443,6 +445,20 @@ export default function Settings() {
               <Btn label={pairBusy ? "…" : "Telefon koppeln"} onPress={pairPhone} disabled={pairBusy} />
               {pairCode ? (
                 <View style={{ marginTop: 10, gap: 8 }}>
+                  {pairLink ? (
+                    <View style={{ gap: 6 }}>
+                      <Hint text="Ohne Scan: diesen Link ans Telefon schicken (WhatsApp/Signal an dich selbst) und antippen — HelmDeck öffnet sich und koppelt." />
+                      <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
+                        <Text selectable numberOfLines={2} style={{ color: t.accent, fontSize: 11.5 }}>{pairLink}</Text>
+                      </View>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <View style={{ flex: 1 }}><Btn label="Link kopieren" onPress={async () => { await Clipboard.setStringAsync(pairLink); Alert.alert("Kopiert", "Pairing-Link kopiert - ans Telefon senden und antippen."); }} /></View>
+                        {isWeb && typeof navigator !== "undefined" && (navigator as unknown as { share?: unknown }).share ? (
+                          <View style={{ flex: 1 }}><Btn label="Teilen" kind="ghost" onPress={() => { (navigator as unknown as { share: (d: { url: string }) => Promise<void> }).share({ url: pairLink }).catch(() => {}); }} /></View>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
                   {qr ? (
                     <View style={{ alignItems: "center", gap: 6 }}>
                       <Hint text="Mit der Handykamera scannen — öffnet HelmDeck und koppelt automatisch." />
