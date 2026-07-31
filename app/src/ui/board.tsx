@@ -16,15 +16,14 @@ import { Chip, Dot, Empty } from "./kit";
 const LANES = ["backlog", "working", "review", "done"] as const;
 const isWeb = Platform.OS === "web";
 
-/** Real frosted glass on the web (CSS backdrop-filter over the glow backdrop);
- *  native RN can't blur what's behind, so it uses a crisp translucent surface. */
-function glassStyle(t: ThemeTokens) {
+/** Content-layer card (Apple HIG: don't put Liquid Glass in the content layer —
+ *  use an opaque standard surface with a hairline + soft elevation shadow, and
+ *  let the aurora show through the *chrome* instead). */
+function contentCardStyle(t: ThemeTokens) {
   return isWeb
-    ? ({ backgroundColor: t.glass, backdropFilter: "blur(24px) saturate(1.8)", WebkitBackdropFilter: "blur(24px) saturate(1.8)",
-        // spec highlight (top inner light + hairline) over a soft drop shadow — the
-        // old app's "liquid glass" material, so the aurora backdrop blooms through
-        boxShadow: "inset 0 1.5px 0 rgba(255,255,255,0.16), inset 0 0 0 1px rgba(255,255,255,0.05), 0 4px 16px rgba(0,0,0,0.30)" } as any)
-    : { backgroundColor: t.surface1 };
+    ? ({ backgroundColor: t.surface1,
+        boxShadow: "0 1px 2px rgba(0,0,0,0.28), 0 6px 18px rgba(0,0,0,0.22)" } as any)
+    : { backgroundColor: t.surface1, elevation: 3 };
 }
 
 function useLaneLabels() {
@@ -55,9 +54,10 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     <Pressable
       onPress={() => router.push(`/card/${k.id}`)}
       onLongPress={() => onMove(k)}
-      style={[s.card, tint ? { backgroundColor: tint + "1A" } : glassStyle(t), {
-        borderColor: tint ? tint + "B3" : t.glassBorder,
+      style={[s.card, tint ? { backgroundColor: t.surface1 } : contentCardStyle(t), {
+        borderColor: tint ? tint + "B3" : t.borderSubtle,
         borderWidth: tint ? 2 : 1,
+        ...(tint && isWeb ? { boxShadow: "0 1px 2px rgba(0,0,0,0.28), 0 6px 18px rgba(0,0,0,0.22)" } as any : null),
       }]}
     >
       {tint ? (
@@ -142,7 +142,7 @@ function TimelineRows({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (id: 
           <View style={{ flex: 1, gap: 6, borderLeftWidth: wide ? 2 : 0, borderLeftColor: t.glassBorder, paddingLeft: wide ? 16 : 0 }}>
             {g.items.map((k) => (
               <Pressable key={k.id} onPress={() => onOpen(k.id)}
-                style={[s.card, glassStyle(t), { borderColor: t.glassBorder, borderWidth: 1, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }]}>
+                style={[s.card, contentCardStyle(t), { borderColor: t.borderSubtle, borderWidth: 1, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }]}>
                 <Dot color={statusColor(t, k.status)} />
                 <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
                 {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
