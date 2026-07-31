@@ -4,8 +4,9 @@ import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import util from "tweetnacl-util";
 import { useConfig } from "@/data/config";
+import { qrDataUrl } from "@/data/qrgen";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -70,6 +71,7 @@ export default function Settings() {
 
   // ---- pairing ----
   const [pairCode, setPairCode] = useState("");
+  const [qr, setQr] = useState("");
   const [pairBusy, setPairBusy] = useState(false);
   const [relayUrl, setRelayUrl] = useState("");
 
@@ -190,6 +192,12 @@ export default function Settings() {
       // Byte-compatible with applyPairing / the web pairing code: base64(JSON{u,r,k,t}).
       const code = util.encodeBase64(util.decodeUTF8(JSON.stringify({ u: r.url, r: r.room, k: r.daemon_pub, t: r.device_token })));
       setPairCode(code);
+      // QR = the relay's own /pair App Link (phone cameras open https, not a
+      // custom scheme). The url is omitted from the payload — it's the link's
+      // own origin. Same mechanism the old SwarmDeck app used.
+      const qrPayload = util.encodeBase64(util.decodeUTF8(JSON.stringify({ r: r.room, k: r.daemon_pub, t: r.device_token })));
+      const link = `${(r.url ?? "").replace(/\/$/, "")}/pair?c=${qrPayload}`;
+      setQr(await qrDataUrl(link));   // real on web/desktop, "" on native (phone scans)
     } catch (e) { fail(e); } finally { setPairBusy(false); }
   }
   async function saveRelay() {
@@ -434,10 +442,16 @@ export default function Settings() {
               <View style={{ height: 10 }} />
               <Btn label={pairBusy ? "…" : "Telefon koppeln"} onPress={pairPhone} disabled={pairBusy} />
               {pairCode ? (
-                <View style={{ marginTop: 10, gap: 6 }}>
-                  <Hint text="Diesen Code am Telefon einfügen (More → Pair). Er enthält ein Einmal-Device-Token - wie ein Passwort behandeln." />
+                <View style={{ marginTop: 10, gap: 8 }}>
+                  {qr ? (
+                    <View style={{ alignItems: "center", gap: 6 }}>
+                      <Hint text="Mit der Handykamera scannen — öffnet HelmDeck und koppelt automatisch." />
+                      <Image source={{ uri: qr }} style={{ width: 220, height: 220, borderRadius: 10, backgroundColor: "#fff" }} />
+                    </View>
+                  ) : null}
+                  <Hint text="Kein Scan? Code kopieren und am Telefon einfügen (More → Pair). Enthält ein Einmal-Token - wie ein Passwort behandeln." />
                   <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
-                    <Text selectable style={{ color: t.txtSecondary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{pairCode}</Text>
+                    <Text selectable numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{pairCode}</Text>
                   </View>
                   <Btn label="Code kopieren" kind="ghost" onPress={async () => { await Clipboard.setStringAsync(pairCode); Alert.alert("Kopiert", "Pairing-Code in der Zwischenablage."); }} />
                 </View>
