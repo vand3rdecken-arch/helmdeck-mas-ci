@@ -20,7 +20,8 @@ const isWeb = Platform.OS === "web";
  *  native RN can't blur what's behind, so it uses a crisp translucent surface. */
 function glassStyle(t: ThemeTokens) {
   return isWeb
-    ? ({ backgroundColor: t.glass, backdropFilter: "blur(16px) saturate(1.3)", WebkitBackdropFilter: "blur(16px) saturate(1.3)" } as any)
+    ? ({ backgroundColor: t.glass, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.28)" } as any)
     : { backgroundColor: t.surface1 };
 }
 
@@ -294,13 +295,14 @@ function WideKanban({
             key={lane}
             ref={(r) => { colRefs.current[lane] = r; }}
             onLayout={() => colRefs.current[lane]?.measureInWindow((x, _y, w) => { colFrames.current[lane] = { x, w }; })}
-            style={[s.column, { borderColor: t.glassBorder, backgroundColor: t.surface1 + "59" }]}
+            style={s.column}
           >
-            <View style={[s.row, { borderBottomWidth: 1, borderBottomColor: t.glassBorder, paddingBottom: 8 }]}>
-              <Dot color={laneColor(t, lane)} size={8} />
-              <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "700", flex: 1 }}>{label(lane)}</Text>
-              <View style={{ backgroundColor: laneColor(t, lane) + "26", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1 }}>
-                <Text style={{ color: laneColor(t, lane), fontSize: 11.5, fontWeight: "700" }}>{inLane.length}</Text>
+            {/* web-app lanes are transparent: just a sticky header + floating glass cards */}
+            <View style={[s.row, { paddingBottom: 10, paddingHorizontal: 6 }]}>
+              <Dot color={laneColor(t, lane)} size={9} />
+              <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600", flex: 1 }}>{label(lane)}</Text>
+              <View style={{ backgroundColor: t.layer1, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 0.5 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "600" }}>{inLane.length}</Text>
               </View>
             </View>
             {inLane.length === 0 ? (
@@ -401,9 +403,9 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
 
 const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  card: { borderRadius: 12, padding: 12, gap: 8 },
-  column: { flex: 1, gap: 8, borderRadius: 16, borderWidth: 1, padding: 10, minHeight: 120 },
-  task: { fontSize: 15, fontWeight: "500" },
+  card: { borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, gap: 7 },
+  column: { flex: 1, minWidth: 250, maxWidth: 340, gap: 8, minHeight: 120 },
+  task: { fontSize: 13.5, fontWeight: "500", lineHeight: 19 },
   branch: { fontSize: 11, flexShrink: 1 },
   nextup: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 6 },
 });
