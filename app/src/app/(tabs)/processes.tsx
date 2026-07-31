@@ -1,8 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet,
+  ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView, StyleSheet,
   Text, TextInput, useWindowDimensions, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +19,10 @@ const isWeb = Platform.OS === "web";
 const MODES = ["do", "prepare", "cowork", "teach", "human"] as const;
 const MODE_LABEL: Record<string, string> = {
   do: "do", prepare: "prepare", cowork: "cowork", teach: "teach", human: "human",
+};
+// Mode -> Ionicon shown inside the pipeline node (mirrors procs.tsx MODE_ICONS).
+const MODE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  do: "flash", prepare: "construct", cowork: "people", teach: "school", human: "person",
 };
 
 // Step lifecycle -> [colour token key, label]; mirrors procs.tsx STATE_STYLE.
@@ -125,6 +130,76 @@ function StepRow({ pid, idx, step, act }: {
   );
 }
 
+// One pipeline node: a coloured circle (checkmark when done, else a mode icon),
+// the step title, and its state label. "ready" pulses amber; "proposed" is dashed.
+function PipeNode({ step }: { step: Step }) {
+  const t = useTheme();
+  const state = step.state ?? "proposed";
+  const [colour] = stateStyle(t, state);
+  const label = state === "proposed" ? "proposed"
+    : step.lane === "review" ? "in review" : stateStyle(t, state)[1];
+  const done = step.done || state === "done";
+  const proposed = state === "proposed";
+
+  // Subtle pulse on the step the chain is waiting on (up next / waiting-for-human).
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (state !== "ready") return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: !isWeb }),
+        Animated.timing(pulse, { toValue: 0, duration: 800, useNativeDriver: !isWeb }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [state, pulse]);
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.45] });
+
+  return (
+    <View style={{ width: 96, alignItems: "center" }}>
+      <Animated.View style={{
+        width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
+        borderWidth: 2.5, borderStyle: proposed ? "dashed" : "solid",
+        borderColor: proposed ? t.borderStrong : colour,
+        backgroundColor: colour + "2E",
+        opacity: state === "ready" ? opacity : 1,
+      }}>
+        <Ionicons name={done ? "checkmark" : (MODE_ICON[step.mode ?? "do"] ?? "ellipse")}
+          size={18} color={proposed ? t.borderStrong : colour} />
+      </Animated.View>
+      <Text numberOfLines={2} style={{ fontSize: 10.5, lineHeight: 13, marginTop: 4, textAlign: "center", color: t.txtSecondary }}>
+        {step.title}
+      </Text>
+      <Text style={{ fontSize: 9.5, fontWeight: "600", color: proposed ? t.txtTertiary : colour }}>{label}</Text>
+    </View>
+  );
+}
+
+// Horizontal n8n-style read of the chain: one node per step joined by connector
+// arrows. Scrolls sideways when it overflows.
+function Pipeline({ p }: { p: Process }) {
+  const t = useTheme();
+  const steps = p.steps ?? [];
+  if (steps.length === 0) return null;
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ alignItems: "flex-start", paddingVertical: 8, paddingHorizontal: 2 }}>
+      {steps.map((st, i) => (
+        <View key={i} style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <PipeNode step={st} />
+          {i < steps.length - 1 ? (
+            <View style={{ width: 22, height: 42, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="chevron-forward" size={14}
+                color={(st.done || st.state === "done") ? t.ok : t.borderStrong} />
+            </View>
+          ) : null}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
 function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   const t = useTheme();
   const router = useRouter();
@@ -171,6 +246,8 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
       </View>
       {p.status === "proposing" ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Agent schlägt Schritte vor…</Text> : null}
       {p.status === "failed" ? <Text style={{ color: t.danger, fontSize: 12 }}>{p.error ?? "Vorschlag fehlgeschlagen"}</Text> : null}
+
+      <Pipeline p={p} />
 
       <View style={{ gap: 6, marginTop: 6 }}>
         {steps.map((st, i) => <StepRow key={i} pid={p.id} idx={i} step={st} act={act} />)}

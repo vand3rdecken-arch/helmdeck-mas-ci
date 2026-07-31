@@ -212,16 +212,102 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   models: string[]; modeOptions: { id: string; label: string }[];
   seed: { text: string; key: number }; setSeed: (s: { text: string; key: number }) => void; bottomInset: number;
 }) {
+  const t = useTheme();
+  const qc = useQueryClient();
   const running = k.status === "running";
+  // card chat mode: "worker" steers the card's own worker (default), "agent" talks
+  // to the free board copilot about this card (it can move/delete/archive/steer).
+  const [agentMode, setAgentMode] = useState(false);
+  // optimistic echo: your just-sent worker message shows instantly, before the
+  // session transcript catches up. Reconciled away once the real feed carries it.
+  const [pending, setPending] = useState<TStep[]>([]);
+  // the free-agent (copilot) conversation about this card
+  const [agentMsgs, setAgentMsgs] = useState<TStep[]>([]);
+  const scrollRef = useRef<ScrollView>(null);
+  const [atBottom, setAtBottom] = useState(true);
+
+  // drop an optimistic echo once the real feed carries that same user text
+  useEffect(() => {
+    if (!pending.length) return;
+    const seen = new Set<string>(feed.filter((s) => s.role === "user").map((s) => (s.text ?? "").trim()));
+    setPending((p) => p.filter((e) => !seen.has((e.text ?? "").trim())));
+  }, [feed]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the rendered feed = server story + optimistic echoes + copilot conversation
+  const steps = useMemo<TStep[]>(() => [...feed, ...pending, ...agentMsgs], [feed, pending, agentMsgs]);
+
+  // auto-pin to newest — but only when the reader is already near the bottom, so
+  // scrolling up to read isn't yanked back down.
+  useEffect(() => {
+    if (atBottom) scrollRef.current?.scrollToEnd({ animated: true });
+  }, [steps.length, atBottom]);
+  const onScroll = (e: { nativeEvent: { contentOffset: { y: number }; contentSize: { height: number }; layoutMeasurement: { height: number } } }) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    setAtBottom(contentSize.height - contentOffset.y - layoutMeasurement.height < 60);
+  };
+
+  const hhmm = () => new Date().toTimeString().slice(0, 5);
+  async function handleSend(text: string, o: SteerOpts) {
+    if (agentMode) {
+      setAgentMsgs((m) => [...m, { role: "user", kind: "text", text, ts: hhmm() }]);
+      try {
+        const r = await api.chat(text, { ...o, card: k.id });
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.text || "(keine Antwort)", ts: hhmm() }]);
+      } catch {
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: "(Agent-Senden fehlgeschlagen)", ts: hhmm() }]);
+      }
+      // the board agent may have moved/deleted/archived cards — refresh the board
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      return;
+    }
+    // worker: echo instantly, then steer; retract the echo if the send throws
+    const echo: TStep = { role: "user", kind: "text", text, ts: hhmm() };
+    setPending((p) => [...p, echo]);
+    try { await onSend(text, o); }
+    catch { setPending((p) => p.filter((e) => e !== echo)); }
+  }
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
-        {feed.length === 0 ? <Empty text="Noch keine Nachrichten." /> :
-          <Transcript steps={feed} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
-      </ScrollView>
-      <Composer onSend={onSend} busy={running} onStop={onStop} models={models} modeOptions={modeOptions}
+      <View style={{ flex: 1 }}>
+        <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64}
+          contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
+          {steps.length === 0 ? <Empty text="Noch keine Nachrichten." /> :
+            <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
+        </ScrollView>
+        {!atBottom ? (
+          <Pressable onPress={() => { scrollRef.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
+            style={{ position: "absolute", right: 14, bottom: 12, flexDirection: "row", alignItems: "center", gap: 4,
+              backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
+              paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Ionicons name="arrow-down" size={14} color={t.accent} />
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>Neueste</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* card chat mode toggle: steer the worker, or talk to the board copilot */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 8 }}>
+        {([["worker", "Worker"], ["agent", "Agent"]] as const).map(([id, label]) => {
+          const on = (id === "agent") === agentMode;
+          return (
+            <Pressable key={id} onPress={() => setAgentMode(id === "agent")}
+              style={{ backgroundColor: on ? t.accent + "26" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
+                borderWidth: 1, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5 }}>
+              <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12 }}>{label}</Text>
+            </Pressable>
+          );
+        })}
+        <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }}>
+          {agentMode ? "freier Board-Agent — verschieben/löschen/alles (berechtigt)"
+            : (k.session_id ? "steuert den Worker — Kontext läuft weiter" : "steuert den Worker — noch nicht gestartet")}
+        </Text>
+      </View>
+
+      <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
         slashCommands={SLASH} seed={seed} bottomInset={bottomInset} draftKey={`card:${k.id}`}
-        placeholder={k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
+        placeholder={agentMode ? "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'"
+          : k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
     </KeyboardAvoidingView>
   );
 }
