@@ -3,8 +3,9 @@ import { ActivityIndicator, Platform, ScrollView, Text, useWindowDimensions, Vie
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import type { Me } from "@/data/types";
 import { useTheme } from "@/theme";
-import { CapacityPanel, GatesPanel, ModelsPanel, SowPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
+import { CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
 
 const isWeb = Platform.OS === "web";
 
@@ -14,6 +15,8 @@ export default function DashboardTab() {
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;
   const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 10000 });
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  const isOwner = me?.role === "owner";
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
@@ -24,24 +27,32 @@ export default function DashboardTab() {
         {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
         {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar.</Text> : null}
         {data ? (
-          <>
-            <Tiles m={data} wide={wide} />
-            {/* On desktop the two gauges sit side by side; the wide tables stay full width. */}
-            {wide ? (
-              <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
-                <View style={{ flex: 1 }}><CapacityPanel m={data} /></View>
-                <View style={{ flex: 1 }}><GatesPanel m={data} /></View>
-              </View>
-            ) : (
+          (() => {
+            const panels = dashPanels(data);
+            const showCap = panels.includes("capacity");
+            const showGates = panels.includes("gates");
+            return (
               <>
-                <CapacityPanel m={data} />
-                <GatesPanel m={data} />
+                {isOwner ? <DashCustomize m={data} /> : null}
+                <Tiles m={data} wide={wide} tiles={dashTiles(data)} />
+                {/* On desktop the two gauges sit side by side; the wide tables stay full width. */}
+                {wide && showCap && showGates ? (
+                  <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+                    <View style={{ flex: 1 }}><CapacityPanel m={data} /></View>
+                    <View style={{ flex: 1 }}><GatesPanel m={data} /></View>
+                  </View>
+                ) : (
+                  <>
+                    {showCap ? <CapacityPanel m={data} /> : null}
+                    {showGates ? <GatesPanel m={data} /> : null}
+                  </>
+                )}
+                {panels.includes("sows") ? <SowPanel m={data} /> : null}
+                {panels.includes("models") ? <ModelsPanel m={data} /> : null}
+                {panels.includes("work") ? <WorkPanel m={data} /> : null}
               </>
-            )}
-            <SowPanel m={data} />
-            <ModelsPanel m={data} />
-            <WorkPanel m={data} />
-          </>
+            );
+          })()
         ) : null}
       </ScrollView>
     </View>

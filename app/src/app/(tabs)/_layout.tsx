@@ -12,7 +12,7 @@ const isWeb = Platform.OS === "web";
 const LOGO = require("../../../assets/images/icon.png");
 
 type IconName = keyof typeof Ionicons.glyphMap;
-type NavItem = { name: string; label: string; icon: IconName; section?: string };
+type NavItem = { name: string; label: string; icon: IconName; section?: string; teamOnly?: boolean };
 
 // Desktop left-sidebar nav (the old web shell): every view is first-class, in
 // sections. On phone only the first four are bottom-bar tabs; the rest live
@@ -20,14 +20,14 @@ type NavItem = { name: string; label: string; icon: IconName; section?: string }
 const NAV: NavItem[] = [
   { name: "index", label: "Board", icon: "grid-outline" },
   { name: "needs", label: "Needs you", icon: "notifications-outline" },
-  { name: "dashboard", label: "Dashboard", icon: "stats-chart-outline" },
+  { name: "dashboard", label: "Dashboard", icon: "stats-chart-outline", teamOnly: true },
   { name: "processes", label: "Processes", icon: "git-network-outline", section: "Workflow" },
   { name: "recordings", label: "Recordings", icon: "videocam-outline" },
-  { name: "sessions", label: "Sessions", icon: "chatbubbles-outline" },
+  { name: "sessions", label: "Sessions", icon: "chatbubbles-outline", teamOnly: true },
   { name: "history", label: "History", icon: "time-outline" },
-  { name: "connectors", label: "Connectors", icon: "sync-outline", section: "Setup" },
-  { name: "automation", label: "Automation", icon: "git-branch-outline" },
-  { name: "settings", label: "Settings", icon: "settings-outline" },
+  { name: "connectors", label: "Connectors", icon: "sync-outline", section: "Setup", teamOnly: true },
+  { name: "automation", label: "Automation", icon: "git-branch-outline", teamOnly: true },
+  { name: "settings", label: "Settings", icon: "settings-outline", teamOnly: true },
 ];
 // screens that are NOT phone bottom-bar tabs (hidden there, shown in sidebar)
 const DESKTOP_ONLY = new Set(["processes", "recordings", "sessions", "history", "connectors", "automation", "settings"]);
@@ -81,7 +81,7 @@ function Sidebar({ state, navigation }: any) {
         <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>HelmDeck</Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        {NAV.map((item) => {
+        {NAV.filter((item) => !(item.teamOnly && me?.role === "client")).map((item) => {
           const active = activeName === item.name;
           const color = active ? t.txtPrimary : t.txtSecondary;
           return (

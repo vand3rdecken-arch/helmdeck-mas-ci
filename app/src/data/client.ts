@@ -97,6 +97,7 @@ export const api = {
   processes: () => req<any[]>("GET", "/processes"),
   runs: () => req<any[]>("GET", "/runs"),
   claudeSessions: () => req<any[]>("GET", "/sessions/claude"),
+  adoptClaude: (b: Record<string, unknown>) => req<{ id?: string; error?: string }>("POST", "/sessions/claude/adopt", b),
   gitHistory: () => req<any[]>("GET", "/history"),
 
   // settings / users / connectors
