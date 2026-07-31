@@ -2,6 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import { type ColorValue, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/data/client";
+import { useBoardFilter } from "@/data/boardfilter";
 import { tokens } from "@/theme/tokens";
 
 const t = tokens.dark;
@@ -44,6 +47,31 @@ function GlassTabBar() {
  *  Real glass (blur 34 / saturate 1.8) so the aurora backdrop refracts through. */
 function Sidebar({ state, navigation }: any) {
   const activeName = state.routes[state.index]?.name;
+  const filter = useBoardFilter((s) => s.filter);
+  const setFilter = useBoardFilter((s) => s.setFilter);
+  const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
+  const clients = Object.entries(
+    (tracks ?? []).reduce((acc: Record<string, number>, k) => {
+      if (k.client && !k.archived) acc[k.client] = (acc[k.client] ?? 0) + 1;
+      return acc;
+    }, {}),
+  ).sort((a, b) => a[0].localeCompare(b[0]));
+
+  const FilterRow = ({ label, value, count }: { label: string; value: string; count?: number }) => {
+    const active = activeName === "index" && filter === value;
+    const color = active ? t.txtPrimary : t.txtSecondary;
+    return (
+      <Pressable
+        onPress={() => { setFilter(value); navigation.navigate("index"); }}
+        style={[styles.navitem, { backgroundColor: active ? t.accent + "1F" : "transparent" }]}
+      >
+        {active ? <View style={[styles.accentBar, { backgroundColor: t.accent }]} /> : null}
+        <Text numberOfLines={1} style={{ color, fontSize: 13, flex: 1 }}>{label}</Text>
+        {count != null ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{count}</Text> : null}
+      </Pressable>
+    );
+  };
+
   return (
     <View style={[styles.side, { backgroundColor: t.glass, borderRightColor: t.glassBorder },
       ({ backdropFilter: "blur(34px) saturate(1.8)", WebkitBackdropFilter: "blur(34px) saturate(1.8)" } as any)]}>
@@ -69,6 +97,13 @@ function Sidebar({ state, navigation }: any) {
             </View>
           );
         })}
+        <Text style={styles.sect}>Filter</Text>
+        <FilterRow label="Alle Arbeit" value="all" />
+        <FilterRow label="Archiv" value="archived" />
+        {clients.length > 0 ? <Text style={styles.sect}>Clients</Text> : null}
+        {clients.map(([name, count]) => (
+          <FilterRow key={name} label={name} value={`client:${name}`} count={count} />
+        ))}
       </ScrollView>
       <View style={{ paddingVertical: 10, paddingHorizontal: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.glassBorder }}>
         <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⌘K · Befehle</Text>
