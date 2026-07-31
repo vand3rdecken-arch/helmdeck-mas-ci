@@ -1,5 +1,5 @@
 import React from "react";
-import { Platform, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import type { EconCard, Metrics, Sow } from "@/data/types";
 import { useTheme } from "@/theme";
@@ -235,31 +235,48 @@ export function WorkPanel({ m }: { m: Metrics }) {
         <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.ai }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>AI ($)</Text></View>
         <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.human }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>human (touch units)</Text></View>
       </View>
-      {/* header */}
-      <View style={[s.tr, { borderBottomColor: t.glassBorder, borderBottomWidth: 1, paddingBottom: 6 }]}>
-        <Text style={[s.th, { color: t.txtTertiary, flex: 2.4 }]}>card</Text>
-        <Text style={[s.th, { color: t.txtTertiary, flex: 1 }]}>lane</Text>
-        <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>AI $</Text>
-        <Text style={[s.th, { color: t.txtTertiary, flex: 0.8, textAlign: "right" }]}>touch</Text>
-        <Text style={[s.th, { color: t.txtTertiary, flex: 1.4 }]}>split</Text>
-        <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>margin</Text>
-      </View>
-      {cards.length === 0 ? <Empty text="no cards yet" /> : cards.map((x: EconCard) => {
-        const margin = x.margin ?? (x.value - x.ai_cost);
-        return (
-          <View key={x.id} style={[s.tr, { borderBottomColor: t.borderSubtle, borderBottomWidth: 1, alignItems: "center" }]}>
-            <Text numberOfLines={1} style={[s.td, { color: t.txtPrimary, flex: 2.4 }]}>{x.task}</Text>
-            <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 1 }]}>{x.lane}</Text>
-            <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{x.ai_cost.toFixed(2)}</Text>
-            <Text style={[s.td, { color: t.txtSecondary, flex: 0.8, textAlign: "right" }]}>{x.touches}</Text>
-            <View style={{ flex: 1.4, gap: 2, justifyContent: "center", paddingRight: 6 }}>
-              <View style={{ height: 4, borderRadius: 999, backgroundColor: t.ai, width: `${Math.max(2, Math.round((100 * x.ai_cost) / maxA))}%` }} />
-              <View style={{ height: 4, borderRadius: 999, backgroundColor: t.human, width: `${Math.max(2, Math.round((100 * x.touches) / maxH))}%` }} />
-            </View>
-            <Text style={[s.td, { color: margin >= 0 ? t.ok : t.danger, flex: 1, textAlign: "right", fontWeight: "600" }]}>{c}{margin.toFixed(2)}</Text>
+      {/* wide table -> horizontal scroll keeps every column readable on phone */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={isWeb} contentContainerStyle={{ minWidth: 760 }}>
+        <View style={{ flexGrow: 1 }}>
+          {/* header */}
+          <View style={[s.tr, { borderBottomColor: t.glassBorder, borderBottomWidth: 1, paddingBottom: 6 }]}>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 2.4 }]}>card</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1 }]}>lane</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1.3 }]}>model</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1.4, textAlign: "right" }]}>tok in/out</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>AI $</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 0.8, textAlign: "right" }]}>touch</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1.4 }]}>split</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>value</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>margin</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 0.9 }]}>mode</Text>
           </View>
-        );
-      })}
+          {cards.length === 0 ? <Empty text="no cards yet" /> : cards.map((x: EconCard) => {
+            const margin = x.margin ?? (x.value - x.ai_cost);
+            const models = x.models?.length ? x.models.map((mm) => mm.replace("claude-", "")).join(", ") : "-";
+            const tin = x.tokens_in ?? 0, tout = x.tokens_out ?? 0;
+            const billedVal = x.billed ?? x.value;
+            const mode = x.mode ? (x.mode === "auto" ? "auto" : "assisted") : "-";
+            return (
+              <View key={x.id} style={[s.tr, { borderBottomColor: t.borderSubtle, borderBottomWidth: 1, alignItems: "center" }]}>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtPrimary, flex: 2.4 }]}>{x.task}</Text>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 1 }]}>{x.lane}</Text>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.3 }]}>{models}</Text>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.4, textAlign: "right" }]}>{tin.toLocaleString()}/{tout.toLocaleString()}</Text>
+                <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{x.ai_cost.toFixed(2)}</Text>
+                <Text style={[s.td, { color: t.txtSecondary, flex: 0.8, textAlign: "right" }]}>{x.touches}</Text>
+                <View style={{ flex: 1.4, gap: 2, justifyContent: "center", paddingRight: 6 }}>
+                  <View style={{ height: 4, borderRadius: 999, backgroundColor: t.ai, width: `${Math.max(2, Math.round((100 * x.ai_cost) / maxA))}%` }} />
+                  <View style={{ height: 4, borderRadius: 999, backgroundColor: t.human, width: `${Math.max(2, Math.round((100 * x.touches) / maxH))}%` }} />
+                </View>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{c}{billedVal.toFixed(2)}{x.billing === "tm" ? " ~" : ""}</Text>
+                <Text style={[s.td, { color: margin >= 0 ? t.ok : t.danger, flex: 1, textAlign: "right", fontWeight: "600" }]}>{c}{margin.toFixed(2)}</Text>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 0.9 }]}>{mode}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
     </GlassPanel>
   );
 }

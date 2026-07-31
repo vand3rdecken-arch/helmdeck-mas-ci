@@ -40,10 +40,41 @@ function prioOrd(p?: string) { return { urgent: 0, high: 1, medium: 2, low: 3 }[
 function laneSort(a: Track, b: Track) { return (a.rank ?? 1e9) - (b.rank ?? 1e9); }
 const isRunning = (k: Track) => k.status === "running" || k.lane === "working";
 
+/** The daemon's verdict after a lane move (ported from archive/web board.tsx
+ *  drop()): Review = preview (gate + merge check), Done = land (merge+deploy). */
+function laneVerdict(res: Track, lane: string): string | null {
+  if (lane === "review") {
+    if (res.gate_failed) return "Gate rot – bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");
+    const k = res.merge_kind;
+    const verdict = k === "mergeable" ? "✓ bereit zu mergen"
+      : (k === "already_merged" || k === "redundant_uncommitted") ? "redundant – schon in main"
+      : k === "conflict" ? "⚠ Konflikt mit main" : "geprüft";
+    return `Review: ${verdict} — zum Landen auf Done ziehen`;
+  }
+  if (lane === "done") {
+    if (res.gate_failed) return "GATE offen – bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");
+    if (res.merge_failed) {
+      const why = (res.merge_report ?? "").split("\n")[0];
+      return (res.merge_kind === "conflict" ? "MERGE-KONFLIKT – bleibt auf Review: " : "Kann nicht landen – bleibt auf Review: ") + why;
+    }
+    return res.merge_kind === "merged" ? "Fertig → committet & nach main gemergt"
+      : (res.merge_kind === "already_merged" || res.merge_kind === "redundant_uncommitted") ? "Redundant – war schon in main, Karte geschlossen"
+      : "Abgenommen";
+  }
+  return lane === "working" ? "Dispatched – Session startet" : lane === "backlog" ? "Queued" : null;
+}
+
 function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const t = useTheme();
   const router = useRouter();
   const tint = k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
+  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
+  const e = metrics?.cards?.find((c) => c.id === k.id);
+  const report =
+    (k.gate_report && k.gate_report.length) ? "gate: " + k.gate_report.join(" | ") :
+    (k.merge_report && !k.gate_report) ? k.merge_report.split("\n")[0] :
+    (k.review_report && k.lane === "review") ? k.review_report.split("\n")[0] : null;
+  const reportColor = k.gate_failed || k.merge_kind === "conflict" ? t.danger : k.merge_kind === "mergeable" ? t.ok : t.txtTertiary;
   const sub =
     k.lane === "backlog" ? k.description :
     k.status === "running" ? null :
@@ -74,13 +105,23 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       <Text style={[s.task, { color: t.txtPrimary }]} numberOfLines={3}>{k.task}</Text>
       {k.status === "running" ? <LiveThumb trackId={k.id} /> : null}
       {sub ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={2}>{sub.replace(/\n/g, " ")}</Text> : null}
+      {report ? <Text style={{ color: reportColor, fontSize: 11 }} numberOfLines={1}>{report.slice(0, 140)}</Text> : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
+        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {k.process_title ?? "process"}</Text> : null}
+        {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
         {k.status ? <Chip text={k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
         {k.due ? <Chip text={`due ${k.due}`} /> : null}
         {k.ai_cost > 0 ? <Chip text={`AI $${k.ai_cost.toFixed(2)}`} /> : null}
+        {e && e.touches > 0 ? <Chip text={`${e.touches}t`} /> : null}
         {k.client ? <Chip text={k.client} /> : null}
       </View>
+      {e && (e.ai_cost > 0 || e.touches > 0) ? (
+        <View style={{ gap: 2, marginTop: 2 }}>
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: t.ai, width: `${Math.min(100, Math.max(3, (e.ai_cost / 10) * 100))}%` }} />
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: t.human, width: `${Math.min(100, Math.max(3, (e.touches / 10) * 100))}%` }} />
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -191,12 +232,13 @@ function DraggableCard({
 }
 
 function WideKanban({
-  tracks, label, qc, onError,
+  tracks, label, qc, onError, onInfo,
 }: {
   tracks: Track[];
   label: (l: string) => string;
   qc: QueryClient;
   onError: (m: string) => void;
+  onInfo: (m: string | null) => void;
 }) {
   const t = useTheme();
   const colFrames = useRef<Record<string, Frame>>({});
@@ -241,7 +283,8 @@ function WideKanban({
     if (!lane || !card) return;
     try {
       if ((card.lane || "working") !== lane) {
-        await api.moveLane(id, lane);
+        const res = await api.moveLane(id, lane);
+        onInfo(laneVerdict(res, lane));
       } else {
         const ordered = byLane(lane).map((k) => k.id).filter((cid) => cid !== id);
         ordered.splice(indexAt(lane, y, id), 0, id);
@@ -249,7 +292,7 @@ function WideKanban({
       }
       await qc.invalidateQueries({ queryKey: ["tracks"] });
     } catch (e) { onError(String((e as Error).message)); }
-  }, [tracks, byLane, indexAt, laneAt, qc, onError]);
+  }, [tracks, byLane, indexAt, laneAt, qc, onError, onInfo]);
 
   const Ins = () => <View style={{ height: 2, borderRadius: 2, backgroundColor: t.accent, marginVertical: 2 }} />;
 
@@ -303,6 +346,12 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 5000 });
   const [busy, setBusy] = useState(false);
   const [layout, setLayout] = useState("board");
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = useCallback((m: string | null) => {
+    if (!m) return;
+    setToast(m);
+    setTimeout(() => setToast(null), 5200);
+  }, []);
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
 
@@ -323,7 +372,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         text: "→ " + label(l),
         onPress: async () => {
           setBusy(true);
-          try { await api.moveLane(k.id, l); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+          try { const res = await api.moveLane(k.id, l); showToast(laneVerdict(res, l)); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
           catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
           finally { setBusy(false); }
         },
@@ -337,6 +386,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
   return (
+    <>
     <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingTop: topInset + (wide ? 8 : 8),
       paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
@@ -354,7 +404,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: four column plates side by side, drag to move/reorder
-        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert("Fehler", m)} />
+        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert("Fehler", m)} onInfo={showToast} />
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
@@ -374,6 +424,16 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         })
       )}
     </ScrollView>
+    {toast ? (
+      <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 24, alignItems: "center" }}>
+        <View style={{ maxWidth: 560, backgroundColor: t.surface1, borderColor: t.borderStrong, borderWidth: 1,
+          borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
+          ...(isWeb ? { boxShadow: "0 6px 20px rgba(0,0,0,0.35)" } as any : { elevation: 6 }) }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 12.5 }}>{toast}</Text>
+        </View>
+      </View>
+    ) : null}
+    </>
   );
 }
 
