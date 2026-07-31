@@ -33,6 +33,36 @@ APK_DIR = os.environ.get("HELMDECK_APK_DIR", "/opt/helmdeck-apk")
 _lock = threading.Lock()
 _rooms = {}   # room -> {"q": [...], "cv": Condition, "waiting": {id: slot}, "last_pull": ts}
 
+# --- phone pairing (App Links) -------------------------------------------
+# Android verifies HelmDeck can own https://<relay>/pair via this file, so a
+# scanned QR opens the app directly instead of the browser. Fingerprint = SHA256
+# of the HelmDeck release keystore (archive/apk/swarmdeck-release.jks).
+ASSETLINKS = [{
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+        "namespace": "android_app",
+        "package_name": "app.helmdeck",
+        "sha256_cert_fingerprints": [
+            "75:21:BA:FA:C1:AD:10:08:27:DA:BA:BA:1D:53:75:6A:07:72:B3:95:20:0A:E5:47:D6:6E:63:3C:4F:79:0D:F4"
+        ],
+    },
+}]
+# Fallback shown only when the app is NOT installed / App Link not yet verified
+# (a verified link never loads this page). Hands the code to the app or offers
+# the APK. __C__ is the base64 {r,k,t} pairing code from the QR.
+PAIR_HTML = """<!doctype html><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>HelmDeck koppeln</title>
+<style>body{background:#0e0f10;color:#e4e6e6;font:16px/1.5 system-ui,sans-serif;
+text-align:center;padding:40px 20px}a{display:inline-block;margin:10px;padding:12px 20px;
+border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;color:#fff}
+.g{border:1px solid #333;color:#cacdce}</style>
+<h2>HelmDeck koppeln</h2>
+<p>Wenn sich die App nicht automatisch geöffnet hat:</p>
+<a class=p href="helmdeck://pair?c=__C__">In HelmDeck öffnen</a><br>
+<a class=g href="/apk/HelmDeck-v29.apk">HelmDeck installieren (APK)</a>
+<script>location.replace("helmdeck://pair?c=__C__");</script>"""
+
 
 def _room(rid):
     with _lock:
