@@ -54,6 +54,10 @@ export interface Step {
   tool?: string; input?: unknown; result?: string; name?: string;
 }
 export interface ChatMsg { cls: string; text: string; ts?: string }
+// POST /chat returns the copilot's answer, not a ChatMsg: {reply, actions, ...}
+// (or {error} on a rejection). Keep ChatMsg for /chat/history entries.
+export interface ChatReply { reply?: string; error?: string; cost?: number;
+  actions?: { tool?: string; detail?: string }[]; usage?: unknown }
 
 export interface SteerOpts { model?: string; thinking?: string; mode?: string }
 
@@ -82,7 +86,8 @@ export const api = {
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 
   // copilot chat
-  chat: (text: string, o: SteerOpts & { card?: string } = {}) => req<ChatMsg>("POST", "/chat", { text, ...o }),
+  chat: (text: string, o: SteerOpts & { card?: string } = {}) => req<ChatReply>("POST", "/chat", { text, ...o }),
+  chatCancel: () => req("POST", "/chat/cancel", {}),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string }>("GET", "/chat/history"),
 
   models: () => req<string[]>("GET", "/models"),

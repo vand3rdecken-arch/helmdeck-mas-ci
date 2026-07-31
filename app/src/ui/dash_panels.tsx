@@ -256,7 +256,7 @@ export function WorkPanel({ m }: { m: Metrics }) {
             const models = x.models?.length ? x.models.map((mm) => mm.replace("claude-", "")).join(", ") : "-";
             const tin = x.tokens_in ?? 0, tout = x.tokens_out ?? 0;
             const billedVal = x.billed ?? x.value;
-            const mode = x.mode ? (x.mode === "auto" ? "auto" : "assisted") : "-";
+            const mode = x.mode ?? "-";
             return (
               <View key={x.id} style={[s.tr, { borderBottomColor: t.borderSubtle, borderBottomWidth: 1, alignItems: "center" }]}>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtPrimary, flex: 2.4 }]}>{x.task}</Text>

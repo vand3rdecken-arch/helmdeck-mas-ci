@@ -52,7 +52,10 @@ export default function NewCard() {
       if (value.trim()) body.value = parseFloat(value);
       if (client.trim()) body.client = client.trim();
       if (driver.trim()) body.driver = driver.trim();
-      await api.newTrack(body);
+      // The daemon can reject with a 200-body {error} (bad repo, WIP limit…),
+      // so inspect it rather than assuming success.
+      const res = await api.newTrack(body) as { error?: string };
+      if (res?.error) { Alert.alert("Abgelehnt", res.error); return; }
       await qc.invalidateQueries({ queryKey: ["tracks"] });
       router.back();
     } catch (e) { Alert.alert("Fehler", String((e as Error).message)); }

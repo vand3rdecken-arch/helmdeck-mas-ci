@@ -87,7 +87,7 @@ export function CommandPalette() {
     setBusy(true); setCopilot("…");
     try {
       const r = await api.chat(text);
-      setCopilot(r.text || "(keine Antwort)");
+      setCopilot(r.reply || r.error || "(keine Antwort)");
       // The copilot may have acted on the board — refresh so it reflects any changes.
       await qc.invalidateQueries({ queryKey: ["tracks"] });
     }
