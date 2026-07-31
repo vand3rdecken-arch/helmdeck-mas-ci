@@ -37,6 +37,8 @@ export default function Settings() {
   const [repo, setRepo] = useState("");
   const [wip, setWip] = useState("");
   const [value, setValue] = useState("");
+  const [budget, setBudget] = useState("");
+  const [tSteer, setTSteer] = useState(""); const [tReview, setTReview] = useState(""); const [tBounce, setTBounce] = useState("");
 
   // ---- policy / appearance ----
   const [autoAccept, setAutoAccept] = useState(false);
@@ -59,6 +61,8 @@ export default function Settings() {
   const [nsRepos, setNsRepos] = useState("");
   const [nsBusy, setNsBusy] = useState(false);
   const [nsPlan, setNsPlan] = useState<NightPlan | null>(null);
+  const [nsReport, setNsReport] = useState<string | null>(null);
+  const [nsReportOpen, setNsReportOpen] = useState(false);
 
   // ---- pairing ----
   const [pairCode, setPairCode] = useState("");
@@ -78,6 +82,10 @@ export default function Settings() {
     setRepo(s.default_repo ?? "");
     setWip(String(s.capacity?.wip_limit ?? ""));
     setValue(String(s.value_per_card ?? ""));
+    setBudget(String(s.capacity?.touch_budget_day ?? ""));
+    setTSteer(String(s.capacity?.tariff?.steer ?? ""));
+    setTReview(String(s.capacity?.tariff?.review ?? ""));
+    setTBounce(String(s.capacity?.tariff?.bounce ?? ""));
     const pol = s.policy ?? {};
     setAutoAccept(!!pol.auto_accept_green);
     setAutoModes(pol.auto_dispatch_modes ?? ["do", "prepare"]);
@@ -103,7 +111,10 @@ export default function Settings() {
   async function saveBusiness() {
     try {
       await api.saveSettings({ default_repo: repo.trim(), value_per_card: Number(value) || 0,
-        capacity: { ...(s?.capacity ?? {}), wip_limit: Number(wip) || 0 } });
+        capacity: { ...(s?.capacity ?? {}), wip_limit: Number(wip) || 0,
+          touch_budget_day: Number(budget) || 0,
+          tariff: { ...(s?.capacity?.tariff ?? {}),
+            steer: Number(tSteer) || 1, review: Number(tReview) || 1, bounce: Number(tBounce) || 3 } } });
       await invalidate(); ok("Business-Einstellungen.");
     } catch (e) { fail(e); }
   }
@@ -159,8 +170,9 @@ export default function Settings() {
   }
   async function showPlan() {
     try {
-      const r = await api.get<{ plan?: NightPlan }>("/nightshift");
+      const r = await api.get<{ plan?: NightPlan; report?: string | null }>("/nightshift");
       setNsPlan(r.plan ?? null);
+      setNsReport(r.report ?? null);
       if (!r.plan) Alert.alert("Kein Plan", "Noch kein Plan vorhanden - erst \"Plan jetzt\".");
     } catch (e) { fail(e); }
   }
@@ -247,7 +259,24 @@ export default function Settings() {
                   <Caption text="Wert/Karte" />
                   <TextInput value={value} onChangeText={setValue} keyboardType="numeric" style={field} />
                 </View>
+                <View>
+                  <Caption text="Touch-Budget/Tag" />
+                  <TextInput value={budget} onChangeText={setBudget} keyboardType="numeric" style={field} />
+                </View>
               </FormGrid>
+              <View style={{ height: 10 }} />
+              <Caption text="Touch-Tarif (steer / review / bounce)" />
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <TextInput value={tSteer} onChangeText={setTSteer} keyboardType="numeric" style={field} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <TextInput value={tReview} onChangeText={setTReview} keyboardType="numeric" style={field} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <TextInput value={tBounce} onChangeText={setTBounce} keyboardType="numeric" style={field} />
+                </View>
+              </View>
               <View style={{ height: 12 }} />
               <Btn label="Speichern" onPress={saveBusiness} />
             </Panel>
@@ -349,6 +378,21 @@ export default function Settings() {
                       ))}
                     </View>
                   ))}
+                </View>
+              ) : null}
+              {nsReport ? (
+                <View style={{ marginTop: 12 }}>
+                  <Pressable onPress={() => setNsReportOpen((o) => !o)}>
+                    <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>
+                      {nsReportOpen ? "▾" : "▸"} Letzter Shift-Report
+                    </Text>
+                  </Pressable>
+                  {nsReportOpen ? (
+                    <View style={{ marginTop: 8, backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
+                      <Text selectable style={{ color: t.txtSecondary, fontSize: 11.5,
+                        fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{nsReport}</Text>
+                    </View>
+                  ) : null}
                 </View>
               ) : null}
             </Panel>

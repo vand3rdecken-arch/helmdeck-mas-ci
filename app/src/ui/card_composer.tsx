@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useTheme } from "@/theme";
 import type { SteerOpts } from "@/data/client";
+import { loadDraft, saveDraft } from "@/data/drafts";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string }
@@ -17,7 +18,7 @@ const THINK: { id: string; short: string }[] = [
 // Model picker (from api.models()), thinking-level cycle, agent/permission mode
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
-  onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0,
+  onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   busy?: boolean;
@@ -28,17 +29,47 @@ export function Composer({
   placeholder?: string;
   seed?: { text: string; key: number };
   bottomInset?: number;
+  draftKey?: string;   // persist in-progress text per surface (board / each card)
 }) {
   const t = useTheme();
-  const [text, setText] = useState("");
+  const [text, setTextRaw] = useState("");
   const [model, setModel] = useState("auto");
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
   const [picker, setPicker] = useState(false);
   const [seedKey, setSeedKey] = useState(0);
+  // queue-while-busy: hold a message typed during a running turn, auto-send on free
+  const [queued, setQueued] = useState<{ text: string; opts: SteerOpts } | null>(null);
+  const flushing = useRef(false);
+
+  // draft persistence — write-through on every edit, restore on mount
+  function setText(v: string) {
+    setTextRaw(v);
+    if (draftKey) saveDraft(draftKey, v);
+  }
+  useEffect(() => {
+    if (!draftKey) return;
+    let live = true;
+    loadDraft(draftKey).then((d) => { if (live && d) setTextRaw(d); });
+    return () => { live = false; };
+  }, [draftKey]);
 
   // external injection (rewind from transcript)
   if (seed && seed.key !== seedKey) { setSeedKey(seed.key); setText(seed.text); }
+
+  function buildOpts(): SteerOpts { return { model, thinking, ...(modeOptions ? { mode } : {}) }; }
+
+  // clear input + its persisted draft after a message leaves the composer
+  function clearInput() { setTextRaw(""); if (draftKey) saveDraft(draftKey, ""); }
+
+  // when the agent frees up, deliver the held message
+  useEffect(() => {
+    if (!busy && queued && !flushing.current) {
+      flushing.current = true;
+      const q = queued; setQueued(null);
+      Promise.resolve(onSend(q.text, q.opts)).finally(() => { flushing.current = false; });
+    }
+  }, [busy, queued]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const matches = useMemo(() => {
     if (!slashCommands) return [];
@@ -52,9 +83,11 @@ export function Composer({
 
   function fire() {
     const v = text.trim();
-    if (!v || busy) return;
-    onSend(v, { model, thinking, ...(modeOptions ? { mode } : {}) });
-    setText("");
+    if (!v) return;
+    const opts = buildOpts();
+    if (busy) setQueued({ text: v, opts });   // hold until the agent is free
+    else onSend(v, opts);
+    clearInput();
   }
 
   const toolBtn = (active: boolean) => ({
@@ -100,6 +133,25 @@ export function Composer({
         ) : null}
       </ScrollView>
 
+      {/* queued-while-busy chip: held until the running turn frees up */}
+      {queued ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, marginTop: 8,
+          backgroundColor: t.accent + "1A", borderColor: t.accent + "66", borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 }}>
+          <ActivityIndicator size="small" color={t.accent} />
+          <Pressable style={{ flex: 1 }} onPress={() => { setText(queued.text); setQueued(null); }}>
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>In Warteschlange — jetzt senden / bearbeiten</Text>
+            <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12 }}>{queued.text}</Text>
+          </Pressable>
+          <Pressable onPress={() => { const q = queued; setQueued(null); onSend(q.text, q.opts); }}
+            style={{ backgroundColor: t.accent, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 5 }}>
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Jetzt senden</Text>
+          </Pressable>
+          <Pressable onPress={() => setQueued(null)} hitSlop={8}>
+            <Ionicons name="close" size={18} color={t.txtTertiary} />
+          </Pressable>
+        </View>
+      ) : null}
+
       {/* input row */}
       <View style={{ flexDirection: "row", padding: 8, gap: 8, alignItems: "flex-end" }}>
         <TextInput value={text} onChangeText={setText} multiline
@@ -111,12 +163,12 @@ export function Composer({
             style={{ backgroundColor: t.danger, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
             <Ionicons name="stop" size={20} color="#fff" />
           </Pressable>
-        ) : (
-          <Pressable onPress={fire} disabled={busy || !text.trim()}
-            style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: busy || !text.trim() ? 0.5 : 1 }}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Ionicons name="arrow-up" size={22} color="#fff" />}
-          </Pressable>
-        )}
+        ) : null}
+        {/* send stays enabled while busy — the message is queued instead of dropped */}
+        <Pressable onPress={fire} disabled={!text.trim()}
+          style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: !text.trim() ? 0.5 : 1 }}>
+          <Ionicons name={busy ? "add" : "arrow-up"} size={22} color="#fff" />
+        </Pressable>
       </View>
 
       {/* model picker modal */}

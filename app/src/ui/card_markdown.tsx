@@ -67,10 +67,18 @@ const KEYWORDS = new Set(
    "true false undefined def elif lambda pass with as True False None and or not is self print raise " +
    "except in of fn pub use struct enum impl match type interface public private static func go defer range").split(" "));
 
+// langs where `#` starts a line comment (not JS/TS/C); mirrors web codeblock.tsx.
+const HASH_COMMENT = /^(py|python|rb|ruby|sh|bash|zsh|yaml|yml|toml|ini|conf|makefile|make|dockerfile|r|pl)$/i;
+
 function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const t = useTheme();
   const [copied, setCopied] = useState(false);
-  const re = /(\/\/[^\n]*|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d_.eExXbB]*\b)|([A-Za-z_$][A-Za-z0-9_$]*)/g;
+  // `#` is a comment only for hash-comment langs; otherwise use `//` (+ `/* */`).
+  // With no language, default to `//`-only so `#` isn't miscolored.
+  const hash = !!lang && HASH_COMMENT.test(lang);
+  const re = hash
+    ? /(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d_.eExXbB]*\b)|([A-Za-z_$][A-Za-z0-9_$]*)/g
+    : /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d_.eExXbB]*\b)|([A-Za-z_$][A-Za-z0-9_$]*)/g;
   const nodes: React.ReactNode[] = [];
   let last = 0, i = 0, m: RegExpExecArray | null;
   while ((m = re.exec(code))) {

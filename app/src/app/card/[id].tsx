@@ -11,9 +11,10 @@ import EventSource from "react-native-sse";
 
 import { api, type SteerOpts } from "@/data/client";
 import { useConfig } from "@/data/config";
-import type { Track, Me } from "@/data/types";
+import type { Track, Me, EconCard } from "@/data/types";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
+import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 
@@ -78,6 +79,9 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
   const t = useTheme();
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const owner = me.data?.role === "owner";
+  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, enabled: owner });
+  const e: EconCard | undefined = metrics?.cards?.find((c) => c.id === k.id);
+  const cy = cur(metrics);
   const { data: turns } = useQuery<Turn[]>({ queryKey: ["turns", k.id], queryFn: () => api.turns(k.id) as Promise<Turn[]> });
   const { data: ckpts } = useQuery<Ckpt[]>({
     queryKey: ["ckpts", k.id, owner], queryFn: () => api.get<Ckpt[]>(`/tracks/${k.id}/checkpoints`), enabled: owner });
@@ -143,6 +147,17 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
         </View>
       </Panel>
 
+      {owner && e ? (
+        <Panel>
+          <SectionLabel text="economics" />
+          <KVRow k="Billed" v={`${cy}${(e.billed ?? e.value).toFixed(2)}${e.billing === "tm" ? " ~" : ""}`} />
+          <KVRow k="AI cost" v={`$${e.ai_cost.toFixed(2)}`} color={t.ai} />
+          <KVRow k="Margin" v={`${cy}${(e.margin ?? ((e.billed ?? e.value) - e.ai_cost)).toFixed(2)}`} color={t.accent} />
+          <KVRow k="Touches" v={`${e.touches} touch${e.touches === 1 ? "" : "es"}`} />
+          {e.mode ? <KVRow k="Mode" v={e.mode === "auto" ? "auto" : "assisted"} /> : null}
+        </Panel>
+      ) : null}
+
       <Panel>
         <SectionLabel text="technical" />
         <KVRow k="Branch" v={k.branch || "—"} />
@@ -205,7 +220,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
           <Transcript steps={feed} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
       </ScrollView>
       <Composer onSend={onSend} busy={running} onStop={onStop} models={models} modeOptions={modeOptions}
-        slashCommands={SLASH} seed={seed} bottomInset={bottomInset}
+        slashCommands={SLASH} seed={seed} bottomInset={bottomInset} draftKey={`card:${k.id}`}
         placeholder={k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
     </KeyboardAvoidingView>
   );

@@ -23,6 +23,53 @@ export interface TStep {
   todos?: { content: string; status: string }[];
 }
 
+// Clamps long text and reveals a "Mehr anzeigen" / "Weniger anzeigen" toggle
+// only when it actually overflows a threshold (mirrors web transcript Collapsible).
+const COLLAPSE_LINES = 24;
+const COLLAPSE_CHARS = 1600;
+function clampText(text: string): { clamped: string; overflow: boolean } {
+  const t = text || "";
+  const lines = t.split("\n");
+  const overflow = lines.length > COLLAPSE_LINES || t.length > COLLAPSE_CHARS;
+  if (!overflow) return { clamped: t, overflow };
+  let clamped = lines.slice(0, COLLAPSE_LINES).join("\n");
+  if (clamped.length > COLLAPSE_CHARS) clamped = clamped.slice(0, COLLAPSE_CHARS);
+  return { clamped, overflow };
+}
+function Collapsible({ text, style, color }: {
+  text: string; style: React.ComponentProps<typeof Text>["style"]; color: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const { clamped, overflow } = clampText(text);
+  return (
+    <View>
+      <Text selectable style={style}>{open || !overflow ? text : clamped + (overflow ? "\n…" : "")}</Text>
+      {overflow ? (
+        <Pressable hitSlop={6} onPress={() => setOpen((o) => !o)} style={{ marginTop: 4 }}>
+          <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{open ? "Weniger anzeigen" : "Mehr anzeigen"}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+// Same clamp/toggle for rendered markdown: clamps the source string so the
+// Markdown renderer only lays out the visible slice until expanded.
+function CollapsibleMarkdown({ text, color }: { text: string; color: string }) {
+  const [open, setOpen] = useState(false);
+  const { clamped, overflow } = clampText(text);
+  return (
+    <View>
+      <Markdown>{open || !overflow ? text : clamped}</Markdown>
+      {overflow ? (
+        <Pressable hitSlop={6} onPress={() => setOpen((o) => !o)} style={{ marginTop: 2 }}>
+          <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{open ? "Weniger anzeigen" : "Mehr anzeigen"}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function CopyBtn({ text, color }: { text: string; color: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -103,10 +150,11 @@ function ToolCard({ s, t }: { s: TStep; t: ThemeTokens }) {
           {s.detail ? <ToolDetailView d={s.detail} t={t} /> : null}
           {hasResult ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              style={{ maxHeight: 260, backgroundColor: t.canvas, borderRadius: 6 }}>
-              <Text selectable style={{ fontFamily: MONO, fontSize: 11.5, color: t.txtSecondary, padding: 8, lineHeight: 16 }}>
-                {(s.result || "").slice(0, 4000)}
-              </Text>
+              style={{ backgroundColor: t.canvas, borderRadius: 6 }}>
+              <View style={{ padding: 8 }}>
+                <Collapsible text={s.result || ""} color={t.ai}
+                  style={{ fontFamily: MONO, fontSize: 11.5, color: t.txtSecondary, lineHeight: 16 }} />
+              </View>
             </ScrollView>
           ) : null}
         </View>
@@ -123,7 +171,8 @@ const Thought = memo(function Thought({ s, t }: { s: TStep; t: ThemeTokens }) {
         <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={11} color={t.accent2} />
         <Text style={{ color: t.accent2, fontSize: 12, fontStyle: "italic" }}>Thinking</Text>
       </Pressable>
-      {open ? <Text selectable style={{ color: t.txtTertiary, fontSize: 12.5, fontStyle: "italic", marginTop: 4, lineHeight: 18 }}>{s.text}</Text> : null}
+      {open ? <View style={{ marginTop: 4 }}><Collapsible text={s.text || ""} color={t.accent2}
+        style={{ color: t.txtTertiary, fontSize: 12.5, fontStyle: "italic", lineHeight: 18 }} /></View> : null}
     </View>
   );
 });
@@ -180,7 +229,8 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
         const mine = s.role === "user" || s.cls === "user";
         if (mine) return (
           <View key={i} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: t.accent + "22", borderRadius: 10, padding: 10 }}>
-            <Text selectable style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }}>{s.text}</Text>
+            <Collapsible text={s.text || ""} color={t.accent}
+              style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }} />
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, justifyContent: "flex-end" }}>
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{s.ts}</Text> : null}
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
@@ -190,7 +240,7 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
         // assistant text
         return (
           <View key={i} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: t.borderSubtle }}>
-            <Markdown>{s.text || ""}</Markdown>
+            <CollapsibleMarkdown text={s.text || ""} color={t.accent} />
             {s.streaming ? <Text style={{ color: t.accent }}>▍</Text> : null}
             {!s.streaming ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>

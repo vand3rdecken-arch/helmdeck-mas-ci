@@ -150,6 +150,7 @@ export default function History() {
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;
 
+  const qc = useQueryClient();
   const hist = useQuery({ queryKey: ["history"], queryFn: () => api.get<Hist>("/history") });
   const cps = useQuery({ queryKey: ["checkpoints"], queryFn: () => api.get<Checkpoint[]>("/checkpoints") });
   const debt = useQuery({ queryKey: ["debt"], queryFn: () => api.get<Debt[]>("/debt") });
@@ -157,6 +158,16 @@ export default function History() {
 
   const isOwner = me.data?.role === "owner";
   const canFix = me.data ? me.data.role !== "client" : false;
+
+  const forkMut = useMutation({
+    mutationFn: (track: string) => api.fork(track) as Promise<{ id?: string; error?: string }>,
+    onSuccess: (r) => {
+      Alert.alert(r.error ? "Fehler" : "Geforkt", r.error ?? "Neue Card aus diesem Branch (Quelle bleibt unberührt).");
+      qc.invalidateQueries({ queryKey: ["history"] });
+      qc.invalidateQueries({ queryKey: ["tracks"] });
+    },
+    onError: (e) => Alert.alert("Fehler", String((e as Error).message)),
+  });
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
@@ -171,7 +182,18 @@ export default function History() {
         {hist.data ? (
           <Panel t={t} title="Commit-Graph"
             sub="Jede Zeile = der Branch einer Card (tippen → Card) · jeder Punkt = ein Commit · Zeilenfarbe = Lane.">
-            <HistoryGraph h={hist.data} onOpenCard={(id) => router.push(`/card/${id}`)} />
+            <HistoryGraph
+              h={hist.data}
+              onOpenCard={(id) => router.push(`/card/${id}`)}
+              onFork={(track, branch) => Alert.alert(
+                "Branch forken?",
+                `Neue Card aus dem Stand von "${branch}" starten? (Append-only – die Quelle bleibt unberührt.)`,
+                [
+                  { text: "Abbrechen", style: "cancel" },
+                  { text: "Fork", onPress: () => forkMut.mutate(track) },
+                ],
+              )}
+            />
           </Panel>
         ) : null}
 

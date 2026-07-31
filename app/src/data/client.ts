@@ -101,7 +101,7 @@ export const api = {
   setRole: (name: string, role: string) => req("POST", `/users/${name}/role`, { role }),
   issueToken: (name: string, label: string) => req<{ token: string }>("POST", `/users/${name}/tokens`, { label }),
   connectors: () => req<any[]>("GET", "/connectors"),
-  runConnector: (name: string) => req("POST", `/connectors/${name}/run`),
+  runConnector: (name: string) => req<{ cards?: number }>("POST", `/connectors/${name}/run`),
   rollbackConnector: (name: string) => req("POST", `/connectors/${name}/rollback`),
 };
 
