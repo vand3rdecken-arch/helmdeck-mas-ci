@@ -53,7 +53,8 @@ LIGHT_PRIM = {
     "brand-default": (.4799, .1158, 242.91), "brand-700": (.6766, .1665, 243.91),
     "green-700": (.64, .17, 149), "amber-600": (.7, .15, 60), "red-700": (.583, .2387, 28.48),
     "accent-2": (.55, .19, 292), "ai": "#4b8fc9", "human": "#a8842d",
-    "glass": (1, 0, 0, .72), "glass-border": (0, 0, 0, .08),
+    # final "liquid glass" pass from globals.css (:root override): white, more translucent
+    "glass": (1, 0, 0, .52), "glass-border": (1, 0, 0, .55),
     "glow-1": (.62, .12, 238, .30), "glow-2": (.55, .19, 292, .24),
     "backdrop": (.1482, .0034, 196.79, .50), "transparent-hover": (.1482, .0034, 196.79, .10),
 }
@@ -67,9 +68,11 @@ DARK_PRIM.update({
     "brand-default": (.6311, .1263, 238.01), "brand-700": (.7408, .1003, 233.89),
     "green-700": (.7, .15, 150), "amber-600": (.77, .17, 65), "red-700": (.7022, .1892, 22.23),
     "accent-2": (.66, .17, 292), "ai": "#5b9fd9", "human": "#c99b2e",
-    "glass": (.21, .003, 230, .62), "glass-border": (1, 1, 1, .09),
+    # final "liquid glass" pass ([data-theme=dark] override): blue-grey plate, white edge.
+    # (1,0,0)=white as an OKLCH triple; (1,1,1) was a bug -> C=1 clipped to magenta.
+    "glass": (.23, .004, 230, .38), "glass-border": (1, 0, 0, .13),
     "glow-1": (.63, .15, 238, .34), "glow-2": (.66, .19, 292, .26),
-    "backdrop": (0, 0, 0, .60), "transparent-hover": (1, 1, 1, .10),
+    "backdrop": (0, 0, 0, .60), "transparent-hover": (1, 0, 0, .10),
 })
 
 # --- semantic aliases: (camelCaseKey -> primitive name), per theme where they differ

@@ -1,14 +1,28 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { api } from "@/data/client";
 import type { Track } from "@/data/types";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
+import type { ThemeTokens } from "@/theme/tokens";
+import { GanttView } from "./board_gantt";
+import { LiveThumb } from "./board_live";
 import { Chip, Dot, Empty } from "./kit";
 
 const LANES = ["backlog", "working", "review", "done"] as const;
+const isWeb = Platform.OS === "web";
+
+/** Real frosted glass on the web (CSS backdrop-filter over the glow backdrop);
+ *  native RN can't blur what's behind, so it uses a crisp translucent surface. */
+function glassStyle(t: ThemeTokens) {
+  return isWeb
+    ? ({ backgroundColor: t.glass, backdropFilter: "blur(16px) saturate(1.3)", WebkitBackdropFilter: "blur(16px) saturate(1.3)" } as any)
+    : { backgroundColor: t.surface1 };
+}
 
 function useLaneLabels() {
   const { data } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 10000 });
@@ -17,6 +31,11 @@ function useLaneLabels() {
 }
 
 function prioOrd(p?: string) { return { urgent: 0, high: 1, medium: 2, low: 3 }[p ?? ""] ?? 2; }
+
+/** Manual board order is data: the daemon's /tracks/reorder writes `rank`, so a
+ *  lane sorts by rank first (unranked cards keep their incoming order). */
+function laneSort(a: Track, b: Track) { return (a.rank ?? 1e9) - (b.rank ?? 1e9); }
+const isRunning = (k: Track) => k.status === "running" || k.lane === "working";
 
 function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const t = useTheme();
@@ -33,8 +52,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     <Pressable
       onPress={() => router.push(`/card/${k.id}`)}
       onLongPress={() => onMove(k)}
-      style={[s.card, {
-        backgroundColor: tint ? tint + "1A" : t.surface1,
+      style={[s.card, tint ? { backgroundColor: tint + "1A" } : glassStyle(t), {
         borderColor: tint ? tint + "B3" : t.glassBorder,
         borderWidth: tint ? 2 : 1,
       }]}
@@ -50,6 +68,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         {k.turns > 0 ? <Text style={[s.branch, { color: t.txtTertiary }]}>{k.turns}t</Text> : null}
       </View>
       <Text style={[s.task, { color: t.txtPrimary }]} numberOfLines={3}>{k.task}</Text>
+      {k.status === "running" ? <LiveThumb trackId={k.id} /> : null}
       {sub ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={2}>{sub.replace(/\n/g, " ")}</Text> : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
         {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
@@ -97,20 +116,37 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
   );
 }
 
-function TimelineRows({ tracks, onOpen }: { tracks: Track[]; onOpen: (id: string) => void }) {
+function TimelineRows({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (id: string) => void; wide?: boolean }) {
   const t = useTheme();
   const items = tracks
     .filter((k) => k.lane !== "done")
     .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.created ?? "").localeCompare(b.created ?? ""));
   if (items.length === 0) return <Empty text="Nichts terminiert." />;
+  // group by due date so it reads as a schedule, not a flat list
+  const groups: { key: string; items: Track[] }[] = [];
+  for (const k of items) {
+    const key = k.due || "Kein Datum";
+    const g = groups.find((x) => x.key === key) ?? (groups.push({ key, items: [] }), groups[groups.length - 1]);
+    g.items.push(k);
+  }
   return (
-    <View style={{ gap: 4 }}>
-      {items.map((k) => (
-        <Pressable key={k.id} onPress={() => onOpen(k.id)} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
-          <Text style={{ color: k.due ? t.human : t.txtTertiary, fontSize: 11, width: 84 }}>{k.due ?? "—"}</Text>
-          <Dot color={statusColor(t, k.status)} />
-          <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
-        </Pressable>
+    <View style={{ gap: 14 }}>
+      {groups.map((g) => (
+        <View key={g.key} style={{ flexDirection: wide ? "row" : "column", gap: wide ? 16 : 6 }}>
+          <View style={{ width: wide ? 130 : undefined, paddingTop: 2 }}>
+            <Text style={{ color: g.key === "Kein Datum" ? t.txtTertiary : t.human, fontSize: 12.5, fontWeight: "700" }}>{g.key}</Text>
+          </View>
+          <View style={{ flex: 1, gap: 6, borderLeftWidth: wide ? 2 : 0, borderLeftColor: t.glassBorder, paddingLeft: wide ? 16 : 0 }}>
+            {g.items.map((k) => (
+              <Pressable key={k.id} onPress={() => onOpen(k.id)}
+                style={[s.card, glassStyle(t), { borderColor: t.glassBorder, borderWidth: 1, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }]}>
+                <Dot color={statusColor(t, k.status)} />
+                <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
+                {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
+              </Pressable>
+            ))}
+          </View>
+        </View>
       ))}
     </View>
   );
@@ -120,7 +156,7 @@ function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) =>
   const t = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: 6 }}>
-      {[["board", "Board"], ["list", "Liste"], ["timeline", "Timeline"]].map(([key, lbl]) => {
+      {[["board", "Board"], ["list", "Liste"], ["timeline", "Timeline"], ["gantt", "Gantt"]].map(([key, lbl]) => {
         const on = layout === key;
         return (
           <Pressable key={key} onPress={() => onSet(key)}
@@ -128,6 +164,162 @@ function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) =>
               borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
             <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12, fontWeight: "500" }}>{lbl}</Text>
           </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// ---- desktop drag-and-drop kanban --------------------------------------------
+// A card is a Pan gesture that only activates after a short hold (so a plain tap
+// still opens the card). While dragging we translate it under the finger, hit-
+// test the four column plates in window coordinates, and show an insertion line.
+// Drop -> moveLane (lane changed) or reorder (same lane, new position).
+
+type Frame = { x: number; w: number };
+type CardCenter = { lane: string; cy: number };
+
+function DraggableCard({
+  k, onMoveTarget, onDropCard, onMeasure, children,
+}: {
+  k: Track;
+  onMoveTarget: (x: number, y: number, id: string) => void;
+  onDropCard: (id: string, x: number, y: number) => void;
+  onMeasure: (id: string, lane: string, cy: number) => void;
+  children: React.ReactNode;
+}) {
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const lifted = useSharedValue(0);
+  const ref = useRef<View>(null);
+
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(200)
+    .onStart(() => { lifted.value = 1; })
+    .onUpdate((e) => {
+      tx.value = e.translationX; ty.value = e.translationY;
+      runOnJS(onMoveTarget)(e.absoluteX, e.absoluteY, k.id);
+    })
+    .onEnd((e) => { runOnJS(onDropCard)(k.id, e.absoluteX, e.absoluteY); })
+    .onFinalize(() => { lifted.value = 0; tx.value = withTiming(0); ty.value = withTiming(0); });
+
+  const aStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: lifted.value ? 1.03 : 1 }],
+    zIndex: lifted.value ? 999 : 0,
+    opacity: lifted.value ? 0.95 : 1,
+  }));
+
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View
+        ref={ref}
+        onLayout={() => ref.current?.measureInWindow((_x, y, _w, h) => onMeasure(k.id, k.lane || "working", y + h / 2))}
+        style={aStyle}
+      >
+        {children}
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+function WideKanban({
+  tracks, label, qc, onError,
+}: {
+  tracks: Track[];
+  label: (l: string) => string;
+  qc: QueryClient;
+  onError: (m: string) => void;
+}) {
+  const t = useTheme();
+  const colFrames = useRef<Record<string, Frame>>({});
+  const colRefs = useRef<Record<string, View | null>>({});
+  const cardPos = useRef<Record<string, CardCenter>>({});
+  const [indicator, setIndicator] = useState<{ lane: string; index: number } | null>(null);
+
+  const byLane = useCallback(
+    (lane: string) => tracks.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort),
+    [tracks],
+  );
+
+  const laneAt = useCallback((x: number): string | null => {
+    for (const lane of LANES) {
+      const f = colFrames.current[lane];
+      if (f && x >= f.x && x <= f.x + f.w) return lane;
+    }
+    return null;
+  }, []);
+
+  const indexAt = useCallback((lane: string, y: number, dragged: string): number => {
+    const arr = Object.entries(cardPos.current)
+      .filter(([id, v]) => v.lane === lane && id !== dragged)
+      .sort((a, b) => a[1].cy - b[1].cy);
+    let i = 0;
+    for (const [, v] of arr) { if (y > v.cy) i++; else break; }
+    return i;
+  }, []);
+
+  const onMeasure = useCallback((id: string, lane: string, cy: number) => { cardPos.current[id] = { lane, cy }; }, []);
+
+  const onMoveTarget = useCallback((x: number, y: number, id: string) => {
+    const lane = laneAt(x);
+    if (!lane) { setIndicator(null); return; }
+    setIndicator({ lane, index: indexAt(lane, y, id) });
+  }, [laneAt, indexAt]);
+
+  const onDropCard = useCallback(async (id: string, x: number, y: number) => {
+    setIndicator(null);
+    const lane = laneAt(x);
+    const card = tracks.find((k) => k.id === id);
+    if (!lane || !card) return;
+    try {
+      if ((card.lane || "working") !== lane) {
+        await api.moveLane(id, lane);
+      } else {
+        const ordered = byLane(lane).map((k) => k.id).filter((cid) => cid !== id);
+        ordered.splice(indexAt(lane, y, id), 0, id);
+        await api.reorder(ordered);
+      }
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+    } catch (e) { onError(String((e as Error).message)); }
+  }, [tracks, byLane, indexAt, laneAt, qc, onError]);
+
+  const Ins = () => <View style={{ height: 2, borderRadius: 2, backgroundColor: t.accent, marginVertical: 2 }} />;
+
+  return (
+    <View style={{ flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
+      {LANES.map((lane) => {
+        const inLane = byLane(lane);
+        return (
+          <View
+            key={lane}
+            ref={(r) => { colRefs.current[lane] = r; }}
+            onLayout={() => colRefs.current[lane]?.measureInWindow((x, _y, w) => { colFrames.current[lane] = { x, w }; })}
+            style={[s.column, { borderColor: t.glassBorder, backgroundColor: t.surface1 + "59" }]}
+          >
+            <View style={[s.row, { borderBottomWidth: 1, borderBottomColor: t.glassBorder, paddingBottom: 8 }]}>
+              <Dot color={laneColor(t, lane)} size={8} />
+              <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "700", flex: 1 }}>{label(lane)}</Text>
+              <View style={{ backgroundColor: laneColor(t, lane) + "26", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1 }}>
+                <Text style={{ color: laneColor(t, lane), fontSize: 11.5, fontWeight: "700" }}>{inLane.length}</Text>
+              </View>
+            </View>
+            {inLane.length === 0 ? (
+              <>
+                {indicator?.lane === lane && indicator.index === 0 ? <Ins /> : null}
+                <Empty text="leer" />
+              </>
+            ) : (
+              inLane.map((k, i) => (
+                <React.Fragment key={k.id}>
+                  {indicator?.lane === lane && indicator.index === i ? <Ins /> : null}
+                  <DraggableCard k={k} onMoveTarget={onMoveTarget} onDropCard={onDropCard} onMeasure={onMeasure}>
+                    <Card k={k} onMove={() => {}} />
+                  </DraggableCard>
+                </React.Fragment>
+              ))
+            )}
+            {indicator?.lane === lane && indicator.index === inLane.length && inLane.length > 0 ? <Ins /> : null}
+          </View>
         );
       })}
     </View>
@@ -142,6 +334,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 5000 });
   const [busy, setBusy] = useState(false);
   const [layout, setLayout] = useState("board");
+  const { width } = useWindowDimensions();
+  const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
 
   const shown = (data ?? []).filter((k) => (filter === "needs_you" ? k.status === "needs_you" : true));
 
@@ -165,7 +359,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 12, paddingTop: topInset + 8, paddingBottom: 120, gap: 8 }}
+    <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingTop: topInset + (wide ? 8 : 8),
+      paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
       {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar – läuft SwarmDeck?</Text> : null}
@@ -176,10 +371,15 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
           shown.map((k) => <Card key={k.id} k={k} onMove={onMove} />)
       ) : layout === "timeline" ? (
-        <TimelineRows tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} />
+        <TimelineRows tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
+      ) : layout === "gantt" ? (
+        <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
+      ) : wide && layout === "board" ? (
+        // desktop kanban: four column plates side by side, drag to move/reorder
+        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert("Fehler", m)} />
       ) : (
         LANES.map((lane) => {
-          const inLane = shown.filter((k) => (k.lane || "working") === lane);
+          const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
           return (
             <View key={lane} style={{ gap: 8 }}>
               <View style={[s.row, { marginTop: 8 }]}>
@@ -202,6 +402,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
 const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   card: { borderRadius: 12, padding: 12, gap: 8 },
+  column: { flex: 1, gap: 8, borderRadius: 16, borderWidth: 1, padding: 10, minHeight: 120 },
   task: { fontSize: 15, fontWeight: "500" },
   branch: { fontSize: 11, flexShrink: 1 },
   nextup: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 6 },
