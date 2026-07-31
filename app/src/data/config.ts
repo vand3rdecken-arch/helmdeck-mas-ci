@@ -52,6 +52,12 @@ export const useConfig = create<ConfigState>((set, get) => ({
       if (code.includes("c=")) code = decodeURIComponent(code.split("c=")[1].split("&")[0]);
       const norm = code.replace(/-/g, "+").replace(/_/g, "/");
       const o = JSON.parse(atob(norm)); // Hermes + web both provide atob
+      // Direct invite {b: baseUrl, t: userToken} — same-LAN / desktop teammates.
+      if (o.b) {
+        get().set({ baseUrl: String(o.b).replace(/\/+$/, ""), token: o.t ?? "", relayUrl: "", room: "", daemonPub: "" });
+        return true;
+      }
+      // Relay invite {u: relayUrl, r: room, k: daemonPub, t: userToken} — remote.
       if (!o.u || !o.r || !o.k) return false;
       let { mySec, myPub } = get();
       if (!mySec || !myPub) { const kp = generateKeyPair(); mySec = kp.sec; myPub = kp.pub; }
