@@ -15,6 +15,7 @@
     },
     "android": {
       "package": "app.swarmdeck",
+      "versionCode": 29,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
