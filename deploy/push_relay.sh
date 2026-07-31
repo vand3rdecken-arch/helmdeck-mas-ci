@@ -23,11 +23,11 @@ TARGET="$SSH_USER@$RELAY_HOST"
 echo "==> shipping relay.py to $TARGET"
 scp "${SSH_OPTS[@]}" relay/relay.py "$TARGET:/tmp/relay.py" || exit 1
 
-APK="apk/app/build/outputs/apk/release/app-release.apk"
+# Expo APK (post-cutover path). versionCode/Name come from app/app.json.
+APK="app/android/app/build/outputs/apk/release/app-release.apk"
 if [ -f "$APK" ]; then
-  # version.json is derived from the gradle file - single source of truth
-  VCODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' apk/app/build.gradle.kts)
-  VNAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' apk/app/build.gradle.kts)
+  VCODE=$(sed -n 's/.*"versionCode"[^0-9]*\([0-9]*\).*/\1/p' app/app.json | head -1)
+  VNAME=$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' app/app.json | head -1)
   printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/helmdeck.apk"}\n' \
          "$VCODE" "$VNAME" > /tmp/sd_version.json
   echo "==> shipping APK v$VNAME ($VCODE) + version.json"
