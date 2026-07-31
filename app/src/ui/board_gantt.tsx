@@ -57,7 +57,6 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
   const now = Date.now();
 
   const rows = tracks
-    .filter((k) => !k.archived)
     .map((k) => ({
       k,
       a: parseTs(k.created) ?? now,

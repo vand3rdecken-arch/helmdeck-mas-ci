@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -18,6 +18,7 @@ export default function ChatScreen() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const qc = useQueryClient();
   const scroll = useRef<ScrollView>(null);
   const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory });
 
@@ -31,7 +32,10 @@ export default function ChatScreen() {
     setBusy(true);
     try {
       const r = await api.chat(q);
-      setMsgs((m) => [...m, r]);
+      const actions = (r.actions ?? []).map((a) => a.detail || a.tool).filter(Boolean).join("\n");
+      setMsgs((m) => [...m, { cls: r.error ? "error" : "bot",
+        text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || "(keine Antwort)"].filter(Boolean).join("\n\n") }]);
+      qc.invalidateQueries({ queryKey: ["tracks"] });
     } catch (e) {
       setMsgs((m) => [...m, { cls: "error", text: String((e as Error).message) }]);
     } finally { setBusy(false); setTimeout(() => scroll.current?.scrollToEnd(), 50); }

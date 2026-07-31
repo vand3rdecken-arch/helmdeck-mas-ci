@@ -37,7 +37,11 @@ function prioOrd(p?: string) { return { urgent: 0, high: 1, medium: 2, low: 3 }[
 
 /** Manual board order is data: the daemon's /tracks/reorder writes `rank`, so a
  *  lane sorts by rank first (unranked cards keep their incoming order). */
-function laneSort(a: Track, b: Track) { return (a.rank ?? 1e9) - (b.rank ?? 1e9); }
+function laneSort(a: Track, b: Track) {
+  return (a.rank ?? 1e9) - (b.rank ?? 1e9)
+    || prioOrd(a.priority) - prioOrd(b.priority)
+    || (a.due ?? "9999").localeCompare(b.due ?? "9999");
+}
 const isRunning = (k: Track) => k.status === "running" || k.lane === "working";
 
 /** The daemon's verdict after a lane move (ported from archive/web board.tsx
@@ -360,7 +364,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const storeFilter = useBoardFilter((s) => s.filter);
   const eff = filter ?? storeFilter;
   const shown = (data ?? []).filter((k) => {
-    if (eff === "needs_you") return k.status === "needs_you" && !k.archived;
+    if (eff === "needs_you") return (k.status === "needs_you" || k.status === "bounced") && !k.archived;
     if (eff === "archived") return !!k.archived;
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
     return !k.archived; // "all"
@@ -382,7 +386,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   }
 
   const nextUp = (data ?? [])
-    .filter((k) => k.lane !== "done" && (k.status === "needs_you" || k.status === "bounced"))
+    .filter((k) => k.lane !== "done" && !k.archived && (k.status === "needs_you" || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
   return (

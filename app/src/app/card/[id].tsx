@@ -252,7 +252,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       setAgentMsgs((m) => [...m, { role: "user", kind: "text", text, ts: hhmm() }]);
       try {
         const r = await api.chat(text, { ...o, card: k.id });
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.text || "(keine Antwort)", ts: hhmm() }]);
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.reply || r.error || "(keine Antwort)", ts: hhmm() }]);
       } catch {
         setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: "(Agent-Senden fehlgeschlagen)", ts: hhmm() }]);
       }
