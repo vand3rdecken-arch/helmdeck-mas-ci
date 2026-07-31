@@ -18,7 +18,7 @@ function GlassTabBar() {
 }
 
 /** Desktop left sidebar — the old web app's nav shell: a gradient logo mark +
- *  "SwarmDeck", then the nav items with a left accent bar on the active one.
+ *  "HelmDeck", then the nav items with a left accent bar on the active one.
  *  Real glass (blur 34 / saturate 1.8) so the aurora backdrop refracts through. */
 function Sidebar({ state, descriptors, navigation }: any) {
   return (
@@ -28,7 +28,7 @@ function Sidebar({ state, descriptors, navigation }: any) {
         <View style={[styles.logoDot, { backgroundColor: t.accent }]}>
           <Ionicons name="albums" size={13} color="#fff" />
         </View>
-        <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>SwarmDeck</Text>
+        <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>HelmDeck</Text>
       </View>
       {state.routes.map((route: any, i: number) => {
         const { options } = descriptors[route.key];

@@ -1,10 +1,10 @@
-// SwarmDeck desktop (Electron wrapper) - modeled on Paseo's packages/desktop.
+// HelmDeck desktop (Electron wrapper) - modeled on Paseo's packages/desktop.
 // On launch it starts the local services and shows the UI in a native window:
 //   - the Python daemon (swarm.py serve) on :8140  (the brain + runner)
 //   - the Next.js server on :3300 (the UI, proxies /backend/* to the daemon)
 // then loads http://localhost:3300 in a BrowserWindow. On quit it kills both.
 //
-// Requirements on the user's machine (same as SwarmDeck itself):
+// Requirements on the user's machine (same as HelmDeck itself):
 //   - Python 3.12 (the `py -3.12` launcher on Windows, or `python3`)
 //   - the `claude` CLI (Claude Code) - the agent runtime cards execute in
 const { app, BrowserWindow, dialog, shell } = require("electron");
@@ -67,7 +67,7 @@ for (const s of [process.stdout, process.stderr]) {
 function fail(msg) {
   if (failed) return;
   failed = true;
-  dialog.showErrorBox("SwarmDeck", msg);
+  dialog.showErrorBox("HelmDeck", msg);
   cleanup();
   app.quit();
 }
@@ -134,7 +134,7 @@ function waitForWeb(cb, tries = 90) {
 function createWindow() {
   if (failed) return;
   win = new BrowserWindow({
-    width: 1360, height: 900, title: "SwarmDeck", backgroundColor: "#0b0f14",
+    width: 1360, height: 900, title: "HelmDeck", backgroundColor: "#0b0f14",
     icon: path.join(__dirname, "assets", "icon.ico"),   // taskbar/window: the fanned-card mark
     autoHideMenuBar: true, webPreferences: { contextIsolation: true },
   });

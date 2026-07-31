@@ -32,7 +32,7 @@ DASH = {"wip": 3, "wip_limit": 5, "touches": 12, "touch_budget": 40, "headroom":
         "settings": {"policy": {"lane_labels": {"backlog": "Backlog", "working": "In Arbeit",
                      "review": "Review", "done": "Erledigt"}}}}
 SETTINGS = {"policy": {"lane_labels": {"backlog": "Backlog", "working": "In Arbeit",
-            "review": "Review", "done": "Erledigt"}}, "default_repo": "swarmdeck"}
+            "review": "Review", "done": "Erledigt"}}, "default_repo": "helmdeck"}
 
 
 class H(BaseHTTPRequestHandler):

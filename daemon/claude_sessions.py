@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Read the user's EXISTING Claude Code sessions from ~/.claude/projects so
-SwarmDeck can list and continue them - the Paseo 'session import' idea. A real
+HelmDeck can list and continue them - the Paseo 'session import' idea. A real
 Claude Code session is a <uuid>.jsonl transcript under
 ~/.claude/projects/<encoded-cwd>/; `claude --resume <uuid>` continues it. We
 surface: id (uuid), cwd, project label, first user message, last activity.
@@ -21,9 +21,9 @@ MAX_THINK = 60_000
 # tool results are re-sent on every live tick and sit behind an expander, so
 # keep them moderate - the whole transcript is refetched while a turn runs.
 MAX_RESULT = 8_000
-# SwarmDeck's own spawned sessions (copilot, process designer) - not the user's
+# HelmDeck's own spawned sessions (copilot, process designer) - not the user's
 # coding sessions, so hide them from the import list.
-_INTERNAL = ("You are the SwarmDeck board copilot", "You are a process designer")
+_INTERNAL = ("You are the HelmDeck board copilot", "You are a process designer")
 
 
 def _first_text(content):
@@ -63,7 +63,7 @@ def _peek(path):
 
 
 def list_sessions(limit=MAX):
-    """All Claude Code sessions, most-recently-active first. Skips SwarmDeck's
+    """All Claude Code sessions, most-recently-active first. Skips HelmDeck's
     own worktree sessions (those are already cards)."""
     out = []
     if not os.path.isdir(PROJECTS):
@@ -84,10 +84,10 @@ def list_sessions(limit=MAX):
             if size < 200:              # empty/aborted transcript
                 continue
             cwd, first = _peek(path)
-            if cwd and "swarmdeck-worktrees" in cwd.replace("/", "\\"):
-                continue                # SwarmDeck-managed - already a card
+            if cwd and "helmdeck-worktrees" in cwd.replace("/", "\\"):
+                continue                # HelmDeck-managed - already a card
             if first and first.startswith(_INTERNAL):
-                continue                # SwarmDeck's own copilot/process session
+                continue                # HelmDeck's own copilot/process session
             out.append({
                 "id": fn[:-6],          # strip .jsonl -> the session uuid
                 "cwd": cwd or "",

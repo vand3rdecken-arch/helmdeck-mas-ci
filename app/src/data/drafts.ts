@@ -5,7 +5,7 @@ import { Platform } from "react-native";
 // storage strategy in config.ts: localStorage on web, expo-secure-store on
 // native. Keyed by a caller-supplied draftKey (e.g. "card:<id>").
 const isWeb = Platform.OS === "web";
-const PREFIX = "swarmdeck.draft.";
+const PREFIX = "helmdeck.draft.";
 
 // SecureStore keys must be [A-Za-z0-9._-]; localStorage is unrestricted but we
 // keep one canonical key shape across platforms.

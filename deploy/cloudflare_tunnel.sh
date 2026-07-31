@@ -9,7 +9,7 @@
 # You must be signed in to a free Cloudflare account for the named variant
 # (the script opens the browser login for you).
 set -o pipefail
-PORT="${SWARMDECK_PORT:-8140}"
+PORT="${HELMDECK_PORT:-8140}"
 DOMAIN="${1:-}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -41,6 +41,6 @@ fi
 
 echo "==> named tunnel for $DOMAIN (stable URL)"
 cloudflared tunnel login                                    # opens the browser: you approve
-cloudflared tunnel create swarmdeck 2>/dev/null || true
-cloudflared tunnel route dns swarmdeck "swarmdeck.$DOMAIN"
-exec cloudflared tunnel run --url "http://localhost:$PORT" swarmdeck
+cloudflared tunnel create helmdeck 2>/dev/null || true
+cloudflared tunnel route dns helmdeck "helmdeck.$DOMAIN"
+exec cloudflared tunnel run --url "http://localhost:$PORT" helmdeck

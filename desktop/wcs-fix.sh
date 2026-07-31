@@ -4,7 +4,7 @@
 # app-builder then finds the extracted dir and skips its own (failing) extraction.
 set -u
 CACHE="$HOME/AppData/Local/electron-builder/Cache/winCodeSign"
-Z="$HOME/Downloads/swarmdeck/desktop/node_modules/7zip-bin/win/x64/7za.exe"
+Z="$HOME/Downloads/helmdeck/desktop/node_modules/7zip-bin/win/x64/7za.exe"
 mkdir -p "$CACHE"
 ARC="$(ls "$CACHE"/*.7z 2>/dev/null | head -1)"
 if [ -z "$ARC" ]; then

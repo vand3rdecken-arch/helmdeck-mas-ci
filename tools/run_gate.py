@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SwarmDeck quality gate - run by the DAEMON at Review/Accept (see sessions._gate),
+"""HelmDeck quality gate - run by the DAEMON at Review/Accept (see sessions._gate),
 NOT by the card's agent. That is the whole point: the harness has full command
 access, so tests always run even when the agent's permission mode gates commands.
 

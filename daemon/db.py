@@ -8,7 +8,7 @@ rule."""
 import json, os, sqlite3, threading
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DBPATH = os.path.join(ROOT, "swarmdeck.db")
+DBPATH = os.path.join(ROOT, "helmdeck.db")
 _local = threading.local()
 _version = 0                      # bumped on every write; SSE waits on it
 _version_cond = threading.Condition()

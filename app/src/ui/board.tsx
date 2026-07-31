@@ -367,7 +367,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
-      {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar – läuft SwarmDeck?</Text> : null}
+      {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar – läuft HelmDeck?</Text> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? <NextUp items={nextUp} /> : null}

@@ -1,4 +1,4 @@
-# SwarmDeck relay (thin - the APK rule)
+# HelmDeck relay (thin - the APK rule)
 
 The cloud's ONLY jobs, all tiny and stateless beyond the newest values:
 

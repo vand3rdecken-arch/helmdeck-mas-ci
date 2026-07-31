@@ -38,7 +38,7 @@ def _active_live():
                 return p
     return None
 
-BOARD = """<!doctype html><meta charset=utf-8><title>SwarmDeck board</title>
+BOARD = """<!doctype html><meta charset=utf-8><title>HelmDeck board</title>
 <style>
 body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
 h1{color:#7ef0b2;font-size:20px;margin:0 0 4px} .hint{color:#5d7488;font-size:12px;margin:0 0 14px}
@@ -73,7 +73,7 @@ button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111a24;
        border:1px solid #2affc0;color:#2affc0;padding:8px 16px;border-radius:8px;display:none}
 </style>
-<h1>SwarmDeck - board</h1>
+<h1>HelmDeck - board</h1>
 <p class=hint>drag a card: → Working dispatches it · → Review runs the gate &amp; submits · → Done accepts. Click a card to open &amp; steer.
   <a href="/recorder" style="color:#6fb2e8">recordings</a> · <a href="/dashboard" style="color:#6fb2e8">dashboard</a></p>
 <div id=cap class=hint style="margin:0 0 10px"></div>
@@ -184,7 +184,7 @@ function fileReq(){
 load();setInterval(load,5000);
 </script>"""
 
-DASH = """<!doctype html><meta charset=utf-8><title>SwarmDeck - dashboard</title>
+DASH = """<!doctype html><meta charset=utf-8><title>HelmDeck - dashboard</title>
 <style>
 body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
 h1{color:#7ef0b2;font-size:20px;margin:0 0 4px}.hint{color:#5d7488;font-size:12px;margin:0 0 16px}
@@ -208,7 +208,7 @@ td.num,th.num{text-align:right;font-family:ui-monospace,monospace}
 .leg{font-size:12px;color:#8fb0c9}.leg b{font-weight:400}
 a{color:#6fb2e8}
 </style>
-<h1>SwarmDeck - company dashboard</h1>
+<h1>HelmDeck - company dashboard</h1>
 <p class=hint>fixed-capacity humans, variable-cost AI. <a href="/">board</a> · <a href="/settings" onclick="alert('GET/POST /settings (JSON): capacity, prices, value_per_card');return false">settings</a></p>
 <div id=tiles></div>
 <h2>Capacity - take more work, or automate?</h2><div id=capbox class=tile style="max-width:520px"></div>
@@ -259,14 +259,14 @@ fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){
 });
 </script>"""
 
-PAGE = """<!doctype html><meta charset=utf-8><title>SwarmDeck review</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>HelmDeck review</title>
 <style>body{font:15px/1.5 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:24px}
 h1{color:#7ef0b2}.run{border:1px solid #24303c;border-radius:10px;padding:12px 16px;margin:12px 0}
 .k{color:#8fb6d9;font-family:monospace}.steps{margin:8px 0 0;padding-left:0;list-style:none}
 .steps li{padding:2px 0;border-left:3px solid #24303c;padding-left:10px;margin:2px 0;font-family:monospace;font-size:13px}
 .steps li.flag{border-color:#ffd166;background:#2a2410}.t{color:#5d7284;margin-right:8px}
 video{max-width:640px;display:block;margin-top:8px}</style>
-<h1>SwarmDeck - runs</h1><div id=out>loading…</div>
+<h1>HelmDeck - runs</h1><div id=out>loading…</div>
 <script>
 fetch('/runs').then(r=>r.json()).then(async runs=>{
   const out=document.getElementById('out');out.innerHTML='';
@@ -393,10 +393,10 @@ class H(BaseHTTPRequestHandler):
                     for u in auth.list_users()]))
             if p == "/":
                 return self._send(200,
-                    "<!doctype html><meta charset=utf-8><title>SwarmDeck</title>"
+                    "<!doctype html><meta charset=utf-8><title>HelmDeck</title>"
                     "<body style=\"font:15px system-ui;background:#16181d;color:#eee;"
                     "display:grid;place-items:center;height:100vh;margin:0\"><div>"
-                    "<h2>SwarmDeck API</h2><p>The app lives at "
+                    "<h2>HelmDeck API</h2><p>The app lives at "
                     "<a style=\"color:#7cb5ff\" href=\"http://localhost:3300\">localhost:3300</a>"
                     " (cd web &amp;&amp; npm run dev -- --port 3300).</p>"
                     "<p style=\"color:#888\">Legacy fallback UI: <a style=\"color:#7cb5ff\" "
@@ -1260,7 +1260,7 @@ def serve(port=8140):
     relay_client.start(port)   # reverse tunnel for mobile - idle until settings.relay is set
     import nightshift
     nightshift.start()         # idle-time worker - no-op until settings.nightshift.enabled
-    print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
+    print("HelmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     try:
         ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
     finally:

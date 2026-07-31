@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""End-to-end test of the SwarmDeck desktop surface, driven through the real UI
+"""End-to-end test of the HelmDeck desktop surface, driven through the real UI
 (Playwright against the app's own production server on :3300) plus the daemon
 API for setup/teardown.
 

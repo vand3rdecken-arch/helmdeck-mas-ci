@@ -1,5 +1,5 @@
-appId: work.21stgen.swarmdeck
-productName: SwarmDeck
+appId: work.21stgen.helmdeck
+productName: HelmDeck
 directories:
   output: release
 # only the Electron shell goes in the asar; the daemon + built UI are shipped as
@@ -38,13 +38,13 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: "SwarmDeck-Setup-${version}-${arch}.${ext}"
+  artifactName: "HelmDeck-Setup-${version}-${arch}.${ext}"
   # the fanned-card mark (tools/make_icon.py) - same glyph as the phone launcher
   icon: assets/icon.ico
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  shortcutName: SwarmDeck
+  shortcutName: HelmDeck
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico

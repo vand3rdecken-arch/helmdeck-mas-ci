@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SwarmDeck's build loop - the FORWARD work loop a request travels through,
+"""HelmDeck's build loop - the FORWARD work loop a request travels through,
 enforced the glass-harness way (states computed from artifacts on disk, Stop
 hook blocks resting mid-loop, SessionStart re-orients fresh context).
 
@@ -52,8 +52,8 @@ WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 CORE_MODULES = ["db", "events", "sessions", "drivers", "processes", "copilot",
                 "connectors", "charter", "checkpoints", "auth", "importers",
                 "debt", "server"]
-SECRET_NAMES = ("settings.json", "users.json", "swarmdeck.db", "swarmdeck.db-wal",
-                "swarmdeck.db-shm", "copilot_log.json",
+SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
+                "helmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
 
 WORKORDER_TEMPLATE = """# Workorder
@@ -187,15 +187,15 @@ def archive_workorder():
 # each shippable artifact vs ONLY the source that feeds it - so a web change
 # doesn't flag the APK (whose Kotlin is untouched) as stale, and vice versa.
 ARTIFACT_SRC = {
-    "desktop/release/SwarmDeck-Setup-0.2.0-x64.exe": ("daemon", "web/app", "web/components", "web/lib"),
+    "desktop/release/HelmDeck-Setup-0.2.0-x64.exe": ("daemon", "web/app", "web/components", "web/lib"),
     # the shippable Android artifact is the SIGNED release build (debug is only
     # a local convenience build and is never distributed)
     "apk/app/build/outputs/apk/release/app-release.apk": ("apk/app/src",),
-    "glasses/dist/swarmdeck-glasses.zip": ("glasses/index.html", "glasses/styles.css", "glasses/app.js"),
+    "glasses/dist/helmdeck-glasses.zip": ("glasses/index.html", "glasses/styles.css", "glasses/app.js"),
 }
 _SKIP = ("node_modules", ".next", "__pycache__", os.sep + "build", os.sep + "dist")
 # only SOURCE files count - not the running daemon's data (events.jsonl,
-# swarmdeck.db, settings.json, ...), which would otherwise flag every artifact
+# helmdeck.db, settings.json, ...), which would otherwise flag every artifact
 # stale on each turn.
 _CODE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".kt", ".kts")
 

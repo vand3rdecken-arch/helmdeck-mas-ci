@@ -22,7 +22,7 @@ export async function registerForPush() {
     if (!perm.granted) return;
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("default", {
-        name: "SwarmDeck", importance: Notifications.AndroidImportance.HIGH,
+        name: "HelmDeck", importance: Notifications.AndroidImportance.HIGH,
       });
     }
     const token = (await Notifications.getDevicePushTokenAsync()).data; // raw FCM token on Android

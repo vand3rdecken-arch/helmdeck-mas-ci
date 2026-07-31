@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Board copilot - steer SwarmDeck by chatting. Each message runs one Claude
+"""Board copilot - steer HelmDeck by chatting. Each message runs one Claude
 turn (resumable per user, so the conversation has memory) with a fresh board
 snapshot; the model answers with JSON: a reply for the human plus zero or more
 ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
@@ -9,10 +9,10 @@ import json, os, re, shutil, subprocess, time
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
-CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
-SYSTEM = """You are the SwarmDeck board copilot. The user steers an agent-execution
+SYSTEM = """You are the HelmDeck board copilot. The user steers an agent-execution
 kanban (cards = agent/human work in lanes backlog/working/review/done; processes =
 step chains that auto-advance). You get a live board snapshot each message.
 

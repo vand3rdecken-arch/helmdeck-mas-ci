@@ -1,8 +1,8 @@
 {
-  "name": "swarmdeck-desktop",
+  "name": "helmdeck-desktop",
   "version": "0.2.0",
   "private": true,
-  "description": "SwarmDeck desktop app (Electron wrapper) - runs the daemon + UI as one Windows program",
+  "description": "HelmDeck desktop app (Electron wrapper) - runs the daemon + UI as one Windows program",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
