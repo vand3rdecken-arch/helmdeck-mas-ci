@@ -60,7 +60,7 @@ border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;co
 <h2>HelmDeck koppeln</h2>
 <p>Wenn sich die App nicht automatisch geöffnet hat:</p>
 <a class=p href="helmdeck://pair?c=__C__">In HelmDeck öffnen</a><br>
-<a class=g href="/apk/HelmDeck-v29.apk">HelmDeck installieren (APK)</a>
+<a class=g href="/apk/helmdeck.apk">HelmDeck installieren (APK)</a>
 <script>location.replace("helmdeck://pair?c=__C__");</script>"""
 
 
@@ -133,6 +133,23 @@ class H(BaseHTTPRequestHandler):
                     room["cv"].wait(left)
                 frame = room["q"].pop(0)
             return self._send(200, json.dumps(frame))
+        if p == "/.well-known/assetlinks.json":
+            body = json.dumps(ASSETLINKS)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body.encode())
+            return
+        if p == "/pair":
+            c = (parse_qs(urlparse(self.path).query).get("c") or [""])[0]
+            html = PAIR_HTML.replace("__C__", c).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html)))
+            self.end_headers()
+            self.wfile.write(html)
+            return
         return self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
