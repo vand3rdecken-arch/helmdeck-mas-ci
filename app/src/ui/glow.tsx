@@ -7,11 +7,14 @@ import { useTheme } from "@/theme";
  *  radial blooms behind everything. Glass refracts these, which is what gave the
  *  old UI its colour. Cross-platform via svg; colour stays decorative (card /
  *  status colour stays semantic). Pre-resolved from the OKLCH source. */
+// Cohesive blue -> violet aurora (analogous scheme). The old mesh mixed teal +
+// green + magenta + violet — four fighting hues; this keeps everything in the
+// blue/indigo/violet family so the backdrop reads as one calm gradient.
 const AUR = {
-  teal: "rgb(0,154,166)",
-  violet: "rgb(147,94,223)",
-  green: "rgb(0,164,108)",
-  magenta: "rgb(179,87,173)",
+  teal: "rgb(46,143,204)",     // accent blue (top-left bloom)
+  violet: "rgb(155,135,232)",  // violet (top-right bloom)
+  green: "rgb(84,104,224)",    // indigo (bottom bloom, replaces green)
+  magenta: "rgb(120,110,214)", // periwinkle (centre, replaces magenta)
 };
 
 export function GlowBackdrop() {
@@ -20,20 +23,20 @@ export function GlowBackdrop() {
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Svg width="100%" height="100%">
         <Defs>
-          <RadialGradient id="a1" cx="8%" cy="-8%" r="60%">
-            <Stop offset="0" stopColor={AUR.teal} stopOpacity={0.38} />
+          <RadialGradient id="a1" cx="6%" cy="-6%" r="66%">
+            <Stop offset="0" stopColor={AUR.teal} stopOpacity={0.60} />
             <Stop offset="1" stopColor={AUR.teal} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id="a2" cx="92%" cy="4%" r="52%">
-            <Stop offset="0" stopColor={AUR.violet} stopOpacity={0.32} />
+          <RadialGradient id="a2" cx="94%" cy="2%" r="60%">
+            <Stop offset="0" stopColor={AUR.violet} stopOpacity={0.55} />
             <Stop offset="1" stopColor={AUR.violet} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id="a3" cx="45%" cy="112%" r="62%">
-            <Stop offset="0" stopColor={AUR.green} stopOpacity={0.28} />
+          <RadialGradient id="a3" cx="45%" cy="112%" r="66%">
+            <Stop offset="0" stopColor={AUR.green} stopOpacity={0.45} />
             <Stop offset="1" stopColor={AUR.green} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id="a4" cx="70%" cy="55%" r="40%">
-            <Stop offset="0" stopColor={AUR.magenta} stopOpacity={0.18} />
+          <RadialGradient id="a4" cx="72%" cy="52%" r="46%">
+            <Stop offset="0" stopColor={AUR.magenta} stopOpacity={0.30} />
             <Stop offset="1" stopColor={AUR.magenta} stopOpacity={0} />
           </RadialGradient>
         </Defs>
