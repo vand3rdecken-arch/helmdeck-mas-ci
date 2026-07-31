@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
@@ -73,7 +74,11 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const router = useRouter();
   const tint = k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
-  const e = metrics?.cards?.find((c) => c.id === k.id);
+  const cards = metrics?.cards ?? [];
+  const e = cards.find((c) => c.id === k.id);
+  const maxA = Math.max(1, ...cards.map((c) => c.ai_cost));   // cross-card scale so
+  const maxH = Math.max(1, ...cards.map((c) => c.touches));   // split bars compare
+  const stepM = k.branch?.match(/-s(\d+)$/);
   const report =
     (k.gate_report && k.gate_report.length) ? "gate: " + k.gate_report.join(" | ") :
     (k.merge_report && !k.gate_report) ? k.merge_report.split("\n")[0] :
@@ -111,26 +116,28 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       {sub ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={2}>{sub.replace(/\n/g, " ")}</Text> : null}
       {report ? <Text style={{ color: reportColor, fontSize: 11 }} numberOfLines={1}>{report.slice(0, 140)}</Text> : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
-        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {k.process_title ?? "process"}</Text> : null}
+        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepM ? `step ${stepM[1]}` : (k.process_title ?? "process")}</Text> : null}
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
         {k.status ? <Chip text={k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
         {k.due ? <Chip text={`due ${k.due}`} /> : null}
+        {k.value > 0 ? <Chip text={`€${k.value}`} /> : null}
         {k.ai_cost > 0 ? <Chip text={`AI $${k.ai_cost.toFixed(2)}`} /> : null}
         {e && e.touches > 0 ? <Chip text={`${e.touches}t`} /> : null}
+        {e?.mode ? <Chip text={e.mode === "auto" ? "auto · AI" : "assisted · human"} dot={e.mode === "auto" ? t.ai : t.human} /> : null}
         {k.client ? <Chip text={k.client} /> : null}
       </View>
       {e && (e.ai_cost > 0 || e.touches > 0) ? (
         <View style={{ gap: 2, marginTop: 2 }}>
-          <View style={{ height: 3, borderRadius: 2, backgroundColor: t.ai, width: `${Math.min(100, Math.max(3, (e.ai_cost / 10) * 100))}%` }} />
-          <View style={{ height: 3, borderRadius: 2, backgroundColor: t.human, width: `${Math.min(100, Math.max(3, (e.touches / 10) * 100))}%` }} />
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: t.ai, width: `${Math.max(2, Math.round((100 * e.ai_cost) / maxA))}%` }} />
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: t.human, width: `${Math.max(2, Math.round((100 * e.touches) / maxH))}%` }} />
         </View>
       ) : null}
     </Pressable>
   );
 }
 
-function NextUp({ items }: { items: Track[] }) {
+function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void }) {
   const t = useTheme();
   const router = useRouter();
   const why = (k: Track) =>
@@ -144,7 +151,15 @@ function NextUp({ items }: { items: Track[] }) {
         <Pressable key={k.id} onPress={() => router.push(`/card/${k.id}`)} style={[s.row, { gap: 8 }]}>
           <Dot color={statusColor(t, k.status)} />
           <Text style={{ color: t.txtPrimary, fontSize: 12.5, flex: 1 }} numberOfLines={1}>{k.task}</Text>
-          <Text style={{ color: t.warn, fontSize: 10.5, fontWeight: "600" }}>{why(k)}</Text>
+          {k.mode === "human" && k.lane === "backlog" ? (
+            <Pressable onPress={() => onDone(k)} hitSlop={6}
+              style={{ flexDirection: "row", alignItems: "center", gap: 3, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 1 }}>
+              <Ionicons name="checkmark" size={11} color={t.ok} />
+              <Text style={{ color: t.txtSecondary, fontSize: 10.5 }}>done</Text>
+            </Pressable>
+          ) : (
+            <Text style={{ color: t.warn, fontSize: 10.5, fontWeight: "600" }}>{why(k)}</Text>
+          )}
         </Pressable>
       ))}
       {items.length > 4 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>+{items.length - 4} weitere</Text> : null}
@@ -157,8 +172,12 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
   return (
     <Pressable onPress={onOpen} onLongPress={onMove} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
       <Dot color={statusColor(t, k.status)} />
+      <Text style={{ color: t.txtTertiary, fontSize: 10.5, width: 96 }} numberOfLines={1}>{k.branch || "(no git)"}</Text>
       <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
+      {k.status ? <Text style={{ color: statusColor(t, k.status), fontSize: 10.5 }}>{k.status.replace(/_/g, " ")}</Text> : null}
       {k.priority && k.priority !== "medium" ? <Text style={{ color: k.priority === "urgent" ? t.danger : t.warn, fontSize: 10.5 }}>{k.priority}</Text> : null}
+      {k.due ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.due}</Text> : null}
+      {k.value > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>€{k.value}</Text> : null}
       {k.ai_cost > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>${k.ai_cost.toFixed(2)}</Text> : null}
       {k.updated ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.updated}</Text> : null}
     </Pressable>
@@ -398,7 +417,12 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar – läuft HelmDeck?</Text> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
-      {!filter && nextUp.length > 0 ? <NextUp items={nextUp} /> : null}
+      {!filter && nextUp.length > 0 ? (
+        <NextUp items={nextUp} onDone={async (k) => {
+          try { const res = await api.moveLane(k.id, "done"); showToast(laneVerdict(res, "done") ?? "Step erledigt – die Kette rückt vor"); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+          catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+        }} />
+      ) : null}
       {filter === "needs_you" ? (
         shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
           shown.map((k) => <Card key={k.id} k={k} onMove={onMove} />)
@@ -412,6 +436,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
+          if (layout === "list" && inLane.length === 0) return null;   // list hides empty lanes
           return (
             <View key={lane} style={{ gap: 8 }}>
               <View style={[s.row, { marginTop: 8 }]}>

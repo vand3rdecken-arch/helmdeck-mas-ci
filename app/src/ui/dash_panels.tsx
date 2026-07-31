@@ -1,12 +1,34 @@
+import { useQueryClient } from "@tanstack/react-query";
 import React from "react";
-import { Platform, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
+import { api } from "@/data/client";
 import type { EconCard, Metrics, Sow } from "@/data/types";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Empty } from "./kit";
 
 const isWeb = Platform.OS === "web";
+
+// ---- dashboard composition (settings.dashboard) ----
+// The owner picks which of the 6 tiles / 5 panels show; missing config = all on
+// (back-compat). Keys match the archived web dash.tsx so settings interop.
+export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"] as const;
+export const ALL_PANELS = ["sows", "capacity", "gates", "models", "work"] as const;
+export const TILE_LABELS: Record<string, string> = {
+  value_delivered: "Value delivered", ai_spend: "AI spend", margin: "Margin",
+  yield: "First-pass yield", automation: "Automation rate", leverage: "Leverage per touch",
+};
+export const PANEL_LABELS: Record<string, string> = {
+  sows: "SoW margin", capacity: "Capacity gauge", gates: "Gate failures",
+  models: "AI usage by model", work: "Work table",
+};
+export function dashTiles(m?: Metrics): string[] {
+  return m?.settings?.dashboard?.tiles ?? [...ALL_TILES];
+}
+export function dashPanels(m?: Metrics): string[] {
+  return m?.settings?.dashboard?.panels ?? [...ALL_PANELS];
+}
 
 /** Real frosted glass on the web (CSS backdrop-filter over the glow backdrop);
  *  native RN can't blur what's behind, so it uses a crisp translucent surface. */
@@ -45,26 +67,82 @@ export function Tile({ value, label }: { value: string; label: string }) {
   );
 }
 
-export function Tiles({ m, wide }: { m: Metrics; wide: boolean }) {
+export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: string[] }) {
   const T = m.totals;
   const [y0, y1] = m.yield_first_pass ?? [0, 0];
   const [a0, a1] = m.automation ?? [0, 0];
   const c = cur(m);
-  const items: { value: string; label: string }[] = [
-    { value: c + T.value_delivered, label: "value delivered" },
-    { value: "$" + T.ai_spend.toFixed(2), label: "AI spend" },
-    { value: c + T.margin, label: "margin (value − AI)" },
-    { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: `first-pass yield (${y0}/${y1})` },
-    { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: `automation rate (${a0}/${a1} auto)` },
-    { value: c + T.leverage_per_touch, label: "value per touch unit" },
-  ];
+  const byKey: Record<string, { value: string; label: string }> = {
+    value_delivered: { value: c + T.value_delivered, label: "value delivered" },
+    ai_spend: { value: "$" + T.ai_spend.toFixed(2), label: "AI spend" },
+    margin: { value: c + T.margin, label: "margin (value − AI)" },
+    yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: `first-pass yield (${y0}/${y1})` },
+    automation: { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: `automation rate (${a0}/${a1} auto)` },
+    leverage: { value: c + T.leverage_per_touch, label: "value per touch unit" },
+  };
+  // Enabled keys drive both which tiles show and their order (missing = all).
+  const keys = (tiles ?? [...ALL_TILES]).filter((k) => byKey[k]);
+  if (keys.length === 0) return null;
   return (
     <View style={s.tileGrid}>
-      {items.map((it, i) => (
-        <View key={i} style={{ width: wide ? "32%" : "48%" }}>
-          <Tile value={it.value} label={it.label} />
+      {keys.map((k) => (
+        <View key={k} style={{ width: wide ? "32%" : "48%" }}>
+          <Tile value={byKey[k].value} label={byKey[k].label} />
         </View>
       ))}
+    </View>
+  );
+}
+
+/** Owner-only dashboard customizer: a gear that reveals toggle chips to
+ *  enable/disable each tile + panel, persisted to settings.dashboard. */
+export function DashCustomize({ m }: { m: Metrics }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const [editing, setEditing] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const tiles = dashTiles(m);
+  const panels = dashPanels(m);
+
+  async function toggle(kind: "tiles" | "panels", key: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const curKeys = kind === "tiles" ? tiles : panels;
+      const next = curKeys.includes(key) ? curKeys.filter((k) => k !== key) : [...curKeys, key];
+      await api.saveSettings({ dashboard: { tiles: kind === "tiles" ? next : tiles, panels: kind === "panels" ? next : panels } });
+      await qc.invalidateQueries({ queryKey: ["metrics"] });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const chip = (on: boolean, label: string, onPress: () => void) => (
+    <Pressable key={label} onPress={onPress}
+      style={[s.tchip, { backgroundColor: on ? t.accent + "22" : t.surface2, borderColor: on ? t.accent : t.borderSubtle }]}>
+      <Text style={{ color: on ? t.accent : t.txtTertiary, fontSize: 12, fontWeight: on ? "600" : "400" }}>{label}</Text>
+    </Pressable>
+  );
+
+  return (
+    <View style={{ gap: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+        <Pressable onPress={() => setEditing((v) => !v)}
+          style={[s.gearBtn, { borderColor: t.glassBorder, backgroundColor: t.surface2 }]}>
+          <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{editing ? "Fertig" : "⚙ Anpassen"}</Text>
+        </Pressable>
+      </View>
+      {editing ? (
+        <GlassPanel title="Auf diesem Dashboard anzeigen"
+          note="Auch per Chat: „zeige nur Marge und Automatisierung“. Die Ökonomie bleibt immer gemessen.">
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {Object.entries(TILE_LABELS).map(([k, label]) => chip(tiles.includes(k), label, () => toggle("tiles", k)))}
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+            {Object.entries(PANEL_LABELS).map(([k, label]) => chip(panels.includes(k), label, () => toggle("panels", k)))}
+          </View>
+        </GlassPanel>
+      ) : null}
     </View>
   );
 }
@@ -294,6 +372,8 @@ const s = StyleSheet.create({
   tr: { flexDirection: "row", alignItems: "center", paddingVertical: 6, gap: 6 },
   th: { fontSize: 10.5, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.4 },
   td: { fontSize: 12.5 },
+  tchip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  gearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
   meter: { height: 8, borderRadius: 999, borderWidth: 1, overflow: "hidden" },
   hbar: { flexDirection: "row", alignItems: "center", gap: 8 },
   trk: { flex: 1, height: 8, borderRadius: 999, overflow: "hidden" },

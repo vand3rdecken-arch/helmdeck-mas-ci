@@ -9,6 +9,9 @@ import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Caption, ChipPick, fieldStyle } from "@/ui/settings_sections";
 
+// Shape of one entry from claude_sessions.list_sessions (daemon/claude_sessions.py).
+type ClaudeSession = { id: string; cwd: string; project: string; first: string; last_active: string };
+
 // Ported from archive/web/components/modal.tsx (EXAMPLES). Tapping a chip seeds
 // the task text and, where the web example set one, the driver.
 const EXAMPLES = [
@@ -35,6 +38,15 @@ export default function NewCard() {
   const [client, setClient] = useState("");
   const [driver, setDriver] = useState("");
   const [busy, setBusy] = useState(false);
+  // Adopt-an-existing-Claude-session flow (ported from archive/web modal). The
+  // list is only fetched once the section is opened; picking a session flips the
+  // submit action from "create card" to "continue session".
+  const [showSess, setShowSess] = useState(false);
+  const [adoptId, setAdoptId] = useState<string | null>(null);
+  const [adoptCwd, setAdoptCwd] = useState("");
+  const { data: sessions, isLoading: sessLoading } = useQuery<ClaudeSession[]>({
+    queryKey: ["claude-sessions"], queryFn: api.claudeSessions, enabled: showSess,
+  });
 
   const field = fieldStyle(t);
   // The app already knows the configured drivers via metrics.settings.drivers
@@ -42,9 +54,20 @@ export default function NewCard() {
   const drivers = Object.keys(metrics?.settings?.drivers ?? {});
 
   async function file() {
-    if (!task.trim()) return;
     setBusy(true);
     try {
+      // A picked session -> adopt it as a card (mode "continue"), with any typed
+      // text carried as the first steer. Same one button either way.
+      if (adoptId) {
+        const res = await api.adoptClaude({
+          session_id: adoptId, cwd: adoptCwd, mode: "continue", first: task.trim(),
+        });
+        if (res?.error) { Alert.alert("Abgelehnt", res.error); return; }
+        await qc.invalidateQueries({ queryKey: ["tracks"] });
+        router.back();
+        return;
+      }
+      if (!task.trim()) return;
       const body: Record<string, unknown> = {
         task: task.trim(), repo: repo.trim(), lane: "backlog", priority,
       };
@@ -77,7 +100,36 @@ export default function NewCard() {
               </Pressable>
             ))}
           </View>
-          <SectionLabel text="was soll getan werden?" />
+          <Pressable onPress={() => setShowSess((v) => !v)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: showSess ? 8 : 4 }}>
+            <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{showSess ? "▾" : "▸"}</Text>
+            <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "500" }}>Bestehende Claude-Session übernehmen</Text>
+          </Pressable>
+          {showSess && (
+            <View style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
+              {sessLoading && <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 10 }}>lese ~/.claude…</Text>}
+              {!sessLoading && (sessions?.length ?? 0) === 0 && (
+                <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 10 }}>keine Sessions gefunden.</Text>
+              )}
+              {sessions?.map((s) => {
+                const sel = s.id === adoptId;
+                return (
+                  <Pressable key={s.id}
+                    onPress={() => { setAdoptId(sel ? null : s.id); setAdoptCwd(sel ? "" : s.cwd); }}
+                    style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: t.glassBorder,
+                      borderLeftWidth: 2, borderLeftColor: sel ? t.accent : "transparent",
+                      backgroundColor: sel ? t.surface2 : "transparent" }}>
+                    <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
+                      <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }} numberOfLines={1}>{s.project || "session"}</Text>
+                      <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{s.last_active}</Text>
+                    </View>
+                    <Text style={{ color: t.txtSecondary, fontSize: 11.5 }} numberOfLines={1}>{s.first || "(kein Text)"}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+          <SectionLabel text={adoptId ? "erste anweisung (optional)" : "was soll getan werden?"} />
           <TextInput value={task} onChangeText={setTask} multiline placeholder="Beschreibe die Aufgabe…"
             placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 90 }]} />
           <View style={{ height: 10 }} />
@@ -119,8 +171,8 @@ export default function NewCard() {
           <Pressable onPress={() => router.back()} style={{ flex: 1, borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, padding: 12, alignItems: "center" }}>
             <Text style={{ color: t.txtSecondary }}>Abbrechen</Text>
           </Pressable>
-          <Pressable onPress={file} disabled={busy || !task.trim()} style={{ flex: 1, backgroundColor: t.accent, borderRadius: 8, padding: 12, alignItems: "center", opacity: busy || !task.trim() ? 0.5 : 1 }}>
-            <Text style={{ color: "#fff", fontWeight: "600" }}>Anlegen</Text>
+          <Pressable onPress={file} disabled={busy || (!adoptId && !task.trim())} style={{ flex: 1, backgroundColor: t.accent, borderRadius: 8, padding: 12, alignItems: "center", opacity: busy || (!adoptId && !task.trim()) ? 0.5 : 1 }}>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{adoptId ? "Übernehmen" : "Anlegen"}</Text>
           </Pressable>
         </View>
       </ScrollView>
