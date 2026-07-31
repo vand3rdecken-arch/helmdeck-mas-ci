@@ -50,6 +50,7 @@ function Sidebar({ state, navigation }: any) {
   const filter = useBoardFilter((s) => s.filter);
   const setFilter = useBoardFilter((s) => s.setFilter);
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const clients = Object.entries(
     (tracks ?? []).reduce((acc: Record<string, number>, k) => {
       if (k.client && !k.archived) acc[k.client] = (acc[k.client] ?? 0) + 1;
@@ -106,7 +107,19 @@ function Sidebar({ state, navigation }: any) {
         ))}
       </ScrollView>
       <View style={{ paddingVertical: 10, paddingHorizontal: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.glassBorder }}>
-        <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⌘K · Befehle</Text>
+        {me ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>{(me.name || "?").charAt(0).toUpperCase()}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{me.name}</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{me.role}</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⌘K · Befehle</Text>
+        )}
       </View>
     </View>
   );

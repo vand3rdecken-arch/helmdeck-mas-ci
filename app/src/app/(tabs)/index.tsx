@@ -45,28 +45,22 @@ export default function BoardTab() {
         <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700" }}>Board</Text>
         {wide ? <CapacityMeter /> : null}
         <View style={{ flex: 1 }} />
-        {wide ? (
-          <Pressable onPress={() => router.push("/new")}
-            style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: t.accent,
-              borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }}>
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Neu</Text>
-          </Pressable>
-        ) : null}
       </View>
       <BoardList />
-      {!wide ? (
-        <View style={{ position: "absolute", right: 18, bottom: 84, alignItems: "center", gap: 12 }}>
-          <Pressable onPress={() => router.push("/chat")}
-            style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.surface2, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="chatbubble-outline" size={18} color={t.accent} />
-          </Pressable>
-          <Pressable onPress={() => router.push("/new")}
-            style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="add" size={26} color="#fff" />
-          </Pressable>
-        </View>
-      ) : null}
+      {/* floating board chat + new-request, bottom-right (works on desktop too) */}
+      <View style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84, alignItems: "center", gap: 12 }}>
+        <Pressable onPress={() => router.push("/chat")}
+          style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+            alignItems: "center", justifyContent: "center",
+            ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
+        </Pressable>
+        <Pressable onPress={() => router.push("/new")}
+          style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: t.accent, alignItems: "center", justifyContent: "center",
+            ...(Platform.OS === "web" ? { boxShadow: "0 6px 18px rgba(0,0,0,0.35)" } as any : { elevation: 6 }) }}>
+          <Ionicons name="add" size={26} color="#fff" />
+        </Pressable>
+      </View>
     </View>
   );
 }
