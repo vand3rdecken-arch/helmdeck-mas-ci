@@ -6,6 +6,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { api } from "@/data/client";
+import { useBoardFilter } from "@/data/boardfilter";
 import type { Track } from "@/data/types";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -305,7 +306,16 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
 
-  const shown = (data ?? []).filter((k) => (filter === "needs_you" ? k.status === "needs_you" : true));
+  // Needs tab passes filter="needs_you" (flat list). The Board tab (no prop)
+  // takes its filter from the sidebar store: all / archived / client:<name>.
+  const storeFilter = useBoardFilter((s) => s.filter);
+  const eff = filter ?? storeFilter;
+  const shown = (data ?? []).filter((k) => {
+    if (eff === "needs_you") return k.status === "needs_you" && !k.archived;
+    if (eff === "archived") return !!k.archived;
+    if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
+    return !k.archived; // "all"
+  });
 
   function onMove(k: Track) {
     Alert.alert(k.task, "Verschieben nach…", [
