@@ -15,10 +15,11 @@ import { presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 import { CommandPalette, usePalette } from "@/ui/palette";
+import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
 
 // Desktop/web power-nav: Cmd/Ctrl-K toggles the command palette, Esc closes it.
-// No-op on native (no DOM); the palette component also renders null off-web.
+// No-op on native (no DOM); on native the palette is opened via the tab bar / a button.
 function usePaletteHotkeys() {
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
@@ -73,6 +74,7 @@ export default function RootLayout() {
             </Stack>
             <WebStyles />
             <CommandPalette />
+            <PromptHost />
           </SafeAreaProvider>
         </ThemeProvider>
       </QueryClientProvider>

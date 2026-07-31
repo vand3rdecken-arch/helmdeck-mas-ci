@@ -3,6 +3,7 @@ import { Alert, Platform, Pressable, Text, TextInput, View, type TextStyle, type
 
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { hasPromptHost, openPrompt } from "@/ui/prompt_host";
 
 export const isWeb = Platform.OS === "web";
 
@@ -94,6 +95,10 @@ export function FormGrid({ children, wide, style }: { children: React.ReactNode;
 // inputs (returns null -> handled by the caller).
 export function promptText(title: string, def = ""): Promise<string | null> {
   if (isWeb && typeof window !== "undefined" && window.prompt) return Promise.resolve(window.prompt(title, def));
+  // Native: use the modal PromptHost mounted at the app root. This covers
+  // Android, which has no native Alert.prompt. iOS keeps Alert.prompt as a
+  // fallback only if the host somehow isn't mounted.
+  if (hasPromptHost()) return openPrompt(title, def);
   return new Promise((resolve) => {
     const A = Alert as unknown as { prompt?: (t: string, m: string | undefined, cbs: unknown, type?: string, d?: string) => void };
     if (Platform.OS === "ios" && A.prompt) {

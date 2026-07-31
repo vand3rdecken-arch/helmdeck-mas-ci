@@ -9,6 +9,7 @@ import type { Track } from "@/data/types";
 import { statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, Empty, Panel, ScreenHeader } from "@/ui/kit";
+import { confirmAsync } from "@/ui/settings_sections";
 
 const isWeb = Platform.OS === "web";
 
@@ -54,9 +55,13 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
   // The web derives produced cards by branch prefix: "conn-" + name[:14].
   const produced = tracks.filter((k) => (k.branch ?? "").startsWith("conn-" + conn.name.slice(0, 14)));
 
-  async function act(fn: () => Promise<unknown>, ok: string) {
+  async function act(fn: () => Promise<unknown>, ok: string | ((res: unknown) => string)) {
     setBusy(true);
-    try { await fn(); await onRefresh(); Alert.alert(ok); }
+    try {
+      const res = await fn();
+      await onRefresh();
+      Alert.alert(typeof ok === "function" ? ok(res) : ok);
+    }
     catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
     finally { setBusy(false); }
   }
@@ -90,12 +95,18 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
 
       {/* Actions */}
       <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <Pressable disabled={busy} onPress={() => act(() => api.runConnector(conn.name), "Gestartet")}
+        <Pressable disabled={busy} onPress={() => act(() => api.runConnector(conn.name), (res) => {
+          const n = (res as { cards?: number } | null)?.cards;
+          return typeof n === "number" ? `Gestartet — ${n} neue Backlog-Karten` : "Gestartet";
+        })}
           style={{ backgroundColor: t.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, opacity: busy ? 0.6 : 1 }}>
           <Text style={{ color: "#fff", fontSize: 13 }}>{busy ? "…" : "Jetzt laufen"}</Text>
         </Pressable>
         {(conn.versions ?? 0) > 0 ? (
-          <Pressable disabled={busy} onPress={() => act(() => api.rollbackConnector(conn.name), "Zurückgerollt")}
+          <Pressable disabled={busy} onPress={async () => {
+            if (!await confirmAsync("Rollback?", `„${conn.name}" auf die vorherige Version zurücksetzen? Die von diesem Connector erzeugten Karten werden rückgängig gemacht.`)) return;
+            act(() => api.rollbackConnector(conn.name), "Zurückgerollt");
+          }}
             style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
             <Text style={{ color: t.txtSecondary, fontSize: 13 }}>Rollback ({conn.versions})</Text>
           </Pressable>

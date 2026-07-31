@@ -1,8 +1,9 @@
 // Command palette (Cmd/Ctrl-K) — the desktop/web power-nav from the old web UI
 // (archive/web/components/palette.tsx). Fuzzy-jumps to any card or view; a ">"
-// prefix runs a board-copilot command inline. Web-only: it mounts under a global
-// key handler wired in app/_layout.tsx; on native it renders nothing.
-import { useQuery } from "@tanstack/react-query";
+// prefix runs a board-copilot command inline. On web it mounts under a global
+// Cmd/Ctrl-K key handler (app/_layout.tsx); on native it's opened via the tab
+// bar / a button and renders whenever the `open` state is true.
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -54,6 +55,7 @@ export function CommandPalette() {
   const router = useRouter();
   const open = usePalette((s) => s.open);
   const hide = usePalette((s) => s.hide);
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const [copilot, setCopilot] = useState<string | null>(null);
@@ -77,13 +79,18 @@ export function CommandPalette() {
 
   useEffect(() => { if (sel >= rows.length) setSel(0); }, [rows.length, sel]);
 
-  if (!isWeb || !open) return null;
+  if (!open) return null;
 
   async function runCopilot() {
     const text = q.slice(1).trim();
     if (!text) return;
     setBusy(true); setCopilot("…");
-    try { const r = await api.chat(text); setCopilot(r.text || "(keine Antwort)"); }
+    try {
+      const r = await api.chat(text);
+      setCopilot(r.text || "(keine Antwort)");
+      // The copilot may have acted on the board — refresh so it reflects any changes.
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+    }
     catch (e) { setCopilot("Fehler: " + String((e as Error).message)); }
     finally { setBusy(false); }
   }
@@ -106,7 +113,10 @@ export function CommandPalette() {
   return (
     <Pressable onPress={hide}
       style={{ position: "absolute", inset: 0, backgroundColor: t.backdrop, alignItems: "center", justifyContent: "flex-start", zIndex: 50 } as any}>
-      <Pressable onPress={() => {}} style={[{ marginTop: "10vh" as any, width: "min(640px, 92vw)" as any, borderRadius: 16, borderWidth: 1, borderColor: t.glassBorder, overflow: "hidden" }, glass]}>
+      <Pressable onPress={() => {}} style={[isWeb
+        ? { marginTop: "10vh" as any, width: "min(640px, 92vw)" as any }
+        : { marginTop: 80, width: "92%" as any },
+        { borderRadius: 16, borderWidth: 1, borderColor: t.glassBorder, overflow: "hidden" }, glass]}>
         <TextInput
           ref={inputRef}
           value={q}

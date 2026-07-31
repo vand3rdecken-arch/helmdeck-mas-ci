@@ -63,7 +63,7 @@ export default function Automation() {
               <SectionLabel text="policy" />
               <KVRow k="Auto-accept grün" v={pol.auto_accept_green ? "ja" : "nein"} />
               <KVRow k="Auto-dispatch" v={(pol.auto_dispatch_modes ?? []).join(", ") || "-"} />
-              <KVRow k="Chat-Admin" v={(pol.chat_admin_roles ?? ["owner"]).join(", ")} />
+              <KVRow k="Chat-Admin" v={(pol.chat_configure_roles ?? ["owner"]).join(", ")} />
             </Panel>
             <Panel>
               <SectionLabel text={`repos (${repos.length})`} />
