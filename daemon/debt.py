@@ -10,6 +10,28 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "expo-cutover-pipeline",
+        "title": "Old frontends archived, but build/deploy/loop still point at them",
+        "status": "open",
+        "what": "web/ (Next.js) and apk/ (Kotlin) were moved to archive/ when the "
+                "single Expo app in app/ took over as the frontend for phone, web "
+                "and desktop. But deploy/push_relay.sh still builds+ships the "
+                "Kotlin APK, tools/loop_state.py's TEST/BUILD states + artifact "
+                "map reference web/ and apk/, tools/design_lint*.py and "
+                "gen_tokens.py read web/app/globals.css (now archive/web/...), and "
+                "there is no EAS cloud-build / OTA wired.",
+        "why_it_bites": "The deploy script errors (missing apk path), the build "
+                        "loop mis-detects state, and the design gate reads a "
+                        "moved token file - the harness thinks it can ship when it "
+                        "cannot.",
+        "trigger": "next relay push, next loop_state run, next design gate",
+        "fix": "Repoint loop_state.py + design_lint + gen_tokens to app/ (Expo); "
+               "rewrite push_relay.sh to ship the Expo web export + an EAS-built "
+               "APK/OTA; add app/eas.json cloud builds. Delete archive/ only once "
+               "the Expo app is confirmed at full parity in production.",
+        "order": 0,
+    },
+    {
         "id": "turn-locks",
         "title": "No per-track turn locks",
         "status": "paid",
