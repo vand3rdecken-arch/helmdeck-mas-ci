@@ -20,8 +20,10 @@ const isWeb = Platform.OS === "web";
  *  native RN can't blur what's behind, so it uses a crisp translucent surface. */
 function glassStyle(t: ThemeTokens) {
   return isWeb
-    ? ({ backgroundColor: t.glass, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-        boxShadow: "0 2px 10px rgba(0,0,0,0.28)" } as any)
+    ? ({ backgroundColor: t.glass, backdropFilter: "blur(24px) saturate(1.8)", WebkitBackdropFilter: "blur(24px) saturate(1.8)",
+        // spec highlight (top inner light + hairline) over a soft drop shadow — the
+        // old app's "liquid glass" material, so the aurora backdrop blooms through
+        boxShadow: "inset 0 1.5px 0 rgba(255,255,255,0.16), inset 0 0 0 1px rgba(255,255,255,0.05), 0 4px 16px rgba(0,0,0,0.30)" } as any)
     : { backgroundColor: t.surface1 };
 }
 
@@ -403,7 +405,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
 
 const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  card: { borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, gap: 7 },
+  card: { borderRadius: 16, paddingVertical: 11, paddingHorizontal: 12, gap: 7 },
   column: { flex: 1, minWidth: 250, maxWidth: 340, gap: 8, minHeight: 120 },
   task: { fontSize: 13.5, fontWeight: "500", lineHeight: 19 },
   branch: { fontSize: 11, flexShrink: 1 },

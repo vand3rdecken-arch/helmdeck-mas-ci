@@ -56,7 +56,7 @@ export function ScreenHeader({ title, onBack }: { title: string; onBack: () => v
 }
 
 const s = StyleSheet.create({
-  chip: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  chip: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
   chipText: { fontSize: 11, fontWeight: "500" },
   panel: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 4 },
   section: { fontSize: 11, letterSpacing: 0.8, marginBottom: 6 },
