@@ -119,47 +119,11 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
   );
 }
 
-function TimelineRows({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (id: string) => void; wide?: boolean }) {
-  const t = useTheme();
-  const items = tracks
-    .filter((k) => k.lane !== "done")
-    .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.created ?? "").localeCompare(b.created ?? ""));
-  if (items.length === 0) return <Empty text="Nichts terminiert." />;
-  // group by due date so it reads as a schedule, not a flat list
-  const groups: { key: string; items: Track[] }[] = [];
-  for (const k of items) {
-    const key = k.due || "Kein Datum";
-    const g = groups.find((x) => x.key === key) ?? (groups.push({ key, items: [] }), groups[groups.length - 1]);
-    g.items.push(k);
-  }
-  return (
-    <View style={{ gap: 14 }}>
-      {groups.map((g) => (
-        <View key={g.key} style={{ flexDirection: wide ? "row" : "column", gap: wide ? 16 : 6 }}>
-          <View style={{ width: wide ? 130 : undefined, paddingTop: 2 }}>
-            <Text style={{ color: g.key === "Kein Datum" ? t.txtTertiary : t.human, fontSize: 12.5, fontWeight: "700" }}>{g.key}</Text>
-          </View>
-          <View style={{ flex: 1, gap: 6, borderLeftWidth: wide ? 2 : 0, borderLeftColor: t.glassBorder, paddingLeft: wide ? 16 : 0 }}>
-            {g.items.map((k) => (
-              <Pressable key={k.id} onPress={() => onOpen(k.id)}
-                style={[s.card, contentCardStyle(t), { borderColor: t.borderSubtle, borderWidth: 1, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }]}>
-                <Dot color={statusColor(t, k.status)} />
-                <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
-                {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) => void }) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: 6 }}>
-      {[["board", "Board"], ["list", "Liste"], ["timeline", "Timeline"], ["gantt", "Gantt"]].map(([key, lbl]) => {
+      {[["board", "Board"], ["list", "Liste"], ["timeline", "Timeline"]].map(([key, lbl]) => {
         const on = layout === key;
         return (
           <Pressable key={key} onPress={() => onSet(key)}
@@ -375,8 +339,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
           shown.map((k) => <Card key={k.id} k={k} onMove={onMove} />)
       ) : layout === "timeline" ? (
-        <TimelineRows tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
-      ) : layout === "gantt" ? (
+        // Timeline = the old web's day-scaled bar view (created→last activity,
+        // today line, due diamonds). No separate "Gantt" tab anymore.
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: four column plates side by side, drag to move/reorder
