@@ -1,7 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import util from "tweetnacl-util";
+import { useConfig } from "@/data/config";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +32,8 @@ export default function Settings() {
   const wide = isWeb && width >= 900;
   const { data: s, isLoading, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users });
+  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
+  const actors = metrics?.capacity?.actors ?? {};   // touch units per person today
 
   const field = fieldStyle(t);
 
@@ -225,6 +229,27 @@ export default function Settings() {
     const label = (await promptText(`Token-Label für ${u.name}:`, "device")) ?? "device";
     try { const r = await api.issueToken(u.name, label); await Clipboard.setStringAsync(r.token); Alert.alert("Token kopiert", "Device-Token in der Zwischenablage."); await refetchUsers(); }
     catch (e) { fail(e); }
+  }
+  // Owner invites a teammate: issue THEIR personal token and package it with the
+  // daemon connection into one importable code (direct {b,t} on LAN/desktop, or
+  // relay {u,r,k,t} when a relay is configured). They paste it in More → Pairing
+  // and join the same board AS themselves (their touches are attributed to them).
+  async function invite(u: UserRow) {
+    try {
+      const r = await api.issueToken(u.name, "invite-" + u.name);
+      let payload: Record<string, string>;
+      if (relayUrl.trim()) {
+        const p = await api.post<{ url?: string; room?: string; daemon_pub?: string; error?: string }>("/relay/pair", {});
+        if (p.error || !p.url) { Alert.alert("Fehler", p.error ?? "Relay-Pairing fehlgeschlagen."); return; }
+        payload = { u: p.url, r: p.room ?? "", k: p.daemon_pub ?? "", t: r.token };
+      } else {
+        payload = { b: useConfig.getState().baseUrl, t: r.token };
+      }
+      const code = util.encodeBase64(util.decodeUTF8(JSON.stringify(payload)));
+      await Clipboard.setStringAsync(code);
+      Alert.alert("Einladung kopiert", `${u.name} (${u.role}) — der Code enthält Daemon-Zugang + persönlichen Token. Teilen; im HelmDeck unter „More" einfügen.`);
+      await refetchUsers();
+    } catch (e) { fail(e); }
   }
   async function revokeToken(u: UserRow, token: string) {
     if (!(await confirmAsync("Token widerrufen?", "Dieses Gerät verliert sofort den Zugang."))) return;
@@ -425,6 +450,7 @@ export default function Settings() {
                 <View key={u.name} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 6 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{u.name}</Text>
+                    {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{actors[u.name]}t heute</Text> : null}
                     <Pressable onPress={() => changeRole(u)}>
                       <Chip text={u.role} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
                     </Pressable>
@@ -439,8 +465,14 @@ export default function Settings() {
                       ))}
                     </View>
                   ) : null}
-                  <View style={{ flexDirection: "row", gap: 14 }}>
-                    <Pressable onPress={() => addToken(u)}><Text style={{ color: t.accent, fontSize: 12 }}>+ Token</Text></Pressable>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                    <Pressable onPress={() => invite(u)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.accent + "1F",
+                        borderColor: t.accent + "66", borderWidth: 1, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3 }}>
+                      <Ionicons name="person-add-outline" size={12} color={t.accent} />
+                      <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>Einladen</Text>
+                    </Pressable>
+                    <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>+ Token</Text></Pressable>
                     <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>Passwort</Text></Pressable>
                     <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>löschen</Text></Pressable>
                   </View>
