@@ -18,7 +18,7 @@ export default function BoardTab() {
         Board
       </Text>
       <BoardList />
-      <View style={{ position: "absolute", right: 18, bottom: 24, alignItems: "center", gap: 12 }}>
+      <View style={{ position: "absolute", right: 18, bottom: 84, alignItems: "center", gap: 12 }}>
         <Pressable onPress={() => router.push("/chat")}
           style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.surface2, alignItems: "center", justifyContent: "center" }}>
           <Ionicons name="chatbubble-outline" size={18} color={t.accent} />

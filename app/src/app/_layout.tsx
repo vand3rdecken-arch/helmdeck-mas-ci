@@ -8,11 +8,31 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import { queryClient } from "@/data/query";
 import { useConfig } from "@/data/config";
 import { presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
+import { CommandPalette, usePalette } from "@/ui/palette";
+
+// Desktop/web power-nav: Cmd/Ctrl-K toggles the command palette, Esc closes it.
+// No-op on native (no DOM); the palette component also renders null off-web.
+function usePaletteHotkeys() {
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        usePalette.getState().toggle();
+      } else if (e.key === "Escape") {
+        usePalette.getState().hide();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+}
 
 function usePushWiring() {
   const router = useRouter();
@@ -37,6 +57,7 @@ function usePushWiring() {
 
 export default function RootLayout() {
   usePushWiring();
+  usePaletteHotkeys();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
@@ -49,6 +70,7 @@ export default function RootLayout() {
               <Stack.Screen name="chat" options={{ presentation: "modal" }} />
               <Stack.Screen name="new" options={{ presentation: "modal" }} />
             </Stack>
+            <CommandPalette />
           </SafeAreaProvider>
         </ThemeProvider>
       </QueryClientProvider>
