@@ -50,7 +50,7 @@ LIGHT_PRIM = {
     "neutral-600": (.8925, .0024, 230.7), "neutral-700": (.8612, .0032, 230.71), "neutral-800": (.6668, .0079, 230.82),
     "neutral-900": (.6161, .0092, 230.87), "neutral-1000": (.5288, .0083, 230.88), "neutral-1100": (.4377, .0066, 230.87),
     "neutral-1200": (.2378, .0029, 230.83), "neutral-black": (.1482, .0034, 196.79),
-    "brand-default": (.4799, .1158, 242.91), "brand-700": (.6766, .1665, 243.91),
+    "brand-default": (.508, .148, 250), "brand-700": (.6766, .1665, 250),
     "green-700": (.64, .15, 149), "amber-600": (.68, .12, 62), "red-700": (.57, .19, 27),
     # blue+violet analogous scheme: AI unified into the blue accent family; human
     # is violet (analogous, was clashing gold); one warm hue (amber) only.
@@ -67,7 +67,7 @@ DARK_PRIM.update({
     "neutral-600": (.3415, .0049, 230.86), "neutral-700": (.3999, .0059, 230.87), "neutral-800": (.5989, .0096, 230.88),
     "neutral-900": (.6835, .0074, 230.81), "neutral-1000": (.7655, .0054, 230.76), "neutral-1100": (.8455, .0035, 230.72),
     "neutral-1200": (.9235, .0017, 230.69), "neutral-white": (.9702, 0, 0),
-    "brand-default": (.6311, .1263, 238.01), "brand-700": (.7408, .1003, 233.89),
+    "brand-default": (.65, .152, 245), "brand-700": (.7408, .11, 245),
     "green-700": (.7, .13, 150), "amber-600": (.75, .13, 66), "red-700": (.68, .16, 24),
     "accent-2": (.66, .17, 292), "ai": "#3D9BD6", "human": "#9B87E8",
     # final "liquid glass" pass ([data-theme=dark] override): blue-grey plate, white edge.

@@ -71,10 +71,11 @@ function CollapsibleMarkdown({ text, color }: { text: string; color: string }) {
 }
 
 function CopyBtn({ text, color }: { text: string; color: string }) {
+  const t = useTheme();
   const [done, setDone] = useState(false);
   return (
     <Pressable hitSlop={8} onPress={async () => { await Clipboard.setStringAsync(text); setDone(true); setTimeout(() => setDone(false), 1400); }}>
-      <Ionicons name={done ? "checkmark" : "copy-outline"} size={13} color={done ? "#4CB86A" : color} />
+      <Ionicons name={done ? "checkmark" : "copy-outline"} size={13} color={done ? t.ok : color} />
     </Pressable>
   );
 }
