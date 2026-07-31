@@ -51,8 +51,10 @@ LIGHT_PRIM = {
     "neutral-900": (.6161, .0092, 230.87), "neutral-1000": (.5288, .0083, 230.88), "neutral-1100": (.4377, .0066, 230.87),
     "neutral-1200": (.2378, .0029, 230.83), "neutral-black": (.1482, .0034, 196.79),
     "brand-default": (.4799, .1158, 242.91), "brand-700": (.6766, .1665, 243.91),
-    "green-700": (.64, .17, 149), "amber-600": (.7, .15, 60), "red-700": (.583, .2387, 28.48),
-    "accent-2": (.55, .19, 292), "ai": "#4b8fc9", "human": "#a8842d",
+    "green-700": (.64, .15, 149), "amber-600": (.68, .12, 62), "red-700": (.57, .19, 27),
+    # blue+violet analogous scheme: AI unified into the blue accent family; human
+    # is violet (analogous, was clashing gold); one warm hue (amber) only.
+    "accent-2": (.55, .19, 292), "ai": "#1C82B8", "human": "#6E5BC4",
     # final "liquid glass" pass from globals.css (:root override): white, more translucent
     "glass": (1, 0, 0, .52), "glass-border": (1, 0, 0, .55),
     "glow-1": (.62, .12, 238, .30), "glow-2": (.55, .19, 292, .24),
@@ -66,8 +68,8 @@ DARK_PRIM.update({
     "neutral-900": (.6835, .0074, 230.81), "neutral-1000": (.7655, .0054, 230.76), "neutral-1100": (.8455, .0035, 230.72),
     "neutral-1200": (.9235, .0017, 230.69), "neutral-white": (.9702, 0, 0),
     "brand-default": (.6311, .1263, 238.01), "brand-700": (.7408, .1003, 233.89),
-    "green-700": (.7, .15, 150), "amber-600": (.77, .17, 65), "red-700": (.7022, .1892, 22.23),
-    "accent-2": (.66, .17, 292), "ai": "#5b9fd9", "human": "#c99b2e",
+    "green-700": (.7, .13, 150), "amber-600": (.75, .13, 66), "red-700": (.68, .16, 24),
+    "accent-2": (.66, .17, 292), "ai": "#3D9BD6", "human": "#9B87E8",
     # final "liquid glass" pass ([data-theme=dark] override): blue-grey plate, white edge.
     # (1,0,0)=white as an OKLCH triple; (1,1,1) was a bug -> C=1 clipped to magenta.
     "glass": (.23, .004, 230, .38), "glass-border": (1, 0, 0, .13),
