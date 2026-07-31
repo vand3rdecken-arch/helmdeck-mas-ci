@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""The orchestrator - SwarmDeck's Paseo half. A TRACK is a git branch, isolated in its own
+"""The orchestrator - HelmDeck's Paseo half. A TRACK is a git branch, isolated in its own
 worktree, bound to a RESUMABLE coding session (Claude Code --resume <session_id>). You select
 a track and continue its context; history is never rebuilt. Each steer is recorded into the
 flight recorder (actionlog) so what the session did stays reviewable.
 
-Store: tracks.json (one list). Worktrees: <repo>/../swarmdeck-worktrees/<branch>.
+Store: tracks.json (one list). Worktrees: <repo>/../helmdeck-worktrees/<branch>.
 Permission mode is per-track and defaults to acceptEdits - the worktree is the blast-radius
 control. Escalate a track to bypassPermissions only deliberately (owner decision)."""
 import json, os, re, shutil, subprocess, time
@@ -12,8 +12,8 @@ from runs import REC
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STORE = os.path.join(ROOT, "tracks.json")
-DEFAULT_PERM = os.environ.get("SWARMDECK_PERM", "acceptEdits")
-CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
 import db as _db
@@ -68,7 +68,7 @@ def _checkpoint(worktree):
         g("add", "-A")                     # stage every worktree file into it
         tree = g("write-tree")
         # commit-tree uses the object db, not the index - real env is fine
-        commit = _git(worktree, "commit-tree", tree, "-p", head, "-m", "swarmdeck checkpoint")
+        commit = _git(worktree, "commit-tree", tree, "-p", head, "-m", "helmdeck checkpoint")
         return commit or None
     except Exception:
         return None
@@ -126,7 +126,7 @@ def is_git_repo(path):
     return r.returncode == 0
 
 def _worktree_for(repo, branch):
-    base = os.path.abspath(os.path.join(repo, "..", "swarmdeck-worktrees"))
+    base = os.path.abspath(os.path.join(repo, "..", "helmdeck-worktrees"))
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, _slug(branch))
 
@@ -331,7 +331,7 @@ def _start_inner(t):
 def _gate(t):
     """Quality gate run when a card is submitted for review. Checks: (1) the
     worktree exists and its work is committed; (2) if the repo declares its own
-    gate (a `swarmdeck.gate` file holding a shell command - the harness's
+    gate (a `helmdeck.gate` file holding a shell command - the harness's
     standard), it must exit 0. Returns (ok, problems)."""
     problems = []
     wt = t.get("worktree")
@@ -347,17 +347,17 @@ def _gate(t):
     # card is verified with the current gate even on an old branch - and it is run
     # by the DAEMON (full command access), so the agent's permission mode never
     # blocks the tests. Fall back to the worktree's own gate file if main has none.
-    gate_file = os.path.join(t.get("repo") or wt, "swarmdeck.gate")
+    gate_file = os.path.join(t.get("repo") or wt, "helmdeck.gate")
     if not os.path.exists(gate_file):
-        gate_file = os.path.join(wt, "swarmdeck.gate")
+        gate_file = os.path.join(wt, "helmdeck.gate")
     if os.path.exists(gate_file):
         with open(gate_file, encoding="utf-8") as f:
             cmd = f.read().strip()
         if cmd:
             # Run in the worktree (cwd = the code under test), but expose the MAIN
-            # checkout as %SWARMDECK_REPO% so the gate can invoke the CURRENT gate
+            # checkout as %HELMDECK_REPO% so the gate can invoke the CURRENT gate
             # script from main - old branches don't carry tools/run_gate.py.
-            genv = dict(os.environ, SWARMDECK_REPO=t.get("repo") or wt)
+            genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
             r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True,
                                text=True, timeout=600, env=genv)
             if r.returncode != 0:
@@ -424,7 +424,7 @@ def _merge_to_main(t):
     # real work to land
     try:
         _git(repo, "merge", "--no-ff", branch, "-m",
-             "SwarmDeck accept: %s (%s)" % (branch, t.get("id", "")))
+             "HelmDeck accept: %s (%s)" % (branch, t.get("id", "")))
         return True, "merged", "%d Commit(s) sauber nach main (%s) gemergt." % (ahead, cur)
     except Exception as e:
         conflicts = ""
@@ -471,7 +471,7 @@ def _autocommit(t):
                          capture_output=True, text=True)
     if "conflict marker" in (chk.stdout or "").lower():
         return "markers"
-    if _git_try(wt, "commit", "-m", "SwarmDeck: finalize %s" % t.get("id", ""))[0] != 0:
+    if _git_try(wt, "commit", "-m", "HelmDeck: finalize %s" % t.get("id", ""))[0] != 0:
         return False
     return True
 
@@ -615,7 +615,7 @@ def move_lane(tid, lane, actor="owner"):
             return t
         if ac is True:
             log.log("note", "COMMITTED worktree changes on the branch before merge")
-        # the repo's own quality gate (swarmdeck.gate command). The committed
+        # the repo's own quality gate (helmdeck.gate command). The committed
         # check now trivially passes because we just committed.
         ok, problems = _gate(t)
         events.emit("gate", tid, ok=ok, problems=problems)

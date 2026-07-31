@@ -9,7 +9,7 @@ import { generateKeyPair } from "./e2ee";
 //   - direct mode: plain Bearer-token HTTP to baseUrl (LAN / web same host).
 // Phase 0 defaulted to the mock; real use pairs via a code (applyPairing).
 const DEV_HOST = Platform.OS === "android" ? "10.0.2.2" : "localhost";
-const KEY = "swarmdeck.config";
+const KEY = "helmdeck.config";
 
 interface Persisted {
   baseUrl: string; token: string;

@@ -1,4 +1,4 @@
-# SwarmDeck - positioning
+# HelmDeck - positioning
 
 **One-liner:** The board where work does itself - and proves it.
 

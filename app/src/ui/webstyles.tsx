@@ -22,7 +22,7 @@ export function WebStyles() {
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
     const el = document.createElement("style");
-    el.setAttribute("data-swarmdeck", "webstyles");
+    el.setAttribute("data-helmdeck", "webstyles");
     el.textContent = CSS;
     document.head.appendChild(el);
     return () => { el.remove(); };

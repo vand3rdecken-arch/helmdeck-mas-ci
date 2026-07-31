@@ -1,4 +1,4 @@
-# SwarmDeck overrides (read AFTER SKILL.md - these win on conflict)
+# HelmDeck overrides (read AFTER SKILL.md - these win on conflict)
 
 - Register: PRODUCT (app UI/dashboard). Never brand mode inside the app.
 - The design system is committed and wins: Plane OKLCH tokens + liquid glass

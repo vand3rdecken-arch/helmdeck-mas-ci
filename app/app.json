@@ -1,20 +1,20 @@
 {
   "expo": {
-    "name": "SwarmDeck",
-    "slug": "swarmdeck",
+    "name": "HelmDeck",
+    "slug": "helmdeck",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "swarmdeck",
+    "scheme": "helmdeck",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "app.swarmdeck",
+      "bundleIdentifier": "app.helmdeck",
       "supportsTablet": true
     },
     "android": {
-      "package": "app.swarmdeck",
+      "package": "app.helmdeck",
       "versionCode": 29,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {

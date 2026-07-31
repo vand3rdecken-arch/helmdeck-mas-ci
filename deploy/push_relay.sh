@@ -28,25 +28,25 @@ if [ -f "$APK" ]; then
   # version.json is derived from the gradle file - single source of truth
   VCODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' apk/app/build.gradle.kts)
   VNAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' apk/app/build.gradle.kts)
-  printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/swarmdeck.apk"}\n' \
+  printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/helmdeck.apk"}\n' \
          "$VCODE" "$VNAME" > /tmp/sd_version.json
   echo "==> shipping APK v$VNAME ($VCODE) + version.json"
-  scp "${SSH_OPTS[@]}" "$APK" "$TARGET:/tmp/swarmdeck.apk" || exit 1
+  scp "${SSH_OPTS[@]}" "$APK" "$TARGET:/tmp/helmdeck.apk" || exit 1
   scp "${SSH_OPTS[@]}" /tmp/sd_version.json "$TARGET:/tmp/version.json" || exit 1
 fi
 
 ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' <<'REMOTE'
 set -e
-# the systemd unit on this VM runs /opt/swarmdeck-relay.py (installed that
+# the systemd unit on this VM runs /opt/helmdeck-relay.py (installed that
 # way originally); keep /opt/relay.py in sync for older docs
-sudo install -m755 /tmp/relay.py /opt/swarmdeck-relay.py
+sudo install -m755 /tmp/relay.py /opt/helmdeck-relay.py
 sudo install -m755 /tmp/relay.py /opt/relay.py
-sudo mkdir -p /opt/swarmdeck-apk
-[ -f /tmp/swarmdeck.apk ] && sudo install -m644 /tmp/swarmdeck.apk /opt/swarmdeck-apk/swarmdeck.apk
-[ -f /tmp/version.json ] && sudo install -m644 /tmp/version.json /opt/swarmdeck-apk/version.json
-sudo systemctl restart swarmdeck-relay
+sudo mkdir -p /opt/helmdeck-apk
+[ -f /tmp/helmdeck.apk ] && sudo install -m644 /tmp/helmdeck.apk /opt/helmdeck-apk/helmdeck.apk
+[ -f /tmp/version.json ] && sudo install -m644 /tmp/version.json /opt/helmdeck-apk/version.json
+sudo systemctl restart helmdeck-relay
 sleep 2
-systemctl is-active swarmdeck-relay
+systemctl is-active helmdeck-relay
 REMOTE
 
 echo

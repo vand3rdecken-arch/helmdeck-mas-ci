@@ -1,6 +1,6 @@
-# SwarmDeck desktop (Windows program)
+# HelmDeck desktop (Windows program)
 
-An Electron wrapper that turns SwarmDeck into a single Windows program - the same
+An Electron wrapper that turns HelmDeck into a single Windows program - the same
 shape as Paseo's desktop app (`electron` + `electron-builder`, NSIS installer).
 Launching it starts the local services and shows the UI in a native window:
 
@@ -11,7 +11,7 @@ On quit it kills both. No browser, no terminal - one app.
 
 ## Requirements on the target PC
 
-Same as SwarmDeck itself (this wrapper doesn't remove them):
+Same as HelmDeck itself (this wrapper doesn't remove them):
 
 - **Python 3.12** - the `py -3.12` launcher (Windows) or `python3`
 - the **`claude` CLI** (Claude Code) - the agent runtime cards execute in
@@ -44,7 +44,7 @@ npm install
 npm run dist:win     # 1) next build (standalone)  2) electron-builder --win
 ```
 
-Output: `desktop/release/SwarmDeck-Setup-0.2.0-x64.exe` (NSIS installer -
+Output: `desktop/release/HelmDeck-Setup-0.2.0-x64.exe` (NSIS installer -
 per-user, lets the user choose the install dir) plus an unpacked app under
 `release/win-unpacked/`.
 

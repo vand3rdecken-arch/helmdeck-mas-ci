@@ -27,7 +27,7 @@ class FakeDB:
 
 
 def main():
-    tmp = tempfile.mkdtemp(prefix="swarmdeck-test-")
+    tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
     real_db, real_emit = sessions._db, events.emit
     try:
         nongit = os.path.join(tmp, "not-a-repo")

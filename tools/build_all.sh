@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build every SwarmDeck deliverable from the current source, in one command:
+# Build every HelmDeck deliverable from the current source, in one command:
 #   Windows installer (.exe)  +  Android APK  +  the Meta glasses webapp bundle.
 #
 #   bash tools/build_all.sh            # build all three
@@ -56,8 +56,8 @@ build_glasses() {
   echo "==> glasses: bundle the Meta Ray-Ban Display webapp"
   mkdir -p glasses/dist
   # `zip` isn't on Git Bash here; use Python's zipfile (always present).
-  py -3.12 -c "import zipfile;z=zipfile.ZipFile('glasses/dist/swarmdeck-glasses.zip','w',zipfile.ZIP_DEFLATED);[z.write('glasses/'+f,f) for f in ('index.html','styles.css','app.js','README.md')];z.close()" \
-    && ok+=("glasses: glasses/dist/swarmdeck-glasses.zip (upload via the toolkit /test-on-device)") || fail+=("glasses")
+  py -3.12 -c "import zipfile;z=zipfile.ZipFile('glasses/dist/helmdeck-glasses.zip','w',zipfile.ZIP_DEFLATED);[z.write('glasses/'+f,f) for f in ('index.html','styles.css','app.js','README.md')];z.close()" \
+    && ok+=("glasses: glasses/dist/helmdeck-glasses.zip (upload via the toolkit /test-on-device)") || fail+=("glasses")
 }
 
 case "$WHAT" in

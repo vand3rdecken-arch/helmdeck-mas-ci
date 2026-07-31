@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SwarmDeck relay - a ZERO-KNOWLEDGE reverse tunnel (Paseo's model). A phone
+"""HelmDeck relay - a ZERO-KNOWLEDGE reverse tunnel (Paseo's model). A phone
 reaches a daemon behind NAT without port-forwarding AND the relay operator can
 neither read nor forge the traffic: every request/response is NaCl-box sealed
 end-to-end (see daemon/e2ee.py) before it ever touches the relay. The relay only
@@ -21,14 +21,14 @@ import json, os, threading, time, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-PORT = int(os.environ.get("SWARMDECK_RELAY_PORT", "6790"))
+PORT = int(os.environ.get("HELMDECK_RELAY_PORT", "6790"))
 # Bind to localhost when a TLS reverse proxy (nginx/Caddy) fronts the relay -
 # then the plain-HTTP port is never exposed. 0.0.0.0 only for direct testing.
-BIND = os.environ.get("SWARMDECK_RELAY_BIND", "0.0.0.0")
+BIND = os.environ.get("HELMDECK_RELAY_BIND", "0.0.0.0")
 PULL_TIMEOUT = 25
 REPLY_TIMEOUT = 120
 # app self-update channel (public by design: Android verifies the signature)
-APK_DIR = os.environ.get("SWARMDECK_APK_DIR", "/opt/swarmdeck-apk")
+APK_DIR = os.environ.get("HELMDECK_APK_DIR", "/opt/helmdeck-apk")
 
 _lock = threading.Lock()
 _rooms = {}   # room -> {"q": [...], "cv": Condition, "waiting": {id: slot}, "last_pull": ts}
@@ -148,7 +148,7 @@ class H(BaseHTTPRequestHandler):
 
 
 def main():
-    print("swarmdeck zero-knowledge relay on %s:%d (health: /health)" % (BIND, PORT), flush=True)
+    print("helmdeck zero-knowledge relay on %s:%d (health: /health)" % (BIND, PORT), flush=True)
     ThreadingHTTPServer((BIND, PORT), H).serve_forever()
 
 

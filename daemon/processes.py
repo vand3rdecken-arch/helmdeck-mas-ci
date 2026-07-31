@@ -18,7 +18,7 @@ import json, os, re, shutil, subprocess, threading, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STORE = os.path.join(ROOT, "processes.json")
-CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 MODES = ("do", "prepare", "cowork", "teach", "human")
 _lock = threading.Lock()

@@ -32,7 +32,7 @@ promise, now per-card."""
 import json, os, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
 
-CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
 # Persistent Claude sessions by track id - modelled on Paseo's provider/claude
@@ -341,7 +341,7 @@ def run(cfg, t, prompt):
 # the BOARD does, and how to hand off - so hitting a boundary produces a
 # pointer to the workflow instead of a dead-end "I cannot do that".
 _CARD_BRIEF = (
-    "You are working ONE SwarmDeck card in an isolated git worktree. "
+    "You are working ONE HelmDeck card in an isolated git worktree. "
     "You CAN: edit files, run commands/tests/builds, and commit on THIS branch. "
     "You CANNOT (by design): merge to main, access secrets (.env/keys), or deploy - "
     "the owner accepts the card on the board, and accepting runs the repo deploy hook. "
