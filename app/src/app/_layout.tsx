@@ -15,6 +15,7 @@ import { presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 import { CommandPalette, usePalette } from "@/ui/palette";
+import { WebStyles } from "@/ui/webstyles";
 
 // Desktop/web power-nav: Cmd/Ctrl-K toggles the command palette, Esc closes it.
 // No-op on native (no DOM); the palette component also renders null off-web.
@@ -70,6 +71,7 @@ export default function RootLayout() {
               <Stack.Screen name="chat" options={{ presentation: "modal" }} />
               <Stack.Screen name="new" options={{ presentation: "modal" }} />
             </Stack>
+            <WebStyles />
             <CommandPalette />
           </SafeAreaProvider>
         </ThemeProvider>
