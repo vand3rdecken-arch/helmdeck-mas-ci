@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 29,
+      "versionCode": 30,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -29,9 +29,16 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "141.144.227.105.sslip.io", "pathPrefix": "/pair" }
+            {
+              "scheme": "https",
+              "host": "141.144.227.105.sslip.io",
+              "pathPrefix": "/pair"
+            }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
