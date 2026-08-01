@@ -8,6 +8,7 @@
     "scheme": "helmdeck",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "runtimeVersion": { "policy": "appVersion" },
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "app.helmdeck",

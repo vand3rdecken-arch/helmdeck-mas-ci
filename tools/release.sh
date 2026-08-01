@@ -14,6 +14,9 @@
 #   bash tools/release.sh android --push          # APK + ship to relay
 #   bash tools/release.sh android --push --bump    # + bump versionCode first
 #   bash tools/release.sh all --push --bump        # both, bumped, shipped
+#   bash tools/release.sh ota "what changed"       # SILENT JS OTA (no APK, no
+#                                                  # prompt) - needs one-time
+#                                                  # eas login + update:configure
 #
 # Prereqs (this machine has them): Node, Python 3.12, the Android SDK, and a
 # JDK 17+ (Android Studio's JBR). A .env with RELAY_HOST/RELAY_SSH_* is needed
@@ -28,11 +31,12 @@ export PATH="/c/Program Files/nodejs:$PATH"
 
 WHAT="${1:-all}"; shift 2>/dev/null || true
 PUSH=0; BUMP=0
+# Only --push/--bump are recognized flags; other args (e.g. the `ota` message)
+# are left for the target to consume.
 for a in "$@"; do
   case "$a" in
     --push) PUSH=1 ;;
     --bump) BUMP=1 ;;
-    *) echo "unknown flag: $a"; exit 2 ;;
   esac
 done
 ok=(); fail=()
@@ -78,11 +82,24 @@ build_windows() {
   ok+=("windows: $(ls desktop/release/*.exe 2>/dev/null | head -1)")
 }
 
+build_ota() {
+  # JS/asset-only OTA (expo-updates / EAS Update): the phone applies it SILENTLY
+  # on its next launch - no APK, no install prompt, like paseo. Native changes
+  # (new native module/permission, an SDK bump that moves runtimeVersion) still
+  # need `release.sh android`. One-time setup first: `eas login` then
+  # `eas update:configure` (fills updates.url + projectId in app.json).
+  local msg="${1:-mobile update}"
+  echo "==> ota: eas update --branch production"
+  ( cd app && npx eas update --branch production --message "$msg" ) || { fail+=("ota"); return 1; }
+  ok+=("ota: published - phones pick it up on next launch, no prompt")
+}
+
 case "$WHAT" in
   android) build_android ;;
   windows) build_windows ;;
   all)     build_android; build_windows ;;
-  *) echo "usage: release.sh [android|windows|all] [--push] [--bump]"; exit 2 ;;
+  ota)     build_ota "$*" ;;   # $* = remaining args = the update message
+  *) echo "usage: release.sh [android|windows|all|ota] [--push] [--bump]"; echo "       release.sh ota \"a message\"   # publish a silent JS OTA update"; exit 2 ;;
 esac
 
 echo; echo "===== release summary ====="
