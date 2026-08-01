@@ -99,7 +99,7 @@ export const api = {
   chatCancel: () => req("POST", "/chat/cancel", {}),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string }>("GET", "/chat/history"),
 
-  models: () => req<string[]>("GET", "/models"),
+  models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),
   automation: () => req<Record<string, unknown>>("GET", "/automation"),
 
   // Phase 2 section lists

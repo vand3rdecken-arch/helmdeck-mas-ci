@@ -207,7 +207,7 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
 
 function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bottomInset }: {
   k: Track; feed: TStep[]; onSend: (text: string, o: SteerOpts) => Promise<void>; onStop: () => void;
-  models: string[]; modeOptions: { id: string; label: string }[];
+  models: (string | { id: string; label?: string; desc?: string })[]; modeOptions: { id: string; label: string }[];
   seed: { text: string; key: number }; setSeed: (s: { text: string; key: number }) => void; bottomInset: number;
 }) {
   const t = useTheme();
