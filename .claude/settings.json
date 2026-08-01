@@ -9,7 +9,7 @@
     ],
     "PostToolUse": [
       { "matcher": "Edit|Write|MultiEdit",
-        "hooks": [ { "type": "command", "command": "py -3.12 tools/design_hook.py", "timeout": 60 } ] }
+        "hooks": [ { "type": "command", "command": "py -3.12 \"$CLAUDE_PROJECT_DIR/tools/design_hook.py\"", "timeout": 60 } ] }
     ]
   },
   "permissions": {
