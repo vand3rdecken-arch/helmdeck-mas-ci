@@ -61,6 +61,7 @@ border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;co
 <p>Wenn sich die App nicht automatisch geöffnet hat:</p>
 <a class=p href="helmdeck://pair?c=__C__">In HelmDeck öffnen</a><br>
 <a class=g href="/apk/helmdeck.apk">HelmDeck installieren (APK)</a>
+<p style="color:#6f7680;font-size:13px;margin-top:22px">Einmal installieren – Updates kommen danach automatisch, ohne Neuinstallation.</p>
 <script>location.replace("helmdeck://pair?c=__C__");</script>"""
 
 
