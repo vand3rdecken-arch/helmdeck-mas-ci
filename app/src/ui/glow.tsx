@@ -1,12 +1,13 @@
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/theme";
 
 /** Ambient "aurora" backdrop — the richer, multi-hue mesh from the old desktop
  *  app (globals.css [data-backdrop="aurora"]): teal, violet, green and magenta
  *  radial blooms behind everything. Glass refracts these, which is what gave the
- *  old UI its colour. Cross-platform via svg; colour stays decorative (card /
- *  status colour stays semantic). Pre-resolved from the OKLCH source. */
+ *  old UI its colour. Colour stays decorative (card / status colour stays
+ *  semantic). Pre-resolved from the OKLCH source. */
 // Cohesive blue -> violet aurora (analogous scheme). The old mesh mixed teal +
 // green + magenta + violet — four fighting hues; this keeps everything in the
 // blue/indigo/violet family so the backdrop reads as one calm gradient.
@@ -19,6 +20,36 @@ const AUR = {
 
 export function GlowBackdrop() {
   const t = useTheme();
+  // Native (Android/iOS): a fullscreen react-native-svg RadialGradient surface
+  // black-screens on some Android GPUs under the New Architecture (Fabric) -
+  // reported on Xiaomi/HyperOS. expo-linear-gradient is a native, GPU-safe view,
+  // so approximate the aurora with stacked diagonal blooms over the canvas.
+  if (Platform.OS !== "web") {
+    return (
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: t.canvas }]} pointerEvents="none">
+        {/* dark canvas dominant; gentle blooms concentrated at the edges and
+            faded to transparent well before centre, so text stays readable */}
+        <LinearGradient
+          colors={[AUR.teal + "1C", "transparent"]}
+          locations={[0, 0.5]}
+          start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.75 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={[AUR.violet + "14", "transparent"]}
+          locations={[0, 0.45]}
+          start={{ x: 1, y: 0 }} end={{ x: 0.25, y: 0.6 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={["transparent", AUR.green + "18"]}
+          locations={[0.6, 1]}
+          start={{ x: 0.4, y: 0.2 }} end={{ x: 0.6, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+    );
+  }
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Svg width="100%" height="100%">
