@@ -130,6 +130,23 @@ def _worktree_for(repo, branch):
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, _slug(branch))
 
+def _worktree_of_branch(repo, branch):
+    """Path of an EXISTING worktree that already has `branch` checked out, or
+    None. git refuses to check the same branch out twice, so if a stale worktree
+    holds it (e.g. a swarmdeck->helmdeck rename left ../swarmdeck-worktrees),
+    dispatch must REUSE that path instead of failing on `git worktree add`."""
+    r = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    path = None
+    for line in r.stdout.splitlines():
+        if line.startswith("worktree "):
+            path = line[9:].strip()
+        elif line.startswith("branch ") and path and line[7:].strip() == "refs/heads/" + branch:
+            return path
+    return None
+
 import threading as _threading
 _turn_locks = {}
 _turn_locks_guard = _threading.Lock()
@@ -295,6 +312,9 @@ def _start(tid):
 def _start_inner(t):
     tid = t["id"]
     wt = _worktree_for(t["repo"], t["branch"])
+    existing = _worktree_of_branch(t["repo"], t["branch"])
+    if existing and os.path.isdir(existing):
+        wt = existing                       # reuse a prior checkout (e.g. legacy dir)
     if not os.path.exists(wt):
         if _branch_exists(t["repo"], t["branch"]):
             _git(t["repo"], "worktree", "add", wt, t["branch"])
