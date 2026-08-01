@@ -17,9 +17,9 @@ shuttles opaque frames, routed by a PUBLIC room id (never the encryption key).
 
 Deploy: `python relay/relay.py` (PORT env, default 6790); front it with TLS.
 Stateless, nothing persisted."""
-import json, os, threading, time, uuid
+import base64, hashlib, json, os, threading, time, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 PORT = int(os.environ.get("HELMDECK_RELAY_PORT", "6790"))
 # Bind to localhost when a TLS reverse proxy (nginx/Caddy) fronts the relay -
@@ -64,6 +64,72 @@ border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;co
 <p style="color:#6f7680;font-size:13px;margin-top:22px">Einmal installieren – Updates kommen danach automatisch, ohne Neuinstallation.</p>
 <script>location.replace("helmdeck://pair?c=__C__");</script>"""
 
+# --- OTA self-hosted Expo Updates (Paseo-style silent updates) ----------
+# `expo export --platform android` output lives here (metadata.json + the .hbc
+# bundle + assets). We serve it as an Expo Updates v1 manifest so the app pulls
+# JS/asset updates on launch - no reinstall. Unsigned application/json manifest
+# (code signing is optional per the spec). Publish a new build by replacing this
+# dir (deploy/push_update.sh); the manifest is rebuilt from disk each request.
+UPDATES_DIR = os.environ.get("HELMDECK_UPDATES_DIR", "/opt/helmdeck-updates")
+_CT = {"hbc": "application/javascript", "js": "application/javascript",
+       "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+       "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+       "ttf": "font/ttf", "otf": "font/otf", "json": "application/json"}
+
+def _b64url_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return base64.urlsafe_b64encode(h.digest()).decode().rstrip("=")
+
+def _norm(rel):
+    """metadata.json paths may use backslashes (Windows export) - normalise to
+    forward slashes and reject traversal."""
+    s = os.path.normpath((rel or "").replace("\\", "/")).replace("\\", "/")
+    return None if s.startswith("..") or s.startswith("/") else s
+
+def _update_file(rel):
+    n = _norm(rel)
+    if not n:
+        return None
+    fp = os.path.join(UPDATES_DIR, *n.split("/"))
+    return fp if os.path.isfile(fp) else None
+
+def _build_manifest(platform, base_url, runtime_version):
+    meta_path = os.path.join(UPDATES_DIR, "metadata.json")
+    if not os.path.isfile(meta_path):
+        return None
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    fm = (meta.get("fileMetadata") or {}).get(platform)
+    if not fm or not fm.get("bundle"):
+        return None
+
+    def asset(rel, ext):
+        fp = _update_file(rel)
+        if not fp:
+            return None
+        n = _norm(rel)
+        a = {"key": n, "contentType": _CT.get((ext or "").lower().lstrip("."), "application/octet-stream"),
+             "url": base_url + "/updates/assets?path=" + quote(n), "hash": _b64url_sha256(fp)}
+        if ext:
+            a["fileExtension"] = "." + ext.lstrip(".")
+        return a
+
+    launch = asset(fm["bundle"], "")
+    if not launch:
+        return None
+    launch["contentType"] = "application/javascript"
+    launch.pop("fileExtension", None)
+    assets = [a for a in (asset(x.get("path"), x.get("ext", "")) for x in fm.get("assets", [])) if a]
+    # id MUST be a UUID; derive it from the bundle hash so it's stable per build
+    # (the client skips an update whose id it already applied).
+    uid = str(uuid.uuid5(uuid.NAMESPACE_URL, launch["hash"]))
+    created = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(os.path.getmtime(meta_path)))
+    return {"id": uid, "createdAt": created, "runtimeVersion": runtime_version,
+            "launchAsset": launch, "assets": assets, "metadata": {}, "extra": {}}
+
 
 def _room(rid):
     with _lock:
@@ -101,6 +167,41 @@ class H(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         if p == "/health":
             return self._send(200, json.dumps({"ok": True, "rooms": len(_rooms)}))
+        if p == "/updates/manifest":
+            # Expo Updates v1 manifest for the self-hosted OTA channel. Unsigned
+            # JSON is valid per the spec (code signing optional).
+            q = parse_qs(urlparse(self.path).query)
+            platform = (self.headers.get("expo-platform") or (q.get("platform") or ["android"])[0])
+            rtv = (self.headers.get("expo-runtime-version") or (q.get("runtime-version") or ["1.0.0"])[0])
+            host = self.headers.get("host") or ""
+            man = _build_manifest(platform, "https://" + host, rtv)
+            if not man:
+                return self._send(404, json.dumps({"error": "no update available"}))
+            body = json.dumps(man).encode("utf-8")
+            self.send_response(200)
+            self.send_header("expo-protocol-version", "1")
+            self.send_header("expo-sfv-version", "0")
+            self.send_header("cache-control", "private, max-age=0")
+            self.send_header("content-type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if p == "/updates/assets":
+            q = parse_qs(urlparse(self.path).query)
+            fp = _update_file((q.get("path") or [""])[0])
+            if not fp:
+                return self._send(404, json.dumps({"error": "not found"}))
+            ext = fp.rsplit(".", 1)[-1].lower() if "." in os.path.basename(fp) else ""
+            with open(fp, "rb") as f:
+                blob = f.read()
+            self.send_response(200)
+            self.send_header("content-type", _CT.get(ext, "application/octet-stream"))
+            self.send_header("cache-control", "public, max-age=31536000, immutable")
+            self.send_header("Content-Length", str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+            return
         if p.startswith("/apk/"):
             # version.json + the signed APK, uploaded by deploy/push_relay.sh.
             # Serving them is safe: an APK signed with a different key than the
