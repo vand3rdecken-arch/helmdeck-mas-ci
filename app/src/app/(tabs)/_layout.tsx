@@ -128,8 +128,11 @@ function Sidebar({ state, navigation }: any) {
 export default function TabsLayout() {
   const { width } = useWindowDimensions();
   const sidebar = isWeb && width >= 900;   // desktop nav shell vs phone bottom bar
+  // Remove a screen from the phone bottom bar entirely. Must use href:null, not
+  // a null tabBarButton — a null button still reserves a flex slot, so the four
+  // real tabs would be sized to 1/11 of the width and clip to "Bo…", "Da…".
   const hideOnPhone = (name: string) =>
-    !sidebar && DESKTOP_ONLY.has(name) ? { tabBarButton: () => null } : {};
+    !sidebar && DESKTOP_ONLY.has(name) ? { href: null } : {};
   const icon = (n: IconName) => ({ color, size }: { color: ColorValue; size: number }) =>
     <Ionicons name={n} color={color as string} size={size} />;
   return (
@@ -142,6 +145,7 @@ export default function TabsLayout() {
           ? { width: 220, backgroundColor: "transparent", borderRightWidth: 0 }
           : { position: "absolute", backgroundColor: "transparent", borderTopWidth: 0, elevation: 0 },
         tabBarBackground: sidebar ? undefined : () => <GlassTabBar />,
+        tabBarLabelStyle: sidebar ? undefined : { fontSize: 11 },
         tabBarActiveTintColor: t.accent,
         tabBarInactiveTintColor: t.txtTertiary,
         sceneStyle: { backgroundColor: t.canvas },
@@ -157,7 +161,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="connectors" options={{ title: "Connectors", tabBarIcon: icon("sync-outline"), ...hideOnPhone("connectors") }} />
       <Tabs.Screen name="automation" options={{ title: "Automation", tabBarIcon: icon("git-branch-outline"), ...hideOnPhone("automation") }} />
       <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: icon("settings-outline"), ...hideOnPhone("settings") }} />
-      <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: icon("ellipsis-horizontal"), ...(sidebar ? { tabBarButton: () => null } : {}) }} />
+      <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: icon("ellipsis-horizontal"), ...(sidebar ? { href: null } : {}) }} />
     </Tabs>
   );
 }

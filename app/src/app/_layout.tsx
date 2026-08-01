@@ -9,8 +9,8 @@ import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { Platform } from "react-native";
-import EventSource from "react-native-sse";
 import { queryClient } from "@/data/query";
+import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
@@ -19,25 +19,32 @@ import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
 
-// Global live updates: the daemon pushes a version tick over /stream whenever
-// board data changes. One root subscription invalidates the active queries, so
-// every screen updates near-instantly instead of waiting on a poll. Relay mode
-// (SSE can't tunnel) keeps the per-screen refetchInterval as the fallback.
+// Global live updates: LONG-POLL the daemon's data version (api.boardWait). It
+// blocks until the board changes, then we invalidate the active queries so
+// every screen updates near-instantly. Works over BOTH the sealed relay and
+// direct (unlike SSE, which can't tunnel the relay) — the per-screen
+// refetchInterval is now just a slow safety fallback.
 function useGlobalStream() {
-  const baseUrl = useConfig((s) => s.baseUrl);
-  const token = useConfig((s) => s.token);
-  const relay = useConfig((s) => s.relayMode());
   useEffect(() => {
-    if (relay || !baseUrl) return;
-    const es = new EventSource(`${baseUrl}/stream`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      pollingInterval: 0,
-    });
-    const bump = () => { queryClient.invalidateQueries(); };
-    es.addEventListener("message", bump);
-    es.addEventListener("error", () => {});
-    return () => { es.removeAllEventListeners(); es.close(); };
-  }, [relay, baseUrl, token]);
+    let alive = true;
+    let v = 0;
+    (async () => {
+      while (alive) {
+        try {
+          const r = await api.boardWait(v);
+          if (!alive) break;
+          if (typeof r?.v === "number") {
+            if (r.v !== v) queryClient.invalidateQueries();
+            v = r.v;
+          }
+        } catch {
+          if (!alive) break;
+          await new Promise((res) => setTimeout(res, 3000));   // backoff, retry
+        }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 }
 
 // Desktop/web power-nav: Cmd/Ctrl-K toggles the command palette, Esc closes it.

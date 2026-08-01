@@ -7,10 +7,8 @@ import {
   ScrollView, Text, TextInput, useWindowDimensions, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import EventSource from "react-native-sse";
 
 import { api, type SteerOpts } from "@/data/client";
-import { useConfig } from "@/data/config";
 import type { Track, Me, EconCard } from "@/data/types";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
@@ -325,32 +323,46 @@ export default function CardScreen() {
   const [tab, setTab] = useState<Tab>("overview");
   const [seed, setSeed] = useState({ text: "", key: 0 });
 
-  const relay = useConfig((s) => s.relayMode());
-  const baseUrl = useConfig((s) => s.baseUrl);
-  const token = useConfig((s) => s.token);
-
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
-  const k: Track | undefined = tracks?.find((x) => x.id === id);
+  // tracks can arrive as a non-array {error} object over the relay (pairing/pin
+  // mismatch) — guard before .find so the card screen doesn't white-screen.
+  const k: Track | undefined = (Array.isArray(tracks) ? tracks : []).find((x) => x.id === id);
   const running = k?.status === "running";
 
-  // Live transcript. Direct transport → subscribe to the card SSE stream so the
-  // feed grows in real time. Relay mode (SSE can't tunnel) keeps the 3s poll.
-  const sseActive = !!running && !relay && !!baseUrl && !!k?.session_id;
+  // Live transcript via LONG-POLL PUSH (api.transcriptLive): the daemon holds
+  // each request open until the transcript changes, so the feed grows with real
+  // streaming latency over BOTH the sealed relay and direct — no SSE (which
+  // can't tunnel the relay) and no fixed 3s poll. The initial query loads the
+  // feed on open; the loop keeps it live, writing into the same cache.
   const { data: transcript } = useQuery<TStep[]>({
     queryKey: ["transcript", id], queryFn: () => api.transcript(id!) as Promise<TStep[]>,
-    enabled: !!id, refetchInterval: running && (relay || !sseActive) ? 3000 : false });
+    enabled: !!id, staleTime: Infinity, refetchInterval: false });
   const { data: hist } = useQuery({ queryKey: ["history", id], queryFn: () => api.history(id!), enabled: !!id });
   const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 300000 });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
 
   useEffect(() => {
-    if (!sseActive || !id) return;
-    const es = new EventSource(`${baseUrl}/tracks/${id}/stream`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined, pollingInterval: 0 });
-    const pull = () => { qc.invalidateQueries({ queryKey: ["transcript", id] }); };
-    es.addEventListener("message", pull);
-    return () => { es.removeAllEventListeners(); es.close(); };
-  }, [sseActive, id, baseUrl, token, qc]);
+    if (!id) return;
+    let alive = true;
+    let v = "";
+    (async () => {
+      while (alive) {
+        try {
+          const r = await api.transcriptLive(id, v);
+          if (!alive) break;
+          if (r && Array.isArray(r.steps)) {
+            qc.setQueryData(["transcript", id], r.steps);
+            if (r.v !== v) qc.invalidateQueries({ queryKey: ["history", id] });   // notes too
+          }
+          v = r?.v ?? v;
+        } catch {
+          if (!alive) break;
+          await new Promise((res) => setTimeout(res, 2500));   // backoff, then retry
+        }
+      }
+    })();
+    return () => { alive = false; };
+  }, [id, qc]);
 
   // Weave the actionlog lifecycle 'note' rows into the transcript by timestamp
   // (ported from peek.tsx). Falls back to the steer/reply history until a
@@ -361,24 +373,25 @@ export default function CardScreen() {
     if (!trans.length) {
       return rows.filter((r) => (r.text || (r as any).detail || r.result))
         .map((r) => r.kind === "steer"
-          ? { role: "user", kind: "text", text: (r as any).detail, ts: r.ts }
+          ? { role: "user", kind: "text", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }
           : r.kind === "reply"
-          ? { role: "assistant", kind: "text", text: (r as any).detail, ts: r.ts }
-          : { kind: "system", text: (r as any).detail ?? r.text, ts: r.ts });
+          ? { role: "assistant", kind: "text", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }
+          : { kind: "system", text: (r as any).detail ?? r.text, ts: r.ts, ta: (r as any).ta });
     }
     const notes: TStep[] = rows.filter((r) => r.kind === "note" && ((r as any).detail ?? "").trim())
-      .map((r) => ({ kind: "system", text: (r as any).detail, ts: r.ts }));
+      .map((r) => ({ kind: "system", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }));
     if (!notes.length) return trans;
-    let last = "";
-    const T = trans.map((s) => { if (s.ts) last = s.ts; return { s, ts: s.ts || last }; });
-    const out: TStep[] = []; let i = 0, j = 0;
-    while (i < T.length && j < notes.length) {
-      if ((notes[j].ts ?? "") && (notes[j].ts ?? "") < T[i].ts) out.push(notes[j++]);
-      else out.push(T[i++].s);
-    }
-    while (i < T.length) out.push(T[i++].s);
-    while (j < notes.length) out.push(notes[j++]);
-    return out;
+    // Weave notes into the transcript by absolute epoch (`ta`) — the only sound
+    // key. Display `ts` is date-less HH:MM:SS and string-sorting it scrambled
+    // the feed across midnight/days. A stable ord tiebreak preserves source
+    // order for legacy rows lacking `ta`.
+    const tagged = [
+      ...trans.map((s, idx) => ({ s, ta: s.ta, ord: idx * 2 })),
+      ...notes.map((s, idx) => ({ s, ta: s.ta, ord: idx * 2 + 1 })),
+    ];
+    const key = (x: { ta?: number }) => (typeof x.ta === "number" ? x.ta : 0);
+    tagged.sort((a, b) => key(a) - key(b) || a.ord - b.ord);
+    return tagged.map((x) => x.s);
   }, [transcript, hist]);
 
   async function edit(patch: Record<string, unknown>) {

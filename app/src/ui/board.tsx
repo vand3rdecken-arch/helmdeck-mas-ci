@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -69,6 +69,24 @@ function laneVerdict(res: Track, lane: string): string | null {
   return lane === "working" ? "Dispatched – Session startet" : lane === "backlog" ? "Queued" : null;
 }
 
+/** A softly pulsing dot — the board's live "this card's agent is running" cue.
+ *  Works everywhere (LiveThumb hides itself over the relay the phone uses).
+ *  Uses RN's core Animated, NOT reanimated: the enabled React Compiler mangles
+ *  reanimated's useAnimatedStyle worklet (crashed with "undefined is not a
+ *  function"); the classic Animated loop has no worklet and is immune. */
+function RunningPulse({ color }: { color: string }) {
+  const o = useRef(new RNAnimated.Value(1)).current;
+  useEffect(() => {
+    const loop = RNAnimated.loop(RNAnimated.sequence([
+      RNAnimated.timing(o, { toValue: 0.28, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      RNAnimated.timing(o, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [o]);
+  return <RNAnimated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, opacity: o }} />;
+}
+
 function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const t = useTheme();
   const router = useRouter();
@@ -107,6 +125,12 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         </Text>
       ) : null}
       <View style={s.row}>
+        {k.status === "running" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <RunningPulse color={t.ai} />
+            <Text style={{ color: t.ai, fontSize: 11, fontWeight: "700" }}>läuft</Text>
+          </View>
+        ) : null}
         <Chip text={executorLabel(k.mode)} dot={t.ai} />
         <Text style={[s.branch, { color: t.txtTertiary }]} numberOfLines={1}>{k.branch || "(no git)"}</Text>
         {k.turns > 0 ? <Text style={[s.branch, { color: t.txtTertiary }]}>{k.turns}t</Text> : null}
@@ -366,7 +390,9 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const router = useRouter();
   const label = useLaneLabels();
   const qc = useQueryClient();
-  const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 5000 });
+  // Freshness is driven by the global version long-poll (useGlobalStream); this
+  // interval is just a slow safety net if that loop errors.
+  const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 20000 });
   const [busy, setBusy] = useState(false);
   const [layout, setLayout] = useState("board");
   const [toast, setToast] = useState<string | null>(null);
@@ -382,7 +408,14 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // takes its filter from the sidebar store: all / archived / client:<name>.
   const storeFilter = useBoardFilter((s) => s.filter);
   const eff = filter ?? storeFilter;
-  const shown = (data ?? []).filter((k) => {
+  // Normally Track[]. Over the relay a hiccup or a pairing/pin mismatch
+  // (the daemon's 409 "another phone is paired…") comes back as an {error}
+  // OBJECT, not an array — `?? []` doesn't catch that, and calling .filter on
+  // it white-screened the whole board. Guard the shape and surface the message.
+  const rows: Track[] = Array.isArray(data) ? data : [];
+  const dataErr = !Array.isArray(data) && data && typeof data === "object"
+    ? String((data as { error?: unknown }).error ?? "") : "";
+  const shown = rows.filter((k) => {
     if (eff === "needs_you") return (k.status === "needs_you" || k.status === "bounced") && !k.archived;
     if (eff === "archived") return !!k.archived;
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
@@ -414,7 +447,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
-      {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar – läuft HelmDeck?</Text> : null}
+      {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || "Desktop nicht erreichbar – läuft HelmDeck?"}</Text> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? (
