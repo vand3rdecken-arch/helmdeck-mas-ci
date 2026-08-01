@@ -11,6 +11,11 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
+    "updates": {
+      "enabled": true,
+      "url": "https://141.144.227.105.sslip.io/updates/manifest",
+      "checkAutomatically": "ON_LOAD"
+    },
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "app.helmdeck",
@@ -18,7 +23,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 34,
+      "versionCode": 35,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
