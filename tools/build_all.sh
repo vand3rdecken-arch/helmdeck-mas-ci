@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# STALE (pre-expo-migration): this targets the old web/ (Next.js) and apk/
+# (Kotlin) trees. For the current Expo stack use tools/release.sh instead
+# (Expo APK + Expo-web desktop installer, optional --push to the relay).
+# Kept only for the `glasses` target.
+#
 # Build every HelmDeck deliverable from the current source, in one command:
 #   Windows installer (.exe)  +  Android APK  +  the Meta glasses webapp bundle.
 #
