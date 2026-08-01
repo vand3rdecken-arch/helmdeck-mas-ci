@@ -148,6 +148,21 @@ def live_session_id(track):
     return (track or {}).get("session_id") or live
 
 
+def transcript_version(track):
+    """A change token for the card's live transcript: bytes of the current
+    session .jsonl + the driver's live_partial.txt. It bumps whenever the agent
+    flushes a block OR streams a token. This is the long-poll key that lets the
+    phone get PUSH latency over the sealed relay (which can't carry SSE): the
+    /transcript/live endpoint blocks until this changes, then returns."""
+    run_dir = (track or {}).get("run_dir") or ""
+    sid = live_session_id(track)
+    jp = _find_transcript(sid) if sid else None
+    js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
+    lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
+    ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
+    return js + ls
+
+
 def read_transcript_live(track, limit=400):
     """read_transcript + the in-flight streaming text (driver's live_partial.txt)
     appended as a streaming step, so a turn streams token-by-token before its
@@ -207,6 +222,19 @@ def _short_ts(iso):
         return iso.split("T")[1][:8]
 
 
+def _epoch(iso):
+    # Absolute POSIX seconds for the session .jsonl UTC timestamp. This is the
+    # sound sort key for weaving the transcript with the actionlog notes
+    # (`ta`); `ts` is date-less HH:MM:SS and scrambles across midnight/days.
+    if not isinstance(iso, str) or "T" not in iso:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
 def _result_text(part):
     c = part.get("content")
     if isinstance(c, str):
@@ -264,6 +292,7 @@ def read_transcript(session_id, limit=400):
             continue
         role = m.get("role") or d.get("type")
         ts = _short_ts(d.get("timestamp"))
+        ta = _epoch(d.get("timestamp"))
         content = m.get("content")
         _lead = content if isinstance(content, str) else (next(
             (p.get("text", "") for p in content
@@ -276,11 +305,11 @@ def read_transcript(session_id, limit=400):
         if d.get("isCompactSummary") or (role == "user" and _lead.lstrip().startswith(
                 "This session is being continued from a previous conversation")):
             if not (steps and steps[-1].get("kind") == "compaction"):
-                steps.append({"kind": "compaction", "ts": ts})
+                steps.append({"kind": "compaction", "ts": ts, "ta": ta})
             continue
         if isinstance(content, str):
             if content.strip():
-                steps.append({"role": role, "kind": "text", "text": content.strip()[:MAX_TEXT], "ts": ts})
+                steps.append({"role": role, "kind": "text", "text": content.strip()[:MAX_TEXT], "ts": ts, "ta": ta})
             continue
         if not isinstance(content, list):
             continue
@@ -289,9 +318,9 @@ def read_transcript(session_id, limit=400):
                 continue
             pt = part.get("type")
             if pt == "text" and (part.get("text") or "").strip():
-                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:MAX_TEXT], "ts": ts})
+                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:MAX_TEXT], "ts": ts, "ta": ta})
             elif pt == "thinking" and (part.get("thinking") or "").strip():
-                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:MAX_THINK], "ts": ts})
+                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:MAX_THINK], "ts": ts, "ta": ta})
             elif pt == "tool_use":
                 name = part.get("name") or "tool"
                 inp = part.get("input") if isinstance(part.get("input"), dict) else {}
@@ -299,16 +328,16 @@ def read_transcript(session_id, limit=400):
                     todos = [{"content": str(td.get("content", ""))[:220], "status": str(td.get("status", ""))}
                              for td in (inp.get("todos") or []) if isinstance(td, dict)]
                     if todos:
-                        steps.append({"kind": "todos", "todos": todos, "ts": ts})
+                        steps.append({"kind": "todos", "todos": todos, "ts": ts, "ta": ta})
                     continue
                 if name == "ExitPlanMode":
-                    steps.append({"kind": "plan", "text": str(inp.get("plan", ""))[:MAX_TEXT], "ts": ts})
+                    steps.append({"kind": "plan", "text": str(inp.get("plan", ""))[:MAX_TEXT], "ts": ts, "ta": ta})
                     continue
                 res = results.get(part.get("id"))
                 step = {"role": role, "kind": "tool", "tool": name,
                         "text": _tool_summary(inp), "result": (res or {}).get("text", ""),
                         "ok": (res or {}).get("ok", True),
-                        "running": res is None, "ts": ts}
+                        "running": res is None, "ts": ts, "ta": ta}
                 detail = _tool_detail(name, inp)
                 if detail:
                     step["detail"] = detail

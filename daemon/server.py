@@ -497,6 +497,19 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/stream/wait":
+                # Board PUSH over the sealed relay (SSE can't tunnel): long-poll
+                # the data version. Blocks until it passes `v` or ~22s, then
+                # returns {v}. The phone loops it and invalidates on change -
+                # live board updates in relay mode, no fixed poll. 22s < relay
+                # REPLY_TIMEOUT (120) and bridge _local (115).
+                import db
+                want = (parse_qs(urlparse(self.path).query).get("v") or ["0"])[0]
+                try:
+                    last = int(want)
+                except ValueError:
+                    last = 0
+                return self._send(200, json.dumps({"v": db.wait_version(last, timeout=22)}))
             if p == "/stream":
                 # SSE: push a version tick whenever board data changes - pays
                 # the polling debt. Client refetches on tick.
@@ -739,6 +752,27 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] == "client" and (not t or t.get("client") != user["name"]):
                     return self._send(403, json.dumps({"error": "not your card"}))
                 return self._send(200, json.dumps(claude_sessions.read_transcript_live(t)))
+            if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "transcript" and parts[3] == "live":
+                # PUSH over the sealed relay: hold the request until the
+                # transcript changes (or ~22s), then return the fresh steps + a
+                # version token. The phone loops this - real streaming latency
+                # without SSE (which can't be relayed). Reuses the e2ee/relay
+                # path untouched. 22s < relay REPLY_TIMEOUT (120) and the daemon
+                # bridge's _local timeout (115), so the reply always lands.
+                import sessions, claude_sessions, time as _t
+                t = sessions.get_track(parts[1])
+                if not t:
+                    return self._send(404, json.dumps({"error": "no such card"}))
+                if user["role"] == "client" and t.get("client") != user["name"]:
+                    return self._send(403, json.dumps({"error": "not your card"}))
+                want = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+                deadline = _t.time() + 22
+                cur = claude_sessions.transcript_version(t)
+                while str(cur) == want and _t.time() < deadline:
+                    _t.sleep(0.35)
+                    cur = claude_sessions.transcript_version(t)
+                return self._send(200, json.dumps(
+                    {"v": str(cur), "steps": claude_sessions.read_transcript_live(t)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "checkpoints":
                 import sessions
                 t = sessions.get_track(parts[1])

@@ -19,8 +19,22 @@ export interface TStep {
   kind?: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system" | "note" | string;
   cls?: string;
   text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; ts?: string;
+  ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
   streaming?: boolean; detail?: ToolDetail;
   todos?: { content: string; status: string }[];
+}
+
+// Display timestamp: the daemon's HH:MM:SS is date-less, so a row from a prior
+// day reads as "out of order" (09:45 then 00:06). Prefix the date when the row
+// is not from today so the feed's ordering is legible across days.
+function tsLabel(s: TStep): string {
+  if (!s.ts) return "";
+  if (typeof s.ta === "number") {
+    const d = new Date(s.ta * 1000), now = new Date();
+    if (d.getFullYear() && d.toDateString() !== now.toDateString())
+      return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${s.ts}`;
+  }
+  return s.ts;
 }
 
 // Clamps long text and reveals a "Mehr anzeigen" / "Weniger anzeigen" toggle
@@ -131,8 +145,10 @@ const TOOL_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 const toolIcon = (n: string): keyof typeof Ionicons.glyphMap =>
   TOOL_ICON[n] || (n.startsWith("mcp__") ? "globe-outline" : "settings-outline");
 
-function ToolCard({ s, t }: { s: TStep; t: ThemeTokens }) {
-  const [open, setOpen] = useState(false);
+function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen?: boolean }) {
+  // Auto-open the running tool and the latest tool so output is visible without
+  // a tap (Paseo-style: the tail of the run is expanded, history stays folded).
+  const [open, setOpen] = useState(!!defaultOpen || !!s.running);
   const hasResult = !!(s.result && s.result.trim());
   const expandable = hasResult || !!s.detail;
   const err = s.ok === false;
@@ -196,56 +212,75 @@ function Todos({ s, t }: { s: TStep; t: ThemeTokens }) {
   );
 }
 
+// Stable per-row key so React reconciles by identity across each refetch/poll
+// instead of remounting the whole list (which collapsed expanded tool cards and
+// read as a "strange rebuild"). Derived from the sort epoch + kind + a content
+// fingerprint; a per-render counter disambiguates genuine collisions.
+function keyFactory() {
+  const seen = new Map<string, number>();
+  return (s: TStep, i: number): string => {
+    const sig = (s.tool || "") + "|" + (s.text || "").slice(0, 40);
+    const base = `${s.ta ?? ""}:${s.kind ?? ""}:${sig}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n ? `${base}#${n}` : base || `row-${i}`;
+  };
+}
+
 export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (text: string) => void }) {
   const t = useTheme();
+  const keyFor = keyFactory();
+  let lastToolIdx = -1;
+  for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
   return (
     <View style={{ gap: 8 }}>
       {steps.map((s, i) => {
         const kind = s.kind;
+        const key = keyFor(s, i);
         if (kind === "compaction") return (
-          <View key={i} style={{ alignItems: "center", paddingVertical: 4 }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ Context compacted{s.ts ? ` · ${s.ts}` : ""}</Text>
+          <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ Context compacted{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
           </View>);
         if (kind === "system" || kind === "note") {
           const good = /\b(MERGED|ACCEPTED|GATE PASSED|DEPLOY HOOK OK|DISPATCHED|CONNECTOR INSTALLED)\b/.test(s.text || "");
           const bad = /\b(FAILED|BOUNCED|conflict)\b/i.test(s.text || "");
           const c = bad ? t.danger : good ? t.ok : t.txtTertiary;
           return (
-            <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 2 }}>
+            <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 2 }}>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }} />
               <Text style={{ color: c, fontSize: 11.5, flex: 1 }}>{s.text}</Text>
-              {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{s.ts}</Text> : null}
+              {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
             </View>);
         }
-        if (kind === "tool") return <ToolCard key={i} s={s} t={t} />;
-        if (kind === "todos") return <Todos key={i} s={s} t={t} />;
+        if (kind === "tool") return <ToolCard key={key} s={s} t={t} defaultOpen={i === lastToolIdx} />;
+        if (kind === "todos") return <Todos key={key} s={s} t={t} />;
         if (kind === "plan") return (
-          <View key={i} style={{ borderWidth: 1, borderColor: t.accent + "55", borderRadius: 8, padding: 9, backgroundColor: t.accent + "12" }}>
+          <View key={key} style={{ borderWidth: 1, borderColor: t.accent + "55", borderRadius: 8, padding: 9, backgroundColor: t.accent + "12" }}>
             <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700", marginBottom: 4 }}>PLAN</Text>
             <Markdown>{s.text || ""}</Markdown>
           </View>);
-        if (kind === "thinking") return <Thought key={i} s={s} t={t} />;
-        if (kind === "result") return <Text key={i} style={{ color: t.txtTertiary, fontSize: 12 }}>{s.text}</Text>;
+        if (kind === "thinking") return <Thought key={key} s={s} t={t} />;
+        if (kind === "result") return <Text key={key} style={{ color: t.txtTertiary, fontSize: 12 }}>{s.text}</Text>;
 
         const mine = s.role === "user" || s.cls === "user";
         if (mine) return (
-          <View key={i} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: t.accent + "22", borderRadius: 10, padding: 10 }}>
+          <View key={key} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: t.accent + "22", borderRadius: 10, padding: 10 }}>
             <Collapsible text={s.text || ""} color={t.accent}
               style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }} />
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, justifyContent: "flex-end" }}>
-              {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{s.ts}</Text> : null}
+              {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
               {onRewind ? <Pressable hitSlop={8} onPress={() => onRewind(s.text || "")}><Ionicons name="arrow-undo-outline" size={13} color={t.txtTertiary} /></Pressable> : null}
             </View>
           </View>);
         // assistant text
         return (
-          <View key={i} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: t.borderSubtle }}>
+          <View key={key} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: t.borderSubtle }}>
             <CollapsibleMarkdown text={s.text || ""} color={t.accent} />
             {s.streaming ? <Text style={{ color: t.accent }}>▍</Text> : null}
             {!s.streaming ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
-                {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{s.ts}</Text> : null}
+                {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
                 <View style={{ flex: 1 }} />
                 <CopyBtn text={s.text || ""} color={t.txtTertiary} />
               </View>

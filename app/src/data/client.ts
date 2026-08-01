@@ -64,6 +64,10 @@ export interface SteerOpts { model?: string; thinking?: string; mode?: string }
 export const api = {
   get: <T,>(path: string) => req<T>("GET", path),
   post: <T,>(path: string, body?: unknown, signal?: AbortSignal) => req<T>("POST", path, body, signal),
+  // Board PUSH long-poll: blocks until the data version passes `v` (or ~22s),
+  // returns the new version. Works over the sealed relay AND direct; the app
+  // loops it and invalidates queries on change (replaces the direct-only SSE).
+  boardWait: (v: number) => req<{ v: number }>("GET", `/stream/wait?v=${v}`),
 
   // board / cards
   tracks: () => req<Track[]>("GET", "/tracks"),
@@ -82,6 +86,11 @@ export const api = {
 
   // card detail feeds
   transcript: (id: string) => req<Step[]>("GET", `/tracks/${id}/transcript`),
+  // Long-poll PUSH: the daemon holds this until the transcript changes (or ~22s)
+  // then returns {v, steps}. Works over the sealed relay AND direct — the phone
+  // loops it, passing back the last v, for real streaming latency (no SSE).
+  transcriptLive: (id: string, v: string) =>
+    req<{ v: string; steps: Step[] }>("GET", `/tracks/${id}/transcript/live?v=${encodeURIComponent(v)}`),
   history: (id: string) => req<Step[]>("GET", `/tracks/${id}/history`),
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 

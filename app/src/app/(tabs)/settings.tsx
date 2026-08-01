@@ -194,10 +194,10 @@ export default function Settings() {
       const code = util.encodeBase64(util.decodeUTF8(JSON.stringify({ u: r.url, r: r.room, k: r.daemon_pub, t: r.device_token })));
       setPairCode(code);
       // QR = the relay's own /pair App Link (phone cameras open https, not a
-      // custom scheme). The url is omitted from the payload — it's the link's
-      // own origin. Same mechanism the old SwarmDeck app used.
-      const qrPayload = util.encodeBase64(util.decodeUTF8(JSON.stringify({ r: r.room, k: r.daemon_pub, t: r.device_token })));
-      const link = `${(r.url ?? "").replace(/\/$/, "")}/pair?c=${qrPayload}`;
+      // custom scheme). Carry the relay url in the payload too: /pair redirects
+      // the phone to helmdeck://pair?c=… (custom scheme), so the https origin is
+      // gone by the time pair.tsx runs and can't be recovered from the link.
+      const link = `${(r.url ?? "").replace(/\/$/, "")}/pair?c=${code}`;
       setPairLink(link);              // tap-to-pair link — send to the phone, no QR scan
       setQr(await qrDataUrl(link));   // real on web/desktop, "" on native (phone scans)
     } catch (e) { fail(e); } finally { setPairBusy(false); }
