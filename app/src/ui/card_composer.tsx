@@ -23,7 +23,7 @@ export function Composer({
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   busy?: boolean;
   onStop?: () => void;
-  models: string[];
+  models: (string | { id: string; label?: string; desc?: string })[];
   modeOptions?: ModeOption[];
   slashCommands?: SlashCommand[];
   placeholder?: string;
@@ -177,13 +177,25 @@ export function Composer({
           <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, maxHeight: "70%", overflow: "hidden" }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>MODEL</Text>
             <ScrollView>
-              {["auto", ...models].map((m) => (
-                <Pressable key={m} onPress={() => { setModel(m); setPicker(false); }}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
-                  <Ionicons name={m === model ? "radio-button-on" : "radio-button-off"} size={16} color={m === model ? t.accent : t.txtTertiary} />
-                  <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{m === "auto" ? "Auto (route by task)" : m}</Text>
-                </Pressable>
-              ))}
+              {["auto", ...models].map((raw) => {
+                // /models returns objects {id,label,desc}; older/custom setups may
+                // return plain id strings. Normalise both so we never render an
+                // object as a React child (that crashed the whole app -> black).
+                const id = typeof raw === "string" ? raw : raw.id;
+                const label = id === "auto" ? "Auto (route by task)"
+                  : typeof raw === "string" ? raw : (raw.label || raw.id);
+                const desc = typeof raw === "string" ? "" : (raw.desc || "");
+                return (
+                  <Pressable key={id} onPress={() => { setModel(id); setPicker(false); }}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+                    <Ionicons name={id === model ? "radio-button-on" : "radio-button-off"} size={16} color={id === model ? t.accent : t.txtTertiary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{label}</Text>
+                      {desc ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{desc}</Text> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
         </Pressable>
