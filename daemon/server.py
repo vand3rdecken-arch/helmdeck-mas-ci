@@ -588,6 +588,12 @@ class H(BaseHTTPRequestHandler):
             if p == "/models":
                 import turnopts
                 return self._send(200, json.dumps(turnopts.list_models()))
+            if p == "/pm/economics":
+                # cheap, no-LLM economics snapshot + the stored MVP goal
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import pm
+                return self._send(200, json.dumps({"goal": pm.get_goal(), "economics": pm.economics()}))
             if p == "/sessions/claude":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -922,6 +928,17 @@ class H(BaseHTTPRequestHandler):
                         actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if p == "/pm/report":
+                # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
+                # token/cost projection grounded in real spend. One model turn.
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import pm
+                try:
+                    return self._send(200, json.dumps(pm.brief(
+                        goal=body.get("goal"), model=body.get("model", ""))))
+                except Exception as e:
+                    return self._send(500, json.dumps({"error": str(e)[:300]}))
             if p == "/chat":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
