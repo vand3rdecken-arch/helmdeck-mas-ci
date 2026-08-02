@@ -5,7 +5,7 @@ Claude Code session is a <uuid>.jsonl transcript under
 ~/.claude/projects/<encoded-cwd>/; `claude --resume <uuid>` continues it. We
 surface: id (uuid), cwd, project label, first user message, last activity.
 Nothing here mutates the sessions - it only reads them."""
-import json, os, time
+import json, os, re, time
 
 HOME = os.path.expanduser("~")
 PROJECTS = os.path.join(HOME, ".claude", "projects")
@@ -235,6 +235,22 @@ def _epoch(iso):
         return None
 
 
+def _cmd_label(text):
+    """A Claude Code local-command envelope (recorded as role=user) -> a short
+    neutral label for a SYSTEM note, so it stays visible but isn't attributed to
+    the human. e.g. '/model claude-haiku-4-5' or 'Set model to ...'."""
+    name = re.search(r"<command-name>(.*?)</command-name>", text, re.S)
+    if name:
+        n = name.group(1).strip().lstrip("/")
+        args = re.search(r"<command-args>(.*?)</command-args>", text, re.S)
+        a = args.group(1).strip() if args else ""
+        return ("⌘ /" + n + (" " + a if a else "")).strip()
+    out = re.search(r"<local-command-stdout>(.*?)</local-command-stdout>", text, re.S)
+    if out and out.group(1).strip():
+        return out.group(1).strip()
+    return None
+
+
 _CTX_SEP = "\n\n---\n\n"
 def _strip_ctx(text):
     """The daemon prepends review/merge context to a steer prompt (sessions.
@@ -312,12 +328,16 @@ def read_transcript(session_id, limit=400):
             if isinstance(content, list) else "")
         # Slash-command plumbing: Claude Code records /model (and other local
         # commands) as role=user WITHOUT isMeta - only the caveat is meta. So the
-        # <command-name>/<command-args>/<local-command-stdout> envelopes leak into
-        # the feed as the human's own messages ("Set model to ..."). They are not
-        # conversation - drop them.
+        # <command-name>/<command-args>/<local-command-stdout> envelopes leaked
+        # into the feed as the HUMAN's own messages ("Set model to ..."). Keep
+        # them visible but RE-ATTRIBUTE as a neutral system note (sorted by time
+        # like everything else) - they are plumbing, not the human talking.
         if role == "user" and _lead.lstrip().startswith((
                 "<command-name>", "<command-message>", "<command-args>",
-                "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>")):
+                "<local-command-stdout>", "<local-command-stderr>")):
+            lbl = _cmd_label(_lead)
+            if lbl:
+                steps.append({"kind": "system", "text": lbl, "ts": ts, "ta": ta})
             continue
         # Compaction: a session that ran out of context writes a summary as a
         # role=user message (flagged isCompactSummary, or the plain continuation
