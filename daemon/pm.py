@@ -1,86 +1,115 @@
 # -*- coding: utf-8 -*-
-"""Proactive PM / CTO briefing.
+"""PM / CTO planning ROLE, run by the thin harness here.
 
-Reads the LIVE board + REAL economics + a GOAL (usually an MVP definition) and
-produces a structured plan: what's left to the goal, what to do next, and a
-token/cost projection. The split of labour is the honest part:
+The PM's brain is DATA (pm.role.md + settings.pm), not code. This module only:
+  - gathers signals (board + REAL economics + quota/velocity + goal),
+  - runs the configured role for ONE plan-mode turn,
+  - prices/times the plan in code (LLM judges effort in turns, code converts to
+    days at the measured velocity and to shadow-€ at the real cost/turn),
+  - writes a reviewable artifact,
+  - and hands the actionable items to whoever executes (the night ticker).
 
-  the LLM JUDGES effort   (how many agent turns a task will take)
-  the CODE PRICES it       (turns x the ACTUAL average cost/turn to date)
-
-so the "how much until MVP" number is grounded in this board's own history, not
-a model guess. Nothing here executes work - it only briefs. Turning a briefing
-into cards stays an explicit action (the copilot's file_card / the human).
+On a flat plan (settings.pm.plan == "max") the bottleneck is quota-TIME, not €,
+so timelines are in DAYS and the € is leverage/ROI, not cash. Nothing here
+executes work; turning items into cards stays an explicit, gated step.
 """
-import json, os, re, subprocess, time
+import json, math, os, re, subprocess, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+ROLE_FILE = os.path.join(ROOT, "pm.role.md")
+PLANS = os.path.join(ROOT, "pm")
 
-PM_SYSTEM = """You are the HelmDeck PM/CTO. Given the live board, the REAL
-economics to date, and a GOAL (usually an MVP definition), produce a crisp,
-honest plan. Tie tasks to EXISTING cards by id where they already exist; only
-invent a task when the board is genuinely missing it.
-
-Reply with ONLY JSON:
-{
- "summary": "2-4 sentence CTO briefing: where we are vs the goal and the single most important next move",
- "done_pct": <integer 0-100, your estimate of progress toward the goal>,
- "tasks": [   // EVERYTHING needed to reach the goal - existing cards + missing work
-   {"title": "...", "why": "one line: why this is needed for the goal",
-    "priority": "urgent|high|medium|low",
-    "status": "done|in_progress|todo",
-    "card": "<existing card id, or null if this work isn't on the board yet>",
-    "est_turns": <rough agent turns to finish, integer 1-10>}
- ],
- "next": [ {"title": "...", "reason": "why do this now", "card": "<id or null>"} ],  // ORDERED, do-first at top, 3-5 items
- "risks": ["short blocker/risk", ...]
+PM_DEFAULTS = {
+    "goal": "",
+    "plan": "max",              # "max" (flat quota) | "api" (per-token €) | "mixed"
+    "monthly_eur": 200,
+    "quota_turns_per_day": 0,   # 0 = derive pace from measured velocity
+    "cadence_minutes": 0,       # 0 = only on demand / when the ticker plans
+    "role_extra": "",           # house additions appended to the role charter
 }
 
-Rules: be concrete and specific to THIS board. Judge est_turns realistically
-against the economics given (a task like the recently-finished ones costs about
-the average). Do not restate the goal as a task. If the goal is unclear, say so
-in summary and still give your best plan from the board. Output JSON only."""
 
-
-def _currency():
+def _pm():
     import events
-    return events.settings().get("currency", "EUR")
+    c = dict(PM_DEFAULTS)
+    c.update(events.settings().get("pm") or {})
+    return c
+
+
+def get_goal():
+    return (_pm().get("goal") or "").strip()
+
+
+def set_goal(goal):
+    import events
+    pm = dict(events.settings().get("pm") or {})
+    pm["goal"] = (goal or "").strip()
+    events.save_settings({"pm": pm})
+    return pm["goal"]
+
+
+def _role():
+    try:
+        with open(ROLE_FILE, encoding="utf-8") as f:
+            role = f.read()
+    except OSError:
+        role = "You are the HelmDeck PM/CTO. Reply with JSON: {summary, done_pct, milestones, next, risks}."
+    extra = (_pm().get("role_extra") or "").strip()
+    return role + ("\n\n## House additions\n" + extra if extra else "")
 
 
 def economics():
-    """Real spend/token facts from this board, so estimates are grounded."""
+    """Real spend/token/velocity facts, so estimates are grounded in THIS board."""
     import sessions, events
+    from datetime import datetime
     tracks = sessions.list_tracks()
     m = events.metrics(tracks)
-    cards = m["cards"]
     spend = m["totals"]["ai_spend"]
     turns = sum(t.get("turns", 0) for t in tracks)
     toks = sum((t.get("tokens_in", 0) + t.get("tokens_out", 0)) for t in tracks)
-    avg_cost_turn = round(spend / turns, 4) if turns else 0.0
-    avg_tok_turn = round(toks / turns) if turns else 0
-    done = [c for c in cards if c["lane"] == "done" and c["ai_cost"] > 0]
-    avg_cost_card = (round(sum(c["ai_cost"] for c in done) / len(done), 4) if done
-                     else round(avg_cost_turn * 3, 4))
+    fmt = "%Y-%m-%d %H:%M:%S"
+    created = []
+    for t in tracks:
+        try:
+            created.append(datetime.strptime(t["created"], fmt))
+        except (KeyError, ValueError, TypeError):
+            pass
+    span_days = 1.0
+    if created:
+        span_days = max(1.0, (datetime.strptime(time.strftime(fmt), fmt) - min(created)).total_seconds() / 86400.0)
+    pm = _pm()
     return {
+        "plan": pm.get("plan", "max"),
+        "monthly_eur": pm.get("monthly_eur", 200),
         "spend_to_date": round(spend, 4),
         "turns_to_date": turns,
         "tokens_to_date": toks,
-        "avg_cost_per_turn": avg_cost_turn,
-        "avg_tokens_per_turn": avg_tok_turn,
-        "avg_cost_per_finished_card": avg_cost_card,
+        "avg_cost_per_turn": round(spend / turns, 4) if turns else 0.0,
+        "avg_tokens_per_turn": round(toks / turns) if turns else 0,
+        "active_days": round(span_days, 1),
+        "velocity_turns_per_day": round(turns / span_days, 1) if turns else 0.0,
+        "quota_turns_per_day": pm.get("quota_turns_per_day", 0),
         "value_delivered": m["totals"]["value_delivered"],
         "margin": m["totals"]["margin"],
         "capacity": m["capacity"],
         "spend_by_model": {k: v.get("cost", 0) for k, v in m["ai_by_model"].items()},
-        "currency": _currency(),
+        "currency": events.settings().get("currency", "EUR"),
     }
 
 
+def _pace(econ):
+    """Turns/day used for timelines: explicit quota cap, else measured velocity,
+    else a conservative default so a fresh board still gets a timeline."""
+    return econ.get("quota_turns_per_day") or econ.get("velocity_turns_per_day") or 3.0
+
+
+def _days(turns, pace):
+    return max(1, math.ceil(turns / pace)) if turns else 0
+
+
 def _ask(prompt, model=""):
-    """One stateless plan-mode turn (read-only); returns the parsed JSON object."""
     import copilot
-    cmd = ["cmd", "/c", copilot.CLAUDE, "-p", "--output-format", "json",
-           "--permission-mode", "plan"]
+    cmd = ["cmd", "/c", copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
     if model:
         cmd += ["--model", model]
     p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -92,57 +121,105 @@ def _ask(prompt, model=""):
     txt = d.get("result", "")
     m = re.search(r"\{.*\}", txt, re.S)
     if not m:
-        return {"summary": txt.strip()[:400], "tasks": [], "next": [], "risks": []}
+        return {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
     try:
         return json.loads(m.group(0))
     except ValueError:
-        return {"summary": txt.strip()[:400], "tasks": [], "next": [], "risks": []}
+        return {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
 
 
-def get_goal():
-    import events
-    return ((events.settings().get("pm") or {}).get("goal") or "").strip()
+def _write_artifact(out):
+    try:
+        os.makedirs(PLANS, exist_ok=True)
+        with open(os.path.join(PLANS, "plan-%s.json" % time.strftime("%Y%m%d")), "w", encoding="utf-8") as f:
+            json.dump(out, f, indent=1, ensure_ascii=False)
+    except OSError:
+        pass
 
 
-def set_goal(goal):
-    import events
-    pm = dict(events.settings().get("pm") or {})
-    pm["goal"] = (goal or "").strip()
-    events.save_settings({"pm": pm})
-    return pm["goal"]
+def latest_plan():
+    if not os.path.isdir(PLANS):
+        return None
+    days = sorted(f for f in os.listdir(PLANS) if f.startswith("plan-"))
+    if not days:
+        return None
+    try:
+        with open(os.path.join(PLANS, days[-1]), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
 
 
 def brief(goal=None, model=""):
-    """The PM/CTO report. `goal` overrides (and is saved as) the stored MVP goal."""
-    import copilot, turnopts
+    """The PM/CTO report: milestones with timelines, next actions, budget grounded
+    in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
+    import copilot, turnopts, events
     if goal is not None and goal.strip():
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
     econ = economics()
-    # PM analysis is real reasoning work -> route it to a strong model on Auto.
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
-    prompt = (PM_SYSTEM
+    prompt = (_role()
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
+              + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
 
-    # Price the plan in CODE: LLM judged est_turns, we cost it at the real rate.
-    todo = [t for t in out.get("tasks", []) if str(t.get("status")) != "done"]
-    est_turns = sum(int(t.get("est_turns") or 0) for t in todo if str(t.get("est_turns") or "").isdigit()
-                    or isinstance(t.get("est_turns"), int))
+    # price + time in CODE: LLM judged est_turns; we convert to days & shadow-€.
+    pace = _pace(econ)
+    cum = 0
+    for ms in out.get("milestones", []):
+        tt = sum(int(x.get("est_turns") or 0) for x in ms.get("tasks", [])
+                 if str(x.get("status")) != "done" and str(x.get("est_turns") or "0").isdigit())
+        cum += tt
+        ms["est_turns"] = tt
+        ms["eta_days"] = _days(tt, pace)
+        ms["cumulative_eta_days"] = _days(cum, pace)
+    est_turns = cum
+    is_max = econ["plan"] == "max"
     out["budget"] = {
-        "currency": econ["currency"],
-        "spent_to_date": econ["spend_to_date"],
-        "avg_cost_per_turn": econ["avg_cost_per_turn"],
-        "remaining_tasks": len(todo),
+        "plan": econ["plan"],
+        "fixed_monthly_eur": econ["monthly_eur"],
+        "cash_to_goal_eur": 0.0 if is_max else round(est_turns * econ["avg_cost_per_turn"], 2),
+        "shadow_eur_to_goal": round(est_turns * econ["avg_cost_per_turn"], 2),
+        "spent_to_date_eur": econ["spend_to_date"],
         "est_turns_to_goal": est_turns,
-        "est_cost_to_goal": round(est_turns * econ["avg_cost_per_turn"], 2),
-        "est_tokens_to_goal": est_turns * econ["avg_tokens_per_turn"],
+        "velocity_turns_per_day": econ["velocity_turns_per_day"],
+        "pace_turns_per_day": pace,
+        "eta_days": _days(est_turns, pace),
+        "note": ("Max-Abo: Engpass ist Quota/Zeit, nicht €. Schatten-€ = API-Äquivalent "
+                 "(Leverage gegen €%s flat)." % econ["monthly_eur"]) if is_max
+                else "API: gegen das €-Cap planen.",
     }
     out["economics"] = econ
     out["goal"] = goal
     out["model"] = cli_model or "default"
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _write_artifact(out)
     return out
+
+
+def plan_items(b=None):
+    """The actionable NEW work from a brief (tasks not yet on the board), ordered
+    by priority - what an executor (the night ticker) should file as cards.
+    Returns (items, brief). Each item: {title, description, priority, repo}."""
+    import events
+    b = b or brief()
+    order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    default_repo = events.settings().get("default_repo") or ""
+    items = []
+    for ms in b.get("milestones", []):
+        for t in ms.get("tasks", []):
+            if str(t.get("status")) == "done" or t.get("card"):
+                continue
+            desc = "%s\n\nStream: %s · Milestone: %s\n[PM plan]" % (
+                t.get("why") or t.get("title", ""), t.get("stream") or "-", ms.get("name") or "-")
+            items.append({"title": t.get("title", "").strip(),
+                          "description": desc,
+                          "priority": t.get("priority", "medium"),
+                          "repo": t.get("repo") or default_repo})
+    items = [it for it in items if it["title"]]
+    items.sort(key=lambda x: order.get(x.get("priority"), 2))
+    return items, b
