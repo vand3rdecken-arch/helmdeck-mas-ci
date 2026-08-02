@@ -235,6 +235,18 @@ def _epoch(iso):
         return None
 
 
+_CTX_SEP = "\n\n---\n\n"
+def _strip_ctx(text):
+    """The daemon prepends review/merge context to a steer prompt (sessions.
+    _pending_context); the session records the AUGMENTED text. Show only the
+    human's actual instruction in the feed, not the injected block."""
+    if isinstance(text, str) and text.lstrip().startswith("[Desktop context since your last turn"):
+        i = text.find(_CTX_SEP)
+        if i != -1:
+            return text[i + len(_CTX_SEP):].lstrip()
+    return text
+
+
 def _result_text(part):
     c = part.get("content")
     if isinstance(c, str):
@@ -298,6 +310,15 @@ def read_transcript(session_id, limit=400):
             (p.get("text", "") for p in content
              if isinstance(p, dict) and p.get("type") == "text"), "")
             if isinstance(content, list) else "")
+        # Slash-command plumbing: Claude Code records /model (and other local
+        # commands) as role=user WITHOUT isMeta - only the caveat is meta. So the
+        # <command-name>/<command-args>/<local-command-stdout> envelopes leak into
+        # the feed as the human's own messages ("Set model to ..."). They are not
+        # conversation - drop them.
+        if role == "user" and _lead.lstrip().startswith((
+                "<command-name>", "<command-message>", "<command-args>",
+                "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>")):
+            continue
         # Compaction: a session that ran out of context writes a summary as a
         # role=user message (flagged isCompactSummary, or the plain continuation
         # summary on resume). Render it as ONE small marker (Paseo-style), never
@@ -309,7 +330,7 @@ def read_transcript(session_id, limit=400):
             continue
         if isinstance(content, str):
             if content.strip():
-                steps.append({"role": role, "kind": "text", "text": content.strip()[:MAX_TEXT], "ts": ts, "ta": ta})
+                steps.append({"role": role, "kind": "text", "text": _strip_ctx(content.strip())[:MAX_TEXT], "ts": ts, "ta": ta})
             continue
         if not isinstance(content, list):
             continue
@@ -318,7 +339,7 @@ def read_transcript(session_id, limit=400):
                 continue
             pt = part.get("type")
             if pt == "text" and (part.get("text") or "").strip():
-                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:MAX_TEXT], "ts": ts, "ta": ta})
+                steps.append({"role": role, "kind": "text", "text": _strip_ctx(part["text"].strip())[:MAX_TEXT], "ts": ts, "ta": ta})
             elif pt == "thinking" and (part.get("thinking") or "").strip():
                 steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:MAX_THINK], "ts": ts, "ta": ta})
             elif pt == "tool_use":
