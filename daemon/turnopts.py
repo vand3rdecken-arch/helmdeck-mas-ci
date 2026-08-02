@@ -19,15 +19,16 @@ import base64, json, os, re
 # settings.json (exactly like Paseo's getClaudeModelsWithSettings).
 CLAUDE_MODELS = [
     {"id": "claude-fable-5",    "label": "Fable 5",    "desc": "Most powerful"},
-    {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Latest · most capable", "default": True},
+    {"id": "claude-opus-5",     "label": "Opus 5",     "desc": "Latest · most capable", "default": True},
+    {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Previous Opus"},
     {"id": "claude-sonnet-5",   "label": "Sonnet 5",   "desc": "Best for everyday work"},
-    {"id": "claude-opus-4-7",   "label": "Opus 4.7",   "desc": "Previous release"},
+    {"id": "claude-opus-4-7",   "label": "Opus 4.7",   "desc": "Older release"},
     {"id": "claude-opus-4-6",   "label": "Opus 4.6",   "desc": "Older · complex work"},
     {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "desc": "Older everyday"},
     {"id": "claude-haiku-4-5",  "label": "Haiku 4.5",  "desc": "Fastest · cheapest"},
 ]
 # friendly aliases still resolve (older drafts / Auto internals)
-_ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-4-8"}
+_ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-5"}
 
 # a turn "looks hard" if it's long, has attachments, or reads like real work
 _HARD = re.compile(r"\b(refactor|architect|debug|why|design|analy[sz]e|plan|"
@@ -75,7 +76,7 @@ def pick_model(text, has_attach=False):
     """Auto routing: cheap for trivial, deep for hard. Returns a concrete id."""
     t = text or ""
     if has_attach or len(t) > 600 or "```" in t or _HARD.search(t):
-        return "claude-opus-4-8"
+        return "claude-opus-5"
     if len(t) < 40 and not _HARD.search(t) and (_EASY.search(t) or "?" not in t):
         return "claude-haiku-4-5"
     return "claude-sonnet-5"
