@@ -20,6 +20,7 @@ export interface TStep {
   cls?: string;
   text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; ts?: string;
   ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
+  agent?: boolean;   // a board-Agent (copilot) message, not a Worker one
   streaming?: boolean; detail?: ToolDetail;
   todos?: { content: string; status: string }[];
 }
@@ -237,6 +238,13 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
       {steps.map((s, i) => {
         const kind = s.kind;
         const key = keyFor(s, i);
+        if (kind === "agentbreak") return (
+          <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
+            <Ionicons name="sparkles-outline" size={12} color={t.accent2} />
+            <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 }}>BOARD-AGENT</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
+          </View>);
         if (kind === "compaction") return (
           <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ Context compacted{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
@@ -263,9 +271,10 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
         if (kind === "result") return <Text key={key} style={{ color: t.txtTertiary, fontSize: 12 }}>{s.text}</Text>;
 
         const mine = s.role === "user" || s.cls === "user";
+        const ac = s.agent ? t.accent2 : t.accent;   // board-Agent = violet, Worker = accent
         if (mine) return (
-          <View key={key} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: t.accent + "22", borderRadius: 10, padding: 10 }}>
-            <Collapsible text={s.text || ""} color={t.accent}
+          <View key={key} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: ac + "22", borderRadius: 10, padding: 10 }}>
+            <Collapsible text={s.text || ""} color={ac}
               style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }} />
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, justifyContent: "flex-end" }}>
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
@@ -273,10 +282,17 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
               {onRewind ? <Pressable hitSlop={8} onPress={() => onRewind(s.text || "")}><Ionicons name="arrow-undo-outline" size={13} color={t.txtTertiary} /></Pressable> : null}
             </View>
           </View>);
-        // assistant text
+        // assistant text (board-Agent replies get a violet tag + border so they
+        // never read as the card's Worker)
         return (
-          <View key={key} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: t.borderSubtle }}>
-            <CollapsibleMarkdown text={s.text || ""} color={t.accent} />
+          <View key={key} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: s.agent ? t.accent2 + "66" : t.borderSubtle }}>
+            {s.agent ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                <Ionicons name="sparkles-outline" size={11} color={t.accent2} />
+                <Text style={{ color: t.accent2, fontSize: 10.5, fontWeight: "700" }}>Board-Agent</Text>
+              </View>
+            ) : null}
+            <CollapsibleMarkdown text={s.text || ""} color={ac} />
             {s.streaming ? <Text style={{ color: t.accent }}>▍</Text> : null}
             {!s.streaming ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
