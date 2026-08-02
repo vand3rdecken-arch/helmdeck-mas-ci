@@ -161,13 +161,17 @@ def pick_model(text, has_attach=False, signals=None):
     prio = str(s.get("priority") or "").lower()
     value = float(s.get("value") or 0)
     turns = int(s.get("turns") or 0)
+    failed = bool(s.get("failed"))     # card was bounced / a gate failed last round
     # STRONG tier - structural, stakes, or proven-hard signals (any one):
     #   real work in the prompt (attachment / long / code) OR a high-stakes card
-    #   (urgent|high priority, or >= HIGH_VALUE) OR it's already dragged on
-    #   (turns >= ESCALATE_TURNS = cheap "escalate on evidence") OR hard keywords.
+    #   (urgent|high priority, or >= HIGH_VALUE) OR it already FAILED (bounce/gate
+    #   -> escalate the retry) OR it's dragged on (turns >= ESCALATE_TURNS) OR
+    #   hard keywords. The failed/turns paths are "escalate on measured evidence"
+    #   - the next turn after a rejection gets the strong model, no retry loop.
     if (has_attach or len(t) > 600 or "```" in t
             or prio in ("urgent", "high")
             or (value and value >= HIGH_VALUE)
+            or failed
             or turns >= ESCALATE_TURNS
             or _HARD.search(t)):
         return "claude-opus-5"
