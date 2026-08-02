@@ -14,6 +14,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { GanttView } from "./board_gantt";
 import { LiveThumb } from "./board_live";
 import { Chip, Dot, Empty } from "./kit";
+import { useActionSheet } from "./action_sheet";
 
 const LANES = ["backlog", "working", "review", "done"] as const;
 const isWeb = Platform.OS === "web";
@@ -403,6 +404,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   }, []);
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
+  const sheet = useActionSheet();
 
   // Needs tab passes filter="needs_you" (flat list). The Board tab (no prop)
   // takes its filter from the sidebar store: all / archived / client:<name>.
@@ -423,9 +425,11 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   });
 
   function onMove(k: Track) {
-    Alert.alert(k.task, "Verschieben nach…", [
-      ...LANES.filter((l) => l !== k.lane).map((l) => ({
-        text: "→ " + label(l),
+    sheet.show({
+      title: k.task,
+      message: "Verschieben nach…",
+      options: LANES.filter((l) => l !== k.lane).map((l) => ({
+        label: "→ " + label(l),
         onPress: async () => {
           setBusy(true);
           try { const res = await api.moveLane(k.id, l); showToast(laneVerdict(res, l)); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
@@ -433,8 +437,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
           finally { setBusy(false); }
         },
       })),
-      { text: "Abbrechen", style: "cancel" as const },
-    ]);
+    });
   }
 
   const nextUp = (data ?? [])
@@ -495,6 +498,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         </View>
       </View>
     ) : null}
+    {sheet.node}
     </>
   );
 }

@@ -15,6 +15,7 @@ import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { useActionSheet } from "@/ui/action_sheet";
 
 type Tab = "overview" | "chat";
 const isWeb = Platform.OS === "web";
@@ -333,6 +334,7 @@ export default function CardScreen() {
   const wide = isWeb && width >= 900;
   const [tab, setTab] = useState<Tab>("overview");
   const [seed, setSeed] = useState({ text: "", key: 0 });
+  const sheet = useActionSheet();
 
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
   // tracks can arrive as a non-array {error} object over the relay (pairing/pin
@@ -428,12 +430,14 @@ export default function CardScreen() {
 
   function menu() {
     if (!k) return;
-    Alert.alert(k.task, undefined, [
-      { text: "Fork", onPress: () => api.fork(k.id) },
-      { text: "Archivieren", onPress: () => api.archive(k.id).then(() => router.back()) },
-      { text: "Löschen", style: "destructive", onPress: () => api.del(k.id).then(() => router.back()) },
-      { text: "Abbrechen", style: "cancel" },
-    ]);
+    sheet.show({
+      title: k.task,
+      options: [
+        { label: "Fork", onPress: () => api.fork(k.id) },
+        { label: "Archivieren", onPress: () => api.archive(k.id).then(() => router.back()) },
+        { label: "Löschen", destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
+      ],
+    });
   }
 
   // permission modes — bypass ("Full") is owner-only; current perm first
@@ -487,6 +491,7 @@ export default function CardScreen() {
           )}
         </>
       )}
+      {sheet.node}
     </View>
   );
 }

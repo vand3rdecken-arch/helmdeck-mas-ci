@@ -175,6 +175,30 @@ DEBT = [
                "ff-only vs --no-ff by policy, and push when the repo is remote.",
         "order": 9,
     },
+    {
+        "id": "android-cleartext-lan",
+        "title": "Android APK enables global cleartext for the direct-LAN feature",
+        "status": "open",
+        "what": "The app's 'direct LAN' option (More > http://<daemon>) could never "
+                "work on a release build: targetSdk>=28 blocks cleartext HTTP by "
+                "default, so every http:// daemon URL failed with 'Desktop nicht "
+                "erreichbar'. Fixed by adding android:usesCleartextTraffic=\"true\" "
+                "to app/android/app/src/main/AndroidManifest.xml - but that file is "
+                "gitignored/hand-managed (not driven by app.json), so the flag is "
+                "invisible to git and a future `expo prebuild` would silently drop "
+                "it (along with the hand-added expo-updates meta-data).",
+        "why_it_bites": "usesCleartextTraffic=true permits plaintext HTTP to ANY "
+                        "host app-wide, not just private LAN IPs - a mild security "
+                        "downgrade (the relay path stays HTTPS/sealed). And the "
+                        "whole native config can vanish on a prebuild.",
+        "trigger": "next `expo prebuild`, or a security review of the APK",
+        "fix": "Move native config to source: add expo-build-properties with "
+               "android.usesCleartextTraffic (or a networkSecurityConfig scoped to "
+               "loopback + RFC1918 ranges so cleartext is allowed ONLY on the LAN), "
+               "and re-express the expo-updates meta-data via app.json so a prebuild "
+               "reproduces the manifest. Relates to [single-secret-transport].",
+        "order": 10,
+    },
 ]
 
 def list_debt():
