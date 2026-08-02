@@ -30,9 +30,18 @@ CLAUDE_MODELS = [
 # friendly aliases still resolve (older drafts / Auto internals)
 _ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-5"}
 
-# a turn "looks hard" if it's long, has attachments, or reads like real work
-_HARD = re.compile(r"\b(refactor|architect|debug|why|design|analy[sz]e|plan|"
-                   r"trade-?off|root cause|prove|derive|reconcile|migrat)", re.I)
+# Auto routing looks at STRUCTURAL signals (the card's own facts) first, and only
+# falls back to reading the prompt text - text keywords are noisy ("why not" is
+# not hard work), the card's value/priority/turn-count are facts. Community
+# practice (FrugalGPT cascades, role-based routing): route on evidence, escalate
+# on measured difficulty. These thresholds are policy - kept as named constants
+# so they can later move to settings (events.settings) without touching logic.
+HIGH_VALUE = 100.0      # €: a card worth this much gets the best model on Auto
+ESCALATE_TURNS = 3      # a card that's taken this many turns has proven hard
+
+# text is only a WEAK, secondary signal (structural signals win)
+_HARD = re.compile(r"\b(refactor|architect|debug|design|analy[sz]e|"
+                   r"root cause|prove|derive|reconcile|migrat)", re.I)
 _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b", re.I)
 
 
@@ -72,22 +81,42 @@ def _allowed_ids():
     return {m["id"] for m in list_models()}
 
 
-def pick_model(text, has_attach=False):
-    """Auto routing: cheap for trivial, deep for hard. Returns a concrete id."""
+def pick_model(text, has_attach=False, signals=None):
+    """Auto routing: cheap for trivial, strong for hard/high-stakes. Returns a
+    concrete id. `signals` (optional) carries the card's own facts:
+    {value: float, priority: str, turns: int} - these are the PRIMARY routing
+    inputs; the prompt text is only a weak fallback. Only used when the user
+    picked "Auto"; an explicit model always wins (see resolve_model)."""
+    s = signals or {}
     t = text or ""
-    if has_attach or len(t) > 600 or "```" in t or _HARD.search(t):
+    prio = str(s.get("priority") or "").lower()
+    value = float(s.get("value") or 0)
+    turns = int(s.get("turns") or 0)
+    # STRONG tier - structural, stakes, or proven-hard signals (any one):
+    #   real work in the prompt (attachment / long / code) OR a high-stakes card
+    #   (urgent|high priority, or >= HIGH_VALUE) OR it's already dragged on
+    #   (turns >= ESCALATE_TURNS = cheap "escalate on evidence") OR hard keywords.
+    if (has_attach or len(t) > 600 or "```" in t
+            or prio in ("urgent", "high")
+            or (value and value >= HIGH_VALUE)
+            or turns >= ESCALATE_TURNS
+            or _HARD.search(t)):
         return "claude-opus-5"
-    if len(t) < 40 and not _HARD.search(t) and (_EASY.search(t) or "?" not in t):
+    # CHEAP tier - ONLY clear chatter (greetings/acks). A short imperative like
+    # "add a null check" is still work -> it falls through to Sonnet, never Haiku.
+    if len(t) < 40 and _EASY.search(t):
         return "claude-haiku-4-5"
     return "claude-sonnet-5"
 
 
-def resolve_model(model, text, has_attach=False):
+def resolve_model(model, text, has_attach=False, signals=None):
     """(cli_model_id_or_None, chosen). '' -> driver default (None). 'auto' ->
-    heuristic. A known model id (manifest or settings.json) -> itself. Unknown ->
-    default. Server-side whitelist: arbitrary ids from the client are rejected."""
+    signal-based pick. A known model id (manifest or settings.json) -> itself.
+    Unknown -> default. Server-side whitelist: arbitrary ids from the client are
+    rejected. THE USER'S EXPLICIT CHOICE ALWAYS WINS - routing only runs for
+    'auto'. `signals` = the card facts passed through to pick_model."""
     if model == "auto":
-        mid = pick_model(text, has_attach)
+        mid = pick_model(text, has_attach, signals)
         return mid, mid
     model = _ALIAS.get(model, model)
     if model and model in _allowed_ids():
