@@ -6,6 +6,7 @@ import { api } from "@/data/client";
 import type { Me } from "@/data/types";
 import { useTheme } from "@/theme";
 import { CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
+import { PMPanel } from "@/ui/pm_panel";
 
 const isWeb = Platform.OS === "web";
 
@@ -33,6 +34,7 @@ export default function DashboardTab() {
             const showGates = panels.includes("gates");
             return (
               <>
+                {isOwner ? <PMPanel defaultRepo={(data as { settings?: { default_repo?: string } })?.settings?.default_repo} /> : null}
                 {isOwner ? <DashCustomize m={data} /> : null}
                 <Tiles m={data} wide={wide} tiles={dashTiles(data)} />
                 {/* On desktop the two gauges sit side by side; the wide tables stay full width. */}
