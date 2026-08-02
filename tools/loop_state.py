@@ -184,14 +184,18 @@ def archive_workorder():
     os.replace(WORKORDER, dst)
 
 
-# each shippable artifact vs ONLY the source that feeds it - so a web change
-# doesn't flag the APK (whose Kotlin is untouched) as stale, and vice versa.
+# each shippable artifact vs ONLY the source that feeds it. Repointed to the
+# Expo stack (paid part of the expo-cutover-pipeline debt): the mobile app's JS
+# ships via OTA (deploy/push_update.sh), NOT the APK - so a JS/daemon change must
+# NOT flag the APK stale. Only NATIVE sources gate the signed APK; a fresh APK is
+# only needed for native changes. web/ and apk/ (Kotlin) are archived and gone.
+# Only the signed Android APK is auto-tracked (native-only sources). The desktop
+# installer and the glasses zip are built on demand (tools/release.sh /
+# build_all.sh glasses) and are not part of the mobile launch pipeline, so they
+# don't nag the loop before rest.
 ARTIFACT_SRC = {
-    "desktop/release/HelmDeck-Setup-0.2.0-x64.exe": ("daemon", "web/app", "web/components", "web/lib"),
-    # the shippable Android artifact is the SIGNED release build (debug is only
-    # a local convenience build and is never distributed)
-    "apk/app/build/outputs/apk/release/app-release.apk": ("apk/app/src",),
-    "glasses/dist/helmdeck-glasses.zip": ("glasses/index.html", "glasses/styles.css", "glasses/app.js"),
+    "app/android/app/build/outputs/apk/release/app-release.apk":
+        ("app/android/app/src/main", "app/app.json"),
 }
 _SKIP = ("node_modules", ".next", "__pycache__", os.sep + "build", os.sep + "dist")
 # only SOURCE files count - not the running daemon's data (events.jsonl,
@@ -284,9 +288,10 @@ def transitions():
 
     quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60
     if quiet and build_stale():
-        t.append(("BUILD", "work verified & quiet, but shippable artifacts are stale - run "
-                  "`bash tools/build_all.sh` to rebuild installer + APK + glasses from "
-                  "current source (or `win`/`apk`/`glasses` for one), THEN propose the commit."))
+        t.append(("BUILD", "verified & quiet, but a NATIVE artifact is stale - only native "
+                  "app changes need this (JS ships via OTA: `bash deploy/push_update.sh`). "
+                  "For a native change run `bash tools/release.sh android` (signed APK), "
+                  "THEN propose the commit."))
         return t
     if quiet:
         t.append(("COMMIT", "loop complete, %d file(s) quiet - propose the commit "
