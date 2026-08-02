@@ -723,6 +723,26 @@ def move_lane(tid, lane, actor="owner"):
 MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
 
 
+def _pending_context(t):
+    """Review/merge/gate checks run OUTSIDE the agent session (daemon-side, only
+    in the actionlog), so the worker never sees a merge conflict or a failed
+    gate - it's in the woven chat view but not the session. When the owner steers
+    to fix one ("resolve the conflict"), prepend the actual report so the worker
+    isn't blind. Empty string when nothing is pending."""
+    parts = []
+    gr = t.get("gate_report")
+    if t.get("gate_failed") and gr:
+        parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
+    rep = t.get("review_report") or t.get("merge_report")
+    if rep and (t.get("merge_kind") == "conflict" or t.get("merge_failed") or t.get("gate_failed")):
+        parts.append("Review/merge check reported:\n" + str(rep))
+    if not parts:
+        return ""
+    return ("[Desktop context since your last turn - the review/merge/gate ran "
+            "outside this session, so you did not see this. Use it if the "
+            "instruction refers to it:]\n\n" + "\n\n".join(parts) + "\n\n---\n\n")
+
+
 def steer(tid, text, perm=None, actor="owner", source="you",
           model="", thinking="", attachments=None, mode=None):
     """Continue the track's session (resume - context preserved, NO history rebuild).
@@ -754,7 +774,10 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     t["status"] = "running"; _save_track(t)
     paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)
     cli_model, _ = turnopts.resolve_model(model, text, bool(paths))
-    prompt = turnopts.augment_prompt(text, thinking, paths)
+    # Hand the worker the daemon-side context it never saw (a merge conflict, a
+    # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
+    # above still logs the human's original text, not this augmentation.
+    prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
     sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
     log.log("reply", result[:2000])
