@@ -1,14 +1,17 @@
 // Web-only global CSS the RN style system can't express: thin custom scrollbars
 // (matching the archived web app's `::-webkit-scrollbar{width:8px}` look), font
-// smoothing, and killing the outer document scrollbar so only inner ScrollViews
-// scroll (no double bars). Injected once; renders nothing. No-op on native.
+// smoothing, killing the outer document scrollbar so only inner ScrollViews
+// scroll (no double bars), and `color-scheme: dark` so NATIVE widget internals
+// (select/date popups, scrollbar chrome) follow the dark shell - the archived
+// web app carried the same rule at :root. Injected once; renders nothing.
+// No-op on native.
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { tokens } from "@/theme/tokens";
 
 const t = tokens.dark;
 const CSS = `
-html, body, #root { height: 100%; margin: 0; background: ${t.canvas}; overflow: hidden; }
+html, body, #root { height: 100%; margin: 0; background: ${t.canvas}; overflow: hidden; color-scheme: dark; }
 * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
