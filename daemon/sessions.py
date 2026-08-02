@@ -723,6 +723,51 @@ def move_lane(tid, lane, actor="owner"):
 MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
 
 
+def park_and_retry_merge(tid, actor="owner"):
+    """Unblock a card whose review/merge is blocked by an uncommitted (dirty)
+    working tree in its repo - NOT a real <<<<<< conflict, but git refusing to
+    merge over local changes ("your local changes ... would be overwritten").
+
+    Park ALL uncommitted work (tracked + untracked) onto a wip-<branch>-<ts>
+    branch - nothing lost, the checkout goes clean - then re-run the review
+    check. NON-DESTRUCTIVE (only ever adds a branch/commit; never discards).
+
+    This is the board-Agent's job, not the sandboxed card worker's: the worker
+    is confined to its worktree and cannot reach the shared main checkout by
+    design, so this cross-cutting unblock belongs to the board-wide agent, gated
+    by the owner's explicit instruction. Returns a human summary."""
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    repo = t.get("repo")
+    if not repo or not is_git_repo(repo):
+        return "cannot park: card '%s' has no git repo" % tid
+    status = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
+                            capture_output=True, text=True).stdout.strip()
+    parked = ""
+    if status.strip():
+        cur = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        wip = "wip-%s-%s" % (_slug(cur), time.strftime("%Y%m%d-%H%M%S"))
+        _git(repo, "checkout", "-b", wip)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m",
+             "wip: park uncommitted %s work so card %s could merge (by %s)" % (cur, t["branch"], actor))
+        _git(repo, "checkout", cur)     # back on the original branch, now clean
+        parked = wip
+        import events
+        events.log("merge", "parked dirty tree of %s onto %s to unblock %s (%s)"
+                   % (cur, wip, t["branch"], actor))
+    # tree is clean now -> re-run the review/merge check
+    r = move_lane(tid, "review", actor=actor)
+    if r.get("gate_failed"):
+        return "parked onto '%s', but the gate is red: %s" % (parked or "-", " | ".join(r.get("gate_report") or [])[:200])
+    if r.get("merge_failed"):
+        return "parked onto '%s', but the card still can't merge: %s" % (parked or "-", (r.get("merge_report") or "")[:200])
+    head = ("Parked the uncommitted work onto branch '%s' (nothing lost) - " % parked) if parked else "The tree was already clean - "
+    return head + "the review check now passes. Move the card to Done to land it."
+
+
 def _pending_context(t):
     """Review/merge/gate checks run OUTSIDE the agent session (daemon-side, only
     in the actionlog), so the worker never sees a merge conflict or a failed
