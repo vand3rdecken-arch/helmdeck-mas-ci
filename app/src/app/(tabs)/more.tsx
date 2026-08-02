@@ -83,6 +83,7 @@ export default function MoreTab() {
         </Panel>
         <Panel style={{ padding: 0 }}>
           {([
+            ["loopmap", "Loop & Harness", "git-network-outline"],
             ["automation", "Automation & loop", "git-branch-outline"],
             ["processes", "Processes", "git-network-outline"],
             ["connectors", "Connectors", "sync-outline"],
@@ -91,7 +92,7 @@ export default function MoreTab() {
             ["recordings", "Recordings", "videocam-outline"],
             ["settings", "Settings", "settings-outline"],
           ] as const).map(([route, label, icon], i) => (
-            <Pressable key={route} onPress={() => router.push(`/${route}`)}
+            <Pressable key={route} onPress={() => router.push(`/${route}` as never)}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
                 borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
               <Ionicons name={icon} size={18} color={t.txtSecondary} />
