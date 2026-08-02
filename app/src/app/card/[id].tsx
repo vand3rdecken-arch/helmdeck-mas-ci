@@ -353,6 +353,7 @@ export default function CardScreen() {
   const { data: hist } = useQuery({ queryKey: ["history", id], queryFn: () => api.history(id!), enabled: !!id });
   const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 300000 });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
+  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 10000 });
 
   useEffect(() => {
     if (!id) return;
@@ -428,11 +429,39 @@ export default function CardScreen() {
     catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
   }
 
+  // Lane flow, Jira-style: the header status pill is the primary "move" control,
+  // the 3-dots carries a one-tap "advance to next" + admin actions.
+  const LANES = ["backlog", "working", "review", "done"] as const;
+  const laneLabel = (l: string) =>
+    ((metrics as { settings?: { policy?: { lane_labels?: Record<string, string> } } })?.settings?.policy?.lane_labels ?? {})[l]
+    ?? l.charAt(0).toUpperCase() + l.slice(1);
+  const laneIdx = k ? LANES.indexOf(k.lane as (typeof LANES)[number]) : -1;
+  const nextLane = laneIdx >= 0 && laneIdx < LANES.length - 1 ? LANES[laneIdx + 1] : null;
+
+  async function moveTo(lane: string) {
+    if (!k) return;
+    try { await api.moveLane(k.id, lane); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+    catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+  }
+  function moveSheet() {
+    if (!k) return;
+    sheet.show({
+      title: k.task,
+      message: "Verschieben nach…",
+      // next step first + labelled, then the rest — like Jira's transition list
+      options: LANES.filter((l) => l !== k.lane)
+        .sort((a, b) => (a === nextLane ? -1 : b === nextLane ? 1 : 0))
+        .map((l) => ({ label: (l === nextLane ? "→ " : "") + laneLabel(l) + (l === nextLane ? "   · nächster Schritt" : ""),
+                       onPress: () => moveTo(l) })),
+    });
+  }
   function menu() {
     if (!k) return;
     sheet.show({
       title: k.task,
       options: [
+        ...(nextLane ? [{ label: "Weiterschieben  →  " + laneLabel(nextLane), onPress: () => moveTo(nextLane) }] : []),
+        { label: "Verschieben nach…", onPress: moveSheet },
         { label: "Fork", onPress: () => api.fork(k.id) },
         { label: "Archivieren", onPress: () => api.archive(k.id).then(() => router.back()) },
         { label: "Löschen", destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
@@ -454,6 +483,16 @@ export default function CardScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
         <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }} numberOfLines={1}>{k?.task ?? "Karte"}</Text>
         {running ? <ActivityIndicator size="small" color={t.ai} /> : null}
+        {k ? (
+          // tappable status pill (Jira-style): shows the lane, opens the move sheet
+          <Pressable onPress={moveSheet} hitSlop={8} accessibilityLabel="Status ändern"
+            style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: t.surface2,
+              borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+            <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: laneColor(t, k.lane) }} />
+            <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{laneLabel(k.lane)}</Text>
+            <Ionicons name="chevron-down" size={12} color={t.txtTertiary} />
+          </Pressable>
+        ) : null}
         <Pressable onPress={menu} hitSlop={10}><Ionicons name="ellipsis-horizontal" size={22} color={t.txtSecondary} /></Pressable>
       </View>
 
