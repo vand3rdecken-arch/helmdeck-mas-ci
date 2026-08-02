@@ -87,10 +87,15 @@ def _snapshot():
     lines = ["POLICY: " + json.dumps(pol)]
     lines += ["CAPACITY: WIP %d/%d, headroom %d cards" % (
         m["capacity"]["wip"], m["capacity"]["wip_limit"], m["capacity"]["headroom"])]
-    lines.append("CARDS:")
+    # Cards span MULTIPLE repos (projects). The repo is shown so a question about
+    # one project (e.g. "what's left for HelmDeck") is scoped to THAT repo only -
+    # without it the model mixed Seekingalpha/immo-deal-scanner cards into HelmDeck.
+    lines.append("CARDS (each belongs to ONE repo; a question about a specific "
+                 "project/repo must include ONLY that repo's cards):")
     for t in sessions.list_tracks():
-        lines.append("- id=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
-            t["id"], t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
+        repo = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "?"
+        lines.append("- id=%s repo=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
+            t["id"], repo, t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "),
             (" last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")) if t.get("status") == "needs_you" else ""))
