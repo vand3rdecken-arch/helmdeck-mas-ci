@@ -583,7 +583,7 @@ def _repo_hook(t, kind):
     return ok
 
 
-def move_lane(tid, lane, actor="owner"):
+def move_lane(tid, lane, actor="owner", _autopark=True):
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
     ->done accepts (records the acceptance economics)."""
@@ -651,6 +651,16 @@ def move_lane(tid, lane, actor="owner"):
         if lane == "review":
             # PREVIEW ONLY: say what a Done would do; the card RESTS on Review.
             kind, msg = _classify_merge(t)
+            # AUTO-DELEGATION: a "conflict" that is really an uncommitted (dirty)
+            # shared checkout, not <<<<<< markers, is an out-of-worktree blocker
+            # the sandboxed worker can't fix. Hand it to the board-Agent capability
+            # automatically - park the dirty tree on a wip-* branch (nothing lost)
+            # and retry, ONCE (_autopark guards recursion).
+            if _autopark and kind == "conflict" and _is_dirty_block(msg):
+                log.log("note", "AUTO: out-of-worktree blocker (dirty checkout) - delegating to the board-Agent")
+                summary = park_and_retry_merge(tid, actor="board-Agent (auto)")
+                log.log("note", "AUTO board-Agent: " + summary[:300])
+                return _find(_load(), tid) or dict(t)
             events.emit("merge", tid, ok=(kind not in ("conflict", "blocked")),
                         outcome=kind, detail="preview: " + msg[:200])
             log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
@@ -723,6 +733,17 @@ def move_lane(tid, lane, actor="owner"):
 MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
 
 
+def _is_dirty_block(msg):
+    """True when a 'conflict' is really git refusing to merge over an uncommitted
+    (dirty) checkout - NOT real <<<<<< markers. That's an out-of-worktree blocker
+    the sandboxed worker can't fix, so the board-Agent parks + retries."""
+    m = (msg or "").lower()
+    return "<<<<<<<" not in (msg or "") and (
+        "would be overwritten by merge" in m
+        or "local changes to the following" in m
+        or "commit your changes or stash" in m)
+
+
 def park_and_retry_merge(tid, actor="owner"):
     """Unblock a card whose review/merge is blocked by an uncommitted (dirty)
     working tree in its repo - NOT a real <<<<<< conflict, but git refusing to
@@ -758,8 +779,8 @@ def park_and_retry_merge(tid, actor="owner"):
         import events
         events.log("merge", "parked dirty tree of %s onto %s to unblock %s (%s)"
                    % (cur, wip, t["branch"], actor))
-    # tree is clean now -> re-run the review/merge check
-    r = move_lane(tid, "review", actor=actor)
+    # tree is clean now -> re-run the review/merge check (no auto-park recursion)
+    r = move_lane(tid, "review", actor=actor, _autopark=False)
     if r.get("gate_failed"):
         return "parked onto '%s', but the gate is red: %s" % (parked or "-", " | ".join(r.get("gate_report") or [])[:200])
     if r.get("merge_failed"):
