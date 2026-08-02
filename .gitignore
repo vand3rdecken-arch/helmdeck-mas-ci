@@ -50,3 +50,4 @@ backups/
 google-services.json
 fcm_service_account.json
 daemon/models_cache.json
+daemon/pm/
