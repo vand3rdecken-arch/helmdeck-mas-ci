@@ -93,96 +93,38 @@ def latest_report():
         return None
 
 
-# -- PLAN: the pre-sleep scout ---------------------------------------------
-
-_SCOUT_PROMPT = """You are the night-shift scout for the repository at hand. READ ONLY - change nothing.
-Produce a prioritized list of at most 5 concrete overnight improvements. Consider:
-- registered debt, failing builds/tests/type checks
-- TODO/FIXME that mark real gaps, missing tests around fragile code
-- what comparable well-run projects in this domain have that this repo lacks (infrastructure, CI, docs, features) - name the comparable if you use one
-Each item must be finishable by one agent in one night, in a worktree, without human input.
-Your ENTIRE reply must be a JSON array and nothing else - no prose, no preamble, English, starting with the character [ :
-[{"title": "<one line>", "description": "<what to do, how to verify, why it matters>", "priority": "high|medium|low"}]"""
-
-_REPAIR_PROMPT = """Convert the following findings into a JSON array, nothing else, starting with [ :
-[{"title": "<one line>", "description": "<what to do, how to verify, why it matters>", "priority": "high|medium|low"}]
-
-Findings:
-"""
-
-
-def _scout(repo, model):
-    """One read-only claude -p pass over a repo -> list of plan items."""
-    from drivers import CLAUDE          # same resolved binary the cards use
-    cmd = [CLAUDE, "-p", _SCOUT_PROMPT, "--permission-mode", "plan"]
-    if model:
-        cmd += ["--model", model]
-    try:
-        r = subprocess.run(cmd, cwd=repo, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=900)
-        out = r.stdout or ""
-    except (subprocess.SubprocessError, OSError) as e:
-        return [], "scout failed: %s" % e
-    items = _parse_items(out)
-    if items is None:
-        # good findings, wrong shape (the scout wrote prose) - one cheap
-        # repair pass converts them instead of throwing the work away
-        try:
-            r2 = subprocess.run([CLAUDE, "-p", _REPAIR_PROMPT + out[-4000:],
-                                 "--model", "haiku"],
-                                cwd=repo, capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=300)
-            items = _parse_items(r2.stdout or "")
-        except (subprocess.SubprocessError, OSError):
-            items = None
-    if items is None:
-        return [], "no JSON in scout output: %s" % out[-300:]
-    return items[:5], None
-
-
-def _parse_items(out):
-    m = re.search(r"\[.*\]", out, re.S)
-    if not m:
-        return None
-    try:
-        items = json.loads(m.group(0))
-    except ValueError:
-        return None
-    good = [i for i in items if isinstance(i, dict) and i.get("title")]
-    return good or None
-
+# -- PLAN: delegated to the PM role (daemon/pm.py) -------------------------
+# There is ONE planning brain now: the data-driven PM/CTO role. The night shift
+# no longer runs its own hardcoded scout - it asks the PM for the plan and files
+# the PM's NEW items as backlog cards. WHAT to build = the PM role (data);
+# WHEN/whether to work = this ticker (code). No second brain.
 
 def make_plan(actor="owner"):
-    """Run the scouts now ("plan before I go to sleep"). Returns the plan."""
-    c = cfg()
-    plan = {"day": _today(), "made": time.strftime("%Y-%m-%d %H:%M"),
-            "actor": actor, "repos": {}}
-    for repo in c["repos"]:
-        if not os.path.isdir(repo):
-            plan["repos"][repo] = {"error": "folder not found", "items": []}
-            continue
-        items, err = _scout(repo, c["scout_model"])
-        plan["repos"][repo] = {"items": items, "error": err}
-    os.makedirs(PLANS, exist_ok=True)
-    with open(plan_path(), "w", encoding="utf-8") as f:
-        json.dump(plan, f, indent=1)
-    # the plan is not a shadow queue: every item lands ON THE BOARD as a
-    # backlog card (deduped by title), and the ticker consumes the board
-    import sessions
+    """Ask the PM role for the current plan and file its new items as backlog
+    cards (deduped by title). The reviewable brief is stored as the day's plan."""
+    import pm, sessions
+    items, brief = pm.plan_items()
     have = {t.get("task", "").strip().lower() for t in sessions.list_tracks()}
     filed = 0
-    for repo, block in plan["repos"].items():
-        for it in block["items"]:
-            if it["title"].strip().lower() in have:
-                continue
-            sessions.new_track(
-                repo, "night-" + re.sub(r"[^a-z0-9]+", "-", it["title"].lower())[:24],
-                it["title"], lane="backlog",
-                description=it.get("description", "") + "\n\n[night-shift scout]",
-                priority=it.get("priority", "medium"), actor="nightshift")
-            filed += 1
-    print("NIGHTSHIFT plan: %d repos, %d items, %d neue Karten" % (
-        len(plan["repos"]), sum(len(v["items"]) for v in plan["repos"].values()), filed))
+    for it in items:
+        repo = it.get("repo") or ""
+        if not repo or not os.path.isdir(repo):
+            continue
+        if it["title"].strip().lower() in have:
+            continue
+        sessions.new_track(
+            repo, "pm-" + re.sub(r"[^a-z0-9]+", "-", it["title"].lower())[:24],
+            it["title"], lane="backlog",
+            description=it.get("description", ""),
+            priority=it.get("priority", "medium"), actor="nightshift")
+        filed += 1
+        have.add(it["title"].strip().lower())
+    plan = {"day": _today(), "made": time.strftime("%Y-%m-%d %H:%M"),
+            "actor": actor, "brief": brief, "filed": filed, "candidates": len(items)}
+    os.makedirs(PLANS, exist_ok=True)
+    with open(plan_path(), "w", encoding="utf-8") as f:
+        json.dump(plan, f, indent=1, ensure_ascii=False)
+    print("NIGHTSHIFT plan (PM role): %d Kandidaten, %d neue Karten" % (len(items), filed))
     return plan
 
 
