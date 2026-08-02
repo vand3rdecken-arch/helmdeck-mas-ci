@@ -13,7 +13,9 @@ import { Panel, SectionLabel } from "@/ui/kit";
 /** Version + the running JS bundle, so silent OTA updates are visible: the OTA
  *  id/date changes each time an update is applied - if it moved, you updated. */
 function VersionFooter({ t }: { t: ReturnType<typeof useTheme> }) {
-  const ver = Constants.expoConfig?.version ?? "?";
+  // expoConfig is null in release/OTA builds - fall back to the updates
+  // runtimeVersion (policy: appVersion), which equals the app version there.
+  const ver = Constants.expoConfig?.version ?? Updates.runtimeVersion ?? "?";
   const code = (Constants.expoConfig as { android?: { versionCode?: number } })?.android?.versionCode;
   const ota = Updates.isEmbeddedLaunch
     ? "Basis-Build (eingebettet, kein OTA)"
