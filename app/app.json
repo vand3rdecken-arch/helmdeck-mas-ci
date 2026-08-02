@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 35,
+      "versionCode": 36,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
