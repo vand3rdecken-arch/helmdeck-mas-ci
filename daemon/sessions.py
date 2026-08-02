@@ -249,7 +249,10 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     # attachments filed with the request are saved now; the first run reads them.
     # model chosen in the composer becomes the card's execution model (Auto too).
     att_paths = turnopts.save_attachments(run_dir, attachments)
-    cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths))
+    # Auto routing sees the card's own facts (value/priority); an explicit model
+    # from the composer still wins (resolve_model only routes for "auto").
+    cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths),
+        signals={"value": value, "priority": priority})
     t = {"id": tid, "repo": repo, "branch": branch, "worktree": "", "task": task,
          # task = the one-line title (Jira summary); description = the long body
          # (Jira/Plane description). Both editable; the agent reads title+desc+files.
@@ -839,7 +842,11 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     log.log("steer", text)               # audit the human's words, not the augmented prompt
     t["status"] = "running"; _save_track(t)
     paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)
-    cli_model, _ = turnopts.resolve_model(model, text, bool(paths))
+    # Auto routing sees the card's facts INCLUDING turn count - a card that's
+    # already dragged on escalates to the strong model (cheap "escalate on
+    # evidence"). An explicit model from the composer still wins.
+    cli_model, _ = turnopts.resolve_model(model, text, bool(paths),
+        signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns")})
     # Hand the worker the daemon-side context it never saw (a merge conflict, a
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
