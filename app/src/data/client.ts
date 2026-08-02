@@ -1,8 +1,20 @@
 import { useConfig } from "./config";
 import { open, seal } from "./e2ee";
+import { useHealth } from "./health";
 import type { Track, Metrics, Me } from "./types";
 
 export class AuthRequired extends Error {}
+// Transport never reached the daemon (relay down, network, crypto mismatch).
+// Feeds the global HealthBanner; message is UI-ready German.
+export class TransportError extends Error {}
+// The daemon answered with an error status. Message = the daemon's own
+// {error} body when present - so a 409 ("pairing code expired…"), 403, 500
+// SURFACE at the call site instead of parsing into fake data. That silent
+// parse was exactly the req-dispatch-failure-is-invisible bug class.
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
+}
 
 function authHeaders(): Record<string, string> {
   const { token } = useConfig.getState();
@@ -14,19 +26,33 @@ function authHeaders(): Record<string, string> {
 // Relay path: seal {method,path,headers,body} to the daemon's pubkey, POST it to
 // the relay room, open the sealed {status,headers,body} reply. Byte-compatible
 // with daemon/relay_client.py + e2ee.py. The relay only ever sees ciphertext.
+// Every failure mode gets a DISTINCT message - "offline", "timeout", "wrong
+// keys" and "no network" need different owner actions.
 async function relayReq(method: string, path: string, bodyStr: string): Promise<{ status: number; body: string }> {
   const { relayUrl, room, daemonPub, mySec, myPub } = useConfig.getState();
   const inner = JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr });
   const cipher = seal(inner, mySec, daemonPub);
-  const r = await fetch(`${relayUrl}/relay?room=${room}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pub: myPub, cipher }),
-  });
-  if (!r.ok) throw new Error(r.status === 503 ? "Desktop nicht erreichbar" : `relay ${r.status}`);
+  let r: Response;
+  try {
+    r = await fetch(`${relayUrl}/relay?room=${room}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pub: myPub, cipher }),
+    });
+  } catch {
+    throw new TransportError("Relay nicht erreichbar (Netzwerk/DNS)");
+  }
+  if (r.status === 503) throw new TransportError("Desktop offline – das Relay erreicht den Daemon nicht");
+  if (r.status === 504) throw new TransportError("Desktop antwortet nicht (Timeout)");
+  if (!r.ok) throw new TransportError(`Relay-Fehler ${r.status}`);
   const out = JSON.parse(await r.text());
-  if (!out.cipher) throw new Error("Desktop antwortet nicht");
-  const resp = JSON.parse(open(out.cipher, mySec, daemonPub));
+  if (!out.cipher) throw new TransportError("Desktop antwortet nicht");
+  let resp: { status?: number; body?: string };
+  try {
+    resp = JSON.parse(open(out.cipher, mySec, daemonPub));
+  } catch {
+    throw new TransportError("Verschlüsselung passt nicht – Telefon neu koppeln (Desktop: Settings → Mobile app)");
+  }
   return { status: resp.status ?? 200, body: resp.body ?? "" };
 }
 
@@ -34,16 +60,34 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   const cfg = useConfig.getState();
   const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
   let status: number, txt: string;
-  if (cfg.relayMode()) {
-    ({ status, body: txt } = await relayReq(method, path, bodyStr));
-  } else {
-    const r = await fetch(cfg.baseUrl + path, {
-      method, headers: authHeaders(),
-      body: method === "GET" ? undefined : bodyStr, signal,
-    });
-    status = r.status; txt = await r.text();
+  try {
+    if (cfg.relayMode()) {
+      ({ status, body: txt } = await relayReq(method, path, bodyStr));
+    } else {
+      let r: Response;
+      try {
+        r = await fetch(cfg.baseUrl + path, {
+          method, headers: authHeaders(),
+          body: method === "GET" ? undefined : bodyStr, signal,
+        });
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") throw e;   // caller cancelled, not a health event
+        throw new TransportError("Direktverbindung (LAN) fehlgeschlagen – läuft HelmDeck am Desktop?");
+      }
+      status = r.status; txt = await r.text();
+    }
+  } catch (e) {
+    if (e instanceof TransportError) useHealth.getState().reportFail(e.message);
+    throw e;
   }
+  // The daemon answered: the CONNECTION is healthy even if this call failed.
+  useHealth.getState().reportOk();
   if (status === 401) throw new AuthRequired();
+  if (status >= 400) {
+    let msg = "";
+    try { msg = String(JSON.parse(txt)?.error ?? ""); } catch { /* not json */ }
+    throw new ApiError(status, msg || `Fehler ${status} (${method} ${path})`);
+  }
   return (txt ? JSON.parse(txt) : {}) as T;
 }
 

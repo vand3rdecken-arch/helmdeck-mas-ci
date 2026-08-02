@@ -967,7 +967,10 @@ class H(BaseHTTPRequestHandler):
                 pay = relay_client.pairing_payload()
                 # a fresh device token so the phone authenticates through the
                 # encrypted tunnel (carried as Bearer inside the sealed request).
-                pay["device_token"] = auth.issue_token(user["name"], "phone (relay)")
+                # Invites bring the teammate's OWN token - minting an owner
+                # token there would leave a dangling owner credential per invite.
+                if not body.get("invite"):
+                    pay["device_token"] = auth.issue_token(user["name"], "phone (relay)")
                 return self._send(200, json.dumps(pay))
             if p == "/relay/unpair":
                 if user["role"] != "owner":

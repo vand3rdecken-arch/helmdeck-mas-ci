@@ -41,9 +41,12 @@ DEFAULTS = {
     # mobile app reaches this daemon over the internet without port-forwarding
     # and end-to-end encrypted. url = where the owner hosts the relay (HTTPS);
     # room = public routing id; sk = this daemon's Curve25519 secret (generated
-    # at pairing); phone_pub = the paired phone's public key (TOFU-pinned).
+    # at pairing); phone_pubs = pinned device keys (phone_pub = legacy mirror of
+    # [0], the push target); pair_pending = the single-use pairing window opened
+    # by issuing a code ({expires: ts}, see relay_client.PAIR_TTL).
     # Empty url = OFF (LAN only).
-    "relay": {"url": "", "room": "", "sk": "", "phone_pub": ""},
+    "relay": {"url": "", "room": "", "sk": "", "phone_pub": "",
+              "phone_pubs": [], "pair_pending": None},
     # preset repo: filing a ticket never needs a path typed (fallback repo).
     "default_repo": "",
     # execution drivers (drivers.py): a card picks one by name. claude-desktop =
