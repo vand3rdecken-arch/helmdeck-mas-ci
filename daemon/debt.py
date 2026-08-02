@@ -107,7 +107,7 @@ DEBT = [
         "id": "nightshift-limit-sniff",
         "title": "Night shift detects usage limits by string-matching replies",
         "status": "paid",
-        "what": "nightshift._limit_hit() greps the card's last_reply for "
+        "what": "pm._limit_hit() (moved from the removed nightshift.py) greps the card's last_reply for "
                 "'usage limit'/'rate limit' instead of reading a structured "
                 "error from the driver.",
         "why_it_bites": "A rephrased CLI error means the night shift keeps "
