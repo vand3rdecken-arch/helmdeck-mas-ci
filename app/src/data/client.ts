@@ -70,7 +70,9 @@ export interface PmBrief {
   next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
   budget?: PmBudget; economics?: Record<string, unknown>; goal?: string; generated_at?: string;
 }
-export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null }
+export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
+  idle_minutes?: number; max_dispatch_per_day?: number; window?: string }
+export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null; config?: PmConfig }
 
 export interface LoopNode { key: string; label?: string; kind?: "fixed" | "policy"; instruction: string }
 export interface LoopMap {
@@ -123,6 +125,7 @@ export const api = {
   // PM/CTO: cached briefing (no LLM) vs a fresh report (one model turn).
   pmPlan: () => req<PmData>("GET", "/pm/plan"),
   pmReport: (goal?: string, model?: string) => req<PmBrief>("POST", "/pm/report", { goal, model }),
+  pmConfig: (patch: Record<string, unknown>) => req<PmConfig>("POST", "/pm/config", patch),
   automation: () => req<Record<string, unknown>>("GET", "/automation"),
 
   // Phase 2 section lists

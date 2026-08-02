@@ -32,6 +32,11 @@ PM_DEFAULTS = {
     "idle_minutes": 20,         # you must be away this long before the PM acts
     "replan_minutes": 120,      # re-run the PM plan (LLM) at most this often
     "max_dispatch_per_day": 3,  # cap on autonomous dispatches/day (quota guard)
+    # escalation ladder (LangChain ambient-agents / Horvitz mixed-initiative):
+    #   "notify" = only refresh the plan, change nothing (advise-only)
+    #   "ask"    = also file backlog cards (reversible), but never auto-dispatch
+    #   "act"    = also dispatch within the WIP/quota gates (merge/accept stay gated)
+    "autonomy": "act",
 }
 
 
@@ -352,15 +357,24 @@ def _tick():
     if len(day["dispatched"]) >= pm.get("max_dispatch_per_day", 3):
         return                                       # daily dispatch cap
 
+    auto = pm.get("autonomy", "act")
     # REPLAN (LLM) only when the plan is stale - keeps quota for real work.
+    # Escalation ladder: "notify" refreshes the plan but touches nothing; "ask"/
+    # "act" also file the backlog cards (reversible).
     last = st.get("last_plan_ts", 0)
     if time.time() - last >= pm.get("replan_minutes", 120) * 60:
         try:
-            make_plan(actor="pm")
+            if auto == "notify":
+                brief()                        # advise-only: artifact, no board change
+            else:
+                make_plan(actor="pm")          # file backlog cards
             st = _loopstate(); st["last_plan_ts"] = time.time(); _save_loopstate(st)
             day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
         except Exception as e:
             print("PM replan error:", e)
+
+    if auto != "act":
+        return                                 # notify/ask never auto-dispatch
 
     # ACT (cheap): dispatch the next un-started backlog card in an allowed repo,
     # priority-first. Reversible + WIP-gated; merge/accept stay at the gate.
