@@ -310,8 +310,8 @@ class H(BaseHTTPRequestHandler):
             # presence signal for the idle-time worker. POSTs only: a GET can
             # be the board's auto-refresh in a forgotten browser tab, but a
             # POST is a human doing something - steering, filing, configuring.
-            import nightshift
-            nightshift.touch()
+            import pm
+            pm.touch()
         return u
 
     def _send_cookie(self, code, body, sid=None, clear=False):
@@ -726,17 +726,17 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(events.settings()))
-            if p == "/nightshift":
-                import nightshift
+            if p == "/nightshift":   # kept as an alias; the PM loop is the system now
+                import pm
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(nightshift.status()))
+                return self._send(200, json.dumps(pm.status()))
             if p == "/automation":
                 # everything about the auto-working machinery in one place: the
                 # night shift (is it on, repos, limits, tonight's plan), the policy
                 # (auto-dispatch/accept), and the build-loop state machine + where
                 # it currently sits - so the UI can expose "what is the harness doing".
-                import events, nightshift, os as _os, sys as _sys
+                import events, pm, os as _os, sys as _sys
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 s = events.settings(); pol = s.get("policy") or {}
@@ -759,10 +759,10 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     current = [{"state": "?", "action": "loop_state: %s" % str(e)[:120]}]
                 return self._send(200, json.dumps({
-                    "nightshift": nightshift.status(),
+                    "nightshift": pm.status(),   # alias key: the PM loop's status
                     "policy": {k: pol.get(k) for k in ("auto_dispatch_modes", "auto_dispatch_priority",
                               "auto_accept_green", "chat_admin_roles", "chat_configure_roles")},
-                    "repos": (s.get("nightshift") or {}).get("repos") or [],
+                    "repos": (s.get("pm") or {}).get("repos") or [],
                     "default_repo": s.get("default_repo"),
                     "loop_states": [{"state": st, "desc": d} for st, d in loop_states],
                     "loop_current": current,
@@ -1146,15 +1146,13 @@ class H(BaseHTTPRequestHandler):
                     return self._send(400, json.dumps({"error": "token required"}))
                 events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
                 return self._send(200, json.dumps({"registered": True}))
-            if p == "/nightshift/plan":
-                # "plan before I go to sleep": scouts run in the background,
-                # the plan lands in daemon/nightshift/plan-<day>.json.
-                import nightshift
+            if p == "/nightshift/plan":   # alias: run the PM plan now, file its cards
+                import pm
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
-                _bg("nightshift:plan", lambda: nightshift.make_plan(actor=user["name"]))
+                _bg("pm:plan", lambda: pm.make_plan(actor=user["name"]))
                 return self._send(200, json.dumps({"planning": True,
-                                                   "repos": nightshift.cfg()["repos"]}))
+                                                   "repos": pm._pm().get("repos") or []}))
             # --- orchestrator control ---
             if p == "/tracks/new":
                 import sessions, events
@@ -1366,8 +1364,8 @@ def serve(port=8140):
     processes.start_chain_poller()
     connectors.start_scheduler()
     relay_client.start(port)   # reverse tunnel for mobile - idle until settings.relay is set
-    import nightshift
-    nightshift.start()         # idle-time worker - no-op until settings.nightshift.enabled
+    import pm
+    pm.start_loop()            # the single proactive loop - no-op until settings.pm.loop_enabled
     print("HelmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     try:
         ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
