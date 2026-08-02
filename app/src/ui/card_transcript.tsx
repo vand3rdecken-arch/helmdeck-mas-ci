@@ -58,7 +58,7 @@ function Collapsible({ text, style, color }: {
   const { clamped, overflow } = clampText(text);
   return (
     <View>
-      <Text selectable style={style}>{open || !overflow ? text : clamped + (overflow ? "\n…" : "")}</Text>
+      <Text style={style}>{open || !overflow ? text : clamped + (overflow ? "\n…" : "")}</Text>
       {overflow ? (
         <Pressable hitSlop={6} onPress={() => setOpen((o) => !o)} style={{ marginTop: 4 }}>
           <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{open ? "Weniger anzeigen" : "Mehr anzeigen"}</Text>

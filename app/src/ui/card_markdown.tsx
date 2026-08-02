@@ -102,7 +102,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
         </Pressable>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 10 }}>
-        <Text selectable style={{ fontFamily: MONO, fontSize: 12, color: t.txtPrimary, lineHeight: 18 }}>{nodes}</Text>
+        <Text style={{ fontFamily: MONO, fontSize: 12, color: t.txtPrimary, lineHeight: 18 }}>{nodes}</Text>
       </ScrollView>
     </View>
   );
