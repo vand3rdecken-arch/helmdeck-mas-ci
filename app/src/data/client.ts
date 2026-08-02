@@ -73,6 +73,9 @@ export interface PmBrief {
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }
 export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null; config?: PmConfig }
+export interface ConsolidationStream { name: string; title: string; members: string[]; why?: string }
+export interface ConsolidationRepo { repo: string; streams: ConsolidationStream[] }
+export interface ConsolidationProposal { repos: ConsolidationRepo[]; generated_at?: string }
 
 export interface LoopNode { key: string; label?: string; kind?: "fixed" | "policy"; instruction: string }
 export interface LoopMap {
@@ -126,6 +129,9 @@ export const api = {
   pmPlan: () => req<PmData>("GET", "/pm/plan"),
   pmReport: (goal?: string, model?: string) => req<PmBrief>("POST", "/pm/report", { goal, model }),
   pmConfig: (patch: Record<string, unknown>) => req<PmConfig>("POST", "/pm/config", patch),
+  pmConsolidatePropose: () => req<ConsolidationProposal>("POST", "/pm/consolidate", { mode: "propose" }),
+  pmConsolidateApply: (repos: ConsolidationRepo[]) =>
+    req<{ created: { id: string }[]; archived: string[] }>("POST", "/pm/consolidate", { mode: "apply", repos }),
   automation: () => req<Record<string, unknown>>("GET", "/automation"),
 
   // Phase 2 section lists

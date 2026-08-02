@@ -1002,6 +1002,20 @@ class H(BaseHTTPRequestHandler):
                     merged["autonomy"] = "act"
                 events.save_settings({"pm": merged})
                 return self._send(200, json.dumps(pm._pm()))
+            if p == "/pm/consolidate":
+                # Phase 3: propose (read-only) or apply (non-destructive) the
+                # roll-up of many small cards into 2-5 stream cards per repo.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import pm
+                try:
+                    if body.get("mode") == "apply":
+                        return self._send(200, json.dumps(pm.apply_consolidation(
+                            body.get("repos") or [], actor=user["name"])))
+                    return self._send(200, json.dumps(pm.consolidation_proposal(
+                        model=body.get("model", ""))))
+                except Exception as e:
+                    return self._send(500, json.dumps({"error": str(e)[:300]}))
             if p == "/pm/report":
                 # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
                 # token/cost projection grounded in real spend. One model turn.
