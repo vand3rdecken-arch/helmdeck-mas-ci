@@ -802,6 +802,16 @@ def _pending_context(t):
     gr = t.get("gate_report")
     if t.get("gate_failed") and gr:
         parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
+    # Thrash guard: if this card has failed its gate several times in a row, a
+    # naive rewrite-and-retry keeps burning the budget (SageRoute's rewrite/retest
+    # trap). Tell the worker to stop rewriting and change approach - break the loop.
+    import events, turnopts
+    fails = events.consecutive_gate_fails(t["id"])
+    if fails >= turnopts.ESCALATE_TURNS:
+        parts.append("This card has FAILED its quality gate %d times in a row. Do "
+                     "NOT just rewrite and resubmit - that pattern has not worked. "
+                     "Step back: re-examine the assumption behind the fix, or say "
+                     "plainly what is blocking you and stop." % fails)
     rep = t.get("review_report") or t.get("merge_report")
     if rep and (t.get("merge_kind") == "conflict" or t.get("merge_failed") or t.get("gate_failed")):
         parts.append("Review/merge check reported:\n" + str(rep))
@@ -847,7 +857,8 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # evidence"). An explicit model from the composer still wins.
     cli_model, _ = turnopts.resolve_model(model, text, bool(paths),
         signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns"),
-                 "failed": t.get("status") == "bounced" or bool(t.get("gate_failed"))})
+                 "failed": t.get("status") == "bounced" or bool(t.get("gate_failed")),
+                 "fails": events.consecutive_gate_fails(t["id"])})
     # Hand the worker the daemon-side context it never saw (a merge conflict, a
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
