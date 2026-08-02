@@ -15,6 +15,7 @@ import { useConfig } from "@/data/config";
 import { presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
+import { HealthBanner } from "@/ui/health_banner";
 import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
@@ -24,22 +25,28 @@ import { WebStyles } from "@/ui/webstyles";
 // every screen updates near-instantly. Works over BOTH the sealed relay and
 // direct (unlike SSE, which can't tunnel the relay) — the per-screen
 // refetchInterval is now just a slow safety fallback.
+// Reconnect with EXPONENTIAL backoff (3s→30s, reset on success): a dead relay
+// isn't hammered, a blip recovers in one short pause. Failures land in the
+// health store via client.ts, so the HealthBanner shows them — never silent.
 function useGlobalStream() {
   useEffect(() => {
     let alive = true;
     let v = 0;
+    let delay = 3000;
     (async () => {
       while (alive) {
         try {
           const r = await api.boardWait(v);
           if (!alive) break;
+          delay = 3000;
           if (typeof r?.v === "number") {
             if (r.v !== v) queryClient.invalidateQueries();
             v = r.v;
           }
         } catch {
           if (!alive) break;
-          await new Promise((res) => setTimeout(res, 3000));   // backoff, retry
+          await new Promise((res) => setTimeout(res, delay));
+          delay = Math.min(delay * 2, 30000);
         }
       }
     })();
@@ -103,6 +110,7 @@ export default function RootLayout() {
               <Stack.Screen name="new" options={{ presentation: "modal" }} />
             </Stack>
             <WebStyles />
+            <HealthBanner />
             <CommandPalette />
             <PromptHost />
           </SafeAreaProvider>
