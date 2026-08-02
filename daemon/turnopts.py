@@ -161,7 +161,11 @@ def pick_model(text, has_attach=False, signals=None):
     prio = str(s.get("priority") or "").lower()
     value = float(s.get("value") or 0)
     turns = int(s.get("turns") or 0)
-    failed = bool(s.get("failed"))     # card was bounced / a gate failed last round
+    # `fails` = consecutive gate failures from the append-only event log (real
+    # trailing evidence, via events.consecutive_gate_fails). `failed` stays a
+    # back-compat one-shot flag; either one means "escalate the retry".
+    fails = int(s.get("fails") or 0)
+    failed = bool(s.get("failed")) or fails > 0
     # STRONG tier - structural, stakes, or proven-hard signals (any one):
     #   real work in the prompt (attachment / long / code) OR a high-stakes card
     #   (urgent|high priority, or >= HIGH_VALUE) OR it already FAILED (bounce/gate

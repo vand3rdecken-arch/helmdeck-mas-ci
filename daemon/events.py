@@ -147,6 +147,20 @@ def read_events():
     import db
     return db.events_all()
 
+def consecutive_gate_fails(track, ev=None):
+    """How many times this track's gate has failed in a row, most recent first.
+    The gate history is already append-only in events.jsonl; this reads the
+    trailing run of ok=False gate events and resets on the last ok=True. It is
+    real trajectory evidence (SageRoute's "repeated error class" signal): a
+    single-shot `failed` flag can't tell one bounce from an agent rewriting-and-
+    refailing the same gate five times while burning the budget."""
+    fails = 0
+    for e in sorted((e for e in (ev if ev is not None else read_events())
+                     if e.get("kind") == "gate" and e.get("track") == track),
+                    key=lambda x: x["ts"]):
+        fails = 0 if e.get("ok") else fails + 1
+    return fails
+
 def price_turn(models, usage, cost_usd=None):
     """Dollar cost of one session turn. CLI-reported total wins; else price the
     token counts against the settings table (first matching model substring)."""
