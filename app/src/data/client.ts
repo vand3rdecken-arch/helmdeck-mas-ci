@@ -61,6 +61,17 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
 
 export interface SteerOpts { model?: string; thinking?: string; mode?: string }
 
+export interface PmTask { title: string; card?: string | null; priority?: string; status?: string; est_turns?: number; stream?: string; why?: string }
+export interface PmMilestone { name: string; why?: string; tasks: PmTask[]; est_turns?: number; eta_days?: number; cumulative_eta_days?: number }
+export interface PmBudget { plan?: string; fixed_monthly_eur?: number; cash_to_goal_eur?: number; shadow_eur_to_goal?: number;
+  spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string }
+export interface PmBrief {
+  summary?: string; done_pct?: number; milestones?: PmMilestone[];
+  next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
+  budget?: PmBudget; economics?: Record<string, unknown>; goal?: string; generated_at?: string;
+}
+export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null }
+
 export interface LoopNode { key: string; label?: string; kind?: "fixed" | "policy"; instruction: string }
 export interface LoopMap {
   runtime: { title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] } };
@@ -109,6 +120,9 @@ export const api = {
 
   models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),
   loopMap: () => req<LoopMap>("GET", "/loop/map"),
+  // PM/CTO: cached briefing (no LLM) vs a fresh report (one model turn).
+  pmPlan: () => req<PmData>("GET", "/pm/plan"),
+  pmReport: (goal?: string, model?: string) => req<PmBrief>("POST", "/pm/report", { goal, model }),
   automation: () => req<Record<string, unknown>>("GET", "/automation"),
 
   // Phase 2 section lists
