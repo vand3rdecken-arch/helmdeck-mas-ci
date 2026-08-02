@@ -10,7 +10,7 @@ routing, the thinking-mode directive, and attachment saving. Kept honest:
 - attachments are size/count-capped and written where the agent can read them;
   the prompt references them by path.
 """
-import base64, json, os, re
+import base64, json, os, re, time, urllib.request
 
 # Curated Claude model manifest - same source-of-truth idea as Paseo's
 # CLAUDE_MODEL_MANIFEST (packages/server/.../claude/model-manifest.ts): the
@@ -67,10 +67,79 @@ def _settings_models():
     return out
 
 
+# -- auto-register: live model discovery from Anthropic's /v1/models ----------
+# The `claude` CLI has no list-models command, but the HTTP API does. We reuse
+# the CLI's own OAuth token (~/.claude/.credentials.json) so a NEW model appears
+# in the picker the day Anthropic ships it - no code edit, no rebuild. The static
+# CLAUDE_MODELS manifest degrades to what community tooling (LiteLLM, Aider) uses
+# it for: curated labels/order + an OFFLINE FALLBACK. Cached 24h; any failure
+# (no token, offline, 401) silently falls back to the last cache, then the
+# manifest - the picker is never empty.
+_MODELS_CACHE = os.path.join(os.path.dirname(__file__), "models_cache.json")
+_DISCOVER_TTL = 24 * 3600
+
+
+def _oauth_token():
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    try:
+        d = json.load(open(os.path.join(cfg, ".credentials.json"), encoding="utf-8"))
+        return (d.get("claudeAiOauth") or {}).get("accessToken")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _fetch_models():
+    """Live [{id, display_name}] from Anthropic /v1/models, or None on failure."""
+    tok = _oauth_token()
+    if not tok:
+        return None
+    try:
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/models?limit=1000",
+            headers={"Authorization": "Bearer " + tok,
+                     "anthropic-version": "2023-06-01",
+                     "anthropic-beta": "oauth-2025-04-20"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = json.load(r)
+        out = [{"id": m["id"], "display_name": m.get("display_name") or m["id"]}
+               for m in data.get("data", []) if m.get("id")]
+        return out or None
+    except Exception:
+        return None
+
+
+def _discovered():
+    """Cached live models (24h TTL). Fetches when stale; on failure serves the
+    last good cache; [] if none (then the manifest stands alone)."""
+    now = time.time()
+    try:
+        cache = json.load(open(_MODELS_CACHE, encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = None
+    if cache and (now - cache.get("at", 0)) < _DISCOVER_TTL:
+        return cache.get("models", [])
+    fresh = _fetch_models()
+    if fresh is not None:
+        try:
+            json.dump({"at": now, "models": fresh}, open(_MODELS_CACHE, "w", encoding="utf-8"))
+        except OSError:
+            pass
+        return fresh
+    return (cache or {}).get("models", [])   # stale cache, or [] -> manifest only
+
+
 def list_models():
-    """The manifest + custom settings.json models, deduped (id order preserved)."""
+    """Curated manifest (labels/order/default) + AUTO-DISCOVERED live models +
+    custom settings.json models, deduped (id order preserved). New Anthropic
+    models are appended automatically; the manifest just gives the known ones
+    nice labels and the offline fallback."""
     models = [dict(m) for m in CLAUDE_MODELS]
     ids = {m["id"] for m in models}
+    for m in _discovered():
+        if m["id"] not in ids:
+            ids.add(m["id"])
+            models.append({"id": m["id"], "label": m.get("display_name") or m["id"],
+                           "desc": "auto-discovered"})
     for m in _settings_models():
         if m["id"] not in ids:
             ids.add(m["id"]); models.append(m)
