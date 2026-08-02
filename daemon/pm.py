@@ -161,6 +161,28 @@ def latest_plan():
         return None
 
 
+def _memory(prev, econ):
+    """The PM's memory: its previous plan + a hard calibration signal (turns
+    actually spent since, and progress) so it self-corrects instead of guessing
+    fresh each time. Empty on the first ever plan."""
+    if not prev:
+        return ""
+    lines = ["\n\nYOUR PREVIOUS PLAN (%s) - MEMORY. Compare against it: call out what "
+             "SLIPPED or was mis-estimated, and CALIBRATE this plan's est_turns from "
+             "what actually happened (don't just re-guess):" % prev.get("generated_at", "?")]
+    lines.append("  prev done_pct: %s" % prev.get("done_pct"))
+    pe = (prev.get("economics") or {}).get("turns_to_date")
+    if pe is not None:
+        lines.append("  turns actually spent SINCE that plan: %d" % max(0, (econ.get("turns_to_date", 0) or 0) - pe))
+    pb = prev.get("budget") or {}
+    if pb.get("est_turns_to_goal") is not None:
+        lines.append("  you then estimated %s turns / ~%s days to goal - was that on track?"
+                     % (pb.get("est_turns_to_goal"), pb.get("eta_days")))
+    for m in (prev.get("milestones") or [])[:6]:
+        lines.append("  - %s: was %s turns, eta ~%sd" % (m.get("name"), m.get("est_turns"), m.get("eta_days")))
+    return "\n".join(lines)
+
+
 def brief(goal=None, model=""):
     """The PM/CTO report: milestones with timelines, next actions, budget grounded
     in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
@@ -169,12 +191,14 @@ def brief(goal=None, model=""):
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
     econ = economics()
+    prev = latest_plan()      # MEMORY: read the last plan BEFORE we overwrite it
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
     prompt = (_role()
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
+              + _memory(prev, econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
 
