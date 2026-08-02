@@ -61,6 +61,14 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
 
 export interface SteerOpts { model?: string; thinking?: string; mode?: string }
 
+export interface LoopNode { key: string; label?: string; kind?: "fixed" | "policy"; instruction: string }
+export interface LoopMap {
+  runtime: { title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] } };
+  build: { title: string; states: { key: string; instruction: string }[] };
+  laws: { key: string; text: string }[];
+  charter: string;
+}
+
 export const api = {
   get: <T,>(path: string) => req<T>("GET", path),
   post: <T,>(path: string, body?: unknown, signal?: AbortSignal) => req<T>("POST", path, body, signal),
@@ -100,6 +108,7 @@ export const api = {
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string }>("GET", "/chat/history"),
 
   models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),
+  loopMap: () => req<LoopMap>("GET", "/loop/map"),
   automation: () => req<Record<string, unknown>>("GET", "/automation"),
 
   // Phase 2 section lists

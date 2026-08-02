@@ -585,6 +585,55 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(
                     {"core": charter.CHARTER,
                      "house_rules": (events.settings().get("policy") or {}).get("house_rules", "")}))
+            if p == "/loop/map":
+                # the machine, made legible: the lane/gate flow + the build loop +
+                # the fixed harness laws behind them (charter is code, shown read-only).
+                import charter, events
+                ll = (events.settings().get("policy") or {}).get("lane_labels") or {}
+                lab = lambda k, d: ll.get(k, d)
+                return self._send(200, json.dumps({
+                    "runtime": {
+                        "title": "Wie Arbeit fließt",
+                        "lanes": [
+                            {"key": "backlog", "label": lab("backlog", "Backlog"), "kind": "policy",
+                             "instruction": "Karten warten. Ab der Priorität in policy.auto_dispatch_priority "
+                                            "starten sie sich selbst — aber nur im WIP-Rahmen (capacity.wip_limit)."},
+                            {"key": "working", "label": lab("working", "In Arbeit"), "kind": "fixed",
+                             "instruction": "Ein Agent arbeitet in einem ISOLIERTEN git-worktree (Harness-Gesetz: "
+                                            "worktree-Isolation). Jeder Turn ist gemessen (Kosten/Token → Audit)."},
+                            {"key": "review", "label": lab("review", "Review"), "kind": "fixed",
+                             "instruction": "Beim Eintritt läuft der Quality-Gate (gate-before-review, FIX). "
+                                            "Rot → die Karte wird zurückgebounced mit sichtbarem Grund."},
+                            {"key": "done", "label": lab("done", "Fertig"), "kind": "policy",
+                             "instruction": "Merge + Deploy. Nichts merged sich selbst — außer policy.auto_accept_green "
+                                            "ist an. Der Prozess-Chain rückt einen Schritt vor."},
+                        ],
+                        "gate": {"label": "Quality Gate", "kind": "fixed", "between": ["working", "review"],
+                                 "instruction": "Gate-before-review ist ein fixes Harness-Gesetz: kein Review ohne "
+                                                "bestandenen Gate. Das Ergebnis geht append-only ins Audit-Log."},
+                    },
+                    "build": {
+                        "title": "Wie Änderungen gebaut werden",
+                        "states": [
+                            {"key": "ALIGN", "instruction": "Arbeit begonnen, aber kein Workorder — Request + passt es zu den Gesetzen/Charter?"},
+                            {"key": "ANALYZE", "instruction": "Architektur-Impact + Debt-Delta (Abkürzungen in debt.py registrieren)."},
+                            {"key": "EXECUTE", "instruction": "Checks rot → bauen/fixen bis grün (compile, types, design-lint)."},
+                            {"key": "TEST", "instruction": "Grün heißt nicht fertig: das echte Ding prüfen (UI = beurteilt, nicht nur gerendert) + adversarial testen."},
+                            {"key": "CLEAN", "instruction": "Hygiene: Debt-Register wohlgeformt, keine Secrets getrackt."},
+                            {"key": "COMMIT", "instruction": "Loop komplett & ruhig → Commit vorschlagen; Workorder archiviert."},
+                        ],
+                    },
+                    "laws": [
+                        {"key": "auth", "text": "Auth ist fix — nie geschwächt."},
+                        {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben."},
+                        {"key": "gate", "text": "Gate-before-review — Qualität vor jeder Abnahme."},
+                        {"key": "economics", "text": "Gemessene Ökonomie — jeder Turn hat Kosten/Value."},
+                        {"key": "worktree", "text": "Worktree-Isolation — jeder Agent in eigenem Checkout."},
+                        {"key": "drivers", "text": "Driver-Kommandos sind fix — was Agents ausführen ist nicht frei konfigurierbar."},
+                        {"key": "charter", "text": "Charter-Kern ist Code — nicht per Chat editierbar."},
+                    ],
+                    "charter": charter.CHARTER,
+                }))
             if p == "/models":
                 import turnopts
                 return self._send(200, json.dumps(turnopts.list_models()))
