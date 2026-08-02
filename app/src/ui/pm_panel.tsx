@@ -2,9 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
 
-import { api, type PmBrief, type PmData } from "@/data/client";
+import { api, type PmBrief, type PmConfig, type PmData } from "@/data/client";
 import { useTheme } from "@/theme";
 
 const cur = (n?: number) => "€" + (n ?? 0).toFixed(2);
@@ -38,9 +38,18 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
     onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
   });
 
+  const setCfg = useMutation({
+    mutationFn: (patch: Partial<PmConfig>) => api.pmConfig(patch),
+    onSuccess: (c: PmConfig) => qc.setQueryData<PmData>(["pmPlan"], (o) => o ? { ...o, config: c } : o),
+    onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
+  });
+
   const plan = data?.plan;
   const curGoal = data?.goal ?? "";
   const b = plan?.budget;
+  const cfg = data?.config;
+  const AUTO: { k: "notify" | "ask" | "act"; label: string }[] = [
+    { k: "notify", label: "Melden" }, { k: "ask", label: "Fragen" }, { k: "act", label: "Handeln" }];
 
   const card = { backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16 } as const;
 
@@ -89,6 +98,35 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
           <Ionicons name="pencil" size={13} color={t.txtTertiary} />
         </Pressable>
       )}
+
+      {/* proactive control: on/off + escalation ladder (notify/ask/act) */}
+      <View style={{ backgroundColor: t.surface2, borderRadius: 10, padding: 10, gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Ionicons name="pulse" size={15} color={cfg?.loop_enabled ? t.ok : t.txtTertiary} />
+          <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600", flex: 1 }}>Proaktiv arbeiten</Text>
+          <Switch value={!!cfg?.loop_enabled} onValueChange={(v) => setCfg.mutate({ loop_enabled: v })}
+            trackColor={{ true: t.accent, false: t.borderStrong }} />
+        </View>
+        {cfg?.loop_enabled ? (
+          <View style={{ flexDirection: "row", backgroundColor: t.surface1, borderRadius: 8, padding: 3 }}>
+            {AUTO.map((a) => {
+              const on = (cfg?.autonomy ?? "act") === a.k;
+              return (
+                <Pressable key={a.k} onPress={() => setCfg.mutate({ autonomy: a.k })}
+                  style={{ flex: 1, paddingVertical: 7, borderRadius: 6, alignItems: "center", backgroundColor: on ? t.accent : "transparent" }}>
+                  <Text style={{ color: on ? "#fff" : t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{a.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>
+          {!cfg?.loop_enabled ? "Aus — der PM plant nur auf Anfrage."
+            : cfg?.autonomy === "notify" ? "Melden — plant still, ändert nichts; meldet nur Blocker."
+            : cfg?.autonomy === "ask" ? "Fragen — legt Karten an (reversibel), startet nichts ohne dich."
+            : "Handeln — legt an & startet im WIP/Quota-Rahmen, während du weg bist. Merge/Accept bleiben bei dir."}
+        </Text>
+      </View>
 
       {isLoading && !plan ? <ActivityIndicator color={t.accent} /> : null}
 

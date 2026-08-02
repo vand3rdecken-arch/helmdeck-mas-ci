@@ -650,7 +650,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import pm
                 return self._send(200, json.dumps({"goal": pm.get_goal(),
-                    "economics": pm.economics(), "plan": pm.latest_plan()}))
+                    "economics": pm.economics(), "plan": pm.latest_plan(), "config": pm._pm()}))
             if p == "/sessions/claude":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -985,6 +985,23 @@ class H(BaseHTTPRequestHandler):
                         actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if p == "/pm/config":
+                # owner sets the proactive-loop policy (on/off, autonomy ladder,
+                # repos allowlist, timing/caps). Whitelisted keys only.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import pm, events
+                allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
+                           "replan_minutes", "max_dispatch_per_day", "goal", "plan",
+                           "monthly_eur", "quota_turns_per_day")
+                merged = dict(events.settings().get("pm") or {})
+                for k in allowed:
+                    if k in body:
+                        merged[k] = body[k]
+                if merged.get("autonomy") not in ("notify", "ask", "act"):
+                    merged["autonomy"] = "act"
+                events.save_settings({"pm": merged})
+                return self._send(200, json.dumps(pm._pm()))
             if p == "/pm/report":
                 # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
                 # token/cost projection grounded in real spend. One model turn.
