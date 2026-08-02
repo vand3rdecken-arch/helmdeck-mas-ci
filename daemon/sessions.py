@@ -846,7 +846,8 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # already dragged on escalates to the strong model (cheap "escalate on
     # evidence"). An explicit model from the composer still wins.
     cli_model, _ = turnopts.resolve_model(model, text, bool(paths),
-        signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns")})
+        signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns"),
+                 "failed": t.get("status") == "bounced" or bool(t.get("gate_failed"))})
     # Hand the worker the daemon-side context it never saw (a merge conflict, a
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
