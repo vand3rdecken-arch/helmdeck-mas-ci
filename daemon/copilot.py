@@ -24,6 +24,7 @@ Reply with ONLY JSON:
    {"type": "delete", "card": "<id or fragment>"}  - permanently remove a card (admin: policy.chat_admin_roles)
    {"type": "archive", "card": "<id or fragment>"}  - archive a card out of the board (admin: policy.chat_admin_roles)
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
+   {"type": "resolve_blocker", "card": "<id or fragment>"}  - a card stuck on Review whose "merge conflict" is really an uncommitted (dirty) tree in the shared repo checkout ("your local changes ... would be overwritten"), NOT a <<<<<< conflict. Parks that uncommitted work on a wip-* branch (NOTHING lost, non-destructive) and re-runs the review check. The sandboxed card worker cannot do this - it's board-level, which is why the worker hands it up. Use ONLY when the owner explicitly asks to unblock / park / resolve the blocker (admin: policy.chat_admin_roles).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
@@ -197,6 +198,20 @@ def _run_action(a, actor, role="operator"):
         threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
                          kwargs={"actor": actor, "source": "board copilot"}, daemon=True).start()
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "resolve_blocker":
+        # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
+        # the shared repo checkout - a cross-cutting fix the sandboxed worker
+        # can't do. Park the dirty work on a wip-* branch (nothing lost) + retry.
+        # Structural + touches the shared checkout -> admin gate, like move.
+        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        if role not in admin_roles:
+            return "resolve_blocker denied: needs role %s (you are '%s')" % ("/".join(admin_roles), role)
+        t = _find_card(a.get("card", ""))
+        if t is None:
+            return "resolve_blocker failed: no card matches '%s'" % a.get("card")
+        if isinstance(t, list):
+            return "resolve_blocker failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
+        return sessions.park_and_retry_merge(t["id"], actor=actor)
     if kind == "build_integration":
         import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]
