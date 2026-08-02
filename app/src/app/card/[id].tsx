@@ -231,8 +231,13 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
     setPending((p) => p.filter((e) => !seen.has((e.text ?? "").trim())));
   }, [feed]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // the rendered feed = server story + optimistic echoes + copilot conversation
-  const steps = useMemo<TStep[]>(() => [...feed, ...pending, ...agentMsgs], [feed, pending, agentMsgs]);
+  // the rendered feed = the worker story + optimistic echoes, then (clearly
+  // separated) the board-Agent conversation. A divider makes the Worker/Agent
+  // boundary unmistakable instead of the two streams blurring together.
+  const steps = useMemo<TStep[]>(() => [
+    ...feed, ...pending,
+    ...(agentMsgs.length ? [{ kind: "agentbreak", ts: "" } as TStep, ...agentMsgs] : []),
+  ], [feed, pending, agentMsgs]);
 
   // auto-pin to newest — but only when the reader is already near the bottom, so
   // scrolling up to read isn't yanked back down.
@@ -247,12 +252,12 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   const hhmm = () => new Date().toTimeString().slice(0, 5);
   async function handleSend(text: string, o: SteerOpts) {
     if (agentMode) {
-      setAgentMsgs((m) => [...m, { role: "user", kind: "text", text, ts: hhmm() }]);
+      setAgentMsgs((m) => [...m, { role: "user", kind: "text", text, ts: hhmm(), agent: true }]);
       try {
         const r = await api.chat(text, { ...o, card: k.id });
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.reply || r.error || "(keine Antwort)", ts: hhmm() }]);
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.reply || r.error || "(keine Antwort)", ts: hhmm(), agent: true }]);
       } catch {
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: "(Agent-Senden fehlgeschlagen)", ts: hhmm() }]);
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: "(Agent-Senden fehlgeschlagen)", ts: hhmm(), agent: true }]);
       }
       // the board agent may have moved/deleted/archived cards — refresh the board
       await qc.invalidateQueries({ queryKey: ["tracks"] });
@@ -284,21 +289,27 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         ) : null}
       </View>
 
-      {/* card chat mode toggle: steer the worker, or talk to the board copilot */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 8 }}>
-        {([["worker", "Worker"], ["agent", "Agent"]] as const).map(([id, label]) => {
-          const on = (id === "agent") === agentMode;
-          return (
-            <Pressable key={id} onPress={() => setAgentMode(id === "agent")}
-              style={{ backgroundColor: on ? t.accent + "26" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
-                borderWidth: 1, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5 }}>
-              <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12 }}>{label}</Text>
-            </Pressable>
-          );
-        })}
-        <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }}>
-          {agentMode ? "freier Board-Agent — verschieben/löschen/alles (berechtigt)"
-            : (k.session_id ? "steuert den Worker — Kontext läuft weiter" : "steuert den Worker — noch nicht gestartet")}
+      {/* mode switch: steer the card's Worker, or talk to the board Agent. One
+          segmented control (not two loose buttons) so the active target is
+          unmistakable; Agent is violet, Worker is accent, matching the chat. */}
+      <View style={{ paddingHorizontal: 12, paddingTop: 8, gap: 6 }}>
+        <View style={{ flexDirection: "row", backgroundColor: t.surface2, borderRadius: 9, borderWidth: 1, borderColor: t.borderSubtle, padding: 2 }}>
+          {([["worker", "Worker", "construct-outline"], ["agent", "Agent", "sparkles-outline"]] as const).map(([id, label, icon]) => {
+            const on = (id === "agent") === agentMode;
+            const col = id === "agent" ? t.accent2 : t.accent;
+            return (
+              <Pressable key={id} onPress={() => setAgentMode(id === "agent")}
+                style={{ flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5,
+                  backgroundColor: on ? col + "22" : "transparent", borderRadius: 7, paddingVertical: 7 }}>
+                <Ionicons name={icon} size={14} color={on ? col : t.txtTertiary} />
+                <Text style={{ color: on ? col : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "700" : "500" }}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text numberOfLines={1} style={{ color: agentMode ? t.accent2 : t.txtTertiary, fontSize: 11 }}>
+          {agentMode ? "⌘ Board-Agent — verschieben/löschen/steuern (getrennt vom Worker)"
+            : (k.session_id ? "Worker — Kontext läuft weiter" : "Worker — noch nicht gestartet")}
         </Text>
       </View>
 
