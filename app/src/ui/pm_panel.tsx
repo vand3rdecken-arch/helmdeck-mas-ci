@@ -44,6 +44,31 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
     onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
   });
 
+  const [proposing, setProposing] = useState(false);
+  async function consolidate() {
+    setProposing(true);
+    try {
+      const p = await api.pmConsolidatePropose();
+      const repos = p.repos || [];
+      const nStreams = repos.reduce((a, r) => a + (r.streams?.length || 0), 0);
+      const nCards = repos.reduce((a, r) => a + (r.streams || []).reduce((c, s) => c + (s.members?.length || 0), 0), 0);
+      if (!nStreams) { Alert.alert("Konsolidieren", "Kein sinnvolles Roll-up gefunden."); return; }
+      const lines = repos.flatMap((r) => (r.streams || []).map((s) => `• ${s.title} (${s.members?.length || 0})`)).join("\n");
+      Alert.alert(`${nStreams} Stream-Karten aus ${nCards} Tickets`,
+        lines + "\n\nDie Tickets werden reversibel archiviert und in die Stream-Karten gerollt.",
+        [{ text: "Abbrechen", style: "cancel" },
+         { text: "Anwenden", onPress: async () => {
+             try {
+               const res = await api.pmConsolidateApply(repos);
+               qc.invalidateQueries({ queryKey: ["tracks"] });
+               qc.invalidateQueries({ queryKey: ["pmPlan"] });
+               Alert.alert("Konsolidiert", `${res.created?.length || 0} Stream-Karten, ${res.archived?.length || 0} Tickets archiviert.`);
+             } catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+           } }]);
+    } catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    finally { setProposing(false); }
+  }
+
   const plan = data?.plan;
   const curGoal = data?.goal ?? "";
   const b = plan?.budget;
@@ -204,6 +229,14 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
               ))}
             </View>
           ) : null}
+
+          {/* Phase 3: consolidate the ticket-ocean into stream cards (gated) */}
+          <Pressable onPress={consolidate} disabled={proposing}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+              backgroundColor: t.surface2, borderRadius: 10, paddingVertical: 10, marginTop: 2 }}>
+            {proposing ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="git-merge-outline" size={15} color={t.txtSecondary} />}
+            <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{proposing ? "Schlägt vor…" : "Karten konsolidieren"}</Text>
+          </Pressable>
 
           {plan.generated_at ? <Text style={{ color: t.txtTertiary, fontSize: 10, textAlign: "right" }}>Stand: {plan.generated_at}</Text> : null}
         </>

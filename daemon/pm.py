@@ -236,6 +236,66 @@ def plan_items(b=None):
     return items, b
 
 
+# -- Phase 3: stream-card consolidation (propose -> confirm -> merge) ---------
+# Fewer, bigger, context-rich cards: 2-5 durable STREAM cards per repo
+# (backend / ux / feature / infra / docs), so a card is a long-lived chat with
+# context - not a pile of micro-tickets that fragment it. The PM PROPOSES the
+# mapping (read-only); applying it is explicit and NON-DESTRUCTIVE (members are
+# reversibly archived, their gist rolled into the stream card).
+
+_CONSOLIDATE_ASK = """The board has too many small cards, which fragments context.
+Propose consolidating the BACKLOG cards into 2-5 durable STREAM cards PER REPO
+(streams: backend / ux / feature-<x> / infra / docs). For each stream give a
+clear title and the EXISTING backlog card ids that roll into it. Leave
+working/review/done cards alone. Prefer FEW streams. Reply with ONLY JSON:
+{"repos":[{"repo":"<abs repo path>","streams":[
+  {"name":"backend","title":"<stream card title>","members":["<card id>", ...],"why":"<one line>"}]}]}"""
+
+
+def consolidation_proposal(model=""):
+    """Read-only: the PM's proposed roll-up of backlog cards into stream cards."""
+    import copilot, turnopts
+    cli_model, _ = turnopts.resolve_model(model or "auto", "consolidate the board",
+                                          False, signals={"priority": "high"})
+    prompt = _CONSOLIDATE_ASK + "\n\nBOARD SNAPSHOT:\n" + copilot._snapshot()
+    out = _ask(prompt, cli_model)
+    return {"repos": out.get("repos", []) if isinstance(out, dict) else [],
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+
+
+def apply_consolidation(repos, actor="owner"):
+    """Non-destructive: create each stream card, then REVERSIBLY archive its
+    members (their titles roll into the stream card's description). Returns what
+    changed so the caller can show/undo it."""
+    import sessions
+    tracks = {t["id"]: t for t in sessions.list_tracks()}
+    created, archived = [], []
+    for rp in repos or []:
+        repo = rp.get("repo") or ""
+        if not repo:
+            continue
+        for st in rp.get("streams", []):
+            members = [m for m in (st.get("members") or []) if m in tracks]
+            if not members:
+                continue
+            rolled = "\n".join("- " + (tracks[m].get("task") or "") for m in members)
+            body = ("Stream-Karte (%s) - kontextreich, langlebig.\n\nEingerollte Tickets:\n%s"
+                    % (st.get("name") or "stream", rolled))
+            slug = re.sub(r"[^a-z0-9]+", "-", (st.get("name") or "stream").lower())[:20]
+            nt = sessions.new_track(repo, "stream-" + slug,
+                                    st.get("title") or st.get("name") or "Stream",
+                                    lane="backlog", description=body,
+                                    priority="medium", actor=actor)
+            created.append({"id": nt["id"], "title": nt.get("task"), "members": members})
+            for m in members:
+                try:
+                    sessions.archive_track(m, on=True, actor=actor)
+                    archived.append(m)
+                except Exception:
+                    pass
+    return {"created": created, "archived": archived}
+
+
 # ============================================================================
 # THE SINGLE PROACTIVE LOOP  (this replaced daemon/nightshift.py)
 #
