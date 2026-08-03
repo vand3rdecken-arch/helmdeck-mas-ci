@@ -209,6 +209,26 @@ DEBT = [
                "reproduces the manifest. Relates to [single-secret-transport].",
         "order": 10,
     },
+    {
+        "id": "pair-token-no-ttl",
+        "title": "Pairing device-token outlives the 15-min pairing window",
+        "status": "open",
+        "what": "Each /relay/pair click mints a device bearer token with no "
+                "expiry. The single-use PAIR_TTL window (relay_client._admit) "
+                "gates the E2EE pin - the relay path of an unused code dies "
+                "with the window - but the token inside the code stays a live "
+                "credential.",
+        "why_it_bites": "A leaked pairing code that was never used can still "
+                        "authenticate over direct LAN mode ({b,t} style) even "
+                        "after the window expired. Tokens are at least visible "
+                        "and revocable per user in Settings -> users.",
+        "trigger": "owner generates codes and abandons them; a code lands in "
+                   "chat history/screenshots and someone on the LAN finds it",
+        "fix": "Give pairing-issued tokens a TTL and auto-revoke unused ones "
+               "when the window closes, or bind the token to the pinned "
+               "device pub at admission time.",
+        "order": 11,
+    },
 ]
 
 def list_debt():

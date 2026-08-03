@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
@@ -39,7 +40,28 @@ export default function MoreTab() {
   const [tok, setTok] = useState(token);
   const [pair, setPair] = useState("");
   const [pairMsg, setPairMsg] = useState("");
+  const [pairBusy, setPairBusy] = useState(false);
   const paired = relayMode();
+
+  // Apply the code, then PROVE the connection with a real round-trip before
+  // claiming success — a parsed-but-dead code (expired window, relay down,
+  // wrong keys) must say what's wrong, not "Gekoppelt" (no silent fallback).
+  async function doPair() {
+    const applied = applyPairing(pair);
+    if (!applied.ok) { setPairMsg(applied.reason); return; }
+    setPairBusy(true); setPairMsg("Verbindung prüfen…");
+    try {
+      await api.me();
+      setPairMsg(applied.mode === "relay"
+        ? "Gekoppelt ✓ – verschlüsselt über Relay, Desktop erreichbar."
+        : "Verbunden ✓ – direkt (LAN), Desktop erreichbar.");
+      setPair("");
+    } catch (e) {
+      setPairMsg(e instanceof AuthRequired
+        ? "Code übernommen, aber der Token wurde abgelehnt – am Desktop neuen Code erzeugen."
+        : `Code übernommen, aber der Desktop antwortet nicht: ${String((e as Error).message)}`);
+    } finally { setPairBusy(false); }
+  }
 
   const field = { color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle,
     borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13 } as const;
@@ -61,11 +83,11 @@ export default function MoreTab() {
           <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" multiline
             placeholder="Pairing-Code / Link" placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
           <View style={{ height: 8 }} />
-          <Pressable onPress={() => { const ok = applyPairing(pair); setPairMsg(ok ? "Gekoppelt – verschlüsselt über Relay." : "Kein gültiger Code."); if (ok) setPair(""); }}
-            style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center" }}>
-            <Text style={{ color: "#fff", fontWeight: "600" }}>Pair</Text>
+          <Pressable onPress={doPair} disabled={pairBusy}
+            style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center", opacity: pairBusy ? 0.6 : 1 }}>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{pairBusy ? "Prüfe…" : "Pair"}</Text>
           </Pressable>
-          {pairMsg ? <Text style={{ color: pairMsg.startsWith("Gekoppelt") ? t.ok : t.danger, fontSize: 12, marginTop: 6 }}>{pairMsg}</Text> : null}
+          {pairMsg ? <Text style={{ color: /✓/.test(pairMsg) ? t.ok : pairMsg.startsWith("Verbindung") ? t.txtSecondary : t.danger, fontSize: 12, marginTop: 6 }}>{pairMsg}</Text> : null}
         </Panel>
         <Panel>
           <SectionLabel text="direct lan (optional)" />

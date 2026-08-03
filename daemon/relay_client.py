@@ -1,38 +1,87 @@
 # -*- coding: utf-8 -*-
 """Daemon side of the ZERO-KNOWLEDGE relay (see relay/relay.py + e2ee.py). When
-paired (settings.relay = {url, room, sk, phone_pub?}), this dials OUT to the
+paired (settings.relay = {url, room, sk, phone_pubs?}), this dials OUT to the
 relay, pulls end-to-end-ENCRYPTED phone frames, decrypts them, runs the inner
 request against the local daemon, and pushes an encrypted response. The relay
 never sees plaintext; no inbound port is opened on the daemon.
 
-Trust model: the phone's public key is pinned on first contact per room (TOFU)
-and a later mismatch is refused, so a leaked room id can't be hijacked to talk
-to your daemon."""
+Trust model - DETERMINISTIC pairing lifecycle (not blind TOFU): a device key is
+served only if it is already pinned, or if it arrives inside the single-use
+window opened by issuing a pairing code (PAIR_TTL). Outside that window an
+unknown key gets a sealed, explicit refusal - so a leaked room id can't be
+hijacked, and a failed pairing is VISIBLE on the phone instead of looking like
+"daemon offline". Unpair rotates room + keypair, killing every code ever
+issued."""
 import json, threading, time, urllib.request, urllib.error
 
 _thread = None
 _stop = False
 _pin_lock = threading.Lock()
 
+# One pairing code admits ONE new device, and only this many seconds after the
+# owner issued it. Both bounds make the code lifecycle deterministic: the
+# newest code works once, old codes/windows are dead, nothing pins by accident.
+PAIR_TTL = 900
+MAX_DEVICES = 8
+
+
+def _pubs_of(rel):
+    """Pinned device keys; merges the legacy single phone_pub field (older
+    installs) so an existing pairing survives the upgrade. Index 0 stays the
+    push target (notify.py seals FCM payloads to phone_pub)."""
+    legacy = rel.get("phone_pub", "") or ""
+    pubs = [p for p in (rel.get("phone_pubs") or []) if p]
+    if legacy and legacy not in pubs:
+        pubs.insert(0, legacy)
+    return pubs
+
 
 def _cfg():
     import events
     r = events.settings().get("relay") or {}
     return ((r.get("url", "") or "").rstrip("/"), r.get("room", "") or "",
-            r.get("sk", "") or "", r.get("phone_pub", "") or "")
+            r.get("sk", "") or "", _pubs_of(r))
 
 
-def _pin_phone(pub):
-    """Store the phone's public key on first contact; return the pinned key."""
+def _admit(pub):
+    """Decide whether to serve this device key. Returns (True, "") for a pinned
+    key; pins a NEW key only inside the open pairing window (consuming it);
+    otherwise returns (False, reason) - the reason is sealed back to the caller
+    so pairing failures surface in the app instead of hanging."""
     with _pin_lock:
         import events
-        cur = (events.settings().get("relay") or {}).get("phone_pub", "") or ""
-        if not cur:
-            rel = dict(events.settings().get("relay") or {})
-            rel["phone_pub"] = pub
+        rel = dict(events.settings().get("relay") or {})
+        pubs = _pubs_of(rel)
+        if pub in pubs:
+            return True, ""
+        pend = rel.get("pair_pending") or {}
+        try:
+            expires = float(pend.get("expires") or 0)
+        except (TypeError, ValueError):
+            expires = 0
+        if not expires:
+            return False, ("this device is not paired with the workspace - "
+                           "generate a pairing code on the desktop "
+                           "(Settings -> Mobile app -> Pair phone)")
+        if time.time() > expires:
+            rel["pair_pending"] = None
             events.save_settings({"relay": rel})
-            return pub
-        return cur
+            return False, ("pairing code expired (valid %d minutes, single "
+                           "use) - generate a fresh one on the desktop"
+                           % (PAIR_TTL // 60))
+        if len(pubs) >= MAX_DEVICES:
+            return False, ("device limit reached (%d) - unpair on the desktop "
+                           "first" % MAX_DEVICES)
+        pubs.append(pub)
+        rel["phone_pubs"] = pubs
+        rel["phone_pub"] = pubs[0]      # push target + legacy mirror
+        rel["pair_pending"] = None      # single use: this code is spent
+        events.save_settings({"relay": rel})
+        try:
+            events.log("relay", "device paired (%d device(s) pinned)" % len(pubs))
+        except Exception:
+            pass
+        return True, ""
 
 
 def _local(port, inner):
@@ -59,18 +108,15 @@ def _serve_one(relay, room, sk_b64, port, frame):
     import e2ee
     fid = frame.get("id")
     pub = frame.get("pub", "")
-    pinned = _pin_phone(pub)
-    if pub != pinned:
-        # Another device already owns this room (trust-on-first-use). Say so
-        # instead of dropping the frame: silence looks exactly like "daemon
-        # offline" and the caller just hangs until its timeout. The reply is
-        # sealed to the caller's own key, so it leaks nothing to anyone else.
+    ok, reason = _admit(pub)
+    if not ok:
+        # Refused (not pinned, window closed/expired). Say so instead of
+        # dropping the frame: silence looks exactly like "daemon offline" and
+        # the caller just hangs until its timeout. The reply is sealed to the
+        # caller's own key, so it leaks nothing to anyone else.
         try:
-            import e2ee
             sk = e2ee.import_sec(sk_b64)
-            body = json.dumps({"error": "another phone is paired with this "
-                                        "workspace - unpair it first "
-                                        "(Settings -> Mobile app -> Unpair)"})
+            body = json.dumps({"error": reason})
             resp = {"status": 409, "headers": {"Content-Type": "application/json"},
                     "body": body, "id": fid}
             resp["cipher"] = e2ee.seal_b64(json.dumps(
@@ -124,6 +170,11 @@ def _loop(port):
     # while the desktop looks perfectly healthy ("no daemon connected for this
     # room"). Same rule as the night shift: the background worker outlives its
     # own errors. It only exits when the daemon is shutting down (_stop).
+    # Reconnect with EXPONENTIAL backoff (3s..60s): a dead relay is retried
+    # gently instead of hammered every 3s, and recovery resets the delay so a
+    # blip costs one short pause. Logged on first failure, then sparsely
+    # (every 10th) to keep the event log readable; recovery is logged once.
+    delay, errs = 3, 0
     while not _stop:
         try:
             relay, room, sk, _ = _cfg()
@@ -131,16 +182,27 @@ def _loop(port):
                 time.sleep(5)
                 continue
             frame = _pull(relay, room)
+            if errs:
+                try:
+                    import events
+                    events.log("relay", "bridge reconnected after %d failed attempt(s)" % errs)
+                except Exception:
+                    pass
+            errs, delay = 0, 3
             if frame:
                 threading.Thread(target=_serve_one, args=(relay, room, sk, port, frame),
                                  daemon=True).start()
         except Exception as e:
-            try:
-                import events
-                events.log("relay", "bridge loop error (retrying): %s" % str(e)[:200])
-            except Exception:
-                pass
-            time.sleep(3)
+            errs += 1
+            if errs == 1 or errs % 10 == 0:
+                try:
+                    import events
+                    events.log("relay", "bridge unreachable (attempt %d, retry in %ds): %s"
+                               % (errs, delay, str(e)[:200]))
+                except Exception:
+                    pass
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
 
 
 def start(port=8140):
@@ -152,35 +214,44 @@ def start(port=8140):
 
 
 def pairing_payload():
-    """Ensure this daemon has a relay keypair + room id, and return the payload
-    the phone needs to pair: relay url, room id, and the daemon's public key.
+    """Ensure this daemon has a relay keypair + room id, open the single-use
+    pairing window (PAIR_TTL), and return the payload the phone needs to pair:
+    relay url, room id, the daemon's public key and the window length. Already
+    pinned devices are untouched - the old behaviour (clearing the pin at
+    issuance) silently unpaired the current phone the moment the owner
+    GENERATED a code, then re-pinned whichever device spoke first.
     (The phone also needs a device token for daemon auth - added by the caller.)"""
     import os, base64, events, e2ee
     rel = dict(events.settings().get("relay") or {})
-    changed = False
     if not rel.get("sk"):
         sk, _ = e2ee.generate_keypair()
         rel["sk"] = e2ee.export_sec(sk)
-        changed = True
     if not rel.get("room"):
         rel["room"] = base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip("=")
-        changed = True
-    # Issuing a new pairing code means "let a phone in" - keeping the previously
-    # pinned device would silently refuse the very phone the owner is pairing.
-    if rel.get("phone_pub"):
-        rel["phone_pub"] = ""
-        changed = True
-    if changed:
-        events.save_settings({"relay": rel})
+    rel["pair_pending"] = {"expires": time.time() + PAIR_TTL}
+    events.save_settings({"relay": rel})
     sk = e2ee.import_sec(rel["sk"])
     return {"url": rel.get("url", ""), "room": rel["room"],
-            "daemon_pub": e2ee.export_pub(sk.public_key)}
+            "daemon_pub": e2ee.export_pub(sk.public_key),
+            "expires_in": PAIR_TTL}
 
 
 def unpair():
-    """Forget the paired phone (its pinned key), so a new phone can pair."""
-    import events
+    """Revoke mobile access outright: forget every pinned device AND rotate
+    room + keypair, so every pairing code/QR/link ever issued is dead - a
+    deterministic kill-switch, not just "let the next phone pin itself". The
+    push token goes too (it belongs to the unpaired phone)."""
+    import os, base64, events, e2ee
     rel = dict(events.settings().get("relay") or {})
-    rel["phone_pub"] = ""
-    events.save_settings({"relay": rel})
+    sk, _ = e2ee.generate_keypair()
+    rel.update({"sk": e2ee.export_sec(sk),
+                "room": base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip("="),
+                "phone_pub": "", "phone_pubs": [], "pair_pending": None})
+    push = dict(events.settings().get("push") or {})
+    push["fcm_token"] = ""
+    events.save_settings({"relay": rel, "push": push})
+    try:
+        events.log("relay", "unpaired - room + keys rotated, all issued codes revoked")
+    except Exception:
+        pass
     return {"ok": True}
