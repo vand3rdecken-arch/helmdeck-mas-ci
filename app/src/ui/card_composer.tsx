@@ -113,7 +113,7 @@ export function Composer({
       ) : null}
 
       {/* control bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
         contentContainerStyle={{ gap: 6, paddingHorizontal: 8, paddingTop: 8, alignItems: "center" }}>
         <Pressable onPress={() => setPicker(true)} style={toolBtn(model !== "auto")}>
           <Ionicons name="sparkles-outline" size={13} color={model !== "auto" ? t.accent : t.txtSecondary} />

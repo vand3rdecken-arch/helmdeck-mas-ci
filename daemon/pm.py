@@ -161,6 +161,28 @@ def latest_plan():
         return None
 
 
+def _memory(prev, econ):
+    """The PM's memory: its previous plan + a hard calibration signal (turns
+    actually spent since, and progress) so it self-corrects instead of guessing
+    fresh each time. Empty on the first ever plan."""
+    if not prev:
+        return ""
+    lines = ["\n\nYOUR PREVIOUS PLAN (%s) - MEMORY. Compare against it: call out what "
+             "SLIPPED or was mis-estimated, and CALIBRATE this plan's est_turns from "
+             "what actually happened (don't just re-guess):" % prev.get("generated_at", "?")]
+    lines.append("  prev done_pct: %s" % prev.get("done_pct"))
+    pe = (prev.get("economics") or {}).get("turns_to_date")
+    if pe is not None:
+        lines.append("  turns actually spent SINCE that plan: %d" % max(0, (econ.get("turns_to_date", 0) or 0) - pe))
+    pb = prev.get("budget") or {}
+    if pb.get("est_turns_to_goal") is not None:
+        lines.append("  you then estimated %s turns / ~%s days to goal - was that on track?"
+                     % (pb.get("est_turns_to_goal"), pb.get("eta_days")))
+    for m in (prev.get("milestones") or [])[:6]:
+        lines.append("  - %s: was %s turns, eta ~%sd" % (m.get("name"), m.get("est_turns"), m.get("eta_days")))
+    return "\n".join(lines)
+
+
 def brief(goal=None, model=""):
     """The PM/CTO report: milestones with timelines, next actions, budget grounded
     in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
@@ -169,16 +191,20 @@ def brief(goal=None, model=""):
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
     econ = economics()
+    prev = latest_plan()      # MEMORY: read the last plan BEFORE we overwrite it
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
     prompt = (_role()
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
+              + _memory(prev, econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
 
-    # price + time in CODE: LLM judged est_turns; we convert to days & shadow-€.
+    # price + time in CODE: LLM judged est_turns; we convert to days, dates & €.
+    from datetime import datetime, timedelta
+    today = datetime.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")
     pace = _pace(econ)
     cum = 0
     for ms in out.get("milestones", []):
@@ -188,6 +214,9 @@ def brief(goal=None, model=""):
         ms["est_turns"] = tt
         ms["eta_days"] = _days(tt, pace)
         ms["cumulative_eta_days"] = _days(cum, pace)
+        # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
+        # the milestone reads "by Thu" not just "~3d".
+        ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
     est_turns = cum
     is_max = econ["plan"] == "max"
     out["budget"] = {
@@ -231,6 +260,9 @@ def plan_items(b=None):
                           "description": desc,
                           "priority": t.get("priority", "medium"),
                           "repo": t.get("repo") or default_repo})
+            # due dates are NOT set here - the OVERVIEW loop state builds the
+            # Timeline from the plan, so that capability lives in the loop, not
+            # in this filing code (see _build_overview).
     items = [it for it in items if it["title"]]
     items.sort(key=lambda x: order.get(x.get("priority"), 2))
     return items, b
@@ -400,74 +432,362 @@ def make_plan(actor="owner"):
     st["last_plan"] = time.strftime("%Y-%m-%d %H:%M")
     st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     _save_loopstate(st)
+    _activity("planned", ("Geplant: %d neue Aufgabe(n) angelegt." % filed) if filed
+              else "Plan geprüft – nichts Neues nötig.")
+    if filed:                                   # only speak up when something changed
+        summary = (brief.get("summary") or "").strip()
+        _say(("Kurzes Update: ich hab %d neue Aufgabe(n) fuer dein Ziel eingeplant." % filed)
+             + (("\n\n" + summary[:350]) if summary else ""))
     print("PM plan: %d Kandidaten, %d neue Karten" % (len(items), filed))
     return {"filed": filed, "candidates": len(items), "brief": brief}
 
 
-def _tick():
-    """One proactive beat. Cheap: dispatches the next queued card while you are
-    away; only occasionally (>= replan_minutes) does it spend a turn to REPLAN."""
-    pm = _pm()
-    if not pm.get("loop_enabled") or not _in_window(pm) or not _board_idle(pm):
-        return
-    st = _loopstate()
-    day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
-    if day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600:
-        return                                       # flat-plan quota pause
-    if len(day["dispatched"]) >= pm.get("max_dispatch_per_day", 3):
-        return                                       # daily dispatch cap
+def _notify_deliveries(day, tracks, st, pm):
+    """Essential-only, rate-limited PUSH (the 'notify' channel): when a card the
+    PM started DELIVERS (needs your review) or BOUNCES, ping ONCE. Silence
+    otherwise - this is the proactive-not-nagging bit. NOT presence-gated: a
+    delivery matters whether or not you're idle.
 
+    A bounce is only escalated to you AFTER the coordinator has tried to delegate
+    the fix (id in day['resolved']) - or immediately if autonomy isn't 'act', when
+    the PM won't auto-resolve. This keeps the PM 'delegate first, escalate second'."""
     auto = pm.get("autonomy", "act")
-    # REPLAN (LLM) only when the plan is stale - keeps quota for real work.
-    # Escalation ladder: "notify" refreshes the plan but touches nothing; "ask"/
-    # "act" also file the backlog cards (reversible).
-    last = st.get("last_plan_ts", 0)
-    if time.time() - last >= pm.get("replan_minutes", 120) * 60:
-        try:
-            if auto == "notify":
-                brief()                        # advise-only: artifact, no board change
-            else:
-                make_plan(actor="pm")          # file backlog cards
-            st = _loopstate(); st["last_plan_ts"] = time.time(); _save_loopstate(st)
-            day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
-        except Exception as e:
-            print("PM replan error:", e)
+    resolved = set(day.get("resolved", []))
+    try:
+        import notify
+        if not notify.fcm_ready():
+            return
+    except Exception:
+        return
+    notified = set(day.setdefault("notified", []))
+    disp = set(day.get("dispatched", []))
+    changed = False
+    for t in tracks:
+        if t["id"] not in disp or t["id"] in notified:
+            continue
+        s = t.get("status")
+        task = (t.get("task") or "").replace("\n", " ")[:60]
+        if s == "needs_you":
+            notify.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
+            _say("Fertig: '%s' ist geliefert und wartet auf deine Abnahme (oder Bounce). Sag mir Bescheid oder tipp die Karte an." % task)
+            notified.add(t["id"]); changed = True
+        elif s == "bounced" and (auto != "act" or t["id"] in resolved):
+            # escalate only once the auto-delegate already ran (or won't run)
+            notify.push_fcm("PM: haengt", "'%s' - haengt trotz Fix-Versuch, schau mal." % task, t["id"])
+            _say("Achtung: '%s' haengt weiter (auch nach meinem Fix-Versuch). Ich brauch dich - "
+                 "neu starten oder anders angehen?" % task)
+            notified.add(t["id"]); changed = True
+    if changed:
+        day["notified"] = list(notified)
+        _save_loopstate(st)
 
-    if auto != "act":
-        return                                 # notify/ask never auto-dispatch
 
-    # ACT (cheap): dispatch the next un-started backlog card in an allowed repo,
-    # priority-first. Reversible + WIP-gated; merge/accept stay at the gate.
-    import sessions, events
+def _backlog(tracks, pm, day):
+    """Dispatch candidates: un-started backlog cards in ALLOWED repos, prio-first."""
     allow = {os.path.normcase(r) for r in (pm.get("repos") or [])}
     rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
-    wip = sum(1 for t in sessions.list_tracks() if t.get("lane") == "working")
-    if wip >= events.settings()["capacity"]["wip_limit"]:
-        return                                       # respect WIP headroom
-    todo = sorted(
-        (t for t in sessions.list_tracks()
-         if t.get("lane") == "backlog" and t["id"] not in day["dispatched"]
+    return sorted(
+        (t for t in tracks
+         if t.get("lane") == "backlog" and t["id"] not in day.get("dispatched", [])
          and t.get("mode") not in ("human", "teach", "cowork")
          and (not allow or os.path.normcase(t.get("repo") or "") in allow)),
         key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
+
+
+def _bounced_to_resolve(tracks, pm, day):
+    """Bounced cards in ALLOWED repos the PM hasn't already tried to auto-resolve
+    today. The coordinator DELEGATES the fix (real conflict -> the card's own
+    worker; gate bounce -> steer the worker with the reason) before escalating to
+    you. Needs an existing worktree - there must be an agent to delegate to."""
+    allow = {os.path.normcase(r) for r in (pm.get("repos") or [])}
+    tried = set(day.get("resolved", []))
+    return [t for t in tracks
+            if t.get("status") == "bounced" and t["id"] not in tried
+            and t.get("mode") not in ("human", "teach", "cowork")
+            and t.get("worktree")
+            and (not allow or os.path.normcase(t.get("repo") or "") in allow)]
+
+
+def _resolve_next(pm, st, day):
+    """DELEGATE the fix for one bounced card - the PM's coordinator role. A real
+    merge conflict goes to the card's worker via dispatch_conflict_resolution; any
+    other bounce (gate red, error) steers the worker with the concrete reason.
+    Each card is attempted ONCE per day (day['resolved']); a second bounce then
+    escalates to you via _notify_deliveries."""
+    import sessions
+    todo = _bounced_to_resolve(sessions.list_tracks(), pm, day)
     if not todo:
         return
     t = todo[0]
-    day["dispatched"].append(t["id"])
+    day.setdefault("resolved", []).append(t["id"]); _save_loopstate(st)
+    task = (t.get("task") or "")[:60]
+    if t.get("merge_kind") == "conflict":
+        sessions.dispatch_conflict_resolution(t["id"], actor="pm")
+        _activity("resolve", "Merge-Konflikt an Worker delegiert: " + task, card=t["id"])
+        _say("Ich hab den Merge-Konflikt in '%s' an den Worker delegiert - er loest die "
+             "Markierungen (nur editieren), dann landet die Karte." % task)
+    else:
+        reason = (" | ".join(t.get("gate_report") or []) or t.get("last_error") or "Review rot")[:500]
+        instr = ("Die Karte ist beim Review gebounct. Grund: %s. Behebe die Ursache im Code "
+                 "(nur editieren, kein git) und reiche dann neu ein." % reason)
+        import threading
+        threading.Thread(target=sessions.steer, args=(t["id"], instr),
+                         kwargs={"actor": "pm", "source": "pm-resolve"}, daemon=True).start()
+        _activity("resolve", "Gate-Bounce an Worker delegiert: " + task, card=t["id"])
+        _say("'%s' ist am Review gebounct - ich hab den Worker beauftragt, es zu fixen und "
+             "neu einzureichen." % task)
+
+
+def _launch_checkin(pm, st):
+    """Proactive coordinator question, ONCE per goal: surface the human-only
+    launch prerequisites for the store deploy so the owner isn't the late
+    bottleneck. The PM drives everything else itself. Re-asks only if the goal
+    text changes (a new north star)."""
+    goal = pm.get("goal") or ""
+    if not any(k in goal.lower() for k in ("launch", "store", "android", "play", "deploy")):
+        return
+    if st.get("launch_asked") == goal:
+        return
+    st["launch_asked"] = goal
     _save_loopstate(st)
-    print("PM dispatch: %s (%s)" % (t.get("task", "")[:60], t.get("repo")))
+    _say("Koordinations-Check fuers Play-Store-Deploy (highest prio: in den Store) - das "
+         "brauche nur ich VON DIR, den Rest treibe ich selbst als Karten: "
+         "1) Google-Play-Console-Account angelegt? 2) Upload-Keystore / Play App Signing "
+         "bereit? 3) Datenschutz-URL + Data-Safety-Angaben? Sag mir kurz, was schon steht - "
+         "fuer den Rest lege ich Karten an und arbeite sie ab.")
+
+
+def _overview_stale(plan, tracks):
+    """True if the plan's roadmap isn't reflected on the board yet: a card that
+    belongs to a dated milestone still lacks that due date (Timeline), or the
+    dashboard layout isn't set."""
+    import events
+    if not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles"):
+        return True
+    byid = {t["id"]: t for t in tracks}
+    by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
+    seen = set()
+    for ms in (plan.get("milestones") or []):
+        d = ms.get("target_date")
+        if not d:
+            continue
+        for task in ms.get("tasks") or []:
+            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
+            if not c or c["id"] in seen:
+                continue
+            seen.add(c["id"])                      # a card belongs to its FIRST milestone
+            if c.get("lane") != "done" and (c.get("due") or "") != d:
+                return True
+    return False
+
+
+def _build_overview(plan):
+    """OVERVIEW state action: build Dashboard + Timeline FROM THE PLAN.
+    - TIMELINE: give each board card its milestone's target date (due) -> the
+      board Timeline lays out the roadmap.
+    - DASHBOARD: ensure a sensible economics layout exists.
+    Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
+    import sessions, events
+    all_t = sessions.list_tracks()
+    byid = {t["id"]: t for t in all_t}
+    by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
+    seen = set()
+    n = 0
+    for ms in (plan.get("milestones") or []):
+        d = ms.get("target_date")
+        if not d:
+            continue
+        for task in ms.get("tasks") or []:
+            # match by the plan's card id first (reliable), then by title
+            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
+            if not c or c["id"] in seen:
+                continue
+            seen.add(c["id"])                      # a card belongs to its FIRST milestone
+            if c.get("lane") != "done" and (c.get("due") or "") != d:
+                try:
+                    sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
+                except Exception:
+                    pass
+    pol = dict(events.settings().get("policy") or {})
+    if not (pol.get("dashboard") or {}).get("tiles"):
+        pol["dashboard"] = {"tiles": ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"],
+                            "panels": ["capacity", "gates", "work"]}
+        events.save_settings({"policy": pol})
+    _activity("overview", "Uebersicht gebaut: %d Termine gesetzt (Timeline) + Dashboard-Layout." % n)
+    return n
+
+
+# The proactive loop is now a STATE MACHINE - same idea as tools/loop_state.py:
+# the STATE is computed from REALITY (board + plan + config) each tick and drives
+# the next action. A new capability = a new STATE (e.g. OVERVIEW), not new code.
+def _state():
+    """(STATE, plain reason). First actionable state wins. Surfaced to you so you
+    can SEE what the PM is doing / about to do. WAIT = wants to act but you're here."""
+    pm = _pm()
+    if not pm.get("loop_enabled"):
+        return ("OFF", "Proaktiv ist aus.")
+    import sessions
+    tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
+    st = _loopstate()
+    day = st.get(_today(), {})
+    disp = set(day.get("dispatched", []))
+    notif = set(day.get("notified", []))
+    if any(t["id"] in disp and t["id"] not in notif and t.get("status") in ("needs_you", "bounced") for t in tracks):
+        return ("NOTIFY", "Fertige/haengende Karten melden.")
+    acting = _in_window(pm) and _board_idle(pm)          # you're away -> may act
+    if time.time() - st.get("last_plan_ts", 0) >= pm.get("replan_minutes", 120) * 60:
+        return ("PLAN", "Plan ist veraltet - neu planen.") if acting else ("WAIT", "Plan veraltet, aber du bist da.")
+    plan = latest_plan()
+    if plan and _overview_stale(plan, tracks):
+        return ("OVERVIEW", "Dashboard + Timeline aus dem Plan bauen.") if acting else ("WAIT", "Uebersicht veraltet, aber du bist da.")
+    # COORDINATOR: unblock what's stuck (delegate the fix) BEFORE starting new work
+    if pm.get("autonomy", "act") == "act" and _bounced_to_resolve(tracks, pm, day):
+        return ("RESOLVE", "Gebouncte Karte an den Worker delegieren.") if acting else ("WAIT", "Bounce zu fixen, aber du bist da.")
+    paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
+    if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
+        return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
+    return ("IDLE", "Alles im Griff - nichts zu tun.")
+
+
+def _dispatch_next(pm, st, day):
+    import sessions, events
+    if sum(1 for t in sessions.list_tracks() if t.get("lane") == "working") >= events.settings()["capacity"]["wip_limit"]:
+        return                                           # respect WIP headroom
+    todo = _backlog(sessions.list_tracks(), pm, day)
+    if not todo:
+        return
+    t = todo[0]
+    day["dispatched"].append(t["id"]); _save_loopstate(st)
+    _activity("started", "Gestartet: " + (t.get("task", "")[:70]), card=t["id"])
     t = sessions.move_lane(t["id"], "working", actor="pm")
     if _limit_hit(t):
         day["paused_at"] = time.time(); _save_loopstate(st)
-        print("PM: usage limit - pausing ~5h until the quota window resets")
+        _activity("blocked", "Quota erschoepft - pausiere ~5 Stunden.")
+
+
+def _tick():
+    """One beat: COMMUNICATE (push, always) then run the current STATE's action -
+    acting states only while you are away. The STATE is the loop now."""
+    pm = _pm()
+    if not pm.get("loop_enabled"):
+        return
+    st = _loopstate()
+    day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
+    import sessions
+    _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
+    _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
+    if not _in_window(pm) or not _board_idle(pm):
+        return                                           # acting states need you away
+    state, _reason = _state()
+    auto = pm.get("autonomy", "act")
+    try:
+        if state == "PLAN":
+            brief() if auto == "notify" else make_plan(actor="pm")
+            st = _loopstate(); st["last_plan_ts"] = time.time(); _save_loopstate(st)
+        elif state == "OVERVIEW":
+            _build_overview(latest_plan() or {})         # build Dashboard + Timeline
+        elif state == "RESOLVE" and auto == "act":
+            _resolve_next(pm, st, day)                   # coordinator: delegate the fix
+        elif state == "DISPATCH" and auto == "act":
+            _dispatch_next(pm, st, day)
+    except Exception as e:
+        print("PM tick error [%s]:" % state, e)
 
 
 def status():
     """Surfaced by /pm/* + /nightshift (alias) + /automation."""
     st = _loopstate()
-    return {"config": _pm(), "plan": latest_plan(),
+    sname, sreason = _state()
+    return {"config": _pm(), "plan": latest_plan(), "state": sname, "state_reason": sreason,
             "today": st.get(_today(), {"dispatched": [], "paused_at": 0}),
             "last_plan": st.get("last_plan")}
+
+
+# -- the communication layer: plain-language "what am I doing" (DAU) ----------
+# Computed from the REAL board (not LLM-guessed) so it's reliable, and phrased
+# for a non-technical owner - no card ids, no jargon. This is how the PM keeps
+# you in the loop without nagging: a status + an append-only activity feed.
+_ACTIVITY = os.path.join(PLANS, "activity.jsonl")
+
+
+def _activity(kind, msg, card=None):
+    """Append one plain-language line the PM 'said' (planned/started/blocked)."""
+    try:
+        os.makedirs(PLANS, exist_ok=True)
+        with open(_ACTIVITY, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "kind": kind,
+                                "msg": msg, "card": card}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _say(text):
+    """The PM SPEAKS TO YOU: post a message into the owner's board chat so the
+    chat MOVES on its own - real proactive communication, not just a silent feed.
+    You can reply there and steer it. (cls 'pm' = a PM-authored message.)"""
+    try:
+        import auth, copilot
+        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
+        if not owner:
+            return
+        copilot._append_log(owner, [{"cls": "pm", "text": text, "ts": time.strftime("%H:%M")}])
+    except Exception:
+        pass
+
+
+def _read_activity(n=20):
+    try:
+        with open(_ACTIVITY, encoding="utf-8") as f:
+            lines = f.readlines()[-n:]
+        return [json.loads(x) for x in lines if x.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def activity():
+    """The DAU narrative: what's running now, what's next, what needs you, and
+    the blockers - all from live card state, plus the recent activity feed."""
+    import sessions
+    tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
+    st = _loopstate()
+
+    def lbl(t):
+        return (t.get("task") or "").replace("\n", " ")[:70]
+
+    now = []
+    for t in tracks:
+        if t.get("lane") != "working":
+            continue
+        s = t.get("status")
+        if s == "running":
+            now.append("arbeitet gerade an: " + lbl(t))
+        elif s == "needs_you":
+            now.append("fertig, wartet auf deine Abnahme: " + lbl(t))
+        elif s == "bounced":
+            now.append("hängt (Timeout/Fehler): " + lbl(t))
+        else:
+            now.append(lbl(t))
+    needs = [lbl(t) for t in tracks if t.get("status") in ("needs_you", "bounced", "submitted")]
+    blockers = [lbl(t) for t in tracks if t.get("status") == "bounced"]
+    rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    todo = sorted((t for t in tracks if t.get("lane") == "backlog"
+                   and t.get("mode") not in ("human", "teach", "cowork")),
+                  key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
+    sname, sreason = _state()
+    return {
+        "loop_enabled": _pm().get("loop_enabled"),
+        "autonomy": _pm().get("autonomy"),
+        "state": sname,
+        "state_reason": sreason,
+        "now": now,
+        "next": lbl(todo[0]) if todo else None,
+        "next_count": len(todo),
+        "needs_you": needs,
+        "blockers": blockers,
+        "quota_paused": bool(st.get(_today(), {}).get("paused_at")),
+        "last_plan": st.get("last_plan"),
+        "feed": _read_activity(20),
+    }
 
 
 def start_loop():

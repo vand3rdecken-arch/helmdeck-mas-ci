@@ -519,6 +519,53 @@ def _pull_main_into_branch(t):
     return "markers:" + (files or _err[:150])
 
 
+def dispatch_conflict_resolution(card_id, actor="board copilot"):
+    """Hand a REAL <<<<<<< merge conflict to the card's OWN worker as an edit-only
+    task - the chat itself never edits code, but it can dispatch the card's agent.
+    Sets up (or reuses) conflict markers in the worker's worktree via
+    _pull_main_into_branch, then steers the worker to merge the markers by plain
+    EDITING (never a git merge). On the next move to done, _autocommit completes
+    the merge and the gate runs. Returns a human-readable status string."""
+    t = _find(_load(), card_id)
+    if not t:
+        return "no card '%s'" % card_id
+    wt = t.get("worktree")
+    if not wt or not os.path.isdir(wt):
+        return "%s has no worktree - dispatch/start the card first" % t.get("branch", card_id)
+    # already mid-merge with markers (from a prior Done attempt)? reuse it - a
+    # second `git merge` would abort with "already merging". Otherwise set one up.
+    merging = _git_try(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] == 0
+    if not merging:
+        res = _pull_main_into_branch(t)
+        if res == "resolved":
+            return ("%s: main merged cleanly into the branch - no markers, nothing to "
+                    "resolve. Move it to done to land it." % t.get("branch", card_id))
+        if res.startswith("error"):
+            return "%s: could not set up resolution (%s)" % (t.get("branch", card_id), res[6:])
+    files = (_git_try(wt, "diff", "--name-only", "--diff-filter=U")[1] or "").strip()
+    if not files:
+        if merging:
+            # mid-merge but nothing unmerged -> the markers are already resolved and
+            # staged; the harness finalizes on the next move to done.
+            return ("%s: Konflikte sind bereits aufgeloest (keine Markierungen mehr offen). "
+                    "Schieb die Karte auf Done - der Harness committet + merged dann selbst."
+                    % t.get("branch", card_id))
+        return ("%s: no conflict markers in the worktree - if it still won't merge it is "
+                "likely a dirty shared checkout (use resolve_blocker)." % t.get("branch", card_id))
+    flist = ", ".join(files.split("\n"))
+    instr = ("Es stehen Git-Konfliktmarkierungen (<<<<<<< / ======= / >>>>>>>) in diesen "
+             "Dateien: %s. Oeffne jede Datei, fuehre beide Seiten inhaltlich sinnvoll "
+             "zusammen und ENTFERNE alle Markierungen restlos. Nur editieren - kein git, "
+             "kein merge oder commit. Wenn keine Markierung mehr uebrig ist, bist du fertig; "
+             "der Harness committet und merged dann selbst." % flist)
+    import threading
+    threading.Thread(target=steer, args=(t["id"], instr),
+                     kwargs={"actor": actor, "source": "conflict-resolution"}, daemon=True).start()
+    return ("Konfliktaufloesung an %s geschickt (Dateien: %s). Der Worker merged die "
+            "Markierungen im Hintergrund - danach die Karte auf Done schieben, dann "
+            "committet+merged der Harness." % (t.get("branch", card_id), flist))
+
+
 def _classify_merge(t):
     """DRY-RUN of the merge - what a Done WOULD do, without landing anything. Used
     by Review to rest the card on the board with a verdict. Returns (kind, message):

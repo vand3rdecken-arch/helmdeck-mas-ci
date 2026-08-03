@@ -12,7 +12,7 @@ import { Platform } from "react-native";
 import { queryClient } from "@/data/query";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
-import { presentDecrypted, registerForPush } from "@/data/push";
+import { decryptPush, presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 import { HealthBanner } from "@/ui/health_banner";
@@ -84,10 +84,14 @@ function usePushWiring() {
       const data = n.request.content.data as Record<string, string>;
       if (data?.cipher) presentDecrypted(data);
     });
-    // tap: deep-link to the card
+    // tap: deep-link to the card (or the PM chat if the push has no card). The
+    // track is sealed in the cipher (zero-knowledge), so decrypt on tap to route.
     const resp = Notifications.addNotificationResponseReceivedListener((r) => {
-      const track = (r.notification.request.content.data as { track?: string })?.track;
+      const data = r.notification.request.content.data as Record<string, string>;
+      let track: string | undefined = data?.track;      // local notif already carries it
+      if (!track && data?.cipher) track = decryptPush(data)?.track;   // system notif: decrypt
       if (track) router.push(`/card/${track}`);
+      else router.push("/(tabs)/dashboard" as never);   // PM status w/o a card -> the PM summary/overview
     });
     return () => { recv.remove(); resp.remove(); };
   }, [router]);

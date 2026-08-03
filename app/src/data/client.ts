@@ -106,7 +106,7 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
 export interface SteerOpts { model?: string; thinking?: string; mode?: string }
 
 export interface PmTask { title: string; card?: string | null; priority?: string; status?: string; est_turns?: number; stream?: string; why?: string }
-export interface PmMilestone { name: string; why?: string; tasks: PmTask[]; est_turns?: number; eta_days?: number; cumulative_eta_days?: number }
+export interface PmMilestone { name: string; why?: string; tasks: PmTask[]; est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string }
 export interface PmBudget { plan?: string; fixed_monthly_eur?: number; cash_to_goal_eur?: number; shadow_eur_to_goal?: number;
   spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string }
 export interface PmBrief {
@@ -116,7 +116,13 @@ export interface PmBrief {
 }
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }
-export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null; config?: PmConfig }
+export interface PmActivity {
+  loop_enabled?: boolean; autonomy?: string; state?: string; state_reason?: string;
+  now: string[]; next?: string | null; next_count?: number;
+  needs_you: string[]; blockers: string[]; quota_paused?: boolean; last_plan?: string;
+  feed: { ts: string; kind: string; msg: string; card?: string | null }[];
+}
+export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null; config?: PmConfig; activity?: PmActivity }
 export interface ConsolidationStream { name: string; title: string; members: string[]; why?: string }
 export interface ConsolidationRepo { repo: string; streams: ConsolidationStream[] }
 export interface ConsolidationProposal { repos: ConsolidationRepo[]; generated_at?: string }

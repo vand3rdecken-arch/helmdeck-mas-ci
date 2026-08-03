@@ -8,6 +8,22 @@ import { api, type PmBrief, type PmConfig, type PmData } from "@/data/client";
 import { useTheme } from "@/theme";
 
 const cur = (n?: number) => "€" + (n ?? 0).toFixed(2);
+const _WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const fmtDate = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  return `${_WD[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+function ActLine({ icon, color, text, t }: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string; t: ReturnType<typeof useTheme> }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      <Ionicons name={icon} size={14} color={color} style={{ marginTop: 1 }} />
+      <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1, lineHeight: 18 }}>{text}</Text>
+    </View>
+  );
+}
 
 function Chip({ icon, label, t }: { icon: keyof typeof Ionicons.glyphMap; label: string; t: ReturnType<typeof useTheme> }) {
   return (
@@ -73,6 +89,7 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
   const curGoal = data?.goal ?? "";
   const b = plan?.budget;
   const cfg = data?.config;
+  const act = data?.activity;
   const AUTO: { k: "notify" | "ask" | "act"; label: string }[] = [
     { k: "notify", label: "Melden" }, { k: "ask", label: "Fragen" }, { k: "act", label: "Handeln" }];
 
@@ -96,6 +113,73 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
           <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{report.isPending ? "Plant…" : "Aktualisieren"}</Text>
         </Pressable>
       </View>
+
+      {/* LAUNCH metric — the north star up top, so it's unmistakable the PM is
+          driving the goal you set (the Android store deploy), on the dashboard. */}
+      {plan && (plan.milestones?.length || plan.done_pct != null) ? (() => {
+        const ms = plan.milestones ?? [];
+        const launchMs = ms.find((m) => /store|play|launch|release|deploy/i.test((m.name || "") + " " + (m.tasks || []).map((x) => x.title).join(" "))) ?? ms[ms.length - 1];
+        const launchDate = launchMs?.target_date;
+        const days = launchDate ? Math.ceil((new Date(launchDate + "T00:00:00").getTime() - Date.now()) / 86400000) : undefined;
+        const pct = Math.max(0, Math.min(100, plan.done_pct ?? 0));
+        return (
+          <View style={{ backgroundColor: t.accent + "18", borderColor: t.accent + "55", borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="rocket" size={16} color={t.accent} />
+              <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "800", flex: 1 }}>Launch: Android Play Store</Text>
+              {days != null ? (
+                <Text style={{ color: t.accent, fontSize: 12, fontWeight: "800" }}>
+                  {days > 0 ? `noch ${days} Tg` : days === 0 ? "heute" : `${-days} Tg drüber`}
+                </Text>
+              ) : null}
+            </View>
+            <View style={{ height: 7, borderRadius: 4, backgroundColor: t.surface2, overflow: "hidden" }}>
+              <View style={{ width: `${pct}%`, height: 7, backgroundColor: t.accent }} />
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{pct}% zum Launch{launchDate ? ` · Ziel ${fmtDate(launchDate)}` : ""}</Text>
+              {act?.next ? <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 11, flex: 1, textAlign: "right", marginLeft: 8 }}>→ {act.next}</Text> : null}
+            </View>
+          </View>
+        );
+      })() : null}
+
+      {/* what the PM is doing — plain language, from real board state */}
+      {act ? (
+        <View style={{ backgroundColor: t.surface2, borderRadius: 10, padding: 11, gap: 7 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700", flex: 1 }}>Was der PM gerade macht</Text>
+            {act.loop_enabled && act.state && act.state !== "IDLE" ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface1, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: act.state === "WAIT" ? t.warn : t.ai }} />
+                <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{act.state}</Text>
+              </View>
+            ) : null}
+          </View>
+          {act.state_reason && act.state !== "IDLE" && act.state !== "OFF" ? (
+            <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{act.state_reason}</Text>
+          ) : null}
+          {act.now && act.now.length ? act.now.slice(0, 3).map((s, i) => (
+            <ActLine key={i} icon={s.startsWith("hängt") ? "warning" : s.startsWith("fertig") ? "checkmark-circle" : "construct"}
+              color={s.startsWith("hängt") ? t.danger : s.startsWith("fertig") ? t.ok : t.ai} text={s} t={t} />
+          )) : (
+            <ActLine icon="pause-circle" color={t.txtTertiary}
+              text={act.loop_enabled ? "Gerade läuft nichts." : "Proaktiv ist AUS — unten einschalten, dann arbeitet der PM, wenn du weg bist."} t={t} />
+          )}
+          {act.next ? <ActLine icon="play-forward" color={t.accent2}
+            text={`Als Nächstes: ${act.next}` + ((act.next_count ?? 0) > 1 ? `  (+${(act.next_count ?? 1) - 1} in Warteschlange)` : "")} t={t} /> : null}
+          {act.needs_you && act.needs_you.length ? <ActLine icon="hand-left" color={t.warn}
+            text={`${act.needs_you.length} Sache(n) fertig — warten auf deine Abnahme.`} t={t} /> : null}
+          {act.blockers && act.blockers.length ? <ActLine icon="alert-circle" color={t.danger}
+            text={`Blocker: ${act.blockers[0]}`} t={t} /> : null}
+          {act.quota_paused ? <ActLine icon="time" color={t.warn} text="Quota erschöpft — Pause bis das Kontingent zurückkommt." t={t} /> : null}
+          {act.feed && act.feed.length ? (
+            <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 2 }} numberOfLines={2}>
+              Zuletzt: {act.feed.slice(-2).map((e) => e.msg).join(" · ")}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* goal */}
       {editGoal ? (
@@ -193,7 +277,9 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
                   <View style={{ flex: 1, paddingBottom: 12 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "700", flex: 1 }}>{m.name}</Text>
-                      <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>~{m.cumulative_eta_days ?? m.eta_days}d</Text>
+                      <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
+                        {m.target_date ? `bis ${fmtDate(m.target_date)}` : `~${m.cumulative_eta_days ?? m.eta_days}d`}
+                      </Text>
                     </View>
                     {m.why ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 2 }}>{m.why}</Text> : null}
                     <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 3 }}>{m.tasks?.length ?? 0} Tasks · {m.est_turns ?? 0} Turns</Text>

@@ -12,7 +12,7 @@ DEBT = [
     {
         "id": "expo-cutover-pipeline",
         "title": "Old frontends archived, but build/deploy/loop still point at them",
-        "status": "in_progress",
+        "status": "paid",
         "what": "web/ (Next.js) and apk/ (Kotlin) were moved to archive/ when the "
                 "single Expo app in app/ took over as the frontend for phone, web "
                 "and desktop. But deploy/push_relay.sh still builds+ships the "
@@ -25,14 +25,18 @@ DEBT = [
                         "moved token file - the harness thinks it can ship when it "
                         "cannot.",
         "trigger": "next relay push, next loop_state run, next design gate",
-        "fix": "IN PROGRESS: loop_state.py ARTIFACT_SRC repointed to the Expo "
-               "signed APK (native-only sources; JS ships via OTA deploy/"
-               "push_update.sh) and the BUILD action now points at release.sh / "
-               "push_update.sh - the false BUILD nag is gone. REMAINING: repoint "
-               "design_lint + gen_tokens off web/app/globals.css to app/ tokens; "
-               "retire/rewrite deploy/push_relay.sh (Kotlin APK) in favour of "
-               "release.sh + push_update.sh; add app/eas.json if cloud builds are "
-               "wanted. Delete archive/ only at confirmed production parity.",
+        "fix": "PAID in two passes. 3114f6d: loop_state.py ARTIFACT_SRC repointed "
+               "to the signed Expo APK (native-only sources; JS ships via OTA "
+               "deploy/push_update.sh), BUILD action -> release.sh/push_update.sh. "
+               "This commit: design_lint + selftest retargeted to app/ (theme "
+               "tokens via useTheme(), webstyles.tsx carries the web-shell "
+               "color-scheme rule); gen_tokens.py declared the CANONICAL palette "
+               "source (globals.css is history in archive/); loop_state's tsc "
+               "check + design-mode hint repointed web/ -> app/. push_relay.sh "
+               "had already been rewritten for the Expo APK, app/eas.json and "
+               "the OTA path (push_update.sh, release.sh ota) already existed. "
+               "Still open elsewhere: delete archive/ only at confirmed "
+               "production parity.",
         "order": 0,
     },
     {
