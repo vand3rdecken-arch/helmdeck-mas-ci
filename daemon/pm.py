@@ -489,13 +489,17 @@ def _overview_stale(plan, tracks):
         return True
     byid = {t["id"]: t for t in tracks}
     by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
+    seen = set()
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
         for task in ms.get("tasks") or []:
             c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
-            if c and c.get("lane") != "done" and (c.get("due") or "") != d:
+            if not c or c["id"] in seen:
+                continue
+            seen.add(c["id"])                      # a card belongs to its FIRST milestone
+            if c.get("lane") != "done" and (c.get("due") or "") != d:
                 return True
     return False
 
@@ -510,6 +514,7 @@ def _build_overview(plan):
     all_t = sessions.list_tracks()
     byid = {t["id"]: t for t in all_t}
     by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
+    seen = set()
     n = 0
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
@@ -518,7 +523,10 @@ def _build_overview(plan):
         for task in ms.get("tasks") or []:
             # match by the plan's card id first (reliable), then by title
             c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
-            if c and c.get("lane") != "done" and (c.get("due") or "") != d:
+            if not c or c["id"] in seen:
+                continue
+            seen.add(c["id"])                      # a card belongs to its FIRST milestone
+            if c.get("lane") != "done" and (c.get("due") or "") != d:
                 try:
                     sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
                 except Exception:
