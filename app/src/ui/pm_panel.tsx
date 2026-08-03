@@ -114,6 +114,36 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
         </Pressable>
       </View>
 
+      {/* LAUNCH metric — the north star up top, so it's unmistakable the PM is
+          driving the goal you set (the Android store deploy), on the dashboard. */}
+      {plan && (plan.milestones?.length || plan.done_pct != null) ? (() => {
+        const ms = plan.milestones ?? [];
+        const launchMs = ms.find((m) => /store|play|launch|release|deploy/i.test((m.name || "") + " " + (m.tasks || []).map((x) => x.title).join(" "))) ?? ms[ms.length - 1];
+        const launchDate = launchMs?.target_date;
+        const days = launchDate ? Math.ceil((new Date(launchDate + "T00:00:00").getTime() - Date.now()) / 86400000) : undefined;
+        const pct = Math.max(0, Math.min(100, plan.done_pct ?? 0));
+        return (
+          <View style={{ backgroundColor: t.accent + "18", borderColor: t.accent + "55", borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="rocket" size={16} color={t.accent} />
+              <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "800", flex: 1 }}>Launch: Android Play Store</Text>
+              {days != null ? (
+                <Text style={{ color: t.accent, fontSize: 12, fontWeight: "800" }}>
+                  {days > 0 ? `noch ${days} Tg` : days === 0 ? "heute" : `${-days} Tg drüber`}
+                </Text>
+              ) : null}
+            </View>
+            <View style={{ height: 7, borderRadius: 4, backgroundColor: t.surface2, overflow: "hidden" }}>
+              <View style={{ width: `${pct}%`, height: 7, backgroundColor: t.accent }} />
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{pct}% zum Launch{launchDate ? ` · Ziel ${fmtDate(launchDate)}` : ""}</Text>
+              {act?.next ? <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 11, flex: 1, textAlign: "right", marginLeft: 8 }}>→ {act.next}</Text> : null}
+            </View>
+          </View>
+        );
+      })() : null}
+
       {/* what the PM is doing — plain language, from real board state */}
       {act ? (
         <View style={{ backgroundColor: t.surface2, borderRadius: 10, padding: 11, gap: 7 }}>
