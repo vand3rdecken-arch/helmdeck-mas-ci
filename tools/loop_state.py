@@ -12,9 +12,9 @@ The loop:
              which modules/laws are touched, does a load-bearing shortcut ship
              (then register it in daemon/debt.py in the same change)?
     EXECUTE  checks are red - build/fix until green: touched daemon/*.py compile,
-             web tsc clean, daemon modules import, and DESIGN LINT passes
+             app (Expo) tsc clean, daemon modules import, and DESIGN LINT passes
              (tools/design_lint.py - the enforceable subset of the design skill:
-             color-scheme, no inline control sizing, tokens not hex, etc).
+             web-shell color-scheme, theme tokens not hex, semantic z-scale).
     TEST     checks green but workorder lacks '## Verified' - run the real
              thing (e2e/screenshot for UI - JUDGE it, don't just render it),
              AND adversarial-test the specific feature you built (write its
@@ -44,7 +44,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DAEMON = os.path.join(ROOT, "daemon")
-WEB = os.path.join(ROOT, "web")
+APP = os.path.join(ROOT, "app")   # the Expo app - the only frontend (web/ archived)
 LOOPDIR = os.path.join(ROOT, ".loop")
 WORKORDER = os.path.join(LOOPDIR, "workorder.md")
 WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
@@ -123,8 +123,8 @@ def checks_red(touched):
                                 os.path.join(ROOT, p)], capture_output=True, text=True)
             if r.returncode != 0:
                 problems.append("%s: %s" % (p, (r.stderr or "").strip().splitlines()[-1][:100]))
-    if any(p.startswith("web/") for p in touched) and \
-       os.path.isdir(os.path.join(WEB, "node_modules")):
+    if any(p.startswith("app/") and p.endswith((".ts", ".tsx")) for p in touched) and \
+       os.path.isdir(os.path.join(APP, "node_modules")):
         try:
             npx = r"C:\Program Files\nodejs\npx.cmd"
             if not os.path.exists(npx):
@@ -132,10 +132,10 @@ def checks_red(touched):
             env = dict(os.environ)
             env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
             r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
-                               cwd=WEB, capture_output=True, text=True, env=env, timeout=180)
+                               cwd=APP, capture_output=True, text=True, env=env, timeout=180)
             if r.returncode != 0:
                 first = (r.stdout or r.stderr or "").strip().splitlines()
-                problems.append("web types: " + (first[0][:120] if first else "tsc failed"))
+                problems.append("app types: " + (first[0][:120] if first else "tsc failed"))
         except (OSError, subprocess.SubprocessError):
             pass   # a state doctor must never crash; types are re-checked in session
     if not problems and any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
@@ -263,10 +263,11 @@ def transitions():
                   "impact + debt delta (register shortcuts in daemon/debt.py)."))
         return t
 
-    ui_work = any(p.startswith("web/") for p in touched)
+    ui_work = any(p.startswith("app/src/") and p.endswith((".ts", ".tsx"))
+                  for p in touched)
     design = (" DESIGN MODE: apply .claude/skills/impeccable (read its SKILL.md "
-              "before writing UI; tokens + laws in web/app/globals.css win on "
-              "conflict)." if ui_work and os.path.isdir(
+              "before writing UI; tokens in app/src/theme/tokens.ts - generated "
+              "by tools/gen_tokens.py - win on conflict)." if ui_work and os.path.isdir(
                   os.path.join(ROOT, ".claude", "skills", "impeccable")) else "")
     red = checks_red(touched)
     if red:
