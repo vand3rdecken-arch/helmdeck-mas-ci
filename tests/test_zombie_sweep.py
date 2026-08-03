@@ -19,7 +19,7 @@ sys.path.insert(0, DAEMON)
 SANDBOX = tempfile.mkdtemp()
 
 import db
-db.DBPATH = os.path.join(SANDBOX, "swarmdeck.db")
+db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")

@@ -10,6 +10,36 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "expo-cutover-pipeline",
+        "title": "Old frontends archived, but build/deploy/loop still point at them",
+        "status": "paid",
+        "what": "web/ (Next.js) and apk/ (Kotlin) were moved to archive/ when the "
+                "single Expo app in app/ took over as the frontend for phone, web "
+                "and desktop. But deploy/push_relay.sh still builds+ships the "
+                "Kotlin APK, tools/loop_state.py's TEST/BUILD states + artifact "
+                "map reference web/ and apk/, tools/design_lint*.py and "
+                "gen_tokens.py read web/app/globals.css (now archive/web/...), and "
+                "there is no EAS cloud-build / OTA wired.",
+        "why_it_bites": "The deploy script errors (missing apk path), the build "
+                        "loop mis-detects state, and the design gate reads a "
+                        "moved token file - the harness thinks it can ship when it "
+                        "cannot.",
+        "trigger": "next relay push, next loop_state run, next design gate",
+        "fix": "PAID in two passes. 3114f6d: loop_state.py ARTIFACT_SRC repointed "
+               "to the signed Expo APK (native-only sources; JS ships via OTA "
+               "deploy/push_update.sh), BUILD action -> release.sh/push_update.sh. "
+               "This commit: design_lint + selftest retargeted to app/ (theme "
+               "tokens via useTheme(), webstyles.tsx carries the web-shell "
+               "color-scheme rule); gen_tokens.py declared the CANONICAL palette "
+               "source (globals.css is history in archive/); loop_state's tsc "
+               "check + design-mode hint repointed web/ -> app/. push_relay.sh "
+               "had already been rewritten for the Expo APK, app/eas.json and "
+               "the OTA path (push_update.sh, release.sh ota) already existed. "
+               "Still open elsewhere: delete archive/ only at confirmed "
+               "production parity.",
+        "order": 0,
+    },
+    {
         "id": "turn-locks",
         "title": "No per-track turn locks",
         "status": "paid",
@@ -87,7 +117,7 @@ DEBT = [
         "id": "nightshift-limit-sniff",
         "title": "Night shift detects usage limits by string-matching replies",
         "status": "paid",
-        "what": "nightshift._limit_hit() greps the card's last_reply for "
+        "what": "pm._limit_hit() (moved from the removed nightshift.py) greps the card's last_reply for "
                 "'usage limit'/'rate limit' instead of reading a structured "
                 "error from the driver.",
         "why_it_bites": "A rephrased CLI error means the night shift keeps "
@@ -154,6 +184,30 @@ DEBT = [
                "(checking it out / using a dedicated integration worktree), offer "
                "ff-only vs --no-ff by policy, and push when the repo is remote.",
         "order": 9,
+    },
+    {
+        "id": "android-cleartext-lan",
+        "title": "Android APK enables global cleartext for the direct-LAN feature",
+        "status": "open",
+        "what": "The app's 'direct LAN' option (More > http://<daemon>) could never "
+                "work on a release build: targetSdk>=28 blocks cleartext HTTP by "
+                "default, so every http:// daemon URL failed with 'Desktop nicht "
+                "erreichbar'. Fixed by adding android:usesCleartextTraffic=\"true\" "
+                "to app/android/app/src/main/AndroidManifest.xml - but that file is "
+                "gitignored/hand-managed (not driven by app.json), so the flag is "
+                "invisible to git and a future `expo prebuild` would silently drop "
+                "it (along with the hand-added expo-updates meta-data).",
+        "why_it_bites": "usesCleartextTraffic=true permits plaintext HTTP to ANY "
+                        "host app-wide, not just private LAN IPs - a mild security "
+                        "downgrade (the relay path stays HTTPS/sealed). And the "
+                        "whole native config can vanish on a prebuild.",
+        "trigger": "next `expo prebuild`, or a security review of the APK",
+        "fix": "Move native config to source: add expo-build-properties with "
+               "android.usesCleartextTraffic (or a networkSecurityConfig scoped to "
+               "loopback + RFC1918 ranges so cleartext is allowed ONLY on the LAN), "
+               "and re-express the expo-updates meta-data via app.json so a prebuild "
+               "reproduces the manifest. Relates to [single-secret-transport].",
+        "order": 10,
     },
 ]
 

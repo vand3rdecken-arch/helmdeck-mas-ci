@@ -10,7 +10,7 @@ routing, the thinking-mode directive, and attachment saving. Kept honest:
 - attachments are size/count-capped and written where the agent can read them;
   the prompt references them by path.
 """
-import base64, json, os, re
+import base64, json, os, re, time, urllib.request
 
 # Curated Claude model manifest - same source-of-truth idea as Paseo's
 # CLAUDE_MODEL_MANIFEST (packages/server/.../claude/model-manifest.ts): the
@@ -19,19 +19,29 @@ import base64, json, os, re
 # settings.json (exactly like Paseo's getClaudeModelsWithSettings).
 CLAUDE_MODELS = [
     {"id": "claude-fable-5",    "label": "Fable 5",    "desc": "Most powerful"},
-    {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Latest · most capable", "default": True},
+    {"id": "claude-opus-5",     "label": "Opus 5",     "desc": "Latest · most capable", "default": True},
+    {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Previous Opus"},
     {"id": "claude-sonnet-5",   "label": "Sonnet 5",   "desc": "Best for everyday work"},
-    {"id": "claude-opus-4-7",   "label": "Opus 4.7",   "desc": "Previous release"},
+    {"id": "claude-opus-4-7",   "label": "Opus 4.7",   "desc": "Older release"},
     {"id": "claude-opus-4-6",   "label": "Opus 4.6",   "desc": "Older · complex work"},
     {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "desc": "Older everyday"},
     {"id": "claude-haiku-4-5",  "label": "Haiku 4.5",  "desc": "Fastest · cheapest"},
 ]
 # friendly aliases still resolve (older drafts / Auto internals)
-_ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-4-8"}
+_ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-5"}
 
-# a turn "looks hard" if it's long, has attachments, or reads like real work
-_HARD = re.compile(r"\b(refactor|architect|debug|why|design|analy[sz]e|plan|"
-                   r"trade-?off|root cause|prove|derive|reconcile|migrat)", re.I)
+# Auto routing looks at STRUCTURAL signals (the card's own facts) first, and only
+# falls back to reading the prompt text - text keywords are noisy ("why not" is
+# not hard work), the card's value/priority/turn-count are facts. Community
+# practice (FrugalGPT cascades, role-based routing): route on evidence, escalate
+# on measured difficulty. These thresholds are policy - kept as named constants
+# so they can later move to settings (events.settings) without touching logic.
+HIGH_VALUE = 100.0      # €: a card worth this much gets the best model on Auto
+ESCALATE_TURNS = 3      # a card that's taken this many turns has proven hard
+
+# text is only a WEAK, secondary signal (structural signals win)
+_HARD = re.compile(r"\b(refactor|architect|debug|design|analy[sz]e|"
+                   r"root cause|prove|derive|reconcile|migrat)", re.I)
 _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b", re.I)
 
 
@@ -57,10 +67,79 @@ def _settings_models():
     return out
 
 
+# -- auto-register: live model discovery from Anthropic's /v1/models ----------
+# The `claude` CLI has no list-models command, but the HTTP API does. We reuse
+# the CLI's own OAuth token (~/.claude/.credentials.json) so a NEW model appears
+# in the picker the day Anthropic ships it - no code edit, no rebuild. The static
+# CLAUDE_MODELS manifest degrades to what community tooling (LiteLLM, Aider) uses
+# it for: curated labels/order + an OFFLINE FALLBACK. Cached 24h; any failure
+# (no token, offline, 401) silently falls back to the last cache, then the
+# manifest - the picker is never empty.
+_MODELS_CACHE = os.path.join(os.path.dirname(__file__), "models_cache.json")
+_DISCOVER_TTL = 24 * 3600
+
+
+def _oauth_token():
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    try:
+        d = json.load(open(os.path.join(cfg, ".credentials.json"), encoding="utf-8"))
+        return (d.get("claudeAiOauth") or {}).get("accessToken")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _fetch_models():
+    """Live [{id, display_name}] from Anthropic /v1/models, or None on failure."""
+    tok = _oauth_token()
+    if not tok:
+        return None
+    try:
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/models?limit=1000",
+            headers={"Authorization": "Bearer " + tok,
+                     "anthropic-version": "2023-06-01",
+                     "anthropic-beta": "oauth-2025-04-20"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = json.load(r)
+        out = [{"id": m["id"], "display_name": m.get("display_name") or m["id"]}
+               for m in data.get("data", []) if m.get("id")]
+        return out or None
+    except Exception:
+        return None
+
+
+def _discovered():
+    """Cached live models (24h TTL). Fetches when stale; on failure serves the
+    last good cache; [] if none (then the manifest stands alone)."""
+    now = time.time()
+    try:
+        cache = json.load(open(_MODELS_CACHE, encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = None
+    if cache and (now - cache.get("at", 0)) < _DISCOVER_TTL:
+        return cache.get("models", [])
+    fresh = _fetch_models()
+    if fresh is not None:
+        try:
+            json.dump({"at": now, "models": fresh}, open(_MODELS_CACHE, "w", encoding="utf-8"))
+        except OSError:
+            pass
+        return fresh
+    return (cache or {}).get("models", [])   # stale cache, or [] -> manifest only
+
+
 def list_models():
-    """The manifest + custom settings.json models, deduped (id order preserved)."""
+    """Curated manifest (labels/order/default) + AUTO-DISCOVERED live models +
+    custom settings.json models, deduped (id order preserved). New Anthropic
+    models are appended automatically; the manifest just gives the known ones
+    nice labels and the offline fallback."""
     models = [dict(m) for m in CLAUDE_MODELS]
     ids = {m["id"] for m in models}
+    for m in _discovered():
+        if m["id"] not in ids:
+            ids.add(m["id"])
+            models.append({"id": m["id"], "label": m.get("display_name") or m["id"],
+                           "desc": "auto-discovered"})
     for m in _settings_models():
         if m["id"] not in ids:
             ids.add(m["id"]); models.append(m)
@@ -71,22 +150,50 @@ def _allowed_ids():
     return {m["id"] for m in list_models()}
 
 
-def pick_model(text, has_attach=False):
-    """Auto routing: cheap for trivial, deep for hard. Returns a concrete id."""
+def pick_model(text, has_attach=False, signals=None):
+    """Auto routing: cheap for trivial, strong for hard/high-stakes. Returns a
+    concrete id. `signals` (optional) carries the card's own facts:
+    {value: float, priority: str, turns: int} - these are the PRIMARY routing
+    inputs; the prompt text is only a weak fallback. Only used when the user
+    picked "Auto"; an explicit model always wins (see resolve_model)."""
+    s = signals or {}
     t = text or ""
-    if has_attach or len(t) > 600 or "```" in t or _HARD.search(t):
-        return "claude-opus-4-8"
-    if len(t) < 40 and not _HARD.search(t) and (_EASY.search(t) or "?" not in t):
+    prio = str(s.get("priority") or "").lower()
+    value = float(s.get("value") or 0)
+    turns = int(s.get("turns") or 0)
+    # `fails` = consecutive gate failures from the append-only event log (real
+    # trailing evidence, via events.consecutive_gate_fails). `failed` stays a
+    # back-compat one-shot flag; either one means "escalate the retry".
+    fails = int(s.get("fails") or 0)
+    failed = bool(s.get("failed")) or fails > 0
+    # STRONG tier - structural, stakes, or proven-hard signals (any one):
+    #   real work in the prompt (attachment / long / code) OR a high-stakes card
+    #   (urgent|high priority, or >= HIGH_VALUE) OR it already FAILED (bounce/gate
+    #   -> escalate the retry) OR it's dragged on (turns >= ESCALATE_TURNS) OR
+    #   hard keywords. The failed/turns paths are "escalate on measured evidence"
+    #   - the next turn after a rejection gets the strong model, no retry loop.
+    if (has_attach or len(t) > 600 or "```" in t
+            or prio in ("urgent", "high")
+            or (value and value >= HIGH_VALUE)
+            or failed
+            or turns >= ESCALATE_TURNS
+            or _HARD.search(t)):
+        return "claude-opus-5"
+    # CHEAP tier - ONLY clear chatter (greetings/acks). A short imperative like
+    # "add a null check" is still work -> it falls through to Sonnet, never Haiku.
+    if len(t) < 40 and _EASY.search(t):
         return "claude-haiku-4-5"
     return "claude-sonnet-5"
 
 
-def resolve_model(model, text, has_attach=False):
+def resolve_model(model, text, has_attach=False, signals=None):
     """(cli_model_id_or_None, chosen). '' -> driver default (None). 'auto' ->
-    heuristic. A known model id (manifest or settings.json) -> itself. Unknown ->
-    default. Server-side whitelist: arbitrary ids from the client are rejected."""
+    signal-based pick. A known model id (manifest or settings.json) -> itself.
+    Unknown -> default. Server-side whitelist: arbitrary ids from the client are
+    rejected. THE USER'S EXPLICIT CHOICE ALWAYS WINS - routing only runs for
+    'auto'. `signals` = the card facts passed through to pick_model."""
     if model == "auto":
-        mid = pick_model(text, has_attach)
+        mid = pick_model(text, has_attach, signals)
         return mid, mid
     model = _ALIAS.get(model, model)
     if model and model in _allowed_ids():

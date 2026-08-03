@@ -13,7 +13,7 @@ TIMEOUT = 15
 
 
 def _get_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "SwarmDeck/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HelmDeck/0.1"})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 

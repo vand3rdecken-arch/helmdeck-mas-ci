@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Board copilot - steer SwarmDeck by chatting. Each message runs one Claude
+"""Board copilot - steer HelmDeck by chatting. Each message runs one Claude
 turn (resumable per user, so the conversation has memory) with a fresh board
 snapshot; the model answers with JSON: a reply for the human plus zero or more
 ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
@@ -9,10 +9,10 @@ import json, os, re, shutil, subprocess, time
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
-CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
-SYSTEM = """You are the SwarmDeck board copilot. The user steers an agent-execution
+SYSTEM = """You are the HelmDeck board copilot. The user steers an agent-execution
 kanban (cards = agent/human work in lanes backlog/working/review/done; processes =
 step chains that auto-advance). You get a live board snapshot each message.
 
@@ -24,6 +24,7 @@ Reply with ONLY JSON:
    {"type": "delete", "card": "<id or fragment>"}  - permanently remove a card (admin: policy.chat_admin_roles)
    {"type": "archive", "card": "<id or fragment>"}  - archive a card out of the board (admin: policy.chat_admin_roles)
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
+   {"type": "resolve_blocker", "card": "<id or fragment>"}  - a card stuck on Review whose "merge conflict" is really an uncommitted (dirty) tree in the shared repo checkout ("your local changes ... would be overwritten"), NOT a <<<<<< conflict. Parks that uncommitted work on a wip-* branch (NOTHING lost, non-destructive) and re-runs the review check. The sandboxed card worker cannot do this - it's board-level, which is why the worker hands it up. Use ONLY when the owner explicitly asks to unblock / park / resolve the blocker (admin: policy.chat_admin_roles).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
@@ -86,10 +87,15 @@ def _snapshot():
     lines = ["POLICY: " + json.dumps(pol)]
     lines += ["CAPACITY: WIP %d/%d, headroom %d cards" % (
         m["capacity"]["wip"], m["capacity"]["wip_limit"], m["capacity"]["headroom"])]
-    lines.append("CARDS:")
+    # Cards span MULTIPLE repos (projects). The repo is shown so a question about
+    # one project (e.g. "what's left for HelmDeck") is scoped to THAT repo only -
+    # without it the model mixed Seekingalpha/immo-deal-scanner cards into HelmDeck.
+    lines.append("CARDS (each belongs to ONE repo; a question about a specific "
+                 "project/repo must include ONLY that repo's cards):")
     for t in sessions.list_tracks():
-        lines.append("- id=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
-            t["id"], t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
+        repo = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "?"
+        lines.append("- id=%s repo=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
+            t["id"], repo, t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "),
             (" last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")) if t.get("status") == "needs_you" else ""))
@@ -197,6 +203,20 @@ def _run_action(a, actor, role="operator"):
         threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
                          kwargs={"actor": actor, "source": "board copilot"}, daemon=True).start()
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "resolve_blocker":
+        # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
+        # the shared repo checkout - a cross-cutting fix the sandboxed worker
+        # can't do. Park the dirty work on a wip-* branch (nothing lost) + retry.
+        # Structural + touches the shared checkout -> admin gate, like move.
+        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        if role not in admin_roles:
+            return "resolve_blocker denied: needs role %s (you are '%s')" % ("/".join(admin_roles), role)
+        t = _find_card(a.get("card", ""))
+        if t is None:
+            return "resolve_blocker failed: no card matches '%s'" % a.get("card")
+        if isinstance(t, list):
+            return "resolve_blocker failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
+        return sessions.park_and_retry_merge(t["id"], actor=actor)
     if kind == "build_integration":
         import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]

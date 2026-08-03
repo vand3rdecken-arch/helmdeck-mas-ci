@@ -118,17 +118,28 @@ def _pull(relay, room):
 
 
 def _loop(port):
+    # The whole body is guarded: a single unhandled error (a hiccup in
+    # events.settings(), a transient DNS/TLS failure, a relay restart) must
+    # NEVER kill this thread - if it dies, the phone silently loses the daemon
+    # while the desktop looks perfectly healthy ("no daemon connected for this
+    # room"). Same rule as the night shift: the background worker outlives its
+    # own errors. It only exits when the daemon is shutting down (_stop).
     while not _stop:
-        relay, room, sk, _ = _cfg()
-        if not (relay and room and sk):
-            time.sleep(5)
-            continue
         try:
+            relay, room, sk, _ = _cfg()
+            if not (relay and room and sk):
+                time.sleep(5)
+                continue
             frame = _pull(relay, room)
             if frame:
                 threading.Thread(target=_serve_one, args=(relay, room, sk, port, frame),
                                  daemon=True).start()
-        except Exception:
+        except Exception as e:
+            try:
+                import events
+                events.log("relay", "bridge loop error (retrying): %s" % str(e)[:200])
+            except Exception:
+                pass
             time.sleep(3)
 
 

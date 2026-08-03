@@ -13,7 +13,7 @@ ADD house rules (further restrictions) via policy.house_rules; nobody can
 subtract from the core."""
 import re
 
-CHARTER = """SwarmDeck workspace charter - what may be built here:
+CHARTER = """HelmDeck workspace charter - what may be built here:
 
 MAY BE BUILT (by anyone with build access, through card + gate + accept):
 - CONNECTORS: read data from external systems and propose backlog cards.

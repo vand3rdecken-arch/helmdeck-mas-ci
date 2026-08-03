@@ -1,13 +1,13 @@
-# SwarmDeck architecture
+# HelmDeck architecture
 
-The organizing idea: **SwarmDeck applies its own product philosophy to
+The organizing idea: **HelmDeck applies its own product philosophy to
 itself.** A harness (the fixed world work executes in) plus loops (the states
 work travels through). What makes the system trustable is code; how work
 flows is data.
 
 ## The company model
 
-| Company concept | SwarmDeck primitive |
+| Company concept | HelmDeck primitive |
 |---|---|
 | Department / studio | a repo + its harness (rules, tools, gates) |
 | Client engagement | a card (branch + worktree + resumable session) |

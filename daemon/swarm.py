@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SwarmDeck daemon CLI.
+"""HelmDeck daemon CLI.
 
   python swarm.py wincap-test           5s desktop capture -> recordings/<id>/screen.mp4
   python swarm.py browser-demo          scripted, audited browser run (video + timeline)

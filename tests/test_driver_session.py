@@ -194,10 +194,13 @@ def test_structured_error_and_nightshift():
     check(meta.get("is_error") is True, "result is_error surfaced in meta")
     check(meta.get("subtype") == "error_during_execution", "result subtype surfaced")
     check("usage limit" in (meta.get("error") or ""), "structured error string surfaced")
-    import nightshift
+    # _limit_hit moved to pm.py when nightshift.py was absorbed there (the old
+    # `import nightshift` kept "working" as a namespace package - the
+    # daemon/nightshift/ REPORTS folder - and then failed on the attribute)
+    import pm
     track = {"last_subtype": meta.get("subtype"), "last_error": meta.get("error"),
              "last_reply": "all fine here"}   # reply is clean; only structured field flags it
-    check(nightshift._limit_hit(track), "night shift detects limit from STRUCTURED field, not prose")
+    check(pm._limit_hit(track), "night shift detects limit from STRUCTURED field, not prose")
     drivers.cancel("t-err")
 
 
