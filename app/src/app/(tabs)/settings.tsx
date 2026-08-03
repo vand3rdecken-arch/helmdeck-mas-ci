@@ -74,6 +74,7 @@ export default function Settings() {
   const [pairLink, setPairLink] = useState("");
   const [qr, setQr] = useState("");
   const [pairBusy, setPairBusy] = useState(false);
+  const [pairTtlMin, setPairTtlMin] = useState(15);
   const [relayUrl, setRelayUrl] = useState("");
 
   // ---- add user ----
@@ -188,8 +189,9 @@ export default function Settings() {
     if (!relayUrl.trim()) { Alert.alert("Relay fehlt", "Erst eine Relay-URL speichern."); return; }
     setPairBusy(true);
     try {
-      const r = await api.post<{ url?: string; room?: string; daemon_pub?: string; device_token?: string; error?: string }>("/relay/pair", {});
+      const r = await api.post<{ url?: string; room?: string; daemon_pub?: string; device_token?: string; expires_in?: number; error?: string }>("/relay/pair", {});
       if (r.error) { Alert.alert("Fehler", r.error); return; }
+      setPairTtlMin(Math.round((r.expires_in ?? 900) / 60));
       // Byte-compatible with applyPairing / the web pairing code: base64(JSON{u,r,k,t}).
       const code = util.encodeBase64(util.decodeUTF8(JSON.stringify({ u: r.url, r: r.room, k: r.daemon_pub, t: r.device_token })));
       setPairCode(code);
@@ -249,7 +251,10 @@ export default function Settings() {
       const r = await api.issueToken(u.name, "invite-" + u.name);
       let payload: Record<string, string>;
       if (relayUrl.trim()) {
-        const p = await api.post<{ url?: string; room?: string; daemon_pub?: string; error?: string }>("/relay/pair", {});
+        // invite:true = the teammate authenticates with THEIR token issued
+        // above; without the flag the daemon would also mint (and orphan) an
+        // owner device token per invite. Opens the same single-use window.
+        const p = await api.post<{ url?: string; room?: string; daemon_pub?: string; error?: string }>("/relay/pair", { invite: true });
         if (p.error || !p.url) { Alert.alert("Fehler", p.error ?? "Relay-Pairing fehlgeschlagen."); return; }
         payload = { u: p.url, r: p.room ?? "", k: p.daemon_pub ?? "", t: r.token };
       } else {
@@ -445,6 +450,7 @@ export default function Settings() {
               <Btn label={pairBusy ? "…" : "Telefon koppeln"} onPress={pairPhone} disabled={pairBusy} />
               {pairCode ? (
                 <View style={{ marginTop: 10, gap: 8 }}>
+                  <Hint text={`Der Code ist ${pairTtlMin} Min gültig und lässt genau EIN neues Gerät herein – danach am Desktop neu erzeugen. Bereits gekoppelte Geräte bleiben verbunden.`} />
                   {pairLink ? (
                     <View style={{ gap: 6 }}>
                       <Hint text="Ohne Scan: diesen Link ans Telefon schicken (WhatsApp/Signal an dich selbst) und antippen — HelmDeck öffnet sich und koppelt." />

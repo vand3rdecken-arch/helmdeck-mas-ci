@@ -4,7 +4,8 @@ the R4 `lint:hex-ok` / `design-lint-allow` markers, the generated-tokens
 exemption, and the R5 zIndex rule.
 
 Writes its own fixture under app/src/ui/, lints it, deletes it - no repo
-state is left behind either way. Run: python tools/design_lint_selftest.py
+state is left behind either way (fixture dirs are created on demand and
+removed again if this test created them). Run: python tools/design_lint_selftest.py
 Exit 0 on pass, 1 on fail."""
 import os, sys
 
@@ -13,6 +14,9 @@ import design_lint
 
 p = "app/src/ui/__lint_selftest__.tsx"
 full = os.path.join(design_lint.ROOT, p)
+fixture_dir = os.path.dirname(full)
+made_dirs = not os.path.isdir(fixture_dir)
+os.makedirs(fixture_dir, exist_ok=True)
 
 CASES = [
     # (name, source line, expect_violations)
@@ -36,6 +40,13 @@ try:
 finally:
     if os.path.exists(full):
         os.remove(full)
+    if made_dirs:
+        # remove only what we created: the fixture dir, then its parent if empty
+        for d in (fixture_dir, os.path.dirname(fixture_dir)):
+            try:
+                os.rmdir(d)
+            except OSError:
+                break
 
 # the generated token map is hex by design - it must never be linted
 got = design_lint.lint(["app/src/theme/tokens.ts"])
