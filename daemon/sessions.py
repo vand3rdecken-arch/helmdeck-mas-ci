@@ -544,6 +544,12 @@ def dispatch_conflict_resolution(card_id, actor="board copilot"):
             return "%s: could not set up resolution (%s)" % (t.get("branch", card_id), res[6:])
     files = (_git_try(wt, "diff", "--name-only", "--diff-filter=U")[1] or "").strip()
     if not files:
+        if merging:
+            # mid-merge but nothing unmerged -> the markers are already resolved and
+            # staged; the harness finalizes on the next move to done.
+            return ("%s: Konflikte sind bereits aufgeloest (keine Markierungen mehr offen). "
+                    "Schieb die Karte auf Done - der Harness committet + merged dann selbst."
+                    % t.get("branch", card_id))
         return ("%s: no conflict markers in the worktree - if it still won't merge it is "
                 "likely a dirty shared checkout (use resolve_blocker)." % t.get("branch", card_id))
     flist = ", ".join(files.split("\n"))
