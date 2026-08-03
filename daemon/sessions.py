@@ -519,13 +519,16 @@ def _pull_main_into_branch(t):
     return "markers:" + (files or _err[:150])
 
 
-def dispatch_conflict_resolution(card_id, actor="board copilot"):
+def dispatch_conflict_resolution(card_id, actor="board copilot", background=True):
     """Hand a REAL <<<<<<< merge conflict to the card's OWN worker as an edit-only
     task - the chat itself never edits code, but it can dispatch the card's agent.
     Sets up (or reuses) conflict markers in the worker's worktree via
     _pull_main_into_branch, then steers the worker to merge the markers by plain
     EDITING (never a git merge). On the next move to done, _autocommit completes
-    the merge and the gate runs. Returns a human-readable status string."""
+    the merge and the gate runs. Returns a human-readable status string.
+
+    background=False runs the steer synchronously (the PM coordinator uses this
+    to chain delegate -> re-submit on its own thread; the chat keeps True)."""
     t = _find(_load(), card_id)
     if not t:
         return "no card '%s'" % card_id
@@ -558,6 +561,10 @@ def dispatch_conflict_resolution(card_id, actor="board copilot"):
              "zusammen und ENTFERNE alle Markierungen restlos. Nur editieren - kein git, "
              "kein merge oder commit. Wenn keine Markierung mehr uebrig ist, bist du fertig; "
              "der Harness committet und merged dann selbst." % flist)
+    if not background:
+        steer(t["id"], instr, actor=actor, source="conflict-resolution")
+        return ("Konfliktaufloesung durch den Worker von %s gelaufen (Dateien: %s) - "
+                "jetzt neu einreichen, dann committet+merged der Harness." % (t.get("branch", card_id), flist))
     import threading
     threading.Thread(target=steer, args=(t["id"], instr),
                      kwargs={"actor": actor, "source": "conflict-resolution"}, daemon=True).start()
@@ -678,6 +685,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                    "nur editieren - und reiche dann neu ein.")
             log.log("note", "CONFLICT MARKERS OPEN - stays on Review to resolve: " + msg[:200])
             t["status"] = "bounced"; t["lane"] = "review"   # stay on Review, not back to Working
+            t.pop("gate_report", None)                      # the CURRENT blocker is the conflict
             t["merge_report"] = msg; t["merge_kind"] = "conflict"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
@@ -693,6 +701,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             punch = " | ".join(p.split("\n")[0] for p in problems)
             log.log("note", "GATE FAILED - stays on Review to fix: " + punch[:400])
             t["status"] = "bounced"; t["lane"] = "review"; t["gate_report"] = problems   # stay on Review
+            t.pop("merge_report", None); t.pop("merge_kind", None)   # the CURRENT blocker is the gate
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
             t = dict(t); t["gate_failed"] = True

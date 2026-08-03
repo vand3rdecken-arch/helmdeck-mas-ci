@@ -207,6 +207,26 @@ DEBT = [
                "reproduces the manifest. Relates to [single-secret-transport].",
         "order": 10,
     },
+    {
+        "id": "pm-loopstate-races",
+        "title": "PM loopstate is read-modify-write from tick + resolve threads",
+        "status": "open",
+        "what": "pm.py's resolve threads (_bump_attempt/_give_up) serialize their "
+                "own writes to pm/loop.json behind _resolving_lock, but the tick "
+                "thread (_notify_deliveries, _dispatch_next, make_plan) still does "
+                "unlocked read-modify-write of the same file with state read "
+                "earlier in the tick.",
+        "why_it_bites": "A tick save landing between a resolve thread's write and "
+                        "the next read can revert an attempt counter or a "
+                        "notified flag - worst case one duplicate owner ping or "
+                        "one extra (harmless, rate-limited) delegation attempt.",
+        "trigger": "a resolve thread finishing in the same second a tick saves "
+                   "loopstate; more likely once several cards resolve in parallel",
+        "fix": "Route ALL loopstate mutations through one locked helper that "
+               "re-reads inside the lock (the _bump_attempt pattern), or move "
+               "loopstate into the sqlite DB like tracks.",
+        "order": 11,
+    },
 ]
 
 def list_debt():
