@@ -208,6 +208,37 @@ DEBT = [
         "order": 10,
     },
     {
+        "id": "machine-task-blast-radius",
+        "title": "Machine tasks run with bypassPermissions over the whole PC",
+        "status": "open",
+        "what": "sessions.new_machine_task dispatches a card whose workplace is a "
+                "real folder on the owner's machine, with permission mode "
+                "bypassPermissions (policy.machine.perm) and no path restriction "
+                "by default (policy.machine.roots = []). Headless is why: an "
+                "unanswerable permission prompt IS a block, and blocking was the "
+                "bug being fixed. Guards in place: owner-only role gate "
+                "(policy.machine.roles), the capability switch "
+                "(policy.machine.enabled), full audit (machine/turn/done events + "
+                "flight recorder), no merge path, and a brief that fences "
+                "HelmDeck's own secrets.",
+        "why_it_bites": "An agent turn that misreads its instruction can change or "
+                        "delete anything the owner's account can reach, and unlike "
+                        "a worktree card there is no branch to roll back - the "
+                        "per-turn checkpoint is deliberately skipped for machine "
+                        "cards. The prompt-level secret fence is guidance, not "
+                        "enforcement.",
+        "trigger": "the first machine task pointed at a broad folder (home, C:\\), "
+                   "or a second non-owner account being granted machine roles",
+        "fix": "Narrow by default: ship policy.machine.roots preset to the owner's "
+               "usual work folders and require an explicit widening; add a "
+               "recycle-bin-style undo (move-to-trash instead of delete) for "
+               "machine file operations; enforce the secret fence in code (deny "
+               "reads of settings.json/users.json/helmdeck.db via allowed_tools "
+               "deny-rules) rather than in the brief; consider a dry-run turn that "
+               "reports the plan before the acting turn for destructive verbs.",
+        "order": 11,
+    },
+    {
         "id": "pm-loopstate-races",
         "title": "PM loopstate is read-modify-write from tick + resolve threads",
         "status": "open",
@@ -225,7 +256,7 @@ DEBT = [
         "fix": "Route ALL loopstate mutations through one locked helper that "
                "re-reads inside the lock (the _bump_attempt pattern), or move "
                "loopstate into the sqlite DB like tracks.",
-        "order": 11,
+        "order": 12,
     },
 ]
 
