@@ -73,7 +73,8 @@ export interface PmBrief {
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }
 export interface PmActivity {
-  loop_enabled?: boolean; autonomy?: string; now: string[]; next?: string | null; next_count?: number;
+  loop_enabled?: boolean; autonomy?: string; state?: string; state_reason?: string;
+  now: string[]; next?: string | null; next_count?: number;
   needs_you: string[]; blockers: string[]; quota_paused?: boolean; last_plan?: string;
   feed: { ts: string; kind: string; msg: string; card?: string | null }[];
 }
