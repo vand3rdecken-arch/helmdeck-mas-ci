@@ -31,6 +31,7 @@ export default function ChatScreen() {
   const [picker, setPicker] = useState(false);
   const qc = useQueryClient();
   const scroll = useRef<ScrollView>(null);
+  const [atBottom, setAtBottom] = useState(true);
   // turn token: each send captures the current id; Stop bumps it so a late
   // reply that arrives after cancel is discarded instead of appended.
   const turn = useRef(0);
@@ -42,6 +43,16 @@ export default function ChatScreen() {
   const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, enabled: me?.role !== "client" });
 
   useEffect(() => { if (data?.messages && !busy) setMsgs(data.messages); }, [data, busy]);
+
+  // auto-pin to newest (incl. the PM's proactive messages) when already near the
+  // bottom - same pattern as the card chat, so opening lands you at the latest.
+  useEffect(() => {
+    if (atBottom) setTimeout(() => scroll.current?.scrollToEnd({ animated: false }), 30);
+  }, [msgs.length, atBottom]);
+  const onScroll = (e: { nativeEvent: { contentOffset: { y: number }; contentSize: { height: number }; layoutMeasurement: { height: number } } }) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    setAtBottom(contentSize.height - contentOffset.y - layoutMeasurement.height < 60);
+  };
 
   async function send() {
     const q = text.trim();
@@ -103,7 +114,8 @@ export default function ChatScreen() {
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       {header}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView ref={scroll} contentContainerStyle={{ padding: 12, gap: 8 }}>
+        <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64}
+          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 24 }}>
           {msgs.length === 0 ? <Empty text="Frag den Copilot über die Arbeit." /> :
             msgs.map((m, i) => {
               const mine = m.cls === "user" || m.cls === "you";
@@ -127,6 +139,15 @@ export default function ChatScreen() {
             })}
           {busy ? <ActivityIndicator color={t.accent} /> : null}
         </ScrollView>
+        {!atBottom ? (
+          <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
+            style={{ position: "absolute", right: 14, bottom: 140, flexDirection: "row", alignItems: "center", gap: 4,
+              backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
+              paddingHorizontal: 12, paddingVertical: 7, ...(Platform.OS === "web" ? {} : { elevation: 6 }) }}>
+            <Ionicons name="arrow-down" size={14} color={t.accent} />
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>Neueste</Text>
+          </Pressable>
+        ) : null}
 
         {/* model + thinking-level pills (pattern from card_composer.tsx) */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
