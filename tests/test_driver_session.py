@@ -194,10 +194,9 @@ def test_structured_error_and_nightshift():
     check(meta.get("is_error") is True, "result is_error surfaced in meta")
     check(meta.get("subtype") == "error_during_execution", "result subtype surfaced")
     check("usage limit" in (meta.get("error") or ""), "structured error string surfaced")
-    # _limit_hit lives in pm.py since the PM loop absorbed nightshift.py
-    # (daemon/nightshift/ is now a DATA dir, which Python silently imports as
-    # an empty namespace package - hence the old `import nightshift` "worked"
-    # right up to the attribute lookup).
+    # _limit_hit lives in pm.py since the PM loop absorbed nightshift.py (the
+    # old `import nightshift` kept "working" as a namespace package - the
+    # daemon/nightshift/ DATA folder - and then failed on the attribute).
     import pm
     track = {"last_subtype": meta.get("subtype"), "last_error": meta.get("error"),
              "last_reply": "all fine here"}   # reply is clean; only structured field flags it

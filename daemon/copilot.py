@@ -4,7 +4,7 @@ turn (resumable per user, so the conversation has memory) with a fresh board
 snapshot; the model answers with JSON: a reply for the human plus zero or more
 ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
-import json, os, re, shutil, subprocess, time
+import json, os, re, shutil, subprocess, threading, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SESS = os.path.join(ROOT, "copilot_sessions.json")
@@ -25,6 +25,7 @@ Reply with ONLY JSON:
    {"type": "archive", "card": "<id or fragment>"}  - archive a card out of the board (admin: policy.chat_admin_roles)
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "resolve_blocker", "card": "<id or fragment>"}  - a card stuck on Review whose "merge conflict" is really an uncommitted (dirty) tree in the shared repo checkout ("your local changes ... would be overwritten"), NOT a <<<<<< conflict. Parks that uncommitted work on a wip-* branch (NOTHING lost, non-destructive) and re-runs the review check. The sandboxed card worker cannot do this - it's board-level, which is why the worker hands it up. Use ONLY when the owner explicitly asks to unblock / park / resolve the blocker (admin: policy.chat_admin_roles).
+   {"type": "resolve_conflict", "card": "<id or fragment>"}  - a card bounced on Review with a REAL <<<<<< merge conflict (message says "Konfliktmarkierungen ... im Worktree"). This sets up/reuses the conflict markers in the card's OWN worktree and STEERS that card's worker to merge them by plain EDITING (edit-only, no git); on the next move to done the harness commits + merges. You DO NOT edit code yourself, but you CAN dispatch the card's agent to - so this is how real code conflicts get resolved. Prefer this (not resolve_blocker) whenever the owner asks to resolve/fix a real <<<<<< conflict (admin: policy.chat_admin_roles).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
@@ -87,10 +88,15 @@ def _snapshot():
     lines = ["POLICY: " + json.dumps(pol)]
     lines += ["CAPACITY: WIP %d/%d, headroom %d cards" % (
         m["capacity"]["wip"], m["capacity"]["wip_limit"], m["capacity"]["headroom"])]
-    lines.append("CARDS:")
+    # Cards span MULTIPLE repos (projects). The repo is shown so a question about
+    # one project (e.g. "what's left for HelmDeck") is scoped to THAT repo only -
+    # without it the model mixed Seekingalpha/immo-deal-scanner cards into HelmDeck.
+    lines.append("CARDS (each belongs to ONE repo; a question about a specific "
+                 "project/repo must include ONLY that repo's cards):")
     for t in sessions.list_tracks():
-        lines.append("- id=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
-            t["id"], t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
+        repo = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "?"
+        lines.append("- id=%s repo=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
+            t["id"], repo, t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "),
             (" last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")) if t.get("status") == "needs_you" else ""))
@@ -183,10 +189,13 @@ def _run_action(a, actor, role="operator"):
                 return "%s denied: needs role %s (you are '%s')" % (kind, "/".join(admin_roles), role)
         if kind == "move":
             r = sessions.move_lane(t["id"], a["lane"], actor=actor)
+            # gate_report / merge_report are curated, self-contained instruction
+            # strings (fixed template + file list) - show them whole, no char cap
+            # (a slice cut the resolve steer off mid-word).
             if r.get("gate_failed"):
-                return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", []))[:200])
+                return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", [])))
             if r.get("merge_failed"):
-                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), (r.get("merge_report") or "")[:200])
+                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), r.get("merge_report") or "")
             return "moved %s -> %s" % (t["branch"], a["lane"])
         if kind == "delete":
             sessions.delete_track(t["id"], actor=actor)
@@ -212,6 +221,20 @@ def _run_action(a, actor, role="operator"):
         if isinstance(t, list):
             return "resolve_blocker failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
         return sessions.park_and_retry_merge(t["id"], actor=actor)
+    if kind == "resolve_conflict":
+        # A REAL <<<<<< merge conflict: set up/reuse markers in the worker's own
+        # worktree and STEER the card's agent to merge them by plain editing. The
+        # chat never edits code, but it can dispatch the card's agent to. Admin-
+        # gated like steer-that-changes-state.
+        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        if role not in admin_roles:
+            return "resolve_conflict denied: needs role %s (you are '%s')" % ("/".join(admin_roles), role)
+        t = _find_card(a.get("card", ""))
+        if t is None:
+            return "resolve_conflict failed: no card matches '%s'" % a.get("card")
+        if isinstance(t, list):
+            return "resolve_conflict failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
+        return sessions.dispatch_conflict_resolution(t["id"], actor=actor)
     if kind == "build_integration":
         import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]
@@ -366,18 +389,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         out = json.loads(m.group(0)) if m else {"reply": txt, "actions": []}
     except ValueError:
         out = {"reply": txt, "actions": []}
-    results = []
-    for a in out.get("actions", [])[:6]:
-        try:
-            results.append(_run_action(a, user, role))
-        except Exception as e:
-            results.append("action failed: %s" % str(e)[:200])
     u = d.get("usage") or {}
     usage = {"in": (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
                     + u.get("cache_creation_input_tokens", 0)),
              "out": u.get("output_tokens", 0), "cost": d.get("total_cost_usd")}
-    _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")}]
-                + [{"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
-                + [{"cls": "act", "text": r} for r in results])
-    return {"reply": out.get("reply", ""), "actions": results,
+    acts = out.get("actions", [])[:6]
+    # Persist the exchange NOW and return immediately, so the chat is responsive.
+    # Actions (moves, MERGES, steers - potentially minutes) run in the BACKGROUND
+    # and append their results to the transcript as they land; the chat polls, so
+    # you see them live. This is why 'move 4 cards to done' no longer freezes.
+    _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
+                       {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}])
+    if acts:
+        def _run_bg():
+            done = []
+            for a in acts:
+                try:
+                    done.append(_run_action(a, user, role))
+                except Exception as e:
+                    done.append("action failed: %s" % str(e)[:200])
+            if done:
+                _append_log(user, [{"cls": "act", "text": r} for r in done])
+        threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
+    return {"reply": out.get("reply", ""), "actions": [],
             "cost": d.get("total_cost_usd"), "usage": usage}

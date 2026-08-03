@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, Keyboard, Platform, Pressable,
   ScrollView, Text, TextInput, useWindowDimensions, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -224,6 +224,14 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   const [agentMsgs, setAgentMsgs] = useState<TStep[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
+  // edge-to-edge (SDK 57) breaks Android adjustResize -> lift the composer above
+  // the keyboard by measuring its height (same fix as the board chat).
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // drop an optimistic echo once the real feed carries that same user text
   useEffect(() => {
@@ -272,9 +280,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <View style={{ flex: 1, paddingBottom: kb }}>
       <View style={{ flex: 1 }}>
-        <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64}
+        <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
           {steps.length === 0 ? <Empty text="Noch keine Nachrichten." /> :
             <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
@@ -315,10 +323,10 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       </View>
 
       <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
-        slashCommands={SLASH} seed={seed} bottomInset={bottomInset} draftKey={`card:${k.id}`}
+        slashCommands={SLASH} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
         placeholder={agentMode ? "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'"
           : k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -335,6 +343,8 @@ export default function CardScreen() {
   const [tab, setTab] = useState<Tab>("overview");
   const [seed, setSeed] = useState({ text: "", key: 0 });
   const sheet = useActionSheet();
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const showToast = (text: string, ok = true) => { setToast({ text, ok }); setTimeout(() => setToast(null), 3800); };
 
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
   // tracks can arrive as a non-array {error} object over the relay (pairing/pin
@@ -440,8 +450,17 @@ export default function CardScreen() {
 
   async function moveTo(lane: string) {
     if (!k) return;
-    try { await api.moveLane(k.id, lane); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-    catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    try {
+      const res = await api.moveLane(k.id, lane);
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      // visual cue: did it take? review runs the gate (may bounce); working = dispatched.
+      const r = res as { status?: string; gate_failed?: boolean };
+      const bad = r?.status === "bounced" || !!r?.gate_failed;
+      const working = lane === "working";
+      showToast(bad ? `Abgelehnt → ${laneLabel(lane)} (Gate/Review)`
+                    : working ? `Gestartet → ${laneLabel(lane)} · Agent arbeitet`
+                    : `Verschoben → ${laneLabel(lane)}`, !bad);
+    } catch (e) { showToast("Move fehlgeschlagen: " + String((e as Error).message), false); }
   }
   function moveSheet() {
     if (!k) return;
@@ -530,6 +549,16 @@ export default function CardScreen() {
           )}
         </>
       )}
+      {toast ? (
+        <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: insets.bottom + 74, alignItems: "center", paddingHorizontal: 16 }}>
+          <View style={{ maxWidth: 520, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface1,
+            borderColor: toast.ok ? t.ok : t.danger, borderWidth: 1, borderRadius: 11, paddingHorizontal: 14, paddingVertical: 11,
+            ...(isWeb ? { boxShadow: "0 6px 20px rgba(0,0,0,0.35)" } as object : { elevation: 8 }) }}>
+            <Ionicons name={toast.ok ? "checkmark-circle" : "alert-circle"} size={17} color={toast.ok ? t.ok : t.danger} />
+            <Text style={{ color: t.txtPrimary, fontSize: 12.5, flexShrink: 1 }}>{toast.text}</Text>
+          </View>
+        </View>
+      ) : null}
       {sheet.node}
     </View>
   );

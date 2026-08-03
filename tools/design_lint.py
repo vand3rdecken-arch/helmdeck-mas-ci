@@ -9,12 +9,20 @@ these gate the commit: the loop stays red until they pass, regardless of
 whether the skill was read. That converts 'please use the skill' (hope) into
 'the output must satisfy these' (code).
 
+Repointed at the Expo app (app/) when web/ (Next.js) was archived: the design
+system is app/src/theme/tokens.ts consumed via useTheme(), and the only global
+web CSS left is the template string in app/src/ui/webstyles.tsx. The web-only
+rules (root color-scheme, <select> option styling) now read THAT css; the
+hex/zIndex token rules apply to the app's .ts/.tsx sources.
+
 Never crashes (returns [] on error) - it's a checker, not a gate itself."""
 import os, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEB = os.path.join(ROOT, "web")
-GLOBALS = os.path.join(WEB, "app", "globals.css")
+APP = os.path.join(ROOT, "app")
+WEBSTYLES = os.path.join(APP, "src", "ui", "webstyles.tsx")
+# generated token map - hex IS the point there (see tools/gen_tokens.py)
+GENERATED = ("app/src/theme/tokens.ts",)
 
 
 def _read(p):
@@ -26,48 +34,47 @@ def _read(p):
 
 
 def lint(touched):
-    """Return list of violation strings for the touched web files."""
+    """Return list of violation strings for the touched Expo-app files."""
     problems = []
-    web_touched = [p for p in touched if p.startswith("web/") and
-                   (p.endswith(".tsx") or p.endswith(".css"))]
-    if not web_touched:
+    app_touched = [p.replace("\\", "/") for p in touched]
+    app_touched = [p for p in app_touched if p.startswith("app/") and
+                   (p.endswith(".tsx") or p.endswith(".ts")) and
+                   p not in GENERATED]
+    if not app_touched:
         return []
-    css = _read(GLOBALS)
+    # webstyles.tsx is a .tsx whose file comments may NAME the rules below -
+    # strip // lines so only the actual CSS template string is judged.
+    css = "\n".join(l for l in _read(WEBSTYLES).splitlines()
+                    if not l.strip().startswith("//"))
 
-    # R1: dark theme exists but color-scheme never declared AT ROOT -> native
-    #     popups (selects, date pickers) render in the wrong scheme. Must be on
-    #     :root/html/body/[data-theme], not just any element. (the dropdown bug)
-    root_scheme = re.search(
-        r'(:root|html|body|\[data-theme[^\]]*\])[^{]*\{[^}]*color-scheme', css)
-    if '[data-theme="dark"]' in css and not root_scheme:
-        problems.append("globals.css: dark theme without a ROOT `color-scheme` "
-                        "declaration - native select/date popups render light. (native-popup bug)")
+    # R1: the web shell paints its own canvas but never declares color-scheme
+    #     -> native popups (selects, date pickers) and scrollbars render in the
+    #     browser's default scheme, not ours. The archived web app carried this
+    #     exact rule at :root (globals.css); the Expo web shell needs it in the
+    #     injected CSS. (the native-popup bug)
+    if css and "background" in css and "color-scheme" not in css:
+        problems.append("webstyles.tsx: the web shell sets a themed canvas but "
+                        "declares no `color-scheme` - native select/date popups "
+                        "and scrollbars render in the wrong scheme. (native-popup bug)")
 
-    # R3: <select> used anywhere but its popup options are unstyled
+    # R3: a raw DOM <select> on the web build with unstyled popup options -
+    #     the open list won't follow the theme. (RN pickers are fine; this
+    #     only fires for react-native-web escape hatches.)
     uses_select = any("<select" in _read(os.path.join(ROOT, p))
-                      for p in web_touched if p.endswith(".tsx"))
-    if uses_select and "select option" not in css and \
-       "[data-theme=\"dark\"]" in css:
-        problems.append("a <select> is used but globals.css has no `select option` "
-                        "styling - the open list won't follow the theme.")
+                      for p in app_touched if p.endswith(".tsx"))
+    if uses_select and "select option" not in css:
+        problems.append("a raw <select> is used but webstyles.tsx has no "
+                        "`select option` styling - the open list won't follow "
+                        "the theme.")
 
-    for p in web_touched:
-        if not p.endswith(".tsx"):
-            continue
+    for p in app_touched:
         src = _read(os.path.join(ROOT, p))
 
-        # R2: inline width/height on a themed control collapses it. (checkbox +
-        #     peek bugs - twice). Flag style={{...width/height...}} on inputs.
-        for m in re.finditer(r'<(input|select|textarea)\b[^>]*style=\{\{([^}]*)\}\}', src):
-            style = m.group(2)
-            if re.search(r'\b(width|height)\s*:', style) and "auto" in style:
-                problems.append("%s: inline width/height:auto on <%s> defeats the "
-                                "custom-control CSS (collapses)." % (p, m.group(1)))
-
-        # R4: hardcoded colors in component code (tokens exist for a reason).
-        #     Allow in globals.css (the token definitions live there). A line
-        #     may opt out with a `lint:hex-ok` marker for literals that MUST
-        #     stay device-absolute (e.g. QR fg/bg black/white to scan).
+        # R4: hardcoded colors in component code (tokens exist for a reason:
+        #     app/src/theme/tokens.ts via useTheme()). A line may opt out with
+        #     a `lint:hex-ok` marker, or `design-lint-allow: <reason>` on the
+        #     same or preceding line, for literals that MUST stay
+        #     device-absolute (e.g. QR fg/bg black/white to scan).
         for m in re.finditer(r'#[0-9a-fA-F]{6}\b', src):
             line_start = src.rfind("\n", 0, m.start()) + 1
             line_end = src.find("\n", m.end())
@@ -78,19 +85,14 @@ def lint(touched):
             line = src[line_start:m.start()]
             if "//" in line or "/*" in line:
                 continue
-            # Auditable escape hatch: a literal that is NOT a themeable UI color
-            # (e.g. a QR code's black/white modules, a canvas pixel) may opt out
-            # with `design-lint-allow: <reason>` on the same or preceding line.
-            # The reason is required so the exception stays honest and greppable.
-            # (`lint:hex-ok` above is the terse variant for the same intent.)
             prev_start = src.rfind("\n", 0, max(line_start - 1, 0)) + 1
             window = src[prev_start:(line_end if line_end != -1 else len(src))]
             if re.search(r'design-lint-allow:\s*\S', window):
                 continue
-            problems.append("%s: hardcoded color %s - use a design token "
-                            "(var(--...)), not a literal hex (intentional "
-                            "literals: annotate the line with `lint:hex-ok`)."
-                            % (p, m.group(0)))
+            problems.append("%s: hardcoded color %s - use a theme token "
+                            "(useTheme() / tokens.ts), not a literal hex "
+                            "(intentional literals: annotate the line with "
+                            "`lint:hex-ok`)." % (p, m.group(0)))
             break   # one flag per file is enough signal
 
         # R5: arbitrary high z-index literal (no semantic scale).
