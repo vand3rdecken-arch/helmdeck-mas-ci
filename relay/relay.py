@@ -70,6 +70,17 @@ border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;co
 # JS/asset updates on launch - no reinstall. Unsigned application/json manifest
 # (code signing is optional per the spec). Publish a new build by replacing this
 # dir (deploy/push_update.sh); the manifest is rebuilt from disk each request.
+#
+# Channels: the build embeds `expo-channel-name` (app.json updates.requestHeaders)
+# and sends it on every manifest/asset request. A channel named C is served from
+# UPDATES_DIR-C when that dir exists (push_update.sh --channel C); anything else
+# - including "production" - falls back to UPDATES_DIR. Channel dirs sit BESIDE
+# the root dir, never inside it, so the root atomic swap can't take them along.
+#
+# Rollback: a `rollback.json` marker in the served dir (deploy/rollback_update.sh
+# --embedded) turns the manifest response into a rollBackToEmbedded directive -
+# clients revert to the APK's embedded bundle on their next silent check. The
+# marker dies naturally with the next push_update.sh (dir swap).
 UPDATES_DIR = os.environ.get("HELMDECK_UPDATES_DIR", "/opt/helmdeck-updates")
 _CT = {"hbc": "application/javascript", "js": "application/javascript",
        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
@@ -89,15 +100,44 @@ def _norm(rel):
     s = os.path.normpath((rel or "").replace("\\", "/")).replace("\\", "/")
     return None if s.startswith("..") or s.startswith("/") else s
 
-def _update_file(rel):
+def _channel_dir(channel):
+    """Resolve a channel to its updates dir. Strict allow-list on the name (it
+    comes from a request header) and existence check; everything else serves
+    the root dir, so an unknown/typo'd channel degrades to production."""
+    c = (channel or "").strip()
+    if c and c != "production" and all(ch.isalnum() or ch in "._-" for ch in c) and len(c) <= 64:
+        d = UPDATES_DIR + "-" + c
+        if os.path.isdir(d):
+            return d, c
+    return UPDATES_DIR, ""
+
+def _update_file(rel, base_dir=None):
     n = _norm(rel)
     if not n:
         return None
-    fp = os.path.join(UPDATES_DIR, *n.split("/"))
+    fp = os.path.join(base_dir or UPDATES_DIR, *n.split("/"))
     return fp if os.path.isfile(fp) else None
 
-def _build_manifest(platform, base_url, runtime_version):
-    meta_path = os.path.join(UPDATES_DIR, "metadata.json")
+def _rollback_directive(base_dir):
+    """rollback.json marker -> rollBackToEmbedded directive (or None). The
+    client only honours a commitTime newer than the last one it applied, so the
+    deploy script stamps publish time; fall back to the marker's mtime."""
+    p = os.path.join(base_dir, "rollback.json")
+    if not os.path.isfile(p):
+        return None
+    ct = None
+    try:
+        with open(p, encoding="utf-8") as f:
+            ct = (json.load(f) or {}).get("commitTime")
+    except Exception:
+        pass
+    if not ct:
+        ct = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(os.path.getmtime(p)))
+    return {"type": "rollBackToEmbedded", "parameters": {"commitTime": ct}}
+
+def _build_manifest(platform, base_url, runtime_version, base_dir=None, channel=""):
+    base_dir = base_dir or UPDATES_DIR
+    meta_path = os.path.join(base_dir, "metadata.json")
     if not os.path.isfile(meta_path):
         return None
     with open(meta_path, encoding="utf-8") as f:
@@ -107,12 +147,14 @@ def _build_manifest(platform, base_url, runtime_version):
         return None
 
     def asset(rel, ext):
-        fp = _update_file(rel)
+        fp = _update_file(rel, base_dir)
         if not fp:
             return None
         n = _norm(rel)
         a = {"key": n, "contentType": _CT.get((ext or "").lower().lstrip("."), "application/octet-stream"),
-             "url": base_url + "/updates/assets?path=" + quote(n), "hash": _b64url_sha256(fp)}
+             "url": base_url + "/updates/assets?path=" + quote(n)
+                  + ("&channel=" + quote(channel) if channel else ""),
+             "hash": _b64url_sha256(fp)}
         if ext:
             a["fileExtension"] = "." + ext.lstrip(".")
         return a
@@ -184,8 +226,29 @@ class H(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             platform = (self.headers.get("expo-platform") or (q.get("platform") or ["android"])[0])
             rtv = (self.headers.get("expo-runtime-version") or (q.get("runtime-version") or ["1.0.0"])[0])
+            base_dir, channel = _channel_dir(self.headers.get("expo-channel-name")
+                                             or (q.get("channel") or [""])[0])
+            directive = _rollback_directive(base_dir)
+            if directive is not None:
+                # Directives only exist in multipart responses (the plain-JSON
+                # form of the spec carries a manifest and nothing else).
+                boundary = "helmdeck-" + uuid.uuid4().hex
+                inner = json.dumps(directive).encode("utf-8")
+                body = (b"--" + boundary.encode() + b"\r\n"
+                        b"content-type: application/json\r\n"
+                        b'content-disposition: form-data; name="directive"\r\n\r\n'
+                        + inner + b"\r\n--" + boundary.encode() + b"--\r\n")
+                self.send_response(200)
+                self.send_header("expo-protocol-version", "1")
+                self.send_header("expo-sfv-version", "0")
+                self.send_header("cache-control", "private, max-age=0")
+                self.send_header("content-type", "multipart/mixed; boundary=" + boundary)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             host = self.headers.get("host") or ""
-            man = _build_manifest(platform, "https://" + host, rtv)
+            man = _build_manifest(platform, "https://" + host, rtv, base_dir, channel)
             if not man:
                 return self._send(404, json.dumps({"error": "no update available"}))
             body = json.dumps(man).encode("utf-8")
@@ -200,7 +263,9 @@ class H(BaseHTTPRequestHandler):
             return
         if p == "/updates/assets":
             q = parse_qs(urlparse(self.path).query)
-            fp = _update_file((q.get("path") or [""])[0])
+            base_dir, _ = _channel_dir((q.get("channel") or [""])[0]
+                                       or self.headers.get("expo-channel-name"))
+            fp = _update_file((q.get("path") or [""])[0], base_dir)
             if not fp:
                 return self._send(404, json.dumps({"error": "not found"}))
             ext = fp.rsplit(".", 1)[-1].lower() if "." in os.path.basename(fp) else ""

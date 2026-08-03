@@ -12,6 +12,7 @@ import { Platform } from "react-native";
 import { queryClient } from "@/data/query";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { useSilentOta } from "@/data/ota";
 import { decryptPush, presentDecrypted, registerForPush } from "@/data/push";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
@@ -101,6 +102,7 @@ export default function RootLayout() {
   usePushWiring();
   usePaletteHotkeys();
   useGlobalStream();
+  useSilentOta();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>

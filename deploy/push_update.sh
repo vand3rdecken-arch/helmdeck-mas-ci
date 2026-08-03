@@ -4,8 +4,14 @@
 # next launch - no reinstall, no APK, no Expo cloud. Only JS/asset changes ride
 # OTA; native changes still need `release.sh android`.
 #
-#   bash deploy/push_update.sh            # export + upload
-#   bash deploy/push_update.sh --no-build # upload the existing app/dist as-is
+#   bash deploy/push_update.sh                 # export + upload (production)
+#   bash deploy/push_update.sh --no-build      # upload the existing app/dist as-is
+#   bash deploy/push_update.sh --channel beta  # publish to the "beta" channel
+#
+# Channels: production = /opt/helmdeck-updates (what every stock build follows);
+# any other name lands in /opt/helmdeck-updates-<name> and is only served to
+# builds whose expo-channel-name matches (app.json updates.requestHeaders).
+# Publishing also clears any rollback marker for that channel (the dir swap).
 #
 # Needs .env with RELAY_HOST / RELAY_SSH_* (same as push_relay.sh).
 set -o pipefail
@@ -19,7 +25,18 @@ SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
 TARGET="$SSH_USER@$RELAY_HOST"
 export PATH="/c/Program Files/nodejs:$PATH"
 
-if [ "${1:-}" != "--no-build" ]; then
+NO_BUILD=0; CHANNEL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-build) NO_BUILD=1 ;;
+    --channel)  CHANNEL="${2:-}"; shift ;;
+    *) echo "unknown arg: $1"; exit 2 ;;
+  esac
+  shift
+done
+case "$CHANNEL" in production) CHANNEL="" ;; *[!A-Za-z0-9._-]*) echo "bad channel name"; exit 2 ;; esac
+
+if [ "$NO_BUILD" != "1" ]; then
   echo "==> expo export (android)"
   ( cd app && rm -rf dist && npx expo export --platform android ) || exit 1
 fi
@@ -30,20 +47,22 @@ tar -C app/dist -czf /tmp/hd-update.tgz . || exit 1
 scp "${SSH_OPTS[@]}" /tmp/hd-update.tgz "$TARGET:/tmp/hd-update.tgz" || exit 1
 
 # atomic swap on the VM so the relay never serves a half-written update dir
-ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' -- "$CHANNEL" <<'REMOTE'
 set -e
-sudo rm -rf /opt/helmdeck-updates.new
-sudo mkdir -p /opt/helmdeck-updates.new
-sudo tar -C /opt/helmdeck-updates.new -xzf /tmp/hd-update.tgz
-sudo rm -rf /opt/helmdeck-updates.old
-[ -d /opt/helmdeck-updates ] && sudo mv /opt/helmdeck-updates /opt/helmdeck-updates.old || true
-sudo mv /opt/helmdeck-updates.new /opt/helmdeck-updates
-sudo chmod -R a+rX /opt/helmdeck-updates
-echo "published: $(sudo test -f /opt/helmdeck-updates/metadata.json && echo ok)"
+DEST="/opt/helmdeck-updates${1:+-$1}"
+sudo rm -rf "$DEST.new"
+sudo mkdir -p "$DEST.new"
+sudo tar -C "$DEST.new" -xzf /tmp/hd-update.tgz
+sudo rm -rf "$DEST.old"
+[ -d "$DEST" ] && sudo mv "$DEST" "$DEST.old" || true
+sudo mv "$DEST.new" "$DEST"
+sudo chmod -R a+rX "$DEST"
+echo "published to $DEST: $(sudo test -f "$DEST/metadata.json" && echo ok)"
 REMOTE
 
 echo "==> verify live manifest"
 curl -s -m20 -H "expo-platform: android" -H "expo-runtime-version: 1.0.0" \
-     -H "expo-protocol-version: 1" "https://$RELAY_DOMAIN/updates/manifest" \
+     -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
+     "https://$RELAY_DOMAIN/updates/manifest" \
   | head -c 240
 echo

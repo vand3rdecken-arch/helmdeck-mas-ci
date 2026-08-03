@@ -14,7 +14,10 @@
     "updates": {
       "enabled": true,
       "url": "https://141.144.227.105.sslip.io/updates/manifest",
-      "checkAutomatically": "ON_LOAD"
+      "checkAutomatically": "ON_LOAD",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "ios": {
       "icon": "./assets/expo.icon",
