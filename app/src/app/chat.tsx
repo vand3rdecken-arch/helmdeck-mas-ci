@@ -122,7 +122,7 @@ export default function ChatScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       {header}
-      <View style={{ flex: 1, paddingBottom: kb }}>
+      <View style={{ flex: 1 }}>
         <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 24 }}>
           {msgs.length === 0 ? <Empty text="Frag den Copilot über die Arbeit." /> :
@@ -150,7 +150,7 @@ export default function ChatScreen() {
         </ScrollView>
         {!atBottom ? (
           <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
-            style={{ position: "absolute", right: 14, bottom: 140, flexDirection: "row", alignItems: "center", gap: 4,
+            style={{ position: "absolute", right: 14, bottom: (kb > 0 ? kb : 0) + 96, flexDirection: "row", alignItems: "center", gap: 4,
               backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
               paddingHorizontal: 12, paddingVertical: 7, ...(Platform.OS === "web" ? {} : { elevation: 6 }) }}>
             <Ionicons name="arrow-down" size={14} color={t.accent} />
@@ -159,7 +159,7 @@ export default function ChatScreen() {
         ) : null}
 
         {/* model + thinking-level pills (pattern from card_composer.tsx) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
           contentContainerStyle={{ gap: 6, paddingHorizontal: 8, paddingTop: 8, alignItems: "center" }}>
           <Pressable onPress={() => setPicker(true)} style={toolBtn(model !== "auto")}>
             <Ionicons name="sparkles-outline" size={13} color={model !== "auto" ? t.accent : t.txtSecondary} />
@@ -188,6 +188,7 @@ export default function ChatScreen() {
             </Pressable>
           )}
         </View>
+        {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
 
       {/* model picker modal (pattern from card_composer.tsx) */}
