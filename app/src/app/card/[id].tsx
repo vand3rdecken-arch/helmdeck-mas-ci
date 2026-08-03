@@ -323,7 +323,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       </View>
 
       <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
-        slashCommands={SLASH} seed={seed} bottomInset={kb > 0 ? 8 : bottomInset} draftKey={`card:${k.id}`}
+        slashCommands={SLASH} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
         placeholder={agentMode ? "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'"
           : k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
     </View>

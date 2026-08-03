@@ -173,7 +173,7 @@ export default function ChatScreen() {
         </ScrollView>
 
         <View style={{ flexDirection: "row", padding: 8, gap: 8, borderTopWidth: 1, borderTopColor: t.glassBorder,
-          paddingBottom: kb > 0 ? 8 : insets.bottom + 8, alignItems: "flex-end" }}>
+          paddingBottom: kb > 0 ? insets.bottom + 10 : insets.bottom + 8, alignItems: "flex-end" }}>
           <TextInput value={text} onChangeText={setText} multiline placeholder="Frage…" placeholderTextColor={t.txtPlaceholder}
             style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120 }} />
           {busy ? (
