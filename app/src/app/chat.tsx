@@ -1,61 +1,53 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator, Keyboard, Modal, Platform, Pressable, ScrollView, Text, TextInput, View,
-} from "react-native";
+import { Keyboard, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type ChatMsg } from "@/data/client";
+import { api, type ChatMsg, type SteerOpts } from "@/data/client";
 import { useTheme } from "@/theme";
-import { Markdown } from "@/ui/card_markdown";
+import { Composer } from "@/ui/card_composer";
+import { Transcript, type TStep } from "@/ui/card_transcript";
 import { Empty } from "@/ui/kit";
 
-// Copy-to-clipboard affordance — same pattern as card_transcript.tsx's CopyBtn
-// so the Board copilot chat behaves like the card chat (agent output copyable,
-// no fragile native text selection).
-function CopyBtn({ text, color, ok }: { text: string; color: string; ok: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <Pressable hitSlop={8} onPress={async () => { await Clipboard.setStringAsync(text); setDone(true); setTimeout(() => setDone(false), 1400); }}>
-      <Ionicons name={done ? "checkmark" : "copy-outline"} size={13} color={done ? ok : color} />
-    </Pressable>
-  );
+// Board copilot chat = the SAME transcript + composer UI as the card chat
+// (app/src/ui/card_transcript.tsx + card_composer.tsx). Only the submit target
+// differs (api.chat here vs api.steer on a card), so there is ONE chat UI to
+// maintain, not two. The board's flat ChatMsg log is mapped onto the transcript
+// step model below.
+function toStep(m: ChatMsg): TStep {
+  const mine = m.cls === "user" || m.cls === "you";
+  return {
+    role: mine ? "user" : "assistant",
+    kind: "text",
+    cls: m.cls,
+    text: m.cls === "error" ? "⚠ " + m.text : m.text,
+    ts: m.ts,
+    agent: m.cls === "pm",   // the PM's proactive messages get the board-agent tag
+  };
 }
-
-// thinking levels — each maps to a real Claude Code budget keyword server-side
-// (mirrors app/src/ui/card_composer.tsx).
-const THINK: { id: string; short: string }[] = [
-  { id: "", short: "off" }, { id: "think", short: "think" },
-  { id: "think-hard", short: "hard" }, { id: "ultrathink", short: "ultra" },
-];
 
 export default function ChatScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
-  const [model, setModel] = useState("auto");
-  const [thinking, setThinking] = useState("");
-  const [picker, setPicker] = useState(false);
   const qc = useQueryClient();
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
   // Edge-to-edge (Expo SDK 57) makes Android ignore adjustResize, so the composer
   // hides behind the keyboard. Measure the keyboard height and lift the content
-  // manually - works on both platforms without a native keyboard-controller lib.
+  // manually (a height:kb spacer) - works on both platforms without a native lib.
   const [kb, setKb] = useState(0);
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
     const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
     return () => { show.remove(); hide.remove(); };
   }, []);
-  // turn token: each send captures the current id; Stop bumps it so a late
-  // reply that arrives after cancel is discarded instead of appended.
+  // turn token: each send captures the current id; Stop bumps it so a late reply
+  // that arrives after cancel is discarded instead of appended.
   const turn = useRef(0);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
@@ -76,15 +68,14 @@ export default function ChatScreen() {
     setAtBottom(contentSize.height - contentOffset.y - layoutMeasurement.height < 60);
   };
 
-  async function send() {
-    const q = text.trim();
+  async function send(raw: string, opts: SteerOpts) {
+    const q = raw.trim();
     if (!q) return;
-    setText("");
     setMsgs((m) => [...m, { cls: "user", text: q }]);
     setBusy(true);
     const id = ++turn.current;
     try {
-      const r = await api.chat(q, { model, thinking });
+      const r = await api.chat(q, opts);
       if (turn.current !== id) return;   // cancelled/superseded — drop this reply
       const actions = (r.actions ?? []).map((a) => a.detail || a.tool).filter(Boolean).join("\n");
       setMsgs((m) => [...m, { cls: r.error ? "error" : "bot",
@@ -104,15 +95,6 @@ export default function ChatScreen() {
     api.chatCancel().catch(() => {});   // kill the copilot subprocess server-side
     setBusy(false);
   }
-
-  const thinkShort = THINK.find((x) => x.id === thinking)?.short ?? "off";
-  const modelLabel = model === "auto" ? "Auto" : model.replace("claude-", "").replace(/-\d{8}$/, "");
-  const toolBtn = (active: boolean) => ({
-    flexDirection: "row" as const, alignItems: "center" as const, gap: 4,
-    backgroundColor: active ? t.accent + "26" : t.surface2,
-    borderColor: active ? t.accent + "80" : t.borderSubtle, borderWidth: 1,
-    borderRadius: 7, paddingHorizontal: 8, paddingVertical: 5,
-  });
 
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
@@ -137,36 +119,11 @@ export default function ChatScreen() {
       {header}
       <View style={{ flex: 1 }}>
         <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 24 }}>
-          {msgs.length === 0 ? <Empty text="Frag den Copilot über die Arbeit." /> :
-            msgs.map((m, i) => {
-              const mine = m.cls === "user" || m.cls === "you";
-              const isPm = m.cls === "pm";
-              return (
-                <View key={i} style={{ alignSelf: mine ? "flex-end" : "stretch", maxWidth: mine ? "85%" : "100%",
-                  backgroundColor: mine ? t.accent + "22" : t.surface1, borderRadius: 10, padding: 10,
-                  borderLeftWidth: isPm ? 3 : 0, borderLeftColor: t.accent2 }}>
-                  {isPm ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                      <Ionicons name="compass" size={13} color={t.accent2} />
-                      <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "800" }}>PM</Text>
-                      {m.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>· {m.ts}</Text> : null}
-                    </View>
-                  ) : null}
-                  {m.cls === "bot" || isPm
-                    ? <Markdown>{m.text}</Markdown>
-                    : <Text style={{ color: m.cls === "error" ? t.danger : t.txtPrimary, fontSize: 14 }}>{m.text}</Text>}
-                  {m.text ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
-                      {!isPm && m.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{m.ts}</Text> : null}
-                      <View style={{ flex: 1 }} />
-                      <CopyBtn text={m.text} color={t.txtTertiary} ok={t.ok} />
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          {busy ? <ActivityIndicator color={t.accent} /> : null}
+          contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
+          {msgs.length === 0
+            ? <Empty text="Frag den Copilot über die Arbeit." />
+            : <Transcript steps={msgs.map(toStep)} />}
+          {busy ? <Text style={{ color: t.txtTertiary, fontSize: 12, paddingTop: 8 }}>… denkt</Text> : null}
         </ScrollView>
         {!atBottom ? (
           <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
@@ -178,67 +135,11 @@ export default function ChatScreen() {
           </Pressable>
         ) : null}
 
-        {/* model + thinking-level pills (pattern from card_composer.tsx) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
-          contentContainerStyle={{ gap: 6, paddingHorizontal: 8, paddingTop: 8, alignItems: "center" }}>
-          <Pressable onPress={() => setPicker(true)} style={toolBtn(model !== "auto")}>
-            <Ionicons name="sparkles-outline" size={13} color={model !== "auto" ? t.accent : t.txtSecondary} />
-            <Text style={{ color: model !== "auto" ? t.accent : t.txtSecondary, fontSize: 12 }}>{modelLabel}</Text>
-          </Pressable>
-          <Pressable onPress={() => { const i = THINK.findIndex((x) => x.id === thinking); setThinking(THINK[(i + 1) % THINK.length].id); }}
-            style={toolBtn(thinking !== "")}>
-            <Ionicons name="bulb-outline" size={13} color={thinking !== "" ? t.accent : t.txtSecondary} />
-            <Text style={{ color: thinking !== "" ? t.accent : t.txtSecondary, fontSize: 12 }}>{thinkShort}</Text>
-          </Pressable>
-        </ScrollView>
-
-        <View style={{ flexDirection: "row", padding: 8, gap: 8, borderTopWidth: 1, borderTopColor: t.glassBorder,
-          paddingBottom: kb > 0 ? insets.bottom + 10 : insets.bottom + 8, alignItems: "flex-end" }}>
-          <TextInput value={text} onChangeText={setText} multiline placeholder="Frage…" placeholderTextColor={t.txtPlaceholder}
-            style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120 }} />
-          {busy ? (
-            <Pressable onPress={stop}
-              style={{ backgroundColor: t.danger, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="stop" size={20} color="#fff" />
-            </Pressable>
-          ) : (
-            <Pressable onPress={send} disabled={!text.trim()}
-              style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: !text.trim() ? 0.5 : 1 }}>
-              <Ionicons name="arrow-up" size={22} color="#fff" />
-            </Pressable>
-          )}
-        </View>
+        <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
+          placeholder="Frage…" draftKey="board-copilot"
+          bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
         {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
-
-      {/* model picker modal (pattern from card_composer.tsx) */}
-      <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
-        <Pressable onPress={() => setPicker(false)} style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "center", padding: 24 }}>
-          <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, maxHeight: "70%", overflow: "hidden" }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>MODEL</Text>
-            <ScrollView>
-              {["auto", ...(models ?? [])].map((raw) => {
-                // /models returns objects {id,label,desc}; normalise (also plain
-                // strings) so we never render an object as a child -> app crash.
-                const id = typeof raw === "string" ? raw : raw.id;
-                const label = id === "auto" ? "Auto (route by task)"
-                  : typeof raw === "string" ? raw : (raw.label || raw.id);
-                const desc = typeof raw === "string" ? "" : (raw.desc || "");
-                return (
-                  <Pressable key={id} onPress={() => { setModel(id); setPicker(false); }}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
-                    <Ionicons name={id === model ? "radio-button-on" : "radio-button-off"} size={16} color={id === model ? t.accent : t.txtTertiary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{label}</Text>
-                      {desc ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{desc}</Text> : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
