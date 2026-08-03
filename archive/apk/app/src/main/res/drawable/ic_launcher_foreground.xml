@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- a fanned stack of three cards: the board, as a glyph. Kept in sync with the
+     desktop mark (tools/make_icon.py) - lifted back card so the stack reads as
+     two cards, a sheen band on the accent card, three text lines, and the small
+     green 'done' card on top. Drawn inside the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="54" android:rotation="-9">
+        <path android:fillColor="#2E4E66"
+            android:pathData="M29,37 h35 a5,5 0 0 1 5,5 v30 a5,5 0 0 1 -5,5 h-35 a5,5 0 0 1 -5,-5 v-30 a5,5 0 0 1 5,-5 z"/>
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="4">
+        <path android:fillColor="#2893CC"
+            android:pathData="M37,33 h35 a5,5 0 0 1 5,5 v30 a5,5 0 0 1 -5,5 h-35 a5,5 0 0 1 -5,-5 v-30 a5,5 0 0 1 5,-5 z"/>
+        <path android:fillColor="#66B6E1"
+            android:pathData="M37,38 a5,5 0 0 1 5,-5 h35 a5,5 0 0 1 5,5 v4 h-45 z"/>
+        <path android:fillColor="#0E0F10"
+            android:pathData="M41,47 h26 v3.6 h-26 z M41,54 h30 v3.6 h-30 z M41,61 h17 v3.6 h-17 z"/>
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="15">
+        <path android:fillColor="#4CB86A"
+            android:pathData="M62,29 h13 a4,4 0 0 1 4,4 v11 a4,4 0 0 1 -4,4 h-13 a4,4 0 0 1 -4,-4 v-11 a4,4 0 0 1 4,-4 z"/>
+    </group>
+</vector>

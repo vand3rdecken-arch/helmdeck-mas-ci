@@ -24,7 +24,7 @@ sudo systemctl disable --now ntfy 2>/dev/null || true
 sudo rm -f /etc/systemd/system/ntfy.service /usr/local/bin/ntfy
 sudo rm -rf /etc/ntfy /var/cache/ntfy
 sudo systemctl daemon-reload
-sudo rm -f /etc/nginx/sites-enabled/swarmdeck-push /etc/nginx/sites-available/swarmdeck-push
+sudo rm -f /etc/nginx/sites-enabled/helmdeck-push /etc/nginx/sites-available/helmdeck-push
 sudo certbot delete --cert-name "$PUSH_DOMAIN" --non-interactive 2>/dev/null || true
 sudo nginx -t && sudo systemctl reload nginx
 echo "ntfy entfernt; nginx laeuft:"

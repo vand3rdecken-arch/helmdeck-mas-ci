@@ -8,7 +8,19 @@ rule."""
 import json, os, sqlite3, threading
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DBPATH = os.path.join(ROOT, "swarmdeck.db")
+DBPATH = os.path.join(ROOT, "helmdeck.db")
+
+# The HelmDeck rename (2026) changed the DB filename from swarmdeck.db. Carry the
+# existing data over on first start so no cards are lost. Copy (not move) so the
+# original stays as a backup; include the WAL sidecars so recent writes come too.
+_LEGACY_DB = os.path.join(ROOT, "swarmdeck.db")
+if not os.path.exists(DBPATH) and os.path.exists(_LEGACY_DB):
+    import shutil
+    shutil.copy2(_LEGACY_DB, DBPATH)
+    for _ext in ("-wal", "-shm"):
+        if os.path.exists(_LEGACY_DB + _ext):
+            shutil.copy2(_LEGACY_DB + _ext, DBPATH + _ext)
+
 _local = threading.local()
 _version = 0                      # bumped on every write; SSE waits on it
 _version_cond = threading.Condition()

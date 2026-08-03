@@ -1,8 +1,8 @@
-# SwarmDeck Glance — Meta Ray-Ban Display webapp
+# HelmDeck Glance — Meta Ray-Ban Display webapp
 
 A glanceable ops view for the Meta Ray-Ban Display glasses (600×600 additive
 waveguide, D-pad / EMG input). Shows what needs you, capacity, and SoW margin —
-read straight from the SwarmDeck daemon.
+read straight from the HelmDeck daemon.
 
 ```
 glasses/
@@ -23,14 +23,14 @@ additive surfaces, focus-based navigation, no touch).
   `/test-on-device` skill; it uploads the files and gives an HTTPS URL the
   glasses open. (For a permanent install you publish through the Wearables
   Developer Center.) You do **not** run a server on the glasses.
-- **The data** → your **SwarmDeck daemon** (`daemon/`, port 8140), hosted by you
+- **The data** → your **HelmDeck daemon** (`daemon/`, port 8140), hosted by you
   — the same box you already run it on, reachable over LAN or Tailscale
   (e.g. `https://<host>.ts.net:8140`). The webapp calls its read-only
   `GET /glance?token=…` endpoint (CORS-enabled, token-gated).
 
 ## Connect it
 
-1. In SwarmDeck **Settings**, set a **glance token** (`settings.glance_token`)
+1. In HelmDeck **Settings**, set a **glance token** (`settings.glance_token`)
    — any random string. Empty = the `/glance` endpoint stays **off**.
 2. Open this webapp; on first run it shows the **Connect** screen. Enter:
    - **Daemon URL** — where your daemon is reachable (must be **HTTPS** for the

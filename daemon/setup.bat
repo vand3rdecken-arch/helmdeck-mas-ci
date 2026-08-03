@@ -1,8 +1,8 @@
 @echo off
-rem SwarmDeck daemon — one-time setup. Requires Python 3.10+ on PATH.
+rem HelmDeck daemon — one-time setup. Requires Python 3.10+ on PATH.
 rem Creates a local venv, installs deps, downloads the Playwright browser helper.
 cd /d "%~dp0"
-echo === SwarmDeck daemon setup ===
+echo === HelmDeck daemon setup ===
 where python >nul 2>&1 || (echo Python not found on PATH. Install Python 3.10+ first. & pause & exit /b 1)
 
 if not exist ".venv" (

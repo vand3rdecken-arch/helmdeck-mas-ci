@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""The orchestrator - SwarmDeck's Paseo half. A TRACK is a git branch, isolated in its own
+"""The orchestrator - HelmDeck's Paseo half. A TRACK is a git branch, isolated in its own
 worktree, bound to a RESUMABLE coding session (Claude Code --resume <session_id>). You select
 a track and continue its context; history is never rebuilt. Each steer is recorded into the
 flight recorder (actionlog) so what the session did stays reviewable.
 
-Store: tracks.json (one list). Worktrees: <repo>/../swarmdeck-worktrees/<branch>.
+Store: tracks.json (one list). Worktrees: <repo>/../helmdeck-worktrees/<branch>.
 Permission mode is per-track and defaults to acceptEdits - the worktree is the blast-radius
 control. Escalate a track to bypassPermissions only deliberately (owner decision)."""
 import json, os, re, shutil, subprocess, time
@@ -12,8 +12,8 @@ from runs import REC
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STORE = os.path.join(ROOT, "tracks.json")
-DEFAULT_PERM = os.environ.get("SWARMDECK_PERM", "acceptEdits")
-CLAUDE = (os.environ.get("SWARMDECK_CLAUDE") or shutil.which("claude")
+DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
 import db as _db
@@ -68,7 +68,7 @@ def _checkpoint(worktree):
         g("add", "-A")                     # stage every worktree file into it
         tree = g("write-tree")
         # commit-tree uses the object db, not the index - real env is fine
-        commit = _git(worktree, "commit-tree", tree, "-p", head, "-m", "swarmdeck checkpoint")
+        commit = _git(worktree, "commit-tree", tree, "-p", head, "-m", "helmdeck checkpoint")
         return commit or None
     except Exception:
         return None
@@ -126,9 +126,26 @@ def is_git_repo(path):
     return r.returncode == 0
 
 def _worktree_for(repo, branch):
-    base = os.path.abspath(os.path.join(repo, "..", "swarmdeck-worktrees"))
+    base = os.path.abspath(os.path.join(repo, "..", "helmdeck-worktrees"))
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, _slug(branch))
+
+def _worktree_of_branch(repo, branch):
+    """Path of an EXISTING worktree that already has `branch` checked out, or
+    None. git refuses to check the same branch out twice, so if a stale worktree
+    holds it (e.g. a swarmdeck->helmdeck rename left ../swarmdeck-worktrees),
+    dispatch must REUSE that path instead of failing on `git worktree add`."""
+    r = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    path = None
+    for line in r.stdout.splitlines():
+        if line.startswith("worktree "):
+            path = line[9:].strip()
+        elif line.startswith("branch ") and path and line[7:].strip() == "refs/heads/" + branch:
+            return path
+    return None
 
 import threading as _threading
 _turn_locks = {}
@@ -232,7 +249,10 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     # attachments filed with the request are saved now; the first run reads them.
     # model chosen in the composer becomes the card's execution model (Auto too).
     att_paths = turnopts.save_attachments(run_dir, attachments)
-    cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths))
+    # Auto routing sees the card's own facts (value/priority); an explicit model
+    # from the composer still wins (resolve_model only routes for "auto").
+    cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths),
+        signals={"value": value, "priority": priority})
     t = {"id": tid, "repo": repo, "branch": branch, "worktree": "", "task": task,
          # task = the one-line title (Jira summary); description = the long body
          # (Jira/Plane description). Both editable; the agent reads title+desc+files.
@@ -295,6 +315,9 @@ def _start(tid):
 def _start_inner(t):
     tid = t["id"]
     wt = _worktree_for(t["repo"], t["branch"])
+    existing = _worktree_of_branch(t["repo"], t["branch"])
+    if existing and os.path.isdir(existing):
+        wt = existing                       # reuse a prior checkout (e.g. legacy dir)
     if not os.path.exists(wt):
         if _branch_exists(t["repo"], t["branch"]):
             _git(t["repo"], "worktree", "add", wt, t["branch"])
@@ -331,7 +354,7 @@ def _start_inner(t):
 def _gate(t):
     """Quality gate run when a card is submitted for review. Checks: (1) the
     worktree exists and its work is committed; (2) if the repo declares its own
-    gate (a `swarmdeck.gate` file holding a shell command - the harness's
+    gate (a `helmdeck.gate` file holding a shell command - the harness's
     standard), it must exit 0. Returns (ok, problems)."""
     problems = []
     wt = t.get("worktree")
@@ -347,17 +370,17 @@ def _gate(t):
     # card is verified with the current gate even on an old branch - and it is run
     # by the DAEMON (full command access), so the agent's permission mode never
     # blocks the tests. Fall back to the worktree's own gate file if main has none.
-    gate_file = os.path.join(t.get("repo") or wt, "swarmdeck.gate")
+    gate_file = os.path.join(t.get("repo") or wt, "helmdeck.gate")
     if not os.path.exists(gate_file):
-        gate_file = os.path.join(wt, "swarmdeck.gate")
+        gate_file = os.path.join(wt, "helmdeck.gate")
     if os.path.exists(gate_file):
         with open(gate_file, encoding="utf-8") as f:
             cmd = f.read().strip()
         if cmd:
             # Run in the worktree (cwd = the code under test), but expose the MAIN
-            # checkout as %SWARMDECK_REPO% so the gate can invoke the CURRENT gate
+            # checkout as %HELMDECK_REPO% so the gate can invoke the CURRENT gate
             # script from main - old branches don't carry tools/run_gate.py.
-            genv = dict(os.environ, SWARMDECK_REPO=t.get("repo") or wt)
+            genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
             r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True,
                                text=True, timeout=600, env=genv)
             if r.returncode != 0:
@@ -424,7 +447,7 @@ def _merge_to_main(t):
     # real work to land
     try:
         _git(repo, "merge", "--no-ff", branch, "-m",
-             "SwarmDeck accept: %s (%s)" % (branch, t.get("id", "")))
+             "HelmDeck accept: %s (%s)" % (branch, t.get("id", "")))
         return True, "merged", "%d Commit(s) sauber nach main (%s) gemergt." % (ahead, cur)
     except Exception as e:
         conflicts = ""
@@ -471,7 +494,7 @@ def _autocommit(t):
                          capture_output=True, text=True)
     if "conflict marker" in (chk.stdout or "").lower():
         return "markers"
-    if _git_try(wt, "commit", "-m", "SwarmDeck: finalize %s" % t.get("id", ""))[0] != 0:
+    if _git_try(wt, "commit", "-m", "HelmDeck: finalize %s" % t.get("id", ""))[0] != 0:
         return False
     return True
 
@@ -563,7 +586,7 @@ def _repo_hook(t, kind):
     return ok
 
 
-def move_lane(tid, lane, actor="owner"):
+def move_lane(tid, lane, actor="owner", _autopark=True):
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
     ->done accepts (records the acceptance economics)."""
@@ -615,7 +638,7 @@ def move_lane(tid, lane, actor="owner"):
             return t
         if ac is True:
             log.log("note", "COMMITTED worktree changes on the branch before merge")
-        # the repo's own quality gate (swarmdeck.gate command). The committed
+        # the repo's own quality gate (helmdeck.gate command). The committed
         # check now trivially passes because we just committed.
         ok, problems = _gate(t)
         events.emit("gate", tid, ok=ok, problems=problems)
@@ -631,6 +654,16 @@ def move_lane(tid, lane, actor="owner"):
         if lane == "review":
             # PREVIEW ONLY: say what a Done would do; the card RESTS on Review.
             kind, msg = _classify_merge(t)
+            # AUTO-DELEGATION: a "conflict" that is really an uncommitted (dirty)
+            # shared checkout, not <<<<<< markers, is an out-of-worktree blocker
+            # the sandboxed worker can't fix. Hand it to the board-Agent capability
+            # automatically - park the dirty tree on a wip-* branch (nothing lost)
+            # and retry, ONCE (_autopark guards recursion).
+            if _autopark and kind == "conflict" and _is_dirty_block(msg):
+                log.log("note", "AUTO: out-of-worktree blocker (dirty checkout) - delegating to the board-Agent")
+                summary = park_and_retry_merge(tid, actor="board-Agent (auto)")
+                log.log("note", "AUTO board-Agent: " + summary[:300])
+                return _find(_load(), tid) or dict(t)
             events.emit("merge", tid, ok=(kind not in ("conflict", "blocked")),
                         outcome=kind, detail="preview: " + msg[:200])
             log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
@@ -703,6 +736,92 @@ def move_lane(tid, lane, actor="owner"):
 MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
 
 
+def _is_dirty_block(msg):
+    """True when a 'conflict' is really git refusing to merge over an uncommitted
+    (dirty) checkout - NOT real <<<<<< markers. That's an out-of-worktree blocker
+    the sandboxed worker can't fix, so the board-Agent parks + retries."""
+    m = (msg or "").lower()
+    return "<<<<<<<" not in (msg or "") and (
+        "would be overwritten by merge" in m
+        or "local changes to the following" in m
+        or "commit your changes or stash" in m)
+
+
+def park_and_retry_merge(tid, actor="owner"):
+    """Unblock a card whose review/merge is blocked by an uncommitted (dirty)
+    working tree in its repo - NOT a real <<<<<< conflict, but git refusing to
+    merge over local changes ("your local changes ... would be overwritten").
+
+    Park ALL uncommitted work (tracked + untracked) onto a wip-<branch>-<ts>
+    branch - nothing lost, the checkout goes clean - then re-run the review
+    check. NON-DESTRUCTIVE (only ever adds a branch/commit; never discards).
+
+    This is the board-Agent's job, not the sandboxed card worker's: the worker
+    is confined to its worktree and cannot reach the shared main checkout by
+    design, so this cross-cutting unblock belongs to the board-wide agent, gated
+    by the owner's explicit instruction. Returns a human summary."""
+    tracks = _load()
+    t = _find(tracks, tid)
+    if not t:
+        raise RuntimeError("no such track: " + tid)
+    repo = t.get("repo")
+    if not repo or not is_git_repo(repo):
+        return "cannot park: card '%s' has no git repo" % tid
+    status = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
+                            capture_output=True, text=True).stdout.strip()
+    parked = ""
+    if status.strip():
+        cur = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        wip = "wip-%s-%s" % (_slug(cur), time.strftime("%Y%m%d-%H%M%S"))
+        _git(repo, "checkout", "-b", wip)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m",
+             "wip: park uncommitted %s work so card %s could merge (by %s)" % (cur, t["branch"], actor))
+        _git(repo, "checkout", cur)     # back on the original branch, now clean
+        parked = wip
+        import events
+        events.log("merge", "parked dirty tree of %s onto %s to unblock %s (%s)"
+                   % (cur, wip, t["branch"], actor))
+    # tree is clean now -> re-run the review/merge check (no auto-park recursion)
+    r = move_lane(tid, "review", actor=actor, _autopark=False)
+    if r.get("gate_failed"):
+        return "parked onto '%s', but the gate is red: %s" % (parked or "-", " | ".join(r.get("gate_report") or [])[:200])
+    if r.get("merge_failed"):
+        return "parked onto '%s', but the card still can't merge: %s" % (parked or "-", (r.get("merge_report") or "")[:200])
+    head = ("Parked the uncommitted work onto branch '%s' (nothing lost) - " % parked) if parked else "The tree was already clean - "
+    return head + "the review check now passes. Move the card to Done to land it."
+
+
+def _pending_context(t):
+    """Review/merge/gate checks run OUTSIDE the agent session (daemon-side, only
+    in the actionlog), so the worker never sees a merge conflict or a failed
+    gate - it's in the woven chat view but not the session. When the owner steers
+    to fix one ("resolve the conflict"), prepend the actual report so the worker
+    isn't blind. Empty string when nothing is pending."""
+    parts = []
+    gr = t.get("gate_report")
+    if t.get("gate_failed") and gr:
+        parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
+    # Thrash guard: if this card has failed its gate several times in a row, a
+    # naive rewrite-and-retry keeps burning the budget (SageRoute's rewrite/retest
+    # trap). Tell the worker to stop rewriting and change approach - break the loop.
+    import events, turnopts
+    fails = events.consecutive_gate_fails(t["id"])
+    if fails >= turnopts.ESCALATE_TURNS:
+        parts.append("This card has FAILED its quality gate %d times in a row. Do "
+                     "NOT just rewrite and resubmit - that pattern has not worked. "
+                     "Step back: re-examine the assumption behind the fix, or say "
+                     "plainly what is blocking you and stop." % fails)
+    rep = t.get("review_report") or t.get("merge_report")
+    if rep and (t.get("merge_kind") == "conflict" or t.get("merge_failed") or t.get("gate_failed")):
+        parts.append("Review/merge check reported:\n" + str(rep))
+    if not parts:
+        return ""
+    return ("[Desktop context since your last turn - the review/merge/gate ran "
+            "outside this session, so you did not see this. Use it if the "
+            "instruction refers to it:]\n\n" + "\n\n".join(parts) + "\n\n---\n\n")
+
+
 def steer(tid, text, perm=None, actor="owner", source="you",
           model="", thinking="", attachments=None, mode=None):
     """Continue the track's session (resume - context preserved, NO history rebuild).
@@ -733,8 +852,17 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     log.log("steer", text)               # audit the human's words, not the augmented prompt
     t["status"] = "running"; _save_track(t)
     paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)
-    cli_model, _ = turnopts.resolve_model(model, text, bool(paths))
-    prompt = turnopts.augment_prompt(text, thinking, paths)
+    # Auto routing sees the card's facts INCLUDING turn count - a card that's
+    # already dragged on escalates to the strong model (cheap "escalate on
+    # evidence"). An explicit model from the composer still wins.
+    cli_model, _ = turnopts.resolve_model(model, text, bool(paths),
+        signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns"),
+                 "failed": t.get("status") == "bounced" or bool(t.get("gate_failed")),
+                 "fails": events.consecutive_gate_fails(t["id"])})
+    # Hand the worker the daemon-side context it never saw (a merge conflict, a
+    # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
+    # above still logs the human's original text, not this augmentation.
+    prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
     sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
     log.log("reply", result[:2000])

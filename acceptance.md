@@ -1,4 +1,4 @@
-# SwarmDeck - acceptance (Define round, 2026-07-19)
+# HelmDeck - acceptance (Define round, 2026-07-19)
 
 ## Definition (owner's answers)
 

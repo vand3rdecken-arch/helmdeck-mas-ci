@@ -1,4 +1,4 @@
-# SwarmDeck
+# HelmDeck
 
 **Work management where the workers are agents.** A merge of Jira (tickets,
 boards, clients), n8n (processes that chain and auto-advance), and UiPath

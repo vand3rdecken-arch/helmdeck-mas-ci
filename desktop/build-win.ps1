@@ -1,8 +1,8 @@
-# SwarmDeck - Windows installer build (one command).
+# HelmDeck - Windows installer build (one command).
 #
 #   powershell -ExecutionPolicy Bypass -File build-win.ps1
 #
-# Produces:  release\SwarmDeck-Setup-<version>-x64.exe
+# Produces:  release\HelmDeck-Setup-<version>-x64.exe
 #
 # It works around electron-builder's winCodeSign cache, which contains macOS
 # symlinks that fail to extract on Windows unless the user has the symlink
@@ -10,7 +10,7 @@
 # darwin symlinks, so the build no longer needs the privilege. If you already
 # have Developer Mode on, this step is harmless.
 #
-# Requirements on this machine (same as SwarmDeck): Python 3.12 + the `claude` CLI.
+# Requirements on this machine (same as HelmDeck): Python 3.12 + the `claude` CLI.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -36,5 +36,5 @@ Write-Host "==> building the UI (Next standalone) + the NSIS installer"
 npm run dist:win
 
 Write-Host ""
-Write-Host "DONE. Installer -> release\ (SwarmDeck-Setup-<version>-x64.exe)"
+Write-Host "DONE. Installer -> release\ (HelmDeck-Setup-<version>-x64.exe)"
 Get-ChildItem "release\*.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }

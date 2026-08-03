@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SwarmDeck's build loop - the FORWARD work loop a request travels through,
+"""HelmDeck's build loop - the FORWARD work loop a request travels through,
 enforced the glass-harness way (states computed from artifacts on disk, Stop
 hook blocks resting mid-loop, SessionStart re-orients fresh context).
 
@@ -12,9 +12,9 @@ The loop:
              which modules/laws are touched, does a load-bearing shortcut ship
              (then register it in daemon/debt.py in the same change)?
     EXECUTE  checks are red - build/fix until green: touched daemon/*.py compile,
-             web tsc clean, daemon modules import, and DESIGN LINT passes
+             app (Expo) tsc clean, daemon modules import, and DESIGN LINT passes
              (tools/design_lint.py - the enforceable subset of the design skill:
-             color-scheme, no inline control sizing, tokens not hex, etc).
+             web-shell color-scheme, theme tokens not hex, semantic z-scale).
     TEST     checks green but workorder lacks '## Verified' - run the real
              thing (e2e/screenshot for UI - JUDGE it, don't just render it),
              AND adversarial-test the specific feature you built (write its
@@ -44,7 +44,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DAEMON = os.path.join(ROOT, "daemon")
-WEB = os.path.join(ROOT, "web")
+APP = os.path.join(ROOT, "app")   # the Expo app - the only frontend (web/ archived)
 LOOPDIR = os.path.join(ROOT, ".loop")
 WORKORDER = os.path.join(LOOPDIR, "workorder.md")
 WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
@@ -52,8 +52,8 @@ WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 CORE_MODULES = ["db", "events", "sessions", "drivers", "processes", "copilot",
                 "connectors", "charter", "checkpoints", "auth", "importers",
                 "debt", "server"]
-SECRET_NAMES = ("settings.json", "users.json", "swarmdeck.db", "swarmdeck.db-wal",
-                "swarmdeck.db-shm", "copilot_log.json",
+SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
+                "helmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
 
 WORKORDER_TEMPLATE = """# Workorder
@@ -123,8 +123,8 @@ def checks_red(touched):
                                 os.path.join(ROOT, p)], capture_output=True, text=True)
             if r.returncode != 0:
                 problems.append("%s: %s" % (p, (r.stderr or "").strip().splitlines()[-1][:100]))
-    if any(p.startswith("web/") for p in touched) and \
-       os.path.isdir(os.path.join(WEB, "node_modules")):
+    if any(p.startswith("app/") and p.endswith((".ts", ".tsx")) for p in touched) and \
+       os.path.isdir(os.path.join(APP, "node_modules")):
         try:
             npx = r"C:\Program Files\nodejs\npx.cmd"
             if not os.path.exists(npx):
@@ -132,10 +132,10 @@ def checks_red(touched):
             env = dict(os.environ)
             env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
             r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
-                               cwd=WEB, capture_output=True, text=True, env=env, timeout=180)
+                               cwd=APP, capture_output=True, text=True, env=env, timeout=180)
             if r.returncode != 0:
                 first = (r.stdout or r.stderr or "").strip().splitlines()
-                problems.append("web types: " + (first[0][:120] if first else "tsc failed"))
+                problems.append("app types: " + (first[0][:120] if first else "tsc failed"))
         except (OSError, subprocess.SubprocessError):
             pass   # a state doctor must never crash; types are re-checked in session
     if not problems and any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
@@ -184,18 +184,22 @@ def archive_workorder():
     os.replace(WORKORDER, dst)
 
 
-# each shippable artifact vs ONLY the source that feeds it - so a web change
-# doesn't flag the APK (whose Kotlin is untouched) as stale, and vice versa.
+# each shippable artifact vs ONLY the source that feeds it. Repointed to the
+# Expo stack (paid part of the expo-cutover-pipeline debt): the mobile app's JS
+# ships via OTA (deploy/push_update.sh), NOT the APK - so a JS/daemon change must
+# NOT flag the APK stale. Only NATIVE sources gate the signed APK; a fresh APK is
+# only needed for native changes. web/ and apk/ (Kotlin) are archived and gone.
+# Only the signed Android APK is auto-tracked (native-only sources). The desktop
+# installer and the glasses zip are built on demand (tools/release.sh /
+# build_all.sh glasses) and are not part of the mobile launch pipeline, so they
+# don't nag the loop before rest.
 ARTIFACT_SRC = {
-    "desktop/release/SwarmDeck-Setup-0.2.0-x64.exe": ("daemon", "web/app", "web/components", "web/lib"),
-    # the shippable Android artifact is the SIGNED release build (debug is only
-    # a local convenience build and is never distributed)
-    "apk/app/build/outputs/apk/release/app-release.apk": ("apk/app/src",),
-    "glasses/dist/swarmdeck-glasses.zip": ("glasses/index.html", "glasses/styles.css", "glasses/app.js"),
+    "app/android/app/build/outputs/apk/release/app-release.apk":
+        ("app/android/app/src/main", "app/app.json"),
 }
 _SKIP = ("node_modules", ".next", "__pycache__", os.sep + "build", os.sep + "dist")
 # only SOURCE files count - not the running daemon's data (events.jsonl,
-# swarmdeck.db, settings.json, ...), which would otherwise flag every artifact
+# helmdeck.db, settings.json, ...), which would otherwise flag every artifact
 # stale on each turn.
 _CODE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".kt", ".kts")
 
@@ -259,10 +263,11 @@ def transitions():
                   "impact + debt delta (register shortcuts in daemon/debt.py)."))
         return t
 
-    ui_work = any(p.startswith("web/") for p in touched)
+    ui_work = any(p.startswith("app/src/") and p.endswith((".ts", ".tsx"))
+                  for p in touched)
     design = (" DESIGN MODE: apply .claude/skills/impeccable (read its SKILL.md "
-              "before writing UI; tokens + laws in web/app/globals.css win on "
-              "conflict)." if ui_work and os.path.isdir(
+              "before writing UI; tokens in app/src/theme/tokens.ts - generated "
+              "by tools/gen_tokens.py - win on conflict)." if ui_work and os.path.isdir(
                   os.path.join(ROOT, ".claude", "skills", "impeccable")) else "")
     red = checks_red(touched)
     if red:
@@ -284,9 +289,10 @@ def transitions():
 
     quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60
     if quiet and build_stale():
-        t.append(("BUILD", "work verified & quiet, but shippable artifacts are stale - run "
-                  "`bash tools/build_all.sh` to rebuild installer + APK + glasses from "
-                  "current source (or `win`/`apk`/`glasses` for one), THEN propose the commit."))
+        t.append(("BUILD", "verified & quiet, but a NATIVE artifact is stale - only native "
+                  "app changes need this (JS ships via OTA: `bash deploy/push_update.sh`). "
+                  "For a native change run `bash tools/release.sh android` (signed APK), "
+                  "THEN propose the commit."))
         return t
     if quiet:
         t.append(("COMMIT", "loop complete, %d file(s) quiet - propose the commit "
