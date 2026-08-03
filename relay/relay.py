@@ -131,10 +131,21 @@ def _build_manifest(platform, base_url, runtime_version):
             "launchAsset": launch, "assets": assets, "metadata": {}, "extra": {}}
 
 
+ROOM_IDLE_GC = 3600  # daemons rotate rooms on unpair; sweep dead ones
+
+
 def _room(rid):
     with _lock:
         r = _rooms.get(rid)
         if r is None:
+            # GC on the growth path: drop rooms nothing pulled for an hour and
+            # that hold no queued frames or waiting callers. Keeps a long-lived
+            # relay from accumulating every room id it ever saw.
+            now = time.time()
+            for k in [k for k, v in _rooms.items()
+                      if now - v["last_pull"] > ROOM_IDLE_GC
+                      and not v["q"] and not v["waiting"]]:
+                del _rooms[k]
             r = {"q": [], "cv": threading.Condition(_lock), "waiting": {}, "last_pull": 0.0}
             _rooms[rid] = r
         return r
