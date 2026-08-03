@@ -335,6 +335,8 @@ export default function CardScreen() {
   const [tab, setTab] = useState<Tab>("overview");
   const [seed, setSeed] = useState({ text: "", key: 0 });
   const sheet = useActionSheet();
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const showToast = (text: string, ok = true) => { setToast({ text, ok }); setTimeout(() => setToast(null), 3800); };
 
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
   // tracks can arrive as a non-array {error} object over the relay (pairing/pin
@@ -440,8 +442,17 @@ export default function CardScreen() {
 
   async function moveTo(lane: string) {
     if (!k) return;
-    try { await api.moveLane(k.id, lane); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-    catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    try {
+      const res = await api.moveLane(k.id, lane);
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      // visual cue: did it take? review runs the gate (may bounce); working = dispatched.
+      const r = res as { status?: string; gate_failed?: boolean };
+      const bad = r?.status === "bounced" || !!r?.gate_failed;
+      const working = lane === "working";
+      showToast(bad ? `Abgelehnt → ${laneLabel(lane)} (Gate/Review)`
+                    : working ? `Gestartet → ${laneLabel(lane)} · Agent arbeitet`
+                    : `Verschoben → ${laneLabel(lane)}`, !bad);
+    } catch (e) { showToast("Move fehlgeschlagen: " + String((e as Error).message), false); }
   }
   function moveSheet() {
     if (!k) return;
@@ -530,6 +541,16 @@ export default function CardScreen() {
           )}
         </>
       )}
+      {toast ? (
+        <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: insets.bottom + 74, alignItems: "center", paddingHorizontal: 16 }}>
+          <View style={{ maxWidth: 520, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface1,
+            borderColor: toast.ok ? t.ok : t.danger, borderWidth: 1, borderRadius: 11, paddingHorizontal: 14, paddingVertical: 11,
+            ...(isWeb ? { boxShadow: "0 6px 20px rgba(0,0,0,0.35)" } as object : { elevation: 8 }) }}>
+            <Ionicons name={toast.ok ? "checkmark-circle" : "alert-circle"} size={17} color={toast.ok ? t.ok : t.danger} />
+            <Text style={{ color: t.txtPrimary, fontSize: 12.5, flexShrink: 1 }}>{toast.text}</Text>
+          </View>
+        </View>
+      ) : null}
       {sheet.node}
     </View>
   );
