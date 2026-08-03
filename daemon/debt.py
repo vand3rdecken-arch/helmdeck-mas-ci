@@ -107,8 +107,10 @@ DEBT = [
         "why_it_bites": "Confusion (features missing there look like bugs) - "
                         "already caused one 'I don't see it' incident.",
         "trigger": "anyone opening :8140 expecting the real UI",
-        "fix": "Replace with a redirect page to the Next app once the Next "
-               "app is served in production mode.",
+        "fix": "PAID: server.py drops the BOARD/DASH/PAGE templates and "
+               "daemon/ui/app.html; /, /classic, /recorder and /dashboard "
+               "302 to the Next app (settings.web_url, default "
+               "http://localhost:3300).",
         "order": 5,
     },
     {
