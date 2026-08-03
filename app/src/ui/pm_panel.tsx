@@ -117,7 +117,18 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
       {/* what the PM is doing — plain language, from real board state */}
       {act ? (
         <View style={{ backgroundColor: t.surface2, borderRadius: 10, padding: 11, gap: 7 }}>
-          <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>Was der PM gerade macht</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700", flex: 1 }}>Was der PM gerade macht</Text>
+            {act.loop_enabled && act.state && act.state !== "IDLE" ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface1, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: act.state === "WAIT" ? t.warn : t.ai }} />
+                <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{act.state}</Text>
+              </View>
+            ) : null}
+          </View>
+          {act.state_reason && act.state !== "IDLE" && act.state !== "OFF" ? (
+            <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{act.state_reason}</Text>
+          ) : null}
           {act.now && act.now.length ? act.now.slice(0, 3).map((s, i) => (
             <ActLine key={i} icon={s.startsWith("hängt") ? "warning" : s.startsWith("fertig") ? "checkmark-circle" : "construct"}
               color={s.startsWith("hängt") ? t.danger : s.startsWith("fertig") ? t.ok : t.ai} text={s} t={t} />

@@ -259,8 +259,10 @@ def plan_items(b=None):
             items.append({"title": t.get("title", "").strip(),
                           "description": desc,
                           "priority": t.get("priority", "medium"),
-                          "repo": t.get("repo") or default_repo,
-                          "due": ms.get("target_date") or ""})   # -> board Timeline roadmap
+                          "repo": t.get("repo") or default_repo})
+            # due dates are NOT set here - the OVERVIEW loop state builds the
+            # Timeline from the plan, so that capability lives in the loop, not
+            # in this filing code (see _build_overview).
     items = [it for it in items if it["title"]]
     items.sort(key=lambda x: order.get(x.get("priority"), 2))
     return items, b
@@ -423,7 +425,7 @@ def make_plan(actor="owner"):
         sessions.new_track(
             repo, "pm-" + re.sub(r"[^a-z0-9]+", "-", it["title"].lower())[:24],
             it["title"], lane="backlog", description=it.get("description", ""),
-            priority=it.get("priority", "medium"), due=it.get("due", ""), actor="pm")
+            priority=it.get("priority", "medium"), actor="pm")
         filed += 1
         have.add(it["title"].strip().lower())
     st = _loopstate()
@@ -466,74 +468,142 @@ def _notify_deliveries(day, tracks, st):
         _save_loopstate(st)
 
 
+def _backlog(tracks, pm, day):
+    """Dispatch candidates: un-started backlog cards in ALLOWED repos, prio-first."""
+    allow = {os.path.normcase(r) for r in (pm.get("repos") or [])}
+    rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    return sorted(
+        (t for t in tracks
+         if t.get("lane") == "backlog" and t["id"] not in day.get("dispatched", [])
+         and t.get("mode") not in ("human", "teach", "cowork")
+         and (not allow or os.path.normcase(t.get("repo") or "") in allow)),
+        key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
+
+
+def _overview_stale(plan, tracks):
+    """True if the plan's roadmap isn't reflected on the board yet: a card that
+    belongs to a dated milestone still lacks that due date (Timeline), or the
+    dashboard layout isn't set."""
+    import events
+    if not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles"):
+        return True
+    by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
+    for ms in (plan.get("milestones") or []):
+        d = ms.get("target_date")
+        if not d:
+            continue
+        for task in ms.get("tasks") or []:
+            c = by_title.get((task.get("title") or "").strip().lower())
+            if c and c.get("lane") != "done" and (c.get("due") or "") != d:
+                return True
+    return False
+
+
+def _build_overview(plan):
+    """OVERVIEW state action: build Dashboard + Timeline FROM THE PLAN.
+    - TIMELINE: give each board card its milestone's target date (due) -> the
+      board Timeline lays out the roadmap.
+    - DASHBOARD: ensure a sensible economics layout exists.
+    Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
+    import sessions, events
+    by_title = {(t.get("task") or "").strip().lower(): t for t in sessions.list_tracks()}
+    n = 0
+    for ms in (plan.get("milestones") or []):
+        d = ms.get("target_date")
+        if not d:
+            continue
+        for task in ms.get("tasks") or []:
+            c = by_title.get((task.get("title") or "").strip().lower())
+            if c and c.get("lane") != "done" and (c.get("due") or "") != d:
+                try:
+                    sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
+                except Exception:
+                    pass
+    pol = dict(events.settings().get("policy") or {})
+    if not (pol.get("dashboard") or {}).get("tiles"):
+        pol["dashboard"] = {"tiles": ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"],
+                            "panels": ["capacity", "gates", "work"]}
+        events.save_settings({"policy": pol})
+    _activity("overview", "Uebersicht gebaut: %d Termine gesetzt (Timeline) + Dashboard-Layout." % n)
+    return n
+
+
+# The proactive loop is now a STATE MACHINE - same idea as tools/loop_state.py:
+# the STATE is computed from REALITY (board + plan + config) each tick and drives
+# the next action. A new capability = a new STATE (e.g. OVERVIEW), not new code.
+def _state():
+    """(STATE, plain reason). First actionable state wins. Surfaced to you so you
+    can SEE what the PM is doing / about to do. WAIT = wants to act but you're here."""
+    pm = _pm()
+    if not pm.get("loop_enabled"):
+        return ("OFF", "Proaktiv ist aus.")
+    import sessions
+    tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
+    st = _loopstate()
+    day = st.get(_today(), {})
+    disp = set(day.get("dispatched", []))
+    notif = set(day.get("notified", []))
+    if any(t["id"] in disp and t["id"] not in notif and t.get("status") in ("needs_you", "bounced") for t in tracks):
+        return ("NOTIFY", "Fertige/haengende Karten melden.")
+    acting = _in_window(pm) and _board_idle(pm)          # you're away -> may act
+    if time.time() - st.get("last_plan_ts", 0) >= pm.get("replan_minutes", 120) * 60:
+        return ("PLAN", "Plan ist veraltet - neu planen.") if acting else ("WAIT", "Plan veraltet, aber du bist da.")
+    plan = latest_plan()
+    if plan and _overview_stale(plan, tracks):
+        return ("OVERVIEW", "Dashboard + Timeline aus dem Plan bauen.") if acting else ("WAIT", "Uebersicht veraltet, aber du bist da.")
+    paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
+    if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
+        return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
+    return ("IDLE", "Alles im Griff - nichts zu tun.")
+
+
+def _dispatch_next(pm, st, day):
+    import sessions, events
+    if sum(1 for t in sessions.list_tracks() if t.get("lane") == "working") >= events.settings()["capacity"]["wip_limit"]:
+        return                                           # respect WIP headroom
+    todo = _backlog(sessions.list_tracks(), pm, day)
+    if not todo:
+        return
+    t = todo[0]
+    day["dispatched"].append(t["id"]); _save_loopstate(st)
+    _activity("started", "Gestartet: " + (t.get("task", "")[:70]), card=t["id"])
+    t = sessions.move_lane(t["id"], "working", actor="pm")
+    if _limit_hit(t):
+        day["paused_at"] = time.time(); _save_loopstate(st)
+        _activity("blocked", "Quota erschoepft - pausiere ~5 Stunden.")
+
+
 def _tick():
-    """One proactive beat. Communicates (push on deliveries, always) then - only
-    while you are away - dispatches the next queued card. Replans occasionally."""
+    """One beat: COMMUNICATE (push, always) then run the current STATE's action -
+    acting states only while you are away. The STATE is the loop now."""
     pm = _pm()
     if not pm.get("loop_enabled"):
         return
     st = _loopstate()
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
-    import sessions as _s
-    _notify_deliveries(day, _s.list_tracks(), st)   # COMMUNICATE - not presence-gated
+    import sessions
+    _notify_deliveries(day, sessions.list_tracks(), st)  # NOTIFY - not presence-gated
     if not _in_window(pm) or not _board_idle(pm):
-        return                                       # ACTING is presence-gated
-    if day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600:
-        return                                       # flat-plan quota pause
-    if len(day["dispatched"]) >= pm.get("max_dispatch_per_day", 3):
-        return                                       # daily dispatch cap
-
+        return                                           # acting states need you away
+    state, _reason = _state()
     auto = pm.get("autonomy", "act")
-    # REPLAN (LLM) only when the plan is stale - keeps quota for real work.
-    # Escalation ladder: "notify" refreshes the plan but touches nothing; "ask"/
-    # "act" also file the backlog cards (reversible).
-    last = st.get("last_plan_ts", 0)
-    if time.time() - last >= pm.get("replan_minutes", 120) * 60:
-        try:
-            if auto == "notify":
-                brief()                        # advise-only: artifact, no board change
-            else:
-                make_plan(actor="pm")          # file backlog cards
+    try:
+        if state == "PLAN":
+            brief() if auto == "notify" else make_plan(actor="pm")
             st = _loopstate(); st["last_plan_ts"] = time.time(); _save_loopstate(st)
-            day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
-        except Exception as e:
-            print("PM replan error:", e)
-
-    if auto != "act":
-        return                                 # notify/ask never auto-dispatch
-
-    # ACT (cheap): dispatch the next un-started backlog card in an allowed repo,
-    # priority-first. Reversible + WIP-gated; merge/accept stay at the gate.
-    import sessions, events
-    allow = {os.path.normcase(r) for r in (pm.get("repos") or [])}
-    rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
-    wip = sum(1 for t in sessions.list_tracks() if t.get("lane") == "working")
-    if wip >= events.settings()["capacity"]["wip_limit"]:
-        return                                       # respect WIP headroom
-    todo = sorted(
-        (t for t in sessions.list_tracks()
-         if t.get("lane") == "backlog" and t["id"] not in day["dispatched"]
-         and t.get("mode") not in ("human", "teach", "cowork")
-         and (not allow or os.path.normcase(t.get("repo") or "") in allow)),
-        key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
-    if not todo:
-        return
-    t = todo[0]
-    day["dispatched"].append(t["id"])
-    _save_loopstate(st)
-    print("PM dispatch: %s (%s)" % (t.get("task", "")[:60], t.get("repo")))
-    _activity("started", "Gestartet: " + (t.get("task", "")[:70]), card=t["id"])
-    t = sessions.move_lane(t["id"], "working", actor="pm")
-    if _limit_hit(t):
-        day["paused_at"] = time.time(); _save_loopstate(st)
-        _activity("blocked", "Quota erschöpft – pausiere ~5 Stunden, bis das Kontingent zurückkommt.")
-        print("PM: usage limit - pausing ~5h until the quota window resets")
+        elif state == "OVERVIEW":
+            _build_overview(latest_plan() or {})         # build Dashboard + Timeline
+        elif state == "DISPATCH" and auto == "act":
+            _dispatch_next(pm, st, day)
+    except Exception as e:
+        print("PM tick error [%s]:" % state, e)
 
 
 def status():
     """Surfaced by /pm/* + /nightshift (alias) + /automation."""
     st = _loopstate()
-    return {"config": _pm(), "plan": latest_plan(),
+    sname, sreason = _state()
+    return {"config": _pm(), "plan": latest_plan(), "state": sname, "state_reason": sreason,
             "today": st.get(_today(), {"dispatched": [], "paused_at": 0}),
             "last_plan": st.get("last_plan")}
 
@@ -594,9 +664,12 @@ def activity():
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
                    and t.get("mode") not in ("human", "teach", "cowork")),
                   key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
+    sname, sreason = _state()
     return {
         "loop_enabled": _pm().get("loop_enabled"),
         "autonomy": _pm().get("autonomy"),
+        "state": sname,
+        "state_reason": sreason,
         "now": now,
         "next": lbl(todo[0]) if todo else None,
         "next_count": len(todo),
