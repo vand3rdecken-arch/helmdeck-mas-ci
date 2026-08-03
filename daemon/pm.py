@@ -424,6 +424,8 @@ def make_plan(actor="owner"):
     st["last_plan"] = time.strftime("%Y-%m-%d %H:%M")
     st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     _save_loopstate(st)
+    _activity("planned", ("Geplant: %d neue Aufgabe(n) angelegt." % filed) if filed
+              else "Plan geprüft – nichts Neues nötig.")
     print("PM plan: %d Kandidaten, %d neue Karten" % (len(items), filed))
     return {"filed": filed, "candidates": len(items), "brief": brief}
 
@@ -480,9 +482,11 @@ def _tick():
     day["dispatched"].append(t["id"])
     _save_loopstate(st)
     print("PM dispatch: %s (%s)" % (t.get("task", "")[:60], t.get("repo")))
+    _activity("started", "Gestartet: " + (t.get("task", "")[:70]), card=t["id"])
     t = sessions.move_lane(t["id"], "working", actor="pm")
     if _limit_hit(t):
         day["paused_at"] = time.time(); _save_loopstate(st)
+        _activity("blocked", "Quota erschöpft – pausiere ~5 Stunden, bis das Kontingent zurückkommt.")
         print("PM: usage limit - pausing ~5h until the quota window resets")
 
 
@@ -492,6 +496,76 @@ def status():
     return {"config": _pm(), "plan": latest_plan(),
             "today": st.get(_today(), {"dispatched": [], "paused_at": 0}),
             "last_plan": st.get("last_plan")}
+
+
+# -- the communication layer: plain-language "what am I doing" (DAU) ----------
+# Computed from the REAL board (not LLM-guessed) so it's reliable, and phrased
+# for a non-technical owner - no card ids, no jargon. This is how the PM keeps
+# you in the loop without nagging: a status + an append-only activity feed.
+_ACTIVITY = os.path.join(PLANS, "activity.jsonl")
+
+
+def _activity(kind, msg, card=None):
+    """Append one plain-language line the PM 'said' (planned/started/blocked)."""
+    try:
+        os.makedirs(PLANS, exist_ok=True)
+        with open(_ACTIVITY, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "kind": kind,
+                                "msg": msg, "card": card}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _read_activity(n=20):
+    try:
+        with open(_ACTIVITY, encoding="utf-8") as f:
+            lines = f.readlines()[-n:]
+        return [json.loads(x) for x in lines if x.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def activity():
+    """The DAU narrative: what's running now, what's next, what needs you, and
+    the blockers - all from live card state, plus the recent activity feed."""
+    import sessions
+    tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
+    st = _loopstate()
+
+    def lbl(t):
+        return (t.get("task") or "").replace("\n", " ")[:70]
+
+    now = []
+    for t in tracks:
+        if t.get("lane") != "working":
+            continue
+        s = t.get("status")
+        if s == "running":
+            now.append("arbeitet gerade an: " + lbl(t))
+        elif s == "needs_you":
+            now.append("fertig, wartet auf deine Abnahme: " + lbl(t))
+        elif s == "bounced":
+            now.append("hängt (Timeout/Fehler): " + lbl(t))
+        else:
+            now.append(lbl(t))
+    needs = [lbl(t) for t in tracks if t.get("status") in ("needs_you", "bounced", "submitted")]
+    blockers = [lbl(t) for t in tracks if t.get("status") == "bounced"]
+    rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    todo = sorted((t for t in tracks if t.get("lane") == "backlog"
+                   and t.get("mode") not in ("human", "teach", "cowork")),
+                  key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
+    return {
+        "loop_enabled": _pm().get("loop_enabled"),
+        "autonomy": _pm().get("autonomy"),
+        "now": now,
+        "next": lbl(todo[0]) if todo else None,
+        "next_count": len(todo),
+        "needs_you": needs,
+        "blockers": blockers,
+        "quota_paused": bool(st.get(_today(), {}).get("paused_at")),
+        "last_plan": st.get("last_plan"),
+        "feed": _read_activity(20),
+    }
 
 
 def start_loop():

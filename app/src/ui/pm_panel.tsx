@@ -9,6 +9,15 @@ import { useTheme } from "@/theme";
 
 const cur = (n?: number) => "€" + (n ?? 0).toFixed(2);
 
+function ActLine({ icon, color, text, t }: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string; t: ReturnType<typeof useTheme> }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      <Ionicons name={icon} size={14} color={color} style={{ marginTop: 1 }} />
+      <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1, lineHeight: 18 }}>{text}</Text>
+    </View>
+  );
+}
+
 function Chip({ icon, label, t }: { icon: keyof typeof Ionicons.glyphMap; label: string; t: ReturnType<typeof useTheme> }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: t.surface2,
@@ -73,6 +82,7 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
   const curGoal = data?.goal ?? "";
   const b = plan?.budget;
   const cfg = data?.config;
+  const act = data?.activity;
   const AUTO: { k: "notify" | "ask" | "act"; label: string }[] = [
     { k: "notify", label: "Melden" }, { k: "ask", label: "Fragen" }, { k: "act", label: "Handeln" }];
 
@@ -96,6 +106,32 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
           <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{report.isPending ? "Plant…" : "Aktualisieren"}</Text>
         </Pressable>
       </View>
+
+      {/* what the PM is doing — plain language, from real board state */}
+      {act ? (
+        <View style={{ backgroundColor: t.surface2, borderRadius: 10, padding: 11, gap: 7 }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>Was der PM gerade macht</Text>
+          {act.now && act.now.length ? act.now.slice(0, 3).map((s, i) => (
+            <ActLine key={i} icon={s.startsWith("hängt") ? "warning" : s.startsWith("fertig") ? "checkmark-circle" : "construct"}
+              color={s.startsWith("hängt") ? t.danger : s.startsWith("fertig") ? t.ok : t.ai} text={s} t={t} />
+          )) : (
+            <ActLine icon="pause-circle" color={t.txtTertiary}
+              text={act.loop_enabled ? "Gerade läuft nichts." : "Proaktiv ist AUS — unten einschalten, dann arbeitet der PM, wenn du weg bist."} t={t} />
+          )}
+          {act.next ? <ActLine icon="play-forward" color={t.accent2}
+            text={`Als Nächstes: ${act.next}` + ((act.next_count ?? 0) > 1 ? `  (+${(act.next_count ?? 1) - 1} in Warteschlange)` : "")} t={t} /> : null}
+          {act.needs_you && act.needs_you.length ? <ActLine icon="hand-left" color={t.warn}
+            text={`${act.needs_you.length} Sache(n) fertig — warten auf deine Abnahme.`} t={t} /> : null}
+          {act.blockers && act.blockers.length ? <ActLine icon="alert-circle" color={t.danger}
+            text={`Blocker: ${act.blockers[0]}`} t={t} /> : null}
+          {act.quota_paused ? <ActLine icon="time" color={t.warn} text="Quota erschöpft — Pause bis das Kontingent zurückkommt." t={t} /> : null}
+          {act.feed && act.feed.length ? (
+            <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 2 }} numberOfLines={2}>
+              Zuletzt: {act.feed.slice(-2).map((e) => e.msg).join(" · ")}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* goal */}
       {editGoal ? (
