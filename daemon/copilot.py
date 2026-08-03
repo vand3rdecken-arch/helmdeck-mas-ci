@@ -4,7 +4,7 @@ turn (resumable per user, so the conversation has memory) with a fresh board
 snapshot; the model answers with JSON: a reply for the human plus zero or more
 ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
-import json, os, re, shutil, subprocess, time
+import json, os, re, shutil, subprocess, threading, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SESS = os.path.join(ROOT, "copilot_sessions.json")
@@ -371,18 +371,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         out = json.loads(m.group(0)) if m else {"reply": txt, "actions": []}
     except ValueError:
         out = {"reply": txt, "actions": []}
-    results = []
-    for a in out.get("actions", [])[:6]:
-        try:
-            results.append(_run_action(a, user, role))
-        except Exception as e:
-            results.append("action failed: %s" % str(e)[:200])
     u = d.get("usage") or {}
     usage = {"in": (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
                     + u.get("cache_creation_input_tokens", 0)),
              "out": u.get("output_tokens", 0), "cost": d.get("total_cost_usd")}
-    _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")}]
-                + [{"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
-                + [{"cls": "act", "text": r} for r in results])
-    return {"reply": out.get("reply", ""), "actions": results,
+    acts = out.get("actions", [])[:6]
+    # Persist the exchange NOW and return immediately, so the chat is responsive.
+    # Actions (moves, MERGES, steers - potentially minutes) run in the BACKGROUND
+    # and append their results to the transcript as they land; the chat polls, so
+    # you see them live. This is why 'move 4 cards to done' no longer freezes.
+    _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
+                       {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}])
+    if acts:
+        def _run_bg():
+            done = []
+            for a in acts:
+                try:
+                    done.append(_run_action(a, user, role))
+                except Exception as e:
+                    done.append("action failed: %s" % str(e)[:200])
+            if done:
+                _append_log(user, [{"cls": "act", "text": r} for r in done])
+        threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
+    return {"reply": out.get("reply", ""), "actions": [],
             "cost": d.get("total_cost_usd"), "usage": usage}
