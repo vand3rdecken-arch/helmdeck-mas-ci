@@ -2,7 +2,10 @@
 """Self-sandboxing test for design_lint's R4 `lint:hex-ok` allow marker.
 
 Writes its own fixture under web/components/, lints it, deletes it - no
-repo state is left behind either way. Run: python tools/design_lint_selftest.py
+repo state is left behind either way. design_lint only looks at web/-prefixed
+paths, and the web tree was archived in the Expo cutover - so the fixture dirs
+are created on demand and removed again if this test created them.
+Run: python tools/design_lint_selftest.py
 Exit 0 on pass, 1 on fail."""
 import os, sys
 
@@ -11,6 +14,9 @@ import design_lint
 
 p = "web/components/__lint_selftest__.tsx"
 full = os.path.join(design_lint.ROOT, p)
+fixture_dir = os.path.dirname(full)
+made_dirs = not os.path.isdir(fixture_dir)
+os.makedirs(fixture_dir, exist_ok=True)
 
 CASES = [
     # (name, source line, expect_violations)
@@ -31,6 +37,13 @@ try:
 finally:
     if os.path.exists(full):
         os.remove(full)
+    if made_dirs:
+        # remove only what we created: web/components, then web if now empty
+        for d in (fixture_dir, os.path.dirname(fixture_dir)):
+            try:
+                os.rmdir(d)
+            except OSError:
+                break
 
 if failures:
     print("design-lint selftest: FAIL")
