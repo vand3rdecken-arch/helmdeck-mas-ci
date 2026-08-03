@@ -72,7 +72,12 @@ export interface PmBrief {
 }
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }
-export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null; config?: PmConfig }
+export interface PmActivity {
+  loop_enabled?: boolean; autonomy?: string; now: string[]; next?: string | null; next_count?: number;
+  needs_you: string[]; blockers: string[]; quota_paused?: boolean; last_plan?: string;
+  feed: { ts: string; kind: string; msg: string; card?: string | null }[];
+}
+export interface PmData { goal: string; economics: Record<string, unknown>; plan: PmBrief | null; config?: PmConfig; activity?: PmActivity }
 export interface ConsolidationStream { name: string; title: string; members: string[]; why?: string }
 export interface ConsolidationRepo { repo: string; streams: ConsolidationStream[] }
 export interface ConsolidationProposal { repos: ConsolidationRepo[]; generated_at?: string }
