@@ -538,6 +538,25 @@ def _resolve_next(pm, st, day):
              "neu einzureichen." % task)
 
 
+def _launch_checkin(pm, st):
+    """Proactive coordinator question, ONCE per goal: surface the human-only
+    launch prerequisites for the store deploy so the owner isn't the late
+    bottleneck. The PM drives everything else itself. Re-asks only if the goal
+    text changes (a new north star)."""
+    goal = pm.get("goal") or ""
+    if not any(k in goal.lower() for k in ("launch", "store", "android", "play", "deploy")):
+        return
+    if st.get("launch_asked") == goal:
+        return
+    st["launch_asked"] = goal
+    _save_loopstate(st)
+    _say("Koordinations-Check fuers Play-Store-Deploy (highest prio: in den Store) - das "
+         "brauche nur ich VON DIR, den Rest treibe ich selbst als Karten: "
+         "1) Google-Play-Console-Account angelegt? 2) Upload-Keystore / Play App Signing "
+         "bereit? 3) Datenschutz-URL + Data-Safety-Angaben? Sag mir kurz, was schon steht - "
+         "fuer den Rest lege ich Karten an und arbeite sie ab.")
+
+
 def _overview_stale(plan, tracks):
     """True if the plan's roadmap isn't reflected on the board yet: a card that
     belongs to a dated milestone still lacks that due date (Timeline), or the
@@ -656,6 +675,7 @@ def _tick():
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     import sessions
     _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
+    _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away
     state, _reason = _state()
