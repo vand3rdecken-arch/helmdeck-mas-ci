@@ -36,10 +36,12 @@ export default function ChatScreen() {
   const turn = useRef(0);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory, enabled: me?.role !== "client" });
+  // poll the transcript so the PM's proactive messages appear LIVE (the chat
+  // moves on its own); don't clobber optimistic messages mid-turn (busy).
+  const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory, enabled: me?.role !== "client", refetchInterval: 8000 });
   const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, enabled: me?.role !== "client" });
 
-  useEffect(() => { if (data?.messages) setMsgs(data.messages); }, [data]);
+  useEffect(() => { if (data?.messages && !busy) setMsgs(data.messages); }, [data, busy]);
 
   async function send() {
     const q = text.trim();
@@ -55,6 +57,7 @@ export default function ChatScreen() {
       setMsgs((m) => [...m, { cls: r.error ? "error" : "bot",
         text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || "(keine Antwort)"].filter(Boolean).join("\n\n") }]);
       qc.invalidateQueries({ queryKey: ["tracks"] });
+      qc.invalidateQueries({ queryKey: ["chatHistory"] });   // pull the persisted turn (+ any PM msgs)
     } catch (e) {
       if (turn.current !== id) return;
       setMsgs((m) => [...m, { cls: "error", text: String((e as Error).message) }]);
@@ -103,11 +106,20 @@ export default function ChatScreen() {
         <ScrollView ref={scroll} contentContainerStyle={{ padding: 12, gap: 8 }}>
           {msgs.length === 0 ? <Empty text="Frag den Copilot über die Arbeit." /> :
             msgs.map((m, i) => {
-              const mine = m.cls === "user";
+              const mine = m.cls === "user" || m.cls === "you";
+              const isPm = m.cls === "pm";
               return (
                 <View key={i} style={{ alignSelf: mine ? "flex-end" : "stretch", maxWidth: mine ? "85%" : "100%",
-                  backgroundColor: mine ? t.accent + "22" : t.surface1, borderRadius: 10, padding: 10 }}>
-                  {m.cls === "bot"
+                  backgroundColor: mine ? t.accent + "22" : t.surface1, borderRadius: 10, padding: 10,
+                  borderLeftWidth: isPm ? 3 : 0, borderLeftColor: t.accent2 }}>
+                  {isPm ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                      <Ionicons name="compass" size={13} color={t.accent2} />
+                      <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "800" }}>PM</Text>
+                      {m.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>· {m.ts}</Text> : null}
+                    </View>
+                  ) : null}
+                  {m.cls === "bot" || isPm
                     ? <Markdown>{m.text}</Markdown>
                     : <Text selectable style={{ color: m.cls === "error" ? t.danger : t.txtPrimary, fontSize: 14 }}>{m.text}</Text>}
                 </View>

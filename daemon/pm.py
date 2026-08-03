@@ -434,6 +434,10 @@ def make_plan(actor="owner"):
     _save_loopstate(st)
     _activity("planned", ("Geplant: %d neue Aufgabe(n) angelegt." % filed) if filed
               else "Plan geprüft – nichts Neues nötig.")
+    if filed:                                   # only speak up when something changed
+        summary = (brief.get("summary") or "").strip()
+        _say(("Kurzes Update: ich hab %d neue Aufgabe(n) fuer dein Ziel eingeplant." % filed)
+             + (("\n\n" + summary[:350]) if summary else ""))
     print("PM plan: %d Kandidaten, %d neue Karten" % (len(items), filed))
     return {"filed": filed, "candidates": len(items), "brief": brief}
 
@@ -459,9 +463,11 @@ def _notify_deliveries(day, tracks, st):
         task = (t.get("task") or "").replace("\n", " ")[:60]
         if s == "needs_you":
             notify.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
+            _say("Fertig: '%s' ist geliefert und wartet auf deine Abnahme (oder Bounce). Sag mir Bescheid oder tipp die Karte an." % task)
             notified.add(t["id"]); changed = True
         elif s == "bounced":
             notify.push_fcm("PM: haengt", "'%s' - Timeout/Fehler, schau mal." % task, t["id"])
+            _say("Achtung: '%s' haengt (Timeout/Fehler). Ich brauch dich - soll ich es neu starten oder anders angehen?" % task)
             notified.add(t["id"]); changed = True
     if changed:
         day["notified"] = list(notified)
@@ -635,6 +641,20 @@ def _activity(kind, msg, card=None):
             f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "kind": kind,
                                 "msg": msg, "card": card}, ensure_ascii=False) + "\n")
     except OSError:
+        pass
+
+
+def _say(text):
+    """The PM SPEAKS TO YOU: post a message into the owner's board chat so the
+    chat MOVES on its own - real proactive communication, not just a silent feed.
+    You can reply there and steer it. (cls 'pm' = a PM-authored message.)"""
+    try:
+        import auth, copilot
+        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
+        if not owner:
+            return
+        copilot._append_log(owner, [{"cls": "pm", "text": text, "ts": time.strftime("%H:%M")}])
+    except Exception:
         pass
 
 
