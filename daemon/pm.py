@@ -504,6 +504,7 @@ def _bounced_to_resolve(tracks, pm, day):
     return [t for t in tracks
             if t.get("status") == "bounced" and t["id"] not in tried
             and t.get("mode") not in ("human", "teach", "cowork")
+            and t.get("mode") != "auto"    # autopilot cards resolve themselves (processes._autopilot)
             and t.get("worktree")
             and (not allow or os.path.normcase(t.get("repo") or "") in allow)]
 
