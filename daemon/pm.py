@@ -430,14 +430,48 @@ def make_plan(actor="owner"):
     return {"filed": filed, "candidates": len(items), "brief": brief}
 
 
+def _notify_deliveries(day, tracks, st):
+    """Essential-only, rate-limited PUSH (the 'notify' channel): when a card the
+    PM started DELIVERS (needs your review) or BOUNCES, ping ONCE. Silence
+    otherwise - this is the proactive-not-nagging bit. NOT presence-gated: a
+    delivery matters whether or not you're idle."""
+    try:
+        import notify
+        if not notify.fcm_ready():
+            return
+    except Exception:
+        return
+    notified = set(day.setdefault("notified", []))
+    disp = set(day.get("dispatched", []))
+    changed = False
+    for t in tracks:
+        if t["id"] not in disp or t["id"] in notified:
+            continue
+        s = t.get("status")
+        task = (t.get("task") or "").replace("\n", " ")[:60]
+        if s == "needs_you":
+            notify.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
+            notified.add(t["id"]); changed = True
+        elif s == "bounced":
+            notify.push_fcm("PM: haengt", "'%s' - Timeout/Fehler, schau mal." % task, t["id"])
+            notified.add(t["id"]); changed = True
+    if changed:
+        day["notified"] = list(notified)
+        _save_loopstate(st)
+
+
 def _tick():
-    """One proactive beat. Cheap: dispatches the next queued card while you are
-    away; only occasionally (>= replan_minutes) does it spend a turn to REPLAN."""
+    """One proactive beat. Communicates (push on deliveries, always) then - only
+    while you are away - dispatches the next queued card. Replans occasionally."""
     pm = _pm()
-    if not pm.get("loop_enabled") or not _in_window(pm) or not _board_idle(pm):
+    if not pm.get("loop_enabled"):
         return
     st = _loopstate()
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
+    import sessions as _s
+    _notify_deliveries(day, _s.list_tracks(), st)   # COMMUNICATE - not presence-gated
+    if not _in_window(pm) or not _board_idle(pm):
+        return                                       # ACTING is presence-gated
     if day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600:
         return                                       # flat-plan quota pause
     if len(day["dispatched"]) >= pm.get("max_dispatch_per_day", 3):
