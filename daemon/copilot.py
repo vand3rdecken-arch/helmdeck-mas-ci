@@ -188,10 +188,13 @@ def _run_action(a, actor, role="operator"):
                 return "%s denied: needs role %s (you are '%s')" % (kind, "/".join(admin_roles), role)
         if kind == "move":
             r = sessions.move_lane(t["id"], a["lane"], actor=actor)
+            # gate_report / merge_report are curated, self-contained instruction
+            # strings (fixed template + file list) - show them whole, no char cap
+            # (a slice cut the resolve steer off mid-word).
             if r.get("gate_failed"):
-                return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", []))[:600])
+                return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", [])))
             if r.get("merge_failed"):
-                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), (r.get("merge_report") or "")[:600])
+                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), r.get("merge_report") or "")
             return "moved %s -> %s" % (t["branch"], a["lane"])
         if kind == "delete":
             sessions.delete_track(t["id"], actor=actor)
