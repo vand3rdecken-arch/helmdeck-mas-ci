@@ -38,7 +38,7 @@ def _active_live():
                 return p
     return None
 
-BOARD = """<!doctype html><meta charset=utf-8><title>SwarmDeck board</title>
+BOARD = """<!doctype html><meta charset=utf-8><title>HelmDeck board</title>
 <style>
 body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
 h1{color:#7ef0b2;font-size:20px;margin:0 0 4px} .hint{color:#5d7488;font-size:12px;margin:0 0 14px}
@@ -73,7 +73,7 @@ button.sec{border-color:#6fb2e8;color:#6fb2e8;background:rgba(111,178,232,.08)}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111a24;
        border:1px solid #2affc0;color:#2affc0;padding:8px 16px;border-radius:8px;display:none}
 </style>
-<h1>SwarmDeck - board</h1>
+<h1>HelmDeck - board</h1>
 <p class=hint>drag a card: → Working dispatches it · → Review runs the gate &amp; submits · → Done accepts. Click a card to open &amp; steer.
   <a href="/recorder" style="color:#6fb2e8">recordings</a> · <a href="/dashboard" style="color:#6fb2e8">dashboard</a></p>
 <div id=cap class=hint style="margin:0 0 10px"></div>
@@ -184,7 +184,7 @@ function fileReq(){
 load();setInterval(load,5000);
 </script>"""
 
-DASH = """<!doctype html><meta charset=utf-8><title>SwarmDeck - dashboard</title>
+DASH = """<!doctype html><meta charset=utf-8><title>HelmDeck - dashboard</title>
 <style>
 body{font:14px/1.45 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:18px 20px}
 h1{color:#7ef0b2;font-size:20px;margin:0 0 4px}.hint{color:#5d7488;font-size:12px;margin:0 0 16px}
@@ -208,7 +208,7 @@ td.num,th.num{text-align:right;font-family:ui-monospace,monospace}
 .leg{font-size:12px;color:#8fb0c9}.leg b{font-weight:400}
 a{color:#6fb2e8}
 </style>
-<h1>SwarmDeck - company dashboard</h1>
+<h1>HelmDeck - company dashboard</h1>
 <p class=hint>fixed-capacity humans, variable-cost AI. <a href="/">board</a> · <a href="/settings" onclick="alert('GET/POST /settings (JSON): capacity, prices, value_per_card');return false">settings</a></p>
 <div id=tiles></div>
 <h2>Capacity - take more work, or automate?</h2><div id=capbox class=tile style="max-width:520px"></div>
@@ -259,14 +259,14 @@ fetch('/dashboard/data').then(function(r){return r.json()}).then(function(m){
 });
 </script>"""
 
-PAGE = """<!doctype html><meta charset=utf-8><title>SwarmDeck review</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>HelmDeck review</title>
 <style>body{font:15px/1.5 system-ui;background:#0b0f14;color:#dfe9f2;margin:0;padding:24px}
 h1{color:#7ef0b2}.run{border:1px solid #24303c;border-radius:10px;padding:12px 16px;margin:12px 0}
 .k{color:#8fb6d9;font-family:monospace}.steps{margin:8px 0 0;padding-left:0;list-style:none}
 .steps li{padding:2px 0;border-left:3px solid #24303c;padding-left:10px;margin:2px 0;font-family:monospace;font-size:13px}
 .steps li.flag{border-color:#ffd166;background:#2a2410}.t{color:#5d7284;margin-right:8px}
 video{max-width:640px;display:block;margin-top:8px}</style>
-<h1>SwarmDeck - runs</h1><div id=out>loading…</div>
+<h1>HelmDeck - runs</h1><div id=out>loading…</div>
 <script>
 fetch('/runs').then(r=>r.json()).then(async runs=>{
   const out=document.getElementById('out');out.innerHTML='';
@@ -310,8 +310,8 @@ class H(BaseHTTPRequestHandler):
             # presence signal for the idle-time worker. POSTs only: a GET can
             # be the board's auto-refresh in a forgotten browser tab, but a
             # POST is a human doing something - steering, filing, configuring.
-            import nightshift
-            nightshift.touch()
+            import pm
+            pm.touch()
         return u
 
     def _send_cookie(self, code, body, sid=None, clear=False):
@@ -329,8 +329,21 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.end_headers()
         self.wfile.write(body if isinstance(body, bytes) else body.encode("utf-8"))
+
+    def do_OPTIONS(self):
+        # CORS preflight: a cross-origin fetch carrying an Authorization header
+        # (the Expo web build hitting the daemon from a different port) sends an
+        # OPTIONS preflight first. Auth is still enforced on the real request -
+        # this only tells the browser the request is permitted.
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
 
     def do_GET(self):
         p = self.path.split("?")[0]
@@ -380,10 +393,10 @@ class H(BaseHTTPRequestHandler):
                     for u in auth.list_users()]))
             if p == "/":
                 return self._send(200,
-                    "<!doctype html><meta charset=utf-8><title>SwarmDeck</title>"
+                    "<!doctype html><meta charset=utf-8><title>HelmDeck</title>"
                     "<body style=\"font:15px system-ui;background:#16181d;color:#eee;"
                     "display:grid;place-items:center;height:100vh;margin:0\"><div>"
-                    "<h2>SwarmDeck API</h2><p>The app lives at "
+                    "<h2>HelmDeck API</h2><p>The app lives at "
                     "<a style=\"color:#7cb5ff\" href=\"http://localhost:3300\">localhost:3300</a>"
                     " (cd web &amp;&amp; npm run dev -- --port 3300).</p>"
                     "<p style=\"color:#888\">Legacy fallback UI: <a style=\"color:#7cb5ff\" "
@@ -484,6 +497,19 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/stream/wait":
+                # Board PUSH over the sealed relay (SSE can't tunnel): long-poll
+                # the data version. Blocks until it passes `v` or ~22s, then
+                # returns {v}. The phone loops it and invalidates on change -
+                # live board updates in relay mode, no fixed poll. 22s < relay
+                # REPLY_TIMEOUT (120) and bridge _local (115).
+                import db
+                want = (parse_qs(urlparse(self.path).query).get("v") or ["0"])[0]
+                try:
+                    last = int(want)
+                except ValueError:
+                    last = 0
+                return self._send(200, json.dumps({"v": db.wait_version(last, timeout=22)}))
             if p == "/stream":
                 # SSE: push a version tick whenever board data changes - pays
                 # the polling debt. Client refetches on tick.
@@ -559,9 +585,73 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(
                     {"core": charter.CHARTER,
                      "house_rules": (events.settings().get("policy") or {}).get("house_rules", "")}))
+            if p == "/loop/map":
+                # the machine, made legible: the lane/gate flow + the build loop +
+                # the fixed harness laws behind them (charter is code, shown read-only).
+                import charter, events
+                ll = (events.settings().get("policy") or {}).get("lane_labels") or {}
+                lab = lambda k, d: ll.get(k, d)
+                return self._send(200, json.dumps({
+                    "runtime": {
+                        "title": "Wie Arbeit fließt",
+                        "lanes": [
+                            {"key": "backlog", "label": lab("backlog", "Backlog"), "kind": "policy",
+                             "instruction": "Karten warten. Ab der Priorität in policy.auto_dispatch_priority "
+                                            "starten sie sich selbst — aber nur im WIP-Rahmen (capacity.wip_limit)."},
+                            {"key": "working", "label": lab("working", "In Arbeit"), "kind": "fixed",
+                             "instruction": "Ein Agent arbeitet in einem ISOLIERTEN git-worktree (Harness-Gesetz: "
+                                            "worktree-Isolation). Jeder Turn ist gemessen (Kosten/Token → Audit)."},
+                            {"key": "review", "label": lab("review", "Review"), "kind": "fixed",
+                             "instruction": "Beim Eintritt läuft der Quality-Gate (gate-before-review, FIX). "
+                                            "Rot → die Karte wird zurückgebounced mit sichtbarem Grund."},
+                            {"key": "done", "label": lab("done", "Fertig"), "kind": "policy",
+                             "instruction": "Merge + Deploy. Nichts merged sich selbst — außer policy.auto_accept_green "
+                                            "ist an. Der Prozess-Chain rückt einen Schritt vor."},
+                        ],
+                        "gate": {"label": "Quality Gate", "kind": "fixed", "between": ["working", "review"],
+                                 "instruction": "Gate-before-review ist ein fixes Harness-Gesetz: kein Review ohne "
+                                                "bestandenen Gate. Das Ergebnis geht append-only ins Audit-Log."},
+                    },
+                    "build": {
+                        "title": "Wie Änderungen gebaut werden",
+                        "states": [
+                            {"key": "ALIGN", "instruction": "Arbeit begonnen, aber kein Workorder — Request + passt es zu den Gesetzen/Charter?"},
+                            {"key": "ANALYZE", "instruction": "Architektur-Impact + Debt-Delta (Abkürzungen in debt.py registrieren)."},
+                            {"key": "EXECUTE", "instruction": "Checks rot → bauen/fixen bis grün (compile, types, design-lint)."},
+                            {"key": "TEST", "instruction": "Grün heißt nicht fertig: das echte Ding prüfen (UI = beurteilt, nicht nur gerendert) + adversarial testen."},
+                            {"key": "CLEAN", "instruction": "Hygiene: Debt-Register wohlgeformt, keine Secrets getrackt."},
+                            {"key": "COMMIT", "instruction": "Loop komplett & ruhig → Commit vorschlagen; Workorder archiviert."},
+                        ],
+                    },
+                    "laws": [
+                        {"key": "auth", "text": "Auth ist fix — nie geschwächt."},
+                        {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben."},
+                        {"key": "gate", "text": "Gate-before-review — Qualität vor jeder Abnahme."},
+                        {"key": "economics", "text": "Gemessene Ökonomie — jeder Turn hat Kosten/Value."},
+                        {"key": "worktree", "text": "Worktree-Isolation — jeder Agent in eigenem Checkout."},
+                        {"key": "drivers", "text": "Driver-Kommandos sind fix — was Agents ausführen ist nicht frei konfigurierbar."},
+                        {"key": "charter", "text": "Charter-Kern ist Code — nicht per Chat editierbar."},
+                    ],
+                    "charter": charter.CHARTER,
+                }))
             if p == "/models":
                 import turnopts
                 return self._send(200, json.dumps(turnopts.list_models()))
+            if p == "/pm/economics":
+                # cheap, no-LLM economics snapshot + the stored MVP goal
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import pm
+                return self._send(200, json.dumps({"goal": pm.get_goal(), "economics": pm.economics()}))
+            if p == "/pm/plan":
+                # the last PM briefing (cached artifact) + live economics - no LLM,
+                # so the Dashboard shows instantly; /pm/report refreshes it.
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import pm
+                return self._send(200, json.dumps({"goal": pm.get_goal(),
+                    "economics": pm.economics(), "plan": pm.latest_plan(),
+                    "config": pm._pm(), "activity": pm.activity()}))
             if p == "/sessions/claude":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -637,11 +727,47 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(events.settings()))
-            if p == "/nightshift":
-                import nightshift
+            if p == "/nightshift":   # kept as an alias; the PM loop is the system now
+                import pm
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(nightshift.status()))
+                return self._send(200, json.dumps(pm.status()))
+            if p == "/automation":
+                # everything about the auto-working machinery in one place: the
+                # night shift (is it on, repos, limits, tonight's plan), the policy
+                # (auto-dispatch/accept), and the build-loop state machine + where
+                # it currently sits - so the UI can expose "what is the harness doing".
+                import events, pm, os as _os, sys as _sys
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                s = events.settings(); pol = s.get("policy") or {}
+                loop_states = [
+                    ["ALIGN", "Arbeit begonnen - Workorder schreiben (passt es zu Gesetzen + Charter?)"],
+                    ["ANALYZE", "Architektur-Impact + Debt-Delta klaeren, bevor gebaut wird"],
+                    ["EXECUTE", "Checks rot - bauen/fixen bis gruen (py_compile, tsc, design-lint)"],
+                    ["TEST", "verifizieren statt nur rendern - adversarial testen"],
+                    ["CLEAN", "aufraeumen, Debt-Register gepflegt halten"],
+                    ["BUILD", "stale Artefakte neu bauen (Installer / APK / glasses)"],
+                    ["COMMIT", "Loop fertig + ruhig - Commit vorschlagen"],
+                    ["DONE", "sauberer Baum, kein offener Workorder"],
+                ]
+                current = []
+                try:
+                    _sys.path.insert(0, _os.path.join(
+                        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools"))
+                    import loop_state
+                    current = [{"state": st, "action": ac} for st, ac in (loop_state.transitions() or [])]
+                except Exception as e:
+                    current = [{"state": "?", "action": "loop_state: %s" % str(e)[:120]}]
+                return self._send(200, json.dumps({
+                    "nightshift": pm.status(),   # alias key: the PM loop's status
+                    "policy": {k: pol.get(k) for k in ("auto_dispatch_modes", "auto_dispatch_priority",
+                              "auto_accept_green", "chat_admin_roles", "chat_configure_roles")},
+                    "repos": (s.get("pm") or {}).get("repos") or [],
+                    "default_repo": s.get("default_repo"),
+                    "loop_states": [{"state": st, "desc": d} for st, d in loop_states],
+                    "loop_current": current,
+                }))
             if p == "/dashboard/data":
                 import events, sessions
                 if user["role"] == "client":
@@ -690,6 +816,27 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] == "client" and (not t or t.get("client") != user["name"]):
                     return self._send(403, json.dumps({"error": "not your card"}))
                 return self._send(200, json.dumps(claude_sessions.read_transcript_live(t)))
+            if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "transcript" and parts[3] == "live":
+                # PUSH over the sealed relay: hold the request until the
+                # transcript changes (or ~22s), then return the fresh steps + a
+                # version token. The phone loops this - real streaming latency
+                # without SSE (which can't be relayed). Reuses the e2ee/relay
+                # path untouched. 22s < relay REPLY_TIMEOUT (120) and the daemon
+                # bridge's _local timeout (115), so the reply always lands.
+                import sessions, claude_sessions, time as _t
+                t = sessions.get_track(parts[1])
+                if not t:
+                    return self._send(404, json.dumps({"error": "no such card"}))
+                if user["role"] == "client" and t.get("client") != user["name"]:
+                    return self._send(403, json.dumps({"error": "not your card"}))
+                want = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+                deadline = _t.time() + 22
+                cur = claude_sessions.transcript_version(t)
+                while str(cur) == want and _t.time() < deadline:
+                    _t.sleep(0.35)
+                    cur = claude_sessions.transcript_version(t)
+                return self._send(200, json.dumps(
+                    {"v": str(cur), "steps": claude_sessions.read_transcript_live(t)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "checkpoints":
                 import sessions
                 t = sessions.get_track(parts[1])
@@ -839,6 +986,48 @@ class H(BaseHTTPRequestHandler):
                         actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if p == "/pm/config":
+                # owner sets the proactive-loop policy (on/off, autonomy ladder,
+                # repos allowlist, timing/caps). Whitelisted keys only.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import pm, events
+                allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
+                           "replan_minutes", "max_dispatch_per_day", "goal", "plan",
+                           "monthly_eur", "quota_turns_per_day")
+                merged = dict(events.settings().get("pm") or {})
+                for k in allowed:
+                    if k in body:
+                        merged[k] = body[k]
+                if merged.get("autonomy") not in ("notify", "ask", "act"):
+                    merged["autonomy"] = "act"
+                events.save_settings({"pm": merged})
+                return self._send(200, json.dumps(pm._pm()))
+            if p == "/pm/consolidate":
+                # Phase 3: propose (read-only) or apply (non-destructive) the
+                # roll-up of many small cards into 2-5 stream cards per repo.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import pm
+                try:
+                    if body.get("mode") == "apply":
+                        return self._send(200, json.dumps(pm.apply_consolidation(
+                            body.get("repos") or [], actor=user["name"])))
+                    return self._send(200, json.dumps(pm.consolidation_proposal(
+                        model=body.get("model", ""))))
+                except Exception as e:
+                    return self._send(500, json.dumps({"error": str(e)[:300]}))
+            if p == "/pm/report":
+                # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
+                # token/cost projection grounded in real spend. One model turn.
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import pm
+                try:
+                    return self._send(200, json.dumps(pm.brief(
+                        goal=body.get("goal"), model=body.get("model", ""))))
+                except Exception as e:
+                    return self._send(500, json.dumps({"error": str(e)[:300]}))
             if p == "/chat":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -989,15 +1178,13 @@ class H(BaseHTTPRequestHandler):
                     return self._send(400, json.dumps({"error": "token required"}))
                 events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
                 return self._send(200, json.dumps({"registered": True}))
-            if p == "/nightshift/plan":
-                # "plan before I go to sleep": scouts run in the background,
-                # the plan lands in daemon/nightshift/plan-<day>.json.
-                import nightshift
+            if p == "/nightshift/plan":   # alias: run the PM plan now, file its cards
+                import pm
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
-                _bg("nightshift:plan", lambda: nightshift.make_plan(actor=user["name"]))
+                _bg("pm:plan", lambda: pm.make_plan(actor=user["name"]))
                 return self._send(200, json.dumps({"planning": True,
-                                                   "repos": nightshift.cfg()["repos"]}))
+                                                   "repos": pm._pm().get("repos") or []}))
             # --- orchestrator control ---
             if p == "/tracks/new":
                 import sessions, events
@@ -1209,9 +1396,9 @@ def serve(port=8140):
     processes.start_chain_poller()
     connectors.start_scheduler()
     relay_client.start(port)   # reverse tunnel for mobile - idle until settings.relay is set
-    import nightshift
-    nightshift.start()         # idle-time worker - no-op until settings.nightshift.enabled
-    print("SwarmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
+    import pm
+    pm.start_loop()            # the single proactive loop - no-op until settings.pm.loop_enabled
+    print("HelmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     try:
         ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
     finally:

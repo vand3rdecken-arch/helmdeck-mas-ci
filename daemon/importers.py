@@ -69,7 +69,7 @@ def url_import(url, client="", due="", actor="owner"):
     import events, processes
     if not re.match(r"^https?://", url):
         raise RuntimeError("http(s) URL required")
-    req = urllib.request.Request(url, headers={"User-Agent": "SwarmDeck/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HelmDeck/0.1"})
     with urllib.request.urlopen(req, timeout=30) as r:
         html = r.read(400_000).decode("utf-8", "replace")
     text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)

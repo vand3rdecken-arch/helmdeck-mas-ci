@@ -1,1 +1,0 @@
-py -3.12 "%SWARMDECK_REPO%\tools\run_gate.py"

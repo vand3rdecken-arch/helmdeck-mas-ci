@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Read the user's EXISTING Claude Code sessions from ~/.claude/projects so
-SwarmDeck can list and continue them - the Paseo 'session import' idea. A real
+HelmDeck can list and continue them - the Paseo 'session import' idea. A real
 Claude Code session is a <uuid>.jsonl transcript under
 ~/.claude/projects/<encoded-cwd>/; `claude --resume <uuid>` continues it. We
 surface: id (uuid), cwd, project label, first user message, last activity.
 Nothing here mutates the sessions - it only reads them."""
-import json, os, time
+import json, os, re, time
 
 HOME = os.path.expanduser("~")
 PROJECTS = os.path.join(HOME, ".claude", "projects")
@@ -21,9 +21,9 @@ MAX_THINK = 60_000
 # tool results are re-sent on every live tick and sit behind an expander, so
 # keep them moderate - the whole transcript is refetched while a turn runs.
 MAX_RESULT = 8_000
-# SwarmDeck's own spawned sessions (copilot, process designer) - not the user's
+# HelmDeck's own spawned sessions (copilot, process designer) - not the user's
 # coding sessions, so hide them from the import list.
-_INTERNAL = ("You are the SwarmDeck board copilot", "You are a process designer")
+_INTERNAL = ("You are the HelmDeck board copilot", "You are a process designer")
 
 
 def _first_text(content):
@@ -63,7 +63,7 @@ def _peek(path):
 
 
 def list_sessions(limit=MAX):
-    """All Claude Code sessions, most-recently-active first. Skips SwarmDeck's
+    """All Claude Code sessions, most-recently-active first. Skips HelmDeck's
     own worktree sessions (those are already cards)."""
     out = []
     if not os.path.isdir(PROJECTS):
@@ -84,10 +84,10 @@ def list_sessions(limit=MAX):
             if size < 200:              # empty/aborted transcript
                 continue
             cwd, first = _peek(path)
-            if cwd and "swarmdeck-worktrees" in cwd.replace("/", "\\"):
-                continue                # SwarmDeck-managed - already a card
+            if cwd and "helmdeck-worktrees" in cwd.replace("/", "\\"):
+                continue                # HelmDeck-managed - already a card
             if first and first.startswith(_INTERNAL):
-                continue                # SwarmDeck's own copilot/process session
+                continue                # HelmDeck's own copilot/process session
             out.append({
                 "id": fn[:-6],          # strip .jsonl -> the session uuid
                 "cwd": cwd or "",
@@ -148,6 +148,21 @@ def live_session_id(track):
     return (track or {}).get("session_id") or live
 
 
+def transcript_version(track):
+    """A change token for the card's live transcript: bytes of the current
+    session .jsonl + the driver's live_partial.txt. It bumps whenever the agent
+    flushes a block OR streams a token. This is the long-poll key that lets the
+    phone get PUSH latency over the sealed relay (which can't carry SSE): the
+    /transcript/live endpoint blocks until this changes, then returns."""
+    run_dir = (track or {}).get("run_dir") or ""
+    sid = live_session_id(track)
+    jp = _find_transcript(sid) if sid else None
+    js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
+    lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
+    ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
+    return js + ls
+
+
 def read_transcript_live(track, limit=400):
     """read_transcript + the in-flight streaming text (driver's live_partial.txt)
     appended as a streaming step, so a turn streams token-by-token before its
@@ -195,7 +210,57 @@ def _tool_detail(name, inp):
 
 
 def _short_ts(iso):
-    return iso.split("T")[1][:5] if isinstance(iso, str) and "T" in iso else ""
+    # The session .jsonl timestamps are UTC (…Z); the actionlog uses LOCAL time.
+    # Convert to local + HH:MM:SS so the transcript and the woven lifecycle notes
+    # sort together (a 2h skew + minute-only granularity was scrambling the feed).
+    if not isinstance(iso, str) or "T" not in iso:
+        return ""
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone().strftime("%H:%M:%S")
+    except Exception:
+        return iso.split("T")[1][:8]
+
+
+def _epoch(iso):
+    # Absolute POSIX seconds for the session .jsonl UTC timestamp. This is the
+    # sound sort key for weaving the transcript with the actionlog notes
+    # (`ta`); `ts` is date-less HH:MM:SS and scrambles across midnight/days.
+    if not isinstance(iso, str) or "T" not in iso:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+def _cmd_label(text):
+    """A Claude Code local-command envelope (recorded as role=user) -> a short
+    neutral label for a SYSTEM note, so it stays visible but isn't attributed to
+    the human. e.g. '/model claude-haiku-4-5' or 'Set model to ...'."""
+    name = re.search(r"<command-name>(.*?)</command-name>", text, re.S)
+    if name:
+        n = name.group(1).strip().lstrip("/")
+        args = re.search(r"<command-args>(.*?)</command-args>", text, re.S)
+        a = args.group(1).strip() if args else ""
+        return ("⌘ /" + n + (" " + a if a else "")).strip()
+    out = re.search(r"<local-command-stdout>(.*?)</local-command-stdout>", text, re.S)
+    if out and out.group(1).strip():
+        return out.group(1).strip()
+    return None
+
+
+_CTX_SEP = "\n\n---\n\n"
+def _strip_ctx(text):
+    """The daemon prepends review/merge context to a steer prompt (sessions.
+    _pending_context); the session records the AUGMENTED text. Show only the
+    human's actual instruction in the feed, not the injected block."""
+    if isinstance(text, str) and text.lstrip().startswith("[Desktop context since your last turn"):
+        i = text.find(_CTX_SEP)
+        if i != -1:
+            return text[i + len(_CTX_SEP):].lstrip()
+    return text
 
 
 def _result_text(part):
@@ -255,11 +320,25 @@ def read_transcript(session_id, limit=400):
             continue
         role = m.get("role") or d.get("type")
         ts = _short_ts(d.get("timestamp"))
+        ta = _epoch(d.get("timestamp"))
         content = m.get("content")
         _lead = content if isinstance(content, str) else (next(
             (p.get("text", "") for p in content
              if isinstance(p, dict) and p.get("type") == "text"), "")
             if isinstance(content, list) else "")
+        # Slash-command plumbing: Claude Code records /model (and other local
+        # commands) as role=user WITHOUT isMeta - only the caveat is meta. So the
+        # <command-name>/<command-args>/<local-command-stdout> envelopes leaked
+        # into the feed as the HUMAN's own messages ("Set model to ..."). Keep
+        # them visible but RE-ATTRIBUTE as a neutral system note (sorted by time
+        # like everything else) - they are plumbing, not the human talking.
+        if role == "user" and _lead.lstrip().startswith((
+                "<command-name>", "<command-message>", "<command-args>",
+                "<local-command-stdout>", "<local-command-stderr>")):
+            lbl = _cmd_label(_lead)
+            if lbl:
+                steps.append({"kind": "system", "text": lbl, "ts": ts, "ta": ta})
+            continue
         # Compaction: a session that ran out of context writes a summary as a
         # role=user message (flagged isCompactSummary, or the plain continuation
         # summary on resume). Render it as ONE small marker (Paseo-style), never
@@ -267,11 +346,11 @@ def read_transcript(session_id, limit=400):
         if d.get("isCompactSummary") or (role == "user" and _lead.lstrip().startswith(
                 "This session is being continued from a previous conversation")):
             if not (steps and steps[-1].get("kind") == "compaction"):
-                steps.append({"kind": "compaction", "ts": ts})
+                steps.append({"kind": "compaction", "ts": ts, "ta": ta})
             continue
         if isinstance(content, str):
             if content.strip():
-                steps.append({"role": role, "kind": "text", "text": content.strip()[:MAX_TEXT], "ts": ts})
+                steps.append({"role": role, "kind": "text", "text": _strip_ctx(content.strip())[:MAX_TEXT], "ts": ts, "ta": ta})
             continue
         if not isinstance(content, list):
             continue
@@ -280,9 +359,9 @@ def read_transcript(session_id, limit=400):
                 continue
             pt = part.get("type")
             if pt == "text" and (part.get("text") or "").strip():
-                steps.append({"role": role, "kind": "text", "text": part["text"].strip()[:MAX_TEXT], "ts": ts})
+                steps.append({"role": role, "kind": "text", "text": _strip_ctx(part["text"].strip())[:MAX_TEXT], "ts": ts, "ta": ta})
             elif pt == "thinking" and (part.get("thinking") or "").strip():
-                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:MAX_THINK], "ts": ts})
+                steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:MAX_THINK], "ts": ts, "ta": ta})
             elif pt == "tool_use":
                 name = part.get("name") or "tool"
                 inp = part.get("input") if isinstance(part.get("input"), dict) else {}
@@ -290,16 +369,16 @@ def read_transcript(session_id, limit=400):
                     todos = [{"content": str(td.get("content", ""))[:220], "status": str(td.get("status", ""))}
                              for td in (inp.get("todos") or []) if isinstance(td, dict)]
                     if todos:
-                        steps.append({"kind": "todos", "todos": todos, "ts": ts})
+                        steps.append({"kind": "todos", "todos": todos, "ts": ts, "ta": ta})
                     continue
                 if name == "ExitPlanMode":
-                    steps.append({"kind": "plan", "text": str(inp.get("plan", ""))[:MAX_TEXT], "ts": ts})
+                    steps.append({"kind": "plan", "text": str(inp.get("plan", ""))[:MAX_TEXT], "ts": ts, "ta": ta})
                     continue
                 res = results.get(part.get("id"))
                 step = {"role": role, "kind": "tool", "tool": name,
                         "text": _tool_summary(inp), "result": (res or {}).get("text", ""),
                         "ok": (res or {}).get("ok", True),
-                        "running": res is None, "ts": ts}
+                        "running": res is None, "ts": ts, "ta": ta}
                 detail = _tool_detail(name, inp)
                 if detail:
                     step["detail"] = detail

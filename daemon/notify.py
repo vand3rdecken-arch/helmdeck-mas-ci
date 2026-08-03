@@ -66,9 +66,17 @@ def push_fcm(title, body, track_id=""):
         cipher = e2ee.seal_b64(
             _json.dumps({"title": title, "body": body, "track": track_id}).encode("utf-8"),
             e2ee.import_sec(rel["sk"]), e2ee.import_pub(rel["phone_pub"]))
+        # A GENERIC notification block so Android displays the push automatically
+        # even when the app is backgrounded/killed (a data-only message needs an
+        # in-app background handler, which we don't ship). Zero-knowledge is kept:
+        # the block carries NO card content - just "you have a message" - while the
+        # real title/body stay in the sealed `cipher`, which the app decrypts and
+        # re-presents in full when it's open.
         msg = {"message": {"token": device,
                            "data": {"cipher": cipher},
-                           "android": {"priority": "high"}}}
+                           "notification": {"title": "HelmDeck",
+                                            "body": "Neue Meldung – zum Ansehen tippen"},
+                           "android": {"priority": "high", "notification": {"channel_id": "default"}}}}
         req = urllib.request.Request(
             "https://fcm.googleapis.com/v1/projects/%s/messages:send" % sa["project_id"],
             data=_json.dumps(msg).encode(), method="POST")

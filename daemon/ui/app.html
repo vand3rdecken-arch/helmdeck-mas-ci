@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SwarmDeck</title>
+<title>HelmDeck</title>
 <style>
 /* ---- design tokens: Plane's system (packages/tailwind-config/variables.css), trimmed ---- */
 :root{
@@ -256,7 +256,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <body>
 <div id="app">
   <nav id="side">
-    <div id="logo"><span class="dot">S</span> SwarmDeck</div>
+    <div id="logo"><span class="dot">S</span> HelmDeck</div>
     <div class="navitem" data-view="board"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/></svg>Board</div>
     <div class="navitem" data-view="procs"><svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M7 7l3 3M14 13l3 3"/></svg>Processes</div>
     <div class="navitem" data-view="dash"><svg viewBox="0 0 24 24"><path d="M3 12h5l2-7 4 14 2-7h5"/></svg>Dashboard</div>
@@ -356,7 +356,7 @@ function authGate(){
     var d=document.createElement('div');d.id='authmodal';
     d.style.cssText='position:fixed;inset:0;background:var(--bg-canvas);display:grid;place-items:center;z-index:40';
     d.innerHTML='<div style="background:var(--bg-surface-1);border:1px solid var(--border-subtle);border-radius:14px;padding:26px;width:min(380px,90vw)">'
-      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><span style="width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px">S</span><b style="font-size:15px">SwarmDeck</b></div>'
+      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><span style="width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px">S</span><b style="font-size:15px">HelmDeck</b></div>'
       +(setup?'<h3 style="margin:0 0 4px;font-size:14px">Create the owner account</h3>'
         +'<div style="font-size:12px;color:var(--txt-tertiary);margin-bottom:12px">First run - this account manages everything, including other users.</div>'
        :'<div style="display:flex;gap:14px;margin-bottom:12px;font-size:13px;font-weight:600">'

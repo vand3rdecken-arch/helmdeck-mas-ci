@@ -27,7 +27,7 @@ def backup():
     ts = time.strftime("%Y%m%d-%H%M%S")
     bdir = os.path.join(ROOT, "backups", "reset-" + ts)
     os.makedirs(bdir, exist_ok=True)
-    for f in ("swarmdeck.db", "swarmdeck.db-wal", "swarmdeck.db-shm"):
+    for f in ("helmdeck.db", "helmdeck.db-wal", "helmdeck.db-shm"):
         p = os.path.join(DAEMON, f)
         if os.path.exists(p):
             shutil.copy2(p, bdir)

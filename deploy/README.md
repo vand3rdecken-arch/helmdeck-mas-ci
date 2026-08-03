@@ -14,7 +14,7 @@ Everything except the account sign-in is scripted here.
 
 No relay, no VM. `cloudflared` runs on THIS PC, dials out to Cloudflare, and
 publishes the daemon under an HTTPS URL. The phone then talks to that URL
-directly (SwarmDeck's own login/device-token auth still applies).
+directly (HelmDeck's own login/device-token auth still applies).
 
 **You (once):** create a free account at https://dash.cloudflare.com/sign-up
 
@@ -28,7 +28,7 @@ bash deploy/cloudflare_tunnel.sh mydomain.com   # named tunnel: stable URL (doma
 The script installs `cloudflared`, starts the tunnel to `localhost:8140`, and
 prints the public HTTPS URL. Put that URL in the app's "daemon url" field.
 
-Trade-off: the daemon is reachable on the internet, protected by SwarmDeck auth
+Trade-off: the daemon is reachable on the internet, protected by HelmDeck auth
 only. Harden it with Cloudflare Access (free) if you want a second door.
 
 ---
@@ -44,9 +44,9 @@ key `~/.ssh/oracle_relay`):
 
 | piece | where |
 |---|---|
-| relay code | `/opt/swarmdeck-relay.py` |
-| service | `swarmdeck-relay.service`, bound to **127.0.0.1:6790** (not public) |
-| TLS + proxy | **nginx** vhost `/etc/nginx/sites-available/swarmdeck-relay` |
+| relay code | `/opt/helmdeck-relay.py` |
+| service | `helmdeck-relay.service`, bound to **127.0.0.1:6790** (not public) |
+| TLS + proxy | **nginx** vhost `/etc/nginx/sites-available/helmdeck-relay` |
 | certificate | Let's Encrypt via certbot, auto-renewing |
 | nginx backup | `/home/ubuntu/nginx-backup-<ts>.tgz` |
 
@@ -60,9 +60,11 @@ sudo ln -s /etc/nginx/sites-available/myproject /etc/nginx/sites-enabled/
 sudo systemctl enable --now myproject && sudo nginx -t && sudo systemctl reload nginx
 ```
 
-> `push_relay.sh` below installs **Caddy** and assumes an EMPTY box. Do not run
-> it against this host - it would fight nginx for port 80. It stays here for a
-> fresh VM.
+> `push_relay.sh` is the UPDATE script for this box: it ships `relay/relay.py`,
+> the Expo APK + `/apk/version.json` (built by `tools/release.sh android`), and
+> restarts the service. It does NOT touch nginx or TLS (the first-install
+> version wrote a Caddyfile; that was removed exactly because it would fight
+> nginx for :443). JS-only changes ride OTA instead: `deploy/push_update.sh`.
 
 ---
 
@@ -83,15 +85,16 @@ if you want the encrypted path, or to serve several users from one host.
 **Then run (from this repo):**
 
 ```bash
-bash deploy/push_relay.sh        # copies relay + units to the VM and starts everything
+bash deploy/push_relay.sh        # ships relay.py (+ APK channel) and restarts the service
 ```
 
-It installs Python + Caddy, drops `relay.py` in place, enables the systemd
-service, and Caddy gets a Let's Encrypt certificate automatically. Verify:
+The script assumes the box was set up once (systemd unit + nginx/certbot or
+equivalent TLS proxy, as on the live VM above); it only updates `relay.py`,
+the `/apk/` update channel, and restarts `helmdeck-relay`. Verify:
 
 ```bash
 curl https://relay.yourdomain.com/health     # {"ok": true, "rooms": 0}
 ```
 
-**Finally, in SwarmDeck:** Settings → *Mobile app - pair a phone* → enter the
+**Finally, in HelmDeck:** Settings → *Mobile app - pair a phone* → enter the
 relay URL → **Pair phone** → copy the pairing code → paste it in the app.
