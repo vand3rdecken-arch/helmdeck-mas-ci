@@ -8,6 +8,13 @@ import { api, type PmBrief, type PmConfig, type PmData } from "@/data/client";
 import { useTheme } from "@/theme";
 
 const cur = (n?: number) => "€" + (n ?? 0).toFixed(2);
+const _WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const fmtDate = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  return `${_WD[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
 
 function ActLine({ icon, color, text, t }: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string; t: ReturnType<typeof useTheme> }) {
   return (
@@ -229,7 +236,9 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
                   <View style={{ flex: 1, paddingBottom: 12 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "700", flex: 1 }}>{m.name}</Text>
-                      <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>~{m.cumulative_eta_days ?? m.eta_days}d</Text>
+                      <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
+                        {m.target_date ? `bis ${fmtDate(m.target_date)}` : `~${m.cumulative_eta_days ?? m.eta_days}d`}
+                      </Text>
                     </View>
                     {m.why ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 2 }}>{m.why}</Text> : null}
                     <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 3 }}>{m.tasks?.length ?? 0} Tasks · {m.est_turns ?? 0} Turns</Text>

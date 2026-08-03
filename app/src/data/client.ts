@@ -62,7 +62,7 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
 export interface SteerOpts { model?: string; thinking?: string; mode?: string }
 
 export interface PmTask { title: string; card?: string | null; priority?: string; status?: string; est_turns?: number; stream?: string; why?: string }
-export interface PmMilestone { name: string; why?: string; tasks: PmTask[]; est_turns?: number; eta_days?: number; cumulative_eta_days?: number }
+export interface PmMilestone { name: string; why?: string; tasks: PmTask[]; est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string }
 export interface PmBudget { plan?: string; fixed_monthly_eur?: number; cash_to_goal_eur?: number; shadow_eur_to_goal?: number;
   spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string }
 export interface PmBrief {

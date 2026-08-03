@@ -202,7 +202,9 @@ def brief(goal=None, model=""):
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
 
-    # price + time in CODE: LLM judged est_turns; we convert to days & shadow-€.
+    # price + time in CODE: LLM judged est_turns; we convert to days, dates & €.
+    from datetime import datetime, timedelta
+    today = datetime.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")
     pace = _pace(econ)
     cum = 0
     for ms in out.get("milestones", []):
@@ -212,6 +214,9 @@ def brief(goal=None, model=""):
         ms["est_turns"] = tt
         ms["eta_days"] = _days(tt, pace)
         ms["cumulative_eta_days"] = _days(cum, pace)
+        # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
+        # the milestone reads "by Thu" not just "~3d".
+        ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
     est_turns = cum
     is_max = econ["plan"] == "max"
     out["budget"] = {
@@ -254,7 +259,8 @@ def plan_items(b=None):
             items.append({"title": t.get("title", "").strip(),
                           "description": desc,
                           "priority": t.get("priority", "medium"),
-                          "repo": t.get("repo") or default_repo})
+                          "repo": t.get("repo") or default_repo,
+                          "due": ms.get("target_date") or ""})   # -> board Timeline roadmap
     items = [it for it in items if it["title"]]
     items.sort(key=lambda x: order.get(x.get("priority"), 2))
     return items, b
@@ -417,7 +423,7 @@ def make_plan(actor="owner"):
         sessions.new_track(
             repo, "pm-" + re.sub(r"[^a-z0-9]+", "-", it["title"].lower())[:24],
             it["title"], lane="backlog", description=it.get("description", ""),
-            priority=it.get("priority", "medium"), actor="pm")
+            priority=it.get("priority", "medium"), due=it.get("due", ""), actor="pm")
         filed += 1
         have.add(it["title"].strip().lower())
     st = _loopstate()
