@@ -189,9 +189,9 @@ def _run_action(a, actor, role="operator"):
         if kind == "move":
             r = sessions.move_lane(t["id"], a["lane"], actor=actor)
             if r.get("gate_failed"):
-                return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", []))[:200])
+                return "gate BOUNCED %s: %s" % (t["branch"], " | ".join(r.get("gate_report", []))[:600])
             if r.get("merge_failed"):
-                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), (r.get("merge_report") or "")[:200])
+                return "%s bleibt auf Review (%s): %s" % (t["branch"], r.get("merge_kind"), (r.get("merge_report") or "")[:600])
             return "moved %s -> %s" % (t["branch"], a["lane"])
         if kind == "delete":
             sessions.delete_track(t["id"], actor=actor)
