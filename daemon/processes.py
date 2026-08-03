@@ -269,12 +269,108 @@ def _priority_dispatch():
         events.emit("process", "-", action="priority_dispatch", card=t["id"])
         threading.Thread(target=_auto_dispatch, args=(t["id"],), daemon=True).start()
 
+AUTOPILOT_RESOLVE_MAX = 2      # RESOLVE ladder: delegate the fix twice, then escalate
+AUTOPILOT_RETRY_SECONDS = 600  # min gap between autopilot attempts on one card
+
+
+def _stamp(tid, **fields):
+    """Persist autopilot bookkeeping fields on a card (fresh load, no clobber)."""
+    import sessions
+    t = sessions._find(sessions._load(), tid)
+    if t:
+        t.update(fields)
+        sessions._save_track(t)
+    return t
+
+
+def _auto_resolve(t):
+    """Bounced autopilot card: DELEGATE the fix to the card's own worker - a
+    real merge conflict goes to conflict resolution, any other bounce steers
+    the worker with the concrete reason. Two attempts, then alert ONCE and
+    leave the card for the human (escalate-with-context, never silently)."""
+    import sessions, events
+    tid = t["id"]
+    if time.time() - (t.get("autopilot_ts") or 0) < AUTOPILOT_RETRY_SECONDS:
+        return                          # a delegated fix is still in flight
+    tries = int(t.get("autopilot_resolves") or 0)
+    if tries >= AUTOPILOT_RESOLVE_MAX or not t.get("worktree"):
+        if not t.get("autopilot_alerted"):
+            _stamp(tid, autopilot_alerted=True)
+            events.emit("process", "-", action="autopilot_escalate", card=tid)
+            try:
+                import notify
+                notify.push_fcm("Autopilot: haengt",
+                                "'%s' - haengt nach %d Fix-Versuchen, schau mal."
+                                % ((t.get("task") or "")[:60], tries), tid)
+            except Exception:
+                pass
+        return
+    _stamp(tid, autopilot_resolves=tries + 1, autopilot_ts=time.time())
+    events.emit("process", "-", action="autopilot_resolve", card=tid, attempt=tries + 1)
+    if t.get("merge_kind") == "conflict":
+        threading.Thread(target=sessions.dispatch_conflict_resolution, args=(tid,),
+                         kwargs={"actor": "autopilot"}, daemon=True).start()
+    else:
+        reason = (" | ".join(t.get("gate_report") or [])
+                  or t.get("last_error") or "Review rot")[:500]
+        instr = ("Die Karte ist beim Review gebounct. Grund: %s. Behebe die Ursache "
+                 "im Code (nur editieren, kein git) und reiche dann neu ein." % reason)
+        threading.Thread(target=sessions.steer, args=(tid, instr),
+                         kwargs={"actor": "autopilot", "source": "autopilot"},
+                         daemon=True).start()
+
+
+def _autopilot():
+    """Per-card autopilot: a card with mode='auto' runs its WHOLE lifecycle
+    unattended, so launch cards never sit for weeks on a bounce or an
+    unreviewed delivery:
+      backlog                 -> dispatch itself (WIP headroom respected)
+      bounced                 -> delegate the fix to its own worker (2 tries,
+                                 then alert once) - see _auto_resolve
+      delivered + gate GREEN  -> accept (merge + deploy), the same green-gate
+                                 rule policy.auto_accept_green applies to chain
+                                 steps, opted in per card instead of per board
+    The gate itself is untouched: red still bounces, green is still required
+    before any merge - autopilot only removes the WAITING, not the checks."""
+    import sessions, events
+    tracks = sessions.list_tracks()
+    auto = [t for t in tracks if t.get("mode") == "auto" and not t.get("archived")]
+    if not auto:
+        return
+    headroom = (events.settings()["capacity"]["wip_limit"]
+                - sum(1 for t in tracks if t.get("lane") == "working"))
+    for t in auto:
+        if t.get("status") == "bounced":
+            _auto_resolve(t)
+        elif t.get("status") == "needs_you":
+            # delivered; gate was green at submit - re-check (cheap safety,
+            # backed off so a red result doesn't re-run the gate every tick)
+            if t.get("autopilot_accepted") \
+               or time.time() - (t.get("autopilot_ts") or 0) < AUTOPILOT_RETRY_SECONDS:
+                continue
+            _stamp(t["id"], autopilot_ts=time.time())
+            ok, _problems = sessions._gate(t)
+            if ok:
+                _stamp(t["id"], autopilot_accepted=True)
+                events.emit("process", "-", action="autopilot_accept", card=t["id"])
+                threading.Thread(target=_auto_accept, args=(t["id"],),
+                                 daemon=True).start()
+        elif t.get("lane") == "backlog" and headroom > 0 \
+                and not t.get("autopilot_dispatched"):
+            headroom -= 1
+            _stamp(t["id"], autopilot_dispatched=True)
+            events.emit("process", "-", action="autopilot_dispatch", card=t["id"])
+            threading.Thread(target=_auto_dispatch, args=(t["id"],),
+                             daemon=True).start()
+
+
 def start_chain_poller(interval=20):
     def loop():
         while True:
             try:
                 sync()
                 _priority_dispatch()
+                _autopilot()
             except Exception as e:
                 print("chain sync error:", e)
             time.sleep(interval)

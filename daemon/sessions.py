@@ -1052,10 +1052,15 @@ def sweep_zombies():
 
 
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
-            "project_id", "billing", "rate")
+            "project_id", "billing", "rate", "mode")
 # project_id may be explicitly cleared (unassign from a project) - unlike the
 # other fields, "" / null is a meaningful value here, not "leave unset".
-CLEARABLE = ("project_id",)
+# mode too: clearing it returns the card to the normal human-driven lifecycle.
+CLEARABLE = ("project_id", "mode")
+# Execution modes a card may carry. The process modes (do/prepare/cowork/teach/
+# human) come from processes.py; "auto" is the per-card autopilot: the chain
+# poller dispatches, bounce-resolves and green-gate-accepts it unattended.
+CARD_MODES = ("auto", "do", "prepare", "cowork", "teach", "human")
 
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
@@ -1105,6 +1110,8 @@ def update_track(tid, patch, actor="owner"):
         v = patch[k] or None if k in CLEARABLE else patch[k]
         if k not in CLEARABLE and v is None:
             continue
+        if k == "mode" and v is not None and v not in CARD_MODES:
+            raise ValueError("bad mode: %r (one of %s)" % (v, "/".join(CARD_MODES)))
         if v == t.get(k):
             continue
         t[k] = float(v) if k in ("value", "rate") and v is not None else v
@@ -1116,6 +1123,45 @@ def update_track(tid, patch, actor="owner"):
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
     return t
+
+DIRECTIVES = os.path.join(ROOT, "board_directives.json")
+
+def apply_board_directives():
+    """One-shot board-data patches shipped as repo DATA (policy is data). A
+    card worker is worktree-isolated and never touches the live DB, so a card
+    whose deliverable is a board change ships it here; the DAEMON applies it at
+    startup through update_track (audit event + actionlog note included).
+    Each entry {"id", "card", "set": {...}} is applied ONCE - the entry id is
+    recorded on the card - so a later owner edit is never overwritten on
+    restart. Done cards are left alone (their fields are accounting by then)."""
+    if not os.path.exists(DIRECTIVES):
+        return 0
+    try:
+        with open(DIRECTIVES, encoding="utf-8") as f:
+            entries = json.load(f)
+    except ValueError as e:
+        print("directives: unreadable board_directives.json:", e)
+        return 0
+    applied = 0
+    for entry in entries:
+        did, tid = entry.get("id"), entry.get("card")
+        if not did or not tid:
+            continue
+        t = get_track(tid)
+        if not t or did in (t.get("directives_applied") or []) or t.get("lane") == "done":
+            continue
+        try:
+            update_track(tid, entry.get("set") or {}, actor="directive:" + did)
+        except (RuntimeError, ValueError) as e:
+            print("directives: %s failed: %s" % (did, e))
+            continue
+        t = get_track(tid)
+        t.setdefault("directives_applied", []).append(did)
+        _save_track(t)
+        applied += 1
+    if applied:
+        print("directives: applied %d board directive(s)" % applied)
+    return applied
 
 def add_attachments(tid, attachments, actor="owner"):
     """Attach files (PDF etc.) to an existing card, Jira/Plane-style. Saved into
