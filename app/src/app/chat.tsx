@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -11,6 +12,18 @@ import { api, type ChatMsg } from "@/data/client";
 import { useTheme } from "@/theme";
 import { Markdown } from "@/ui/card_markdown";
 import { Empty } from "@/ui/kit";
+
+// Copy-to-clipboard affordance — same pattern as card_transcript.tsx's CopyBtn
+// so the Board copilot chat behaves like the card chat (agent output copyable,
+// no fragile native text selection).
+function CopyBtn({ text, color, ok }: { text: string; color: string; ok: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <Pressable hitSlop={8} onPress={async () => { await Clipboard.setStringAsync(text); setDone(true); setTimeout(() => setDone(false), 1400); }}>
+      <Ionicons name={done ? "checkmark" : "copy-outline"} size={13} color={done ? ok : color} />
+    </Pressable>
+  );
+}
 
 // thinking levels — each maps to a real Claude Code budget keyword server-side
 // (mirrors app/src/ui/card_composer.tsx).
@@ -142,7 +155,14 @@ export default function ChatScreen() {
                   ) : null}
                   {m.cls === "bot" || isPm
                     ? <Markdown>{m.text}</Markdown>
-                    : <Text selectable style={{ color: m.cls === "error" ? t.danger : t.txtPrimary, fontSize: 14 }}>{m.text}</Text>}
+                    : <Text style={{ color: m.cls === "error" ? t.danger : t.txtPrimary, fontSize: 14 }}>{m.text}</Text>}
+                  {m.text ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
+                      {!isPm && m.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{m.ts}</Text> : null}
+                      <View style={{ flex: 1 }} />
+                      <CopyBtn text={m.text} color={t.txtTertiary} ok={t.ok} />
+                    </View>
+                  ) : null}
                 </View>
               );
             })}
