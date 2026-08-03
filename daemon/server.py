@@ -727,7 +727,10 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 import relay_client, auth
-                pay = relay_client.pairing_payload()
+                try:
+                    pay = relay_client.pairing_payload()
+                except ValueError as e:   # plain-http relay url: refuse to mint
+                    return self._send(400, json.dumps({"error": str(e)}))
                 # a fresh device token so the phone authenticates through the
                 # encrypted tunnel (carried as Bearer inside the sealed request).
                 # Invites bring the teammate's OWN token - minting an owner
@@ -932,6 +935,14 @@ class H(BaseHTTPRequestHandler):
                 import events
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
+                rel = body.get("relay")
+                if isinstance(rel, dict) and rel.get("url"):
+                    import relay_client
+                    if relay_client.insecure_url(rel["url"]):
+                        return self._send(400, json.dumps({"error":
+                            "relay url must be https:// (or http://localhost for "
+                            "local testing) - pairing links carry a device token "
+                            "and must not cross the network unencrypted"}))
                 return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
             if p == "/push/register":
                 # the phone announces its FCM token (arrives through the E2EE
@@ -1138,6 +1149,24 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(500, json.dumps({"error": str(e)}))
 
+def _tls_config():
+    """Resolve the daemon's TLS material: env (HELMDECK_TLS_CERT/KEY) beats
+    settings.tls {cert,key,port} beats auto-detected daemon/certs/tls.crt+key
+    (what tools/make_tls_cert.py writes). Returns (cert, key, port) or
+    (None, None, port) when TLS is not configured."""
+    import events
+    t = events.settings().get("tls") or {}
+    cert = os.environ.get("HELMDECK_TLS_CERT") or t.get("cert") or ""
+    key = os.environ.get("HELMDECK_TLS_KEY") or t.get("key") or ""
+    if not (cert and key):
+        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs")
+        c, k = os.path.join(base, "tls.crt"), os.path.join(base, "tls.key")
+        if os.path.isfile(c) and os.path.isfile(k):
+            cert, key = c, k
+    tls_port = int(os.environ.get("HELMDECK_TLS_PORT") or t.get("port") or 8443)
+    return (cert, key, tls_port) if (cert and key) else (None, None, tls_port)
+
+
 def serve(port=8140):
     import db
     db.init()
@@ -1163,9 +1192,34 @@ def serve(port=8140):
     relay_client.start(port)   # reverse tunnel for mobile - idle until settings.relay is set
     import pm
     pm.start_loop()            # the single proactive loop - no-op until settings.pm.loop_enabled
+    # Transport (pays debt [single-secret-transport]): with TLS material
+    # present, network traffic goes through the https listener and the plain
+    # listener retreats to LOOPBACK ONLY - local tooling (relay bridge,
+    # cloudflared, Electron shell) keeps http://localhost, but credentials and
+    # cookies never cross the LAN unencrypted. No TLS material = today's
+    # behaviour, unchanged. A BROKEN TLS config also stays loopback-only:
+    # failing loud beats silently downgrading to cleartext on the network.
+    cert, key, tls_port = _tls_config()
+    bind = "127.0.0.1" if cert else "0.0.0.0"
+    if cert:
+        import ssl
+        try:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(cert, key)
+            tls_srv = ThreadingHTTPServer(("0.0.0.0", tls_port), H)
+            tls_srv.socket = ctx.wrap_socket(tls_srv.socket, server_side=True,
+                                             do_handshake_on_connect=False)
+            threading.Thread(target=tls_srv.serve_forever, daemon=True).start()
+            print("TLS: https://0.0.0.0:%d (cert %s); plain http is loopback-only" % (tls_port, cert), flush=True)
+        except Exception as e:
+            print("TLS ERROR: %s\n    https listener NOT started; plain http stays "
+                  "LOOPBACK-ONLY (no cleartext on the network). Fix the cert/key "
+                  "(tools/make_tls_cert.py) or remove them to serve http again." % e,
+                  flush=True)
     print("HelmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     try:
-        ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+        ThreadingHTTPServer((bind, port), H).serve_forever()
     finally:
         drivers.shutdown_all()   # tree-kill live worker sessions on stop (Ctrl-C included)
 

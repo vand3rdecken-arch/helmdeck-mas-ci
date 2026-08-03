@@ -25,6 +25,22 @@ PAIR_TTL = 900
 MAX_DEVICES = 8
 
 
+def insecure_url(url):
+    """True when this url would carry secrets in CLEARTEXT across a network:
+    plain http:// to any host that is not this machine's own loopback. The
+    relay frames themselves are E2EE-sealed, but the pairing link/QR puts a
+    live bearer token into a URL - that must never travel unencrypted."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit((url or "").strip())
+    except ValueError:
+        return True
+    if u.scheme != "http":
+        return False
+    host = (u.hostname or "").lower()
+    return not (host in ("localhost", "::1") or host.startswith("127."))
+
+
 def _pubs_of(rel):
     """Pinned device keys; merges the legacy single phone_pub field (older
     installs) so an existing pairing survives the upgrade. Index 0 stays the
@@ -175,12 +191,25 @@ def _loop(port):
     # blip costs one short pause. Logged on first failure, then sparsely
     # (every 10th) to keep the event log readable; recovery is logged once.
     delay, errs = 3, 0
+    warned_http = False
     while not _stop:
         try:
             relay, room, sk, _ = _cfg()
             if not (relay and room and sk):
                 time.sleep(5)
                 continue
+            if insecure_url(relay) and not warned_http:
+                # Legacy config from before the https guard. Frames stay
+                # E2EE-sealed either way, so keep bridging - but say it once:
+                # new pairing links are refused until the URL is https.
+                warned_http = True
+                try:
+                    import events
+                    events.log("relay", "relay url is plain http:// - frames are "
+                               "still E2EE-sealed, but pairing is refused until "
+                               "the relay URL is https (Settings -> Mobile app)")
+                except Exception:
+                    pass
             frame = _pull(relay, room)
             if errs:
                 try:
@@ -223,6 +252,13 @@ def pairing_payload():
     (The phone also needs a device token for daemon auth - added by the caller.)"""
     import os, base64, events, e2ee
     rel = dict(events.settings().get("relay") or {})
+    if insecure_url(rel.get("url", "")):
+        # Refuse BEFORE opening the window or minting anything: the code this
+        # payload becomes embeds a live device token in a plain-http URL.
+        raise ValueError("relay url is plain http:// - the pairing link would "
+                         "carry a live device token unencrypted. Use the HTTPS "
+                         "relay URL (deploy/README.md), or http://localhost "
+                         "only for local testing.")
     if not rel.get("sk"):
         sk, _ = e2ee.generate_keypair()
         rel["sk"] = e2ee.export_sec(sk)
