@@ -60,9 +60,11 @@ sudo ln -s /etc/nginx/sites-available/myproject /etc/nginx/sites-enabled/
 sudo systemctl enable --now myproject && sudo nginx -t && sudo systemctl reload nginx
 ```
 
-> `push_relay.sh` below installs **Caddy** and assumes an EMPTY box. Do not run
-> it against this host - it would fight nginx for port 80. It stays here for a
-> fresh VM.
+> `push_relay.sh` is the UPDATE script for this box: it ships `relay/relay.py`,
+> the Expo APK + `/apk/version.json` (built by `tools/release.sh android`), and
+> restarts the service. It does NOT touch nginx or TLS (the first-install
+> version wrote a Caddyfile; that was removed exactly because it would fight
+> nginx for :443). JS-only changes ride OTA instead: `deploy/push_update.sh`.
 
 ---
 
@@ -83,11 +85,12 @@ if you want the encrypted path, or to serve several users from one host.
 **Then run (from this repo):**
 
 ```bash
-bash deploy/push_relay.sh        # copies relay + units to the VM and starts everything
+bash deploy/push_relay.sh        # ships relay.py (+ APK channel) and restarts the service
 ```
 
-It installs Python + Caddy, drops `relay.py` in place, enables the systemd
-service, and Caddy gets a Let's Encrypt certificate automatically. Verify:
+The script assumes the box was set up once (systemd unit + nginx/certbot or
+equivalent TLS proxy, as on the live VM above); it only updates `relay.py`,
+the `/apk/` update channel, and restarts `helmdeck-relay`. Verify:
 
 ```bash
 curl https://relay.yourdomain.com/health     # {"ok": true, "rooms": 0}
