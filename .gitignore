@@ -25,6 +25,7 @@ web/node_modules/
 web/.next/
 daemon/checkpoints/
 daemon/swarmdeck.db
+daemon/helmdeck.db
 daemon/*.imported
 daemon/tracks.json.imported
 .loop/
@@ -36,6 +37,8 @@ daemon/restart_stderr.log
 web/devserver.log
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
+daemon/helmdeck.db-wal
+daemon/helmdeck.db-shm
 plane-selfhost/.env
 plane-selfhost/*.env
 backups/
@@ -46,3 +49,5 @@ backups/
 !.env.example
 google-services.json
 fcm_service_account.json
+daemon/models_cache.json
+daemon/pm/

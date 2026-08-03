@@ -1,4 +1,4 @@
-/* SwarmDeck Glance — Meta Ray-Ban Display (600x600 additive waveguide).
+/* HelmDeck Glance — Meta Ray-Ban Display (600x600 additive waveguide).
    Black = transparent (real world shows through); UI surfaces are dark gray so
    they read as opaque. White text at high contrast. D-pad focus states. */
 * { margin: 0; padding: 0; box-sizing: border-box; }

@@ -4,11 +4,12 @@
 #
 #   bash tools/check_all.sh
 #
-# Runs, in order: daemon py_compile, web tsc --noEmit, design-lint selftest,
-# design_lint over the git-dirty files (the same set the loop lints), the
-# self-sandboxed tests/test_*.py (e2e_* skipped - they need :3300), and the
-# tests/unit pytest suite. Any failure -> nonzero exit; each check is skipped
-# (not failed) when its inputs are absent so the script works on any branch.
+# Runs, in order: daemon py_compile, app/ (Expo) tsc --noEmit, design-lint
+# selftest, design_lint over the git-dirty files (the same set the loop
+# lints), the self-sandboxed tests/test_*.py (e2e_* skipped - they need
+# :3300), and the tests/unit pytest suite. Any failure -> nonzero exit; each
+# check is skipped (not failed) when its inputs are absent so the script
+# works on any branch.
 set -o pipefail        # NOT -u: Git Bash may leave Windows env vars unset
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -43,14 +44,11 @@ else
   skip+=("py_compile (no daemon/*.py)")
 fi
 
-# 2. web types. `next typegen` first: tsconfig includes the .next/types route
-#    types (RouteContext etc.), which only exist after a dev/build/typegen run -
-#    a fresh worktree has none and tsc would fail on phantom errors.
-if [ -d web/node_modules ]; then
-  run "web tsc --noEmit" bash -c \
-    'cd web && { npx next typegen >/dev/null 2>&1 || true; } && npx tsc --noEmit -p tsconfig.json'
+# 2. app/ (Expo) types - the only frontend now (web/ Next.js is archived).
+if [ -d app/node_modules ]; then
+  run "app tsc --noEmit" bash -c 'cd app && npx tsc --noEmit -p tsconfig.json'
 else
-  skip+=("web tsc (no web/node_modules - run npm install in web/)")
+  skip+=("app tsc (no app/node_modules - run npm install in app/)")
 fi
 
 # 3. design lint: the selftest proves the linter, then the linter runs over

@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Pair HelmDeck</title>
+<style>
+body{font:16px/1.55 system-ui,-apple-system,sans-serif;background:#0e0f10;color:#e4e6e6;
+     padding:28px;max-width:32em;margin:auto;text-align:center}
+h2{font-size:20px;margin:8px 0 4px}
+a.btn{display:block;margin:18px 0;padding:16px 20px;border-radius:12px;background:#2893cc;
+      color:#fff;text-decoration:none;font-weight:600;font-size:17px}
+a.ghost{background:transparent;border:1px solid #333;color:#cacdce}
+p{color:#9aa0aa;font-size:14px}
+p.note{color:#6f7680;font-size:13px;margin-top:22px}
+</style></head><body>
+<h2>Pair this phone with HelmDeck</h2>
+<p>Opening the app…</p>
+<a class=btn id=go href="#">Open HelmDeck</a>
+<a class="btn ghost" href="/apk/helmdeck.apk">Install HelmDeck (APK)</a>
+<p id=hint>If nothing happens, install HelmDeck first, then open this link again.</p>
+<p class=note>You only install once — future updates arrive automatically, no reinstall.</p>
+<script>
+(function(){
+  var c = new URLSearchParams(location.search).get('c') || '';
+  if (!c) { document.getElementById('hint').textContent = 'No pairing code — generate a new pairing link in HelmDeck Settings.'; return; }
+  var deep = 'helmdeck://pair?c=' + encodeURIComponent(c);
+  document.getElementById('go').href = deep;
+  setTimeout(function(){ location.href = deep; }, 350);
+})();
+</script></body></html>

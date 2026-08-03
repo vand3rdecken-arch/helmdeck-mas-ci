@@ -1,10 +1,10 @@
-// SwarmDeck Glance — Meta Ray-Ban Display webapp.
-// Read-only glance at the SwarmDeck daemon's /glance endpoint (token-gated).
+// HelmDeck Glance — Meta Ray-Ban Display webapp.
+// Read-only glance at the HelmDeck daemon's /glance endpoint (token-gated).
 // D-pad / EMG navigation, no touch. No idle intervals.
 (function () {
   'use strict';
 
-  var CFG_KEY = 'swarmdeck_glance_cfg';
+  var CFG_KEY = 'helmdeck_glance_cfg';
   var cfg = loadCfg();
   var data = { needs_you: [], econ: {}, sows: [] };
   var screenStack = ['home'];

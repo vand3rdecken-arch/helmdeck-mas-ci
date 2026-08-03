@@ -1,0 +1,417 @@
+package app.swarmdeck
+
+import android.content.Intent
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Analytics
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.ViewColumn
+import androidx.compose.material3.*
+import androidx.compose.ui.draw.drawBehind
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.swarmdeck.ui.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+/**
+ * The whole phone app: the desktop's views, laid out for a narrow screen.
+ * Board / Needs you / Dashboard / More, plus the card surface which carries the
+ * same operations as the desktop peek panel.
+ */
+class MainActivity : ComponentActivity() {
+
+    private val pairedFromIntent = mutableStateOf(0)
+    // a card id from a tapped push notification (PushService puts "track" extra) -
+    // AppRoot opens that card once the board has loaded.
+    private val openTrackFromIntent = mutableStateOf<String?>(null)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        HubStore.init(this)
+        consumePairingIntent(intent)
+        openTrackFromIntent.value = intent?.getStringExtra("track")?.ifBlank { null }
+        setContent { SwarmTheme { AppRoot(pairedFromIntent.value, openTrackFromIntent) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent); setIntent(intent); consumePairingIntent(intent)
+        intent.getStringExtra("track")?.ifBlank { null }?.let { openTrackFromIntent.value = it }
+    }
+
+    /** A scanned pairing QR (https app link, or the swarmdeck:// fallback). */
+    private fun consumePairingIntent(intent: Intent?): Boolean {
+        val data = intent?.data ?: return false
+        val isAppLink = data.scheme == "https" && data.path?.startsWith("/pair") == true
+        val isCustom = data.scheme == "swarmdeck" && data.host == "pair"
+        if (!isAppLink && !isCustom) return false
+        if (data.getQueryParameter("c").isNullOrEmpty()) return false
+        // pass the whole link: for an app link the origin carries the relay url
+        return if (HubStore.applyPairingCode(data.toString())) { pairedFromIntent.value++; true } else false
+    }
+}
+
+private enum class Tab(val label: String) { BOARD("Board"), NEEDS("Needs you"), DASH("Dashboard"), MORE("More") }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppRoot(pairNonce: Int = 0, openTrackState: androidx.compose.runtime.MutableState<String?>? = null) {
+    val scope = rememberCoroutineScope()
+    var tab by remember { mutableStateOf(Tab.BOARD) }
+    var moreView by remember { mutableStateOf<String?>(null) }   // processes|history|chat|settings
+    var open by remember { mutableStateOf<Track?>(null) }
+    var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var metrics by remember { mutableStateOf<Metrics?>(null) }
+    var laneLabels by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var toastMsg by remember { mutableStateOf<String?>(null) }
+    var loadErr by remember { mutableStateOf<String?>(null) }
+    var showNew by remember { mutableStateOf(false) }
+    var chatOpen by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    val hazeState = remember { HazeState() }   // links the scrolling content to the glass nav
+
+    val toast: (String) -> Unit = { toastMsg = it }
+    LaunchedEffect(toastMsg) { if (toastMsg != null) { delay(2600); toastMsg = null } }
+
+    // deep-link from a tapped push notification: open that card once it's loaded
+    val pendingTrack = openTrackState?.value
+    LaunchedEffect(pendingTrack, tracks) {
+        val id = pendingTrack ?: return@LaunchedEffect
+        tracks.firstOrNull { it.id == id }?.let { open = it; tab = Tab.BOARD; openTrackState?.value = null }
+    }
+
+    // self-update: one silent check per app start against the relay host
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var update by remember { mutableStateOf<Updater.Info?>(null) }
+    var updProgress by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(pairNonce) { update = Updater.check(ctx) }
+
+    // push: ask once for the notification permission (API 33+), then announce
+    // the FCM token to the daemon - pushes are sealed to this device's keys
+    val askNotif = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(pairNonce) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                ctx, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED)
+            askNotif.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+    // Paseo's lesson: announce the push token on EVERY connection, not once at
+    // launch - at first launch the app is typically not yet paired, and a
+    // one-shot registration silently loses push forever. Retries until it
+    // lands, then stops.
+    var pushRegistered by remember { mutableStateOf(false) }
+    LaunchedEffect(pairNonce) {
+        while (!pushRegistered) {
+            if (DaemonClient.configured()) runCatching {
+                val tok = kotlinx.coroutines.suspendCancellableCoroutine<String> { cont ->
+                    com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                        .addOnSuccessListener { cont.resume(it) {} }
+                        .addOnFailureListener { cont.cancel(it) }
+                }
+                DaemonClient.registerPushToken(tok)
+                pushRegistered = true
+            }
+            if (!pushRegistered) delay(8000)
+        }
+    }
+
+    // board data, refreshed on a light poll so the phone tracks the desktop
+    LaunchedEffect(reload, pairNonce) {
+        while (true) {
+            if (DaemonClient.configured()) {
+                runCatching { DaemonClient.tracks() }
+                    .onSuccess { tracks = it; loadErr = null }
+                    .onFailure { loadErr = DaemonClient.humanError(it) }
+                runCatching { DaemonClient.metrics() }.onSuccess { metrics = it }
+                runCatching { DaemonClient.settings() }.onSuccess { s ->
+                    val p = s.optJSONObject("policy")?.optJSONObject("lane_labels")
+                    if (p != null) laneLabels = p.keys().asSequence().associateWith { p.optString(it) }
+                }
+            }
+            delay(6000)
+        }
+    }
+
+    open?.let { t ->
+        CardScreen(t, onBack = { open = null }, onChanged = { reload++ }, toast = toast)
+        return
+    }
+
+    Scaffold(
+        modifier = Modifier.glowBackdrop(),   // the desktop's ambient glow behind everything
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        topBar = {
+            TopAppBar(
+                modifier = Modifier
+                    .hazeEffect(hazeState) {          // glass: blurs the board scrolling up under it
+                        blurRadius = 24.dp
+                        backgroundColor = Tok.canvas
+                        tints = listOf(HazeTint(Tok.surface1.copy(alpha = .35f)))
+                    }
+                    .drawBehind {                    // light edge along the bottom of the bar
+                        drawRect(Tok.glassBorder, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+                    },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent, titleContentColor = Tok.txtPrimary),
+                title = {
+                    Text(moreView?.replaceFirstChar { it.uppercase() } ?: tab.label,
+                        fontSize = 17.sp, modifier = Modifier.testTag("screenTitle"))
+                },
+                navigationIcon = {
+                    if (moreView != null) TextButton(onClick = { moreView = null }) {
+                        Text("‹", fontSize = 20.sp, color = Tok.txtSecondary) }
+                })
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                modifier = Modifier
+                    .hazeEffect(hazeState) {          // REAL backdrop blur of the board scrolling under
+                        blurRadius = 24.dp
+                        backgroundColor = Tok.canvas
+                        tints = listOf(HazeTint(Tok.surface1.copy(alpha = .35f)))
+                    }
+                    .drawBehind {                    // thin light edge = the glass catching light
+                        drawRect(Tok.glassBorder, size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+                    }) {
+                Tab.entries.forEach { t ->
+                    NavigationBarItem(
+                        selected = tab == t && moreView == null,
+                        onClick = { tab = t; moreView = null },
+                        label = { Text(t.label, fontSize = 11.sp) },
+                        icon = { Icon(when (t) {
+                            Tab.BOARD -> Icons.Outlined.ViewColumn
+                            Tab.NEEDS -> Icons.Outlined.NotificationsNone
+                            Tab.DASH  -> Icons.Outlined.Analytics
+                            Tab.MORE  -> Icons.Outlined.MoreHoriz },
+                            contentDescription = t.label, modifier = Modifier.size(20.dp)) },
+                        modifier = Modifier.testTag("tab_${t.name}"),
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Tok.accent, selectedTextColor = Tok.accent,
+                            unselectedIconColor = Tok.txtTertiary, unselectedTextColor = Tok.txtTertiary,
+                            indicatorColor = Tok.surface2)
+                    )
+                }
+            }
+        }
+    ) { pad ->
+        // Content is the haze SOURCE and bleeds under the (glass) bottom bar, so
+        // the bar has something to blur. Only the top bar's height is padded out;
+        // the board scrolls under the nav, non-board screens get a bottom inset.
+        Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+          val underBars = DaemonClient.configured() && moreView == null && (tab == Tab.BOARD || tab == Tab.NEEDS)
+          Box(if (underBars) Modifier.fillMaxSize()
+              else Modifier.fillMaxSize().padding(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())) {
+            if (!DaemonClient.configured()) {
+                SettingsScreen(toast) { reload++ }
+            } else when {
+                moreView == "sessions"  -> SessionsScreen(toast) { reload++ }
+                moreView == "processes" -> ProcessesScreen(toast)
+                moreView == "recordings"-> RecordingsScreen(toast)
+                moreView == "users"     -> UsersScreen(toast)
+                moreView == "connectors"-> ConnectorsScreen(toast)
+                moreView == "workspace" -> WorkspaceHistoryScreen(toast)
+                moreView == "debt"      -> DebtScreen(toast)
+                moreView == "automation"-> AutomationScreen(toast)
+                moreView == "import"    -> ImportScreen(toast) { reload++ }
+                moreView == "history"   -> HistoryScreen()
+                moreView == "chat"      -> ChatScreen(toast)
+                moreView == "settings"  -> SettingsScreen(toast) { reload++ }
+                tab == Tab.BOARD -> BoardScreen(tracks, metrics, laneLabels, null,
+                    onOpen = { open = it }, onNew = { showNew = true },
+                    onChat = { chatOpen = true }, topInset = pad.calculateTopPadding())
+                tab == Tab.NEEDS -> BoardScreen(tracks, null, laneLabels, "needs_you",
+                    onOpen = { open = it }, onNew = { showNew = true },
+                    topInset = pad.calculateTopPadding(),
+                    onChat = { chatOpen = true })
+                tab == Tab.DASH  -> DashboardScreen(toast)
+                tab == Tab.MORE  -> MoreMenu { moreView = it }
+            }
+          }  // end inner inset Box
+            loadErr?.let {
+                Surface(color = Tok.surface2, shadowElevation = 4.dp,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .padding(top = pad.calculateTopPadding() + 8.dp, start = 12.dp, end = 12.dp)) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(8.dp).background(Tok.warn,
+                            androidx.compose.foundation.shape.CircleShape))
+                        Text(it, fontSize = 12.5.sp, color = Tok.txtPrimary,
+                            modifier = Modifier.weight(1f, fill = false))
+                        TextButton(onClick = { reload++ }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                            Text("Erneut", fontSize = 12.5.sp, color = Tok.accent)
+                        }
+                    }
+                }
+            }
+            update?.let { u ->
+                Surface(color = Tok.surface2, shadowElevation = 6.dp,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .padding(start = 12.dp, end = 12.dp, bottom = pad.calculateBottomPadding() + 12.dp)
+                        .testTag("updateBanner")) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            updProgress?.let { "Update ${u.versionName} - ${(it * 100).toInt()}%" }
+                                ?: "Update ${u.versionName} verfügbar",
+                            fontSize = 12.5.sp, color = Tok.txtPrimary)
+                        if (updProgress == null) {
+                            TextButton(onClick = {
+                                updProgress = 0f
+                                scope.launch {
+                                    val f = Updater.download(ctx, u) { updProgress = it }
+                                    updProgress = null
+                                    if (f != null) { Updater.install(ctx, f); update = null }
+                                    else toast("Update-Download fehlgeschlagen")
+                                }
+                            }) { Text("Installieren", fontSize = 12.5.sp, color = Tok.accent) }
+                            TextButton(onClick = { update = null }) {
+                                Text("Später", fontSize = 12.5.sp, color = Tok.txtTertiary) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showNew) NewCardDialog(onDismiss = { showNew = false }) { repo, task, prio ->
+        showNew = false
+        scope.launch {
+            runCatching { DaemonClient.newTrack(repo, task, priority = prio) }
+                .onSuccess { toast("Card filed"); reload++ }
+                .onFailure { toast(it.message ?: "could not file") }
+        }
+    }
+
+    // the copilot rides above the board rather than living in a menu
+    if (chatOpen) Dialog(
+        onDismissRequest = { chatOpen = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(Modifier.fillMaxSize(), color = Tok.canvas) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().background(Tok.surface1).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Board copilot", fontSize = 15.sp, color = Tok.txtPrimary,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = { chatOpen = false }) {
+                        Text("close", fontSize = 13.sp, color = Tok.txtSecondary) }
+                }
+                ChatScreen(toast)
+            }
+        }
+    }
+
+    toastMsg?.let {
+        Box(Modifier.fillMaxSize().padding(bottom = 96.dp), contentAlignment = Alignment.BottomCenter) {
+            Surface(color = Tok.surface2, shape = MaterialTheme.shapes.medium) {
+                Text(it, Modifier.padding(14.dp, 10.dp), fontSize = 13.sp, color = Tok.txtPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreMenu(go: (String) -> Unit) {
+    // Ordered to mirror the desktop sidebar's priority: the primary work
+    // surfaces first (processes/recordings/sessions/history), then feeds, then
+    // the settings-group. Board copilot is the FAB (like web), not a menu row.
+    Column(Modifier.fillMaxSize()
+        .verticalScroll(androidx.compose.foundation.rememberScrollState())
+        .padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("processes" to "Processes - chains, steps, new definitions",
+               "recordings" to "Recordings - flight-recorder runs",
+               "sessions" to "Sessions - continue a Claude Code conversation",
+               "history" to "History - the git audit trail",
+               "connectors" to "Connectors - scheduled feeds",
+               "import" to "Import - pull work in from Jira or a page",
+               "automation" to "Automation & loop - build-loop state, night-shift, policy, repos",
+               "users" to "Users - accounts, roles, device tokens",
+               "workspace" to "Workspace history - restore a past config",
+               "debt" to "Debt register - shortcuts we owe",
+               "settings" to "Settings - pairing and connection").forEach { (key, label) ->
+            Panel(Modifier.testTag("more_$key")) {
+                TextButton(onClick = { go(key) }) {
+                    Text(label, fontSize = 14.sp, color = Tok.txtPrimary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewCardDialog(onDismiss: () -> Unit, onCreate: (String, String, String) -> Unit) {
+    var repo by remember { mutableStateOf(HubStore.lastRepo) }
+    var task by remember { mutableStateOf("") }
+    val prio by remember { mutableStateOf("medium") }
+    var repos by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pickOpen by remember { mutableStateOf(false) }
+
+    // offer the repos this workspace already knows, so nobody types a path on a phone
+    LaunchedEffect(Unit) {
+        repos = runCatching { DaemonClient.knownRepos() }.getOrDefault(emptyList())
+        if (repo.isBlank()) repo = repos.firstOrNull().orEmpty()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Tok.surface1,
+        title = { Text("New request", fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(task, { task = it }, Modifier.fillMaxWidth().testTag("newTask"),
+                    placeholder = { Text("What should happen?", fontSize = 13.sp) }, colors = fieldColors())
+                Text("Repo", fontSize = 11.sp, color = Tok.txtTertiary)
+                Box {
+                    OutlinedButton(
+                        onClick = { pickOpen = true },
+                        modifier = Modifier.fillMaxWidth().testTag("repoPicker"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Tok.txtPrimary)
+                    ) {
+                        Text(repo.ifBlank { "default repo" }, fontSize = 12.5.sp, maxLines = 1)
+                    }
+                    DropdownMenu(pickOpen, { pickOpen = false }) {
+                        DropdownMenuItem(text = { Text("default repo") },
+                            onClick = { repo = ""; pickOpen = false })
+                        repos.forEach { r ->
+                            DropdownMenuItem(
+                                text = { Text(r, fontSize = 12.sp, maxLines = 1) },
+                                onClick = { repo = r; pickOpen = false })
+                        }
+                    }
+                }
+                OutlinedTextField(repo, { repo = it }, Modifier.fillMaxWidth(),
+                    placeholder = { Text("or type a path", fontSize = 12.sp) }, colors = fieldColors())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { HubStore.lastRepo = repo; onCreate(repo, task, prio) },
+                enabled = task.isNotBlank()) { Text("File it", color = Tok.accent) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
