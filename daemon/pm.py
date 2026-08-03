@@ -487,13 +487,14 @@ def _overview_stale(plan, tracks):
     import events
     if not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles"):
         return True
+    byid = {t["id"]: t for t in tracks}
     by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
         for task in ms.get("tasks") or []:
-            c = by_title.get((task.get("title") or "").strip().lower())
+            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
             if c and c.get("lane") != "done" and (c.get("due") or "") != d:
                 return True
     return False
@@ -506,14 +507,17 @@ def _build_overview(plan):
     - DASHBOARD: ensure a sensible economics layout exists.
     Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
     import sessions, events
-    by_title = {(t.get("task") or "").strip().lower(): t for t in sessions.list_tracks()}
+    all_t = sessions.list_tracks()
+    byid = {t["id"]: t for t in all_t}
+    by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
     n = 0
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
         for task in ms.get("tasks") or []:
-            c = by_title.get((task.get("title") or "").strip().lower())
+            # match by the plan's card id first (reliable), then by title
+            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
             if c and c.get("lane") != "done" and (c.get("due") or "") != d:
                 try:
                     sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1

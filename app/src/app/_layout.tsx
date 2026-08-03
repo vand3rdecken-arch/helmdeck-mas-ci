@@ -84,7 +84,7 @@ function usePushWiring() {
       let track: string | undefined = data?.track;      // local notif already carries it
       if (!track && data?.cipher) track = decryptPush(data)?.track;   // system notif: decrypt
       if (track) router.push(`/card/${track}`);
-      else router.push("/chat");                        // PM message w/o a card -> conversation
+      else router.push("/(tabs)/dashboard" as never);   // PM status w/o a card -> the PM summary/overview
     });
     return () => { recv.remove(); resp.remove(); };
   }, [router]);
