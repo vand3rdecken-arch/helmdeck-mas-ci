@@ -19,9 +19,13 @@ interface ConfigState extends Persisted {
   hydrated: boolean;
   relayMode: () => boolean;
   set: (patch: Partial<Persisted>) => void;
-  applyPairing: (code: string) => boolean;
+  applyPairing: (code: string) => PairResult;
   hydrate: () => Promise<void>;
 }
+
+// ok=false always carries WHY (bad format vs missing fields) - the screens
+// show the reason instead of a generic "failed" (no silent fallback).
+export type PairResult = { ok: true; mode: "relay" | "direct" } | { ok: false; reason: string };
 
 const DEFAULTS: Persisted = {
   baseUrl: `http://${DEV_HOST}:8199`, token: "",
@@ -47,23 +51,30 @@ export const useConfig = create<ConfigState>((set, get) => ({
   // Pairing code (base64 JSON {u:relayUrl, r:room, k:daemonPub, t:deviceToken}),
   // matching daemon relay_client.pairing_payload() / the Kotlin HubStore parser.
   applyPairing: (raw) => {
+    if (!raw.trim()) return { ok: false, reason: "Kein Code eingegeben." };
+    let o: { b?: string; u?: string; r?: string; k?: string; t?: string };
     try {
       let code = raw.trim();
       if (code.includes("c=")) code = decodeURIComponent(code.split("c=")[1].split("&")[0]);
       const norm = code.replace(/-/g, "+").replace(/_/g, "/");
-      const o = JSON.parse(atob(norm)); // Hermes + web both provide atob
-      // Direct invite {b: baseUrl, t: userToken} — same-LAN / desktop teammates.
-      if (o.b) {
-        get().set({ baseUrl: String(o.b).replace(/\/+$/, ""), token: o.t ?? "", relayUrl: "", room: "", daemonPub: "" });
-        return true;
-      }
-      // Relay invite {u: relayUrl, r: room, k: daemonPub, t: userToken} — remote.
-      if (!o.u || !o.r || !o.k) return false;
-      let { mySec, myPub } = get();
-      if (!mySec || !myPub) { const kp = generateKeyPair(); mySec = kp.sec; myPub = kp.pub; }
-      get().set({ relayUrl: String(o.u).replace(/\/+$/, ""), room: o.r, daemonPub: o.k, token: o.t ?? "", mySec, myPub });
-      return true;
-    } catch { return false; }
+      o = JSON.parse(atob(norm)); // Hermes + web both provide atob
+    } catch {
+      return { ok: false, reason: "Das ist kein Pairing-Code (Format ungültig) – Code/Link vollständig kopieren." };
+    }
+    // Direct invite {b: baseUrl, t: userToken} — same-LAN / desktop teammates.
+    if (o.b) {
+      get().set({ baseUrl: String(o.b).replace(/\/+$/, ""), token: o.t ?? "", relayUrl: "", room: "", daemonPub: "" });
+      return { ok: true, mode: "direct" };
+    }
+    // Relay invite {u: relayUrl, r: room, k: daemonPub, t: userToken} — remote.
+    if (!o.u || !o.r || !o.k) {
+      const missing = [!o.u && "Relay-URL", !o.r && "Room", !o.k && "Schlüssel"].filter(Boolean).join(", ");
+      return { ok: false, reason: `Code unvollständig (${missing} fehlt) – am Desktop neu erzeugen.` };
+    }
+    let { mySec, myPub } = get();
+    if (!mySec || !myPub) { const kp = generateKeyPair(); mySec = kp.sec; myPub = kp.pub; }
+    get().set({ relayUrl: String(o.u).replace(/\/+$/, ""), room: o.r, daemonPub: o.k, token: o.t ?? "", mySec, myPub });
+    return { ok: true, mode: "relay" };
   },
 
   hydrate: async () => {

@@ -107,8 +107,10 @@ DEBT = [
         "why_it_bites": "Confusion (features missing there look like bugs) - "
                         "already caused one 'I don't see it' incident.",
         "trigger": "anyone opening :8140 expecting the real UI",
-        "fix": "Replace with a redirect page to the Next app once the Next "
-               "app is served in production mode.",
+        "fix": "PAID: server.py drops the BOARD/DASH/PAGE templates and "
+               "daemon/ui/app.html; /, /classic, /recorder and /dashboard "
+               "302 to the Next app (settings.web_url, default "
+               "http://localhost:3300).",
         "order": 5,
     },
     {
@@ -208,6 +210,26 @@ DEBT = [
         "order": 10,
     },
     {
+        "id": "pair-token-no-ttl",
+        "title": "Pairing device-token outlives the 15-min pairing window",
+        "status": "open",
+        "what": "Each /relay/pair click mints a device bearer token with no "
+                "expiry. The single-use PAIR_TTL window (relay_client._admit) "
+                "gates the E2EE pin - the relay path of an unused code dies "
+                "with the window - but the token inside the code stays a live "
+                "credential.",
+        "why_it_bites": "A leaked pairing code that was never used can still "
+                        "authenticate over direct LAN mode ({b,t} style) even "
+                        "after the window expired. Tokens are at least visible "
+                        "and revocable per user in Settings -> users.",
+        "trigger": "owner generates codes and abandons them; a code lands in "
+                   "chat history/screenshots and someone on the LAN finds it",
+        "fix": "Give pairing-issued tokens a TTL and auto-revoke unused ones "
+               "when the window closes, or bind the token to the pinned "
+               "device pub at admission time.",
+        "order": 11,
+    },
+    {
         "id": "machine-task-blast-radius",
         "title": "Machine tasks run with bypassPermissions over the whole PC",
         "status": "open",
@@ -236,7 +258,7 @@ DEBT = [
                "reads of settings.json/users.json/helmdeck.db via allowed_tools "
                "deny-rules) rather than in the brief; consider a dry-run turn that "
                "reports the plan before the acting turn for destructive verbs.",
-        "order": 11,
+        "order": 12,
     },
     {
         "id": "pm-loopstate-races",
@@ -256,7 +278,7 @@ DEBT = [
         "fix": "Route ALL loopstate mutations through one locked helper that "
                "re-reads inside the lock (the _bump_attempt pattern), or move "
                "loopstate into the sqlite DB like tracks.",
-        "order": 12,
+        "order": 13,
     },
 ]
 
