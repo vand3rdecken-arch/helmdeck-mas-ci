@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, Keyboard, Platform, Pressable,
   ScrollView, Text, TextInput, useWindowDimensions, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -224,6 +224,14 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   const [agentMsgs, setAgentMsgs] = useState<TStep[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
+  // edge-to-edge (SDK 57) breaks Android adjustResize -> lift the composer above
+  // the keyboard by measuring its height (same fix as the board chat).
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // drop an optimistic echo once the real feed carries that same user text
   useEffect(() => {
@@ -272,9 +280,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <View style={{ flex: 1, paddingBottom: kb }}>
       <View style={{ flex: 1 }}>
-        <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64}
+        <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
           {steps.length === 0 ? <Empty text="Noch keine Nachrichten." /> :
             <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
@@ -315,10 +323,10 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       </View>
 
       <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
-        slashCommands={SLASH} seed={seed} bottomInset={bottomInset} draftKey={`card:${k.id}`}
+        slashCommands={SLASH} seed={seed} bottomInset={kb > 0 ? 8 : bottomInset} draftKey={`card:${k.id}`}
         placeholder={agentMode ? "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'"
           : k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

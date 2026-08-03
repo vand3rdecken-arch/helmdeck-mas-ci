@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View,
+  ActivityIndicator, Keyboard, Modal, Platform, Pressable, ScrollView, Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -32,6 +32,15 @@ export default function ChatScreen() {
   const qc = useQueryClient();
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
+  // Edge-to-edge (Expo SDK 57) makes Android ignore adjustResize, so the composer
+  // hides behind the keyboard. Measure the keyboard height and lift the content
+  // manually - works on both platforms without a native keyboard-controller lib.
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   // turn token: each send captures the current id; Stop bumps it so a late
   // reply that arrives after cancel is discarded instead of appended.
   const turn = useRef(0);
@@ -113,8 +122,8 @@ export default function ChatScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       {header}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64}
+      <View style={{ flex: 1, paddingBottom: kb }}>
+        <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 24 }}>
           {msgs.length === 0 ? <Empty text="Frag den Copilot über die Arbeit." /> :
             msgs.map((m, i) => {
@@ -164,7 +173,7 @@ export default function ChatScreen() {
         </ScrollView>
 
         <View style={{ flexDirection: "row", padding: 8, gap: 8, borderTopWidth: 1, borderTopColor: t.glassBorder,
-          paddingBottom: insets.bottom + 8, alignItems: "flex-end" }}>
+          paddingBottom: kb > 0 ? 8 : insets.bottom + 8, alignItems: "flex-end" }}>
           <TextInput value={text} onChangeText={setText} multiline placeholder="Frage…" placeholderTextColor={t.txtPlaceholder}
             style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120 }} />
           {busy ? (
@@ -179,7 +188,7 @@ export default function ChatScreen() {
             </Pressable>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* model picker modal (pattern from card_composer.tsx) */}
       <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
