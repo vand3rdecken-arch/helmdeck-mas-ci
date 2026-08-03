@@ -442,11 +442,17 @@ def make_plan(actor="owner"):
     return {"filed": filed, "candidates": len(items), "brief": brief}
 
 
-def _notify_deliveries(day, tracks, st):
+def _notify_deliveries(day, tracks, st, pm):
     """Essential-only, rate-limited PUSH (the 'notify' channel): when a card the
     PM started DELIVERS (needs your review) or BOUNCES, ping ONCE. Silence
     otherwise - this is the proactive-not-nagging bit. NOT presence-gated: a
-    delivery matters whether or not you're idle."""
+    delivery matters whether or not you're idle.
+
+    A bounce is only escalated to you AFTER the coordinator has tried to delegate
+    the fix (id in day['resolved']) - or immediately if autonomy isn't 'act', when
+    the PM won't auto-resolve. This keeps the PM 'delegate first, escalate second'."""
+    auto = pm.get("autonomy", "act")
+    resolved = set(day.get("resolved", []))
     try:
         import notify
         if not notify.fcm_ready():
@@ -465,9 +471,11 @@ def _notify_deliveries(day, tracks, st):
             notify.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
             _say("Fertig: '%s' ist geliefert und wartet auf deine Abnahme (oder Bounce). Sag mir Bescheid oder tipp die Karte an." % task)
             notified.add(t["id"]); changed = True
-        elif s == "bounced":
-            notify.push_fcm("PM: haengt", "'%s' - Timeout/Fehler, schau mal." % task, t["id"])
-            _say("Achtung: '%s' haengt (Timeout/Fehler). Ich brauch dich - soll ich es neu starten oder anders angehen?" % task)
+        elif s == "bounced" and (auto != "act" or t["id"] in resolved):
+            # escalate only once the auto-delegate already ran (or won't run)
+            notify.push_fcm("PM: haengt", "'%s' - haengt trotz Fix-Versuch, schau mal." % task, t["id"])
+            _say("Achtung: '%s' haengt weiter (auch nach meinem Fix-Versuch). Ich brauch dich - "
+                 "neu starten oder anders angehen?" % task)
             notified.add(t["id"]); changed = True
     if changed:
         day["notified"] = list(notified)
@@ -484,6 +492,50 @@ def _backlog(tracks, pm, day):
          and t.get("mode") not in ("human", "teach", "cowork")
          and (not allow or os.path.normcase(t.get("repo") or "") in allow)),
         key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
+
+
+def _bounced_to_resolve(tracks, pm, day):
+    """Bounced cards in ALLOWED repos the PM hasn't already tried to auto-resolve
+    today. The coordinator DELEGATES the fix (real conflict -> the card's own
+    worker; gate bounce -> steer the worker with the reason) before escalating to
+    you. Needs an existing worktree - there must be an agent to delegate to."""
+    allow = {os.path.normcase(r) for r in (pm.get("repos") or [])}
+    tried = set(day.get("resolved", []))
+    return [t for t in tracks
+            if t.get("status") == "bounced" and t["id"] not in tried
+            and t.get("mode") not in ("human", "teach", "cowork")
+            and t.get("worktree")
+            and (not allow or os.path.normcase(t.get("repo") or "") in allow)]
+
+
+def _resolve_next(pm, st, day):
+    """DELEGATE the fix for one bounced card - the PM's coordinator role. A real
+    merge conflict goes to the card's worker via dispatch_conflict_resolution; any
+    other bounce (gate red, error) steers the worker with the concrete reason.
+    Each card is attempted ONCE per day (day['resolved']); a second bounce then
+    escalates to you via _notify_deliveries."""
+    import sessions
+    todo = _bounced_to_resolve(sessions.list_tracks(), pm, day)
+    if not todo:
+        return
+    t = todo[0]
+    day.setdefault("resolved", []).append(t["id"]); _save_loopstate(st)
+    task = (t.get("task") or "")[:60]
+    if t.get("merge_kind") == "conflict":
+        sessions.dispatch_conflict_resolution(t["id"], actor="pm")
+        _activity("resolve", "Merge-Konflikt an Worker delegiert: " + task, card=t["id"])
+        _say("Ich hab den Merge-Konflikt in '%s' an den Worker delegiert - er loest die "
+             "Markierungen (nur editieren), dann landet die Karte." % task)
+    else:
+        reason = (" | ".join(t.get("gate_report") or []) or t.get("last_error") or "Review rot")[:500]
+        instr = ("Die Karte ist beim Review gebounct. Grund: %s. Behebe die Ursache im Code "
+                 "(nur editieren, kein git) und reiche dann neu ein." % reason)
+        import threading
+        threading.Thread(target=sessions.steer, args=(t["id"], instr),
+                         kwargs={"actor": "pm", "source": "pm-resolve"}, daemon=True).start()
+        _activity("resolve", "Gate-Bounce an Worker delegiert: " + task, card=t["id"])
+        _say("'%s' ist am Review gebounct - ich hab den Worker beauftragt, es zu fixen und "
+             "neu einzureichen." % task)
 
 
 def _overview_stale(plan, tracks):
@@ -569,6 +621,9 @@ def _state():
     plan = latest_plan()
     if plan and _overview_stale(plan, tracks):
         return ("OVERVIEW", "Dashboard + Timeline aus dem Plan bauen.") if acting else ("WAIT", "Uebersicht veraltet, aber du bist da.")
+    # COORDINATOR: unblock what's stuck (delegate the fix) BEFORE starting new work
+    if pm.get("autonomy", "act") == "act" and _bounced_to_resolve(tracks, pm, day):
+        return ("RESOLVE", "Gebouncte Karte an den Worker delegieren.") if acting else ("WAIT", "Bounce zu fixen, aber du bist da.")
     paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
     if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
         return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
@@ -600,7 +655,7 @@ def _tick():
     st = _loopstate()
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     import sessions
-    _notify_deliveries(day, sessions.list_tracks(), st)  # NOTIFY - not presence-gated
+    _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away
     state, _reason = _state()
@@ -611,6 +666,8 @@ def _tick():
             st = _loopstate(); st["last_plan_ts"] = time.time(); _save_loopstate(st)
         elif state == "OVERVIEW":
             _build_overview(latest_plan() or {})         # build Dashboard + Timeline
+        elif state == "RESOLVE" and auto == "act":
+            _resolve_next(pm, st, day)                   # coordinator: delegate the fix
         elif state == "DISPATCH" and auto == "act":
             _dispatch_next(pm, st, day)
     except Exception as e:
