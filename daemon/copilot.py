@@ -25,6 +25,7 @@ Reply with ONLY JSON:
    {"type": "archive", "card": "<id or fragment>"}  - archive a card out of the board (admin: policy.chat_admin_roles)
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "resolve_blocker", "card": "<id or fragment>"}  - a card stuck on Review whose "merge conflict" is really an uncommitted (dirty) tree in the shared repo checkout ("your local changes ... would be overwritten"), NOT a <<<<<< conflict. Parks that uncommitted work on a wip-* branch (NOTHING lost, non-destructive) and re-runs the review check. The sandboxed card worker cannot do this - it's board-level, which is why the worker hands it up. Use ONLY when the owner explicitly asks to unblock / park / resolve the blocker (admin: policy.chat_admin_roles).
+   {"type": "resolve_conflict", "card": "<id or fragment>"}  - a card bounced on Review with a REAL <<<<<< merge conflict (message says "Konfliktmarkierungen ... im Worktree"). This sets up/reuses the conflict markers in the card's OWN worktree and STEERS that card's worker to merge them by plain EDITING (edit-only, no git); on the next move to done the harness commits + merges. You DO NOT edit code yourself, but you CAN dispatch the card's agent to - so this is how real code conflicts get resolved. Prefer this (not resolve_blocker) whenever the owner asks to resolve/fix a real <<<<<< conflict (admin: policy.chat_admin_roles).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
@@ -220,6 +221,20 @@ def _run_action(a, actor, role="operator"):
         if isinstance(t, list):
             return "resolve_blocker failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
         return sessions.park_and_retry_merge(t["id"], actor=actor)
+    if kind == "resolve_conflict":
+        # A REAL <<<<<< merge conflict: set up/reuse markers in the worker's own
+        # worktree and STEER the card's agent to merge them by plain editing. The
+        # chat never edits code, but it can dispatch the card's agent to. Admin-
+        # gated like steer-that-changes-state.
+        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        if role not in admin_roles:
+            return "resolve_conflict denied: needs role %s (you are '%s')" % ("/".join(admin_roles), role)
+        t = _find_card(a.get("card", ""))
+        if t is None:
+            return "resolve_conflict failed: no card matches '%s'" % a.get("card")
+        if isinstance(t, list):
+            return "resolve_conflict failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
+        return sessions.dispatch_conflict_resolution(t["id"], actor=actor)
     if kind == "build_integration":
         import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]
