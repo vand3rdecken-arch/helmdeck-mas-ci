@@ -1055,7 +1055,7 @@ class H(BaseHTTPRequestHandler):
                     t = sessions.get_track(parts[1])
                     if not t or t.get("client") != user["name"]:
                         return self._send(403, json.dumps({"error": "not your card"}))
-                    body.pop("mode", None)   # autopilot opt-in (auto-accept + deploy) is owner/operator only
+                    body.pop("autopilot", None)   # autopilot opt-in is owner/operator only
                 try:
                     return self._send(200, json.dumps(
                         sessions.update_track(parts[1], body, actor=user["name"])))

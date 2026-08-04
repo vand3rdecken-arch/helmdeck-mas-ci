@@ -26,6 +26,7 @@ Reply with ONLY JSON:
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "resolve_blocker", "card": "<id or fragment>"}  - a card stuck on Review whose "merge conflict" is really an uncommitted (dirty) tree in the shared repo checkout ("your local changes ... would be overwritten"), NOT a <<<<<< conflict. Parks that uncommitted work on a wip-* branch (NOTHING lost, non-destructive) and re-runs the review check. The sandboxed card worker cannot do this - it's board-level, which is why the worker hands it up. Use ONLY when the owner explicitly asks to unblock / park / resolve the blocker (admin: policy.chat_admin_roles).
    {"type": "resolve_conflict", "card": "<id or fragment>"}  - a card bounced on Review with a REAL <<<<<< merge conflict (message says "Konfliktmarkierungen ... im Worktree"). This sets up/reuses the conflict markers in the card's OWN worktree and STEERS that card's worker to merge them by plain EDITING (edit-only, no git); on the next move to done the harness commits + merges. You DO NOT edit code yourself, but you CAN dispatch the card's agent to - so this is how real code conflicts get resolved. Prefer this (not resolve_blocker) whenever the owner asks to resolve/fix a real <<<<<< conflict (admin: policy.chat_admin_roles).
+   {"type": "machine_task", "task": "what should happen on the PC", "cwd": "C:/optional/folder", "priority": "high", "dispatch": true}  - THE way to get anything done on this Windows machine that is not repo work: opening/controlling apps, files and folders, system settings, printers, installs, diagnostics, scripts. It files a card whose workplace is a real folder on the PC (no git worktree, no branch) and starts an agent there that CAN run commands. YOU never execute anything yourself - you dispatch the agent that does, exactly like resolve_conflict. cwd defaults to the owner's home folder; give one when the task is about a specific place. The card is audited and the owner accepts it like any other (roles: policy.machine.roles, default owner).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
@@ -53,20 +54,43 @@ configure may ONLY touch these keys (the flexible half of the workspace):
 Everything else (auth, users, drivers, audit, the gate itself) is FIXED - refuse
 politely and explain it is part of the harness, not policy.
 
-CAPABILITY CHARTER: connectors are read-only toward the world, create-only
-toward the board, stdlib-only. NEVER commission builds that edit/delete
-existing work, touch auth/users/audit, execute shells or processes, write or
-read local files, read env secrets, produce UI code, or alter drivers -
-refuse such build requests and explain the charter. Off-charter code is also
-blocked at install time by static screening; do not try to work around it.
-If policy.house_rules is present in POLICY, apply those additional
-restrictions too.
+CAPABILITY CHARTER - read the scope carefully, it is narrower than it looks:
+it governs CODE THAT GETS INSTALLED INTO THIS PROGRAM (connectors, templates,
+policy), NOT what work the owner may ask an agent to do. Connectors are
+read-only toward the world, create-only toward the board, stdlib-only: never
+commission a BUILD that edits/deletes existing work, touches auth/users/audit,
+executes shells, reads or writes local files, reads env secrets, produces UI
+code, or alters drivers. Off-charter code is also blocked at install time by
+static screening; do not try to work around it.
+The charter does NOT mean the owner may not have work done on his machine. A
+request to open an app, fix a folder, change a Windows setting or run a script
+is NOT a connector build - it is machine_task, and the answer is to DISPATCH
+it, never to refuse it. If policy.house_rules is present in POLICY, apply those
+additional restrictions too.
+
+YOU ARE THE COORDINATOR - NEVER DEAD-END. You are the owner's one interface to
+this machine and this board. You yourself execute nothing: you delegate, and
+almost everything is reachable through some delegation:
+  work in a repo             -> file_card (dispatch:true) / steer
+  anything else on this PC   -> machine_task
+  a stuck card               -> resolve_conflict / resolve_blocker
+  work you cannot classify   -> machine_task with the request as the task, or
+                                file_card if it is clearly repo work
+So do not answer "I can't do that" / "that is outside my capabilities" / "you
+will have to do that yourself". If the direct route is closed, take the route
+that is open and say which one you took. Only ONE thing is genuinely yours to
+refuse: installing off-charter code (above). Two things stay the owner's alone
+and you must ASK, not do: accepting/merging work (move to done) and anything
+destructive you were not clearly asked for (delete). When something is blocked
+by a POLICY key, name that exact key and offer the one-line change - never a
+bare refusal.
 
 Rules: answer status questions from the snapshot with NO actions. Only act when
 the user clearly asks for a change. Prefer one precise action over many. When a
-card reference is ambiguous, act on nothing and ask in the reply. Moving to
-review runs the quality gate (may bounce); moving to done accepts and advances
-the process chain. dispatch:true files AND starts the card immediately."""
+card reference is ambiguous, act on nothing and ask in the reply - listing the
+candidates you saw. Moving to review runs the quality gate (may bounce); moving
+to done accepts and advances the process chain. dispatch:true files AND starts
+the card immediately."""
 
 def _sessions():
     try:
@@ -137,13 +161,39 @@ def _find_card(frag):
 ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
                   "registration", "dashboard", "prices", "currency", "appearance", "jira"}
 
+
+# -- never dead-end: every refusal carries the route that IS open -------------
+# Same rule the PM coordinator follows (pm._unblock_proposal) and the card
+# agents follow (drivers._CARD_BRIEF): a boundary must produce a pointer to the
+# workflow, not a full stop. These helpers make the ACTION layer obey it too -
+# the model can be prompted to be helpful, but the code must not answer a
+# missed card reference with "failed." and nothing else.
+
+def _card_hint(kind, frag, hits):
+    """A miss on a card reference, answered with the actual candidates so the
+    owner's next message resolves it in one move."""
+    import sessions
+    if hits:
+        opts = "; ".join("%s (%s, %s)" % (t["branch"], t["id"], t.get("lane"))
+                         for t in hits[:6])
+        return ("%s: '%s' passt auf %d Karten - welche? %s" % (kind, frag, len(hits), opts))
+    near = [t for t in sessions.list_tracks() if t.get("lane") != "done"][:6]
+    opts = "; ".join("%s (%s)" % (t["branch"], t.get("lane")) for t in near) or "keine offenen Karten"
+    return ("%s: keine Karte passt auf '%s'. Offen sind gerade: %s" % (kind, frag, opts))
+
+
+def _denied(kind, role, roles, key, extra=""):
+    """A role refusal, answered with the exact policy key that opens it."""
+    return ("%s ist fuer die Rolle '%s' gesperrt (erlaubt: %s). Der Owner kann das mit "
+            "%s aendern%s." % (kind, role, "/".join(roles), key, (" - " + extra) if extra else ""))
+
 def _run_action(a, actor, role="operator"):
     import sessions, processes, events
     kind = a.get("type")
     if kind == "configure":
         allowed_roles = (events.settings().get("policy") or {}).get("chat_configure_roles", ["owner"])
         if role not in allowed_roles:
-            return "configure denied: policy allows roles %s" % ", ".join(allowed_roles)
+            return _denied("configure", role, allowed_roles, "policy.chat_configure_roles")
         raw = a.get("patch") or {}
         patch = {}
         for k, v in raw.items():   # accept both {"policy": {...}} and "policy.x"
@@ -158,15 +208,46 @@ def _run_action(a, actor, role="operator"):
                 patch[k] = v
         bad = set(patch) - ALLOWED_CONFIG
         if bad:
-            return "configure denied for fixed keys: %s (harness, not policy)" % ", ".join(sorted(bad))
+            # a fixed key is harness, not policy - but that is a ROUTE, not a wall:
+            # the harness is changed by changing its code, which is a card.
+            return ("%s ist Teil des Harness (Auth/Audit/Gate/Driver), nicht der Policy - "
+                    "per Chat nicht schaltbar. Wenn es sich wirklich aendern soll, ist das "
+                    "eine Code-Aenderung: sag 'leg eine Karte dafuer an', dann baut ein Agent "
+                    "es mit Gate und deiner Abnahme. Die restlichen Keys kann ich sofort setzen."
+                    % ", ".join(sorted(bad)))
         import events as _ev
         _ev.save_settings(patch, actor=actor, reason="via chat")
         _ev.emit("config", "-", actor=actor, patch=patch)
         return "policy updated: " + json.dumps(patch)[:300]
+    if kind == "machine_task":
+        # The board reaching the PC. The chat executes nothing itself - it
+        # dispatches an agent into a real folder on this machine (see
+        # sessions.new_machine_task). Owner-gated, audited, no merge path.
+        pol = sessions.machine_policy()
+        roles = pol.get("roles") or ["owner"]
+        if not pol.get("enabled", True):
+            return ("Maschinen-Aufgaben sind aus (policy.machine.enabled=false). Der Owner "
+                    "kann sie mit policy.machine.enabled=true wieder freigeben.")
+        if role not in roles:
+            return _denied("machine_task", role, roles, "policy.machine.roles")
+        task = (a.get("task") or "").strip()
+        if not task:
+            return "machine_task: sag mir in einem Satz, was auf dem Rechner passieren soll."
+        try:
+            t = sessions.new_machine_task(
+                a.get("cwd") or os.path.expanduser("~"), task, actor=actor,
+                priority=a.get("priority", "medium"),
+                dispatch=a.get("dispatch", True) is not False)
+        except RuntimeError as e:
+            return "machine_task: %s" % e
+        return ("Maschinen-Aufgabe gestartet (%s, Ordner %s) - der Agent arbeitet auf dem "
+                "Rechner, du siehst alles auf der Karte." % (t["id"], t.get("worktree")))
     if kind == "file_card":
         repo = events.settings().get("default_repo")
         if not repo:
-            return "file_card failed: no default_repo preset"
+            return ("file_card: es ist kein default_repo gesetzt. Entweder settings "
+                    "default_repo auf das Projekt setzen (configure), oder ich mache es "
+                    "als machine_task auf dem Rechner - sag mir welches.")
         branch = "chat-" + "".join(ch if ch.isalnum() else "-" for ch in a["task"].lower())[:24]
         t = sessions.new_track(repo, branch, a["task"],
                                lane="working" if a.get("dispatch") else "backlog",
@@ -176,17 +257,16 @@ def _run_action(a, actor, role="operator"):
         return "filed card %s (%s)" % (t["id"], t["lane"])
     if kind in ("move", "steer", "delete", "archive"):
         t = _find_card(a.get("card", ""))
-        if t is None:
-            return "%s failed: no card matches '%s'" % (kind, a.get("card"))
-        if isinstance(t, list):
-            return "%s failed: '%s' is ambiguous (%d matches)" % (kind, a.get("card"), len(t))
+        if t is None or isinstance(t, list):
+            return _card_hint(kind, a.get("card", ""), t if isinstance(t, list) else [])
         # admin gate: MOVING / DELETING / ARCHIVING a card is a structural change -
         # only authorized roles may (policy.chat_admin_roles, default owner+operator).
         # steer stays open (clients steer their own cards).
         if kind in ("move", "delete", "archive"):
             admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
             if role not in admin_roles:
-                return "%s denied: needs role %s (you are '%s')" % (kind, "/".join(admin_roles), role)
+                return _denied(kind, role, admin_roles, "policy.chat_admin_roles",
+                               "steuern (steer) darfst du die Karte aber jederzeit")
         if kind == "move":
             r = sessions.move_lane(t["id"], a["lane"], actor=actor)
             # gate_report / merge_report are curated, self-contained instruction
@@ -214,12 +294,10 @@ def _run_action(a, actor, role="operator"):
         # Structural + touches the shared checkout -> admin gate, like move.
         admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
         if role not in admin_roles:
-            return "resolve_blocker denied: needs role %s (you are '%s')" % ("/".join(admin_roles), role)
+            return _denied("resolve_blocker", role, admin_roles, "policy.chat_admin_roles")
         t = _find_card(a.get("card", ""))
-        if t is None:
-            return "resolve_blocker failed: no card matches '%s'" % a.get("card")
-        if isinstance(t, list):
-            return "resolve_blocker failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
+        if t is None or isinstance(t, list):
+            return _card_hint("resolve_blocker", a.get("card", ""), t if isinstance(t, list) else [])
         return sessions.park_and_retry_merge(t["id"], actor=actor)
     if kind == "resolve_conflict":
         # A REAL <<<<<< merge conflict: set up/reuse markers in the worker's own
@@ -228,12 +306,10 @@ def _run_action(a, actor, role="operator"):
         # gated like steer-that-changes-state.
         admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
         if role not in admin_roles:
-            return "resolve_conflict denied: needs role %s (you are '%s')" % ("/".join(admin_roles), role)
+            return _denied("resolve_conflict", role, admin_roles, "policy.chat_admin_roles")
         t = _find_card(a.get("card", ""))
-        if t is None:
-            return "resolve_conflict failed: no card matches '%s'" % a.get("card")
-        if isinstance(t, list):
-            return "resolve_conflict failed: '%s' is ambiguous (%d matches)" % (a.get("card"), len(t))
+        if t is None or isinstance(t, list):
+            return _card_hint("resolve_conflict", a.get("card", ""), t if isinstance(t, list) else [])
         return sessions.dispatch_conflict_resolution(t["id"], actor=actor)
     if kind == "build_integration":
         import connectors
@@ -291,7 +367,21 @@ def _run_action(a, actor, role="operator"):
             if not p["steps"][i].get("track"):
                 p = processes.accept_step(p["id"], i, repo, actor=actor)
         return "accepted all steps of %s into cards" % p["id"]
-    return "unknown action type: " + str(kind)
+    # NEVER DROP THE REQUEST: an unimplemented action type is almost always the
+    # model reaching for a capability the board has no verb for (open an app,
+    # fix the printer, tidy a folder). That is what a machine task is - route it
+    # there instead of answering "unknown action type" and losing what was asked.
+    payload = " ".join(str(a[k]) for k in ("task", "text", "request", "prompt", "spec",
+                                           "instruction", "command") if a.get(k))
+    if payload.strip():
+        routed = dict(a, type="machine_task", task=payload.strip())
+        return ("'%s' ist keine eingebaute Aktion - ich hab sie als Maschinen-Aufgabe "
+                "weitergegeben. %s" % (kind, _run_action(routed, actor, role)))
+    return ("'%s' kann ich nicht direkt ausfuehren. Ich kann: Karten anlegen/steuern/"
+            "verschieben, Aufgaben auf dem Rechner erledigen lassen (machine_task), "
+            "Blocker und Merge-Konflikte aufloesen, Prozesse anlegen, Policy setzen, "
+            "Connectoren bauen und laufen lassen. Sag mir in einem Satz, was passieren "
+            "soll - ich such den Weg." % kind)
 
 def _branchless_slug_fix():
     pass  # new_track slugs empty branch to 'track'; acceptable

@@ -352,6 +352,28 @@ _CARD_BRIEF = (
     "must change (a setting, a secret, a decision)."
 )
 
+# A MACHINE card has no worktree and no branch - its workplace is a real folder
+# on the owner's own PC. The card brief above would make such an agent refuse
+# ("I'm sandboxed in a worktree, I can't touch your machine"), which is the same
+# dead-end the board chat used to hit. This is its counterpart.
+_MACHINE_BRIEF = (
+    "You are running ONE HelmDeck MACHINE task for the OWNER, on the owner's own "
+    "Windows PC, in the working directory you were started in. This is not a git "
+    "worktree and there is no branch. "
+    "You CAN: run commands and PowerShell, start and control applications, read "
+    "and write files, inspect and fix the system - this is the owner's machine and "
+    "he asked for this task through his authenticated board. "
+    "You SHOULD: prefer the reversible form of an action, say plainly what you "
+    "changed, and never touch HelmDeck's own secrets (settings.json, users.json, "
+    "helmdeck.db, tokens) or its git history. "
+    "Ask for nothing you can find out yourself - look it up on the machine. "
+    "NEVER end with just 'I cannot do X': if one route is blocked, try another, "
+    "and if you are truly stuck, name the exact blocker and the one thing the "
+    "owner must decide or provide. When it is done, end with a short DELIVERED "
+    "summary of what actually changed on the machine."
+)
+
+
 def _cmd_line(argv):
     """Windows can't spawn a .cmd/.bat directly (claude ships as claude.cmd), so
     we route through cmd.exe. `cmd /c "<a>" "<b>"` is a TRAP: cmd strips the
@@ -400,6 +422,7 @@ class _ClaudeSession:
         self.tid = t["id"]
         self.cfg = cfg
         self.worktree = t.get("worktree") or "."
+        self.brief = _MACHINE_BRIEF if t.get("machine") else _CARD_BRIEF
         self.sig = _opts_sig(cfg, t)
         self.session_id = t.get("session_id")
         self.adopted_source = t.get("adopted_source")
@@ -419,7 +442,7 @@ class _ClaudeSession:
                 "--output-format", "stream-json", "--input-format", "stream-json",
                 "--include-partial-messages", "--verbose",
                 "--permission-mode", self.cfg.get("perm", "acceptEdits"),
-                "--append-system-prompt", _CARD_BRIEF]
+                "--append-system-prompt", self.brief]
         if self.cfg.get("model"):
             argv += ["--model", self.cfg["model"]]
         for pat in self.cfg.get("allowed_tools") or []:
