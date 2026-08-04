@@ -126,6 +126,48 @@ function Picker({ label, value, options, onPick }: {
   );
 }
 
+/** What is actually attached to this card. The agent reads these files off disk
+ *  (the daemon appends their paths to its prompt), so the owner needs to see
+ *  what it was handed - otherwise an attachment is a black hole after sending.
+ *  Silent when the card has none, so it costs nothing on a normal card. */
+function AttachmentList({ id }: { id: string }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["attachments", id], queryFn: () => api.attachments(id) });
+  const files = data ?? [];
+  if (!files.length) return null;
+  const kb = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  return (
+    <>
+      <View style={{ height: 8 }} />
+      <SectionLabel text="anhänge" />
+      <View style={{ gap: 6 }}>
+        {files.map((f) => (
+          <View key={f.name} style={{ flexDirection: "row", alignItems: "center", gap: 8,
+            backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+            borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}>
+            <Ionicons name={/\.(png|jpe?g|gif|webp)$/i.test(f.name) ? "image-outline" : "document-outline"}
+              size={15} color={t.txtTertiary} />
+            {/* the daemon prefixes saved files with their index (save_attachments
+                writes "%d_%s"); show the name the owner recognises, but keep
+                f.name for the remove call - that is the on-disk basename. */}
+            <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }}>
+              {f.name.replace(/^\d+_/, "")}
+            </Text>
+            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{kb(f.size)}</Text>
+            <Pressable hitSlop={8} accessibilityLabel={`${f.name} entfernen`}
+              onPress={() => api.removeAttachment(id, f.name)
+                .then(() => qc.invalidateQueries({ queryKey: ["attachments", id] }))
+                .catch((e) => Alert.alert("Anhang", String((e as Error).message)))}>
+              <Ionicons name="close-circle" size={17} color={t.txtTertiary} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </>
+  );
+}
+
 // ---- overview / detail column --------------------------------------------
 
 function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) => void }) {
@@ -165,6 +207,7 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
         <View style={{ height: 8 }} />
         <SectionLabel text="description" />
         <DescriptionField value={k.description ?? ""} onSave={(v) => edit({ description: v })} />
+        <AttachmentList id={k.id} />
       </Panel>
 
       <Panel>

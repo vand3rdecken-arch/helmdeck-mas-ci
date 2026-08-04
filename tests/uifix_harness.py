@@ -16,6 +16,10 @@ cards in exactly the states this branch changed:
 
 Prints TOKEN=<device token> so the Playwright driver can authenticate in
 direct mode. Never touches the owner's real files. Ctrl-C to stop.
+
+STOP THIS BEFORE RUNNING tools/run_gate.py: while it is listening on :8199,
+test_machine_task.py resolves card references against THIS live board and fails
+with "'machine' passt auf 2 Karten". The gate is green once it is stopped.
 """
 import json, os, sys, tempfile, threading, time
 

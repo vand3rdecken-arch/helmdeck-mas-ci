@@ -1,6 +1,7 @@
 import { useConfig } from "./config";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
+import type { Attach } from "./attachments";
 import type { Track, LaneMove, Metrics, Me } from "./types";
 
 export class AuthRequired extends Error {}
@@ -103,7 +104,12 @@ export interface ChatMsg { cls: string; text: string; ts?: string }
 export interface ChatReply { reply?: string; error?: string; cost?: number;
   actions?: { tool?: string; detail?: string }[]; usage?: unknown }
 
-export interface SteerOpts { model?: string; thinking?: string; mode?: string }
+// `attachments` was dropped when the archived web composer (SendOpts, which had
+// it) was ported to RN - the daemon has accepted it the whole time. Both /steer
+// and /chat spread these opts into the request body, so adding it here wires it.
+export interface SteerOpts {
+  model?: string; thinking?: string; mode?: string; attachments?: Attach[];
+}
 
 // legacy shape (pre-PMP-epic plans on disk) - kept optional so an old
 // plan-YYYYMMDD.json artifact doesn't crash the panel after an upgrade.
@@ -177,6 +183,13 @@ export const api = {
   transcriptLive: (id: string, v: string) =>
     req<{ v: string; steps: Step[] }>("GET", `/tracks/${id}/transcript/live?v=${encodeURIComponent(v)}`),
   history: (id: string) => req<Step[]>("GET", `/tracks/${id}/history`),
+  // attachments already on the card (daemon serves name+size; the file itself
+  // comes from /tracks/<id>/attachment/<name>)
+  attachments: (id: string) => req<{ name: string; size: number }[]>("GET", `/tracks/${id}/attachments`),
+  addAttachments: (id: string, attachments: Attach[]) =>
+    req("POST", `/tracks/${id}/attach`, { attachments }),
+  removeAttachment: (id: string, name: string) =>
+    req("POST", `/tracks/${id}/attach/remove`, { name }),
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 
   // copilot chat

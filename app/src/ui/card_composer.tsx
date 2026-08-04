@@ -1,8 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useTheme } from "@/theme";
 import type { SteerOpts } from "@/data/client";
+import {
+  type Attach, filesToAttachments, isWeb, MAX_FILES, mergeAttachments, pickFiles,
+  pickImages, recoverPendingImages, takePhoto,
+} from "@/data/attachments";
 import { loadDraft, saveDraft } from "@/data/drafts";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
@@ -37,7 +41,10 @@ export function Composer({
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
   const [picker, setPicker] = useState(false);
+  const [attachMenu, setAttachMenu] = useState(false);
+  const [atts, setAtts] = useState<Attach[]>([]);
   const [seedKey, setSeedKey] = useState(0);
+  const picking = useRef(false);   // Android: a double-tap otherwise opens two pickers
   // queue-while-busy: hold a message typed during a running turn, auto-send on free
   const [queued, setQueued] = useState<{ text: string; opts: SteerOpts } | null>(null);
   const flushing = useRef(false);
@@ -57,10 +64,69 @@ export function Composer({
   // external injection (rewind from transcript)
   if (seed && seed.key !== seedKey) { setSeedKey(seed.key); setText(seed.text); }
 
-  function buildOpts(): SteerOpts { return { model, thinking, ...(modeOptions ? { mode } : {}) }; }
+  function buildOpts(): SteerOpts {
+    return { model, thinking, ...(modeOptions ? { mode } : {}), ...(atts.length ? { attachments: atts } : {}) };
+  }
 
   // clear input + its persisted draft after a message leaves the composer
-  function clearInput() { setTextRaw(""); if (draftKey) saveDraft(draftKey, ""); }
+  function clearInput() { setTextRaw(""); setAtts([]); if (draftKey) saveDraft(draftKey, ""); }
+
+  // -- attachments ----------------------------------------------------------
+  // The daemon SILENTLY skips oversized/extra files (turnopts.save_attachments),
+  // so every refusal is surfaced here instead of the file just vanishing.
+  function addAttachments(add: Attach[]) {
+    if (!add.length) return;
+    setAtts((cur) => {
+      const { next, problem } = mergeAttachments(cur, add);
+      if (problem) Alert.alert("Nicht angehängt", problem);
+      return next;
+    });
+  }
+
+  async function runPick(fn: () => Promise<Attach[]>) {
+    if (picking.current) return;
+    picking.current = true;
+    setAttachMenu(false);
+    try { addAttachments(await fn()); }
+    catch (e) { Alert.alert("Anhang", String((e as Error).message)); }
+    finally { picking.current = false; }
+  }
+
+  // Android can kill the activity behind the system picker; without this the
+  // user's selection is silently lost when the app comes back.
+  useEffect(() => { recoverPendingImages().then(addAttachments); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Web: paste an image straight into the composer (the archived web composer
+  // had this; RN has no paste event, so it is a DOM listener and web-only).
+  useEffect(() => {
+    if (!isWeb) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter((i) => i.kind === "file")
+        .map((i) => i.getAsFile())
+        .filter((f): f is File => !!f);
+      if (!files.length) return;
+      e.preventDefault();
+      filesToAttachments(files).then(addAttachments);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Web: drag & drop onto the window. Ignored while a turn is being submitted -
+  // a drop landing mid-submit would be cleared by clearInput().
+  useEffect(() => {
+    if (!isWeb) return;
+    const stop = (e: DragEvent) => { e.preventDefault(); };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length) filesToAttachments(files).then(addAttachments);
+    };
+    window.addEventListener("dragover", stop);
+    window.addEventListener("drop", onDrop);
+    return () => { window.removeEventListener("dragover", stop); window.removeEventListener("drop", onDrop); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // when the agent frees up, deliver the held message
   useEffect(() => {
@@ -82,7 +148,9 @@ export function Composer({
   const modelLabel = model === "auto" ? "Auto" : model.replace("claude-", "").replace(/-\d{8}$/, "");
 
   function fire() {
-    const v = text.trim();
+    // an attachment alone is a valid message ("look at this") - give the agent
+    // a sentence so the turn is never empty prose with a dangling file list
+    const v = text.trim() || (atts.length ? "Siehe Anhang." : "");
     if (!v) return;
     const opts = buildOpts();
     if (busy) setQueued({ text: v, opts });   // hold until the agent is free
@@ -131,7 +199,34 @@ export function Composer({
             <Text style={{ color: t.accent, fontSize: 12 }}>{modeLabel}</Text>
           </Pressable>
         ) : null}
+        <Pressable onPress={() => setAttachMenu(true)} style={toolBtn(atts.length > 0)}
+          accessibilityLabel="Anhang hinzufügen">
+          <Ionicons name="attach" size={14} color={atts.length ? t.accent : t.txtSecondary} />
+          <Text style={{ color: atts.length ? t.accent : t.txtSecondary, fontSize: 12 }}>
+            {atts.length ? `${atts.length}/${MAX_FILES}` : "Anhang"}
+          </Text>
+        </Pressable>
       </ScrollView>
+
+      {/* attachment chips */}
+      {atts.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
+          contentContainerStyle={{ gap: 6, paddingHorizontal: 8, paddingTop: 8, alignItems: "center" }}>
+          {atts.map((a, i) => (
+            <View key={`${a.name}-${i}`} style={{ flexDirection: "row", alignItems: "center", gap: 6,
+              backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+              borderRadius: 999, paddingLeft: 9, paddingRight: 5, paddingVertical: 4, maxWidth: 220 }}>
+              <Ionicons name={(a.mime || "").startsWith("image/") ? "image-outline" : "document-outline"}
+                size={12} color={t.txtTertiary} />
+              <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 11.5, flexShrink: 1 }}>{a.name}</Text>
+              <Pressable onPress={() => setAtts((c) => c.filter((_, j) => j !== i))} hitSlop={8}
+                accessibilityLabel={`${a.name} entfernen`}>
+                <Ionicons name="close-circle" size={15} color={t.txtTertiary} />
+              </Pressable>
+            </View>
+          ))}
+        </ScrollView>
+      ) : null}
 
       {/* queued-while-busy chip: held until the running turn frees up */}
       {queued ? (
@@ -165,11 +260,36 @@ export function Composer({
           </Pressable>
         ) : null}
         {/* send stays enabled while busy — the message is queued instead of dropped */}
-        <Pressable onPress={fire} disabled={!text.trim()}
-          style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: !text.trim() ? 0.5 : 1 }}>
+        <Pressable onPress={fire} disabled={!text.trim() && !atts.length}
+          style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: (!text.trim() && !atts.length) ? 0.5 : 1 }}>
           <Ionicons name={busy ? "add" : "arrow-up"} size={22} color="#fff" />
         </Pressable>
       </View>
+
+      {/* attachment source sheet. On web the photo picker IS a file dialog, so
+          only offer "Datei"; camera is native-only. */}
+      <Modal visible={attachMenu} transparent animationType="fade" onRequestClose={() => setAttachMenu(false)}>
+        <Pressable onPress={() => setAttachMenu(false)}
+          style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "flex-end", padding: 16 }}>
+          <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, overflow: "hidden" }}>
+            {[
+              ...(isWeb ? [] : [{ icon: "camera-outline" as const, label: "Foto aufnehmen", fn: takePhoto }]),
+              { icon: "image-outline" as const, label: isWeb ? "Bild wählen" : "Aus Fotos wählen", fn: pickImages },
+              { icon: "document-outline" as const, label: "Datei wählen", fn: pickFiles },
+            ].map((o, i) => (
+              <Pressable key={o.label} onPress={() => runPick(o.fn)}
+                style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14,
+                  borderTopWidth: i ? 1 : 0, borderTopColor: t.borderSubtle }}>
+                <Ionicons name={o.icon} size={19} color={t.accent} />
+                <Text style={{ color: t.txtPrimary, fontSize: 15 }}>{o.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={{ color: t.txtTertiary, fontSize: 11, textAlign: "center", paddingTop: 10 }}>
+            max. 6 Anhänge · 5 MB pro Datei{isWeb ? " · Einfügen und Ablegen gehen auch" : ""}
+          </Text>
+        </Pressable>
+      </Modal>
 
       {/* model picker modal */}
       <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
