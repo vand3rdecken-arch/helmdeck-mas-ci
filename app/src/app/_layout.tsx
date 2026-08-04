@@ -112,7 +112,7 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: tokens.dark.canvas } }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="card/[id]" />
-              <Stack.Screen name="chat" options={{ presentation: "modal" }} />
+              <Stack.Screen name="chat" options={{ presentation: "transparentModal", animation: "fade" }} />
               <Stack.Screen name="new" options={{ presentation: "modal" }} />
             </Stack>
             <WebStyles />

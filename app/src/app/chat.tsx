@@ -37,7 +37,8 @@ export default function ChatScreen() {
   // On a wide desktop window the chat must read as a centered column, not stretch
   // edge-to-edge like the board. Cap + center the messages and the composer.
   const { width } = useWindowDimensions();
-  const colMax = Platform.OS === "web" && width >= 900 ? 860 : undefined;
+  const wide = Platform.OS === "web" && width >= 900;
+  const colMax = wide ? 860 : undefined;
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const qc = useQueryClient();
@@ -120,8 +121,9 @@ export default function ChatScreen() {
     );
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
+  const body = (
+    <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top,
+      ...(wide ? { borderLeftWidth: 1, borderColor: t.glassBorder } : null) }}>
       {header}
       <View style={{ flex: 1 }}>
         <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
@@ -150,4 +152,16 @@ export default function ChatScreen() {
       </View>
     </View>
   );
+
+  if (wide) {
+    // Desktop: a right-side panel over the DIMMED board (which stays visible)
+    // instead of a full-screen takeover; tapping the board area closes the chat.
+    return (
+      <View style={{ flex: 1, flexDirection: "row", backgroundColor: "#00000073" }}>
+        <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel="Chat schließen" />
+        <View style={{ width: 540, maxWidth: "48%" }}>{body}</View>
+      </View>
+    );
+  }
+  return body;
 }
