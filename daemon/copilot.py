@@ -25,6 +25,7 @@ Reply with ONLY JSON:
    {"type": "archive", "card": "<id or fragment>"}  - archive a card out of the board (admin: policy.chat_admin_roles)
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "resolve_blocker", "card": "<id or fragment>"}  - a card stuck on Review whose "merge conflict" is really an uncommitted (dirty) tree in the shared repo checkout ("your local changes ... would be overwritten"), NOT a <<<<<< conflict. Parks that uncommitted work on a wip-* branch (NOTHING lost, non-destructive) and re-runs the review check. The sandboxed card worker cannot do this - it's board-level, which is why the worker hands it up. Use ONLY when the owner explicitly asks to unblock / park / resolve the blocker (admin: policy.chat_admin_roles).
+   {"type": "fast_track", "card": "<id or fragment>", "on": true}  - put THIS card on the dev fast-track: once its gate is GREEN and the merge is clean it auto-accepts + merges + runs the repo deploy hook (OTA), with NO human accept. Scoped to the one card - every other card stays human-gated. The gate still guards (a red gate still bounces). Use when the owner wants a card (e.g. "Fix Helmdeck") to ship without babysitting; on:false turns it back off (admin: policy.chat_admin_roles).
    {"type": "resolve_conflict", "card": "<id or fragment>"}  - a card bounced on Review with a REAL <<<<<< merge conflict (message says "Konfliktmarkierungen ... im Worktree"). This sets up/reuses the conflict markers in the card's OWN worktree and STEERS that card's worker to merge them by plain EDITING (edit-only, no git); on the next move to done the harness commits + merges. You DO NOT edit code yourself, but you CAN dispatch the card's agent to - so this is how real code conflicts get resolved. Prefer this (not resolve_blocker) whenever the owner asks to resolve/fix a real <<<<<< conflict (admin: policy.chat_admin_roles).
    {"type": "machine_task", "task": "what should happen on the PC", "cwd": "C:/optional/folder", "priority": "high", "dispatch": true}  - THE way to get anything done on this Windows machine that is not repo work: opening/controlling apps, files and folders, system settings, printers, installs, diagnostics, scripts. It files a card whose workplace is a real folder on the PC (no git worktree, no branch) and starts an agent there that CAN run commands. YOU never execute anything yourself - you dispatch the agent that does, exactly like resolve_conflict. cwd defaults to the owner's home folder; give one when the task is about a specific place. The card is audited and the owner accepts it like any other (roles: policy.machine.roles, default owner).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
@@ -311,6 +312,21 @@ def _run_action(a, actor, role="operator"):
         if t is None or isinstance(t, list):
             return _card_hint("resolve_conflict", a.get("card", ""), t if isinstance(t, list) else [])
         return sessions.dispatch_conflict_resolution(t["id"], actor=actor)
+    if kind == "fast_track":
+        # Per-card FAST-TRACK: a flagged card with a green gate + clean merge lands
+        # + deploys automatically (no human accept). Scoped to THIS card; every
+        # other card stays human-gated. The gate still guards. Admin-gated.
+        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        if role not in admin_roles:
+            return _denied("fast_track", role, admin_roles, "policy.chat_admin_roles")
+        t = _find_card(a.get("card", ""))
+        if t is None or isinstance(t, list):
+            return _card_hint("fast_track", a.get("card", ""), t if isinstance(t, list) else [])
+        on = a.get("on", True)
+        sessions.update_track(t["id"], {"fast_track": bool(on)}, actor=actor)
+        return (("%s ist jetzt im Fast-Track: gruenes Gate -> auto-merge + auto-deploy (OTA), ohne Abnahme. "
+                 "Rotes Gate bounct weiterhin." % t["branch"]) if on
+                else "%s: Fast-Track aus - wieder human-gated (Abnahme durch dich)." % t["branch"])
     if kind == "build_integration":
         import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]

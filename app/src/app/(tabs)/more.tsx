@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -29,6 +30,7 @@ export default function MoreTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { baseUrl, token, set, applyPairing, relayMode } = useConfig();
+  const qc = useQueryClient();
   const [url, setUrl] = useState(baseUrl);
   const [tok, setTok] = useState(token);
   const [pair, setPair] = useState("");
@@ -48,6 +50,7 @@ export default function MoreTab() {
     setPairBusy(true); setPairKind("info"); setPairMsg(tr("settings.more.verifying"));
     try {
       await api.me();
+      qc.invalidateQueries();   // board/dashboard ran pre-pairing (empty) - reload against the new config
       setPairKind("ok");
       setPairMsg(applied.mode === "relay"
         ? tr("settings.more.pairedRelayOk")
@@ -80,6 +83,13 @@ export default function MoreTab() {
           <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>
             {tr("settings.more.pairHelp")}
           </Text>
+          <Pressable onPress={() => router.push("/scan" as never)}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+              backgroundColor: t.accent, borderRadius: 8, padding: 12, marginBottom: 10 }}>
+            <Ionicons name="qr-code-outline" size={18} color="#fff" />
+            <Text style={{ color: "#fff", fontWeight: "700" }}>QR-Code scannen</Text>
+          </Pressable>
+          <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 6 }}>oder Code / Link einfügen:</Text>
           <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" multiline
             placeholder={tr("settings.more.pairPh")} placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
           <View style={{ height: 8 }} />

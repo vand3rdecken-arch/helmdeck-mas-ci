@@ -30,7 +30,7 @@ interface ConfigState extends Persisted {
 export type PairResult = { ok: true; mode: "relay" | "direct" } | { ok: false; reason: string };
 
 const DEFAULTS: Persisted = {
-  baseUrl: `http://${DEV_HOST}:8199`, token: "",
+  baseUrl: `http://${DEV_HOST}:8140`, token: "",   // the daemon serves on 8140
   relayUrl: "", room: "", daemonPub: "", mySec: "", myPub: "",
 };
 

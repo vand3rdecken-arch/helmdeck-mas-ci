@@ -604,6 +604,8 @@ export default function CardScreen() {
       options: [
         ...(nextLane ? [{ label: `${tr("card.move.advance")}  →  ${laneLabel(nextLane)}`, onPress: () => moveTo(nextLane) }] : []),
         { label: tr("card.move.to"), onPress: moveSheet },
+        { label: (k.fast_track ? "⚡ Fast-Track deaktivieren" : "⚡ Fast-Track aktivieren")
+                  + "  (grün → auto-merge + deploy)", onPress: () => edit({ fast_track: !k.fast_track }) },
         { label: tr("card.menu.fork"), onPress: () => api.fork(k.id) },
         { label: tr("card.menu.archive"), onPress: () => api.archive(k.id).then(() => router.back()) },
         { label: tr("ui.delete"), destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
@@ -625,6 +627,14 @@ export default function CardScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
         <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }} numberOfLines={1}>{k?.task ?? tr("card.card")}</Text>
         {running ? <ActivityIndicator size="small" color={t.ai} /> : null}
+        {k?.fast_track ? (
+          <Pressable onPress={() => edit({ fast_track: false })} hitSlop={6} accessibilityLabel="Fast-Track aus"
+            style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: t.accent + "22",
+              borderColor: t.accent + "80", borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <Ionicons name="flash" size={12} color={t.accent} />
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>Fast-Track</Text>
+          </Pressable>
+        ) : null}
         {k ? (
           // tappable status pill (Jira-style): shows the lane, opens the move sheet
           <Pressable onPress={moveSheet} hitSlop={8} accessibilityLabel={tr("card.changeStatus")}
