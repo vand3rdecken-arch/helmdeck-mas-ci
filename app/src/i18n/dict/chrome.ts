@@ -46,8 +46,8 @@ export const chrome: Dict = {
   "ui.remove": { de: "Entfernen", en: "Remove" },
   "ui.open": { de: "Öffnen", en: "Open" },
   "ui.close": { de: "Schließen", en: "Close" },
-  "ui.retry": { de: "Nochmal", en: "Retry" },
   "ui.back": { de: "Zurück", en: "Back" },
+  "ui.retry": { de: "Nochmal", en: "Retry" },
   "ui.error": { de: "Fehler", en: "Error" },
   "ui.empty": { de: "leer", en: "empty" },
   "ui.loading": { de: "lädt…", en: "loading…" },
@@ -55,4 +55,16 @@ export const chrome: Dict = {
   "ui.language": { de: "Sprache", en: "Language" },
   "ui.offline": { de: "Desktop nicht erreichbar – läuft HelmDeck?",
                   en: "Desktop unreachable – is HelmDeck running?" },
+
+  // Render-crash boundary (app/_layout.tsx). It renders ABOVE the providers, so
+  // it must translate through the hook-free t() from i18n/core - useT() would
+  // need the QueryClient that is not mounted yet at that point.
+  "err.updateNeeded": { de: "App-Update nötig", en: "App update required" },
+  "err.generic": { de: "Etwas ist schiefgelaufen", en: "Something went wrong" },
+  "err.updateBody": {
+    de: "Diese App-Version ist älter als das aktuelle Update. Bitte installiere die neueste HelmDeck-App (Google Drive / Store) und öffne sie neu.",
+    en: "This app version is older than the current update. Please install the latest HelmDeck app (Google Drive / Store) and open it again.",
+  },
+  "err.unknown": { de: "Unbekannter Fehler", en: "Unknown error" },
+  "err.retry": { de: "Erneut versuchen", en: "Try again" },
 };

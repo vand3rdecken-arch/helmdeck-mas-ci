@@ -339,7 +339,8 @@ def _auto_resolve(t):
     pm.mark_notified(tid)      # exactly ONE ping: don't let the PM push it again
     events.emit("process", "-", action="autopilot_escalate", card=tid)
     try:
-        import notify, i18n as _i18n
+        import notify
+        import i18n as _i18n     # `t` is the track dict here, so alias the translator
         notify.push_fcm(_i18n.t("push.autopilotStuck"),
                         _i18n.t("push.autopilotStuckBody",
                                 task=(t.get("task") or "")[:50],

@@ -64,6 +64,139 @@ border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;co
 <p style="color:#6f7680;font-size:13px;margin-top:22px">Einmal installieren – Updates kommen danach automatisch, ohne Neuinstallation.</p>
 <script>location.replace("helmdeck://pair?c=__C__");</script>"""
 
+# --- privacy policy (Play Store requirement) -----------------------------
+# Served at /privacy (+ /datenschutz). Embedded here because push_relay.sh
+# ships ONLY relay.py - a separate html file would never reach the VM. The
+# text is derived from the app's ACTUAL data flows (app/src/data/*, this
+# relay, daemon/notify.py); keep it in sync when transport behavior changes.
+# Play Console -> App content -> Privacy policy:
+#   https://141.144.227.105.sslip.io/privacy
+PRIVACY_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>HelmDeck – Datenschutzerklärung / Privacy Policy</title>
+<style>body{background:#0e0f10;color:#e4e6e6;font:16px/1.6 system-ui,sans-serif;
+max-width:720px;margin:0 auto;padding:40px 20px}h1{font-size:26px}h2{font-size:19px;
+margin-top:32px}h3{font-size:16px}a{color:#4faee8}hr{border:0;border-top:1px solid #2a2d2f;
+margin:40px 0}small,.muted{color:#8b9298}table{border-collapse:collapse;width:100%;
+font-size:14px}td,th{border:1px solid #2a2d2f;padding:8px;text-align:left;vertical-align:top}
+</style>
+<h1>Datenschutzerklärung – HelmDeck</h1>
+<p class=muted>Stand: 4. August 2026 · <a href="#en">English version below</a></p>
+
+<p>HelmDeck ist eine Fernbedienung für die eigene HelmDeck-Installation
+(„Daemon") auf dem eigenen Rechner. Die App verbindet das Telefon
+ausschließlich mit Infrastruktur, die die Nutzerin/der Nutzer selbst
+betreibt. Es gibt kein Entwickler-Konto, keinen zentralen Dienst, der Inhalte
+speichert, keine Werbung und keine Analyse-/Tracking-SDKs.</p>
+
+<h2>1. Verantwortlicher / Kontakt</h2>
+<p>Tien Duy Vo · E-Mail:
+<a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+
+<h2>2. Welche Daten die App verarbeitet</h2>
+<table>
+<tr><th>Daten</th><th>Wohin sie gehen</th><th>Zweck</th></tr>
+<tr><td>Karten, Chat-Nachrichten, Steueranweisungen</td>
+<td>Nur an den eigenen Daemon – direkt (HTTPS/LAN) oder Ende-zu-Ende-verschlüsselt
+über das Relay</td><td>Kernfunktion: Board bedienen, Agenten steuern</td></tr>
+<tr><td>Anhänge (Fotos, Kamera-Aufnahmen, Dateien – nur auf ausdrückliche
+Auswahl)</td><td>Nur an den eigenen Daemon, gleicher verschlüsselter Weg</td>
+<td>Anhänge an Karten/Aufträge</td></tr>
+<tr><td>Push-Token (Firebase Cloud Messaging, FCM)</td><td>An den eigenen
+Daemon; technisch an Google FCM zur Zustellung</td><td>Benachrichtigungen
+(z.&nbsp;B. „Antwort da", „bereit zur Abnahme")</td></tr>
+<tr><td>Kopplungsdaten (Server-Adresse, Raum-ID, Schlüssel, Geräte-Token)</td>
+<td>Bleiben auf dem Gerät (verschlüsselter Speicher, expo-secure-store)</td>
+<td>Verbindung halten</td></tr>
+</table>
+<p>Nicht verarbeitet werden: Standort, Kontakte, Werbe-IDs, Analysedaten.
+Die Kamera wird nur zum Scannen des Kopplungs-QR-Codes und für bewusst
+aufgenommene Anhang-Fotos genutzt; es findet keine Hintergrund-Aufnahme statt.</p>
+
+<h2>3. Das Relay ist „zero knowledge"</h2>
+<p>Wenn Telefon und Rechner nicht im selben Netz sind, laufen Anfragen über
+ein Relay. Jede Anfrage und jede Antwort wird auf dem Gerät mit NaCl
+(Curve25519 / XSalsa20-Poly1305) versiegelt, bevor sie das Relay erreicht.
+Das Relay sieht nur Chiffretext und eine öffentliche Raum-ID, speichert
+nichts dauerhaft und führt keine Zugriffs­protokolle über Inhalte. Technisch
+bedingt sind Verbindungs-Metadaten (IP-Adresse, Zeitpunkt) für den
+Relay-Betreiber kurzzeitig sichtbar – Inhalte nie.</p>
+
+<h2>4. Push-Benachrichtigungen</h2>
+<p>Push-Nachrichten werden vom eigenen Daemon an das Telefon geschickt und
+sind Ende-zu-Ende-verschlüsselt; Google FCM transportiert nur Chiffretext.
+Für die Zustellung verarbeitet Google das Push-Token gemäß der
+<a href="https://policies.google.com/privacy">Google-Datenschutzerklärung</a>.
+Push ist optional (Systemberechtigung).</p>
+
+<h2>5. Speicherung &amp; Löschung</h2>
+<ul>
+<li>Inhalte (Karten, Chats, Anhänge) liegen ausschließlich auf dem eigenen
+Rechner der Nutzerin/des Nutzers – nicht beim App-Entwickler.</li>
+<li>„Entkoppeln" auf dem Desktop widerruft den Zugriff des Telefons sofort
+(Schlüssel und Raum werden rotiert) und entfernt das Push-Token.</li>
+<li>Deinstallation der App löscht alle lokal gespeicherten Daten
+(Kopplungsdaten, Schlüssel, Token).</li>
+</ul>
+
+<h2>6. Konten</h2>
+<p>Es gibt keine beim Entwickler geführten Konten. Zugangsdaten existieren
+nur gegenüber der eigenen HelmDeck-Installation; ihre Verwaltung (Anlegen,
+Löschen) liegt vollständig bei deren Betreiber.</p>
+
+<h2>7. Rechtsgrundlage (DSGVO)</h2>
+<p>Die Verarbeitung erfolgt zur Vertragserfüllung bzw. auf Grundlage des
+berechtigten Interesses an der Bereitstellung der selbst betriebenen
+Funktion (Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;b/f DSGVO). Betroffenenrechte
+(Auskunft, Löschung, Berichtigung) richten sich an den Kontakt oben; für
+Inhalte auf der eigenen Installation an deren Betreiber.</p>
+
+<hr>
+<h1 id=en>Privacy Policy – HelmDeck</h1>
+<p class=muted>Last updated: August 4, 2026</p>
+
+<p>HelmDeck is a remote control for your own HelmDeck installation
+(“daemon”) on your own machine. The app connects your phone exclusively to
+infrastructure you operate yourself. There is no developer-hosted account,
+no central service storing your content, no ads and no analytics/tracking
+SDKs.</p>
+
+<h2>Controller / contact</h2>
+<p>Tien Duy Vo · e-mail:
+<a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+
+<h2>Data the app processes</h2>
+<ul>
+<li><b>Cards, chat messages, steering commands</b> – sent only to your own
+daemon, either directly (HTTPS/LAN) or end-to-end encrypted through the
+relay.</li>
+<li><b>Attachments</b> (photos, camera shots, files – only when you
+explicitly pick them) – same encrypted path to your own daemon.</li>
+<li><b>Push token</b> (Firebase Cloud Messaging) – registered with your own
+daemon; Google FCM transports delivery. Push payloads are end-to-end
+encrypted; FCM only ever carries ciphertext.</li>
+<li><b>Pairing data</b> (server address, room id, keys, device token) –
+stays on the device in encrypted storage (expo-secure-store).</li>
+</ul>
+<p>Not processed: location, contacts, advertising IDs, analytics. The camera
+is used only to scan the pairing QR code and for photos you deliberately
+attach.</p>
+
+<h2>Zero-knowledge relay</h2>
+<p>When phone and computer are not on the same network, requests travel via
+a relay. Every request/response is sealed on-device with NaCl
+(Curve25519 / XSalsa20-Poly1305) before it reaches the relay. The relay sees
+only ciphertext and a public room id, persists nothing, and keeps no content
+logs. Connection metadata (IP address, timing) is transiently visible to the
+relay operator as with any internet service – content never is.</p>
+
+<h2>Storage &amp; deletion</h2>
+<p>Your content lives solely on your own machine, not with the app
+developer. Unpairing on the desktop revokes the phone's access immediately
+(keys and room are rotated) and removes the push token. Uninstalling the app
+deletes all locally stored data. There are no developer-hosted accounts.</p>
+</html>"""
+
 # --- OTA self-hosted Expo Updates (Paseo-style silent updates) ----------
 # `expo export --platform android` output lives here (metadata.json + the .hbc
 # bundle + assets). We serve it as an Expo Updates v1 manifest so the app pulls
@@ -220,6 +353,14 @@ class H(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         if p == "/health":
             return self._send(200, json.dumps({"ok": True, "rooms": len(_rooms)}))
+        if p in ("/privacy", "/datenschutz"):
+            body = PRIVACY_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if p == "/updates/manifest":
             # Expo Updates v1 manifest for the self-hosted OTA channel. Unsigned
             # JSON is valid per the spec (code signing optional).
