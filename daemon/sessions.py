@@ -36,6 +36,21 @@ def _find(tracks, tid):
 def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:32] or "track"
 
+def _unique_id(suffix):
+    """Card ids are <timestamp>-<suffix>, and the id is also the PRIMARY KEY and
+    the run_dir name. Two cards filed in the SAME SECOND with the same suffix
+    used to produce the same id - and track_put is INSERT OR REPLACE, so the
+    first card was silently overwritten (its audit + economics gone, its flight
+    recorder shared). That is reachable in normal use: every machine task uses
+    the branch '(machine)', and the chat can file two in one second. Take the
+    next free id instead."""
+    base = time.strftime("%Y%m%d-%H%M%S") + "-" + suffix
+    tid, n = base, 2
+    while _db.track_get(tid) is not None:
+        tid = "%s-%d" % (base, n)
+        n += 1
+    return tid
+
 def _git(repo, *args):
     r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
     if r.returncode != 0:
@@ -246,7 +261,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     import events, turnopts
     repo = os.path.abspath(repo)
     tracks = _load()
-    tid = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(branch)
+    tid = _unique_id(_slug(branch))
     run_dir = os.path.join(REC, tid)
     os.makedirs(run_dir, exist_ok=True)
     # attachments filed with the request are saved now; the first run reads them.
@@ -1127,7 +1142,7 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
         return t
 
     # continue: a card that IS the existing session, running in its own cwd
-    tid = time.strftime("%Y%m%d-%H%M%S") + "-adopt-" + short
+    tid = _unique_id("adopt-" + short)
     run_dir = os.path.join(REC, tid); os.makedirs(run_dir, exist_ok=True)
     branch = _current_branch(cwd) or "(no git)"
     t = {"id": tid, "repo": cwd, "branch": branch, "worktree": cwd,
@@ -1406,7 +1421,7 @@ def fork_track(tid, from_ref="", actor="owner"):
         raise RuntimeError("no such card: " + tid)
     repo = src["repo"]
     ref = (from_ref or "").strip() or src["branch"]
-    new_id = time.strftime("%Y%m%d-%H%M%S") + "-fork"
+    new_id = _unique_id("fork")
     branch = "fork-" + _slug(src["branch"])[:20] + "-" + new_id.split("-")[0][-4:]
     wt = _worktree_for(repo, branch)
     if os.path.exists(wt):
