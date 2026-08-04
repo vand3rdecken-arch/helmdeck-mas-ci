@@ -280,9 +280,18 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
                       <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
                         {m.target_date ? `bis ${fmtDate(m.target_date)}` : `~${m.cumulative_eta_days ?? m.eta_days}d`}
                       </Text>
+                      {m.card ? (
+                        <Pressable onPress={() => router.push(`/card/${m.card}` as never)} hitSlop={6}>
+                          <Ionicons name="arrow-forward-circle" size={18} color={t.accent} />
+                        </Pressable>
+                      ) : null}
                     </View>
-                    {m.why ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 2 }}>{m.why}</Text> : null}
-                    <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 3 }}>{m.tasks?.length ?? 0} Tasks · {m.est_turns ?? 0} Turns</Text>
+                    {m.why_now || m.why ? (
+                      <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 2 }}>{m.why_now ?? m.why}</Text>
+                    ) : null}
+                    <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 3 }}>
+                      {(m.steps?.length ?? m.tasks?.length ?? 0)} Schritte · {m.est_turns ?? 0} Turns
+                    </Text>
                   </View>
                 </View>
               ))}
