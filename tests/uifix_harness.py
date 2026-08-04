@@ -24,6 +24,7 @@ DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
 sys.path.insert(0, DAEMON)
 
 SANDBOX = os.environ.get("HELMDECK_UI_SANDBOX") or tempfile.mkdtemp(prefix="helmdeck-ui-")
+os.makedirs(SANDBOX, exist_ok=True)   # an explicit sandbox path may not exist yet
 
 import auth, db, events
 
