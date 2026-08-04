@@ -30,8 +30,19 @@ for its runtimeVersion **even if that bundle is older**, and it overwrites the
 APK's embedded JS. So if you build a native APK with new JS but forget to push a
 matching OTA, the old relay bundle reverts the JS on next launch — the native
 module stays, but its UI vanishes ("OTA works but the update is gone"). Always
-`push_update.sh` right after a native release. Proper long-term fix: **bump
-`runtimeVersion`** when adding native code so old JS can't load on a new APK.
+`push_update.sh` right after a native release.
+
+### runtimeVersion bump on native change (automated in ship.sh)
+`runtimeVersion` policy is `appVersion`, so the runtimeVersion == `expo.version`.
+`deploy/ship.sh` now **bumps `version` + `android.versionCode` on every native
+change** before building the APK. Effect: an OLD APK (old version) *rejects* the
+new JS (rtv mismatch) instead of loading it and crashing on a native module it
+doesn't ship — the `Cannot find native module 'ExpoDocumentPicker'` crash-loop.
+JS-only ships keep the version, so phones still receive those OTAs. Belt-and-
+suspenders: `app/src/app/_layout.tsx` `ErrorBoundary` turns any such missing-
+native-module error into a clear "App-Update nötig" screen instead of a crash.
+Recovery if a bad bundle already shipped: `deploy/rollback_update.sh --embedded`
+(reverts every phone to its APK's own bundle), then distribute the matching APK.
 
 ---
 
@@ -120,7 +131,9 @@ same as a hand deploy, gate still guarding.
 
 ## Fast-track deploy (deploy/ship.sh)
 The repo `deploy` hook runs `deploy/ship.sh`: it fingerprints the native-affecting
-files and ships JS-only changes via OTA, or on a native change builds the APK
+files and ships JS-only changes via OTA, or on a native change **bumps the
+version/runtimeVersion** (so old APKs can't pull incompatible JS), builds the APK
 (deploy/build_apk.sh: JDK17 + gradle + emulator smoke + relay distribute) AND
-pushes a matching OTA. So a fast-track card just works whether the change is JS
-or native.
+pushes a matching OTA, then commits the version bump. So a fast-track card just
+works whether the change is JS or native, and a native change never crash-loops
+an un-updated phone.
