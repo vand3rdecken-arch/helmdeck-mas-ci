@@ -69,7 +69,11 @@
       ],
       "expo-secure-store",
       "expo-image",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-camera",
+        { "cameraPermission": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop." }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

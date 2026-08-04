@@ -56,9 +56,16 @@ export default function MoreTab() {
             <SectionLabel text="pair with a desktop" />
             <Text style={{ color: paired ? t.ok : t.txtTertiary, fontSize: 11 }}>{paired ? "● gekoppelt (Relay)" : "nicht gekoppelt"}</Text>
           </View>
-          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>
-            Desktop: Settings → Mobile app → Pair phone. Code hier einfügen.
+          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 8 }}>
+            Desktop: Settings → Mobile app → „Telefon koppeln". Den QR scannen — oder den Code unten einfügen.
           </Text>
+          <Pressable onPress={() => router.push("/scan" as never)}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+              backgroundColor: t.accent, borderRadius: 8, padding: 12, marginBottom: 10 }}>
+            <Ionicons name="qr-code-outline" size={18} color="#fff" />
+            <Text style={{ color: "#fff", fontWeight: "700" }}>QR-Code scannen</Text>
+          </Pressable>
+          <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 6 }}>oder Code / Link einfügen:</Text>
           <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" multiline
             placeholder="Pairing-Code / Link" placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
           <View style={{ height: 8 }} />
