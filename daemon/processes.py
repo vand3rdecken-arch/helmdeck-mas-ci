@@ -269,12 +269,98 @@ def _priority_dispatch():
         events.emit("process", "-", action="priority_dispatch", card=t["id"])
         threading.Thread(target=_auto_dispatch, args=(t["id"],), daemon=True).start()
 
+AUTOPILOT_RETRY_SECONDS = 600  # min gap between autopilot gate re-checks on one card
+
+
+def _stamp(tid, **fields):
+    """Persist autopilot bookkeeping fields on a card (fresh load, no clobber)."""
+    import sessions
+    t = sessions._find(sessions._load(), tid)
+    if t:
+        t.update(fields)
+        sessions._save_track(t)
+    return t
+
+
+def _auto_resolve(t):
+    """Bounced autopilot card: run the PM's resilience ladder on it NOW
+    (pm.resolve_card_now) instead of waiting for the PM's idle window - the
+    ladder classifies the bounce (dispatch/dirty/conflict/gate), delegates the
+    matching fix, and RE-SUBMITS so the gate decides. One ladder, one attempt
+    budget: the autopilot only supplies the always-on trigger. When the ladder
+    is exhausted, alert ONCE - with the ladder's own unblock proposal, so the
+    escalation is a decision you can act on, never a bare 'it is stuck'."""
+    import events, pm
+    tid = t["id"]
+    state = pm.resolve_card_now(tid)
+    if state != "exhausted" or t.get("autopilot_alerted"):
+        return
+    _stamp(tid, autopilot_alerted=True)
+    pm.mark_notified(tid)      # exactly ONE ping: don't let the PM push it again
+    events.emit("process", "-", action="autopilot_escalate", card=tid)
+    try:
+        import notify
+        notify.push_fcm("Autopilot: haengt",
+                        "'%s' haengt trotz Fix-Versuchen. %s"
+                        % ((t.get("task") or "")[:50], pm._unblock_proposal(t)), tid)
+    except Exception:
+        pass
+
+
+def _autopilot():
+    """Per-card autopilot: a card flagged autopilot=true keeps MOVING on its
+    own, so launch cards never sit for weeks waiting on a human:
+      backlog  -> dispatch itself (WIP headroom respected)
+      bounced  -> run the PM's resilience ladder immediately, ignoring the PM's
+                  presence/idle window; escalate once when it's exhausted
+      needs_you + policy.auto_accept_green -> accept on a re-verified green gate
+
+    What autopilot does NOT do: merge or deploy on its own authority. The
+    harness rule stands - nothing merges itself unless the OWNER turned on
+    policy.auto_accept_green (default off), and the gate is never bypassed:
+    red still bounces, green is still required. Autopilot removes the WAITING,
+    not the checks and not your accept."""
+    import sessions, events
+    tracks = sessions.list_tracks()
+    auto = [t for t in tracks if t.get("autopilot") and not t.get("archived")]
+    if not auto:
+        return
+    s = events.settings()
+    auto_accept = bool((s.get("policy") or {}).get("auto_accept_green"))
+    headroom = (s["capacity"]["wip_limit"]
+                - sum(1 for t in tracks if t.get("lane") == "working"))
+    for t in auto:
+        if t.get("status") == "bounced":
+            _auto_resolve(t)
+        elif t.get("status") == "needs_you" and auto_accept:
+            # delivered; gate was green at submit - re-check before accepting
+            # (backed off so a red result doesn't re-run the gate every tick)
+            if t.get("autopilot_accepted") \
+               or time.time() - (t.get("autopilot_ts") or 0) < AUTOPILOT_RETRY_SECONDS:
+                continue
+            _stamp(t["id"], autopilot_ts=time.time())
+            ok, _problems = sessions._gate(t)
+            if ok:
+                _stamp(t["id"], autopilot_accepted=True)
+                events.emit("process", "-", action="autopilot_accept", card=t["id"])
+                threading.Thread(target=_auto_accept, args=(t["id"],),
+                                 daemon=True).start()
+        elif t.get("lane") == "backlog" and headroom > 0 \
+                and not t.get("autopilot_dispatched"):
+            headroom -= 1
+            _stamp(t["id"], autopilot_dispatched=True)
+            events.emit("process", "-", action="autopilot_dispatch", card=t["id"])
+            threading.Thread(target=_auto_dispatch, args=(t["id"],),
+                             daemon=True).start()
+
+
 def start_chain_poller(interval=20):
     def loop():
         while True:
             try:
                 sync()
                 _priority_dispatch()
+                _autopilot()
             except Exception as e:
                 print("chain sync error:", e)
             time.sleep(interval)

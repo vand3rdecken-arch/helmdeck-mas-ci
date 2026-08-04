@@ -1,0 +1,26 @@
+[
+  {
+    "id": "20260804-launch-auto-move",
+    "card": "20260803-004026-pm-board-move-ux-on-device",
+    "set": {"autopilot": true},
+    "note": "M1 Bounce-Schleife brechen: Board-Move UX (aktuell gebounct) auf Autopilot"
+  },
+  {
+    "id": "20260804-launch-auto-ota",
+    "card": "20260803-004026-pm-silent-ota-expo-updates",
+    "set": {"autopilot": true},
+    "note": "M1: Silent OTA (expo-updates) auf Autopilot"
+  },
+  {
+    "id": "20260804-launch-auto-playstore",
+    "card": "20260803-181939-chat-android-play-store-relea",
+    "set": {"autopilot": true},
+    "note": "M1: Play-Store-Release-Checkliste auf Autopilot"
+  },
+  {
+    "id": "20260804-launch-auto-relay-tls",
+    "card": "20260803-004027-pm-pay-debt-single-secret-t",
+    "set": {"autopilot": true},
+    "note": "M1: Relay/API-Transport (TLS-Debt) auf Autopilot - Relay-Pairing selbst ist schon accepted"
+  }
+]

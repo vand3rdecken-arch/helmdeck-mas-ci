@@ -143,8 +143,10 @@ def test_chat_never_dead_ends():
 
     # role refusals name the key that opens them (on a card that DOES resolve -
     # a reference that misses is answered by _card_hint first, which is right:
-    # you cannot refuse what you could not identify)
-    out = copilot._run_action({"type": "move", "card": "machine", "lane": "done"},
+    # you cannot refuse what you could not identify). The reference has to pick
+    # exactly ONE card: "machine" matches the BRANCH that every machine card
+    # shares, so it is ambiguous the moment two of them exist - the normal case.
+    out = copilot._run_action({"type": "move", "card": "chrome", "lane": "done"},
                               "bob", role="client")
     check("policy.chat_admin_roles" in out, "role refusal names the policy key (%s)" % out[:70])
     check("steer" in out, "and points at what the role CAN still do")
@@ -164,12 +166,30 @@ def test_chat_never_dead_ends():
           "the charter is scoped to BUILT CODE, so PC work is no longer refused")
 
 
+# -- 6. two cards filed in the SAME SECOND must stay TWO cards ---------------
+# Found live 2026-08-04: the card id is <timestamp>-<branch slug> and is also
+# the primary key + run_dir name, so two cards filed in one second collided and
+# track_put (INSERT OR REPLACE) silently destroyed the first - audit, economics
+# and flight recorder with it. Machine cards hit this every time because they
+# all share the branch '(machine)'.
+def test_same_second_cards_survive():
+    a = sessions.new_machine_task(WORKPLACE, "eins", actor="owner", dispatch=False)
+    b = sessions.new_machine_task(WORKPLACE, "zwei", actor="owner", dispatch=False)
+    check(a["id"] != b["id"], "same-second cards get distinct ids (%s / %s)"
+          % (a["id"], b["id"]))
+    ids = [t["id"] for t in sessions.list_tracks()]
+    check(ids.count(a["id"]) == 1 and ids.count(b["id"]) == 1,
+          "both cards are still on the board (neither overwrote the other)")
+    check(a["run_dir"] != b["run_dir"], "and they don't share a flight recorder")
+
+
 if __name__ == "__main__":
     t = test_machine_card_runs_in_place()
     test_machine_accept_path(t)
     test_machine_brief()
     test_policy_gates()
     test_chat_never_dead_ends()
+    test_same_second_cards_survive()
     if _fails:
         print("\nFAILED (%d): %s" % (len(_fails), "; ".join(_fails)))
         sys.exit(1)

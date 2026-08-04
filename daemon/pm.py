@@ -591,6 +591,7 @@ def _bounced_to_resolve(tracks, pm, day):
             and t["id"] not in busy
             and attempts.get(t["id"], 0) < _RESOLVE_MAX
             and t.get("mode") not in ("human", "teach", "cowork")
+            and not t.get("autopilot")   # autopilot drives its own cards (processes._autopilot)
             and (not allow or os.path.normcase(t.get("repo") or "") in allow)]
 
 
@@ -611,6 +612,44 @@ def _resolve_next(pm, st, day):
     attempt = _bump_attempt(t["id"])
     threading.Thread(target=_resolve_card, args=(t["id"], attempt), daemon=True,
                      name="pm-resolve").start()
+
+
+def mark_notified(tid):
+    """Record that this card's escalation has already gone out, so the PM's own
+    _notify_deliveries doesn't push it a SECOND time. The autopilot escalates
+    its cards itself (it must work even with the PM loop switched off) and
+    calls this so the owner still gets exactly one ping per stuck card."""
+    with _resolving_lock:
+        st = _loopstate()
+        day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
+        if tid not in day.setdefault("notified", []):
+            day["notified"].append(tid)
+            _save_loopstate(st)
+
+
+def resolve_card_now(tid):
+    """Run ONE rung of the resilience ladder for a SPECIFIC card, outside the
+    proactive loop's gating (loop_enabled / window / idle / repo allowlist).
+    The per-card autopilot (processes._autopilot) calls this so an opted-in
+    card gets exactly the same classify -> delegate -> re-submit -> escalate
+    treatment without waiting for the PM's idle window - ONE ladder, not two.
+    Attempts share the PM's day budget (_RESOLVE_MAX), so a card can't be
+    worked twice per day by two callers. Returns:
+      "started"   - an attempt is now running on its own thread
+      "busy"      - a fix for this card is already in flight
+      "exhausted" - attempts used up; the caller escalates (_unblock_proposal)"""
+    day = _loopstate().get(_today(), {})
+    if tid in set(day.get("resolved", [])) \
+       or (day.get("resolve_attempts") or {}).get(tid, 0) >= _RESOLVE_MAX:
+        return "exhausted"
+    with _resolving_lock:
+        if tid in _resolving:
+            return "busy"
+        _resolving.add(tid)
+    attempt = _bump_attempt(tid)
+    threading.Thread(target=_resolve_card, args=(tid, attempt), daemon=True,
+                     name="pm-resolve-auto").start()
+    return "started"
 
 
 def _resolve_card(tid, attempt):
