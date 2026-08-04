@@ -14,7 +14,7 @@ export interface Track {
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;
   merge_failed?: boolean; merge_kind?: string; merge_report?: string;
   review_preview?: boolean; review_report?: string;
-  archived?: boolean;
+  archived?: boolean; autopilot?: boolean; fast_track?: boolean;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
 }
 /** POST /tracks/<id>/lane. ->backlog still returns the finished Track;

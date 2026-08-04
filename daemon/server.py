@@ -1075,6 +1075,7 @@ class H(BaseHTTPRequestHandler):
                     t = sessions.get_track(parts[1])
                     if not t or t.get("client") != user["name"]:
                         return self._send(403, json.dumps({"error": "not your card"}))
+                    body.pop("autopilot", None)   # autopilot opt-in is owner/operator only
                 try:
                     return self._send(200, json.dumps(
                         sessions.update_track(parts[1], body, actor=user["name"])))
@@ -1199,6 +1200,7 @@ def serve(port=8140):
     zombies = sessions.sweep_zombies()   # running-flagged cards whose turn died with the old daemon
     if zombies:
         print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
+    sessions.apply_board_directives()    # one-shot board-data patches shipped as repo data
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")

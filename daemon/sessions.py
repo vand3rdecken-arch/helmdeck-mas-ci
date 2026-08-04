@@ -36,6 +36,21 @@ def _find(tracks, tid):
 def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:32] or "track"
 
+def _unique_id(suffix):
+    """Card ids are <timestamp>-<suffix>, and the id is also the PRIMARY KEY and
+    the run_dir name. Two cards filed in the SAME SECOND with the same suffix
+    used to produce the same id - and track_put is INSERT OR REPLACE, so the
+    first card was silently overwritten (its audit + economics gone, its flight
+    recorder shared). That is reachable in normal use: every machine task uses
+    the branch '(machine)', and the chat can file two in one second. Take the
+    next free id instead."""
+    base = time.strftime("%Y%m%d-%H%M%S") + "-" + suffix
+    tid, n = base, 2
+    while _db.track_get(tid) is not None:
+        tid = "%s-%d" % (base, n)
+        n += 1
+    return tid
+
 def _git(repo, *args):
     r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
     if r.returncode != 0:
@@ -246,7 +261,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     import events, turnopts
     repo = os.path.abspath(repo)
     tracks = _load()
-    tid = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(branch)
+    tid = _unique_id(_slug(branch))
     run_dir = os.path.join(REC, tid)
     os.makedirs(run_dir, exist_ok=True)
     # attachments filed with the request are saved now; the first run reads them.
@@ -913,20 +928,29 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                 return _find(_load(), tid) or dict(t)
             events.emit("merge", tid, ok=(kind not in ("conflict", "blocked")),
                         outcome=kind, detail="preview: " + msg[:200])
-            log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
-            t.pop("merge_report", None)
-            t["merge_kind"] = kind; t["review_report"] = msg
-            t["status"] = "submitted"; t["lane"] = "review"
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
-            _VERDICT = {"mergeable": "verdict.mergeable",
-                        "already_merged": "verdict.alreadyMerged",
-                        "redundant_uncommitted": "verdict.alreadyMerged",
-                        "conflict": "verdict.conflict"}
-            _verdict = (_i18n.t(_VERDICT[kind]) if kind in _VERDICT
-                        else _i18n.t("verdict.other", detail=msg[:200]))
-            _say_card(t, _i18n.t("say.reviewChecked", verdict=_verdict))
-            return dict(t, review_preview=True, merge_kind=kind)
-        # lane == "done": LAND it
+            # FAST-TRACK (per-card, SCOPED): a card flagged `fast_track` with a
+            # GREEN gate (already checked above) and a clean merge LANDS
+            # immediately - no human accept. Only for flagged cards; every other
+            # card rests on Review for your accept. The gate still guards (a red
+            # gate already bounced above), so this is auto-accept, not skip-gate.
+            _clean = kind in ("mergeable", "already_merged", "redundant_uncommitted")
+            if not (t.get("fast_track") and _clean):
+                log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
+                t.pop("merge_report", None)
+                t["merge_kind"] = kind; t["review_report"] = msg
+                t["status"] = "submitted"; t["lane"] = "review"
+                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+                _VERDICT = {"mergeable": "verdict.mergeable",
+                            "already_merged": "verdict.alreadyMerged",
+                            "redundant_uncommitted": "verdict.alreadyMerged",
+                            "conflict": "verdict.conflict"}
+                _verdict = (_i18n.t(_VERDICT[kind]) if kind in _VERDICT
+                            else _i18n.t("verdict.other", detail=msg[:200]))
+                _say_card(t, _i18n.t("say.reviewChecked", verdict=_verdict))
+                return dict(t, review_preview=True, merge_kind=kind)
+            log.log("note", "FAST-TRACK %s: gruenes Gate + sauberer Merge -> lande + deploye ohne Abnahme"
+                    % t.get("branch", ""))
+        # lane == "done" (or a fast-tracked review): LAND it
         _repo_hook(t, "preview")   # best-effort try-it surface before it lands
         # classify + merge to main - conflict/blocked bounces with the resolve path
         accept_ok, kind, mergemsg = _merge_to_main(t)
@@ -1183,7 +1207,7 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
         return t
 
     # continue: a card that IS the existing session, running in its own cwd
-    tid = time.strftime("%Y%m%d-%H%M%S") + "-adopt-" + short
+    tid = _unique_id("adopt-" + short)
     run_dir = os.path.join(REC, tid); os.makedirs(run_dir, exist_ok=True)
     branch = _current_branch(cwd) or "(no git)"
     t = {"id": tid, "repo": cwd, "branch": branch, "worktree": cwd,
@@ -1274,10 +1298,15 @@ def sweep_zombies():
 
 
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
-            "project_id", "billing", "rate")
+            "project_id", "billing", "rate", "autopilot", "fast_track")
 # project_id may be explicitly cleared (unassign from a project) - unlike the
 # other fields, "" / null is a meaningful value here, not "leave unset".
 CLEARABLE = ("project_id",)
+# "autopilot" is a card's own flag, NOT a mode: `mode` is already overloaded
+# (execution mode for process steps, then the completion statistic auto/assisted
+# written on accept by events._completion_mode), so the opt-in gets its own key
+# and can never be set as a side effect of a touch-free acceptance.
+BOOLFIELDS = ("autopilot", "fast_track")
 
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
@@ -1327,6 +1356,8 @@ def update_track(tid, patch, actor="owner"):
         v = patch[k] or None if k in CLEARABLE else patch[k]
         if k not in CLEARABLE and v is None:
             continue
+        if k in BOOLFIELDS:
+            v = bool(v)          # "off" arrives as false/0/"" - never as a string
         if v == t.get(k):
             continue
         t[k] = float(v) if k in ("value", "rate") and v is not None else v
@@ -1338,6 +1369,45 @@ def update_track(tid, patch, actor="owner"):
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
     return t
+
+DIRECTIVES = os.path.join(ROOT, "board_directives.json")
+
+def apply_board_directives():
+    """One-shot board-data patches shipped as repo DATA (policy is data). A
+    card worker is worktree-isolated and never touches the live DB, so a card
+    whose deliverable is a board change ships it here; the DAEMON applies it at
+    startup through update_track (audit event + actionlog note included).
+    Each entry {"id", "card", "set": {...}} is applied ONCE - the entry id is
+    recorded on the card - so a later owner edit is never overwritten on
+    restart. Done cards are left alone (their fields are accounting by then)."""
+    if not os.path.exists(DIRECTIVES):
+        return 0
+    try:
+        with open(DIRECTIVES, encoding="utf-8") as f:
+            entries = json.load(f)
+    except ValueError as e:
+        print("directives: unreadable board_directives.json:", e)
+        return 0
+    applied = 0
+    for entry in entries:
+        did, tid = entry.get("id"), entry.get("card")
+        if not did or not tid:
+            continue
+        t = get_track(tid)
+        if not t or did in (t.get("directives_applied") or []) or t.get("lane") == "done":
+            continue
+        try:
+            update_track(tid, entry.get("set") or {}, actor="directive:" + did)
+        except (RuntimeError, ValueError) as e:
+            print("directives: %s failed: %s" % (did, e))
+            continue
+        t = get_track(tid)
+        t.setdefault("directives_applied", []).append(did)
+        _save_track(t)
+        applied += 1
+    if applied:
+        print("directives: applied %d board directive(s)" % applied)
+    return applied
 
 def add_attachments(tid, attachments, actor="owner"):
     """Attach files (PDF etc.) to an existing card, Jira/Plane-style. Saved into
@@ -1416,7 +1486,7 @@ def fork_track(tid, from_ref="", actor="owner"):
         raise RuntimeError("no such card: " + tid)
     repo = src["repo"]
     ref = (from_ref or "").strip() or src["branch"]
-    new_id = time.strftime("%Y%m%d-%H%M%S") + "-fork"
+    new_id = _unique_id("fork")
     branch = "fork-" + _slug(src["branch"])[:20] + "-" + new_id.split("-")[0][-4:]
     wt = _worktree_for(repo, branch)
     if os.path.exists(wt):
