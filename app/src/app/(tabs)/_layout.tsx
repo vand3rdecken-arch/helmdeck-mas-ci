@@ -5,6 +5,7 @@ import { type ColorValue, Image, Platform, Pressable, ScrollView, StyleSheet, Te
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
+import { useT } from "@/i18n";
 import { tokens } from "@/theme/tokens";
 
 const t = tokens.dark;
@@ -12,22 +13,24 @@ const isWeb = Platform.OS === "web";
 const LOGO = require("../../../assets/images/icon.png");
 
 type IconName = keyof typeof Ionicons.glyphMap;
-type NavItem = { name: string; label: string; icon: IconName; section?: string; teamOnly?: boolean };
+// labelKey / sectionKey are i18n keys, not prose - the nav renders them through
+// the translator so the shell speaks the workspace language.
+type NavItem = { name: string; labelKey: string; icon: IconName; sectionKey?: string; teamOnly?: boolean };
 
 // Desktop left-sidebar nav (the old web shell): every view is first-class, in
 // sections. On phone only the first four are bottom-bar tabs; the rest live
 // under "More".
 const NAV: NavItem[] = [
-  { name: "index", label: "Board", icon: "grid-outline" },
-  { name: "needs", label: "Needs you", icon: "notifications-outline" },
-  { name: "dashboard", label: "Dashboard", icon: "stats-chart-outline", teamOnly: true },
-  { name: "processes", label: "Processes", icon: "git-network-outline", section: "Workflow" },
-  { name: "recordings", label: "Recordings", icon: "videocam-outline" },
-  { name: "sessions", label: "Sessions", icon: "chatbubbles-outline", teamOnly: true },
-  { name: "history", label: "History", icon: "time-outline" },
-  { name: "connectors", label: "Connectors", icon: "sync-outline", section: "Setup", teamOnly: true },
-  { name: "automation", label: "Automation", icon: "git-branch-outline", teamOnly: true },
-  { name: "settings", label: "Settings", icon: "settings-outline", teamOnly: true },
+  { name: "index", labelKey: "nav.board", icon: "grid-outline" },
+  { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
+  { name: "dashboard", labelKey: "nav.dashboard", icon: "stats-chart-outline", teamOnly: true },
+  { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", sectionKey: "nav.sectionWorkflow" },
+  { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline" },
+  { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", teamOnly: true },
+  { name: "history", labelKey: "nav.history", icon: "time-outline" },
+  { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
+  { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", teamOnly: true },
+  { name: "settings", labelKey: "nav.settings", icon: "settings-outline", teamOnly: true },
 ];
 // screens that are NOT phone bottom-bar tabs (hidden there, shown in sidebar)
 const DESKTOP_ONLY = new Set(["processes", "recordings", "sessions", "history", "connectors", "automation", "settings"]);
@@ -46,6 +49,7 @@ function GlassTabBar() {
  *  wordmark, then sectioned nav items with a left accent bar on the active one.
  *  Real glass (blur 34 / saturate 1.8) so the aurora backdrop refracts through. */
 function Sidebar({ state, navigation }: any) {
+  const tr = useT();
   const activeName = state.routes[state.index]?.name;
   const filter = useBoardFilter((s) => s.filter);
   const setFilter = useBoardFilter((s) => s.setFilter);
@@ -86,22 +90,22 @@ function Sidebar({ state, navigation }: any) {
           const color = active ? t.txtPrimary : t.txtSecondary;
           return (
             <View key={item.name}>
-              {item.section ? <Text style={styles.sect}>{item.section}</Text> : null}
+              {item.sectionKey ? <Text style={styles.sect}>{tr(item.sectionKey)}</Text> : null}
               <Pressable
                 onPress={() => { if (!active) navigation.navigate(item.name); }}
                 style={[styles.navitem, { backgroundColor: active ? t.accent + "1F" : "transparent" }]}
               >
                 {active ? <View style={[styles.accentBar, { backgroundColor: t.accent }]} /> : null}
                 <Ionicons name={item.icon} size={17} color={color} />
-                <Text style={{ color, fontSize: 13.5, fontWeight: active ? "600" : "500" }}>{item.label}</Text>
+                <Text style={{ color, fontSize: 13.5, fontWeight: active ? "600" : "500" }}>{tr(item.labelKey)}</Text>
               </Pressable>
             </View>
           );
         })}
-        <Text style={styles.sect}>Filter</Text>
-        <FilterRow label="Alle Arbeit" value="all" />
-        <FilterRow label="Archiv" value="archived" />
-        {clients.length > 0 ? <Text style={styles.sect}>Clients</Text> : null}
+        <Text style={styles.sect}>{tr("nav.filter")}</Text>
+        <FilterRow label={tr("nav.filterAll")} value="all" />
+        <FilterRow label={tr("nav.filterArchived")} value="archived" />
+        {clients.length > 0 ? <Text style={styles.sect}>{tr("nav.clients")}</Text> : null}
         {clients.map(([name, count]) => (
           <FilterRow key={name} label={name} value={`client:${name}`} count={count} />
         ))}
@@ -118,7 +122,7 @@ function Sidebar({ state, navigation }: any) {
             </View>
           </View>
         ) : (
-          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⌘K · Befehle</Text>
+          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("nav.commands")}</Text>
         )}
       </View>
     </View>
@@ -126,6 +130,7 @@ function Sidebar({ state, navigation }: any) {
 }
 
 export default function TabsLayout() {
+  const tr = useT();
   const { width } = useWindowDimensions();
   const sidebar = isWeb && width >= 900;   // desktop nav shell vs phone bottom bar
   // Remove a screen from the phone bottom bar entirely. Must use href:null, not
@@ -151,17 +156,17 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: t.canvas },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Board", tabBarIcon: icon("grid-outline") }} />
-      <Tabs.Screen name="needs" options={{ title: "Needs you", tabBarIcon: icon("notifications-outline") }} />
-      <Tabs.Screen name="dashboard" options={{ title: "Dashboard", tabBarIcon: icon("stats-chart-outline") }} />
-      <Tabs.Screen name="processes" options={{ title: "Processes", tabBarIcon: icon("git-network-outline"), ...hideOnPhone("processes") }} />
-      <Tabs.Screen name="recordings" options={{ title: "Recordings", tabBarIcon: icon("videocam-outline"), ...hideOnPhone("recordings") }} />
-      <Tabs.Screen name="sessions" options={{ title: "Sessions", tabBarIcon: icon("chatbubbles-outline"), ...hideOnPhone("sessions") }} />
-      <Tabs.Screen name="history" options={{ title: "History", tabBarIcon: icon("time-outline"), ...hideOnPhone("history") }} />
-      <Tabs.Screen name="connectors" options={{ title: "Connectors", tabBarIcon: icon("sync-outline"), ...hideOnPhone("connectors") }} />
-      <Tabs.Screen name="automation" options={{ title: "Automation", tabBarIcon: icon("git-branch-outline"), ...hideOnPhone("automation") }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: icon("settings-outline"), ...hideOnPhone("settings") }} />
-      <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: icon("ellipsis-horizontal"), ...(sidebar ? { href: null } : {}) }} />
+      <Tabs.Screen name="index" options={{ title: tr("nav.board"), tabBarIcon: icon("grid-outline") }} />
+      <Tabs.Screen name="needs" options={{ title: tr("nav.needsYou"), tabBarIcon: icon("notifications-outline") }} />
+      <Tabs.Screen name="dashboard" options={{ title: tr("nav.dashboard"), tabBarIcon: icon("stats-chart-outline") }} />
+      <Tabs.Screen name="processes" options={{ title: tr("nav.processes"), tabBarIcon: icon("git-network-outline"), ...hideOnPhone("processes") }} />
+      <Tabs.Screen name="recordings" options={{ title: tr("nav.recordings"), tabBarIcon: icon("videocam-outline"), ...hideOnPhone("recordings") }} />
+      <Tabs.Screen name="sessions" options={{ title: tr("nav.sessions"), tabBarIcon: icon("chatbubbles-outline"), ...hideOnPhone("sessions") }} />
+      <Tabs.Screen name="history" options={{ title: tr("nav.history"), tabBarIcon: icon("time-outline"), ...hideOnPhone("history") }} />
+      <Tabs.Screen name="connectors" options={{ title: tr("nav.connectors"), tabBarIcon: icon("sync-outline"), ...hideOnPhone("connectors") }} />
+      <Tabs.Screen name="automation" options={{ title: tr("nav.automation"), tabBarIcon: icon("git-branch-outline"), ...hideOnPhone("automation") }} />
+      <Tabs.Screen name="settings" options={{ title: tr("nav.settings"), tabBarIcon: icon("settings-outline"), ...hideOnPhone("settings") }} />
+      <Tabs.Screen name="more" options={{ title: tr("nav.more"), tabBarIcon: icon("ellipsis-horizontal"), ...(sidebar ? { href: null } : {}) }} />
     </Tabs>
   );
 }

@@ -9,6 +9,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
 import type { Track, LaneMove } from "@/data/types";
+import { t as tt, useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { GanttView } from "./board_gantt";
@@ -29,10 +30,37 @@ function contentCardStyle(t: ThemeTokens) {
     : { backgroundColor: t.surface1, elevation: 3 };
 }
 
+/** Translator signature (useT / t). Helpers take it so they render in the
+ *  workspace language without each growing its own hook. */
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+
+// Raw daemon vocabulary -> shared chrome keys. Unknown values fall back to the
+// raw string so a new lane/status/priority stays visible instead of blank.
+const LANE_KEY: Record<string, string> = {
+  backlog: "lane.backlog", working: "lane.working", review: "lane.review", done: "lane.done",
+};
+const STATUS_KEY: Record<string, string> = {
+  queued: "status.queued", running: "status.running", gating: "status.gating",
+  needs_you: "status.needsYou", bounced: "status.bounced",
+  submitted: "status.submitted", accepted: "status.accepted",
+};
+const PRIO_KEY: Record<string, string> = {
+  urgent: "prio.urgent", high: "prio.high", medium: "prio.medium", low: "prio.low",
+};
+const statusLabel = (tr: TFn, s?: string) =>
+  (s ? (STATUS_KEY[s] ? tr(STATUS_KEY[s]) : s.replace(/_/g, " ")) : "");
+const prioLabel = (tr: TFn, p?: string) => (p ? (PRIO_KEY[p] ? tr(PRIO_KEY[p]) : p) : "");
+
 function useLaneLabels() {
+  const tr = useT();
+  // /me first: it carries the public UI policy for EVERY role. The dashboard
+  // payload strips `settings` for operators, so reading only there left them
+  // with raw lane keys while the owner saw the configured labels.
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const { data } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 10000 });
-  const labels = data?.settings?.policy?.lane_labels ?? {};
-  return (lane: string) => labels[lane] ?? lane.charAt(0).toUpperCase() + lane.slice(1);
+  const labels = me?.ui?.lane_labels ?? data?.settings?.policy?.lane_labels ?? {};
+  return (lane: string) => labels[lane]
+    ?? (LANE_KEY[lane] ? tr(LANE_KEY[lane]) : lane.charAt(0).toUpperCase() + lane.slice(1));
 }
 
 function prioOrd(p?: string) { return { urgent: 0, high: 1, medium: 2, low: 3 }[p ?? ""] ?? 2; }
@@ -71,30 +99,31 @@ const isGating = (k: Track) => k.status === "gating";
  *  reporting an outcome we don't have yet — the old inline call blocked the
  *  request for minutes and put the only copy of the reason in a 5s toast. */
 function laneVerdict(res: LaneMove, lane: string): string | null {
+  // The gate/merge report itself is audit text from the daemon - it travels as
+  // a variable and stays in its original wording.
+  const heads = () => (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");
   if (res.gating) {
-    return lane === "done"
-      ? "Gate läuft, dann Merge nach main – Ergebnis kommt auf die Karte und in den Chat"
-      : "Gate läuft – Ergebnis kommt auf die Karte und in den Chat";
+    return tt(lane === "done" ? "board.verdict.gatingDone" : "board.verdict.gating");
   }
   if (lane === "review") {
-    if (res.gate_failed) return "Gate rot – bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");
+    if (res.gate_failed) return tt("board.verdict.gateRed", { why: heads() });
     const k = res.merge_kind;
-    const verdict = k === "mergeable" ? "✓ bereit zu mergen"
-      : (k === "already_merged" || k === "redundant_uncommitted") ? "redundant – schon in main"
-      : k === "conflict" ? "⚠ Konflikt mit main" : "geprüft";
-    return `Review: ${verdict} — zum Landen auf Done ziehen`;
+    const verdict = k === "mergeable" ? tt("board.merge.mergeable")
+      : (k === "already_merged" || k === "redundant_uncommitted") ? tt("board.merge.redundant")
+      : k === "conflict" ? tt("board.merge.conflict") : tt("board.merge.checked");
+    return tt("board.verdict.review", { verdict });
   }
   if (lane === "done") {
-    if (res.gate_failed) return "GATE offen – bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");
+    if (res.gate_failed) return tt("board.verdict.gateOpen", { why: heads() });
     if (res.merge_failed) {
       const why = (res.merge_report ?? "").split("\n")[0];
-      return (res.merge_kind === "conflict" ? "MERGE-KONFLIKT – bleibt auf Review: " : "Kann nicht landen – bleibt auf Review: ") + why;
+      return tt(res.merge_kind === "conflict" ? "board.verdict.mergeConflict" : "board.verdict.cannotLand", { why });
     }
-    return res.merge_kind === "merged" ? "Fertig → committet & nach main gemergt"
-      : (res.merge_kind === "already_merged" || res.merge_kind === "redundant_uncommitted") ? "Redundant – war schon in main, Karte geschlossen"
-      : "Abgenommen";
+    return res.merge_kind === "merged" ? tt("board.verdict.merged")
+      : (res.merge_kind === "already_merged" || res.merge_kind === "redundant_uncommitted") ? tt("board.verdict.redundant")
+      : tt("board.accepted");
   }
-  return lane === "working" ? "Dispatched – Session startet" : lane === "backlog" ? "Queued" : null;
+  return lane === "working" ? tt("board.verdict.dispatched") : lane === "backlog" ? tt("board.verdict.queued") : null;
 }
 
 /** A softly pulsing dot — the board's live "this card's agent is running" cue.
@@ -117,6 +146,7 @@ function RunningPulse({ color }: { color: string }) {
 
 function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const t = useTheme();
+  const tr = useT();
   const router = useRouter();
   const tint = k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
@@ -131,12 +161,12 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     (k.review_report && k.lane === "review") ? k.review_report.split("\n")[0] : null;
   const reportColor = k.gate_failed || k.merge_kind === "conflict" ? t.danger : k.merge_kind === "mergeable" ? t.ok : t.txtTertiary;
   const sub =
-    isGating(k) ? "Der Harness prüft und merged – das kann ein paar Minuten dauern." :
+    isGating(k) ? tr("board.card.gating") :
     k.lane === "backlog" ? descPreview(k.description) :
     k.status === "running" ? null :
     (k.lane === "working" && k.last_reply) ? k.last_reply :
-    (k.lane === "review" && k.last_reply) ? "Geliefert: " + k.last_reply :
-    k.lane === "done" ? "Abgenommen" + (k.updated ? ` · ${k.updated}` : "") : null;
+    (k.lane === "review" && k.last_reply) ? tr("board.card.delivered", { text: k.last_reply }) :
+    k.lane === "done" ? tr("board.accepted") + (k.updated ? ` · ${k.updated}` : "") : null;
 
   return (
     <Pressable
@@ -150,23 +180,23 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     >
       {tint ? (
         <Text style={{ color: tint, fontSize: 11.5, fontWeight: "600" }}>
-          {k.status === "needs_you" ? "● Antwort da – tippen" : "● abgelehnt – ansehen"}
+          {k.status === "needs_you" ? tr("board.card.replyReady") : tr("board.card.bounced")}
         </Text>
       ) : null}
       <View style={s.row}>
         {k.status === "running" ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <RunningPulse color={t.ai} />
-            <Text style={{ color: t.ai, fontSize: 11, fontWeight: "700" }}>läuft</Text>
+            <Text style={{ color: t.ai, fontSize: 11, fontWeight: "700" }}>{tr("status.running")}</Text>
           </View>
         ) : isGating(k) ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <RunningPulse color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>Gate läuft…</Text>
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>{tr("status.gating")}</Text>
           </View>
         ) : null}
         <Chip text={executorLabel(k.mode)} dot={t.ai} />
-        <Text style={[s.branch, { color: t.txtTertiary }]} numberOfLines={1}>{k.branch || "(no git)"}</Text>
+        <Text style={[s.branch, { color: t.txtTertiary }]} numberOfLines={1}>{k.branch || tr("board.noGit")}</Text>
         {k.turns > 0 ? <Text style={[s.branch, { color: t.txtTertiary }]}>{k.turns}t</Text> : null}
       </View>
       <Text style={[s.task, { color: t.txtPrimary }]} numberOfLines={3}>{k.task}</Text>
@@ -174,15 +204,15 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       {sub ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={2}>{sub.replace(/\n/g, " ")}</Text> : null}
       {report ? <Text style={{ color: reportColor, fontSize: 11 }} numberOfLines={1}>{report.slice(0, 140)}</Text> : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
-        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepM ? `step ${stepM[1]}` : (k.process_title ?? "process")}</Text> : null}
+        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepM ? tr("board.step", { n: stepM[1] }) : (k.process_title ?? tr("board.process"))}</Text> : null}
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
-        {k.priority && k.priority !== "medium" ? <Chip text={k.priority} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
-        {k.status ? <Chip text={k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
-        {k.due ? <Chip text={`due ${k.due}`} /> : null}
+        {k.priority && k.priority !== "medium" ? <Chip text={prioLabel(tr, k.priority)} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
+        {k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
+        {k.due ? <Chip text={tr("board.due", { d: k.due })} /> : null}
         {k.value > 0 ? <Chip text={`€${k.value}`} /> : null}
         {k.ai_cost > 0 ? <Chip text={`AI $${k.ai_cost.toFixed(2)}`} /> : null}
         {e && e.touches > 0 ? <Chip text={`${e.touches}t`} /> : null}
-        {e?.mode ? <Chip text={e.mode === "auto" ? "auto · AI" : "assisted · human"} dot={e.mode === "auto" ? t.ai : t.human} /> : null}
+        {e?.mode ? <Chip text={tr(e.mode === "auto" ? "board.mode.auto" : "board.mode.assisted")} dot={e.mode === "auto" ? t.ai : t.human} /> : null}
         {k.client ? <Chip text={k.client} /> : null}
       </View>
       {e && (e.ai_cost > 0 || e.touches > 0) ? (
@@ -197,14 +227,15 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
 
 function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void }) {
   const t = useTheme();
+  const tr = useT();
   const router = useRouter();
   const why = (k: Track) =>
-    k.status === "bounced" ? "gate abgelehnt - fixen" :
-    k.status === "needs_you" ? "Agent braucht dich" :
-    k.mode === "human" ? "dein Schritt" : k.mode === "cowork" ? "cowork" : "als Nächstes";
+    k.status === "bounced" ? tr("board.why.bounced") :
+    k.status === "needs_you" ? tr("board.why.needsYou") :
+    k.mode === "human" ? tr("board.why.human") : k.mode === "cowork" ? tr("board.why.cowork") : tr("board.why.next");
   return (
     <View style={[s.nextup, { backgroundColor: t.warn + "12", borderColor: t.warn + "66" }]}>
-      <Text style={{ color: t.warn, fontSize: 11.5, fontWeight: "700" }}>▸ NEXT UP</Text>
+      <Text style={{ color: t.warn, fontSize: 11.5, fontWeight: "700" }}>▸ {tr("board.nextUp")}</Text>
       {items.slice(0, 4).map((k) => (
         <Pressable key={k.id} onPress={() => router.push(`/card/${k.id}`)} style={[s.row, { gap: 8 }]}>
           <Dot color={statusColor(t, k.status)} />
@@ -213,27 +244,28 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
             <Pressable onPress={() => onDone(k)} hitSlop={6}
               style={{ flexDirection: "row", alignItems: "center", gap: 3, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 1 }}>
               <Ionicons name="checkmark" size={11} color={t.ok} />
-              <Text style={{ color: t.txtSecondary, fontSize: 10.5 }}>done</Text>
+              <Text style={{ color: t.txtSecondary, fontSize: 10.5 }}>{tr("board.markDone")}</Text>
             </Pressable>
           ) : (
             <Text style={{ color: t.warn, fontSize: 10.5, fontWeight: "600" }}>{why(k)}</Text>
           )}
         </Pressable>
       ))}
-      {items.length > 4 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>+{items.length - 4} weitere</Text> : null}
+      {items.length > 4 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("board.more", { n: items.length - 4 })}</Text> : null}
     </View>
   );
 }
 
 function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () => void }) {
   const t = useTheme();
+  const tr = useT();
   return (
     <Pressable onPress={onOpen} onLongPress={onMove} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
       <Dot color={statusColor(t, k.status)} />
-      <Text style={{ color: t.txtTertiary, fontSize: 10.5, width: 96 }} numberOfLines={1}>{k.branch || "(no git)"}</Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 10.5, width: 96 }} numberOfLines={1}>{k.branch || tr("board.noGit")}</Text>
       <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
-      {k.status ? <Text style={{ color: statusColor(t, k.status), fontSize: 10.5 }}>{k.status.replace(/_/g, " ")}</Text> : null}
-      {k.priority && k.priority !== "medium" ? <Text style={{ color: k.priority === "urgent" ? t.danger : t.warn, fontSize: 10.5 }}>{k.priority}</Text> : null}
+      {k.status ? <Text style={{ color: statusColor(t, k.status), fontSize: 10.5 }}>{statusLabel(tr, k.status)}</Text> : null}
+      {k.priority && k.priority !== "medium" ? <Text style={{ color: k.priority === "urgent" ? t.danger : t.warn, fontSize: 10.5 }}>{prioLabel(tr, k.priority)}</Text> : null}
       {k.due ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.due}</Text> : null}
       {k.value > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>€{k.value}</Text> : null}
       {k.ai_cost > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>${k.ai_cost.toFixed(2)}</Text> : null}
@@ -244,15 +276,16 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
 
 function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) => void }) {
   const t = useTheme();
+  const tr = useT();
   return (
     <View style={{ flexDirection: "row", gap: 6 }}>
-      {[["board", "Board"], ["list", "Liste"], ["timeline", "Timeline"]].map(([key, lbl]) => {
+      {["board", "list", "timeline"].map((key) => {
         const on = layout === key;
         return (
           <Pressable key={key} onPress={() => onSet(key)}
             style={{ backgroundColor: on ? t.accent + "29" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
               borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
-            <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12, fontWeight: "500" }}>{lbl}</Text>
+            <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12, fontWeight: "500" }}>{tr(`board.layout.${key}`)}</Text>
           </Pressable>
         );
       })}
@@ -322,6 +355,7 @@ function WideKanban({
   onInfo: (m: string | null) => void;
 }) {
   const t = useTheme();
+  const tr = useT();
   const colFrames = useRef<Record<string, Frame>>({});
   const colRefs = useRef<Record<string, View | null>>({});
   const cardPos = useRef<Record<string, CardCenter>>({});
@@ -399,7 +433,7 @@ function WideKanban({
             {inLane.length === 0 ? (
               <>
                 {indicator?.lane === lane && indicator.index === 0 ? <Ins /> : null}
-                <Empty text="leer" />
+                <Empty text={tr("ui.empty")} />
               </>
             ) : (
               inLane.map((k, i) => (
@@ -421,6 +455,7 @@ function WideKanban({
 
 export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topInset?: number }) {
   const t = useTheme();
+  const tr = useT();
   const router = useRouter();
   const label = useLaneLabels();
   const qc = useQueryClient();
@@ -466,13 +501,13 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   function onMove(k: Track) {
     sheet.show({
       title: k.task,
-      message: "Verschieben nach…",
+      message: tr("board.moveTo"),
       options: LANES.filter((l) => l !== k.lane).map((l) => ({
         label: "→ " + label(l),
         onPress: async () => {
           setBusy(true);
           try { const res = await api.moveLane(k.id, l); showToast(laneVerdict(res, l)); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-          catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+          catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
           finally { setBusy(false); }
         },
       })),
@@ -489,17 +524,17 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
-      {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || "Desktop nicht erreichbar – läuft HelmDeck?"}</Text> : null}
+      {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || tr("ui.offline")}</Text> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? (
         <NextUp items={nextUp} onDone={async (k) => {
-          try { const res = await api.moveLane(k.id, "done"); showToast(laneVerdict(res, "done") ?? "Step erledigt – die Kette rückt vor"); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-          catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+          try { const res = await api.moveLane(k.id, "done"); showToast(laneVerdict(res, "done") ?? tr("board.stepDone")); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+          catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
         }} />
       ) : null}
       {filter === "needs_you" ? (
-        shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
+        shown.length === 0 ? <Empty text={tr("board.emptyNeedsYou")} /> :
           shown.map((k) => <Card key={k.id} k={k} onMove={onMove} />)
       ) : layout === "timeline" ? (
         // Timeline = the old web's day-scaled bar view (created→last activity,
@@ -507,7 +542,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: four column plates side by side, drag to move/reorder
-        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert("Fehler", m)} onInfo={showToast} />
+        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert(tr("ui.error"), m)} onInfo={showToast} />
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
@@ -519,7 +554,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
                 <Text style={{ color: t.txtSecondary, fontSize: 13, fontWeight: "600" }}>{label(lane)}</Text>
                 <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{inLane.length}</Text>
               </View>
-              {inLane.length === 0 ? <Empty text="leer" /> :
+              {inLane.length === 0 ? <Empty text={tr("ui.empty")} /> :
                 inLane.map((k) => layout === "list"
                   ? <LRow key={k.id} k={k} onOpen={() => router.push(`/card/${k.id}`)} onMove={() => onMove(k)} />
                   : <Card key={k.id} k={k} onMove={onMove} />)}

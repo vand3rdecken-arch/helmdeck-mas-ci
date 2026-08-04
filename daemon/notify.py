@@ -90,14 +90,12 @@ def push_fcm(title, body, track_id=""):
 
 
 def card_event(track, status):
-    """One line per transition the owner must act on."""
-    titles = {
-        "needs_you": ("Karte fertig - dein Urteil", "hourglass"),
-        "bounced":   ("Karte gescheitert", "warning"),
-        "done":      ("Karte akzeptiert", "white_check_mark"),
-    }
-    if status not in titles:
+    """One line per transition the owner must act on. The title follows the
+    workspace language (policy.lang); the body is the card's own title, which
+    is the owner's text and never translated."""
+    import i18n
+    keys = {"needs_you": "push.needsYou", "bounced": "push.bounced", "done": "push.done"}
+    if status not in keys:
         return
-    title, _ = titles[status]
     body = "%s  [%s]" % (track.get("task", "")[:80], track.get("id", ""))
-    push_fcm(title, body, track.get("id", ""))
+    push_fcm(i18n.t(keys[status]), body, track.get("id", ""))

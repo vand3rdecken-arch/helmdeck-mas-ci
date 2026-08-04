@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import type { UserRow } from "@/data/types";
+import { LANGS, useT, type Lang } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
@@ -21,12 +22,17 @@ const BACKDROPS = ["mesh", "aurora", "ember", "forest", "mono"] as const;
 const AUTO_MODES = ["do", "prepare", "cowork"] as const;
 const CHAT_ROLES = ["owner", "operator"] as const;
 const PRIOS = ["never", "urgent", "high"] as const;
+// The language chips show the language's own name (Deutsch / English - never
+// translated); the id behind the label is what lands in policy.lang.
+const LANG_LABELS = LANGS.map((l) => l.label);
+const langId = (label: string): Lang => (LANGS.find((l) => l.label === label)?.id ?? "de");
 
 type PlanRepo = { items?: { title: string; priority?: string }[]; error?: string | null };
 type NightPlan = { made?: string; actor?: string; repos?: Record<string, PlanRepo> };
 
 export default function Settings() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
@@ -45,6 +51,9 @@ export default function Settings() {
   const [value, setValue] = useState("");
   const [budget, setBudget] = useState("");
   const [tSteer, setTSteer] = useState(""); const [tReview, setTReview] = useState(""); const [tBounce, setTBounce] = useState("");
+
+  // ---- language ----
+  const [lang, setLangSel] = useState<Lang>("de");
 
   // ---- policy / appearance ----
   const [autoAccept, setAutoAccept] = useState(false);
@@ -96,6 +105,7 @@ export default function Settings() {
     setTReview(String(s.capacity?.tariff?.review ?? ""));
     setTBounce(String(s.capacity?.tariff?.bounce ?? ""));
     const pol = s.policy ?? {};
+    setLangSel(pol.lang === "en" ? "en" : "de");
     setAutoAccept(!!pol.auto_accept_green);
     setAutoModes(pol.auto_dispatch_modes ?? ["do", "prepare"]);
     setAutoPrio(pol.auto_dispatch_priority || "never");
@@ -113,9 +123,26 @@ export default function Settings() {
     setRegRole(s.registration?.default_role ?? "client");
   }, [s]);
 
-  const ok = (msg: string) => Alert.alert("Gespeichert", msg);
-  const fail = (e: unknown) => Alert.alert("Fehler", String((e as Error).message));
+  const ok = (msg: string) => Alert.alert(tr("settings.savedTitle"), msg);
+  const fail = (e: unknown) => Alert.alert(tr("ui.error"), String((e as Error).message));
   async function invalidate() { await qc.invalidateQueries({ queryKey: ["settings"] }); }
+
+  // The language is policy data like any other field; the daemon merges the
+  // policy patch, so writing lang alone leaves the rest of the policy intact.
+  // No success alert: the whole UI flipping language IS the confirmation.
+  // ["me"] is the query that must refetch - useLang() reads /me, because that
+  // is the only endpoint every role can call (/dashboard/data strips settings
+  // for operators and 403s clients).
+  async function saveLang(l: Lang) {
+    if (l === lang) return;
+    setLangSel(l);
+    try {
+      await api.saveSettings({ policy: { lang: l } });
+      await invalidate();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      await qc.invalidateQueries({ queryKey: ["metrics"] });
+    } catch (e) { fail(e); }
+  }
 
   async function saveBusiness() {
     try {
@@ -124,7 +151,7 @@ export default function Settings() {
           touch_budget_day: Number(budget) || 0,
           tariff: { ...(s?.capacity?.tariff ?? {}),
             steer: Number(tSteer) || 1, review: Number(tReview) || 1, bounce: Number(tBounce) || 3 } } });
-      await invalidate(); ok("Business-Einstellungen.");
+      await invalidate(); ok(tr("settings.saved.business"));
     } catch (e) { fail(e); }
   }
 
@@ -135,21 +162,22 @@ export default function Settings() {
           auto_dispatch_priority: autoPrio === "never" ? "" : autoPrio,
           chat_configure_roles: chatRoles, lane_labels: laneLabels },
         appearance: { backdrop } });
-      await invalidate(); await qc.invalidateQueries({ queryKey: ["metrics"] }); ok("Policy & Aussehen.");
+      await invalidate(); await qc.invalidateQueries({ queryKey: ["metrics"] }); ok(tr("settings.saved.policy"));
     } catch (e) { fail(e); }
   }
 
   async function saveJira() {
     try {
       await api.saveSettings({ jira: { base: jBase.trim(), email: jEmail.trim(), api_token: jToken.trim(), default_jql: jJql.trim() } });
-      ok("Jira-Verbindung.");
+      ok(tr("settings.saved.jira"));
     } catch (e) { fail(e); }
   }
   async function importJira() {
     setBusyImp(true);
     try {
       const r = await api.post<{ imported?: number; error?: string }>("/import/jira", { jql: jJql.trim() });
-      Alert.alert(r.error ? "Fehler" : "Import", r.error ?? `${r.imported ?? 0} Issues in den Backlog geladen.`);
+      Alert.alert(r.error ? tr("ui.error") : tr("settings.import.title"),
+        r.error ?? tr("settings.import.jiraDone", { n: r.imported ?? 0 }));
     } catch (e) { fail(e); } finally { setBusyImp(false); }
   }
   async function importUrl() {
@@ -157,7 +185,7 @@ export default function Settings() {
     setBusyImp(true);
     try {
       const r = await api.post<{ id?: string; error?: string }>("/import/url", { url: impUrl.trim() });
-      Alert.alert(r.error ? "Fehler" : "Import", r.error ?? "Der Agent schlägt Schritte vor (siehe Processes).");
+      Alert.alert(r.error ? tr("ui.error") : tr("settings.import.title"), r.error ?? tr("settings.import.urlDone"));
       if (!r.error) setImpUrl("");
     } catch (e) { fail(e); } finally { setBusyImp(false); }
   }
@@ -167,14 +195,14 @@ export default function Settings() {
       await api.saveSettings({ nightshift: { enabled: nsOn, window: nsWindow.trim(),
         repos: nsRepos.split("\n").map((r) => r.trim()).filter(Boolean),
         max_cards: Number(nsMax) || 3, idle_minutes: Number(nsIdle) || 20 } });
-      await invalidate(); ok("Night-shift.");
+      await invalidate(); ok(tr("settings.saved.night"));
     } catch (e) { fail(e); }
   }
   async function planNow() {
     setNsBusy(true);
     try {
       await api.post("/nightshift/plan", {});
-      Alert.alert("Scouts planen", "Die Scouts arbeiten im Hintergrund - in ein paar Minuten \"Plan anzeigen\" tippen.");
+      Alert.alert(tr("settings.night.planStartedTitle"), tr("settings.night.planStartedMsg"));
     } catch (e) { fail(e); } finally { setNsBusy(false); }
   }
   async function showPlan() {
@@ -182,16 +210,16 @@ export default function Settings() {
       const r = await api.get<{ plan?: NightPlan; report?: string | null }>("/nightshift");
       setNsPlan(r.plan ?? null);
       setNsReport(r.report ?? null);
-      if (!r.plan) Alert.alert("Kein Plan", "Noch kein Plan vorhanden - erst \"Plan jetzt\".");
+      if (!r.plan) Alert.alert(tr("settings.night.noPlanTitle"), tr("settings.night.noPlanMsg"));
     } catch (e) { fail(e); }
   }
 
   async function pairPhone() {
-    if (!relayUrl.trim()) { Alert.alert("Relay fehlt", "Erst eine Relay-URL speichern."); return; }
+    if (!relayUrl.trim()) { Alert.alert(tr("settings.pair.noRelayTitle"), tr("settings.pair.noRelayMsg")); return; }
     setPairBusy(true);
     try {
       const r = await api.post<{ url?: string; room?: string; daemon_pub?: string; device_token?: string; expires_in?: number; error?: string }>("/relay/pair", {});
-      if (r.error) { Alert.alert("Fehler", r.error); return; }
+      if (r.error) { Alert.alert(tr("ui.error"), r.error); return; }
       setPairTtlMin(Math.round((r.expires_in ?? 900) / 60));
       // Byte-compatible with applyPairing / the web pairing code: base64(JSON{u,r,k,t}).
       const code = util.encodeBase64(util.decodeUTF8(JSON.stringify({ u: r.url, r: r.room, k: r.daemon_pub, t: r.device_token })));
@@ -206,41 +234,41 @@ export default function Settings() {
     } catch (e) { fail(e); } finally { setPairBusy(false); }
   }
   async function saveRelay() {
-    try { await api.saveSettings({ relay: { url: relayUrl.trim() } }); await invalidate(); ok("Relay-URL."); }
+    try { await api.saveSettings({ relay: { url: relayUrl.trim() } }); await invalidate(); ok(tr("settings.saved.relay")); }
     catch (e) { fail(e); }
   }
 
   // ---- users ----
   async function addUser() {
-    if (!uName.trim() || !uPw) { Alert.alert("Fehlt", "Name und Passwort nötig."); return; }
+    if (!uName.trim() || !uPw) { Alert.alert(tr("settings.users.missingTitle"), tr("settings.users.missingMsg")); return; }
     try {
       const r = await api.post<{ error?: string }>("/users", { name: uName.trim(), password: uPw, role: uRole });
-      if (r.error) { Alert.alert("Fehler", r.error); return; }
+      if (r.error) { Alert.alert(tr("ui.error"), r.error); return; }
       setUName(""); setUPw(""); await refetchUsers();
     } catch (e) { fail(e); }
   }
   function changeRole(u: UserRow) {
-    Alert.alert(u.name, "Rolle setzen", [
+    Alert.alert(u.name, tr("settings.users.setRole"), [
       ...["owner", "operator", "client"].filter((r) => r !== u.role).map((r) => ({
         text: r, onPress: async () => { try { await api.setRole(u.name, r); await refetchUsers(); } catch (e) { fail(e); } },
       })),
-      { text: "Abbrechen", style: "cancel" as const },
+      { text: tr("ui.cancel"), style: "cancel" as const },
     ]);
   }
   async function resetPw(u: UserRow) {
-    const pw = await promptText(`Neues Passwort für ${u.name} (8+ Zeichen):`);
-    if (pw == null) { if (!isWeb && Platform.OS !== "ios") Alert.alert("Nicht unterstützt", "Passwort-Reset am Desktop/Web nutzen."); return; }
-    if (pw.length < 8) { Alert.alert("Zu kurz", "Mindestens 8 Zeichen."); return; }
-    try { await api.post(`/users/${u.name}/password`, { password: pw }); Alert.alert("OK", "Passwort gesetzt."); }
+    const pw = await promptText(tr("settings.users.newPwPrompt", { name: u.name }));
+    if (pw == null) { if (!isWeb && Platform.OS !== "ios") Alert.alert(tr("settings.users.unsupportedTitle"), tr("settings.users.unsupportedMsg")); return; }
+    if (pw.length < 8) { Alert.alert(tr("settings.users.tooShortTitle"), tr("settings.users.tooShortMsg")); return; }
+    try { await api.post(`/users/${u.name}/password`, { password: pw }); Alert.alert(tr("settings.users.pwSetTitle"), tr("settings.users.pwSetMsg")); }
     catch (e) { fail(e); }
   }
   async function delUser(u: UserRow) {
-    if (!(await confirmAsync(`${u.name} löschen?`, "Sessions und Tokens dieses Users sterben sofort."))) return;
+    if (!(await confirmAsync(tr("settings.users.delConfirm", { name: u.name }), tr("settings.users.delMsg")))) return;
     try { await api.post(`/users/${u.name}/delete`, {}); await refetchUsers(); } catch (e) { fail(e); }
   }
   async function addToken(u: UserRow) {
-    const label = (await promptText(`Token-Label für ${u.name}:`, "device")) ?? "device";
-    try { const r = await api.issueToken(u.name, label); await Clipboard.setStringAsync(r.token); Alert.alert("Token kopiert", "Device-Token in der Zwischenablage."); await refetchUsers(); }
+    const label = (await promptText(tr("settings.users.tokenLabelPrompt", { name: u.name }), "device")) ?? "device";
+    try { const r = await api.issueToken(u.name, label); await Clipboard.setStringAsync(r.token); Alert.alert(tr("settings.users.tokenCopiedTitle"), tr("settings.users.tokenCopiedMsg")); await refetchUsers(); }
     catch (e) { fail(e); }
   }
   // Owner invites a teammate: issue THEIR personal token and package it with the
@@ -256,57 +284,65 @@ export default function Settings() {
         // above; without the flag the daemon would also mint (and orphan) an
         // owner device token per invite. Opens the same single-use window.
         const p = await api.post<{ url?: string; room?: string; daemon_pub?: string; error?: string }>("/relay/pair", { invite: true });
-        if (p.error || !p.url) { Alert.alert("Fehler", p.error ?? "Relay-Pairing fehlgeschlagen."); return; }
+        if (p.error || !p.url) { Alert.alert(tr("ui.error"), p.error ?? tr("settings.pair.relayFailed")); return; }
         payload = { u: p.url, r: p.room ?? "", k: p.daemon_pub ?? "", t: r.token };
       } else {
         payload = { b: useConfig.getState().baseUrl, t: r.token };
       }
       const code = util.encodeBase64(util.decodeUTF8(JSON.stringify(payload)));
       await Clipboard.setStringAsync(code);
-      Alert.alert("Einladung kopiert", `${u.name} (${u.role}) — der Code enthält Daemon-Zugang + persönlichen Token. Teilen; im HelmDeck unter „More" einfügen.`);
+      Alert.alert(tr("settings.users.inviteCopiedTitle"), tr("settings.users.inviteCopiedMsg", { name: u.name, role: u.role }));
       await refetchUsers();
     } catch (e) { fail(e); }
   }
   async function revokeToken(u: UserRow, token: string) {
-    if (!(await confirmAsync("Token widerrufen?", "Dieses Gerät verliert sofort den Zugang."))) return;
+    if (!(await confirmAsync(tr("settings.users.revokeTitle"), tr("settings.users.revokeMsg")))) return;
     try { await api.post(`/users/${u.name}/revoke`, { token }); await refetchUsers(); } catch (e) { fail(e); }
   }
   async function saveReg() {
-    try { await api.saveSettings({ registration: { open: regOpen, invite_code: regCode.trim(), default_role: regRole } }); ok("Registrierung."); }
+    try { await api.saveSettings({ registration: { open: regOpen, invite_code: regCode.trim(), default_role: regRole } }); ok(tr("settings.saved.registration")); }
     catch (e) { fail(e); }
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-      <ScreenHeader title="Settings" onBack={() => router.back()} />
+      <ScreenHeader title={tr("nav.settings")} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 60,
         width: "100%", maxWidth: wide ? 1100 : undefined, alignSelf: "center" }}>
         {isLoading ? <ActivityIndicator color={t.accent} /> : null}
-        {error ? <Text style={{ color: t.danger }}>Nur für Owner / Desktop nicht erreichbar.</Text> : null}
+        {error ? <Text style={{ color: t.danger }}>{tr("settings.ownerOnly")}</Text> : null}
         {s ? (
           <>
+            {/* Language first: it changes every label below it. */}
             <Panel>
-              <SectionLabel text="business" />
+              <SectionLabel text={tr("ui.language")} />
+              <Hint text={tr("settings.lang.hint")} />
+              <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === lang)?.label ?? LANG_LABELS[0]]}
+                single onToggle={(label) => saveLang(langId(label))} />
+            </Panel>
+
+            <Panel>
+              <SectionLabel text={tr("settings.sec.business")} />
               <FormGrid wide={wide}>
                 <View>
-                  <Caption text="Standard-Repo" />
+                  <Caption text={tr("settings.business.repo")} />
                   <TextInput value={repo} onChangeText={setRepo} autoCapitalize="none" style={field} />
                 </View>
                 <View>
-                  <Caption text="WIP-Limit" />
+                  <Caption text={tr("settings.business.wip")} />
                   <TextInput value={wip} onChangeText={setWip} keyboardType="numeric" style={field} />
                 </View>
                 <View>
-                  <Caption text="Wert/Karte" />
+                  <Caption text={tr("settings.business.value")} />
                   <TextInput value={value} onChangeText={setValue} keyboardType="numeric" style={field} />
                 </View>
                 <View>
-                  <Caption text="Touch-Budget/Tag" />
+                  <Caption text={tr("settings.business.budget")} />
                   <TextInput value={budget} onChangeText={setBudget} keyboardType="numeric" style={field} />
                 </View>
               </FormGrid>
               <View style={{ height: 10 }} />
-              <Caption text="Touch-Tarif (steer / review / bounce)" />
+              <Caption text={tr("settings.business.tariff")} />
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <View style={{ flex: 1 }}>
                   <TextInput value={tSteer} onChangeText={setTSteer} keyboardType="numeric" style={field} />
@@ -319,26 +355,26 @@ export default function Settings() {
                 </View>
               </View>
               <View style={{ height: 12 }} />
-              <Btn label="Speichern" onPress={saveBusiness} />
+              <Btn label={tr("ui.save")} onPress={saveBusiness} />
             </Panel>
 
             <Panel>
-              <SectionLabel text="automation policy" />
-              <Hint text="Wie Arbeit fliesst ist konfigurierbar. Was sie vertrauenswürdig macht - Auth, Audit, das Gate - ist im Code fixiert." />
-              <Toggle label="Auto-accept bei grünem Gate (Kette läuft ohne Mensch weiter)" value={autoAccept} onChange={setAutoAccept} />
+              <SectionLabel text={tr("settings.sec.automation")} />
+              <Hint text={tr("settings.policy.hint")} />
+              <Toggle label={tr("settings.policy.autoAccept")} value={autoAccept} onChange={setAutoAccept} />
               <View style={{ height: 8 }} />
-              <Caption text="Auto-dispatch Modi (Kette darf selbst starten)" />
+              <Caption text={tr("settings.policy.autoModes")} />
               <ChipPick options={AUTO_MODES} selected={autoModes}
                 onToggle={(m) => setAutoModes(autoModes.includes(m) ? autoModes.filter((x) => x !== m) : [...autoModes, m])} />
               <View style={{ height: 10 }} />
-              <Caption text="Backlog Self-dispatch (ab dieser Priorität)" />
+              <Caption text={tr("settings.policy.autoPrio")} />
               <ChipPick options={PRIOS} selected={[autoPrio]} single onToggle={setAutoPrio} />
               <View style={{ height: 10 }} />
-              <Caption text="Chat darf Workspace umkonfigurieren (Rollen)" />
+              <Caption text={tr("settings.policy.chatRoles")} />
               <ChipPick options={CHAT_ROLES} selected={chatRoles}
                 onToggle={(r) => setChatRoles(chatRoles.includes(r) ? chatRoles.filter((x) => x !== r) : [...chatRoles, r])} />
               <View style={{ height: 10 }} />
-              <Caption text="Lane-Labels (Umbenennen; Semantik bleibt fix)" />
+              <Caption text={tr("settings.policy.laneLabels")} />
               <FormGrid wide={wide}>
                 {LANES.map((k) => (
                   <View key={k}>
@@ -348,68 +384,68 @@ export default function Settings() {
                 ))}
               </FormGrid>
               <View style={{ height: 10 }} />
-              <Caption text="Backdrop-Theme (ambient, hinter dem Glas)" />
+              <Caption text={tr("settings.policy.backdrop")} />
               <ChipPick options={BACKDROPS} selected={[backdrop]} single onToggle={setBackdrop} />
               <View style={{ height: 12 }} />
-              <Btn label="Policy & Aussehen speichern" onPress={savePolicy} />
+              <Btn label={tr("settings.policy.save")} onPress={savePolicy} />
             </Panel>
 
             <Panel>
-              <SectionLabel text="data flows - import" />
-              <Caption text="Jira Cloud (Base-URL · E-Mail · API-Token · Default-JQL)" />
+              <SectionLabel text={tr("settings.sec.dataflows")} />
+              <Caption text={tr("settings.jira.caption")} />
               <FormGrid wide={wide}>
                 <TextInput value={jBase} onChangeText={setJBase} autoCapitalize="none" placeholder="https://your.atlassian.net" placeholderTextColor={t.txtPlaceholder} style={field} />
-                <TextInput value={jEmail} onChangeText={setJEmail} autoCapitalize="none" placeholder="email" placeholderTextColor={t.txtPlaceholder} style={field} />
-                <TextInput value={jToken} onChangeText={setJToken} autoCapitalize="none" secureTextEntry placeholder="API token" placeholderTextColor={t.txtPlaceholder} style={field} />
-                <TextInput value={jJql} onChangeText={setJJql} autoCapitalize="none" placeholder='JQL, z.B. project = ABC' placeholderTextColor={t.txtPlaceholder} style={field} />
+                <TextInput value={jEmail} onChangeText={setJEmail} autoCapitalize="none" placeholder={tr("settings.jira.emailPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+                <TextInput value={jToken} onChangeText={setJToken} autoCapitalize="none" secureTextEntry placeholder={tr("settings.jira.tokenPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+                <TextInput value={jJql} onChangeText={setJJql} autoCapitalize="none" placeholder={tr("settings.jira.jqlPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
               </FormGrid>
               <View style={{ height: 10 }} />
               <View style={{ flexDirection: "row", gap: 8 }}>
-                <View style={{ flex: 1 }}><Btn label="Verbindung speichern" kind="ghost" onPress={saveJira} /></View>
-                <View style={{ flex: 1 }}><Btn label={busyImp ? "…" : "Jetzt importieren"} onPress={importJira} disabled={busyImp} /></View>
+                <View style={{ flex: 1 }}><Btn label={tr("settings.jira.saveConn")} kind="ghost" onPress={saveJira} /></View>
+                <View style={{ flex: 1 }}><Btn label={busyImp ? "…" : tr("settings.jira.importNow")} onPress={importJira} disabled={busyImp} /></View>
               </View>
               <View style={{ height: 14 }} />
-              <Caption text="Von einer Webseite (Agent leitet einen Prozess ab)" />
+              <Caption text={tr("settings.import.urlCaption")} />
               <TextInput value={impUrl} onChangeText={setImpUrl} autoCapitalize="none" placeholder="https://..." placeholderTextColor={t.txtPlaceholder} style={field} />
               <View style={{ height: 8 }} />
-              <Btn label={busyImp ? "…" : "Seite importieren"} onPress={importUrl} disabled={busyImp} />
+              <Btn label={busyImp ? "…" : tr("settings.import.page")} onPress={importUrl} disabled={busyImp} />
             </Panel>
 
             <Panel>
-              <SectionLabel text="night-shift" />
-              <Hint text="Während du schläfst plant ein Scout pro Repo Verbesserungen und arbeitet sie als Karten durchs Gate - nichts merged sich selbst, Ergebnisse warten im Review." />
-              <Toggle label="aktiviert" value={nsOn} onChange={setNsOn} />
+              <SectionLabel text={tr("settings.sec.night")} />
+              <Hint text={tr("settings.night.hint")} />
+              <Toggle label={tr("settings.night.enabled")} value={nsOn} onChange={setNsOn} />
               <View style={{ height: 8 }} />
               <FormGrid wide={wide}>
                 <View>
-                  <Caption text="Fenster (always oder z.B. 01:00-07:00)" />
+                  <Caption text={tr("settings.night.window")} />
                   <TextInput value={nsWindow} onChangeText={setNsWindow} autoCapitalize="none" placeholder="always" placeholderTextColor={t.txtPlaceholder} style={field} />
                 </View>
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <View style={{ flex: 1 }}>
-                    <Caption text="Max/Nacht" />
+                    <Caption text={tr("settings.night.max")} />
                     <TextInput value={nsMax} onChangeText={setNsMax} keyboardType="numeric" style={field} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Caption text="Idle (min)" />
+                    <Caption text={tr("settings.night.idle")} />
                     <TextInput value={nsIdle} onChangeText={setNsIdle} keyboardType="numeric" style={field} />
                   </View>
                 </View>
               </FormGrid>
               <View style={{ height: 10 }} />
-              <Caption text="Repo-Ordner (ein absoluter Pfad pro Zeile; Reihenfolge = Priorität)" />
+              <Caption text={tr("settings.night.repos")} />
               <TextInput value={nsRepos} onChangeText={setNsRepos} autoCapitalize="none" multiline
                 placeholder={"C:\\Users\\you\\Downloads\\myrepo"} placeholderTextColor={t.txtPlaceholder}
                 style={[field, { minHeight: 84, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 }]} />
               <View style={{ height: 10 }} />
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                <View style={{ flex: 1, minWidth: 120 }}><Btn label="Speichern" onPress={saveNight} /></View>
-                <View style={{ flex: 1, minWidth: 120 }}><Btn label={nsBusy ? "plant…" : "Plan jetzt"} kind="ghost" onPress={planNow} disabled={nsBusy} /></View>
-                <View style={{ flex: 1, minWidth: 120 }}><Btn label="Plan anzeigen" kind="ghost" onPress={showPlan} /></View>
+                <View style={{ flex: 1, minWidth: 120 }}><Btn label={tr("ui.save")} onPress={saveNight} /></View>
+                <View style={{ flex: 1, minWidth: 120 }}><Btn label={nsBusy ? tr("settings.night.planning") : tr("settings.night.planNow")} kind="ghost" onPress={planNow} disabled={nsBusy} /></View>
+                <View style={{ flex: 1, minWidth: 120 }}><Btn label={tr("settings.night.showPlan")} kind="ghost" onPress={showPlan} /></View>
               </View>
               {nsPlan?.repos ? (
                 <View style={{ marginTop: 12, gap: 4 }}>
-                  {nsPlan.made ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>Plan von {nsPlan.made}</Text> : null}
+                  {nsPlan.made ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("settings.night.planFrom", { when: nsPlan.made })}</Text> : null}
                   {Object.entries(nsPlan.repos).map(([r, block]) => (
                     <View key={r} style={{ marginTop: 6 }}>
                       <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>{r.split(/[\\/]/).pop()}</Text>
@@ -425,7 +461,7 @@ export default function Settings() {
                 <View style={{ marginTop: 12 }}>
                   <Pressable onPress={() => setNsReportOpen((o) => !o)}>
                     <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>
-                      {nsReportOpen ? "▾" : "▸"} Letzter Shift-Report
+                      {nsReportOpen ? "▾" : "▸"} {tr("settings.night.lastReport")}
                     </Text>
                   </Pressable>
                   {nsReportOpen ? (
@@ -439,55 +475,55 @@ export default function Settings() {
             </Panel>
 
             <Panel>
-              <SectionLabel text="mobile - pair a phone (e2e encrypted)" />
-              <Hint text="Das Telefon erreicht diesen Daemon über dein Relay (HTTPS). Traffic ist Ende-zu-Ende NaCl-verschlüsselt - das Relay sieht nur Chiffretext." />
-              <Caption text="Relay-URL (wo du das Relay hostest, HTTPS)" />
+              <SectionLabel text={tr("settings.sec.mobile")} />
+              <Hint text={tr("settings.pair.hint")} />
+              <Caption text={tr("settings.pair.relayUrl")} />
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <TextInput value={relayUrl} onChangeText={setRelayUrl} autoCapitalize="none" placeholder="https://relay.example.com"
                   placeholderTextColor={t.txtPlaceholder} style={[field, { flex: 1 }]} />
-                <Btn label="Speichern" kind="ghost" onPress={saveRelay} />
+                <Btn label={tr("ui.save")} kind="ghost" onPress={saveRelay} />
               </View>
               <View style={{ height: 10 }} />
-              <Btn label={pairBusy ? "…" : "Telefon koppeln"} onPress={pairPhone} disabled={pairBusy} />
+              <Btn label={pairBusy ? "…" : tr("settings.pair.pairPhone")} onPress={pairPhone} disabled={pairBusy} />
               {pairCode ? (
                 <View style={{ marginTop: 10, gap: 8 }}>
-                  <Hint text={`Der Code ist ${pairTtlMin} Min gültig und lässt genau EIN neues Gerät herein – danach am Desktop neu erzeugen. Bereits gekoppelte Geräte bleiben verbunden.`} />
+                  <Hint text={tr("settings.pair.ttl", { min: pairTtlMin })} />
                   {pairLink ? (
                     <View style={{ gap: 6 }}>
-                      <Hint text="Ohne Scan: diesen Link ans Telefon schicken (WhatsApp/Signal an dich selbst) und antippen — HelmDeck öffnet sich und koppelt." />
+                      <Hint text={tr("settings.pair.linkHint")} />
                       <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
                         <Text selectable numberOfLines={2} style={{ color: t.accent, fontSize: 11.5 }}>{pairLink}</Text>
                       </View>
                       <View style={{ flexDirection: "row", gap: 8 }}>
-                        <View style={{ flex: 1 }}><Btn label="Link kopieren" onPress={async () => { await Clipboard.setStringAsync(pairLink); Alert.alert("Kopiert", "Pairing-Link kopiert - ans Telefon senden und antippen."); }} /></View>
+                        <View style={{ flex: 1 }}><Btn label={tr("settings.pair.copyLink")} onPress={async () => { await Clipboard.setStringAsync(pairLink); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.linkCopied")); }} /></View>
                         {isWeb && typeof navigator !== "undefined" && (navigator as unknown as { share?: unknown }).share ? (
-                          <View style={{ flex: 1 }}><Btn label="Teilen" kind="ghost" onPress={() => { (navigator as unknown as { share: (d: { url: string }) => Promise<void> }).share({ url: pairLink }).catch(() => {}); }} /></View>
+                          <View style={{ flex: 1 }}><Btn label={tr("settings.pair.share")} kind="ghost" onPress={() => { (navigator as unknown as { share: (d: { url: string }) => Promise<void> }).share({ url: pairLink }).catch(() => {}); }} /></View>
                         ) : null}
                       </View>
                     </View>
                   ) : null}
                   {qr ? (
                     <View style={{ alignItems: "center", gap: 6 }}>
-                      <Hint text="Mit der Handykamera scannen — öffnet HelmDeck und koppelt automatisch." />
+                      <Hint text={tr("settings.pair.qrHint")} />
                       <Image source={{ uri: qr }} style={{ width: 220, height: 220, borderRadius: 10, backgroundColor: "#fff" }} />
                     </View>
                   ) : null}
-                  <Hint text="Kein Scan? Code kopieren und am Telefon einfügen (More → Pair). Enthält ein Einmal-Token - wie ein Passwort behandeln." />
+                  <Hint text={tr("settings.pair.codeHint")} />
                   <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
                     <Text selectable numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{pairCode}</Text>
                   </View>
-                  <Btn label="Code kopieren" kind="ghost" onPress={async () => { await Clipboard.setStringAsync(pairCode); Alert.alert("Kopiert", "Pairing-Code in der Zwischenablage."); }} />
+                  <Btn label={tr("settings.pair.copyCode")} kind="ghost" onPress={async () => { await Clipboard.setStringAsync(pairCode); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.codeCopied")); }} />
                 </View>
               ) : null}
             </Panel>
 
             <Panel>
-              <SectionLabel text={`users (${users?.length ?? 0})`} />
+              <SectionLabel text={tr("settings.sec.users", { n: users?.length ?? 0 })} />
               {(users ?? []).map((u) => (
                 <View key={u.name} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 6 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{u.name}</Text>
-                    {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{actors[u.name]}t heute</Text> : null}
+                    {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{tr("settings.users.touchesToday", { n: actors[u.name] })}</Text> : null}
                     <Pressable onPress={() => changeRole(u)}>
                       <Chip text={u.role} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
                     </Pressable>
@@ -497,7 +533,7 @@ export default function Settings() {
                       {u.tokens.map((tk) => (
                         <View key={tk.token} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>{tk.label} · …{tk.token.slice(-6)}</Text>
-                          <Pressable onPress={() => revokeToken(u, tk.token)}><Text style={{ color: t.danger, fontSize: 11 }}>widerrufen</Text></Pressable>
+                          <Pressable onPress={() => revokeToken(u, tk.token)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
                         </View>
                       ))}
                     </View>
@@ -507,38 +543,38 @@ export default function Settings() {
                       style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.accent + "1F",
                         borderColor: t.accent + "66", borderWidth: 1, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3 }}>
                       <Ionicons name="person-add-outline" size={12} color={t.accent} />
-                      <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>Einladen</Text>
+                      <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.users.invite")}</Text>
                     </Pressable>
-                    <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>+ Token</Text></Pressable>
-                    <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>Passwort</Text></Pressable>
-                    <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>löschen</Text></Pressable>
+                    <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.addToken")}</Text></Pressable>
+                    <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.password")}</Text></Pressable>
+                    <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.delete")}</Text></Pressable>
                   </View>
                 </View>
               ))}
               <View style={{ height: 12, borderTopWidth: 1, borderTopColor: t.glassBorder, marginTop: 4 }} />
-              <Caption text="Neuen User anlegen" />
+              <Caption text={tr("settings.users.newUser")} />
               <FormGrid wide={wide}>
-                <TextInput value={uName} onChangeText={setUName} autoCapitalize="none" placeholder="username" placeholderTextColor={t.txtPlaceholder} style={field} />
-                <TextInput value={uPw} onChangeText={setUPw} autoCapitalize="none" secureTextEntry placeholder="password (8+)" placeholderTextColor={t.txtPlaceholder} style={field} />
+                <TextInput value={uName} onChangeText={setUName} autoCapitalize="none" placeholder={tr("settings.users.namePh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+                <TextInput value={uPw} onChangeText={setUPw} autoCapitalize="none" secureTextEntry placeholder={tr("settings.users.pwPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
               </FormGrid>
               <View style={{ height: 8 }} />
               <ChipPick options={["operator", "client", "owner"]} selected={[uRole]} single onToggle={setURole} />
               <View style={{ height: 10 }} />
-              <Btn label="User anlegen" onPress={addUser} />
+              <Btn label={tr("settings.users.create")} onPress={addUser} />
             </Panel>
 
             <Panel>
-              <SectionLabel text="registration" />
-              <Hint text="Lässt Leute selbst ein Konto auf dem Login anlegen. Teile den Invite-Code; neue Konten bekommen die Default-Rolle." />
-              <Toggle label="offen (kein Code nötig)" value={regOpen} onChange={setRegOpen} />
+              <SectionLabel text={tr("settings.sec.registration")} />
+              <Hint text={tr("settings.reg.hint")} />
+              <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={setRegOpen} />
               <View style={{ height: 8 }} />
-              <Caption text="Invite-Code (leer = Registrierung aus)" />
+              <Caption text={tr("settings.reg.code")} />
               <TextInput value={regCode} onChangeText={setRegCode} autoCapitalize="none" style={field} />
               <View style={{ height: 10 }} />
-              <Caption text="Default-Rolle" />
+              <Caption text={tr("settings.reg.role")} />
               <ChipPick options={["client", "operator"]} selected={[regRole]} single onToggle={setRegRole} />
               <View style={{ height: 12 }} />
-              <Btn label="Registrierung speichern" onPress={saveReg} />
+              <Btn label={tr("settings.reg.save")} onPress={saveReg} />
             </Panel>
           </>
         ) : null}

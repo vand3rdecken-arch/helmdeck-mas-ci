@@ -38,6 +38,10 @@ if daemon_py:
 if os.path.exists(os.path.join("tools", "design_lint_selftest.py")):
     run("design_lint_selftest", [PY, "tools/design_lint_selftest.py"])
 
+# 2b. one language, no leftovers (the mix creeps back one hardcoded label at a time)
+if os.path.exists(os.path.join("tools", "i18n_lint.py")):
+    run("i18n_lint", [PY, "tools/i18n_lint.py"])
+
 # 3. self-sandboxed unit tests (skip the live-server e2e_* ones)
 for path in sorted(glob.glob(os.path.join("tests", "test_*.py"))):
     name = os.path.basename(path)

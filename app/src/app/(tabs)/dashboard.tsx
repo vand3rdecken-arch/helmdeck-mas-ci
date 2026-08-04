@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import type { Me } from "@/data/types";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
 import { PMPanel } from "@/ui/pm_panel";
@@ -12,6 +13,7 @@ const isWeb = Platform.OS === "web";
 
 export default function DashboardTab() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;
@@ -22,11 +24,11 @@ export default function DashboardTab() {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
       <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700", paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 6 }}>
-        Dashboard
+        {tr("nav.dashboard")}
       </Text>
       <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingBottom: 120, gap: 12, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}>
         {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
-        {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar.</Text> : null}
+        {error ? <Text style={{ color: t.danger }}>{tr("ui.offline")}</Text> : null}
         {data ? (
           (() => {
             const panels = dashPanels(data);

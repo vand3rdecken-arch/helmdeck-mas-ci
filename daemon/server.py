@@ -481,7 +481,20 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(processes.list_processes(
                     client=user["name"] if user["role"] == "client" else None)))
             if p == "/me":
-                return self._send(200, json.dumps({"name": user["name"], "role": user["role"]}))
+                # Carries the PUBLIC UI policy, not just the identity: the
+                # workspace language (and the lane labels the board renders) has
+                # to reach EVERY role, or the app is German for an operator and
+                # English for the owner - exactly the split this replaced.
+                # /dashboard/data can't serve it: it strips settings for
+                # non-owners and 403s clients. Whitelisted, never the whole
+                # settings blob - that stays owner-only.
+                import events
+                pol = events.settings().get("policy") or {}
+                return self._send(200, json.dumps({
+                    "name": user["name"], "role": user["role"],
+                    "ui": {"lang": pol.get("lang", "de"),
+                           "lane_labels": pol.get("lane_labels") or {}},
+                }))
             if p == "/settings":
                 import events
                 if user["role"] != "owner":

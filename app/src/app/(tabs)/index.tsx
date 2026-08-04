@@ -5,6 +5,7 @@ import { Platform, Pressable, Text, useWindowDimensions, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import { useT } from "@/i18n";
 import { BoardList } from "@/ui/board";
 import { GlowBackdrop } from "@/ui/glow";
 import { useTheme } from "@/theme";
@@ -13,6 +14,7 @@ import { useTheme } from "@/theme";
  *  headroom. Owner-facing at-a-glance load. */
 function CapacityMeter() {
   const t = useTheme();
+  const tr = useT();
   const { data } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
   const c = data?.capacity;
   if (!c) return null;
@@ -23,15 +25,16 @@ function CapacityMeter() {
   );
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-      <Item label="WIP" value={`${c.wip}/${c.wip_limit}`} />
-      <Item label="Touches" value={`${c.touches_today}/${c.touch_budget_day}`} />
-      <Item label="Headroom" value={`${c.headroom}`} />
+      <Item label={tr("board.wip")} value={`${c.wip}/${c.wip_limit}`} />
+      <Item label={tr("board.touches")} value={`${c.touches_today}/${c.touch_budget_day}`} />
+      <Item label={tr("board.headroom")} value={`${c.headroom}`} />
     </View>
   );
 }
 
 export default function BoardTab() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -42,7 +45,7 @@ export default function BoardTab() {
       {/* desktop header: title · capacity meter · + Neu */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 16, paddingTop: insets.top + 10,
         paddingHorizontal: wide ? 20 : 16, paddingBottom: 6 }}>
-        <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700" }}>Board</Text>
+        <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700" }}>{tr("nav.board")}</Text>
         {wide ? <CapacityMeter /> : null}
         <View style={{ flex: 1 }} />
       </View>

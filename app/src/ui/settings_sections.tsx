@@ -1,6 +1,7 @@
 import React from "react";
 import { Alert, Platform, Pressable, Text, TextInput, View, type TextStyle, type ViewStyle } from "react-native";
 
+import { t as tr } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { hasPromptHost, openPrompt } from "@/ui/prompt_host";
@@ -103,7 +104,7 @@ export function promptText(title: string, def = ""): Promise<string | null> {
     const A = Alert as unknown as { prompt?: (t: string, m: string | undefined, cbs: unknown, type?: string, d?: string) => void };
     if (Platform.OS === "ios" && A.prompt) {
       A.prompt(title, undefined, [
-        { text: "Abbrechen", style: "cancel", onPress: () => resolve(null) },
+        { text: tr("ui.cancel"), style: "cancel", onPress: () => resolve(null) },
         { text: "OK", onPress: (v?: string) => resolve(v ?? null) },
       ], "plain-text", def);
     } else resolve(null);
@@ -114,7 +115,7 @@ export function confirmAsync(title: string, msg: string): Promise<boolean> {
   if (isWeb && typeof window !== "undefined" && window.confirm) return Promise.resolve(window.confirm(`${title}\n\n${msg}`));
   return new Promise((resolve) => {
     Alert.alert(title, msg, [
-      { text: "Abbrechen", style: "cancel", onPress: () => resolve(false) },
+      { text: tr("ui.cancel"), style: "cancel", onPress: () => resolve(false) },
       { text: "OK", style: "destructive", onPress: () => resolve(true) },
     ]);
   });
