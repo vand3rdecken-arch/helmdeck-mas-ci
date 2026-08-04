@@ -208,8 +208,7 @@ def brief(goal=None, model=""):
     pace = _pace(econ)
     cum = 0
     for ms in out.get("milestones", []):
-        tt = sum(int(x.get("est_turns") or 0) for x in ms.get("tasks", [])
-                 if str(x.get("status")) != "done" and str(x.get("est_turns") or "0").isdigit())
+        tt = int(ms.get("est_turns") or 0) if str(ms.get("status")) != "done" else 0
         cum += tt
         ms["est_turns"] = tt
         ms["eta_days"] = _days(tt, pace)
@@ -241,29 +240,52 @@ def brief(goal=None, model=""):
     return out
 
 
+def _epic_description(ms):
+    """The PMP-scoped, owner-language body for ONE epic card: a user story,
+    acceptance criteria (Definition of Done), why it's next, and the work
+    breakdown (WBS) as an in-card checklist - never separate tickets. No card
+    ids, file paths, or internal jargon; the owner reads this cold."""
+    parts = []
+    story = (ms.get("user_story") or "").strip()
+    if story:
+        parts.append("NUTZERGESCHICHTE\n" + story)
+    done_when = [str(d).strip() for d in (ms.get("done_when") or []) if str(d).strip()]
+    if done_when:
+        parts.append("FERTIG, WENN\n" + "\n".join("- " + d for d in done_when))
+    why_now = (ms.get("why_now") or "").strip()
+    if why_now:
+        parts.append("WARUM JETZT\n" + why_now)
+    steps = [str(s).strip() for s in (ms.get("steps") or []) if str(s).strip()]
+    if steps:
+        parts.append("ENTHÄLT\n" + "\n".join("- " + s for s in steps))
+    return "\n\n".join(parts) or (ms.get("name") or "")
+
+
 def plan_items(b=None):
-    """The actionable NEW work from a brief (tasks not yet on the board), ordered
-    by priority - what an executor (the night ticker) should file as cards.
-    Returns (items, brief). Each item: {title, description, priority, repo}."""
+    """The actionable NEW epics from a brief (milestones not yet on the board),
+    ordered by priority - what an executor (the night ticker) should file as
+    cards. ONE card PER MILESTONE (epic): its steps stay a checklist inside
+    that card, not separate tickets, so a card is a long-lived, context-rich
+    chat instead of a fragment. Returns (items, brief). Each item:
+    {title, description, priority, repo}."""
     import events
     b = b or brief()
     order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     default_repo = events.settings().get("default_repo") or ""
     items = []
     for ms in b.get("milestones", []):
-        for t in ms.get("tasks", []):
-            if str(t.get("status")) == "done" or t.get("card"):
-                continue
-            desc = "%s\n\nStream: %s · Milestone: %s\n[PM plan]" % (
-                t.get("why") or t.get("title", ""), t.get("stream") or "-", ms.get("name") or "-")
-            items.append({"title": t.get("title", "").strip(),
-                          "description": desc,
-                          "priority": t.get("priority", "medium"),
-                          "repo": t.get("repo") or default_repo})
-            # due dates are NOT set here - the OVERVIEW loop state builds the
-            # Timeline from the plan, so that capability lives in the loop, not
-            # in this filing code (see _build_overview).
-    items = [it for it in items if it["title"]]
+        if str(ms.get("status")) == "done" or ms.get("card"):
+            continue
+        title = (ms.get("name") or "").strip()
+        if not title:
+            continue
+        items.append({"title": title,
+                      "description": _epic_description(ms),
+                      "priority": ms.get("priority", "medium"),
+                      "repo": ms.get("repo") or default_repo})
+        # due dates are NOT set here - the OVERVIEW loop state builds the
+        # Timeline from the plan, so that capability lives in the loop, not
+        # in this filing code (see _build_overview).
     items.sort(key=lambda x: order.get(x.get("priority"), 2))
     return items, b
 
@@ -720,18 +742,15 @@ def _overview_stale(plan, tracks):
         return True
     byid = {t["id"]: t for t in tracks}
     by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
-    seen = set()
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
-        for task in ms.get("tasks") or []:
-            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
-            if not c or c["id"] in seen:
-                continue
-            seen.add(c["id"])                      # a card belongs to its FIRST milestone
-            if c.get("lane") != "done" and (c.get("due") or "") != d:
-                return True
+        c = byid.get(ms.get("card")) or by_title.get((ms.get("name") or "").strip().lower())
+        if not c:
+            continue
+        if c.get("lane") != "done" and (c.get("due") or "") != d:
+            return True
     return False
 
 
@@ -745,23 +764,20 @@ def _build_overview(plan):
     all_t = sessions.list_tracks()
     byid = {t["id"]: t for t in all_t}
     by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
-    seen = set()
     n = 0
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
-        for task in ms.get("tasks") or []:
-            # match by the plan's card id first (reliable), then by title
-            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
-            if not c or c["id"] in seen:
-                continue
-            seen.add(c["id"])                      # a card belongs to its FIRST milestone
-            if c.get("lane") != "done" and (c.get("due") or "") != d:
-                try:
-                    sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
-                except Exception:
-                    pass
+        # match by the plan's card id first (reliable), then by title
+        c = byid.get(ms.get("card")) or by_title.get((ms.get("name") or "").strip().lower())
+        if not c:
+            continue
+        if c.get("lane") != "done" and (c.get("due") or "") != d:
+            try:
+                sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
+            except Exception:
+                pass
     pol = dict(events.settings().get("policy") or {})
     if not (pol.get("dashboard") or {}).get("tiles"):
         pol["dashboard"] = {"tiles": ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"],
