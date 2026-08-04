@@ -105,6 +105,11 @@ export const card: Dict = {
   "card.move.to": { de: "Verschieben nach…", en: "Move to…" },
   "card.move.nextStep": { de: "nächster Schritt", en: "next step" },
   "card.move.advance": { de: "Weiterschieben", en: "Advance" },
+  "card.fastTrack.enable": { de: "⚡ Fast-Track aktivieren", en: "⚡ Enable fast-track" },
+  "card.fastTrack.disable": { de: "⚡ Fast-Track deaktivieren", en: "⚡ Disable fast-track" },
+  "card.fastTrack.hint": { de: "  (grün → auto-merge + deploy)",
+                           en: "  (green → auto-merge + deploy)" },
+  "card.fastTrack.off": { de: "Fast-Track aus", en: "Turn fast-track off" },
   "card.menu.fork": { de: "Fork", en: "Fork" },
   "card.menu.archive": { de: "Archivieren", en: "Archive" },
 

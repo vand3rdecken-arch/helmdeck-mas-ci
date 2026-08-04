@@ -57,6 +57,7 @@ export const composer: Dict = {
   "chat.thinking": { de: "… denkt", en: "… thinking" },
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
   "chat.latest": { de: "Neueste", en: "Latest" },
+  "chat.close": { de: "Chat schließen", en: "Close chat" },
 
   // -- new card ------------------------------------------------------------
   "new.title": { de: "Neue Karte", en: "New card" },

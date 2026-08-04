@@ -62,21 +62,59 @@ entfällt.
 
 ## 3. Berechtigungen (konsistent zum Formular)
 
-Managed Workflow — Manifest wird generiert. Erwartete sensible Einträge:
+Managed Workflow — das Manifest wird generiert, also ist die **einzige
+belastbare Quelle das gebaute Artefakt**, nicht die Plugin-Liste. Unten steht,
+was der aktuell ausgelieferte Build (`app.helmdeck`, versionCode 36,
+nicht-debuggable) tatsächlich anfordert — ausgelesen mit:
 
-| Permission | Quelle | Rechtfertigung |
+```
+adb shell dumpsys package app.helmdeck | sed -n '/requested permissions/,/install permissions/p'
+```
+
+| Permission | Quelle (verifiziert) | Rechtfertigung / Play-Relevanz |
 |---|---|---|
-| `INTERNET` | Core | eigener Daemon/Relay |
-| `CAMERA` | `expo-camera` (app.json-Plugin) | QR-Kopplung (`scan.tsx`), Anhang-Fotos (`attachments.ts:takePhoto`) |
-| `POST_NOTIFICATIONS` | `expo-notifications` | Push nach Runtime-Prompt (`push.ts`) |
-| `VIBRATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED` | `expo-notifications` | Zustellung |
+| `INTERNET`, `ACCESS_NETWORK_STATE` | Core / React Native | eigener Daemon/Relay |
+| `CAMERA` | `expo-camera` + `expo-image-picker` (beide Library-Manifeste) | QR-Kopplung (`scan.tsx`), Anhang-Fotos (`attachments.ts:takePhoto`) |
+| `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED` | `expo-notifications` (Library-Manifest) | Push-Zustellung, Runtime-Prompt in `push.ts` |
+| `VIBRATE`, `WAKE_LOCK` | `expo-notifications` | Zustellung |
+| `com.google.android.c2dm.permission.RECEIVE` | FCM | Push-Transport |
+| Badge-Permissions (`READ_APP_BADGE`, `*.permission.BADGE_COUNT_*`, launcher-spezifisch) | ShortcutBadger via `expo-notifications` | App-Icon-Badge; harmlos, keine Deklaration nötig |
+| `USE_BIOMETRIC`, `USE_FINGERPRINT` | `expo-secure-store` → `androidx.biometric:1.1.0` (dessen `build.gradle`) | biometrisch abgesicherter Keystore; keine Play-Deklaration nötig |
+| `BIND_GET_INSTALL_REFERRER_SERVICE` | Play-Services-AAR | Install-Referrer; keine Deklaration nötig |
+| ⚠ `SYSTEM_ALERT_WINDOW` | **nicht abschließend zugeordnet** — im JS-Baum nur in `react-native/ReactAndroid/src/debug/AndroidManifest.xml` deklariert, der Build ist aber nicht debuggable ⇒ vermutlich aus einem AAR | **Vor der Einreichung klären.** „Über anderen Apps anzeigen" ist für Nutzer sichtbar und zieht Rückfragen; die App nutzt keinerlei Overlay-API (`grep -ri overlay app/src` → nichts) |
 
-`RECORD_AUDIO` ist per `"recordAudioAndroid": false` im expo-camera-Plugin
-abgeschaltet (die App nimmt nie Audio auf). Vor dem Store-Build das gemergte
-Manifest prüfen (`npx expo prebuild -p android --no-install`, wegwerfen):
-falls `READ_MEDIA_IMAGES`/`READ_EXTERNAL_STORAGE` auftaucht, via
-expo-build-properties strippen — der Bild-Picker nutzt den System-Photo-Picker,
-und `READ_MEDIA_IMAGES` löst seit 2024 eine eigene Play-Deklaration aus.
+**Nicht enthalten** (im ausgelieferten Build geprüft): kein `RECORD_AUDIO`,
+kein `READ_MEDIA_IMAGES`, kein Standort, kein `QUERY_ALL_PACKAGES`.
+
+`RECORD_AUDIO`: `expo-camera`s Plugin fügt es per Default hinzu
+(`recordAudioAndroid` ist in `plugin/build/withCamera.js` auf `true`
+vorbelegt) — deshalb steht in `app.json` jetzt `"recordAudioAndroid": false`.
+`expo-image-picker` ist nicht in `plugins` gelistet, sein Plugin läuft also
+nicht; sein Library-Manifest deklariert `CAMERA` und
+`READ/WRITE_EXTERNAL_STORAGE` mit `maxSdkVersion="32"` (unkritisch, kein
+`READ_MEDIA_IMAGES`).
+
+### Pflicht-Check vor der Einreichung
+
+Das Store-Artefakt ist ein AAB aus einem anderen Build-Profil als der
+Hub-APK oben — die Liste **muss am Release-Artefakt** gegengeprüft werden:
+
+```
+cd app && npx expo prebuild -p android --no-install   # Wegwerf-Ausgabe, android/ NICHT committen
+grep uses-permission android/app/src/main/AndroidManifest.xml
+```
+
+Taucht `SYSTEM_ALERT_WINDOW` (oder `RECORD_AUDIO`/`READ_MEDIA_IMAGES`) dort
+auf, in `app.json` hart blocken — `android.blockedPermissions` setzt
+`tools:node="remove"` und gewinnt gegen jedes Library-Manifest
+(verifiziert in `@expo/config-plugins/build/android/Permissions.js:64`):
+
+```json
+"android": { "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"] }
+```
+
+Nicht auf Verdacht blocken: stammt das Recht doch aus dem RN-Debug-Manifest,
+nimmt ein globaler Block dem Dev-Build sein Overlay (LogBox/Dev-Menü).
 
 ## 4. Privacy-Policy-URL
 

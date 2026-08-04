@@ -158,7 +158,7 @@ export default function ChatScreen() {
     // instead of a full-screen takeover; tapping the board area closes the chat.
     return (
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: "#00000073" }}>
-        <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel="Chat schließen" />
+        <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel={tr("chat.close")} />
         <View style={{ width: 540, maxWidth: "48%" }}>{body}</View>
       </View>
     );

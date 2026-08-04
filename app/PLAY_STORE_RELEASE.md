@@ -129,12 +129,16 @@ why (no sensitive/declaration-form permissions are used):
 - ✅ CAMERA needs no Play declaration form (only location/SMS/etc. do); it
   must simply match the Data Safety answers — see `docs/store/DATA_SAFETY.md`.
 - ✅ `RECORD_AUDIO` from expo-camera is disabled via
-  `"recordAudioAndroid": false` (app.json) — the app never records audio.
-- ⚠ expo-image-picker may merge `READ_MEDIA_IMAGES`/`READ_EXTERNAL_STORAGE`;
-  the app uses the system photo picker, so if they appear in the merged
-  manifest, strip them via expo-build-properties — `READ_MEDIA_IMAGES`
-  triggers Play's Photo & Video Permissions declaration since 2024.
-- ✅ No mic, location, or QUERY_ALL_PACKAGES.
+  `"recordAudioAndroid": false` (app.json) — its plugin defaults that to
+  `true`, so this was actively being merged in. Verified absent from the
+  shipped build.
+- ⚠ **`SYSTEM_ALERT_WINDOW` is in the currently shipped build** (verified via
+  `adb shell dumpsys package app.helmdeck`) and nothing in `app/src` uses an
+  overlay. Confirm it is absent from the release AAB before submitting; if
+  present, block it via `android.blockedPermissions`. Full verified permission
+  table + the check: `docs/store/DATA_SAFETY.md` §3.
+- ✅ Verified absent from the shipped build: mic, location,
+  `READ_MEDIA_IMAGES`, QUERY_ALL_PACKAGES.
 - ⚠ Verify the final merged manifest before submitting:
   `cd app && npx expo prebuild -p android --no-install` (throwaway; don't
   commit `android/`) and read

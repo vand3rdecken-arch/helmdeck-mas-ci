@@ -239,6 +239,15 @@ export const screens: Dict = {
     en: "Desktop: Settings → Mobile app → “Pair phone” creates a fresh code (valid for 15 min, single use).",
   },
 
+  // ---- QR scanner (app/scan.tsx) ------------------------------------------
+  "scan.permTitle": { de: "Kamera für QR-Scan", en: "Camera for the QR scan" },
+  "scan.permBody": {
+    de: "HelmDeck braucht die Kamera nur, um den Pairing-QR vom Desktop zu lesen.",
+    en: "HelmDeck only needs the camera to read the pairing QR from your desktop.",
+  },
+  "scan.allow": { de: "Kamera erlauben", en: "Allow camera" },
+  "scan.hint": { de: "Pairing-QR vom Desktop scannen", en: "Scan the pairing QR from your desktop" },
+
   // ---- app & OTA updates --------------------------------------------------
   "updates.embedded": {
     de: "Basis-Build (eingebettet, kein OTA)",
