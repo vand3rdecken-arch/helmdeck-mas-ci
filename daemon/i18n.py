@@ -90,6 +90,7 @@ MESSAGES = {
     "push.pmDoneBody": {"de": "'{task}' - braucht deine Abnahme.",
                         "en": "'{task}' - needs your acceptance."},
     "push.pmStuckBody": {"de": "'{task}' - {proposal}", "en": "'{task}' - {proposal}"},
+    # the per-card autopilot escalating on its own (processes._auto_resolve)
     "push.autopilotStuck": {"de": "Autopilot: haengt", "en": "Autopilot: stuck"},
     "push.autopilotStuckBody": {
         "de": "'{task}' haengt trotz Fix-Versuchen. {proposal}",
