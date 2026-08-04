@@ -208,7 +208,10 @@ def _record_turn(t, meta):
     events.emit("turn", t["id"], cost=round(cost, 6), usage=u, models=meta.get("models") or [])
     # per-turn rewind anchor: snapshot the worktree so a message can be rewound
     # to (files restored to this point) later. Non-fatal if git isn't available.
-    if t.get("worktree") and os.path.isdir(t["worktree"]):
+    # NOT for machine cards: their "worktree" is a real folder on the owner's PC
+    # (often his home), and snapshotting every file in it each turn is both slow
+    # and none of our business - rewind is a code-worktree feature.
+    if t.get("worktree") and not t.get("machine") and os.path.isdir(t["worktree"]):
         cp = _checkpoint(t["worktree"])
         if cp:
             t.setdefault("checkpoints", []).append(
@@ -313,6 +316,8 @@ def _start(tid):
         raise
 
 def _start_inner(t):
+    if t.get("machine"):
+        return _start_machine(t)
     tid = t["id"]
     wt = _worktree_for(t["repo"], t["branch"])
     existing = _worktree_of_branch(t["repo"], t["branch"])
@@ -348,6 +353,146 @@ def _start_inner(t):
     import notify
     notify.card_event(t, "needs_you")
     return t
+
+
+# -- MACHINE tasks: the board reaches the PC, not just the repo --------------
+# A machine card is a card whose workplace is a REAL directory on this Windows
+# machine instead of a git worktree - the shape adopt_session(mode="continue")
+# already used, made first-class so the chat can DELEGATE anything that isn't
+# repo work ("open X", "sort these files", "why is the printer offline") instead
+# of refusing it. The chat still executes nothing itself; it dispatches the
+# agent that does, exactly like resolve_conflict dispatches a worker to edit.
+#
+# What is deliberately NOT weakened: auth (owner-gated at the chat action),
+# audit (filed/turn/done events + the flight recorder, same as any card),
+# economics (every turn priced), and gate-before-review - a machine card has no
+# branch and NEVER merges to main, so the code-landing gate is untouched. Its
+# gate is the owner's own accept, which is the stricter human one.
+
+MACHINE_BRANCH = "(machine)"
+
+
+def machine_policy():
+    """Owner policy for machine tasks. Defaults are permissive-for-the-owner by
+    design (it is his own PC, and a blocked chat is the bug we are fixing);
+    house rules may RESTRICT - never the other way round, per the charter.
+      policy.machine {enabled, roles, roots, perm}
+        enabled: false switches the capability off entirely
+        roles:   who may dispatch machine work (default owner only)
+        roots:   [] = the whole machine; else allowed parent directories
+        perm:    driver permission mode (headless needs bypassPermissions to be
+                 able to run commands at all - an unanswerable prompt IS a block)"""
+    import events
+    p = dict((events.settings().get("policy") or {}).get("machine") or {})
+    p.setdefault("enabled", True)
+    p.setdefault("roles", ["owner"])
+    p.setdefault("roots", [])
+    p.setdefault("perm", "bypassPermissions")
+    return p
+
+
+def machine_root_ok(cwd):
+    """(ok, reason). Empty roots = the whole PC is in scope (the default)."""
+    roots = machine_policy().get("roots") or []
+    if not roots:
+        return True, ""
+    c = os.path.normcase(os.path.abspath(cwd))
+    for r in roots:
+        r = os.path.normcase(os.path.abspath(r))
+        if c == r or c.startswith(r + os.sep):
+            return True, ""
+    return False, ("'%s' liegt ausserhalb der erlaubten Ordner (policy.machine.roots: %s)"
+                   % (cwd, ", ".join(roots)))
+
+
+def new_machine_task(cwd, task, actor="owner", priority="medium", description="",
+                     dispatch=True, driver="claude", value=None, model=""):
+    """File (and by default start) a task that runs ON THIS MACHINE in `cwd`.
+    Same card, same audit, same economics - only the workplace differs."""
+    import events
+    pol = machine_policy()
+    if not pol.get("enabled", True):
+        raise RuntimeError("machine tasks are switched off (policy.machine.enabled=false)")
+    cwd = os.path.abspath(os.path.expandvars(os.path.expanduser(cwd or os.path.expanduser("~"))))
+    if not os.path.isdir(cwd):
+        raise RuntimeError("no such directory on this machine: %s" % cwd)
+    ok, why = machine_root_ok(cwd)
+    if not ok:
+        raise RuntimeError(why)
+    t = new_track(cwd, MACHINE_BRANCH, task, lane="backlog", actor=actor,
+                  priority=priority, description=description, driver=driver,
+                  value=value, model=model, perm=pol.get("perm", "bypassPermissions"))
+    cur = _db.track_get(t["id"]) or t
+    cur["machine"] = True
+    cur["worktree"] = cwd            # the driver's cwd - a real folder, no worktree
+    _save_track(cur)
+    from actionlog import ActionLog
+    ActionLog(cur["run_dir"]).log("note", "MACHINE task filed - workplace %s (by %s)" % (cwd, actor))
+    events.emit("machine", cur["id"], action="filed", cwd=cwd, actor=actor)
+    if dispatch:
+        return move_lane(cur["id"], "working", actor=actor)
+    return cur
+
+
+def _start_machine(t):
+    """Dispatch a machine card: no worktree, no branch - just open the session in
+    its directory and run the first turn there."""
+    import events
+    tid = t["id"]
+    cwd = t.get("worktree") or t.get("repo")
+    if not cwd or not os.path.isdir(cwd):
+        raise RuntimeError("machine task has no working directory: %r" % cwd)
+    from actionlog import ActionLog
+    log = ActionLog(t["run_dir"])
+    log.log("note", "DISPATCHED (machine) -> %s" % cwd)
+    log.log("steer", t["task"])
+    events.emit("lane", tid, frm=t.get("lane"), to="working")
+    t["worktree"] = cwd; t["lane"] = "working"; t["status"] = "running"
+    _save_track(t)
+    prompt = t["task"]
+    if t.get("description"):
+        prompt += "\n\n" + t["description"]
+    if t.get("attachments"):
+        prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
+    sid, result, meta = _turn(t, prompt)
+    log.log("reply", result[:2000])
+    t = _db.track_get(tid) or t
+    t["session_id"] = sid; t["turns"] = 1
+    t["last_reply"] = result[:2000]; t["status"] = "needs_you"
+    _record_turn(t, meta)
+    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _save_track(t)
+    import notify
+    notify.card_event(t, "needs_you")
+    return t
+
+
+def _accept_machine(t, lane, actor, log):
+    """Review/Done for a machine card. There is no branch to gate or merge, so
+    Review RESTS it for the owner to judge and Done records the acceptance
+    economics. The repo deploy hook does NOT run (nothing landed in a repo)."""
+    import events
+    if lane == "review":
+        log.log("note", "REVIEW (machine): erledigt auf dem Rechner - wartet auf deine Abnahme.")
+        t["status"] = "submitted"; t["lane"] = "review"
+        t["review_report"] = ("Maschinen-Aufgabe - kein Branch, kein Merge. Pruefe das "
+                              "Ergebnis auf dem Rechner und nimm die Karte ab.")
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+        return dict(t, review_preview=True, merge_kind="machine")
+    events.emit("touch", t["id"], touch="review", actor=actor)
+    te = [e for e in events.read_events() if e.get("track") == t["id"]]
+    mode = events._completion_mode(te, t.get("turns"))
+    events.emit("done", t["id"], mode=mode, ai_cost=t.get("ai_cost", 0.0),
+                value=t.get("value"), models=t.get("models", []),
+                tokens_in=t.get("tokens_in", 0), tokens_out=t.get("tokens_out", 0))
+    events.emit("machine", t["id"], action="accepted", cwd=t.get("worktree") or "", actor=actor)
+    log.log("note", "ACCEPTED (machine, %s) - AI $%.4f, value %s"
+            % (mode, t.get("ai_cost", 0.0), t.get("value")))
+    t["status"] = "accepted"; t["mode"] = mode; t["lane"] = "done"
+    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+    events.emit("lane", t["id"], frm="review", to="done")
+    return t
+
 
 # -- the review gate: work may only reach the client when it is green ----
 
@@ -519,16 +664,23 @@ def _pull_main_into_branch(t):
     return "markers:" + (files or _err[:150])
 
 
-def dispatch_conflict_resolution(card_id, actor="board copilot"):
+def dispatch_conflict_resolution(card_id, actor="board copilot", background=True):
     """Hand a REAL <<<<<<< merge conflict to the card's OWN worker as an edit-only
     task - the chat itself never edits code, but it can dispatch the card's agent.
     Sets up (or reuses) conflict markers in the worker's worktree via
     _pull_main_into_branch, then steers the worker to merge the markers by plain
     EDITING (never a git merge). On the next move to done, _autocommit completes
-    the merge and the gate runs. Returns a human-readable status string."""
+    the merge and the gate runs. Returns a human-readable status string.
+
+    background=False runs the steer synchronously (the PM coordinator uses this
+    to chain delegate -> re-submit on its own thread; the chat keeps True)."""
     t = _find(_load(), card_id)
     if not t:
         return "no card '%s'" % card_id
+    if t.get("machine"):
+        return ("'%s' ist eine Maschinen-Aufgabe (Ordner %s) ohne Branch - es gibt keinen "
+                "Merge-Konflikt. Steuere sie einfach weiter."
+                % (card_id, t.get("worktree") or "?"))
     wt = t.get("worktree")
     if not wt or not os.path.isdir(wt):
         return "%s has no worktree - dispatch/start the card first" % t.get("branch", card_id)
@@ -558,6 +710,10 @@ def dispatch_conflict_resolution(card_id, actor="board copilot"):
              "zusammen und ENTFERNE alle Markierungen restlos. Nur editieren - kein git, "
              "kein merge oder commit. Wenn keine Markierung mehr uebrig ist, bist du fertig; "
              "der Harness committet und merged dann selbst." % flist)
+    if not background:
+        steer(t["id"], instr, actor=actor, source="conflict-resolution")
+        return ("Konfliktaufloesung durch den Worker von %s gelaufen (Dateien: %s) - "
+                "jetzt neu einreichen, dann committet+merged der Harness." % (t.get("branch", card_id), flist))
     import threading
     threading.Thread(target=steer, args=(t["id"], instr),
                      kwargs={"actor": actor, "source": "conflict-resolution"}, daemon=True).start()
@@ -666,6 +822,9 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         return _start(tid)   # idempotent: resumes position if already started
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
+    if t.get("machine") and lane in ("review", "done"):
+        # no branch, no merge - the owner's accept IS the gate (see _accept_machine)
+        return _accept_machine(t, lane, actor, log)
     if lane in ("review", "done"):
         # Two verbs sharing one prep: clean up + commit, then the gate. REVIEW then
         # CLASSIFIES the merge (dry-run) and RESTS on Review showing the verdict -
@@ -678,6 +837,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                    "nur editieren - und reiche dann neu ein.")
             log.log("note", "CONFLICT MARKERS OPEN - stays on Review to resolve: " + msg[:200])
             t["status"] = "bounced"; t["lane"] = "review"   # stay on Review, not back to Working
+            t.pop("gate_report", None)                      # the CURRENT blocker is the conflict
             t["merge_report"] = msg; t["merge_kind"] = "conflict"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
@@ -693,6 +853,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             punch = " | ".join(p.split("\n")[0] for p in problems)
             log.log("note", "GATE FAILED - stays on Review to fix: " + punch[:400])
             t["status"] = "bounced"; t["lane"] = "review"; t["gate_report"] = problems   # stay on Review
+            t.pop("merge_report", None); t.pop("merge_kind", None)   # the CURRENT blocker is the gate
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
             t = dict(t); t["gate_failed"] = True
@@ -811,6 +972,11 @@ def park_and_retry_merge(tid, actor="owner"):
     t = _find(tracks, tid)
     if not t:
         raise RuntimeError("no such track: " + tid)
+    if t.get("machine"):
+        # its "repo" is a folder on the owner's PC - never run branch surgery there
+        return ("'%s' ist eine Maschinen-Aufgabe (Ordner %s), kein Branch - da gibt es "
+                "nichts zu parken. Steuere sie einfach weiter."
+                % (tid, t.get("worktree") or "?"))
     repo = t.get("repo")
     if not repo or not is_git_repo(repo):
         return "cannot park: card '%s' has no git repo" % tid

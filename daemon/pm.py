@@ -448,34 +448,41 @@ def _notify_deliveries(day, tracks, st, pm):
     otherwise - this is the proactive-not-nagging bit. NOT presence-gated: a
     delivery matters whether or not you're idle.
 
-    A bounce is only escalated to you AFTER the coordinator has tried to delegate
-    the fix (id in day['resolved']) - or immediately if autonomy isn't 'act', when
-    the PM won't auto-resolve. This keeps the PM 'delegate first, escalate second'."""
+    A bounce is only escalated to you AFTER the coordinator has EXHAUSTED its
+    delegation attempts (id in day['resolved']) - or immediately if autonomy isn't
+    'act', when the PM won't auto-resolve. Every escalation carries a CONCRETE
+    unblock proposal (_unblock_proposal), never just 'it is stuck'. The chat
+    message goes out even without FCM - push is an extra channel, not the gate."""
     auto = pm.get("autonomy", "act")
     resolved = set(day.get("resolved", []))
+    fcm = None
     try:
         import notify
-        if not notify.fcm_ready():
-            return
+        if notify.fcm_ready():
+            fcm = notify
     except Exception:
-        return
+        pass
     notified = set(day.setdefault("notified", []))
     disp = set(day.get("dispatched", []))
     changed = False
     for t in tracks:
-        if t["id"] not in disp or t["id"] in notified:
+        if t["id"] in notified:
             continue
         s = t.get("status")
         task = (t.get("task") or "").replace("\n", " ")[:60]
-        if s == "needs_you":
-            notify.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
+        if s == "needs_you" and t["id"] in disp:
+            if fcm:
+                fcm.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
             _say("Fertig: '%s' ist geliefert und wartet auf deine Abnahme (oder Bounce). Sag mir Bescheid oder tipp die Karte an." % task)
             notified.add(t["id"]); changed = True
-        elif s == "bounced" and (auto != "act" or t["id"] in resolved):
-            # escalate only once the auto-delegate already ran (or won't run)
-            notify.push_fcm("PM: haengt", "'%s' - haengt trotz Fix-Versuch, schau mal." % task, t["id"])
-            _say("Achtung: '%s' haengt weiter (auch nach meinem Fix-Versuch). Ich brauch dich - "
-                 "neu starten oder anders angehen?" % task)
+        elif s == "bounced" and (t["id"] in resolved or (auto != "act" and t["id"] in disp)):
+            # escalate only once the coordinator gave up (or won't auto-resolve) -
+            # and ALWAYS with a concrete next step attached
+            prop = _unblock_proposal(t)
+            if fcm:
+                fcm.push_fcm("PM: haengt", "'%s' - %s" % (task, prop[:140]), t["id"])
+            _say("Achtung: '%s' haengt weiter - meine Fix-Versuche haben nicht gereicht. %s"
+                 % (task, prop))
             notified.add(t["id"]); changed = True
     if changed:
         day["notified"] = list(notified)
@@ -494,48 +501,195 @@ def _backlog(tracks, pm, day):
         key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
 
 
+# -- RESOLVE: the coordinator's resilience ladder ------------------------------
+# On ANY bounce the PM actively finds a path forward before it ever bothers you:
+#   classify the blocker (dispatch failed / dirty shared checkout / real merge
+#   conflict / gate red) -> delegate the matching fix -> RE-SUBMIT so the gate,
+#   not a human, decides whether the card is unstuck -> if it bounces AGAIN,
+#   retry once with a DIFFERENT approach -> only then escalate, and always with
+#   a concrete unblock proposal attached (_unblock_proposal).
+_RESOLVE_MAX = 2            # delegation attempts per card per day before escalating
+_resolving = set()          # card ids with a fix currently in flight (thread running)
+_resolving_lock = threading.Lock()   # guards _resolving + loopstate writes from threads
+
+
+def _bounce_kind(t):
+    """Classify WHY a card bounced, from its persisted state:
+      dispatch - never got a worktree (dispatch/start failed) -> retry the start
+      dirty    - 'conflict' that is really git refusing to merge over an
+                 uncommitted shared checkout -> park_and_retry_merge (resolve_blocker)
+      conflict - real <<<<<<< markers -> the card's own worker resolves by editing
+      gate     - gate red / error / zombie note -> steer the worker with the reason"""
+    import sessions
+    wt = t.get("worktree")
+    if not wt or not os.path.isdir(wt):
+        return "dispatch"
+    if sessions._is_dirty_block(t.get("merge_report") or ""):
+        return "dirty"
+    if t.get("merge_kind") == "conflict" and t.get("merge_report"):
+        return "conflict"
+    return "gate"
+
+
+def _unblock_proposal(t):
+    """The concrete next step attached to EVERY escalation - the owner never gets
+    a bare 'it is stuck', always a decision they can take in one move."""
+    kind = _bounce_kind(t)
+    branch = t.get("branch") or t.get("id", "")
+    if kind == "dispatch":
+        err = ((t.get("last_reply") or "").split("\n")[0])[:160] or "Dispatch-Fehler"
+        return ("Vorschlag: Repo/Setup pruefen (%s) und die Karte dann wieder auf "
+                "'In Arbeit' ziehen - meine automatischen Neustarts haben es nicht behoben." % err)
+    if kind == "dirty":
+        return ("Vorschlag: sag im Chat 'resolve_blocker %s' - das parkt die uncommitteten "
+                "Aenderungen im Haupt-Checkout auf einen wip-Branch (nichts geht verloren)." % branch)
+    if kind == "conflict":
+        rep = ((t.get("merge_report") or "").split("\n")[0])[:160]
+        return ("Vorschlag: sag im Chat 'resolve_conflict %s' fuer einen weiteren Versuch - "
+                "oder entscheide, ob der Branch anders aufgesetzt werden soll (%s)." % (branch, rep))
+    reason = (" | ".join(p.split("\n")[0] for p in (t.get("gate_report") or []))
+              or (t.get("last_error") or ""))[:200] or "Review rot"
+    return ("Vorschlag: entscheide die Ursache '%s' - steuere den Worker mit deiner "
+            "Entscheidung oder zieh die Karte zurueck ins Backlog." % reason)
+
+
+def _bump_attempt(tid):
+    """Count a delegation attempt (thread-safe: resolve threads and the tick
+    share the loopstate file). Returns the attempt number just started (1-based)."""
+    with _resolving_lock:
+        st = _loopstate()
+        day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
+        att = day.setdefault("resolve_attempts", {})
+        att[tid] = att.get(tid, 0) + 1
+        _save_loopstate(st)
+        return att[tid]
+
+
+def _give_up(tid):
+    """Mark a card escalation-ready: attempts exhausted, _notify_deliveries now
+    pings the owner ONCE - with the unblock proposal attached."""
+    with _resolving_lock:
+        st = _loopstate()
+        day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
+        if tid not in day.setdefault("resolved", []):
+            day["resolved"].append(tid)
+        _save_loopstate(st)
+
+
 def _bounced_to_resolve(tracks, pm, day):
-    """Bounced cards in ALLOWED repos the PM hasn't already tried to auto-resolve
-    today. The coordinator DELEGATES the fix (real conflict -> the card's own
-    worker; gate bounce -> steer the worker with the reason) before escalating to
-    you. Needs an existing worktree - there must be an agent to delegate to."""
+    """Bounced cards in ALLOWED repos the coordinator can still move forward:
+    fewer than _RESOLVE_MAX attempts today, not given up on (day['resolved']),
+    no fix currently in flight. Cards WITHOUT a worktree count too - a failed
+    dispatch is retried, not silently abandoned."""
     allow = {os.path.normcase(r) for r in (pm.get("repos") or [])}
-    tried = set(day.get("resolved", []))
+    given_up = set(day.get("resolved", []))
+    attempts = day.get("resolve_attempts") or {}
+    with _resolving_lock:
+        busy = set(_resolving)
     return [t for t in tracks
-            if t.get("status") == "bounced" and t["id"] not in tried
+            if t.get("status") == "bounced" and t["id"] not in given_up
+            and t["id"] not in busy
+            and attempts.get(t["id"], 0) < _RESOLVE_MAX
             and t.get("mode") not in ("human", "teach", "cowork")
-            and t.get("worktree")
             and (not allow or os.path.normcase(t.get("repo") or "") in allow)]
 
 
 def _resolve_next(pm, st, day):
-    """DELEGATE the fix for one bounced card - the PM's coordinator role. A real
-    merge conflict goes to the card's worker via dispatch_conflict_resolution; any
-    other bounce (gate red, error) steers the worker with the concrete reason.
-    Each card is attempted ONCE per day (day['resolved']); a second bounce then
-    escalates to you via _notify_deliveries."""
+    """Kick ONE delegation attempt for the next bounced card, on its own thread
+    (a fix can take minutes; the tick must not block). Attempts are counted in
+    day['resolve_attempts']; after _RESOLVE_MAX failed attempts the card moves to
+    day['resolved'] and _notify_deliveries escalates it WITH a proposal."""
     import sessions
     todo = _bounced_to_resolve(sessions.list_tracks(), pm, day)
     if not todo:
         return
     t = todo[0]
-    day.setdefault("resolved", []).append(t["id"]); _save_loopstate(st)
-    task = (t.get("task") or "")[:60]
-    if t.get("merge_kind") == "conflict":
-        sessions.dispatch_conflict_resolution(t["id"], actor="pm")
-        _activity("resolve", "Merge-Konflikt an Worker delegiert: " + task, card=t["id"])
-        _say("Ich hab den Merge-Konflikt in '%s' an den Worker delegiert - er loest die "
-             "Markierungen (nur editieren), dann landet die Karte." % task)
+    with _resolving_lock:
+        if t["id"] in _resolving:
+            return
+        _resolving.add(t["id"])
+    attempt = _bump_attempt(t["id"])
+    threading.Thread(target=_resolve_card, args=(t["id"], attempt), daemon=True,
+                     name="pm-resolve").start()
+
+
+def _resolve_card(tid, attempt):
+    """One delegation attempt (runs on its own thread): pick the matching unblock
+    path, then RE-SUBMIT to Review so the gate verdict decides whether the card
+    is unstuck - the loop never waits for a human to press retry. A second
+    attempt explicitly demands a DIFFERENT approach from the worker."""
+    import sessions
+    note = ""
+    try:
+        t = sessions._find(sessions._load(), tid)
+        if not t or t.get("status") != "bounced":
+            return
+        kind = _bounce_kind(t)
+        task = (t.get("task") or "").replace("\n", " ")[:60]
+        if attempt == 1 and kind != "dispatch":
+            _say("'%s' ist gebounct (%s) - ich kuemmere mich: Fix delegiert, danach "
+                 "reiche ich die Karte selbst neu ein." % (task, kind))
+        if kind == "dispatch":
+            _activity("resolve", "Dispatch schlug fehl - starte neu (Versuch %d): %s"
+                      % (attempt, task), card=tid)
+            sessions.move_lane(tid, "working", actor="pm")   # idempotent re-dispatch
+        elif kind == "dirty":
+            _activity("resolve", "Unsauberer Haupt-Checkout blockiert - parke + pruefe neu: "
+                      + task, card=tid)
+            note = sessions.park_and_retry_merge(tid, actor="pm")
+        else:
+            if kind == "conflict":
+                _activity("resolve", "Merge-Konflikt an Worker delegiert (Versuch %d): %s"
+                          % (attempt, task), card=tid)
+                note = sessions.dispatch_conflict_resolution(tid, actor="pm", background=False)
+                if "resolve_blocker" in note:
+                    # mis-filed: the 'conflict' is really a dirty shared checkout -
+                    # switch tools instead of stalling on the wrong one
+                    _activity("resolve", "Kein Marker-Konflikt, sondern Checkout-Blocker - "
+                              "wechsle auf park+retry: " + task, card=tid)
+                    note = sessions.park_and_retry_merge(tid, actor="pm")
+            else:   # gate red / error / zombie
+                reason = (" | ".join(t.get("gate_report") or []) or t.get("last_error")
+                          or "Review rot")[:500]
+                if attempt <= 1:
+                    instr = ("Die Karte ist beim Review gebounct. Grund: %s. Behebe die "
+                             "Ursache im Code (nur editieren, kein git); das Neu-Einreichen "
+                             "uebernehme ich." % reason)
+                else:
+                    instr = ("Zweiter Anlauf - der erste Fix hat den Bounce NICHT behoben. "
+                             "Grund weiterhin: %s. Waehle einen ANDEREN Ansatz: hinterfrage "
+                             "die Annahme hinter dem letzten Fix, lies die Fehlermeldung "
+                             "woertlich und mach die kleinste Aenderung, die die Ursache "
+                             "trifft (nur editieren, kein git)." % reason)
+                _activity("resolve", "Fix an Worker delegiert (Versuch %d): %s"
+                          % (attempt, task), card=tid)
+                sessions.steer(tid, instr, actor="pm", source="pm-resolve")
+            # delegate-then-verify: re-submit so the gate re-runs NOW; a green gate
+            # parks the card on Review as 'submitted' for your accept (accept/merge
+            # stay gated to you - the law), a red one bounces for the next rung.
+            # Unconditional on status: 'already resolved, just re-submit' is a
+            # real dispatch_conflict_resolution outcome that leaves it bounced.
+            cur = sessions._find(sessions._load(), tid)
+            if cur and cur.get("lane") in ("working", "review"):
+                sessions.move_lane(tid, "review", actor="pm")
+    except Exception as e:
+        note = ("%s" % e)[:200]
+    finally:
+        with _resolving_lock:
+            _resolving.discard(tid)
+    t = sessions._find(sessions._load(), tid)
+    task = ((t or {}).get("task") or "").replace("\n", " ")[:60]
+    if t and t.get("status") != "bounced":
+        _activity("resolve", "Wieder frei (Versuch %d): %s" % (attempt, task), card=tid)
+        _say("Geschafft: '%s' ist wieder frei%s" % (task, (" - " + note[:200]) if note else "."))
+    elif attempt >= _RESOLVE_MAX:
+        _give_up(tid)
+        _activity("blocked", "Haengt trotz %d Fix-Versuchen - eskaliere mit Vorschlag: %s"
+                  % (attempt, task), card=tid)
+        # the escalation itself (push + proposal) goes out via _notify_deliveries
     else:
-        reason = (" | ".join(t.get("gate_report") or []) or t.get("last_error") or "Review rot")[:500]
-        instr = ("Die Karte ist beim Review gebounct. Grund: %s. Behebe die Ursache im Code "
-                 "(nur editieren, kein git) und reiche dann neu ein." % reason)
-        import threading
-        threading.Thread(target=sessions.steer, args=(t["id"], instr),
-                         kwargs={"actor": "pm", "source": "pm-resolve"}, daemon=True).start()
-        _activity("resolve", "Gate-Bounce an Worker delegiert: " + task, card=t["id"])
-        _say("'%s' ist am Review gebounct - ich hab den Worker beauftragt, es zu fixen und "
-             "neu einzureichen." % task)
+        _activity("resolve", "Versuch %d hat nicht gereicht - naechster Anlauf mit anderem "
+                  "Ansatz: %s" % (attempt, task), card=tid)
 
 
 def _launch_checkin(pm, st):
@@ -632,17 +786,24 @@ def _state():
     day = st.get(_today(), {})
     disp = set(day.get("dispatched", []))
     notif = set(day.get("notified", []))
-    if any(t["id"] in disp and t["id"] not in notif and t.get("status") in ("needs_you", "bounced") for t in tracks):
-        return ("NOTIFY", "Fertige/haengende Karten melden.")
+    res = set(day.get("resolved", []))
+    auto0 = pm.get("autonomy", "act")
+    if any(t["id"] not in notif and (
+            (t.get("status") == "needs_you" and t["id"] in disp)
+            or (t.get("status") == "bounced"
+                and (t["id"] in res or (auto0 != "act" and t["id"] in disp))))
+           for t in tracks):
+        return ("NOTIFY", "Fertige/haengende Karten melden (mit Vorschlag).")
     acting = _in_window(pm) and _board_idle(pm)          # you're away -> may act
     if time.time() - st.get("last_plan_ts", 0) >= pm.get("replan_minutes", 120) * 60:
         return ("PLAN", "Plan ist veraltet - neu planen.") if acting else ("WAIT", "Plan veraltet, aber du bist da.")
     plan = latest_plan()
     if plan and _overview_stale(plan, tracks):
         return ("OVERVIEW", "Dashboard + Timeline aus dem Plan bauen.") if acting else ("WAIT", "Uebersicht veraltet, aber du bist da.")
-    # COORDINATOR: unblock what's stuck (delegate the fix) BEFORE starting new work
+    # COORDINATOR: unblock what's stuck (delegate + re-submit, bis zu
+    # _RESOLVE_MAX Anlaeufe mit anderem Ansatz) BEFORE starting new work
     if pm.get("autonomy", "act") == "act" and _bounced_to_resolve(tracks, pm, day):
-        return ("RESOLVE", "Gebouncte Karte an den Worker delegieren.") if acting else ("WAIT", "Bounce zu fixen, aber du bist da.")
+        return ("RESOLVE", "Gebouncte Karte entstoeren (delegieren + neu einreichen).") if acting else ("WAIT", "Bounce zu fixen, aber du bist da.")
     paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
     if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
         return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
