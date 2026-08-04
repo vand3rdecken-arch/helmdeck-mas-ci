@@ -30,6 +30,24 @@ export const screens: Dict = {
   "automation.no": { de: "nein", en: "no" },
   "automation.repos": { de: "Repos ({n})", en: "repos ({n})" },
   "automation.noRepos": { de: "keine", en: "none" },
+  "automation.openMap": { de: "Loop-Map ansehen", en: "View loop map" },
+  "automation.configPolicy": { de: "Policy (konfigurierbar)", en: "Policy (configurable)" },
+  "automation.nightSection": { de: "Nachtschicht", en: "Night shift" },
+  "automation.save": { de: "Speichern", en: "Save" },
+  // config_schema knob labels (rendered generically from the daemon schema)
+  "cfg.autoAccept": { de: "Grün automatisch abnehmen & mergen", en: "Auto-accept & merge green" },
+  "cfg.autoModes": { de: "Auto-Dispatch-Modi", en: "Auto-dispatch modes" },
+  "cfg.autoPrio": { de: "Auto-Dispatch ab Priorität", en: "Auto-dispatch from priority" },
+  "cfg.chatRoles": { de: "Wer die Policy per Chat ändern darf", en: "Who may change policy via chat" },
+  "cfg.laneLabels": { de: "Spalten-Beschriftungen", en: "Lane labels" },
+  "cfg.nightEnabled": { de: "Nachtschicht an", en: "Night shift on" },
+  "cfg.nightWindow": { de: "Zeitfenster", en: "Window" },
+  "cfg.nightMax": { de: "Max. Karten/Nacht", en: "Max cards/night" },
+  "cfg.nightIdle": { de: "Idle-Gate (Min)", en: "Idle gate (min)" },
+  "automation.movedHint": {
+    de: "Loop, Harness & Automatik-Policy sind jetzt hier gebündelt.",
+    en: "Loop, harness & automation policy now live here.",
+  },
 
   // ---- connectors ---------------------------------------------------------
   "connectors.everyMins": { de: "alle {n}m", en: "every {n}m" },
