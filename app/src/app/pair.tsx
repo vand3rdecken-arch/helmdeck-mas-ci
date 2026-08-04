@@ -5,6 +5,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
 // Handles the pairing App Link (https://<relay>/pair?c=…, verified via
@@ -19,24 +20,25 @@ import { useTheme } from "@/theme";
 // the board — the exact bug class this screen now surfaces.
 export default function Pair() {
   const t = useTheme();
+  const tr = useT();
   const router = useRouter();
   const { c } = useLocalSearchParams<{ c?: string | string[] }>();
   const url = Linking.useURL();
   const applyPairing = useConfig((s) => s.applyPairing);
-  const [msg, setMsg] = useState("Koppeln…");
+  const [msg, setMsg] = useState(() => i18nT("pair.pairing"));
   const [state, setState] = useState<"busy" | "ok" | "fail">("busy");
   const ran = useRef("");   // guard: verify once per code, not per re-render
 
   useEffect(() => {
     const code = Array.isArray(c) ? c[0] : c;
-    if (!code) { setState("fail"); setMsg("Kein Pairing-Code im Link."); return; }
+    if (!code) { setState("fail"); setMsg(i18nT("pair.noCode")); return; }
     if (ran.current === code) return;
     let inner: { u?: string; r?: string; k?: string; t?: string };
     try {
       inner = JSON.parse(atob(code.replace(/-/g, "+").replace(/_/g, "/")));
     } catch {
       ran.current = code;
-      setState("fail"); setMsg("Ungültiger Pairing-Code."); return;
+      setState("fail"); setMsg(i18nT("pair.badCode")); return;
     }
     const origin = (/^https?:\/\/[^/]+/i.exec(url ?? "") ?? [""])[0];
     // Relay url comes from the link's origin when the code omits it; if the
@@ -45,34 +47,34 @@ export default function Pair() {
     if (!inner.u && !origin) return;
     ran.current = code;
     (async () => {
-      setState("busy"); setMsg("Koppeln…");
+      setState("busy"); setMsg(i18nT("pair.pairing"));
       const applied = applyPairing(btoa(JSON.stringify({
         u: inner.u || origin, r: inner.r, k: inner.k, t: inner.t,
       })));
       if (!applied.ok) { setState("fail"); setMsg(applied.reason); return; }
-      setMsg("Verbindung prüfen…");
+      setMsg(i18nT("pair.checking"));
       try {
         await api.me();   // proves relay + E2EE + Token in one round-trip
-        setState("ok"); setMsg("Gekoppelt ✓ – Desktop erreichbar.");
+        setState("ok"); setMsg(i18nT("pair.ok"));
         setTimeout(() => router.replace("/"), 900);
       } catch (e) {
         setState("fail");
         setMsg(e instanceof AuthRequired
-          ? "Gekoppelt, aber der Token wurde abgelehnt – am Desktop einen neuen Code erzeugen."
-          : `Code übernommen, aber der Desktop antwortet nicht:\n${String((e as Error).message)}`);
+          ? i18nT("pair.tokenRejected")
+          : i18nT("pair.noAnswer", { err: String((e as Error).message) }));
       }
     })();
   }, [c, url, applyPairing, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", gap: 10, padding: 24 }}>
-      <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "600" }}>HelmDeck koppeln</Text>
+      <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "600" }}>{tr("pair.title")}</Text>
       {state === "busy" ? <ActivityIndicator color={t.accent} /> : null}
       <Text style={{ color: state === "fail" ? t.danger : state === "ok" ? t.ok : t.txtSecondary,
         fontSize: 14, textAlign: "center", lineHeight: 20 }}>{msg}</Text>
       {state === "fail" ? (
         <Text style={{ color: t.txtTertiary, fontSize: 12, textAlign: "center" }}>
-          Desktop: Settings → Mobile app → „Telefon koppeln" erzeugt einen frischen Code (15 Min gültig, einmal verwendbar).
+          {tr("pair.hint")}
         </Text>
       ) : null}
     </View>

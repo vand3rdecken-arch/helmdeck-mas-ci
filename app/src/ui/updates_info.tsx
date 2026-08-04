@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { otaPending } from "@/data/ota";
+import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { KVRow, Panel, SectionLabel } from "@/ui/kit";
 
@@ -17,7 +18,7 @@ const build = (Constants.expoConfig as { android?: { versionCode?: number } } | 
 
 function bundleLabel(): string {
   return Updates.isEmbeddedLaunch
-    ? "Basis-Build (eingebettet, kein OTA)"
+    ? i18nT("updates.embedded")
     : Updates.updateId
     ? `OTA ${Updates.updateId.slice(0, 8)} · ${Updates.createdAt ? new Date(Updates.createdAt).toLocaleString() : "?"}`
     : "Dev";
@@ -39,55 +40,57 @@ export function VersionFooter() {
  *  applies exactly like the silent path: reload in the background, or on tap. */
 export function UpdatesPanel() {
   const t = useTheme();
+  const tr = useT();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [failed, setFailed] = useState(false);
   const [staged, setStaged] = useState(otaPending.current);
 
   async function checkNow() {
-    setBusy(true); setMsg("Prüfe…");
+    setBusy(true); setFailed(false); setMsg(tr("updates.checking"));
     try {
       const r = await Updates.checkForUpdateAsync();
-      if (!r.isAvailable && !r.isRollBackToEmbedded) { setMsg("Aktuell - kein Update auf dem Server."); return; }
-      setMsg("Lade…");
+      if (!r.isAvailable && !r.isRollBackToEmbedded) { setMsg(tr("updates.upToDateNoServer")); return; }
+      setMsg(tr("updates.downloading"));
       const f = await Updates.fetchUpdateAsync();
       if (f.isNew || f.isRollBackToEmbedded) {
         otaPending.current = true; setStaged(true);
         setMsg(f.isRollBackToEmbedded
-          ? "Rollback geladen - zurück zum eingebetteten Build."
-          : "Update geladen - aktiviert sich beim nächsten Wechsel in den Hintergrund.");
-      } else setMsg("Aktuell.");
+          ? tr("updates.rollbackLoaded")
+          : tr("updates.updateLoaded"));
+      } else setMsg(tr("updates.upToDate"));
     } catch (e) {
-      setMsg(`Check fehlgeschlagen: ${String((e as Error).message)}`);
+      setFailed(true);
+      setMsg(tr("updates.checkFailed", { err: String((e as Error).message) }));
     } finally { setBusy(false); }
   }
 
   return (
     <Panel>
-      <SectionLabel text="app & updates" />
-      <KVRow k="Version" v={`v${version}${build ? ` · Build ${build}` : ""}`} />
-      <KVRow k="Runtime" v={Updates.runtimeVersion ?? "—"} />
-      <KVRow k="Kanal" v={Updates.channel || (Updates.isEnabled ? "production" : "— (dev)")} />
-      <KVRow k="Bundle" v={bundleLabel()} />
+      <SectionLabel text={tr("updates.section")} />
+      <KVRow k={tr("updates.version")} v={`v${version}${build ? ` · Build ${build}` : ""}`} />
+      <KVRow k={tr("updates.runtime")} v={Updates.runtimeVersion ?? "—"} />
+      <KVRow k={tr("updates.channel")} v={Updates.channel || (Updates.isEnabled ? "production" : "— (dev)")} />
+      <KVRow k={tr("updates.bundle")} v={bundleLabel()} />
       <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 4, marginBottom: 8 }}>
-        Updates installieren sich still: Check beim Start und beim Zurückkehren in die App,
-        aktiv nach dem nächsten Hintergrund-Wechsel. Kein Dialog - dieser Abschnitt ist der Beleg.
+        {tr("updates.silentNote")}
       </Text>
       {Updates.isEnabled ? (
         <>
           <Pressable onPress={checkNow} disabled={busy}
             style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center", opacity: busy ? 0.6 : 1 }}>
-            <Text style={{ color: "#fff", fontWeight: "600" }}>{busy ? "Prüfe…" : "Jetzt auf Update prüfen"}</Text>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{busy ? tr("updates.checking") : tr("updates.checkNow")}</Text>
           </Pressable>
           {staged ? (
             <Pressable onPress={() => Updates.reloadAsync().catch(() => {})}
               style={{ marginTop: 8, borderColor: t.accent, borderWidth: 1, borderRadius: 8, padding: 11, alignItems: "center" }}>
-              <Text style={{ color: t.accent, fontWeight: "600" }}>Jetzt neu starten & anwenden</Text>
+              <Text style={{ color: t.accent, fontWeight: "600" }}>{tr("updates.restartApply")}</Text>
             </Pressable>
           ) : null}
-          {msg ? <Text style={{ color: msg.startsWith("Check fehlgeschlagen") ? t.danger : t.txtSecondary, fontSize: 12, marginTop: 6 }}>{msg}</Text> : null}
+          {msg ? <Text style={{ color: failed ? t.danger : t.txtSecondary, fontSize: 12, marginTop: 6 }}>{msg}</Text> : null}
         </>
       ) : (
-        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>OTA ist nur im Release-Build aktiv (Dev/Expo Go: aus).</Text>
+        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("updates.otaReleaseOnly")}</Text>
       )}
     </Panel>
   );

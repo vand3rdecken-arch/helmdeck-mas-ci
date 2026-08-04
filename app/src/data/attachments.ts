@@ -16,6 +16,8 @@ import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { Platform } from "react-native";
 
+import { t } from "@/i18n";
+
 /** What the daemon accepts. `data` is BARE base64 (no data: prefix). */
 export interface Attach { name: string; data: string; mime?: string }
 
@@ -24,6 +26,8 @@ export interface Attach { name: string; data: string; mime?: string }
 // check here the file just vanishes with no explanation. Enforce + explain.
 export const MAX_FILES = 6;
 export const MAX_BYTES = 5 * 1024 * 1024;
+/** The cap as the owner reads it - used in the limit hint and the refusal text. */
+export const MAX_MB = Math.round(MAX_BYTES / 1024 / 1024);
 
 /** What Claude Code can actually read as an image. Anything else that is still
  *  an image gets transcoded to PNG (iPhone HEIC is the case that matters). */
@@ -82,7 +86,7 @@ async function fromImageAsset(a: ImagePicker.ImagePickerAsset, i: number): Promi
 export async function pickImages(): Promise<Attach[]> {
   if (!isWeb) {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) throw new Error("Kein Zugriff auf die Fotos erlaubt.");
+    if (!perm.granted) throw new Error(t("attach.noPhotoAccess"));
   }
   const res = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"], allowsMultipleSelection: true,
@@ -97,7 +101,7 @@ export async function pickImages(): Promise<Attach[]> {
  *  launchCameraAsync, and "add a photo" usually means taking one. */
 export async function takePhoto(): Promise<Attach[]> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) throw new Error("Kein Zugriff auf die Kamera erlaubt.");
+  if (!perm.granted) throw new Error(t("attach.noCameraAccess"));
   const res = await ImagePicker.launchCameraAsync({ quality: 0.8, base64: true });
   if (res.canceled) return [];
   const out = await Promise.all(res.assets.map(fromImageAsset));
@@ -153,7 +157,7 @@ export function mergeAttachments(cur: Attach[], add: Attach[]): { next: Attach[]
   const taken = ok.slice(0, room);
   const over = ok.length - taken.length;
   const msgs: string[] = [];
-  if (big.length) msgs.push(`${big.join(", ")}: über 5 MB`);
-  if (over > 0) msgs.push(`${over} weitere: max. ${MAX_FILES} Anhänge`);
+  if (big.length) msgs.push(t("attach.tooBig", { names: big.join(", "), mb: MAX_MB }));
+  if (over > 0) msgs.push(t("attach.tooMany", { n: over, max: MAX_FILES }));
   return { next: [...cur, ...taken], problem: msgs.join(" · ") || undefined };
 }

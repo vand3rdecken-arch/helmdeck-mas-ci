@@ -4,18 +4,20 @@ import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput
 import { useTheme } from "@/theme";
 import type { SteerOpts } from "@/data/client";
 import {
-  type Attach, filesToAttachments, isWeb, MAX_FILES, mergeAttachments, pickFiles,
+  type Attach, filesToAttachments, isWeb, MAX_FILES, MAX_MB, mergeAttachments, pickFiles,
   pickImages, recoverPendingImages, takePhoto,
 } from "@/data/attachments";
 import { loadDraft, saveDraft } from "@/data/drafts";
+import { useT } from "@/i18n";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string }
 
-// thinking levels — each maps to a real Claude Code budget keyword server-side
-const THINK: { id: string; short: string }[] = [
-  { id: "", short: "off" }, { id: "think", short: "think" },
-  { id: "think-hard", short: "hard" }, { id: "ultrathink", short: "ultra" },
+// thinking levels — each `id` maps to a real Claude Code budget keyword
+// server-side (never translated); `key` is only the button label.
+const THINK: { id: string; key: string }[] = [
+  { id: "", key: "composer.thinkOff" }, { id: "think", key: "composer.thinkOn" },
+  { id: "think-hard", key: "composer.thinkHard" }, { id: "ultrathink", key: "composer.thinkUltra" },
 ];
 
 // Card steer composer — ported from the archived web Composer, rebuilt for RN.
@@ -36,6 +38,7 @@ export function Composer({
   draftKey?: string;   // persist in-progress text per surface (board / each card)
 }) {
   const t = useTheme();
+  const tr = useT();
   const [text, setTextRaw] = useState("");
   const [model, setModel] = useState("auto");
   const [thinking, setThinking] = useState("");
@@ -78,7 +81,7 @@ export function Composer({
     if (!add.length) return;
     setAtts((cur) => {
       const { next, problem } = mergeAttachments(cur, add);
-      if (problem) Alert.alert("Nicht angehängt", problem);
+      if (problem) Alert.alert(tr("composer.notAttached"), problem);
       return next;
     });
   }
@@ -88,7 +91,7 @@ export function Composer({
     picking.current = true;
     setAttachMenu(false);
     try { addAttachments(await fn()); }
-    catch (e) { Alert.alert("Anhang", String((e as Error).message)); }
+    catch (e) { Alert.alert(tr("composer.attach"), String((e as Error).message)); }
     finally { picking.current = false; }
   }
 
@@ -143,14 +146,15 @@ export function Composer({
     return m ? slashCommands.filter((c) => c.name.startsWith(m[1].toLowerCase())) : [];
   }, [text, slashCommands]);
 
-  const thinkShort = THINK.find((x) => x.id === thinking)?.short ?? "off";
+  const thinkShort = tr(THINK.find((x) => x.id === thinking)?.key ?? "composer.thinkOff");
   const modeLabel = modeOptions?.find((m) => m.id === mode)?.label;
-  const modelLabel = model === "auto" ? "Auto" : model.replace("claude-", "").replace(/-\d{8}$/, "");
+  const modelLabel = model === "auto" ? tr("composer.modelAutoShort")
+    : model.replace("claude-", "").replace(/-\d{8}$/, "");
 
   function fire() {
     // an attachment alone is a valid message ("look at this") - give the agent
     // a sentence so the turn is never empty prose with a dangling file list
-    const v = text.trim() || (atts.length ? "Siehe Anhang." : "");
+    const v = text.trim() || (atts.length ? tr("composer.seeAttachment") : "");
     if (!v) return;
     const opts = buildOpts();
     if (busy) setQueued({ text: v, opts });   // hold until the agent is free
@@ -200,10 +204,10 @@ export function Composer({
           </Pressable>
         ) : null}
         <Pressable onPress={() => setAttachMenu(true)} style={toolBtn(atts.length > 0)}
-          accessibilityLabel="Anhang hinzufügen">
+          accessibilityLabel={tr("composer.addAttachment")}>
           <Ionicons name="attach" size={14} color={atts.length ? t.accent : t.txtSecondary} />
           <Text style={{ color: atts.length ? t.accent : t.txtSecondary, fontSize: 12 }}>
-            {atts.length ? `${atts.length}/${MAX_FILES}` : "Anhang"}
+            {atts.length ? `${atts.length}/${MAX_FILES}` : tr("composer.attach")}
           </Text>
         </Pressable>
       </ScrollView>
@@ -220,7 +224,7 @@ export function Composer({
                 size={12} color={t.txtTertiary} />
               <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 11.5, flexShrink: 1 }}>{a.name}</Text>
               <Pressable onPress={() => setAtts((c) => c.filter((_, j) => j !== i))} hitSlop={8}
-                accessibilityLabel={`${a.name} entfernen`}>
+                accessibilityLabel={tr("composer.removeAttachment", { name: a.name })}>
                 <Ionicons name="close-circle" size={15} color={t.txtTertiary} />
               </Pressable>
             </View>
@@ -234,12 +238,12 @@ export function Composer({
           backgroundColor: t.accent + "1A", borderColor: t.accent + "66", borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 }}>
           <ActivityIndicator size="small" color={t.accent} />
           <Pressable style={{ flex: 1 }} onPress={() => { setText(queued.text); setQueued(null); }}>
-            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>In Warteschlange — jetzt senden / bearbeiten</Text>
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>{tr("composer.queued")}</Text>
             <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12 }}>{queued.text}</Text>
           </Pressable>
           <Pressable onPress={() => { const q = queued; setQueued(null); onSend(q.text, q.opts); }}
             style={{ backgroundColor: t.accent, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 5 }}>
-            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Jetzt senden</Text>
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{tr("composer.sendNow")}</Text>
           </Pressable>
           <Pressable onPress={() => setQueued(null)} hitSlop={8}>
             <Ionicons name="close" size={18} color={t.txtTertiary} />
@@ -250,7 +254,7 @@ export function Composer({
       {/* input row */}
       <View style={{ flexDirection: "row", padding: 8, gap: 8, alignItems: "flex-end" }}>
         <TextInput value={text} onChangeText={setText} multiline
-          placeholder={placeholder ?? "Nachricht an den Agenten…"} placeholderTextColor={t.txtPlaceholder}
+          placeholder={placeholder ?? tr("composer.placeholder")} placeholderTextColor={t.txtPlaceholder}
           style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120,
             borderWidth: 1, borderColor: t.borderSubtle }} />
         {busy && onStop ? (
@@ -273,9 +277,9 @@ export function Composer({
           style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "flex-end", padding: 16 }}>
           <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, overflow: "hidden" }}>
             {[
-              ...(isWeb ? [] : [{ icon: "camera-outline" as const, label: "Foto aufnehmen", fn: takePhoto }]),
-              { icon: "image-outline" as const, label: isWeb ? "Bild wählen" : "Aus Fotos wählen", fn: pickImages },
-              { icon: "document-outline" as const, label: "Datei wählen", fn: pickFiles },
+              ...(isWeb ? [] : [{ icon: "camera-outline" as const, label: tr("composer.takePhoto"), fn: takePhoto }]),
+              { icon: "image-outline" as const, label: tr(isWeb ? "composer.pickImageWeb" : "composer.pickImage"), fn: pickImages },
+              { icon: "document-outline" as const, label: tr("composer.pickFile"), fn: pickFiles },
             ].map((o, i) => (
               <Pressable key={o.label} onPress={() => runPick(o.fn)}
                 style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14,
@@ -286,7 +290,8 @@ export function Composer({
             ))}
           </View>
           <Text style={{ color: t.txtTertiary, fontSize: 11, textAlign: "center", paddingTop: 10 }}>
-            max. 6 Anhänge · 5 MB pro Datei{isWeb ? " · Einfügen und Ablegen gehen auch" : ""}
+            {tr("composer.attachLimits", { n: MAX_FILES, mb: MAX_MB })}
+            {isWeb ? tr("composer.attachPasteDrop") : ""}
           </Text>
         </Pressable>
       </Modal>
@@ -295,14 +300,14 @@ export function Composer({
       <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
         <Pressable onPress={() => setPicker(false)} style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "center", padding: 24 }}>
           <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, maxHeight: "70%", overflow: "hidden" }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>MODEL</Text>
+            <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>{tr("composer.model")}</Text>
             <ScrollView>
               {["auto", ...models].map((raw) => {
                 // /models returns objects {id,label,desc}; older/custom setups may
                 // return plain id strings. Normalise both so we never render an
                 // object as a React child (that crashed the whole app -> black).
                 const id = typeof raw === "string" ? raw : raw.id;
-                const label = id === "auto" ? "Auto (route by task)"
+                const label = id === "auto" ? tr("composer.modelAuto")
                   : typeof raw === "string" ? raw : (raw.label || raw.id);
                 const desc = typeof raw === "string" ? "" : (raw.desc || "");
                 return (

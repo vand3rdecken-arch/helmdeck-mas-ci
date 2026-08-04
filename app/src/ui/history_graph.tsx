@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 
@@ -33,11 +34,12 @@ export function HistoryGraph({ h, onOpenCard, onFork }: {
   h: Hist; onOpenCard: (id: string) => void; onFork?: (track: string, branch: string) => void;
 }) {
   const t = useTheme();
+  const tr = useT();
   const [selected, setSelected] = useState<Selected | null>(null);
   const shownBranches = h.branches.filter((b) => b.commits.length);
   const all = [...h.main, ...shownBranches.flatMap((b) => b.commits)];
   if (!all.length) {
-    return <Text style={{ color: t.txtTertiary, fontSize: 12.5, paddingVertical: 8 }}>Noch keine Commits.</Text>;
+    return <Text style={{ color: t.txtTertiary, fontSize: 12.5, paddingVertical: 8 }}>{tr("history.noCommits")}</Text>;
   }
   const ts = (c: Commit) => new Date(c.date).getTime();
   const times = all.map(ts);
@@ -57,7 +59,7 @@ export function HistoryGraph({ h, onOpenCard, onFork }: {
             {/* day axis header */}
             <View style={{ flexDirection: "row", height: 22, borderBottomWidth: 1, borderBottomColor: t.glassBorder }}>
               <View style={{ width: LABEL_W, paddingLeft: 8, justifyContent: "center" }}>
-                <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>branch</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{tr("history.branch")}</Text>
               </View>
               <View style={{ flexDirection: "row", width: W }}>
                 {Array.from({ length: days }, (_, i) => {
@@ -71,7 +73,7 @@ export function HistoryGraph({ h, onOpenCard, onFork }: {
               </View>
             </View>
 
-            <GraphRow t={t} label={h.head} sub="the accepted truth" color={t.accent} commits={h.main} x={x} W={W} ts={ts}
+            <GraphRow t={t} label={h.head} sub={tr("history.acceptedTruth")} color={t.accent} commits={h.main} x={x} W={W} ts={ts}
               selectedHash={selected?.commit.h} onPickCommit={(c) => pick(c, h.head, t.accent)} />
             {shownBranches.map((b) => {
               const color = laneColor(t, b.lane ?? undefined);
@@ -105,6 +107,7 @@ const LABEL_W = 150;
 
 // the tapped commit's metadata, shown inline below the graph
 function CommitDetail({ t, sel, onClose }: { t: ThemeTokens; sel: Selected; onClose: () => void }) {
+  const tr = useT();
   const { commit: c } = sel;
   return (
     <View style={{ borderWidth: 1, borderColor: t.glassBorder, borderRadius: 12, backgroundColor: t.surface1, padding: 12, gap: 6 }}>

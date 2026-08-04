@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import type { Track } from "@/data/types";
+import { useT } from "@/i18n";
 import { statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, Empty, Panel, ScreenHeader } from "@/ui/kit";
@@ -22,9 +23,21 @@ function glassStyle(t: ThemeTokens) {
 
 interface ConnectorInfo { name: string; description?: string; last_run?: string | null; versions?: number; schedule?: number }
 
+// Raw daemon vocabulary -> shared chrome keys (mirrors board.tsx). An unknown
+// value falls back to the raw string, never to a blank chip.
+const STATUS_KEY: Record<string, string> = {
+  queued: "status.queued", running: "status.running", gating: "status.gating",
+  needs_you: "status.needsYou", bounced: "status.bounced",
+  submitted: "status.submitted", accepted: "status.accepted",
+};
+const PRIO_KEY: Record<string, string> = {
+  urgent: "prio.urgent", high: "prio.high", medium: "prio.medium", low: "prio.low",
+};
+
 // One produced-card tile in the connector grid — tapping opens the card detail.
 function CardTile({ k, wide }: { k: Track; wide: boolean }) {
   const t = useTheme();
+  const tr = useT();
   const router = useRouter();
   return (
     <Pressable
@@ -36,9 +49,10 @@ function CardTile({ k, wide }: { k: Track; wide: boolean }) {
     >
       <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "500" }} numberOfLines={2}>{k.task}</Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        {k.status ? <Chip text={k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
+        {k.status ? <Chip text={STATUS_KEY[k.status] ? tr(STATUS_KEY[k.status]) : k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
         {k.client ? <Chip text={k.client} /> : null}
-        {k.priority && k.priority !== "medium" ? <Chip text={k.priority} /> : null}
+        {k.priority && k.priority !== "medium"
+          ? <Chip text={PRIO_KEY[k.priority] ? tr(PRIO_KEY[k.priority]) : k.priority} /> : null}
       </View>
     </Pressable>
   );
@@ -47,6 +61,7 @@ function CardTile({ k, wide }: { k: Track; wide: boolean }) {
 function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
   { conn: ConnectorInfo; tracks: Track[]; savedMins: number; onRefresh: () => Promise<void> }) {
   const t = useTheme();
+  const tr = useT();
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;
   const [busy, setBusy] = useState(false);
@@ -62,7 +77,7 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
       await onRefresh();
       Alert.alert(typeof ok === "function" ? ok(res) : ok);
     }
-    catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
     finally { setBusy(false); }
   }
 
@@ -75,8 +90,8 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
       if (m > 0) next[conn.name] = { every_minutes: m }; else delete next[conn.name];
       await api.saveSettings({ connectors: next });
       await onRefresh();
-      Alert.alert(m > 0 ? `Alle ${m} Min geplant` : "Zeitplan entfernt");
-    } catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+      Alert.alert(m > 0 ? tr("connectors.scheduled", { n: m }) : tr("connectors.scheduleRemoved"));
+    } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
     finally { setBusy(false); }
   }
 
@@ -84,38 +99,38 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
     <Panel style={glassStyle(t)}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "600", flex: 1 }}>{conn.name}</Text>
-        {savedMins > 0 ? <Chip text={`alle ${savedMins}m`} /> : null}
+        {savedMins > 0 ? <Chip text={tr("connectors.everyMins", { n: savedMins })} /> : null}
       </View>
       {conn.description ? (
         <Text style={{ color: t.txtSecondary, fontSize: 12.5, marginTop: 2 }}>{conn.description}</Text>
       ) : null}
       <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 4 }}>
-        Letzter Lauf: {conn.last_run ?? "nie"}
+        {tr("connectors.lastRun", { when: conn.last_run ?? tr("connectors.never") })}
       </Text>
 
       {/* Actions */}
       <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
         <Pressable disabled={busy} onPress={() => act(() => api.runConnector(conn.name), (res) => {
           const n = (res as { cards?: number } | null)?.cards;
-          return typeof n === "number" ? `Gestartet — ${n} neue Backlog-Karten` : "Gestartet";
+          return typeof n === "number" ? tr("connectors.startedCards", { n }) : tr("connectors.started");
         })}
           style={{ backgroundColor: t.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, opacity: busy ? 0.6 : 1 }}>
-          <Text style={{ color: "#fff", fontSize: 13 }}>{busy ? "…" : "Jetzt laufen"}</Text>
+          <Text style={{ color: "#fff", fontSize: 13 }}>{busy ? "…" : tr("connectors.runNow")}</Text>
         </Pressable>
         {(conn.versions ?? 0) > 0 ? (
           <Pressable disabled={busy} onPress={async () => {
-            if (!await confirmAsync("Rollback?", `„${conn.name}" auf die vorherige Version zurücksetzen? Die von diesem Connector erzeugten Karten werden rückgängig gemacht.`)) return;
-            act(() => api.rollbackConnector(conn.name), "Zurückgerollt");
+            if (!await confirmAsync(tr("connectors.rollbackTitle"), tr("connectors.rollbackBody", { name: conn.name }))) return;
+            act(() => api.rollbackConnector(conn.name), tr("connectors.rolledBack"));
           }}
             style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
-            <Text style={{ color: t.txtSecondary, fontSize: 13 }}>Rollback ({conn.versions})</Text>
+            <Text style={{ color: t.txtSecondary, fontSize: 13 }}>{tr("connectors.rollbackN", { n: conn.versions ?? 0 })}</Text>
           </Pressable>
         ) : null}
       </View>
 
       {/* Editable schedule — POST /settings {connectors:{...}} is the save route. */}
       <View style={{ flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>alle</Text>
+        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("connectors.every")}</Text>
         <TextInput
           value={mins}
           onChangeText={setMins}
@@ -125,19 +140,19 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
           style={{ width: 64, color: t.txtPrimary, fontSize: 13, borderWidth: 1, borderColor: t.borderSubtle,
             borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: t.surface2 }}
         />
-        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Minuten</Text>
+        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("connectors.minutes")}</Text>
         <Pressable disabled={busy} onPress={saveSchedule}
           style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 }}>
-          <Text style={{ color: t.txtSecondary, fontSize: 13 }}>Zeitplan speichern</Text>
+          <Text style={{ color: t.txtSecondary, fontSize: 13 }}>{tr("connectors.saveSchedule")}</Text>
         </Pressable>
       </View>
 
       {/* Produced cards */}
       <View style={{ marginTop: 12, gap: 6 }}>
         <Text style={{ color: t.txtTertiary, fontSize: 11, letterSpacing: 0.8 }}>
-          {`ERZEUGTE KARTEN (${produced.length})`}
+          {tr("connectors.produced", { n: produced.length })}
         </Text>
-        {produced.length === 0 ? <Empty text="Noch keine – lass ihn laufen." /> : (
+        {produced.length === 0 ? <Empty text={tr("connectors.noneProduced")} /> : (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {produced.slice(0, 12).map((k) => <CardTile key={k.id} k={k} wide={wide} />)}
           </View>
@@ -149,6 +164,7 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
 
 export default function Connectors() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -172,12 +188,12 @@ export default function Connectors() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-      <ScreenHeader title="Connectors" onBack={() => router.back()} />
+      <ScreenHeader title={tr("nav.connectors")} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, gap: 10, paddingBottom: 40,
         width: "100%", maxWidth: wide ? 900 : undefined, alignSelf: "center" }}>
         {connectors.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-        {connectors.error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar.</Text> : null}
-        {data.length === 0 && !connectors.isLoading ? <Empty text="Keine Connectors." /> : null}
+        {connectors.error ? <Text style={{ color: t.danger }}>{tr("health.unreachable")}</Text> : null}
+        {data.length === 0 && !connectors.isLoading ? <Empty text={tr("connectors.empty")} /> : null}
         {data.map((c) => (
           <ConnectorPanel
             key={c.name}

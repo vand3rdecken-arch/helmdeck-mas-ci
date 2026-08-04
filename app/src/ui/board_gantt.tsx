@@ -2,18 +2,23 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 import type { Track } from "@/data/types";
+import { t as tt, useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import { Empty } from "./kit";
 
 const DAY = 86400e3;
 const parseTs = (s?: string) => (s ? new Date(s.replace(" ", "T")).getTime() : null);
-const MON = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const MON = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+  .map((m) => `gantt.mon.${m}`);
+const LANE_KEY: Record<string, string> = {
+  backlog: "lane.backlog", working: "lane.working", review: "lane.review", done: "lane.done",
+};
 
 type Zoom = "weeks" | "months" | "quarters";
 // pixels-per-day per zoom — like Jira, zooming out packs more time into view so
 // you rescale instead of scrolling. A tick (header column) spans one unit.
 const PXDAY: Record<Zoom, number> = { weeks: 18, months: 5, quarters: 1.7 };
-const ZOOMS: [Zoom, string][] = [["weeks", "Wochen"], ["months", "Monate"], ["quarters", "Quartale"]];
+const ZOOMS: Zoom[] = ["weeks", "months", "quarters"];
 
 /** Header ticks (unit columns) for a zoom level: week-starts, month-starts, or
  *  quarter-starts between `min` and `max`. Each carries its pixel left/width. */
@@ -39,7 +44,7 @@ function ticks(min: number, max: number, zoom: Zoom, pxday: number) {
     const yy = String(d.getFullYear()).slice(2);
     const label =
       zoom === "weeks" ? `${d.getMonth() + 1}/${d.getDate()}` :
-      zoom === "months" ? (d.getMonth() === 0 ? `${MON[0]} '${yy}` : MON[d.getMonth()]) :
+      zoom === "months" ? (d.getMonth() === 0 ? `${tt(MON[0])} '${yy}` : tt(MON[d.getMonth()])) :
       `Q${Math.floor(d.getMonth() / 3) + 1} '${yy}`;
     out.push({ label, left: ((start - min) / DAY) * pxday, width: ((next.getTime() - start) / DAY) * pxday });
     d.setTime(next.getTime());
@@ -53,6 +58,7 @@ function ticks(min: number, max: number, zoom: Zoom, pxday: number) {
  *  due-date diamond, and a "today" marker. */
 export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (id: string) => void; wide?: boolean }) {
   const t = useTheme();
+  const tr = useT();
   const [zoom, setZoom] = React.useState<Zoom>("weeks");
   const now = Date.now();
 
@@ -63,7 +69,7 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
       b: (k.lane === "done" ? parseTs(k.updated) : now) ?? now,
       due: k.due ? parseTs(k.due + " 23:59:59") : null,
     }));
-  if (rows.length === 0) return <Empty text="Noch keine Arbeit." />;
+  if (rows.length === 0) return <Empty text={tr("gantt.empty")} />;
 
   let min = Math.min(...rows.map((x) => x.a));
   const max = Math.max(now, ...rows.map((x) => Math.max(x.b, x.due ?? 0))) + DAY;
@@ -85,13 +91,13 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
     <View style={{ gap: 8 }}>
       {/* zoom control (Jira-style) */}
       <View style={{ flexDirection: "row", gap: 6, alignSelf: "flex-start" }}>
-        {ZOOMS.map(([key, lbl]) => {
+        {ZOOMS.map((key) => {
           const on = zoom === key;
           return (
             <Pressable key={key} onPress={() => setZoom(key)}
               style={{ backgroundColor: on ? t.accent + "29" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
                 borderWidth: 1, borderRadius: 6, paddingHorizontal: 11, paddingVertical: 4 }}>
-              <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 11.5, fontWeight: "500" }}>{lbl}</Text>
+              <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 11.5, fontWeight: "500" }}>{tr(`gantt.zoom.${key}`)}</Text>
             </Pressable>
           );
         })}
@@ -103,7 +109,7 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
           {/* header: unit columns */}
           <View style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: t.borderSubtle }}>
             <View style={{ width: side, paddingHorizontal: 10, justifyContent: "center" }}>
-              <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", letterSpacing: 0.6 }}>CARD</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", letterSpacing: 0.6 }}>{tr("gantt.card")}</Text>
             </View>
             <View style={{ width: W, height: 28 }}>
               {cols.map((c, i) => (
@@ -142,7 +148,8 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
                   }}>
                     {w > 44 ? (
                       <Text numberOfLines={1} style={{ color: "#fff", fontSize: 9.5, fontWeight: "600" }}>
-                        {(r.k.branch || r.k.lane) + (late ? " · overdue" : "")}
+                        {(r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane))
+                          + (late ? " · " + tr("gantt.overdue") : "")}
                       </Text>
                     ) : null}
                   </View>
@@ -152,9 +159,7 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
           })}
         </View>
       </ScrollView>
-      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
-        Balken = angelegt → letzte Aktivität (Done friert bei Abnahme ein) · blaue Linie = jetzt · ◆ = fällig
-      </Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("gantt.legend")}</Text>
     </View>
   );
 }

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, Empty, Panel, ScreenHeader } from "@/ui/kit";
@@ -28,6 +29,7 @@ function stepColor(t: ThemeTokens, kind?: string): string {
 
 function RunRow({ run }: { run: any }) {
   const t = useTheme();
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const { baseUrl, token, relayMode } = useConfig();
 
@@ -51,14 +53,14 @@ function RunRow({ run }: { run: any }) {
         {run.status ? <Chip text={run.status} /> : null}
       </Pressable>
       <Text style={{ color: t.txtTertiary, fontSize: 12, marginLeft: 22 }}>
-        {run.kind ?? ""}{run.id ? ` · ${run.id}` : ""}{run.steps != null ? ` · ${run.steps} Schritte` : ""}
+        {run.kind ?? ""}{run.id ? ` · ${run.id}` : ""}{run.steps != null ? ` · ${tr("recordings.steps", { n: run.steps })}` : ""}
       </Text>
 
       {open ? (
         <View style={{ marginTop: 10, marginLeft: 22, gap: 8 }}>
           {timeline.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-          {timeline.error ? <Text style={{ color: t.danger, fontSize: 12 }}>Timeline nicht ladbar.</Text> : null}
-          {timeline.data && timeline.data.length === 0 ? <Empty text="Keine Schritte aufgezeichnet." /> : null}
+          {timeline.error ? <Text style={{ color: t.danger, fontSize: 12 }}>{tr("recordings.timelineError")}</Text> : null}
+          {timeline.data && timeline.data.length === 0 ? <Empty text={tr("recordings.noSteps")} /> : null}
 
           {(timeline.data ?? []).map((s, i) => (
             <View key={s.i ?? i} style={{ flexDirection: "row", gap: 8, alignItems: "flex-start" }}>
@@ -75,16 +77,16 @@ function RunRow({ run }: { run: any }) {
           <View style={{ marginTop: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 4 }}>
             {relayed ? (
               <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>
-                Video verfügbar auf dem Desktop (im Relay-Modus nicht direkt streambar).
+                {tr("recordings.videoRelay")}
               </Text>
             ) : (
               <>
                 <Pressable onPress={() => Linking.openURL(videoUrl)}
                   style={{ alignSelf: "flex-start", borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
-                  <Text style={{ color: t.accent, fontSize: 12.5 }}>▶ Video öffnen</Text>
+                  <Text style={{ color: t.accent, fontSize: 12.5 }}>{tr("recordings.openVideo")}</Text>
                 </Pressable>
                 <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
-                  Für eingebettete Wiedergabe expo-video installieren.
+                  {tr("recordings.installExpoVideo")}
                 </Text>
               </>
             )}
@@ -97,6 +99,7 @@ function RunRow({ run }: { run: any }) {
 
 export default function Recordings() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -105,12 +108,12 @@ export default function Recordings() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-      <ScreenHeader title="Recordings" onBack={() => router.back()} />
+      <ScreenHeader title={tr("nav.recordings")} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, gap: 8, paddingBottom: 40,
         width: "100%", maxWidth: wide ? 760 : undefined, alignSelf: "center" }}>
         {isLoading ? <ActivityIndicator color={t.accent} /> : null}
-        {error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar.</Text> : null}
-        {data && data.length === 0 ? <Empty text="Keine Aufnahmen." /> : null}
+        {error ? <Text style={{ color: t.danger }}>{tr("health.unreachable")}</Text> : null}
+        {data && data.length === 0 ? <Empty text={tr("recordings.empty")} /> : null}
         {(data ?? []).map((r: any) => <RunRow key={r.id} run={r} />)}
       </ScrollView>
     </View>

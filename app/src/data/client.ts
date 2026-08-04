@@ -1,6 +1,8 @@
 import { useConfig } from "./config";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
+import { t } from "@/i18n/core";
+
 import type { Attach } from "./attachments";
 import type { Track, LaneMove, Metrics, Me } from "./types";
 
@@ -41,18 +43,18 @@ async function relayReq(method: string, path: string, bodyStr: string): Promise<
       body: JSON.stringify({ pub: myPub, cipher }),
     });
   } catch {
-    throw new TransportError("Relay nicht erreichbar (Netzwerk/DNS)");
+    throw new TransportError(t("net.relayUnreachable"));
   }
-  if (r.status === 503) throw new TransportError("Desktop offline – das Relay erreicht den Daemon nicht");
-  if (r.status === 504) throw new TransportError("Desktop antwortet nicht (Timeout)");
-  if (!r.ok) throw new TransportError(`Relay-Fehler ${r.status}`);
+  if (r.status === 503) throw new TransportError(t("net.desktopOffline"));
+  if (r.status === 504) throw new TransportError(t("net.desktopTimeout"));
+  if (!r.ok) throw new TransportError(t("net.relayError", { status: r.status }));
   const out = JSON.parse(await r.text());
-  if (!out.cipher) throw new TransportError("Desktop antwortet nicht");
+  if (!out.cipher) throw new TransportError(t("net.desktopSilent"));
   let resp: { status?: number; body?: string };
   try {
     resp = JSON.parse(open(out.cipher, mySec, daemonPub));
   } catch {
-    throw new TransportError("Verschlüsselung passt nicht – Telefon neu koppeln (Desktop: Settings → Mobile app)");
+    throw new TransportError(t("net.badKeys"));
   }
   return { status: resp.status ?? 200, body: resp.body ?? "" };
 }
@@ -73,7 +75,7 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
         });
       } catch (e) {
         if ((e as Error)?.name === "AbortError") throw e;   // caller cancelled, not a health event
-        throw new TransportError("Direktverbindung (LAN) fehlgeschlagen – läuft HelmDeck am Desktop?");
+        throw new TransportError(t("net.lanFailed"));
       }
       status = r.status; txt = await r.text();
     }
@@ -87,7 +89,7 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   if (status >= 400) {
     let msg = "";
     try { msg = String(JSON.parse(txt)?.error ?? ""); } catch { /* not json */ }
-    throw new ApiError(status, msg || `Fehler ${status} (${method} ${path})`);
+    throw new ApiError(status, msg || t("net.httpError", { status, method, path }));
   }
   return (txt ? JSON.parse(txt) : {}) as T;
 }
