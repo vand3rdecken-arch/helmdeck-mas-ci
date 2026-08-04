@@ -889,13 +889,22 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                 return _find(_load(), tid) or dict(t)
             events.emit("merge", tid, ok=(kind not in ("conflict", "blocked")),
                         outcome=kind, detail="preview: " + msg[:200])
-            log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
-            t.pop("merge_report", None)
-            t["merge_kind"] = kind; t["review_report"] = msg
-            t["status"] = "submitted"; t["lane"] = "review"
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
-            return dict(t, review_preview=True, merge_kind=kind)
-        # lane == "done": LAND it
+            # FAST-TRACK (per-card, SCOPED): a card flagged `fast_track` with a
+            # GREEN gate (already checked above) and a clean merge LANDS
+            # immediately - no human accept. Only for flagged cards; every other
+            # card rests on Review for your accept. The gate still guards (a red
+            # gate already bounced above), so this is auto-accept, not skip-gate.
+            _clean = kind in ("mergeable", "already_merged", "redundant_uncommitted")
+            if not (t.get("fast_track") and _clean):
+                log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
+                t.pop("merge_report", None)
+                t["merge_kind"] = kind; t["review_report"] = msg
+                t["status"] = "submitted"; t["lane"] = "review"
+                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+                return dict(t, review_preview=True, merge_kind=kind)
+            log.log("note", "FAST-TRACK %s: gruenes Gate + sauberer Merge -> lande + deploye ohne Abnahme"
+                    % t.get("branch", ""))
+        # lane == "done" (or a fast-tracked review): LAND it
         _repo_hook(t, "preview")   # best-effort try-it surface before it lands
         # classify + merge to main - conflict/blocked bounces with the resolve path
         accept_ok, kind, mergemsg = _merge_to_main(t)
