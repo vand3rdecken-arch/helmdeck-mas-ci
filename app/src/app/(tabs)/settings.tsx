@@ -17,11 +17,9 @@ import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { UpdatesPanel } from "@/ui/updates_info";
 
-const LANES = ["backlog", "working", "review", "done"] as const;
 const BACKDROPS = ["mesh", "aurora", "ember", "forest", "mono"] as const;
-const AUTO_MODES = ["do", "prepare", "cowork"] as const;
-const CHAT_ROLES = ["owner", "operator"] as const;
-const PRIOS = ["never", "urgent", "high"] as const;
+// auto-modes / chat-roles / prios / lane-labels moved to the Automatik hub
+// (schema-driven) - settings only points there now.
 // The language chips show the language's own name (Deutsch / English - never
 // translated); the id behind the label is what lands in policy.lang.
 const LANG_LABELS = LANGS.map((l) => l.label);
@@ -55,12 +53,7 @@ export default function Settings() {
   // ---- language ----
   const [lang, setLangSel] = useState<Lang>("de");
 
-  // ---- policy / appearance ----
-  const [autoAccept, setAutoAccept] = useState(false);
-  const [autoModes, setAutoModes] = useState<string[]>([]);
-  const [autoPrio, setAutoPrio] = useState("never");
-  const [chatRoles, setChatRoles] = useState<string[]>(["owner"]);
-  const [laneLabels, setLaneLabels] = useState<Record<string, string>>({});
+  // ---- appearance (policy knobs live in the Automatik hub now) ----
   const [backdrop, setBackdrop] = useState("mesh");
 
   // ---- jira / imports ----
@@ -106,11 +99,6 @@ export default function Settings() {
     setTBounce(String(s.capacity?.tariff?.bounce ?? ""));
     const pol = s.policy ?? {};
     setLangSel(pol.lang === "en" ? "en" : "de");
-    setAutoAccept(!!pol.auto_accept_green);
-    setAutoModes(pol.auto_dispatch_modes ?? ["do", "prepare"]);
-    setAutoPrio(pol.auto_dispatch_priority || "never");
-    setChatRoles(pol.chat_configure_roles ?? ["owner"]);
-    setLaneLabels({ backlog: "Backlog", working: "Working", review: "Review", done: "Done", ...(pol.lane_labels ?? {}) });
     setBackdrop(s.appearance?.backdrop ?? "mesh");
     setJBase(s.jira?.base ?? ""); setJEmail(s.jira?.email ?? "");
     setJToken(s.jira?.api_token ?? ""); setJJql(s.jira?.default_jql ?? "");
@@ -152,17 +140,6 @@ export default function Settings() {
           tariff: { ...(s?.capacity?.tariff ?? {}),
             steer: Number(tSteer) || 1, review: Number(tReview) || 1, bounce: Number(tBounce) || 3 } } });
       await invalidate(); ok(tr("settings.saved.business"));
-    } catch (e) { fail(e); }
-  }
-
-  async function savePolicy() {
-    try {
-      await api.saveSettings({
-        policy: { auto_accept_green: autoAccept, auto_dispatch_modes: autoModes,
-          auto_dispatch_priority: autoPrio === "never" ? "" : autoPrio,
-          chat_configure_roles: chatRoles, lane_labels: laneLabels },
-        appearance: { backdrop } });
-      await invalidate(); await qc.invalidateQueries({ queryKey: ["metrics"] }); ok(tr("settings.saved.policy"));
     } catch (e) { fail(e); }
   }
 
@@ -319,6 +296,10 @@ export default function Settings() {
               <Hint text={tr("settings.lang.hint")} />
               <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === lang)?.label ?? LANG_LABELS[0]]}
                 single onToggle={(label) => saveLang(langId(label))} />
+              <View style={{ height: 10 }} />
+              <Caption text={tr("settings.policy.backdrop")} />
+              <ChipPick options={BACKDROPS} selected={[backdrop]} single
+                onToggle={(b) => { setBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
             </Panel>
 
             <Panel>
@@ -358,36 +339,14 @@ export default function Settings() {
               <Btn label={tr("ui.save")} onPress={saveBusiness} />
             </Panel>
 
+            {/* Loop, harness & automation policy now live in ONE place - the
+                Automatik hub (schema-driven, editable there). This is just the
+                pointer, so there is no second edit surface for the same data. */}
             <Panel>
               <SectionLabel text={tr("settings.sec.automation")} />
-              <Hint text={tr("settings.policy.hint")} />
-              <Toggle label={tr("settings.policy.autoAccept")} value={autoAccept} onChange={setAutoAccept} />
-              <View style={{ height: 8 }} />
-              <Caption text={tr("settings.policy.autoModes")} />
-              <ChipPick options={AUTO_MODES} selected={autoModes}
-                onToggle={(m) => setAutoModes(autoModes.includes(m) ? autoModes.filter((x) => x !== m) : [...autoModes, m])} />
-              <View style={{ height: 10 }} />
-              <Caption text={tr("settings.policy.autoPrio")} />
-              <ChipPick options={PRIOS} selected={[autoPrio]} single onToggle={setAutoPrio} />
-              <View style={{ height: 10 }} />
-              <Caption text={tr("settings.policy.chatRoles")} />
-              <ChipPick options={CHAT_ROLES} selected={chatRoles}
-                onToggle={(r) => setChatRoles(chatRoles.includes(r) ? chatRoles.filter((x) => x !== r) : [...chatRoles, r])} />
-              <View style={{ height: 10 }} />
-              <Caption text={tr("settings.policy.laneLabels")} />
-              <FormGrid wide={wide}>
-                {LANES.map((k) => (
-                  <View key={k}>
-                    <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 3 }}>{k}</Text>
-                    <TextInput value={laneLabels[k] ?? ""} onChangeText={(v) => setLaneLabels({ ...laneLabels, [k]: v })} style={field} />
-                  </View>
-                ))}
-              </FormGrid>
-              <View style={{ height: 10 }} />
-              <Caption text={tr("settings.policy.backdrop")} />
-              <ChipPick options={BACKDROPS} selected={[backdrop]} single onToggle={setBackdrop} />
-              <View style={{ height: 12 }} />
-              <Btn label={tr("settings.policy.save")} onPress={savePolicy} />
+              <Hint text={tr("automation.movedHint")} />
+              <View style={{ height: 6 }} />
+              <Btn label={tr("automation.title")} kind="ghost" onPress={() => router.push("/(tabs)/automation")} />
             </Panel>
 
             <Panel>
