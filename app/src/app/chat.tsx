@@ -170,6 +170,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 // (the flex-1 backdrop) closes it.
 export function CopilotOverlay() {
   const t = useTheme();
+  const tr = useT();
   const { width } = useWindowDimensions();
   const wide = Platform.OS === "web" && width >= 900;
   const open = useCopilotPanel((s) => s.open);
@@ -177,7 +178,7 @@ export function CopilotOverlay() {
   if (!wide || !open) return null;
   return (
     <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, flexDirection: "row", backgroundColor: "#00000073" }}>
-      <Pressable style={{ flex: 1 }} onPress={hide} accessibilityLabel="Chat schließen" />
+      <Pressable style={{ flex: 1 }} onPress={hide} accessibilityLabel={tr("chat.close")} />
       <View style={{ width: 540, maxWidth: "48%", ...(Platform.OS === "web" ? { boxShadow: "-8px 0 24px rgba(0,0,0,0.35)" } as any : {}) }}>
         <ChatBody onClose={hide} wide />
       </View>
@@ -187,6 +188,7 @@ export function CopilotOverlay() {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const tr = useT();
   const { width } = useWindowDimensions();
   const wide = Platform.OS === "web" && width >= 900;
   // Phone: the chat is a full-screen route. Desktop reaches the copilot via the
@@ -196,7 +198,7 @@ export default function ChatScreen() {
   if (wide) {
     return (
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: "#00000073" }}>
-        <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel="Chat schließen" />
+        <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel={tr("chat.close")} />
         <View style={{ width: 540, maxWidth: "48%" }}><ChatBody onClose={() => router.back()} wide /></View>
       </View>
     );

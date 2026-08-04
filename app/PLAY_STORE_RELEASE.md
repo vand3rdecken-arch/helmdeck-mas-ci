@@ -59,25 +59,25 @@ to `app-bundle`. `production-apk` stays for hub/sideload distribution only.
 
 ## 3. Privacy policy URL
 
-- ⚠ **No privacy policy exists anywhere in the repo.** Play requires a
-  public, non-editable URL for every app — even with zero data collection.
-  Write one page covering: what the app is (remote control for your own
-  HelmDeck daemon), data stored on-device (pairing config + keys in
-  `expo-secure-store`), data in transit (NaCl-sealed relay traffic, FCM push
-  token registered with *your own* daemon), no analytics / no ads / no sale of
-  data, contact address.
-- ⚠ Host it on a stable HTTPS URL. The raw-IP `sslip.io` host works
-  technically but looks disposable to reviewers; a real domain (or GitHub
-  Pages off this repo, e.g. `docs/privacy.html`) is safer for review.
+- ✅ Privacy policy (DE+EN) is embedded in `relay/relay.py` and served at
+  **`https://141.144.227.105.sslip.io/privacy`** (alias `/datenschutz`).
+  Embedded, not a file, because `deploy/push_relay.sh` ships only `relay.py`.
+  Goes live with the next `bash deploy/push_relay.sh`.
+- ⚠ The raw-IP `sslip.io` host works but looks disposable to reviewers; when
+  a real domain exists, point it at the relay and re-enter the URL — the page
+  itself needs no change.
 - ☐ Enter the URL in Play Console → App content → Privacy policy.
 
 ## 4. Data Safety form (Play Console → App content)
 
-What the app actually does with data (verified in `app/src`):
+➜ **Full derivation with per-answer code evidence: `docs/store/DATA_SAFETY.md`**
+(recommended form answers, permission table, E2EE-exemption discussion).
+Summary of what the app actually does with data (verified in `app/src`):
 
 | Data | Where it goes | Declare as |
 |---|---|---|
 | Chat messages / card content | User's own daemon, direct HTTPS or NaCl-sealed via relay | Messages — collected, encrypted in transit, not shared with third parties, user-deletable (unpair) |
+| Attachments: gallery photos, camera shots, files (explicit user pick only) | User's own daemon, same encrypted path (`attachments.ts`) | Photos + Files and docs — collected (optional), encrypted in transit, not shared |
 | FCM device push token (`getDevicePushTokenAsync`) | User's own daemon (to send pushes); Google FCM infra | Device or other IDs — collected, encrypted in transit |
 | Pairing config, keypairs, tokens | On-device only (`expo-secure-store`) | Not collected (never leaves device) |
 | Analytics / ads / location / contacts | none — no such SDK in `package.json` | Not collected |
@@ -94,13 +94,14 @@ What the app actually does with data (verified in `app/src`):
 ## 5. Store listing
 
 - ☐ App name: **HelmDeck** (matches `expo.name`).
-- ☐ Short description (≤80 chars) + full description (≤4000). Source copy
-  from `docs/POSITIONING.md`.
-- ☐ Graphics, all required:
+- ✅ Short description (≤80 chars) + full description (≤4000), DE+EN,
+  copy-paste-ready: `docs/store/LISTING.md`.
+- ☐ Graphics:
   - App icon 512×512 PNG (export from `assets/images/icon.png` pipeline).
-  - Feature graphic 1024×500.
-  - ≥2 phone screenshots (app is portrait-locked, dark UI — shoot Board,
-    Card chat, Pairing). 7"/10" tablet shots optional but listed.
+  - Feature graphic 1024×500 (still to build — spec in LISTING.md).
+  - ✅ 4 phone screenshots 1080×2400: `docs/store/screenshots/` (Board,
+    card timeline, Needs-you, dashboard — shot on emulator against a demo
+    daemon, no real client data). 7"/10" tablet shots optional but listed.
 - ☐ Category: Productivity (or Tools). Tags: no ads, no in-app purchases.
 - ☐ Content rating questionnaire: utility app; chat content is private
   self-to-own-server, so answer the UGC section as "no publicly visible UGC".
@@ -121,12 +122,23 @@ why (no sensitive/declaration-form permissions are used):
 | Permission | Source | Justification |
 |---|---|---|
 | `INTERNET` | core | talk to daemon/relay |
+| `CAMERA` | `expo-camera` plugin in app.json | QR pairing scan (`src/app/scan.tsx`) + attachment photos (`src/data/attachments.ts` `takePhoto`); runtime-prompted, never in background |
 | `POST_NOTIFICATIONS` | `expo-notifications` | push for agent replies/review-ready; runtime-prompted in `src/data/push.ts` (`requestPermissionsAsync`) — only after pairing, good |
 | `VIBRATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM` (maybe, from expo-notifications) | `expo-notifications` | notification delivery/rescheduling |
 
-- ✅ No camera, mic, location, storage, or QUERY_ALL_PACKAGES — nothing that
-  triggers a Play permission declaration form. (QR codes are *generated*
-  with the `qrcode` lib, not scanned.)
+- ✅ CAMERA needs no Play declaration form (only location/SMS/etc. do); it
+  must simply match the Data Safety answers — see `docs/store/DATA_SAFETY.md`.
+- ✅ `RECORD_AUDIO` from expo-camera is disabled via
+  `"recordAudioAndroid": false` (app.json) — its plugin defaults that to
+  `true`, so this was actively being merged in. Verified absent from the
+  shipped build.
+- ⚠ **`SYSTEM_ALERT_WINDOW` is in the currently shipped build** (verified via
+  `adb shell dumpsys package app.helmdeck`) and nothing in `app/src` uses an
+  overlay. Confirm it is absent from the release AAB before submitting; if
+  present, block it via `android.blockedPermissions`. Full verified permission
+  table + the check: `docs/store/DATA_SAFETY.md` §3.
+- ✅ Verified absent from the shipped build: mic, location,
+  `READ_MEDIA_IMAGES`, QUERY_ALL_PACKAGES.
 - ⚠ Verify the final merged manifest before submitting:
   `cd app && npx expo prebuild -p android --no-install` (throwaway; don't
   commit `android/`) and read
@@ -180,6 +192,9 @@ why (no sensitive/declaration-form permissions are used):
   to internal testing) — `eas submit` only works once the app record exists.
 
 ## 9. Release-day order of operations
+
+➜ **Owner click-path for the internal-testing submission:
+`docs/store/INTERNAL_TESTING.md`** (uses the pieces below in order).
 
 1. Fix the ⚠ items above (privacy policy, cleartext decision, assetlinks,
    EAS file env for `google-services.json`).

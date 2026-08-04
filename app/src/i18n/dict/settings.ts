@@ -201,6 +201,8 @@ export const settings: Dict = {
   "settings.more.notPaired": { de: "nicht gekoppelt", en: "not paired" },
   "settings.more.pairHelp": { de: "Desktop: Settings → Mobile app → Pair phone. Code hier einfügen.",
                               en: "Desktop: Settings → Mobile app → Pair phone. Paste the code here." },
+  "settings.more.scanQr": { de: "QR-Code scannen", en: "Scan QR code" },
+  "settings.more.orPaste": { de: "oder Code / Link einfügen:", en: "or paste a code / link:" },
   "settings.more.pairPh": { de: "Pairing-Code / Link", en: "Pairing code / link" },
   "settings.more.pairBtn": { de: "Pair", en: "Pair" },
   "settings.more.checking": { de: "Prüfe…", en: "Checking…" },
