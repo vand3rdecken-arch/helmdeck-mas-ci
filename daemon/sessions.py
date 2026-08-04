@@ -1028,6 +1028,14 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         for k in ("autopilot_dispatched", "autopilot_accepted",
                   "autopilot_alerted", "autopilot_ts", "priority_dispatched"):
             t.pop(k, None)
+        # the chain keeps its OWN stamps on the step (processes.json), which the
+        # loop above cannot reach - without this the card came back clean but
+        # its step stayed "already dispatched" and never ran again.
+        try:
+            import processes
+            processes.clear_step_stamps(tid)
+        except Exception as e:      # a board move must not fail on the chain store
+            print("clear_step_stamps failed for %s: %s" % (tid, e))
     events.emit("lane", tid, frm=prev, to=lane)
     t["lane"] = lane
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")

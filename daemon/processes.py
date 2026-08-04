@@ -235,6 +235,34 @@ def sync():
         sessions._save(tracks)
     return ps
 
+def clear_step_stamps(tid):
+    """A card re-queued to Backlog must be able to run its chain step AGAIN.
+
+    The step's one-shot stamps live HERE (processes.json, keyed by the step's
+    track), so sessions.move_lane structurally cannot reach them the way it
+    clears the card-level ones - the card came back clean while the step still
+    said "already dispatched", and the chain silently never restarted it.
+
+    Deliberately driven by the board MOVE, not by sync() noticing the card in
+    backlog: a FAILED dispatch also leaves the card in backlog
+    (_dispatch_failed marks it bounced without moving the lane), so clearing on
+    "is in backlog" would re-dispatch a broken step on every 20s poll - the
+    same trap _priority_dispatch just had. move_lane fires once, per move."""
+    with _lock:
+        ps = _load()
+        hit = False
+        for p in ps:
+            for s in p.get("steps", []):
+                if s.get("track") != tid:
+                    continue
+                for k in ("auto_dispatched", "auto_accepted"):
+                    if s.pop(k, None) is not None:
+                        hit = True
+        if hit:
+            _save(ps)
+    return hit
+
+
 def _auto_dispatch(tid):
     import sessions
     try:
