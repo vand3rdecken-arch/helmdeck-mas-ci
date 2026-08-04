@@ -89,14 +89,29 @@ DEBT = [
     {
         "id": "single-secret-transport",
         "title": "Plain HTTP on the LAN",
-        "status": "open",
+        "status": "paid",
         "what": "Credentials and session cookies travel unencrypted on the "
                 "local network.",
         "why_it_bites": "Any hostile device on the same network can read "
                         "them.",
         "trigger": "first remote/client access from outside a trusted LAN",
-        "fix": "Tailscale for own devices; Cloudflare Tunnel + TLS the day a "
-               "client gets a URL.",
+        "fix": "PAID. Remote paths were already TLS: relay behind nginx+"
+               "certbot (E2EE-sealed frames on top), Cloudflare Tunnel script "
+               "for the API. This card closed the LAN + enforcement gaps: "
+               "(1) server.serve() grows a native https listener - cert/key "
+               "via HELMDECK_TLS_CERT/KEY, settings.tls, or auto-detected "
+               "daemon/certs/ (minted by tools/make_tls_cert.py; trusted "
+               "certs via `tailscale cert`) - and with TLS on, plain http "
+               "binds LOOPBACK-ONLY (local tooling keeps working, nothing "
+               "cleartext leaves the machine; a broken TLS config also stays "
+               "loopback-only instead of downgrading). (2) Pairing links "
+               "embed a live device token in a URL, so relay_client."
+               "insecure_url() now refuses plain-http non-loopback relay "
+               "URLs at BOTH seams: /settings save and pairing_payload(); "
+               "an existing http config logs a one-time warning but keeps "
+               "bridging (frames are E2EE regardless). Remaining relatives "
+               "stay listed separately: [android-cleartext-lan], "
+               "[pair-token-no-ttl].",
         "order": 4,
     },
     {

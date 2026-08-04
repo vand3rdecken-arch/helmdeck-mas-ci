@@ -68,6 +68,37 @@ sudo systemctl enable --now myproject && sudo nginx -t && sudo systemctl reload 
 
 ---
 
+## LAN HTTPS — the daemon's own TLS listener (no tunnel, no VM)
+
+For browsers/desktops on your own network (the phone should use Path A/B).
+Mint a cert and restart the daemon:
+
+```bash
+py -3.12 tools/make_tls_cert.py        # writes daemon/certs/tls.crt + tls.key (git-ignored)
+```
+
+The daemon auto-detects the files and then serves **https on :8443**
+(`HELMDECK_TLS_PORT` or `settings.tls.port` to change) while plain http
+retreats to **loopback only** — local tooling (relay bridge, cloudflared,
+Electron) keeps `http://localhost:8140`, but credentials and cookies never
+cross the LAN unencrypted. Explicit paths beat auto-detection:
+`HELMDECK_TLS_CERT`/`HELMDECK_TLS_KEY` (env) or `settings.tls {cert,key}`.
+
+Self-signed = one browser trust warning per device (Android refuses outright).
+For a cert every device trusts without warnings, use Tailscale:
+
+```bash
+tailscale up
+tailscale cert <machine>.<tailnet>.ts.net    # real Let's Encrypt cert for your tailnet name
+# point HELMDECK_TLS_CERT / HELMDECK_TLS_KEY at the two files it writes
+```
+
+Related enforcement: the daemon refuses to SAVE or PAIR a plain-`http://`
+relay URL (non-loopback) — pairing links embed a live device token and must
+never travel unencrypted.
+
+---
+
 ## Path B — your own relay on a free VM (zero-knowledge, E2E encrypted)
 
 The relay (`relay/relay.py`) shuttles only ciphertext: it cannot read or forge

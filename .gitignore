@@ -44,6 +44,7 @@ plane-selfhost/*.env
 backups/
 
 # local credentials - never commit
+daemon/certs/
 .env
 *.env
 !.env.example
