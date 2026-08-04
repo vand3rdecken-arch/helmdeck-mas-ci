@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""A card's `mode` value must never block card dispatch (found live 2026-08-04:
+"""Nothing may SILENTLY stop an opted-in card from dispatching.
+
+Two invariants, both from the same live investigation (2026-08-04):
+
+1. A card's `mode` value must never block card dispatch (found live 2026-08-04:
 a PM plan read the launch cards' mode='auto' - the auto/assisted completion
 STATISTIC events._completion_mode writes on accept - as an execution mode,
 concluded policy.auto_dispatch_modes ["do","prepare"] was blocking them, and
@@ -7,15 +11,21 @@ filed an alignment card. It wasn't: auto_dispatch_modes gates process STEPS
 (processes.sync); card-level dispatch only excludes the needs-a-person modes
 human/teach/cowork. The launch cards had in fact already dispatched.)
 
-This pins that invariant on both card-dispatch paths so it cannot silently
-regress into a real version of that misdiagnosis.
+2. The autopilot's one-shot stamps must not survive a re-queue. Looking for a
+REAL version of (1) turned one up: `autopilot_dispatched` is written once and
+nothing ever cleared it, so an autopilot card moved back to Backlog kept
+autopilot=true and never dispatched again - it sat in Backlog looking like a
+normal queued card, no bounce, no event, no escalation. Exactly the silent
+waiting the autopilot exists to remove. move_lane now clears the stamps.
+
+This pins both invariants on the card-dispatch paths so they cannot regress.
 
 Self-sandboxing: fake DB, patched settings/emit, synchronous fake threads -
 nothing touches the real board or event log, nothing really dispatches.
 
 Run: py -3.12 daemon/test_mode_dispatch.py
 """
-import os, sys
+import os, shutil, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import events, pm, processes, sessions
@@ -56,6 +66,7 @@ def main():
     real_db, real_emit = sessions._db, events.emit
     real_settings = events.settings
     real_threading, real_dispatch = processes.threading, processes._auto_dispatch
+    tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
     try:
         # -- pm._backlog: unset mode and the 'auto' completion stat dispatch;
         #    only the needs-a-person modes are held back for the human --------
@@ -71,7 +82,10 @@ def main():
         # -- processes._autopilot on the exact live launch-card shape:
         #    backlog + autopilot=true + completion stat mode='auto' -----------
         fake = FakeDB()
-        fake.track_put(_card("t-launch", autopilot=True, mode="auto"))
+        run_dir = os.path.join(tmp, "run")
+        os.makedirs(run_dir)
+        fake.track_put(_card("t-launch", autopilot=True, mode="auto",
+                             run_dir=run_dir))
         fake.track_put(_card("t-busy", lane="working", status="running"))
         sessions._db = fake
         emitted, dispatched = [], []
@@ -95,11 +109,30 @@ def main():
             "no autopilot_dispatch event emitted: %r" % emitted
         print("PASS processes._autopilot: launch card (autopilot, mode='auto') "
               "dispatches, is stamped, event emitted")
+
+        # -- a re-queued autopilot card dispatches AGAIN --------------------
+        # drive the real board move (sessions.move_lane), not a hand-built
+        # card, so the reset is pinned where the lane actually changes.
+        moved = sessions.move_lane("t-launch", "backlog", actor="owner")
+        for k in ("autopilot_dispatched", "autopilot_accepted",
+                  "autopilot_alerted", "autopilot_ts"):
+            assert k not in moved, "%s survived the move back to Backlog" % k
+        assert moved["lane"] == "backlog" and moved["status"] == "queued", \
+            "re-queue did not reset lane/status: %r" % moved
+        assert moved.get("autopilot") is True, "re-queue dropped the opt-in"
+
+        dispatched.clear()
+        processes._autopilot()
+        assert dispatched == ["t-launch"], \
+            "re-queued autopilot card did not dispatch again: %r" % dispatched
+        print("PASS move_lane->backlog: autopilot stamps cleared, card "
+              "dispatches again (opt-in preserved)")
         print("ALL PASS")
     finally:
         sessions._db, events.emit = real_db, real_emit
         events.settings = real_settings
         processes.threading, processes._auto_dispatch = real_threading, real_dispatch
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -1015,6 +1015,16 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         lane = "done"   # Review == Abnahme: a finished card lands in Done
     elif lane == "backlog":
         t["status"] = "queued"
+        # Re-queueing a card IS the "run it again" instruction, so the
+        # autopilot's one-shot stamps must not survive it. They are written
+        # once (processes._autopilot / _auto_resolve) and NOTHING else ever
+        # clears them, so a re-queued autopilot card kept autopilot=true but
+        # never dispatched again - it sat in Backlog looking like a normal
+        # queued card, which is exactly the silent waiting the autopilot
+        # exists to remove. A fresh queue = a fresh dispatch/escalation budget.
+        for k in ("autopilot_dispatched", "autopilot_accepted",
+                  "autopilot_alerted", "autopilot_ts"):
+            t.pop(k, None)
     events.emit("lane", tid, frm=prev, to=lane)
     t["lane"] = lane
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
