@@ -251,7 +251,17 @@ def _auto_accept(tid):
 
 def _priority_dispatch():
     """Policy: backlog cards at/above auto_dispatch_priority start themselves
-    while WIP headroom exists."""
+    while WIP headroom exists.
+
+    ONE dispatch per card, stamped like the autopilot's: this runs on the chain
+    poller (every 20s) and a FAILED dispatch leaves the card in backlog
+    (_dispatch_failed marks status=bounced but never moves the lane), so an
+    unguarded pass re-dispatched the same broken card three times a minute
+    forever - flooding the append-only log and re-running git each time. It
+    also closed a race: the lane only flips to working partway into _start,
+    so a slow worktree checkout could be dispatched twice and the duplicate's
+    failure would mark a perfectly healthy card bounced. Re-queueing to Backlog
+    clears the stamp (sessions.move_lane) - that is the retry handle."""
     import sessions, events
     s = events.settings()
     floor = (s.get("policy") or {}).get("auto_dispatch_priority") or ""
@@ -263,9 +273,11 @@ def _priority_dispatch():
     headroom = s["capacity"]["wip_limit"] - wip
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
                    and not t.get("mode") in ("human", "teach", "cowork")
+                   and not t.get("priority_dispatched")
                    and order.get(t.get("priority", "medium"), 2) <= order[floor]),
                   key=lambda t: (order.get(t.get("priority", "medium"), 2), t.get("due") or "9999"))
     for t in todo[:max(0, headroom)]:
+        _stamp(t["id"], priority_dispatched=True)
         events.emit("process", "-", action="priority_dispatch", card=t["id"])
         threading.Thread(target=_auto_dispatch, args=(t["id"],), daemon=True).start()
 

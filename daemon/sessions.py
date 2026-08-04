@@ -1016,14 +1016,17 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
     elif lane == "backlog":
         t["status"] = "queued"
         # Re-queueing a card IS the "run it again" instruction, so the
-        # autopilot's one-shot stamps must not survive it. They are written
-        # once (processes._autopilot / _auto_resolve) and NOTHING else ever
-        # clears them, so a re-queued autopilot card kept autopilot=true but
-        # never dispatched again - it sat in Backlog looking like a normal
-        # queued card, which is exactly the silent waiting the autopilot
-        # exists to remove. A fresh queue = a fresh dispatch/escalation budget.
+        # auto-dispatchers' one-shot stamps must not survive it. They are
+        # written once (processes._autopilot / _priority_dispatch /
+        # _auto_resolve) and NOTHING else ever clears them, so a re-queued
+        # autopilot card kept autopilot=true but never dispatched again - it
+        # sat in Backlog looking like a normal queued card, which is exactly
+        # the silent waiting the autopilot exists to remove. A fresh queue =
+        # a fresh dispatch/escalation budget. This is also the ONLY retry
+        # handle for a card whose automatic dispatch failed, so every
+        # dispatcher stamp added here must be cleared here too.
         for k in ("autopilot_dispatched", "autopilot_accepted",
-                  "autopilot_alerted", "autopilot_ts"):
+                  "autopilot_alerted", "autopilot_ts", "priority_dispatched"):
             t.pop(k, None)
     events.emit("lane", tid, frm=prev, to=lane)
     t["lane"] = lane
