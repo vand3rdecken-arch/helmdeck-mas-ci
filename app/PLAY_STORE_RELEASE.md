@@ -150,17 +150,16 @@ why (no sensitive/declaration-form permissions are used):
 
 - ✅ Expo SDK 57 targets **API 36 (Android 16)** — satisfies Google's
   target-API requirement (≥35 for updates since Aug 2025; 36-ready).
-- ⚠ **Cleartext gotcha — real bug for direct mode.** Release builds have
-  `usesCleartextTraffic=false` (Android default). The app's *direct* mode
-  defaults to `http://10.0.2.2:8199` (`src/data/config.ts`) and the Settings
-  screen suggests `http://10.0.2.2:8140` (`src/app/(tabs)/more.tsx`) — plain
-  `http://` base URLs users enter for LAN use will **silently fail in the
-  Play build**. Decide before release:
-  1. Relay/HTTPS-only in production (document it, adjust the placeholder), or
-  2. allow cleartext to private ranges only via a
-     `networkSecurityConfig` (expo-build-properties), or
-  3. (not recommended) global `usesCleartextTraffic: true`.
-  Option 2 preserves the LAN story without opening cleartext to the internet.
+- ✅ **Cleartext is scoped, not global** (was the gotcha here; debt
+  `android-cleartext-lan` paid). `app/plugins/withLanCleartext.js` ships a
+  `networkSecurityConfig` that blocks cleartext app-wide and allows it only
+  for `10.0.2.2`/`localhost`/`127.0.0.1` plus the hosts listed in its
+  `app.json` plugin entry (Android NSC has no RFC1918 ranges — explicit
+  hosts only). Applied on `expo prebuild` AND re-applied to the hand-managed
+  `app/android` by `deploy/build_apk.sh`. Consequence for the Play build:
+  direct mode to an arbitrary `http://` LAN IP fails unless that IP is in
+  the host list at build time — for store users the answer is the relay
+  (HTTPS + E2EE), which needs nothing.
 - ✅ OTA endpoint and relay are HTTPS (`sslip.io` wraps the IP with a valid
   cert) — no cleartext there.
 - ⚠ **App Links verification.** `app.json` declares an `autoVerify: true`
