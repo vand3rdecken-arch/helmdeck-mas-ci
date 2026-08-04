@@ -33,8 +33,9 @@ const SLASH = [
 
 // ---- inline field editors -------------------------------------------------
 
-function EditText({ value, onSave, placeholder, multiline, style }: {
-  value: string; onSave: (v: string) => void; placeholder?: string; multiline?: boolean; style?: any;
+function EditText({ value, onSave, placeholder, multiline, style, autoFocus, onDone }: {
+  value: string; onSave: (v: string) => void; placeholder?: string; multiline?: boolean;
+  style?: any; autoFocus?: boolean; onDone?: () => void;
 }) {
   const t = useTheme();
   const [v, setV] = useState(value);
@@ -42,10 +43,63 @@ function EditText({ value, onSave, placeholder, multiline, style }: {
   useEffect(() => { if (!dirty.current) setV(value); }, [value]);
   return (
     <TextInput value={v} multiline={multiline} placeholder={placeholder} placeholderTextColor={t.txtPlaceholder}
+      autoFocus={autoFocus}
       onChangeText={(x) => { dirty.current = true; setV(x); }}
-      onBlur={() => { dirty.current = false; if (v.trim() !== value) onSave(v.trim()); }}
+      onBlur={() => { dirty.current = false; if (v.trim() !== value) onSave(v.trim()); onDone?.(); }}
       style={[{ color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 8, borderWidth: 1,
         borderColor: t.borderSubtle, padding: 8, fontSize: 14 }, style]} />
+  );
+}
+
+/** The card body, READABLE. The PM writes a structured work package
+ *  (NUTZERGESCHICHTE / FERTIG, WENN / WARUM JETZT / ENTHÄLT); a multiline
+ *  TextInput renders as a ~2-row textarea on web that never grows, so the
+ *  acceptance criteria and steps were clipped mid-line and effectively
+ *  invisible - the exact opposite of the point. Show the whole thing with the
+ *  ALL-CAPS section heads lifted out, and swap to the editor on tap.
+ *  Formatting happens HERE, not in the stored text, so the board's two-line
+ *  preview and the agent's prompt stay clean (no markdown syntax to leak). */
+function DescriptionField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const t = useTheme();
+  const [editing, setEditing] = useState(false);
+  const text = value ?? "";
+
+  if (editing || !text.trim()) {
+    return (
+      <EditText value={text} onSave={onSave} multiline autoFocus={editing}
+        onDone={() => setEditing(false)}
+        placeholder="Kontext, Akzeptanzkriterien, Links… (der Worker liest es)"
+        style={{ minHeight: 200, textAlignVertical: "top", lineHeight: 20 }} />
+    );
+  }
+  const isHead = (l: string) => {
+    const s = l.trim();
+    return s.length > 2 && s.length <= 40 && s === s.toUpperCase() && /[A-ZÄÖÜ]/.test(s);
+  };
+  return (
+    <Pressable onPress={() => setEditing(true)} accessibilityLabel="Beschreibung bearbeiten"
+      style={{ backgroundColor: t.surface2, borderRadius: 8, borderWidth: 1,
+        borderColor: t.borderSubtle, padding: 10, gap: 2 }}>
+      {text.split("\n").map((line, i) => {
+        const s = line.trim();
+        if (!s) return <View key={i} style={{ height: 8 }} />;
+        if (isHead(line)) {
+          return (
+            <Text key={i} style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700",
+              letterSpacing: 0.6, marginTop: i ? 6 : 0 }}>{s}</Text>
+          );
+        }
+        if (s.startsWith("- ")) {
+          return (
+            <View key={i} style={{ flexDirection: "row", gap: 6 }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 14, lineHeight: 20 }}>•</Text>
+              <Text style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, flex: 1 }}>{s.slice(2)}</Text>
+            </View>
+          );
+        }
+        return <Text key={i} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }}>{s}</Text>;
+      })}
+    </Pressable>
   );
 }
 
@@ -110,8 +164,7 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
         <EditText value={k.task} onSave={(v) => v && edit({ task: v })} multiline style={{ fontWeight: "600" }} />
         <View style={{ height: 8 }} />
         <SectionLabel text="description" />
-        <EditText value={k.description ?? ""} onSave={(v) => edit({ description: v })} multiline
-          placeholder="Kontext, Akzeptanzkriterien, Links… (der Worker liest es)" />
+        <DescriptionField value={k.description ?? ""} onSave={(v) => edit({ description: v })} />
       </Panel>
 
       <Panel>

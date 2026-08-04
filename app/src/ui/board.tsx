@@ -45,6 +45,19 @@ function laneSort(a: Track, b: Track) {
     || (a.due ?? "9999").localeCompare(b.due ?? "9999");
 }
 const isRunning = (k: Track) => k.status === "running" || k.lane === "working";
+
+/** Two lines of a PM work package, worth reading. The stored body is structured
+ *  (NUTZERGESCHICHTE / FERTIG, WENN / …); flattened raw, the ALL-CAPS heads run
+ *  into the prose ("NUTZERGESCHICHTE Als Owner… FERTIG, WENN - Die…") and eat
+ *  the preview. Drop the heads and lead with the actual user story. */
+function descPreview(d?: string) {
+  const body = (d ?? "").split("\n").filter((l) => {
+    const s = l.trim();
+    if (!s) return false;
+    return !(s.length <= 40 && s === s.toUpperCase() && /[A-ZÄÖÜ]/.test(s));
+  });
+  return body.join(" ").replace(/\s+/g, " ").trim();
+}
 /** The daemon is running this card's gate/merge/deploy right now (backgrounded,
  *  can take minutes). Without a visible cue the board looked frozen. */
 const isGating = (k: Track) => k.status === "gating";
@@ -119,7 +132,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const reportColor = k.gate_failed || k.merge_kind === "conflict" ? t.danger : k.merge_kind === "mergeable" ? t.ok : t.txtTertiary;
   const sub =
     isGating(k) ? "Der Harness prüft und merged – das kann ein paar Minuten dauern." :
-    k.lane === "backlog" ? k.description :
+    k.lane === "backlog" ? descPreview(k.description) :
     k.status === "running" ? null :
     (k.lane === "working" && k.last_reply) ? k.last_reply :
     (k.lane === "review" && k.last_reply) ? "Geliefert: " + k.last_reply :
