@@ -117,3 +117,10 @@ The gate is fixed (always runs — your safety net), but the human steps are pol
 - a deploy hook that runs `deploy/push_update.sh` on accept → auto-OTA on merge.
 With all three: file a card → agent works → gate green → auto-merge → auto-deploy,
 same as a hand deploy, gate still guarding.
+
+## Fast-track deploy (deploy/ship.sh)
+The repo `deploy` hook runs `deploy/ship.sh`: it fingerprints the native-affecting
+files and ships JS-only changes via OTA, or on a native change builds the APK
+(deploy/build_apk.sh: JDK17 + gradle + emulator smoke + relay distribute) AND
+pushes a matching OTA. So a fast-track card just works whether the change is JS
+or native.
