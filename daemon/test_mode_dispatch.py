@@ -36,6 +36,8 @@ class FakeDB:
         self.tracks = {}
     def tracks_all(self):
         return [dict(t) for t in self.tracks.values()]
+    def tracks_replace(self, ts):
+        self.tracks = {t["id"]: dict(t) for t in ts}
     def track_put(self, t):
         self.tracks[t["id"]] = dict(t)
     def track_get(self, tid):
@@ -154,6 +156,43 @@ def main():
         assert dispatched == ["t-broken"], \
             "re-queued card was not retried by priority dispatch: %r" % dispatched
         print("PASS move_lane->backlog: priority stamp cleared, card retried")
+
+        # -- the CHAIN's own step stamp must clear on a re-queue too ---------
+        # It lives in processes.json, not on the card, so move_lane cannot
+        # reach it with the loop above - the card came back clean while the
+        # step still said "already dispatched" and never ran again.
+        events.settings = lambda: {
+            "policy": {"auto_dispatch_modes": ["do", "prepare"],
+                       "auto_accept_green": False},
+            "capacity": {"wip_limit": 3}}
+        fake.track_put(_card("t-chain", run_dir=run_dir))
+        proc = [{"id": "p1", "status": "running",
+                 "steps": [{"title": "step one", "mode": "do", "track": "t-chain"}]}]
+        real_pload, real_psave = processes._load, processes._save
+        processes._load, processes._save = (lambda: proc), (lambda ps: None)
+        try:
+            dispatched.clear()
+            processes.sync()
+            assert dispatched == ["t-chain"], \
+                "chain step did not dispatch: %r" % dispatched
+            assert proc[0]["steps"][0].get("auto_dispatched") is True, \
+                "chain dispatch not stamped on the step"
+
+            # the step's card ran, then the owner re-queues it to run again
+            fake.track_put({**fake.track_get("t-chain"),
+                            "lane": "working", "status": "running"})
+            sessions.move_lane("t-chain", "backlog", actor="owner")
+            assert "auto_dispatched" not in proc[0]["steps"][0], \
+                "step stamp survived the move back to Backlog"
+
+            dispatched.clear()
+            processes.sync()
+            assert dispatched == ["t-chain"], \
+                "re-queued chain step did not dispatch again: %r" % dispatched
+            print("PASS move_lane->backlog: chain step stamp cleared, step "
+                  "dispatches again")
+        finally:
+            processes._load, processes._save = real_pload, real_psave
         print("ALL PASS")
     finally:
         sessions._db, events.emit = real_db, real_emit
