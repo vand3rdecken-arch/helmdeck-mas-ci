@@ -1,7 +1,10 @@
 import { useConfig } from "./config";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
-import type { Track, Metrics, Me } from "./types";
+import { t } from "@/i18n/core";
+
+import type { Attach } from "./attachments";
+import type { Track, LaneMove, Metrics, Me } from "./types";
 
 export class AuthRequired extends Error {}
 // Transport never reached the daemon (relay down, network, crypto mismatch).
@@ -40,18 +43,18 @@ async function relayReq(method: string, path: string, bodyStr: string): Promise<
       body: JSON.stringify({ pub: myPub, cipher }),
     });
   } catch {
-    throw new TransportError("Relay nicht erreichbar (Netzwerk/DNS)");
+    throw new TransportError(t("net.relayUnreachable"));
   }
-  if (r.status === 503) throw new TransportError("Desktop offline – das Relay erreicht den Daemon nicht");
-  if (r.status === 504) throw new TransportError("Desktop antwortet nicht (Timeout)");
-  if (!r.ok) throw new TransportError(`Relay-Fehler ${r.status}`);
+  if (r.status === 503) throw new TransportError(t("net.desktopOffline"));
+  if (r.status === 504) throw new TransportError(t("net.desktopTimeout"));
+  if (!r.ok) throw new TransportError(t("net.relayError", { status: r.status }));
   const out = JSON.parse(await r.text());
-  if (!out.cipher) throw new TransportError("Desktop antwortet nicht");
+  if (!out.cipher) throw new TransportError(t("net.desktopSilent"));
   let resp: { status?: number; body?: string };
   try {
     resp = JSON.parse(open(out.cipher, mySec, daemonPub));
   } catch {
-    throw new TransportError("Verschlüsselung passt nicht – Telefon neu koppeln (Desktop: Settings → Mobile app)");
+    throw new TransportError(t("net.badKeys"));
   }
   return { status: resp.status ?? 200, body: resp.body ?? "" };
 }
@@ -72,7 +75,7 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
         });
       } catch (e) {
         if ((e as Error)?.name === "AbortError") throw e;   // caller cancelled, not a health event
-        throw new TransportError("Direktverbindung (LAN) fehlgeschlagen – läuft HelmDeck am Desktop?");
+        throw new TransportError(t("net.lanFailed"));
       }
       status = r.status; txt = await r.text();
     }
@@ -86,7 +89,7 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   if (status >= 400) {
     let msg = "";
     try { msg = String(JSON.parse(txt)?.error ?? ""); } catch { /* not json */ }
-    throw new ApiError(status, msg || `Fehler ${status} (${method} ${path})`);
+    throw new ApiError(status, msg || t("net.httpError", { status, method, path }));
   }
   return (txt ? JSON.parse(txt) : {}) as T;
 }
@@ -103,10 +106,22 @@ export interface ChatMsg { cls: string; text: string; ts?: string }
 export interface ChatReply { reply?: string; error?: string; cost?: number;
   actions?: { tool?: string; detail?: string }[]; usage?: unknown }
 
-export interface SteerOpts { model?: string; thinking?: string; mode?: string }
+// `attachments` was dropped when the archived web composer (SendOpts, which had
+// it) was ported to RN - the daemon has accepted it the whole time. Both /steer
+// and /chat spread these opts into the request body, so adding it here wires it.
+export interface SteerOpts {
+  model?: string; thinking?: string; mode?: string; attachments?: Attach[];
+}
 
+// legacy shape (pre-PMP-epic plans on disk) - kept optional so an old
+// plan-YYYYMMDD.json artifact doesn't crash the panel after an upgrade.
 export interface PmTask { title: string; card?: string | null; priority?: string; status?: string; est_turns?: number; stream?: string; why?: string }
-export interface PmMilestone { name: string; why?: string; tasks: PmTask[]; est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string }
+export interface PmMilestone {
+  name: string; card?: string | null; priority?: string; status?: string; repo?: string | null; stream?: string;
+  user_story?: string; done_when?: string[]; why_now?: string; steps?: string[];
+  est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string;
+  why?: string; tasks?: PmTask[];
+}
 export interface PmBudget { plan?: string; fixed_monthly_eur?: number; cash_to_goal_eur?: number; shadow_eur_to_goal?: number;
   spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string }
 export interface PmBrief {
@@ -147,7 +162,11 @@ export const api = {
   tracks: () => req<Track[]>("GET", "/tracks"),
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   me: () => req<Me>("GET", "/me"),
-  moveLane: (id: string, lane: string) => req<Track>("POST", `/tracks/${id}/lane`, { lane }),
+  // ->working/review/done are run in the BACKGROUND by the daemon (the gate is a
+  // subprocess, the merge + deploy hook follow it), so those reply {started,
+  // gating} instead of the finished Track. The verdict arrives on the card
+  // (status/gate_report/merge_report), in the chat and by push - not here.
+  moveLane: (id: string, lane: string) => req<LaneMove>("POST", `/tracks/${id}/lane`, { lane }),
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),
   newTrack: (b: Record<string, unknown>) => req("POST", "/tracks/new", b),
   update: (id: string, patch: Record<string, unknown>) => req("POST", `/tracks/${id}/update`, patch),
@@ -166,6 +185,13 @@ export const api = {
   transcriptLive: (id: string, v: string) =>
     req<{ v: string; steps: Step[] }>("GET", `/tracks/${id}/transcript/live?v=${encodeURIComponent(v)}`),
   history: (id: string) => req<Step[]>("GET", `/tracks/${id}/history`),
+  // attachments already on the card (daemon serves name+size; the file itself
+  // comes from /tracks/<id>/attachment/<name>)
+  attachments: (id: string) => req<{ name: string; size: number }[]>("GET", `/tracks/${id}/attachments`),
+  addAttachments: (id: string, attachments: Attach[]) =>
+    req("POST", `/tracks/${id}/attach`, { attachments }),
+  removeAttachment: (id: string, name: string) =>
+    req("POST", `/tracks/${id}/attach/remove`, { name }),
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 
   // copilot chat

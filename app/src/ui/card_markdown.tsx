@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import React, { useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 
@@ -72,6 +73,7 @@ const HASH_COMMENT = /^(py|python|rb|ruby|sh|bash|zsh|yaml|yml|toml|ini|conf|mak
 
 function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const t = useTheme();
+  const tr = useT();
   const [copied, setCopied] = useState(false);
   // `#` is a comment only for hash-comment langs; otherwise use `//` (+ `/* */`).
   // With no language, default to `//`-only so `#` isn't miscolored.
@@ -96,7 +98,9 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
     <View style={{ backgroundColor: t.canvas, borderRadius: 8, borderWidth: 1, borderColor: t.borderSubtle, marginVertical: 4, overflow: "hidden" }}>
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5,
         borderBottomWidth: 1, borderBottomColor: t.borderSubtle, backgroundColor: t.surface2 }}>
-        <Text style={{ color: t.txtTertiary, fontSize: 10.5, flex: 1 }}>{lang || "code"}</Text>
+        {/* `lang` is the fence's own language tag (ts, py, …) - a technical
+            token, never translated; only the fallback label is chrome. */}
+        <Text style={{ color: t.txtTertiary, fontSize: 10.5, flex: 1 }}>{lang || tr("transcript.code")}</Text>
         <Pressable hitSlop={8} onPress={async () => { await Clipboard.setStringAsync(code); setCopied(true); setTimeout(() => setCopied(false), 1400); }}>
           <Ionicons name={copied ? "checkmark" : "copy-outline"} size={13} color={copied ? t.ok : t.txtTertiary} />
         </Pressable>

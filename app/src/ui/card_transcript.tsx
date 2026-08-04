@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import React, { memo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Markdown } from "./card_markdown";
@@ -38,8 +39,8 @@ function tsLabel(s: TStep): string {
   return s.ts;
 }
 
-// Clamps long text and reveals a "Mehr anzeigen" / "Weniger anzeigen" toggle
-// only when it actually overflows a threshold (mirrors web transcript Collapsible).
+// Clamps long text and reveals a show-more / show-less toggle only when it
+// actually overflows a threshold (mirrors web transcript Collapsible).
 const COLLAPSE_LINES = 24;
 const COLLAPSE_CHARS = 1600;
 function clampText(text: string): { clamped: string; overflow: boolean } {
@@ -54,6 +55,7 @@ function clampText(text: string): { clamped: string; overflow: boolean } {
 function Collapsible({ text, style, color }: {
   text: string; style: React.ComponentProps<typeof Text>["style"]; color: string;
 }) {
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const { clamped, overflow } = clampText(text);
   return (
@@ -61,7 +63,7 @@ function Collapsible({ text, style, color }: {
       <Text style={style}>{open || !overflow ? text : clamped + (overflow ? "\n…" : "")}</Text>
       {overflow ? (
         <Pressable hitSlop={6} onPress={() => setOpen((o) => !o)} style={{ marginTop: 4 }}>
-          <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{open ? "Weniger anzeigen" : "Mehr anzeigen"}</Text>
+          <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{tr(open ? "transcript.showLess" : "transcript.showMore")}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -71,6 +73,7 @@ function Collapsible({ text, style, color }: {
 // Same clamp/toggle for rendered markdown: clamps the source string so the
 // Markdown renderer only lays out the visible slice until expanded.
 function CollapsibleMarkdown({ text, color }: { text: string; color: string }) {
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const { clamped, overflow } = clampText(text);
   return (
@@ -78,7 +81,7 @@ function CollapsibleMarkdown({ text, color }: { text: string; color: string }) {
       <Markdown>{open || !overflow ? text : clamped}</Markdown>
       {overflow ? (
         <Pressable hitSlop={6} onPress={() => setOpen((o) => !o)} style={{ marginTop: 2 }}>
-          <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{open ? "Weniger anzeigen" : "Mehr anzeigen"}</Text>
+          <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{tr(open ? "transcript.showLess" : "transcript.showMore")}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -182,12 +185,13 @@ function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen
 }
 
 const Thought = memo(function Thought({ s, t }: { s: TStep; t: ThemeTokens }) {
+  const tr = useT();
   const [open, setOpen] = useState(false);
   return (
     <View style={{ borderLeftWidth: 2, borderLeftColor: t.accent2, paddingLeft: 8 }}>
       <Pressable onPress={() => setOpen((o) => !o)} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
         <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={11} color={t.accent2} />
-        <Text style={{ color: t.accent2, fontSize: 12, fontStyle: "italic" }}>Thinking</Text>
+        <Text style={{ color: t.accent2, fontSize: 12, fontStyle: "italic" }}>{tr("transcript.thinking")}</Text>
       </Pressable>
       {open ? <View style={{ marginTop: 4 }}><Collapsible text={s.text || ""} color={t.accent2}
         style={{ color: t.txtTertiary, fontSize: 12.5, fontStyle: "italic", lineHeight: 18 }} /></View> : null}
@@ -196,9 +200,10 @@ const Thought = memo(function Thought({ s, t }: { s: TStep; t: ThemeTokens }) {
 });
 
 function Todos({ s, t }: { s: TStep; t: ThemeTokens }) {
+  const tr = useT();
   return (
     <View style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, padding: 9, backgroundColor: t.surface1, gap: 3 }}>
-      <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", marginBottom: 2 }}>PLAN / TO-DOS</Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", marginBottom: 2 }}>{tr("transcript.todos")}</Text>
       {s.todos?.map((td, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Ionicons
@@ -230,6 +235,7 @@ function keyFactory() {
 
 export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (text: string) => void }) {
   const t = useTheme();
+  const tr = useT();
   const keyFor = keyFactory();
   let lastToolIdx = -1;
   for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
@@ -242,12 +248,12 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
           <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}>
             <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
             <Ionicons name="sparkles-outline" size={12} color={t.accent2} />
-            <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 }}>BOARD-AGENT</Text>
+            <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 }}>{tr("transcript.boardAgentDivider")}</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
           </View>);
         if (kind === "compaction") return (
           <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ Context compacted{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
+            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ {tr("transcript.compacted")}{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
           </View>);
         if (kind === "system" || kind === "note") {
           const good = /\b(MERGED|ACCEPTED|GATE PASSED|DEPLOY HOOK OK|DISPATCHED|CONNECTOR INSTALLED)\b/.test(s.text || "");
@@ -264,7 +270,7 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
         if (kind === "todos") return <Todos key={key} s={s} t={t} />;
         if (kind === "plan") return (
           <View key={key} style={{ borderWidth: 1, borderColor: t.accent + "55", borderRadius: 8, padding: 9, backgroundColor: t.accent + "12" }}>
-            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700", marginBottom: 4 }}>PLAN</Text>
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700", marginBottom: 4 }}>{tr("transcript.plan")}</Text>
             <Markdown>{s.text || ""}</Markdown>
           </View>);
         if (kind === "thinking") return <Thought key={key} s={s} t={t} />;
@@ -289,7 +295,7 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
             {s.agent ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
                 <Ionicons name="sparkles-outline" size={11} color={t.accent2} />
-                <Text style={{ color: t.accent2, fontSize: 10.5, fontWeight: "700" }}>Board-Agent</Text>
+                <Text style={{ color: t.accent2, fontSize: 10.5, fontWeight: "700" }}>{tr("transcript.boardAgent")}</Text>
               </View>
             ) : null}
             <CollapsibleMarkdown text={s.text || ""} color={ac} />

@@ -7,12 +7,26 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { VersionFooter } from "@/ui/updates_info";
 
+// route → nav key + icon for the phone's "everything else" list
+const LINKS = [
+  ["loopmap", "nav.loopmap", "git-network-outline"],
+  ["automation", "nav.automation", "git-branch-outline"],
+  ["processes", "nav.processes", "git-network-outline"],
+  ["connectors", "nav.connectors", "sync-outline"],
+  ["history", "nav.history", "time-outline"],
+  ["sessions", "nav.sessions", "chatbubbles-outline"],
+  ["recordings", "nav.recordings", "videocam-outline"],
+  ["settings", "nav.settings", "settings-outline"],
+] as const;
+
 export default function MoreTab() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { baseUrl, token, set, applyPairing, relayMode } = useConfig();
@@ -21,6 +35,9 @@ export default function MoreTab() {
   const [tok, setTok] = useState(token);
   const [pair, setPair] = useState("");
   const [pairMsg, setPairMsg] = useState("");
+  // The colour of the status line is driven by this kind, never by sniffing the
+  // message text - the message is translated, its meaning must not be.
+  const [pairKind, setPairKind] = useState<"info" | "ok" | "err">("info");
   const [pairBusy, setPairBusy] = useState(false);
   const paired = relayMode();
 
@@ -29,19 +46,21 @@ export default function MoreTab() {
   // wrong keys) must say what's wrong, not "Gekoppelt" (no silent fallback).
   async function doPair() {
     const applied = applyPairing(pair);
-    if (!applied.ok) { setPairMsg(applied.reason); return; }
-    setPairBusy(true); setPairMsg("Verbindung prüfen…");
+    if (!applied.ok) { setPairKind("err"); setPairMsg(applied.reason); return; }
+    setPairBusy(true); setPairKind("info"); setPairMsg(tr("settings.more.verifying"));
     try {
       await api.me();
       qc.invalidateQueries();   // board/dashboard ran pre-pairing (empty) - reload against the new config
+      setPairKind("ok");
       setPairMsg(applied.mode === "relay"
-        ? "Gekoppelt ✓ – verschlüsselt über Relay, Desktop erreichbar."
-        : "Verbunden ✓ – direkt (LAN), Desktop erreichbar.");
+        ? tr("settings.more.pairedRelayOk")
+        : tr("settings.more.pairedLanOk"));
       setPair("");
     } catch (e) {
+      setPairKind("err");
       setPairMsg(e instanceof AuthRequired
-        ? "Code übernommen, aber der Token wurde abgelehnt – am Desktop neuen Code erzeugen."
-        : `Code übernommen, aber der Desktop antwortet nicht: ${String((e as Error).message)}`);
+        ? tr("settings.more.tokenRejected")
+        : tr("settings.more.noAnswer", { err: String((e as Error).message) }));
     } finally { setPairBusy(false); }
   }
 
@@ -51,16 +70,18 @@ export default function MoreTab() {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
       <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700", paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 6 }}>
-        More
+        {tr("nav.more")}
       </Text>
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120, gap: 10 }}>
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <SectionLabel text="pair with a desktop" />
-            <Text style={{ color: paired ? t.ok : t.txtTertiary, fontSize: 11 }}>{paired ? "● gekoppelt (Relay)" : "nicht gekoppelt"}</Text>
+            <SectionLabel text={tr("settings.more.pairSection")} />
+            <Text style={{ color: paired ? t.ok : t.txtTertiary, fontSize: 11 }}>
+              {paired ? tr("settings.more.pairedRelay") : tr("settings.more.notPaired")}
+            </Text>
           </View>
-          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 8 }}>
-            Desktop: Settings → Mobile app → „Telefon koppeln". Den QR scannen — oder den Code unten einfügen.
+          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>
+            {tr("settings.more.pairHelp")}
           </Text>
           <Pressable onPress={() => router.push("/scan" as never)}
             style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
@@ -70,44 +91,35 @@ export default function MoreTab() {
           </Pressable>
           <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 6 }}>oder Code / Link einfügen:</Text>
           <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" multiline
-            placeholder="Pairing-Code / Link" placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
+            placeholder={tr("settings.more.pairPh")} placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
           <View style={{ height: 8 }} />
           <Pressable onPress={doPair} disabled={pairBusy}
             style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center", opacity: pairBusy ? 0.6 : 1 }}>
-            <Text style={{ color: "#fff", fontWeight: "600" }}>{pairBusy ? "Prüfe…" : "Pair"}</Text>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{pairBusy ? tr("settings.more.checking") : tr("settings.more.pairBtn")}</Text>
           </Pressable>
-          {pairMsg ? <Text style={{ color: /✓/.test(pairMsg) ? t.ok : pairMsg.startsWith("Verbindung") ? t.txtSecondary : t.danger, fontSize: 12, marginTop: 6 }}>{pairMsg}</Text> : null}
+          {pairMsg ? <Text style={{ color: pairKind === "ok" ? t.ok : pairKind === "info" ? t.txtSecondary : t.danger, fontSize: 12, marginTop: 6 }}>{pairMsg}</Text> : null}
         </Panel>
         <Panel>
-          <SectionLabel text="direct lan (optional)" />
-          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>Nur im selben Netz ohne Relay. Daemon URL + Device-Token.</Text>
+          <SectionLabel text={tr("settings.more.lanSection")} />
+          <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>{tr("settings.more.lanHelp")}</Text>
           <TextInput value={url} onChangeText={setUrl} autoCapitalize="none" placeholder="http://10.0.2.2:8140"
             placeholderTextColor={t.txtPlaceholder} style={field} />
           <View style={{ height: 8 }} />
-          <TextInput value={tok} onChangeText={setTok} autoCapitalize="none" placeholder="Bearer token (optional)"
+          <TextInput value={tok} onChangeText={setTok} autoCapitalize="none" placeholder={tr("settings.more.tokenPh")}
             placeholderTextColor={t.txtPlaceholder} style={field} />
           <View style={{ height: 10 }} />
           <Pressable onPress={() => set({ baseUrl: url.replace(/\/+$/, ""), token: tok.trim() })}
             style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center" }}>
-            <Text style={{ color: "#fff", fontWeight: "600" }}>Speichern</Text>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{tr("ui.save")}</Text>
           </Pressable>
         </Panel>
         <Panel style={{ padding: 0 }}>
-          {([
-            ["loopmap", "Loop & Harness", "git-network-outline"],
-            ["automation", "Automation & loop", "git-branch-outline"],
-            ["processes", "Processes", "git-network-outline"],
-            ["connectors", "Connectors", "sync-outline"],
-            ["history", "History", "time-outline"],
-            ["sessions", "Sessions", "chatbubbles-outline"],
-            ["recordings", "Recordings", "videocam-outline"],
-            ["settings", "Settings", "settings-outline"],
-          ] as const).map(([route, label, icon], i) => (
+          {LINKS.map(([route, labelKey, icon], i) => (
             <Pressable key={route} onPress={() => router.push(`/${route}` as never)}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
                 borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
               <Ionicons name={icon} size={18} color={t.txtSecondary} />
-              <Text style={{ color: t.txtPrimary, fontSize: 14, flex: 1 }}>{label}</Text>
+              <Text style={{ color: t.txtPrimary, fontSize: 14, flex: 1 }}>{tr(labelKey)}</Text>
               <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
             </Pressable>
           ))}

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import type { Me } from "@/data/types";
+import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Empty, ScreenHeader } from "@/ui/kit";
@@ -29,7 +30,7 @@ function glass(t: ThemeTokens) {
 }
 
 function val(v: unknown): string {
-  if (v === null || v === undefined) return "(unset)";
+  if (v === null || v === undefined) return i18nT("history.unset");
   if (typeof v === "string") return v === "" ? '""' : v;
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
@@ -47,6 +48,7 @@ function Panel({ t, title, sub, children }: { t: ThemeTokens; title: string; sub
 
 function CheckpointRow({ t, c, isOwner }: { t: ThemeTokens; c: Checkpoint; isOwner: boolean }) {
   const qc = useQueryClient();
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const { data: diff, isFetching } = useQuery({
     queryKey: ["cpdiff", c.id],
@@ -56,10 +58,10 @@ function CheckpointRow({ t, c, isOwner }: { t: ThemeTokens; c: Checkpoint; isOwn
   const restore = useMutation({
     mutationFn: () => api.post<{ error?: string; restored?: string }>(`/checkpoints/${c.id}/restore`, {}),
     onSuccess: (r) => {
-      Alert.alert(r.error ? "Fehler" : "Wiederhergestellt", r.error ?? "Aktueller Stand wurde zuvor gesichert.");
+      Alert.alert(r.error ? tr("ui.error") : tr("history.restored"), r.error ?? tr("history.restoredBody"));
       qc.invalidateQueries({ queryKey: ["checkpoints"] });
     },
-    onError: (e) => Alert.alert("Fehler", String((e as Error).message)),
+    onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
   const noChange = diff && diff.settings.length === 0 && !diff.connectors.added.length && !diff.connectors.removed.length;
   return (
@@ -74,20 +76,20 @@ function CheckpointRow({ t, c, isOwner }: { t: ThemeTokens; c: Checkpoint; isOwn
         </Pressable>
         {isOwner ? (
           <Pressable
-            onPress={() => Alert.alert("Wiederherstellen?", `Config-Stand vor "${c.reason}" wiederherstellen? (Umkehrbar – aktueller Stand wird zuerst gesichert.)`, [
-              { text: "Abbrechen", style: "cancel" },
-              { text: "Restore", onPress: () => restore.mutate() },
+            onPress={() => Alert.alert(tr("history.restoreTitle"), tr("history.restoreBody", { reason: c.reason }), [
+              { text: tr("ui.cancel"), style: "cancel" },
+              { text: tr("history.restore"), onPress: () => restore.mutate() },
             ])}
             style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}
           >
-            <Text style={{ color: t.txtSecondary, fontSize: 11 }}>↺ restore</Text>
+            <Text style={{ color: t.txtSecondary, fontSize: 11 }}>{tr("history.restoreShort")}</Text>
           </Pressable>
         ) : null}
       </View>
       {open ? (
         <View style={{ paddingLeft: 19, paddingTop: 6 }}>
-          {isFetching && !diff ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Diff wird gelesen…</Text> : null}
-          {diff && noChange ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Keine feldweise Änderung erfasst.</Text> : null}
+          {isFetching && !diff ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("history.diffLoading")}</Text> : null}
+          {diff && noChange ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("history.noFieldChange")}</Text> : null}
           {diff && !noChange ? (
             <View style={{ gap: 2 }}>
               {diff.settings.map((f) => (
@@ -99,8 +101,8 @@ function CheckpointRow({ t, c, isOwner }: { t: ThemeTokens; c: Checkpoint; isOwn
                   <Text style={{ color: t.ok }}>{val(f.after)}</Text>
                 </Text>
               ))}
-              {diff.connectors.added.map((n) => <Text key={"a" + n} style={{ color: t.ok, fontSize: 12 }}>+ connector {n}</Text>)}
-              {diff.connectors.removed.map((n) => <Text key={"r" + n} style={{ color: t.danger, fontSize: 12 }}>− connector {n}</Text>)}
+              {diff.connectors.added.map((n) => <Text key={"a" + n} style={{ color: t.ok, fontSize: 12 }}>{tr("history.connectorAdded", { name: n })}</Text>)}
+              {diff.connectors.removed.map((n) => <Text key={"r" + n} style={{ color: t.danger, fontSize: 12 }}>{tr("history.connectorRemoved", { name: n })}</Text>)}
             </View>
           ) : null}
         </View>
@@ -111,13 +113,14 @@ function CheckpointRow({ t, c, isOwner }: { t: ThemeTokens; c: Checkpoint; isOwn
 
 function DebtRow({ t, d, canFix }: { t: ThemeTokens; d: Debt; canFix: boolean }) {
   const qc = useQueryClient();
+  const tr = useT();
   const fix = useMutation({
     mutationFn: () => api.post<{ error?: string; id?: string }>(`/debt/${d.id}/fix`, {}),
     onSuccess: (r) => {
-      Alert.alert(r.error ? "Fehler" : "Fix-Card erstellt", r.error ?? "Fix-Card im Backlog (hohe Priorität).");
+      Alert.alert(r.error ? tr("ui.error") : tr("history.fixCardCreated"), r.error ?? tr("history.fixCardBody"));
       qc.invalidateQueries({ queryKey: ["tracks"] });
     },
-    onError: (e) => Alert.alert("Fehler", String((e as Error).message)),
+    onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
   const stColor = d.status === "paid" ? t.ok : d.status === "in_progress" ? t.ai : t.warn;
   return (
@@ -132,19 +135,20 @@ function DebtRow({ t, d, canFix }: { t: ThemeTokens; d: Debt; canFix: boolean })
             onPress={() => fix.mutate()}
             style={{ marginLeft: "auto", borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}
           >
-            <Text style={{ color: t.txtSecondary, fontSize: 11 }}>file fix card</Text>
+            <Text style={{ color: t.txtSecondary, fontSize: 11 }}>{tr("history.fileFixCard")}</Text>
           </Pressable>
         ) : null}
       </View>
-      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>bites when: {d.trigger}</Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("history.bitesWhen", { trigger: d.trigger })}</Text>
       <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{d.why_it_bites}</Text>
-      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>fix: {d.fix}</Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("history.fix", { fix: d.fix })}</Text>
     </View>
   );
 }
 
 export default function History() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -162,52 +166,52 @@ export default function History() {
   const forkMut = useMutation({
     mutationFn: (track: string) => api.fork(track) as Promise<{ id?: string; error?: string }>,
     onSuccess: (r) => {
-      Alert.alert(r.error ? "Fehler" : "Geforkt", r.error ?? "Neue Card aus diesem Branch (Quelle bleibt unberührt).");
+      Alert.alert(r.error ? tr("ui.error") : tr("history.forked"), r.error ?? tr("history.forkedBody"));
       qc.invalidateQueries({ queryKey: ["history"] });
       qc.invalidateQueries({ queryKey: ["tracks"] });
     },
-    onError: (e) => Alert.alert("Fehler", String((e as Error).message)),
+    onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-      <ScreenHeader title="History" onBack={() => router.back()} />
+      <ScreenHeader title={tr("nav.history")} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{
         padding: wide ? 20 : 12, gap: 14, paddingBottom: 60,
         width: "100%", maxWidth: wide ? 1200 : undefined, alignSelf: "center",
       }}>
         {hist.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-        {hist.error ? <Text style={{ color: t.danger }}>Desktop nicht erreichbar.</Text> : null}
+        {hist.error ? <Text style={{ color: t.danger }}>{tr("health.unreachable")}</Text> : null}
 
         {hist.data ? (
-          <Panel t={t} title="Commit-Graph"
-            sub="Jede Zeile = der Branch einer Card (tippen → Card) · jeder Punkt = ein Commit · Zeilenfarbe = Lane.">
+          <Panel t={t} title={tr("history.commitGraph")}
+            sub={tr("history.commitGraphSub")}>
             <HistoryGraph
               h={hist.data}
               onOpenCard={(id) => router.push(`/card/${id}`)}
               onFork={(track, branch) => Alert.alert(
-                "Branch forken?",
-                `Neue Card aus dem Stand von "${branch}" starten? (Append-only – die Quelle bleibt unberührt.)`,
+                tr("history.forkTitle"),
+                tr("history.forkBody", { branch }),
                 [
-                  { text: "Abbrechen", style: "cancel" },
-                  { text: "Fork", onPress: () => forkMut.mutate(track) },
+                  { text: tr("ui.cancel"), style: "cancel" },
+                  { text: tr("history.fork"), onPress: () => forkMut.mutate(track) },
                 ],
               )}
             />
           </Panel>
         ) : null}
 
-        <Panel t={t} title="Config-Checkpoints"
-          sub="Policy/Settings- und Connector-Änderungen (nicht Code – das ist der Graph oben). Zeile antippen für Details.">
+        <Panel t={t} title={tr("history.checkpoints")}
+          sub={tr("history.checkpointsSub")}>
           {cps.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-          {cps.data && cps.data.length === 0 ? <Empty text="Noch keine – die nächste Settings-/Connector-Änderung erzeugt einen." /> : null}
+          {cps.data && cps.data.length === 0 ? <Empty text={tr("history.noCheckpoints")} /> : null}
           {(cps.data ?? []).slice(0, 20).map((c) => <CheckpointRow key={c.id} t={t} c={c} isOwner={isOwner} />)}
         </Panel>
 
-        <Panel t={t} title="Structural Debt"
-          sub="Bewusste Abkürzungen, die das Programm über sich selbst kennt.">
+        <Panel t={t} title={tr("history.debt")}
+          sub={tr("history.debtSub")}>
           {debt.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-          {debt.data && debt.data.length === 0 ? <Empty text="Keine Einträge." /> : null}
+          {debt.data && debt.data.length === 0 ? <Empty text={tr("history.noDebt")} /> : null}
           {(debt.data ?? []).map((d) => <DebtRow key={d.id} t={t} d={d} canFix={canFix} />)}
         </Panel>
       </ScrollView>

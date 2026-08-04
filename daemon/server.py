@@ -308,20 +308,16 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
 
-                # Tick whenever EITHER the session .jsonl grows OR the driver's
+                # Tick whenever the session .jsonl grows, the driver's
                 # live_partial.txt grows (token streaming within a block, before
-                # it's flushed to the .jsonl). session_id is resolved fresh each
-                # loop so streaming starts on turn 1 (sidecar) too. The client
-                # refetches the (transcript + live partial) on each tick.
-                run_dir = (t or {}).get("run_dir") or ""
-                live_path = os.path.join(run_dir, "live_partial.txt") if run_dir else None
-
+                # it's flushed to the .jsonl), OR the flight recorder gets a
+                # lifecycle note. ONE token for both live paths - SSE and the
+                # relay long-poll must agree on what "changed" means, or the
+                # web feed silently misses what the phone gets. session_id is
+                # resolved fresh inside so streaming starts on turn 1 (sidecar)
+                # too. The client refetches the transcript on each tick.
                 def combined():
-                    s2 = claude_sessions.live_session_id(t)
-                    jp = claude_sessions._find_transcript(s2) if s2 else None
-                    js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
-                    ls = os.path.getsize(live_path) if live_path and os.path.exists(live_path) else 0
-                    return js + ls
+                    return claude_sessions.transcript_version(t)
 
                 def tick(v):
                     self.wfile.write(("data: %d" % v).encode() + b"\n\n")
@@ -485,7 +481,20 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(processes.list_processes(
                     client=user["name"] if user["role"] == "client" else None)))
             if p == "/me":
-                return self._send(200, json.dumps({"name": user["name"], "role": user["role"]}))
+                # Carries the PUBLIC UI policy, not just the identity: the
+                # workspace language (and the lane labels the board renders) has
+                # to reach EVERY role, or the app is German for an operator and
+                # English for the owner - exactly the split this replaced.
+                # /dashboard/data can't serve it: it strips settings for
+                # non-owners and 403s clients. Whitelisted, never the whole
+                # settings blob - that stays owner-only.
+                import events
+                pol = events.settings().get("policy") or {}
+                return self._send(200, json.dumps({
+                    "name": user["name"], "role": user["role"],
+                    "ui": {"lang": pol.get("lang", "de"),
+                           "lane_labels": pol.get("lane_labels") or {}},
+                }))
             if p == "/settings":
                 import events
                 if user["role"] != "owner":
@@ -1143,6 +1152,16 @@ class H(BaseHTTPRequestHandler):
                     _bg("track:dispatch:" + tid,
                         lambda: sessions.move_lane(tid, "working", actor=actor))
                     return self._send(200, json.dumps({"started": tid}))
+                if lane in ("review", "done"):
+                    # Gate (subprocess, up to 600s) + merge + deploy hook. Held
+                    # inline this blocked the HTTP request for minutes, which is
+                    # what made an accept feel like invisible background work.
+                    # Background it like ->working; the card carries status
+                    # "gating" and every outcome is reported on the card, in the
+                    # chat (sessions._say_card) and by push.
+                    _bg("track:gate:" + tid,
+                        lambda: sessions.move_lane(tid, lane, actor=actor))
+                    return self._send(200, json.dumps({"started": tid, "gating": True}))
                 return self._send(200, json.dumps(sessions.move_lane(tid, lane, actor=actor)))
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):

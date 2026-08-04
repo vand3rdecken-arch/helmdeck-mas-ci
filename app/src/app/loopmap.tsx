@@ -6,6 +6,7 @@ import { ActivityIndicator, Animated as RNAnimated, Easing, Pressable, ScrollVie
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type LoopMap, type LoopNode } from "@/data/client";
+import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 
 // A glowing token that travels the lane pipeline, left to right, forever.
@@ -53,19 +54,21 @@ function GatePulse({ color, active, onPress }: { color: string; active: boolean;
 }
 
 function KindBadge({ kind, t }: { kind?: string; t: ReturnType<typeof useTheme> }) {
+  const tr = useT();
   if (!kind) return null;
   const fixed = kind === "fixed";
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface2,
       borderColor: fixed ? t.danger : t.ok, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
       <Ionicons name={fixed ? "lock-closed" : "options-outline"} size={11} color={fixed ? t.danger : t.ok} />
-      <Text style={{ color: fixed ? t.danger : t.ok, fontSize: 10.5, fontWeight: "700" }}>{fixed ? "FIX (Harness)" : "POLICY (justierbar)"}</Text>
+      <Text style={{ color: fixed ? t.danger : t.ok, fontSize: 10.5, fontWeight: "700" }}>{fixed ? tr("loopmap.kindFixed") : tr("loopmap.kindPolicy")}</Text>
     </View>
   );
 }
 
 export default function LoopMapScreen() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { data, isLoading, error } = useQuery<LoopMap>({ queryKey: ["loopmap"], queryFn: api.loopMap, staleTime: 60000 });
@@ -85,11 +88,11 @@ export default function LoopMapScreen() {
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}>
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
-        <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "700", flex: 1 }}>Loop &amp; Harness</Text>
+        <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "700", flex: 1 }}>{tr("loopmap.title")}</Text>
       </View>
 
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 40 }} /> :
-       error || !data ? <Text style={{ color: t.danger, padding: 16 }}>Desktop nicht erreichbar.</Text> : (
+       error || !data ? <Text style={{ color: t.danger, padding: 16 }}>{tr("health.unreachable")}</Text> : (
         <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 60, gap: 18 }}>
           {/* ---- runtime lane flow ---- */}
           <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700" }}>{data.runtime.title}</Text>
@@ -119,7 +122,7 @@ export default function LoopMapScreen() {
               </View>
             </View>
             <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center" }}>
-              Tippe einen Schritt oder das Schild, um die Regel dahinter zu sehen.
+              {tr("loopmap.hint")}
             </Text>
           </View>
 
@@ -149,7 +152,7 @@ export default function LoopMapScreen() {
           </View>
 
           {/* ---- harness laws ---- */}
-          <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700", marginTop: 4 }}>Harness-Gesetze (fix)</Text>
+          <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700", marginTop: 4 }}>{tr("loopmap.laws")}</Text>
           <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, overflow: "hidden" }}>
             {data.laws.map((law, i) => (
               <View key={law.key} style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12,
@@ -165,7 +168,7 @@ export default function LoopMapScreen() {
             style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface1,
               borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, padding: 13 }}>
             <Ionicons name="document-text-outline" size={16} color={t.txtSecondary} />
-            <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600", flex: 1 }}>Capability-Charter (Code, read-only)</Text>
+            <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600", flex: 1 }}>{tr("loopmap.charter")}</Text>
             <Ionicons name={showCharter ? "chevron-up" : "chevron-down"} size={16} color={t.txtTertiary} />
           </Pressable>
           {showCharter ? (

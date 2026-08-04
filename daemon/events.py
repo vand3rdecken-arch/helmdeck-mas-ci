@@ -74,8 +74,20 @@ DEFAULTS = {
     # economics, worktree isolation, chain ordering, driver commands) is code,
     # deliberately not configurable from chat.
     "policy": {
-        "lane_labels": {"backlog": "Backlog", "working": "Working",
-                        "review": "Review", "done": "Done"},
+        # UI + owner-facing prose language: "de" | "en". ONE language, sharply -
+        # the app translates every screen through app/src/i18n.ts and the daemon
+        # runs its chat/push messages through i18n.t(). The append-only AUDIT
+        # trail (event log, gate output, git) stays English on purpose: it is a
+        # technical record, not owner prose, and must read the same in every
+        # workspace. tools/i18n_lint.py enforces that nothing drifts back.
+        "lang": "de",
+        # EMPTY on purpose: a lane label shipped in the defaults would be
+        # hardcoded in ONE language and it overrides the translation, so a
+        # German workspace read "Backlog / Working / Review / Done" - exactly
+        # the mix policy.lang exists to end. Empty = the app translates the
+        # lane; this stays here purely as a per-workspace RENAME ("Working" ->
+        # "Bei uns"), which is language-neutral by definition.
+        "lane_labels": {},
         # which step modes the chain starts without a human
         "auto_dispatch_modes": ["do", "prepare"],
         # green gate on a chain step -> accept automatically (full autonomy);
