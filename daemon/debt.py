@@ -303,6 +303,37 @@ DEBT = [
                "loopstate into the sqlite DB like tracks.",
         "order": 13,
     },
+    {
+        "id": "browser-attach-real-chrome",
+        "title": "Standard agent browser attaches to a real, logged-in Chrome",
+        "status": "open",
+        "what": "browsercap.AgentBrowser now defaults to attach=True: it launches "
+                "(or reuses) a persistent Chrome with a debug port + a dedicated "
+                "HelmDeck user-data-dir and drives it over CDP. That profile holds "
+                "real extensions and logged-in sessions (the whole point - so an "
+                "agent can use Claude-for-Chrome etc.), and the agent gets a page "
+                "handle in it. Guards in place: it is a SEPARATE profile (not the "
+                "owner's daily user-data-dir), the browser is visible and fully "
+                "screen-recorded (wincap screen.mp4 + live.jpg) beside the audited "
+                "action timeline, close() never kills the owner's browser, and "
+                "invocation stays behind the machine capability (policy.machine, "
+                "owner role) like any other PC-touching work.",
+        "why_it_bites": "An agent turn can act inside a browser carrying the "
+                        "owner's cookies/OAuth sessions - it can read or send as "
+                        "the owner on any site that profile is logged into, with no "
+                        "per-site consent and no branch to roll back. The profile "
+                        "separation is a convention, not a sandbox; nothing yet "
+                        "restricts which origins the agent may drive.",
+        "trigger": "the first card that opens the standard browser against a "
+                   "sensitive logged-in site (mail, bank, cloud console), or the "
+                   "debug port being reachable by another local process",
+        "fix": "Gate origins: an allowlist of hosts the agent browser may navigate "
+               "(deny the rest at goto()); bind the debug port to loopback with a "
+               "per-run token; add a dry-run/confirm turn for state-changing "
+               "actions on allowlisted-but-sensitive sites; surface the active "
+               "origin in the live glance feed so the owner sees where it is.",
+        "order": 14,
+    },
 ]
 
 def list_debt():
