@@ -1015,6 +1015,27 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         lane = "done"   # Review == Abnahme: a finished card lands in Done
     elif lane == "backlog":
         t["status"] = "queued"
+        # Re-queueing a card IS the "run it again" instruction, so the
+        # auto-dispatchers' one-shot stamps must not survive it. They are
+        # written once (processes._autopilot / _priority_dispatch /
+        # _auto_resolve) and NOTHING else ever clears them, so a re-queued
+        # autopilot card kept autopilot=true but never dispatched again - it
+        # sat in Backlog looking like a normal queued card, which is exactly
+        # the silent waiting the autopilot exists to remove. A fresh queue =
+        # a fresh dispatch/escalation budget. This is also the ONLY retry
+        # handle for a card whose automatic dispatch failed, so every
+        # dispatcher stamp added here must be cleared here too.
+        for k in ("autopilot_dispatched", "autopilot_accepted",
+                  "autopilot_alerted", "autopilot_ts", "priority_dispatched"):
+            t.pop(k, None)
+        # the chain keeps its OWN stamps on the step (processes.json), which the
+        # loop above cannot reach - without this the card came back clean but
+        # its step stayed "already dispatched" and never ran again.
+        try:
+            import processes
+            processes.clear_step_stamps(tid)
+        except Exception as e:      # a board move must not fail on the chain store
+            print("clear_step_stamps failed for %s: %s" % (tid, e))
     events.emit("lane", tid, frm=prev, to=lane)
     t["lane"] = lane
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1306,6 +1327,11 @@ CLEARABLE = ("project_id",)
 # (execution mode for process steps, then the completion statistic auto/assisted
 # written on accept by events._completion_mode), so the opt-in gets its own key
 # and can never be set as a side effect of a touch-free acceptance.
+# For the same reason a CARD's mode is never compared against
+# policy.auto_dispatch_modes (that gates process STEPS in processes.sync):
+# card dispatch only excludes the needs-a-person modes human/teach/cowork,
+# so the 'auto' stat on an accepted card can never block a (re)dispatch
+# (test_mode_dispatch.py pins this).
 BOOLFIELDS = ("autopilot", "fast_track")
 
 def archive_track(tid, on=True, actor="owner"):
