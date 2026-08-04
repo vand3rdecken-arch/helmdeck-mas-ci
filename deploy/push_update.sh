@@ -61,7 +61,10 @@ echo "published to $DEST: $(sudo test -f "$DEST/metadata.json" && echo ok)"
 REMOTE
 
 echo "==> verify live manifest"
-curl -s -m20 -H "expo-platform: android" -H "expo-runtime-version: 1.0.0" \
+# runtimeVersion policy is "appVersion", so the live rtv == expo.version. Derive
+# it (don't hardcode) or the verify HEAD mismatches after a native version bump.
+RTV="$(py -3.12 -c 'import json;print(json.load(open("app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)"
+curl -s -m20 -H "expo-platform: android" -H "expo-runtime-version: $RTV" \
      -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
      "https://$RELAY_DOMAIN/updates/manifest" \
   | head -c 240
