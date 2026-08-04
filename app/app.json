@@ -72,7 +72,10 @@
       "expo-notifications",
       [
         "expo-camera",
-        { "cameraPermission": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop." }
+        {
+          "cameraPermission": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "experiments": {

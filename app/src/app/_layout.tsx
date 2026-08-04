@@ -15,6 +15,7 @@ import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useSilentOta } from "@/data/ota";
 import { decryptPush, presentDecrypted, registerForPush } from "@/data/push";
+import { t as i18nT } from "@/i18n/core";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 import { HealthBanner } from "@/ui/health_banner";
@@ -113,15 +114,15 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28, gap: 14 }}>
       <Text style={{ color: t.txtPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>
-        {needsUpdate ? "App-Update nötig" : "Etwas ist schiefgelaufen"}
+        {needsUpdate ? i18nT("err.updateNeeded") : i18nT("err.generic")}
       </Text>
       <Text style={{ color: t.txtSecondary, fontSize: 14, textAlign: "center", lineHeight: 20 }}>
         {needsUpdate
-          ? "Diese App-Version ist älter als das aktuelle Update. Bitte installiere die neueste HelmDeck-App (Google Drive / Store) und öffne sie neu."
-          : (error?.message ?? "Unbekannter Fehler")}
+          ? i18nT("err.updateBody")
+          : (error?.message ?? i18nT("err.unknown"))}
       </Text>
       <Pressable onPress={retry} style={{ marginTop: 6, backgroundColor: t.accent, paddingHorizontal: 20, paddingVertical: 11, borderRadius: 12 }}>
-        <Text style={{ color: "#fff", fontWeight: "600" }}>Erneut versuchen</Text>
+        <Text style={{ color: "#fff", fontWeight: "600" }}>{i18nT("err.retry")}</Text>
       </Pressable>
     </View>
   );

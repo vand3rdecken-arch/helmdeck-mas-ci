@@ -90,6 +90,11 @@ MESSAGES = {
     "push.pmDoneBody": {"de": "'{task}' - braucht deine Abnahme.",
                         "en": "'{task}' - needs your acceptance."},
     "push.pmStuckBody": {"de": "'{task}' - {proposal}", "en": "'{task}' - {proposal}"},
+    "push.autopilotStuck": {"de": "Autopilot: haengt", "en": "Autopilot: stuck"},
+    "push.autopilotStuckBody": {
+        "de": "'{task}' haengt trotz Fix-Versuchen. {proposal}",
+        "en": "'{task}' is still stuck despite fix attempts. {proposal}",
+    },
 
     # -- the PM speaking in chat (pm._say) ------------------------------------
     "pm.planned": {

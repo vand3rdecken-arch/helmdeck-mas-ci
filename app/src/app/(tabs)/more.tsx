@@ -87,9 +87,9 @@ export default function MoreTab() {
             style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
               backgroundColor: t.accent, borderRadius: 8, padding: 12, marginBottom: 10 }}>
             <Ionicons name="qr-code-outline" size={18} color="#fff" />
-            <Text style={{ color: "#fff", fontWeight: "700" }}>QR-Code scannen</Text>
+            <Text style={{ color: "#fff", fontWeight: "700" }}>{tr("settings.more.scanQr")}</Text>
           </Pressable>
-          <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 6 }}>oder Code / Link einfügen:</Text>
+          <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 6 }}>{tr("settings.more.orPaste")}</Text>
           <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" multiline
             placeholder={tr("settings.more.pairPh")} placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 60 }]} />
           <View style={{ height: 8 }} />
