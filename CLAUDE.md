@@ -34,3 +34,13 @@ py -3.12 -m py_compile daemon/*.py          # quick daemon check
 cd web && npx tsc --noEmit                  # web types
 ```
 E2E smoke: Playwright against :3300 (login owner; password in owner's hands).
+
+## Deploy / ship to the phone
+
+**Read `DEPLOY.md` before shipping** - it is the runbook for getting a change to
+the phone/desktop and the traps that cost hours. In short:
+- JS/React/asset change → OTA: `bash deploy/push_update.sh` (seconds).
+- Native change (native module, permission, app.json plugin, runtimeVersion) →
+  APK rebuild (needs JDK 17, forward-slash `local.properties`), then
+  `deploy/push_relay.sh` AND a matching OTA (else the old relay bundle reverts
+  the JS). Emulator-verify with `adb exec-out screencap -p > shot.png`.
