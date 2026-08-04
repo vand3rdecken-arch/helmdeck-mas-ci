@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { create } from "zustand";
 
 import { api, type ChatMsg, type SteerOpts } from "@/data/client";
 import { useT } from "@/i18n";
@@ -11,6 +12,17 @@ import { useTheme } from "@/theme";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { Empty } from "@/ui/kit";
+
+// Desktop copilot is an IN-PAGE overlay (not a route), so the board stays mounted
+// and visible-behind-dimmed — a route/transparentModal leaves a black void on web
+// because expo-router doesn't keep the previous screen rendered. The FAB opens
+// this store on wide screens; the phone still navigates to the /chat route.
+interface CopilotPanel { open: boolean; show: () => void; hide: () => void }
+export const useCopilotPanel = create<CopilotPanel>((set) => ({
+  open: false,
+  show: () => set({ open: true }),
+  hide: () => set({ open: false }),
+}));
 
 // Board copilot chat = the SAME transcript + composer UI as the card chat
 // (app/src/ui/card_transcript.tsx + card_composer.tsx). Only the submit target
@@ -29,15 +41,13 @@ function toStep(m: ChatMsg): TStep {
   };
 }
 
-export default function ChatScreen() {
+// The chat body (transcript + composer + logic). `onClose` returns to the board:
+// router.back() when mounted as a route (phone), or the panel store's hide() when
+// mounted as the desktop overlay. `wide` caps/centers the column for desktop.
+function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  // On a wide desktop window the chat must read as a centered column, not stretch
-  // edge-to-edge like the board. Cap + center the messages and the composer.
-  const { width } = useWindowDimensions();
-  const wide = Platform.OS === "web" && width >= 900;
   const colMax = wide ? 860 : undefined;
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -105,7 +115,7 @@ export default function ChatScreen() {
 
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
-      <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
+      <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
     </View>
   );
@@ -114,14 +124,14 @@ export default function ChatScreen() {
   // (mirrors archive/web/components/chat.tsx returning null for clients).
   if (me?.role === "client") {
     return (
-      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
+      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top }}>
         {header}
         <Empty text={tr("chat.teamOnly")} />
       </View>
     );
   }
 
-  const body = (
+  return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top,
       ...(wide ? { borderLeftWidth: 1, borderColor: t.glassBorder } : null) }}>
       {header}
@@ -152,16 +162,44 @@ export default function ChatScreen() {
       </View>
     </View>
   );
+}
 
+// Desktop overlay: a right-side panel over the DIMMED board, which STAYS mounted
+// and visible because this renders inside the board screen (not as a route). The
+// board tab mounts this; it no-ops on phone / when closed. Tapping the board area
+// (the flex-1 backdrop) closes it.
+export function CopilotOverlay() {
+  const t = useTheme();
+  const { width } = useWindowDimensions();
+  const wide = Platform.OS === "web" && width >= 900;
+  const open = useCopilotPanel((s) => s.open);
+  const hide = useCopilotPanel((s) => s.hide);
+  if (!wide || !open) return null;
+  return (
+    <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, flexDirection: "row", backgroundColor: "#00000073" }}>
+      <Pressable style={{ flex: 1 }} onPress={hide} accessibilityLabel="Chat schließen" />
+      <View style={{ width: 540, maxWidth: "48%", ...(Platform.OS === "web" ? { boxShadow: "-8px 0 24px rgba(0,0,0,0.35)" } as any : {}) }}>
+        <ChatBody onClose={hide} wide />
+      </View>
+    </View>
+  );
+}
+
+export default function ChatScreen() {
+  const router = useRouter();
+  const { width } = useWindowDimensions();
+  const wide = Platform.OS === "web" && width >= 900;
+  // Phone: the chat is a full-screen route. Desktop reaches the copilot via the
+  // in-page CopilotOverlay (board FAB opens the panel store), NOT this route — but
+  // if a wide window ever lands here directly (deep link / reload), still render
+  // as a panel rather than a full-bleed takeover.
   if (wide) {
-    // Desktop: a right-side panel over the DIMMED board (which stays visible)
-    // instead of a full-screen takeover; tapping the board area closes the chat.
     return (
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: "#00000073" }}>
         <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel="Chat schließen" />
-        <View style={{ width: 540, maxWidth: "48%" }}>{body}</View>
+        <View style={{ width: 540, maxWidth: "48%" }}><ChatBody onClose={() => router.back()} wide /></View>
       </View>
     );
   }
-  return body;
+  return <ChatBody onClose={() => router.back()} wide={false} />;
 }

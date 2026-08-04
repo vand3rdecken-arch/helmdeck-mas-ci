@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import { useT } from "@/i18n";
+import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { BoardList } from "@/ui/board";
 import { GlowBackdrop } from "@/ui/glow";
 import { useTheme } from "@/theme";
@@ -52,7 +53,7 @@ export default function BoardTab() {
       <BoardList />
       {/* floating board chat + new-request, bottom-right (works on desktop too) */}
       <View style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84, alignItems: "center", gap: 12 }}>
-        <Pressable onPress={() => router.push("/chat")}
+        <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat")}
           style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
             alignItems: "center", justifyContent: "center",
             ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
@@ -64,6 +65,9 @@ export default function BoardTab() {
           <Ionicons name="add" size={26} color="#fff" />
         </Pressable>
       </View>
+      {/* desktop: the copilot renders here as a right-side panel over the DIMMED,
+          still-visible board (phone uses the /chat route instead) */}
+      <CopilotOverlay />
     </View>
   );
 }
