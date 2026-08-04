@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +24,7 @@ export default function Pair() {
   const { c } = useLocalSearchParams<{ c?: string | string[] }>();
   const url = Linking.useURL();
   const applyPairing = useConfig((s) => s.applyPairing);
+  const qc = useQueryClient();
   const [msg, setMsg] = useState("Koppeln…");
   const [state, setState] = useState<"busy" | "ok" | "fail">("busy");
   const ran = useRef("");   // guard: verify once per code, not per re-render
@@ -53,6 +55,10 @@ export default function Pair() {
       setMsg("Verbindung prüfen…");
       try {
         await api.me();   // proves relay + E2EE + Token in one round-trip
+        // the board/dashboard queries ran BEFORE this pairing (unconfigured ->
+        // empty/error) and won't refetch on their own; force every query to
+        // reload against the now-working config, else the board stays blank.
+        qc.invalidateQueries();
         setState("ok"); setMsg("Gekoppelt ✓ – Desktop erreichbar.");
         setTimeout(() => router.replace("/"), 900);
       } catch (e) {

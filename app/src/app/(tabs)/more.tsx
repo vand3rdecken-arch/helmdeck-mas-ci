@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -15,6 +16,7 @@ export default function MoreTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { baseUrl, token, set, applyPairing, relayMode } = useConfig();
+  const qc = useQueryClient();
   const [url, setUrl] = useState(baseUrl);
   const [tok, setTok] = useState(token);
   const [pair, setPair] = useState("");
@@ -31,6 +33,7 @@ export default function MoreTab() {
     setPairBusy(true); setPairMsg("Verbindung prüfen…");
     try {
       await api.me();
+      qc.invalidateQueries();   // board/dashboard ran pre-pairing (empty) - reload against the new config
       setPairMsg(applied.mode === "relay"
         ? "Gekoppelt ✓ – verschlüsselt über Relay, Desktop erreichbar."
         : "Verbunden ✓ – direkt (LAN), Desktop erreichbar.");
