@@ -1,7 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import * as Updates from "expo-updates";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,26 +8,7 @@ import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
-
-/** Version + the running JS bundle, so silent OTA updates are visible: the OTA
- *  id/date changes each time an update is applied - if it moved, you updated. */
-function VersionFooter({ t }: { t: ReturnType<typeof useTheme> }) {
-  // expoConfig is null in release/OTA builds - fall back to the updates
-  // runtimeVersion (policy: appVersion), which equals the app version there.
-  const ver = Constants.expoConfig?.version ?? Updates.runtimeVersion ?? "?";
-  const code = (Constants.expoConfig as { android?: { versionCode?: number } })?.android?.versionCode;
-  const ota = Updates.isEmbeddedLaunch
-    ? "Basis-Build (eingebettet, kein OTA)"
-    : Updates.updateId
-    ? `OTA ${Updates.updateId.slice(0, 8)} · ${Updates.createdAt ? new Date(Updates.createdAt).toLocaleString() : "?"}`
-    : "Dev";
-  return (
-    <View style={{ alignItems: "center", paddingVertical: 16, gap: 3 }}>
-      <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>HelmDeck v{ver}{code ? ` · Build ${code}` : ""}</Text>
-      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{ota}</Text>
-    </View>
-  );
-}
+import { VersionFooter } from "@/ui/updates_info";
 
 export default function MoreTab() {
   const t = useTheme();
@@ -123,7 +102,7 @@ export default function MoreTab() {
             </Pressable>
           ))}
         </Panel>
-        <VersionFooter t={t} />
+        <VersionFooter />
       </ScrollView>
     </View>
   );

@@ -14,6 +14,7 @@ import type { UserRow } from "@/data/types";
 import { useTheme } from "@/theme";
 import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
+import { UpdatesPanel } from "@/ui/updates_info";
 
 const LANES = ["backlog", "working", "review", "done"] as const;
 const BACKDROPS = ["mesh", "aurora", "ember", "forest", "mono"] as const;
@@ -541,6 +542,9 @@ export default function Settings() {
             </Panel>
           </>
         ) : null}
+        {/* Outside the owner-only block: build/OTA identity must be checkable
+            even when the daemon is unreachable or the user isn't owner. */}
+        <UpdatesPanel />
       </ScrollView>
     </View>
   );
