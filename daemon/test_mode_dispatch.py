@@ -115,7 +115,7 @@ def main():
         # card, so the reset is pinned where the lane actually changes.
         moved = sessions.move_lane("t-launch", "backlog", actor="owner")
         for k in ("autopilot_dispatched", "autopilot_accepted",
-                  "autopilot_alerted", "autopilot_ts"):
+                  "autopilot_alerted", "autopilot_ts", "priority_dispatched"):
             assert k not in moved, "%s survived the move back to Backlog" % k
         assert moved["lane"] == "backlog" and moved["status"] == "queued", \
             "re-queue did not reset lane/status: %r" % moved
@@ -127,6 +127,33 @@ def main():
             "re-queued autopilot card did not dispatch again: %r" % dispatched
         print("PASS move_lane->backlog: autopilot stamps cleared, card "
               "dispatches again (opt-in preserved)")
+
+        # -- _priority_dispatch must not re-dispatch a card forever ---------
+        # A failed dispatch leaves the card in backlog (status=bounced, lane
+        # untouched), and the chain poller runs every 20s - so an unguarded
+        # pass hammered the same broken card three times a minute forever.
+        events.settings = lambda: {"policy": {"auto_dispatch_priority": "high"},
+                                   "capacity": {"wip_limit": 3}}
+        fake.track_put(_card("t-broken", priority="high", run_dir=run_dir,
+                             status="bounced",
+                             last_reply="DISPATCH FAILED: not a git repository"))
+        dispatched.clear()
+        for _tick in range(5):
+            processes._priority_dispatch()
+        assert dispatched == ["t-broken"], \
+            "broken card re-dispatched every tick: %r" % dispatched
+        assert fake.track_get("t-broken")["priority_dispatched"] is True, \
+            "priority dispatch not stamped on the card"
+        print("PASS _priority_dispatch: one attempt over 5 poller ticks, "
+              "not one per tick")
+
+        # ...and Backlog stays the retry handle for it, like every other stamp
+        dispatched.clear()
+        sessions.move_lane("t-broken", "backlog", actor="owner")
+        processes._priority_dispatch()
+        assert dispatched == ["t-broken"], \
+            "re-queued card was not retried by priority dispatch: %r" % dispatched
+        print("PASS move_lane->backlog: priority stamp cleared, card retried")
         print("ALL PASS")
     finally:
         sessions._db, events.emit = real_db, real_emit
