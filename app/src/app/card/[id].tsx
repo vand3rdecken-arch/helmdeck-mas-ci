@@ -453,13 +453,20 @@ export default function CardScreen() {
     try {
       const res = await api.moveLane(k.id, lane);
       await qc.invalidateQueries({ queryKey: ["tracks"] });
-      // visual cue: did it take? review runs the gate (may bounce); working = dispatched.
-      const r = res as { status?: string; gate_failed?: boolean };
-      const bad = r?.status === "bounced" || !!r?.gate_failed;
-      const working = lane === "working";
-      showToast(bad ? `Abgelehnt → ${laneLabel(lane)} (Gate/Review)`
-                    : working ? `Gestartet → ${laneLabel(lane)} · Agent arbeitet`
-                    : `Verschoben → ${laneLabel(lane)}`, !bad);
+      // Review/Done are backgrounded by the daemon (gate subprocess + merge +
+      // deploy hook), so there is no verdict to report yet — say what STARTED.
+      // The outcome arrives on the card, woven into this feed as a lifecycle
+      // note, and in the board chat; it is no longer toast-only.
+      if (res.gating) {
+        showToast(lane === "done" ? "Gate + Merge laufen… Ergebnis erscheint hier"
+                                  : "Gate läuft… Ergebnis erscheint hier");
+      } else if (lane === "working") {
+        showToast(`Gestartet → ${laneLabel(lane)} · Agent arbeitet`);
+      } else {
+        const bad = res.status === "bounced" || !!res.gate_failed;
+        showToast(bad ? `Abgelehnt → ${laneLabel(lane)} (Gate/Review)`
+                      : `Verschoben → ${laneLabel(lane)}`, !bad);
+      }
     } catch (e) { showToast("Move fehlgeschlagen: " + String((e as Error).message), false); }
   }
   function moveSheet() {

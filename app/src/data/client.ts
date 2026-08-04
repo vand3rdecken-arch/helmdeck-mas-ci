@@ -1,7 +1,7 @@
 import { useConfig } from "./config";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
-import type { Track, Metrics, Me } from "./types";
+import type { Track, LaneMove, Metrics, Me } from "./types";
 
 export class AuthRequired extends Error {}
 // Transport never reached the daemon (relay down, network, crypto mismatch).
@@ -154,7 +154,11 @@ export const api = {
   tracks: () => req<Track[]>("GET", "/tracks"),
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   me: () => req<Me>("GET", "/me"),
-  moveLane: (id: string, lane: string) => req<Track>("POST", `/tracks/${id}/lane`, { lane }),
+  // ->working/review/done are run in the BACKGROUND by the daemon (the gate is a
+  // subprocess, the merge + deploy hook follow it), so those reply {started,
+  // gating} instead of the finished Track. The verdict arrives on the card
+  // (status/gate_report/merge_report), in the chat and by push - not here.
+  moveLane: (id: string, lane: string) => req<LaneMove>("POST", `/tracks/${id}/lane`, { lane }),
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),
   newTrack: (b: Record<string, unknown>) => req("POST", "/tracks/new", b),
   update: (id: string, patch: Record<string, unknown>) => req("POST", `/tracks/${id}/update`, patch),

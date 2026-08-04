@@ -478,6 +478,8 @@ def _accept_machine(t, lane, actor, log):
         t["review_report"] = ("Maschinen-Aufgabe - kein Branch, kein Merge. Pruefe das "
                               "Ergebnis auf dem Rechner und nimm die Karte ab.")
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+        _say_card(t, "auf dem Rechner erledigt - schau dir das Ergebnis an und "
+                     "nimm die Karte ab (kein Branch, kein Merge).")
         return dict(t, review_preview=True, merge_kind="machine")
     events.emit("touch", t["id"], touch="review", actor=actor)
     te = [e for e in events.read_events() if e.get("track") == t["id"]]
@@ -491,6 +493,8 @@ def _accept_machine(t, lane, actor, log):
     t["status"] = "accepted"; t["mode"] = mode; t["lane"] = "done"
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
     events.emit("lane", t["id"], frm="review", to="done")
+    _say_card(t, "abgenommen und geschlossen (Maschinen-Aufgabe).")
+    import notify; notify.card_event(t, "done")
     return t
 
 
@@ -789,6 +793,22 @@ def _repo_hook(t, kind):
     return ok
 
 
+def _say_card(t, text):
+    """Report a lane OUTCOME in the owner's board chat, in plain language.
+
+    The lane pipeline is otherwise mute toward the chat: it writes the flight
+    recorder, the event log and a push, none of which is the surface the owner
+    actually reads. A drag to Done could run the gate, hit a conflict and
+    bounce with nothing to show for it. Best-effort by design - reporting an
+    outcome must never break the work that produced it."""
+    try:
+        import copilot
+        title = (t.get("task") or "").replace("\n", " ")[:60]
+        copilot.say("'%s': %s" % (title, text), cls="pm")
+    except Exception:
+        pass
+
+
 def move_lane(tid, lane, actor="owner", _autopark=True):
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
@@ -818,6 +838,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             t["status"] = "bounced"; t["lane"] = "working"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _save_track(t)
+            _say_card(t, "zurueck auf 'In Arbeit' geschoben - der Agent macht weiter.")
             return t
         return _start(tid)   # idempotent: resumes position if already started
     from actionlog import ActionLog
@@ -830,6 +851,16 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         # CLASSIFIES the merge (dry-run) and RESTS on Review showing the verdict -
         # a deliberate drag to DONE actually merges + deploys. gate-before-merge LAW
         # kept. Any problem keeps the card on Review with a clear reason.
+        #
+        # Publish "gating" FIRST: the gate is a real subprocess (up to 600s) and
+        # the merge + deploy hook follow it, so without this the card looked
+        # untouched for minutes while the work ran. Every poller now sees the
+        # card is busy; each terminal branch below overwrites this status.
+        # No chat line here on purpose - the card's own status covers "started",
+        # and chains/policy auto-accept through this path too. The chat carries
+        # OUTCOMES (what was missing), not progress chatter.
+        t["status"] = "gating"
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
         ac = _autocommit(t)
         if ac == "markers":
             msg = ("Konfliktmarkierungen sind noch im Worktree offen. Steuere den Agenten: "
@@ -841,6 +872,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             t["merge_report"] = msg; t["merge_kind"] = "conflict"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
+            _say_card(t, "bleibt auf Review - im Worktree stehen noch offene "
+                         "Konfliktmarkierungen. " + msg)
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
             return t
         if ac is True:
@@ -856,6 +889,12 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             t.pop("merge_report", None); t.pop("merge_kind", None)   # the CURRENT blocker is the gate
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
+            # The chat gets the FULL problem text, not the one-line `punch`:
+            # a gate failure's actual output (which test, which assertion) lives
+            # on the lines after the header, and the chat is where the owner
+            # reads the reason. `punch` stays for the card's compact report.
+            _say_card(t, "Gate ist rot - bleibt auf Review. Grund:\n"
+                      + "\n".join(problems)[:800])
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
@@ -879,6 +918,11 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             t["merge_kind"] = kind; t["review_report"] = msg
             t["status"] = "submitted"; t["lane"] = "review"
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+            _VERDICT = {"mergeable": "Gate gruen, sauber mergebar - zieh sie auf Done zum Landen.",
+                        "already_merged": "Gate gruen, ist aber schon in main - Done schliesst sie nur noch.",
+                        "redundant_uncommitted": "Gate gruen, Inhalt ist schon in main - Done schliesst sie nur noch.",
+                        "conflict": "Gate gruen, ABER sie kollidiert mit main - das muss vor Done aufgeloest werden."}
+            _say_card(t, "auf Review geprueft. " + _VERDICT.get(kind, "Geprueft: " + msg[:200]))
             return dict(t, review_preview=True, merge_kind=kind)
         # lane == "done": LAND it
         _repo_hook(t, "preview")   # best-effort try-it surface before it lands
@@ -905,6 +949,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             t["merge_report"] = mergemsg; t["merge_kind"] = kind
             t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
             import notify; notify.card_event(t, "bounced")
+            _say_card(t, ("konnte nicht landen (%s) - bleibt auf Review. %s"
+                          % (kind, mergemsg[:400])))
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = kind
             return t
         t.pop("merge_report", None); t["merge_kind"] = kind
@@ -921,6 +967,15 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                 (mode, t.get("ai_cost", 0.0), t.get("value")))
         t["status"] = "accepted"; t["mode"] = mode
         _repo_hook(t, "deploy")    # daemon-side (post-merge), with the secrets agents never see
+        # A landing was the QUIETEST outcome of all: no push (card_event was only
+        # ever called for bounces) and no chat line. Report it like any other.
+        _LANDED = {"merged": "abgenommen und nach main gemergt",
+                   "already_merged": "abgenommen - war schon in main, jetzt geschlossen",
+                   "redundant_uncommitted": "abgenommen - war schon in main, jetzt geschlossen"}
+        _dh = t.get("deploy_hook") or {}
+        _say_card(t, _LANDED.get(kind, "abgenommen") + (
+            "" if not _dh else (" · Deploy ok." if _dh.get("ok") else " · ACHTUNG: Deploy-Hook fehlgeschlagen.")))
+        import notify; notify.card_event(t, "done")
         if t.get("connector"):
             import connectors, checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))

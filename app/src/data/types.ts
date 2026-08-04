@@ -17,6 +17,11 @@ export interface Track {
   archived?: boolean;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
 }
+/** POST /tracks/<id>/lane. ->backlog still returns the finished Track;
+ *  ->working/review/done are backgrounded by the daemon (gate subprocess +
+ *  merge + deploy hook) and answer {started, gating} right away. The card then
+ *  carries status "gating" until the real verdict lands on it. */
+export type LaneMove = Partial<Track> & { started?: string; gating?: boolean };
 export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;
   touches: number; value: number; mode: string | null; models: string[];

@@ -901,13 +901,12 @@ def _activity(kind, msg, card=None):
 def _say(text):
     """The PM SPEAKS TO YOU: post a message into the owner's board chat so the
     chat MOVES on its own - real proactive communication, not just a silent feed.
-    You can reply there and steer it. (cls 'pm' = a PM-authored message.)"""
+    You can reply there and steer it. (cls 'pm' = a PM-authored message.)
+    One voice: the shared writer in copilot.say, which the lane pipeline uses
+    too - so everything non-interactive speaks in the same chat."""
     try:
-        import auth, copilot
-        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
-        if not owner:
-            return
-        copilot._append_log(owner, [{"cls": "pm", "text": text, "ts": time.strftime("%H:%M")}])
+        import copilot
+        copilot.say(text, cls="pm")
     except Exception:
         pass
 

@@ -409,6 +409,23 @@ def history(user):
     return {"messages": _log().get(user, []),
             "session_id": _sessions().get(user)}
 
+
+def say(text, cls="pm"):
+    """THE harness's voice in the owner's board chat - the one place anything
+    non-interactive speaks to the owner (pm._say and the lane pipeline both go
+    through here). Without this, work that happens without the owner typing
+    (a gate verdict, a merge, a bounce) only ever reached the flight recorder
+    and the event log, so the chat looked frozen while the daemon worked.
+    Best-effort by design: never let a chat write break the work it reports."""
+    try:
+        import auth
+        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
+        if not owner:
+            return
+        _append_log(owner, [{"cls": cls, "text": text, "ts": time.strftime("%H:%M")}])
+    except Exception:
+        pass
+
 # live copilot subprocess per user, so the chat's Stop button can kill a turn.
 _running = {}
 _cancelled = set()
