@@ -1242,7 +1242,7 @@ def sweep_zombies():
 
 
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
-            "project_id", "billing", "rate", "autopilot")
+            "project_id", "billing", "rate", "autopilot", "fast_track")
 # project_id may be explicitly cleared (unassign from a project) - unlike the
 # other fields, "" / null is a meaningful value here, not "leave unset".
 CLEARABLE = ("project_id",)
@@ -1250,7 +1250,7 @@ CLEARABLE = ("project_id",)
 # (execution mode for process steps, then the completion statistic auto/assisted
 # written on accept by events._completion_mode), so the opt-in gets its own key
 # and can never be set as a side effect of a touch-free acceptance.
-BOOLFIELDS = ("autopilot",)
+BOOLFIELDS = ("autopilot", "fast_track")
 
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
