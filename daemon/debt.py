@@ -203,7 +203,7 @@ DEBT = [
     {
         "id": "android-cleartext-lan",
         "title": "Android APK enables global cleartext for the direct-LAN feature",
-        "status": "open",
+        "status": "paid",
         "what": "The app's 'direct LAN' option (More > http://<daemon>) could never "
                 "work on a release build: targetSdk>=28 blocks cleartext HTTP by "
                 "default, so every http:// daemon URL failed with 'Desktop nicht "
@@ -217,11 +217,19 @@ DEBT = [
                         "downgrade (the relay path stays HTTPS/sealed). And the "
                         "whole native config can vanish on a prebuild.",
         "trigger": "next `expo prebuild`, or a security review of the APK",
-        "fix": "Move native config to source: add expo-build-properties with "
-               "android.usesCleartextTraffic (or a networkSecurityConfig scoped to "
-               "loopback + RFC1918 ranges so cleartext is allowed ONLY on the LAN), "
-               "and re-express the expo-updates meta-data via app.json so a prebuild "
-               "reproduces the manifest. Relates to [single-secret-transport].",
+        "fix": "PAID: app/plugins/withLanCleartext.js scopes cleartext via a "
+               "network-security-config (base-config blocks cleartext; a "
+               "domain-config allows it only for 10.0.2.2/localhost/127.0.0.1 "
+               "plus the hosts listed in the app.json plugin entry - Android NSC "
+               "cannot express RFC1918 ranges, so the scope is an explicit host "
+               "list; a real phone's direct-LAN mode needs the PC's IP added "
+               "there + an APK rebuild). One file drives BOTH build paths: expo "
+               "config plugin for a future prebuild, and a bare-node CLI that "
+               "deploy/build_apk.sh runs against the hand-managed app/android "
+               "before every gradle build, replacing the invisible global flag. "
+               "expo-updates is now an explicit app.json plugin, so its "
+               "meta-data survives a prebuild too. "
+               "Relates to [single-secret-transport].",
         "order": 10,
     },
     {

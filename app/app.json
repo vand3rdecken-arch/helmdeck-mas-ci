@@ -59,6 +59,13 @@
     },
     "plugins": [
       "expo-router",
+      "expo-updates",
+      [
+        "./plugins/withLanCleartext",
+        {
+          "hosts": []
+        }
+      ],
       [
         "expo-splash-screen",
         {
