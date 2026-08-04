@@ -71,6 +71,15 @@ permission (e.g. CAMERA) must go in BOTH `app/app.json` `plugins` (so a future
 `expo prebuild` reproduces it) AND the hand-managed
 `app/android/app/src/main/AndroidManifest.xml` (what THIS build uses).
 
+Cleartext / direct-LAN: cleartext HTTP is **scoped, not global** — a
+network-security-config allows it only for `10.0.2.2`/loopback plus the hosts
+in the `./plugins/withLanCleartext` entry in `app.json` (Android can't express
+IP ranges). `deploy/build_apk.sh` re-applies it to the hand-managed
+`app/android` before every gradle build (`node app/plugins/withLanCleartext.js
+app/android`), and the same file is the expo config plugin for a future
+prebuild. Direct-LAN from a real phone ⇒ add the PC's IP to that host list and
+rebuild the APK; relay/HTTPS need nothing.
+
 ---
 
 ## 3) Get the APK onto the phone

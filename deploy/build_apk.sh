@@ -17,6 +17,13 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROID_HOME")" \
   > app/android/local.properties
 
+# app/android is git-ignored/hand-managed, so re-apply the source-of-truth
+# native config before every build: scope cleartext to the direct-LAN hosts
+# from app.json (pays debt [android-cleartext-lan]; same plugin runs on a
+# future `expo prebuild`, so the two paths cannot drift).
+node app/plugins/withLanCleartext.js app/android \
+  || { echo "[build_apk] network-security-config apply FAILED"; exit 1; }
+
 echo "[build_apk] gradle assembleRelease (native, ~10 min first time)"
 ( cd app/android && ./gradlew assembleRelease -x lint --console=plain ) \
   || { echo "[build_apk] APK BUILD FAILED"; exit 1; }
