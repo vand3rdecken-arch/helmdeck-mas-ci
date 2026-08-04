@@ -339,10 +339,11 @@ def _auto_resolve(t):
     pm.mark_notified(tid)      # exactly ONE ping: don't let the PM push it again
     events.emit("process", "-", action="autopilot_escalate", card=tid)
     try:
-        import notify
-        notify.push_fcm("Autopilot: haengt",
-                        "'%s' haengt trotz Fix-Versuchen. %s"
-                        % ((t.get("task") or "")[:50], pm._unblock_proposal(t)), tid)
+        import notify, i18n as _i18n
+        notify.push_fcm(_i18n.t("push.autopilotStuck"),
+                        _i18n.t("push.autopilotStuckBody",
+                                task=(t.get("task") or "")[:50],
+                                proposal=pm._unblock_proposal(t)), tid)
     except Exception:
         pass
 

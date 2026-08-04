@@ -107,6 +107,11 @@ export const card: Dict = {
   "card.move.advance": { de: "Weiterschieben", en: "Advance" },
   "card.menu.fork": { de: "Fork", en: "Fork" },
   "card.menu.archive": { de: "Archivieren", en: "Archive" },
+  "card.fastTrack.on": { de: "⚡ Fast-Track aktivieren", en: "⚡ Enable fast-track" },
+  "card.fastTrack.off": { de: "⚡ Fast-Track deaktivieren", en: "⚡ Disable fast-track" },
+  "card.fastTrack.hint": { de: "  (grün → auto-merge + deploy)",
+                           en: "  (green → auto-merge + deploy)" },
+  "card.fastTrack.disable": { de: "Fast-Track aus", en: "Fast-track off" },
 
   // move toasts
   "card.toast.gateMerge": { de: "Gate + Merge laufen… Ergebnis erscheint hier",
