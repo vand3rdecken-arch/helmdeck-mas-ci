@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type ChatMsg, type SteerOpts } from "@/data/client";
@@ -34,6 +34,10 @@ export default function ChatScreen() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  // On a wide desktop window the chat must read as a centered column, not stretch
+  // edge-to-edge like the board. Cap + center the messages and the composer.
+  const { width } = useWindowDimensions();
+  const colMax = Platform.OS === "web" && width >= 900 ? 860 : undefined;
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const qc = useQueryClient();
@@ -121,7 +125,7 @@ export default function ChatScreen() {
       {header}
       <View style={{ flex: 1 }}>
         <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
+          contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
           {msgs.length === 0
             ? <Empty text={tr("chat.empty")} />
             : <Transcript steps={msgs.map(toStep)} />}
@@ -137,9 +141,11 @@ export default function ChatScreen() {
           </Pressable>
         ) : null}
 
-        <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
-          placeholder={tr("chat.placeholder")} draftKey="board-copilot"
-          bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
+        <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>
+          <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
+            placeholder={tr("chat.placeholder")} draftKey="board-copilot"
+            bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
+        </View>
         {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
     </View>
