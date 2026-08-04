@@ -16,6 +16,29 @@ native_fp() {
   } | sha256sum | cut -d' ' -f1
 }
 
+# Bump expo.version (patch) + android.versionCode in app/app.json. runtimeVersion
+# policy is "appVersion", so bumping the version bumps the runtimeVersion too: an
+# OLD APK (old version) then REJECTS this new JS (rtv mismatch) instead of loading
+# it and crashing on a native module it doesn't have (the ExpoDocumentPicker trap).
+# JS-only ships keep the version, so phones still receive those OTAs. Prints the
+# new "version versionCode".
+bump_version() {
+  py -3.12 - <<'PY'
+import json
+p = "app/app.json"
+d = json.load(open(p, encoding="utf-8"))
+e = d["expo"]
+parts = (e.get("version", "1.0.0").split(".") + ["0", "0"])[:3]
+e["version"] = f"{parts[0]}.{parts[1]}.{int(parts[2]) + 1}"
+e.setdefault("android", {})
+e["android"]["versionCode"] = int(e["android"].get("versionCode", 0)) + 1
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+print(e["version"], e["android"]["versionCode"])
+PY
+}
+
 CUR="$(native_fp)"
 LAST="$(cat deploy/.native_fp 2>/dev/null || true)"
 
@@ -23,11 +46,20 @@ if [ -n "$LAST" ] && [ "$CUR" = "$LAST" ]; then
   echo "[ship] JS-only change -> OTA"
   bash deploy/push_update.sh
 else
-  echo "[ship] native change detected -> APK build + emulator test + distribute"
-  bash deploy/build_apk.sh || { echo "[ship] APK path failed - NOT recording fingerprint"; exit 1; }
+  echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute"
+  BUMP="$(bump_version)" || { echo "[ship] version bump failed"; exit 1; }
+  echo "[ship] version -> $BUMP (new runtimeVersion; old APKs will reject this JS instead of crashing)"
+  if ! bash deploy/build_apk.sh; then
+    echo "[ship] APK path failed - reverting version bump, NOT recording fingerprint"
+    git checkout -- app/app.json 2>/dev/null || true
+    exit 1
+  fi
   # keep the OTA bundle matched to the new APK (else the old relay bundle reverts
-  # the APK's JS on next launch - the source-of-truth trap in DEPLOY.md).
+  # the APK's JS on next launch - the source-of-truth trap in DEPLOY.md). The OTA
+  # manifest inherits the new runtimeVersion from the bumped app.json.
   bash deploy/push_update.sh
-  echo "$CUR" > deploy/.native_fp
+  git add app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
+  # record the POST-bump fingerprint so the next unchanged ship is seen as JS-only
+  native_fp > deploy/.native_fp
 fi
 echo "[ship] done"

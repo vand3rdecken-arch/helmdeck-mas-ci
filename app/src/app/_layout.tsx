@@ -1,5 +1,6 @@
 import "react-native-gesture-handler";
 import { Stack } from "expo-router";
+import type { ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -8,7 +9,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { queryClient } from "@/data/query";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
@@ -96,6 +97,34 @@ function usePushWiring() {
     });
     return () => { recv.remove(); resp.remove(); };
   }, [router]);
+}
+
+// expo-router renders THIS instead of crashing to native when the tree throws
+// during render. The classic case: an OTA JS bundle references a native module
+// the installed APK doesn't ship (e.g. "Cannot find native module
+// 'ExpoDocumentPicker'") - without a boundary that becomes a full app crash on
+// every launch. We now bump runtimeVersion on native changes so old APKs reject
+// incompatible JS, but this is the belt-and-suspenders: a clear "update the app"
+// screen instead of a crash loop. No provider hooks here (this renders ABOVE the
+// providers), so styling is static tokens only.
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const t = tokens.dark;
+  const needsUpdate = /native module|requireNativeModule|Cannot find native/i.test(error?.message ?? "");
+  return (
+    <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28, gap: 14 }}>
+      <Text style={{ color: t.txtPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>
+        {needsUpdate ? "App-Update nötig" : "Etwas ist schiefgelaufen"}
+      </Text>
+      <Text style={{ color: t.txtSecondary, fontSize: 14, textAlign: "center", lineHeight: 20 }}>
+        {needsUpdate
+          ? "Diese App-Version ist älter als das aktuelle Update. Bitte installiere die neueste HelmDeck-App (Google Drive / Store) und öffne sie neu."
+          : (error?.message ?? "Unbekannter Fehler")}
+      </Text>
+      <Pressable onPress={retry} style={{ marginTop: 6, backgroundColor: t.accent, paddingHorizontal: 20, paddingVertical: 11, borderRadius: 12 }}>
+        <Text style={{ color: "#fff", fontWeight: "600" }}>Erneut versuchen</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export default function RootLayout() {
