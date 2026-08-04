@@ -4,6 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle
 
 import { api } from "@/data/client";
 import type { EconCard, Metrics, Sow } from "@/data/types";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Empty } from "./kit";
@@ -15,13 +16,19 @@ const isWeb = Platform.OS === "web";
 // (back-compat). Keys match the archived web dash.tsx so settings interop.
 export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"] as const;
 export const ALL_PANELS = ["sows", "capacity", "gates", "models", "work"] as const;
-export const TILE_LABELS: Record<string, string> = {
-  value_delivered: "Value delivered", ai_spend: "AI spend", margin: "Margin",
-  yield: "First-pass yield", automation: "Automation rate", leverage: "Leverage per touch",
+// The customizer names each tile/panel by dict key, so the chip list speaks the
+// workspace language too.
+export const TILE_LABEL_KEYS: Record<string, string> = {
+  value_delivered: "dash.tileName.valueDelivered", ai_spend: "dash.tileName.aiSpend",
+  margin: "dash.tileName.margin", yield: "dash.tileName.yield",
+  automation: "dash.tileName.automation", leverage: "dash.tileName.leverage",
 };
-export const PANEL_LABELS: Record<string, string> = {
-  sows: "SoW margin", capacity: "Capacity gauge", gates: "Gate failures",
-  models: "AI usage by model", work: "Work table",
+export const PANEL_LABEL_KEYS: Record<string, string> = {
+  sows: "dash.panelName.sows", capacity: "dash.panelName.capacity", gates: "dash.panelName.gates",
+  models: "dash.panelName.models", work: "dash.panelName.work",
+};
+const LANE_KEY: Record<string, string> = {
+  backlog: "lane.backlog", working: "lane.working", review: "lane.review", done: "lane.done",
 };
 export function dashTiles(m?: Metrics): string[] {
   return m?.settings?.dashboard?.tiles ?? [...ALL_TILES];
@@ -68,17 +75,18 @@ export function Tile({ value, label }: { value: string; label: string }) {
 }
 
 export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: string[] }) {
+  const tr = useT();
   const T = m.totals;
   const [y0, y1] = m.yield_first_pass ?? [0, 0];
   const [a0, a1] = m.automation ?? [0, 0];
   const c = cur(m);
   const byKey: Record<string, { value: string; label: string }> = {
-    value_delivered: { value: c + T.value_delivered, label: "value delivered" },
-    ai_spend: { value: "$" + T.ai_spend.toFixed(2), label: "AI spend" },
-    margin: { value: c + T.margin, label: "margin (value − AI)" },
-    yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: `first-pass yield (${y0}/${y1})` },
-    automation: { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: `automation rate (${a0}/${a1} auto)` },
-    leverage: { value: c + T.leverage_per_touch, label: "value per touch unit" },
+    value_delivered: { value: c + T.value_delivered, label: tr("dash.tile.valueDelivered") },
+    ai_spend: { value: "$" + T.ai_spend.toFixed(2), label: tr("dash.tile.aiSpend") },
+    margin: { value: c + T.margin, label: tr("dash.tile.margin") },
+    yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: tr("dash.tile.yield", { a: y0, b: y1 }) },
+    automation: { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: tr("dash.tile.automation", { a: a0, b: a1 }) },
+    leverage: { value: c + T.leverage_per_touch, label: tr("dash.tile.leverage") },
   };
   // Enabled keys drive both which tiles show and their order (missing = all).
   const keys = (tiles ?? [...ALL_TILES]).filter((k) => byKey[k]);
@@ -98,6 +106,7 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
  *  enable/disable each tile + panel, persisted to settings.dashboard. */
 export function DashCustomize({ m }: { m: Metrics }) {
   const t = useTheme();
+  const tr = useT();
   const qc = useQueryClient();
   const [editing, setEditing] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -129,17 +138,16 @@ export function DashCustomize({ m }: { m: Metrics }) {
       <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
         <Pressable onPress={() => setEditing((v) => !v)}
           style={[s.gearBtn, { borderColor: t.glassBorder, backgroundColor: t.surface2 }]}>
-          <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{editing ? "Fertig" : "⚙ Anpassen"}</Text>
+          <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr(editing ? "dash.customizeDone" : "dash.customize")}</Text>
         </Pressable>
       </View>
       {editing ? (
-        <GlassPanel title="Auf diesem Dashboard anzeigen"
-          note="Auch per Chat: „zeige nur Marge und Automatisierung“. Die Ökonomie bleibt immer gemessen.">
+        <GlassPanel title={tr("dash.customizeTitle")} note={tr("dash.customizeNote")}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {Object.entries(TILE_LABELS).map(([k, label]) => chip(tiles.includes(k), label, () => toggle("tiles", k)))}
+            {Object.entries(TILE_LABEL_KEYS).map(([k, key]) => chip(tiles.includes(k), tr(key), () => toggle("tiles", k)))}
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
-            {Object.entries(PANEL_LABELS).map(([k, label]) => chip(panels.includes(k), label, () => toggle("panels", k)))}
+            {Object.entries(PANEL_LABEL_KEYS).map(([k, key]) => chip(panels.includes(k), tr(key), () => toggle("panels", k)))}
           </View>
         </GlassPanel>
       ) : null}
@@ -181,21 +189,24 @@ function Table({ cols, rows, foot }: { cols: Col[]; rows: any[]; foot?: React.Re
 
 export function SowPanel({ m }: { m: Metrics }) {
   const t = useTheme();
+  const tr = useT();
   const c = cur(m);
   const sows = m.sows ?? [];
   const cols: Col[] = [
-    { key: "name", label: "statement of work", flex: 2, render: (r: Sow) => r.name },
-    { key: "client", label: "client", flex: 1.2, render: (r: Sow) => r.client || "-" },
-    { key: "status", label: "status", flex: 1.2, render: (r: Sow) => (r.all_done ? "delivered" : `${r.done}/${r.cards} done`) },
-    { key: "cards", label: "cards", num: true, render: (r: Sow) => String(r.cards) },
-    { key: "hours", label: "hours", num: true, render: (r: Sow) => r.hours.toFixed(1) },
-    { key: "billed", label: "billed", num: true, render: (r: Sow) => c + r.billed.toFixed(2) },
-    { key: "ai_cost", label: "AI $", num: true, render: (r: Sow) => r.ai_cost.toFixed(2) },
-    { key: "margin", label: "margin", num: true, render: (r: Sow) => c + r.margin.toFixed(2), color: (r: Sow) => (r.margin >= 0 ? t.ok : t.danger) },
+    { key: "name", label: tr("dash.sow.col.name"), flex: 2, render: (r: Sow) => r.name },
+    { key: "client", label: tr("dash.sow.col.client"), flex: 1.2, render: (r: Sow) => r.client || "-" },
+    { key: "status", label: tr("dash.sow.col.status"), flex: 1.2, render: (r: Sow) => (r.all_done ? tr("dash.sow.delivered") : tr("dash.sow.progress", { done: r.done, cards: r.cards })) },
+    { key: "cards", label: tr("dash.sow.col.cards"), num: true, render: (r: Sow) => String(r.cards) },
+    { key: "hours", label: tr("dash.sow.col.hours"), num: true, render: (r: Sow) => r.hours.toFixed(1) },
+    { key: "billed", label: tr("dash.sow.col.billed"), num: true, render: (r: Sow) => c + r.billed.toFixed(2) },
+    { key: "ai_cost", label: tr("dash.sow.col.aiCost"), num: true, render: (r: Sow) => r.ai_cost.toFixed(2) },
+    { key: "margin", label: tr("dash.sow.col.margin"), num: true, render: (r: Sow) => c + r.margin.toFixed(2), color: (r: Sow) => (r.margin >= 0 ? t.ok : t.danger) },
   ];
   const foot = sows.length ? (
     <View style={[s.tr, { borderTopColor: t.glassBorder, borderTopWidth: 1, paddingTop: 6 }]}>
-      <Text style={[s.td, { color: t.txtPrimary, flex: 2, fontWeight: "700" }]}>total ({sows.length} SoW{sows.length === 1 ? "" : "s"})</Text>
+      <Text style={[s.td, { color: t.txtPrimary, flex: 2, fontWeight: "700" }]}>
+        {sows.length === 1 ? tr("dash.sow.totalOne") : tr("dash.sow.totalMany", { n: sows.length })}
+      </Text>
       <Text style={[s.td, { flex: 1.2 }]} />
       <Text style={[s.td, { flex: 1.2 }]} />
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{sows.reduce((a, x) => a + x.cards, 0)}</Text>
@@ -206,10 +217,10 @@ export function SowPanel({ m }: { m: Metrics }) {
     </View>
   ) : null;
   return (
-    <GlassPanel title="SoW margin — one process = one statement of work"
-      note={sows.length ? "billed = recognized revenue (fixed price on delivery · T&M accrues with hours · none = internal). margin = billed − AI cost." : undefined}>
+    <GlassPanel title={tr("dash.sow.title")}
+      note={sows.length ? tr("dash.sow.note") : undefined}>
       {sows.length ? <Table cols={cols} rows={sows} foot={foot} />
-        : <Empty text="No process-grouped work yet. A process groups its cards into one SoW; per-card billing rolls up here." />}
+        : <Empty text={tr("dash.sow.empty")} />}
     </GlassPanel>
   );
 }
@@ -227,15 +238,15 @@ function Meter({ pct, color }: { pct: number; color: string }) {
 
 export function CapacityPanel({ m }: { m: Metrics }) {
   const t = useTheme();
+  const tr = useT();
   const c = m.capacity;
   const pct = Math.min(100, Math.round((100 * c.touches_today) / (c.touch_budget_day || 1)));
   const actors = Object.entries(c.actors ?? {});
   return (
-    <GlassPanel title="Capacity — take more work, or automate?"
-      note="WIP = running agents you can supervise · touch units = your attention as currency vs a daily budget · headroom = WIP slots left. All thresholds are policy.">
+    <GlassPanel title={tr("dash.capacity.title")} note={tr("dash.capacity.note")}>
       <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>
-        today {c.touches_today}/{c.touch_budget_day} touch units ({pct}%) · WIP {c.wip}/{c.wip_limit} · headroom{" "}
-        <Text style={{ color: t.ok, fontWeight: "700" }}>{c.headroom} cards</Text>
+        {tr("dash.capacity.line", { a: c.touches_today, b: c.touch_budget_day, pct, wip: c.wip, limit: c.wip_limit })}{" "}
+        <Text style={{ color: t.ok, fontWeight: "700" }}>{tr("dash.capacity.headroom", { n: c.headroom })}</Text>
       </Text>
       <View style={{ marginVertical: 6 }}><Meter pct={pct} color={pct >= 90 ? t.warn : t.accent} /></View>
       {actors.length > 1 ? (
@@ -244,9 +255,7 @@ export function CapacityPanel({ m }: { m: Metrics }) {
         </Text>
       ) : null}
       <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>
-        {pct < 80 && c.headroom > 0
-          ? "Below capacity → intake more: marginal cost of one more card is tokens only."
-          : "At capacity → automate: fixing the top gate failure below frees the most headroom."}
+        {tr(pct < 80 && c.headroom > 0 ? "dash.capacity.below" : "dash.capacity.at")}
       </Text>
     </GlassPanel>
   );
@@ -256,11 +265,12 @@ export function CapacityPanel({ m }: { m: Metrics }) {
 
 export function GatesPanel({ m }: { m: Metrics }) {
   const t = useTheme();
+  const tr = useT();
   const fails = m.gate_failures ?? [];
   const gmax = fails[0]?.[1] ?? 1;
   return (
-    <GlassPanel title="Gate failures — what to fix in the harness next">
-      {fails.length === 0 ? <Empty text="none recorded yet" /> : (
+    <GlassPanel title={tr("dash.gates.title")}>
+      {fails.length === 0 ? <Empty text={tr("dash.gates.empty")} /> : (
         <View style={{ gap: 6 }}>
           {fails.map(([k, n]) => (
             <View key={k} style={s.hbar}>
@@ -280,20 +290,20 @@ export function GatesPanel({ m }: { m: Metrics }) {
 // ---- AI usage by model ----
 
 export function ModelsPanel({ m }: { m: Metrics }) {
+  const tr = useT();
   const by = m.ai_by_model ?? {};
   const rows = Object.entries(by).map(([model, b]) => ({ model: model.replace("claude-", ""), ...b }));
   if (rows.length === 0) return null;
   const cols: Col[] = [
-    { key: "model", label: "model", flex: 1.6 },
-    { key: "turns", label: "turns", num: true },
-    { key: "tok_in", label: "tok in", num: true, render: (r) => r.tok_in.toLocaleString() },
-    { key: "tok_out", label: "tok out", num: true, render: (r) => r.tok_out.toLocaleString() },
-    { key: "cost", label: "total $", num: true, render: (r) => r.cost.toFixed(2) },
-    { key: "avg", label: "$/turn", num: true, render: (r) => r.avg_cost_per_turn.toFixed(3) },
+    { key: "model", label: tr("dash.models.col.model"), flex: 1.6 },
+    { key: "turns", label: tr("dash.models.col.turns"), num: true },
+    { key: "tok_in", label: tr("dash.models.col.tokIn"), num: true, render: (r) => r.tok_in.toLocaleString() },
+    { key: "tok_out", label: tr("dash.models.col.tokOut"), num: true, render: (r) => r.tok_out.toLocaleString() },
+    { key: "cost", label: tr("dash.models.col.cost"), num: true, render: (r) => r.cost.toFixed(2) },
+    { key: "avg", label: tr("dash.models.col.avg"), num: true, render: (r) => r.avg_cost_per_turn.toFixed(3) },
   ];
   return (
-    <GlassPanel title="AI usage by model — what a unit of agent work costs"
-      note="avg $/turn is your quoting number: estimated turns × avg cost ≈ the AI price of a future card.">
+    <GlassPanel title={tr("dash.models.title")} note={tr("dash.models.note")}>
       <Table cols={cols} rows={rows} />
     </GlassPanel>
   );
@@ -303,33 +313,34 @@ export function ModelsPanel({ m }: { m: Metrics }) {
 
 export function WorkPanel({ m }: { m: Metrics }) {
   const t = useTheme();
+  const tr = useT();
   const c = cur(m);
   const cards = m.cards ?? [];
   let maxA = 0.01, maxH = 1;
   cards.forEach((x) => { if (x.ai_cost > maxA) maxA = x.ai_cost; if (x.touches > maxH) maxH = x.touches; });
   return (
-    <GlassPanel title="Work done">
+    <GlassPanel title={tr("dash.work.title")}>
       <View style={[s.row, { gap: 12, marginBottom: 8 }]}>
-        <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.ai }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>AI ($)</Text></View>
-        <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.human }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>human (touch units)</Text></View>
+        <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.ai }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("dash.work.legendAi")}</Text></View>
+        <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.human }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("dash.work.legendHuman")}</Text></View>
       </View>
       {/* wide table -> horizontal scroll keeps every column readable on phone */}
       <ScrollView horizontal showsHorizontalScrollIndicator={isWeb} contentContainerStyle={{ minWidth: 760 }}>
         <View style={{ flexGrow: 1 }}>
           {/* header */}
           <View style={[s.tr, { borderBottomColor: t.glassBorder, borderBottomWidth: 1, paddingBottom: 6 }]}>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 2.4 }]}>card</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1 }]}>lane</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1.3 }]}>model</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1.4, textAlign: "right" }]}>tok in/out</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>AI $</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 0.8, textAlign: "right" }]}>touch</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1.4 }]}>split</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>value</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>margin</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 0.9 }]}>mode</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 2.4 }]}>{tr("dash.work.col.card")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1 }]}>{tr("dash.work.col.lane")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1.3 }]}>{tr("dash.work.col.model")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1.4, textAlign: "right" }]}>{tr("dash.work.col.tok")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>{tr("dash.work.col.aiCost")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 0.8, textAlign: "right" }]}>{tr("dash.work.col.touch")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1.4 }]}>{tr("dash.work.col.split")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>{tr("dash.work.col.value")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>{tr("dash.work.col.margin")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 0.9 }]}>{tr("dash.work.col.mode")}</Text>
           </View>
-          {cards.length === 0 ? <Empty text="no cards yet" /> : cards.map((x: EconCard) => {
+          {cards.length === 0 ? <Empty text={tr("dash.work.empty")} /> : cards.map((x: EconCard) => {
             const margin = x.margin ?? (x.value - x.ai_cost);
             const models = x.models?.length ? x.models.map((mm) => mm.replace("claude-", "")).join(", ") : "-";
             const tin = x.tokens_in ?? 0, tout = x.tokens_out ?? 0;
@@ -338,7 +349,7 @@ export function WorkPanel({ m }: { m: Metrics }) {
             return (
               <View key={x.id} style={[s.tr, { borderBottomColor: t.borderSubtle, borderBottomWidth: 1, alignItems: "center" }]}>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtPrimary, flex: 2.4 }]}>{x.task}</Text>
-                <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 1 }]}>{x.lane}</Text>
+                <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 1 }]}>{LANE_KEY[x.lane] ? tr(LANE_KEY[x.lane]) : x.lane}</Text>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.3 }]}>{models}</Text>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.4, textAlign: "right" }]}>{tin.toLocaleString()}/{tout.toLocaleString()}</Text>
                 <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{x.ai_cost.toFixed(2)}</Text>

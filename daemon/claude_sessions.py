@@ -149,18 +149,27 @@ def live_session_id(track):
 
 
 def transcript_version(track):
-    """A change token for the card's live transcript: bytes of the current
-    session .jsonl + the driver's live_partial.txt. It bumps whenever the agent
-    flushes a block OR streams a token. This is the long-poll key that lets the
-    phone get PUSH latency over the sealed relay (which can't carry SSE): the
-    /transcript/live endpoint blocks until this changes, then returns."""
+    """A change token for the card's live FEED: bytes of the current session
+    .jsonl + the driver's live_partial.txt + the flight recorder's
+    actions.jsonl. It bumps whenever the agent flushes a block, streams a
+    token, OR the harness records a lifecycle note. This is the long-poll key
+    that lets the phone get PUSH latency over the sealed relay (which can't
+    carry SSE): the /transcript/live endpoint blocks until this changes.
+
+    actions.jsonl is in the token because the card feed WEAVES those notes in
+    (see the client's feed memo). Keyed on agent output alone, a lane move -
+    gate verdict, merge, bounce - changed nothing the poll could see, so the
+    notes sat on disk until the screen was remounted. All three files only
+    ever grow, so summing sizes stays monotonic."""
     run_dir = (track or {}).get("run_dir") or ""
     sid = live_session_id(track)
     jp = _find_transcript(sid) if sid else None
     js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
     lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
     ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
-    return js + ls
+    ap = os.path.join(run_dir, "actions.jsonl") if run_dir else None
+    as_ = os.path.getsize(ap) if ap and os.path.exists(ap) else 0
+    return js + ls + as_
 
 
 def read_transcript_live(track, limit=400):

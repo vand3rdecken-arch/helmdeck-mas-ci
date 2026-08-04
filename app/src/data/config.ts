@@ -1,6 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { create } from "zustand";
+import { t } from "@/i18n/core";
+
 import { generateKeyPair } from "./e2ee";
 
 // Where/how the app talks to the daemon:
@@ -51,7 +53,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
   // Pairing code (base64 JSON {u:relayUrl, r:room, k:daemonPub, t:deviceToken}),
   // matching daemon relay_client.pairing_payload() / the Kotlin HubStore parser.
   applyPairing: (raw) => {
-    if (!raw.trim()) return { ok: false, reason: "Kein Code eingegeben." };
+    if (!raw.trim()) return { ok: false, reason: t("pair.empty") };
     let o: { b?: string; u?: string; r?: string; k?: string; t?: string };
     try {
       let code = raw.trim();
@@ -59,7 +61,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
       const norm = code.replace(/-/g, "+").replace(/_/g, "/");
       o = JSON.parse(atob(norm)); // Hermes + web both provide atob
     } catch {
-      return { ok: false, reason: "Das ist kein Pairing-Code (Format ungültig) – Code/Link vollständig kopieren." };
+      return { ok: false, reason: t("pair.badFormat") };
     }
     // Direct invite {b: baseUrl, t: userToken} — same-LAN / desktop teammates.
     if (o.b) {
@@ -68,8 +70,9 @@ export const useConfig = create<ConfigState>((set, get) => ({
     }
     // Relay invite {u: relayUrl, r: room, k: daemonPub, t: userToken} — remote.
     if (!o.u || !o.r || !o.k) {
-      const missing = [!o.u && "Relay-URL", !o.r && "Room", !o.k && "Schlüssel"].filter(Boolean).join(", ");
-      return { ok: false, reason: `Code unvollständig (${missing} fehlt) – am Desktop neu erzeugen.` };
+      const missing = [!o.u && t("pair.partRelayUrl"), !o.r && t("pair.partRoom"),
+                       !o.k && t("pair.partKey")].filter(Boolean).join(", ");
+      return { ok: false, reason: t("pair.incomplete", { missing }) };
     }
     let { mySec, myPub } = get();
     if (!mySec || !myPub) { const kp = generateKeyPair(); mySec = kp.sec; myPub = kp.pub; }

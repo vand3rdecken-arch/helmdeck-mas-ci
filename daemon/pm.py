@@ -15,6 +15,8 @@ executes work; turning items into cards stays an explicit, gated step.
 """
 import json, math, os, re, subprocess, threading, time
 
+import i18n as _i18n
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 ROLE_FILE = os.path.join(ROOT, "pm.role.md")
 PLANS = os.path.join(ROOT, "pm")
@@ -208,8 +210,7 @@ def brief(goal=None, model=""):
     pace = _pace(econ)
     cum = 0
     for ms in out.get("milestones", []):
-        tt = sum(int(x.get("est_turns") or 0) for x in ms.get("tasks", [])
-                 if str(x.get("status")) != "done" and str(x.get("est_turns") or "0").isdigit())
+        tt = int(ms.get("est_turns") or 0) if str(ms.get("status")) != "done" else 0
         cum += tt
         ms["est_turns"] = tt
         ms["eta_days"] = _days(tt, pace)
@@ -241,29 +242,52 @@ def brief(goal=None, model=""):
     return out
 
 
+def _epic_description(ms):
+    """The PMP-scoped, owner-language body for ONE epic card: a user story,
+    acceptance criteria (Definition of Done), why it's next, and the work
+    breakdown (WBS) as an in-card checklist - never separate tickets. No card
+    ids, file paths, or internal jargon; the owner reads this cold."""
+    parts = []
+    story = (ms.get("user_story") or "").strip()
+    if story:
+        parts.append("NUTZERGESCHICHTE\n" + story)
+    done_when = [str(d).strip() for d in (ms.get("done_when") or []) if str(d).strip()]
+    if done_when:
+        parts.append("FERTIG, WENN\n" + "\n".join("- " + d for d in done_when))
+    why_now = (ms.get("why_now") or "").strip()
+    if why_now:
+        parts.append("WARUM JETZT\n" + why_now)
+    steps = [str(s).strip() for s in (ms.get("steps") or []) if str(s).strip()]
+    if steps:
+        parts.append("ENTHÄLT\n" + "\n".join("- " + s for s in steps))
+    return "\n\n".join(parts) or (ms.get("name") or "")
+
+
 def plan_items(b=None):
-    """The actionable NEW work from a brief (tasks not yet on the board), ordered
-    by priority - what an executor (the night ticker) should file as cards.
-    Returns (items, brief). Each item: {title, description, priority, repo}."""
+    """The actionable NEW epics from a brief (milestones not yet on the board),
+    ordered by priority - what an executor (the night ticker) should file as
+    cards. ONE card PER MILESTONE (epic): its steps stay a checklist inside
+    that card, not separate tickets, so a card is a long-lived, context-rich
+    chat instead of a fragment. Returns (items, brief). Each item:
+    {title, description, priority, repo}."""
     import events
     b = b or brief()
     order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     default_repo = events.settings().get("default_repo") or ""
     items = []
     for ms in b.get("milestones", []):
-        for t in ms.get("tasks", []):
-            if str(t.get("status")) == "done" or t.get("card"):
-                continue
-            desc = "%s\n\nStream: %s · Milestone: %s\n[PM plan]" % (
-                t.get("why") or t.get("title", ""), t.get("stream") or "-", ms.get("name") or "-")
-            items.append({"title": t.get("title", "").strip(),
-                          "description": desc,
-                          "priority": t.get("priority", "medium"),
-                          "repo": t.get("repo") or default_repo})
-            # due dates are NOT set here - the OVERVIEW loop state builds the
-            # Timeline from the plan, so that capability lives in the loop, not
-            # in this filing code (see _build_overview).
-    items = [it for it in items if it["title"]]
+        if str(ms.get("status")) == "done" or ms.get("card"):
+            continue
+        title = (ms.get("name") or "").strip()
+        if not title:
+            continue
+        items.append({"title": title,
+                      "description": _epic_description(ms),
+                      "priority": ms.get("priority", "medium"),
+                      "repo": ms.get("repo") or default_repo})
+        # due dates are NOT set here - the OVERVIEW loop state builds the
+        # Timeline from the plan, so that capability lives in the loop, not
+        # in this filing code (see _build_overview).
     items.sort(key=lambda x: order.get(x.get("priority"), 2))
     return items, b
 
@@ -472,17 +496,17 @@ def _notify_deliveries(day, tracks, st, pm):
         task = (t.get("task") or "").replace("\n", " ")[:60]
         if s == "needs_you" and t["id"] in disp:
             if fcm:
-                fcm.push_fcm("PM: fertig", "'%s' - braucht deine Abnahme." % task, t["id"])
-            _say("Fertig: '%s' ist geliefert und wartet auf deine Abnahme (oder Bounce). Sag mir Bescheid oder tipp die Karte an." % task)
+                fcm.push_fcm(_i18n.t("push.pmDone"), _i18n.t("push.pmDoneBody", task=task), t["id"])
+            _say(_i18n.t("pm.delivered", task=task))
             notified.add(t["id"]); changed = True
         elif s == "bounced" and (t["id"] in resolved or (auto != "act" and t["id"] in disp)):
             # escalate only once the coordinator gave up (or won't auto-resolve) -
             # and ALWAYS with a concrete next step attached
             prop = _unblock_proposal(t)
             if fcm:
-                fcm.push_fcm("PM: haengt", "'%s' - %s" % (task, prop[:140]), t["id"])
-            _say("Achtung: '%s' haengt weiter - meine Fix-Versuche haben nicht gereicht. %s"
-                 % (task, prop))
+                fcm.push_fcm(_i18n.t("push.pmStuck"),
+                             _i18n.t("push.pmStuckBody", task=task, proposal=prop[:140]), t["id"])
+            _say(_i18n.t("pm.stillStuck", task=task, proposal=prop))
             notified.add(t["id"]); changed = True
     if changed:
         day["notified"] = list(notified)
@@ -541,16 +565,13 @@ def _unblock_proposal(t):
         return ("Vorschlag: Repo/Setup pruefen (%s) und die Karte dann wieder auf "
                 "'In Arbeit' ziehen - meine automatischen Neustarts haben es nicht behoben." % err)
     if kind == "dirty":
-        return ("Vorschlag: sag im Chat 'resolve_blocker %s' - das parkt die uncommitteten "
-                "Aenderungen im Haupt-Checkout auf einen wip-Branch (nichts geht verloren)." % branch)
+        return _i18n.t("unblock.dirty", branch=branch)
     if kind == "conflict":
         rep = ((t.get("merge_report") or "").split("\n")[0])[:160]
-        return ("Vorschlag: sag im Chat 'resolve_conflict %s' fuer einen weiteren Versuch - "
-                "oder entscheide, ob der Branch anders aufgesetzt werden soll (%s)." % (branch, rep))
+        return _i18n.t("unblock.conflict", branch=branch, detail=rep)
     reason = (" | ".join(p.split("\n")[0] for p in (t.get("gate_report") or []))
-              or (t.get("last_error") or ""))[:200] or "Review rot"
-    return ("Vorschlag: entscheide die Ursache '%s' - steuere den Worker mit deiner "
-            "Entscheidung oder zieh die Karte zurueck ins Backlog." % reason)
+              or (t.get("last_error") or ""))[:200] or _i18n.t("unblock.reasonFallback")
+    return _i18n.t("unblock.gate", reason=reason)
 
 
 def _bump_attempt(tid):
@@ -666,8 +687,7 @@ def _resolve_card(tid, attempt):
         kind = _bounce_kind(t)
         task = (t.get("task") or "").replace("\n", " ")[:60]
         if attempt == 1 and kind != "dispatch":
-            _say("'%s' ist gebounct (%s) - ich kuemmere mich: Fix delegiert, danach "
-                 "reiche ich die Karte selbst neu ein." % (task, kind))
+            _say(_i18n.t("pm.onIt", task=task, kind=kind))
         if kind == "dispatch":
             _activity("resolve", "Dispatch schlug fehl - starte neu (Versuch %d): %s"
                       % (attempt, task), card=tid)
@@ -720,7 +740,7 @@ def _resolve_card(tid, attempt):
     task = ((t or {}).get("task") or "").replace("\n", " ")[:60]
     if t and t.get("status") != "bounced":
         _activity("resolve", "Wieder frei (Versuch %d): %s" % (attempt, task), card=tid)
-        _say("Geschafft: '%s' ist wieder frei%s" % (task, (" - " + note[:200]) if note else "."))
+        _say(_i18n.t("pm.freeAgain", task=task, note=(" - " + note[:200]) if note else "."))
     elif attempt >= _RESOLVE_MAX:
         _give_up(tid)
         _activity("blocked", "Haengt trotz %d Fix-Versuchen - eskaliere mit Vorschlag: %s"
@@ -743,11 +763,7 @@ def _launch_checkin(pm, st):
         return
     st["launch_asked"] = goal
     _save_loopstate(st)
-    _say("Koordinations-Check fuers Play-Store-Deploy (highest prio: in den Store) - das "
-         "brauche nur ich VON DIR, den Rest treibe ich selbst als Karten: "
-         "1) Google-Play-Console-Account angelegt? 2) Upload-Keystore / Play App Signing "
-         "bereit? 3) Datenschutz-URL + Data-Safety-Angaben? Sag mir kurz, was schon steht - "
-         "fuer den Rest lege ich Karten an und arbeite sie ab.")
+    _say(_i18n.t("pm.launchCheck"))
 
 
 def _overview_stale(plan, tracks):
@@ -759,18 +775,15 @@ def _overview_stale(plan, tracks):
         return True
     byid = {t["id"]: t for t in tracks}
     by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
-    seen = set()
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
-        for task in ms.get("tasks") or []:
-            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
-            if not c or c["id"] in seen:
-                continue
-            seen.add(c["id"])                      # a card belongs to its FIRST milestone
-            if c.get("lane") != "done" and (c.get("due") or "") != d:
-                return True
+        c = byid.get(ms.get("card")) or by_title.get((ms.get("name") or "").strip().lower())
+        if not c:
+            continue
+        if c.get("lane") != "done" and (c.get("due") or "") != d:
+            return True
     return False
 
 
@@ -784,23 +797,20 @@ def _build_overview(plan):
     all_t = sessions.list_tracks()
     byid = {t["id"]: t for t in all_t}
     by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
-    seen = set()
     n = 0
     for ms in (plan.get("milestones") or []):
         d = ms.get("target_date")
         if not d:
             continue
-        for task in ms.get("tasks") or []:
-            # match by the plan's card id first (reliable), then by title
-            c = byid.get(task.get("card")) or by_title.get((task.get("title") or "").strip().lower())
-            if not c or c["id"] in seen:
-                continue
-            seen.add(c["id"])                      # a card belongs to its FIRST milestone
-            if c.get("lane") != "done" and (c.get("due") or "") != d:
-                try:
-                    sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
-                except Exception:
-                    pass
+        # match by the plan's card id first (reliable), then by title
+        c = byid.get(ms.get("card")) or by_title.get((ms.get("name") or "").strip().lower())
+        if not c:
+            continue
+        if c.get("lane") != "done" and (c.get("due") or "") != d:
+            try:
+                sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
+            except Exception:
+                pass
     pol = dict(events.settings().get("policy") or {})
     if not (pol.get("dashboard") or {}).get("tiles"):
         pol["dashboard"] = {"tiles": ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"],
@@ -924,13 +934,12 @@ def _activity(kind, msg, card=None):
 def _say(text):
     """The PM SPEAKS TO YOU: post a message into the owner's board chat so the
     chat MOVES on its own - real proactive communication, not just a silent feed.
-    You can reply there and steer it. (cls 'pm' = a PM-authored message.)"""
+    You can reply there and steer it. (cls 'pm' = a PM-authored message.)
+    One voice: the shared writer in copilot.say, which the lane pipeline uses
+    too - so everything non-interactive speaks in the same chat."""
     try:
-        import auth, copilot
-        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
-        if not owner:
-            return
-        copilot._append_log(owner, [{"cls": "pm", "text": text, "ts": time.strftime("%H:%M")}])
+        import copilot
+        copilot.say(text, cls="pm")
     except Exception:
         pass
 

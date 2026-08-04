@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
 
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
 // A promise-based single-field prompt that works on every platform, including
@@ -24,6 +25,7 @@ export function openPrompt(title: string, def = ""): Promise<string | null> {
 
 export function PromptHost() {
   const t = useTheme();
+  const tr = useT();
   const [req, setReq] = React.useState<PromptReq | null>(null);
   const [val, setVal] = React.useState("");
 
@@ -60,7 +62,7 @@ export function PromptHost() {
           />
           <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>
             <Pressable onPress={() => close(null)} style={{ paddingVertical: 8, paddingHorizontal: 14 }}>
-              <Text style={{ color: t.txtSecondary, fontWeight: "500" }}>Abbrechen</Text>
+              <Text style={{ color: t.txtSecondary, fontWeight: "500" }}>{tr("ui.cancel")}</Text>
             </Pressable>
             <Pressable
               onPress={() => close(val)}

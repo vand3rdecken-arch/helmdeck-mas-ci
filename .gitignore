@@ -53,3 +53,6 @@ fcm_service_account.json
 daemon/models_cache.json
 daemon/pm/
 tests/banner_offline.png
+
+# UI-judging screenshots (regenerate with tests/uifix_shoot.py)
+tests/_shots/

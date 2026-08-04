@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type SteerOpts } from "@/data/client";
 import type { Track, Me, EconCard } from "@/data/types";
+import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { cur } from "@/ui/dash_panels";
@@ -24,17 +25,30 @@ interface Turn { ts?: string; cost?: number; models?: string[];
   usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
 interface Ckpt { turn: number; commit: string; ts: string; reply: string }
 
-const SLASH = [
-  { name: "plan", hint: "plan before acting", insert: "Make a plan for: " },
-  { name: "test", hint: "run tests, report failures", insert: "Run the tests and report any failures." },
-  { name: "diff", hint: "summarize current changes", insert: "Summarize the current diff on this branch." },
-  { name: "commit", hint: "commit the work", insert: "Commit the current work with a clear message." },
-];
+// Slash commands, built per render: the hint AND the text they type for the
+// owner are their prose, so both follow the workspace language. A module-level
+// const would freeze whatever language was current at import time.
+type Tr = (key: string, vars?: Record<string, string | number>) => string;
+const slashCommands = (tr: Tr) => ["plan", "test", "diff", "commit"].map((name) => ({
+  name, hint: tr(`card.slash.${name}Hint`), insert: tr(`card.slash.${name}Insert`),
+}));
+
+// daemon status / lane words have shared keys in chrome.ts; map explicitly so an
+// unknown value from the daemon falls back to its raw text, never to a key.
+const STATUS_KEY: Record<string, string> = {
+  queued: "status.queued", running: "status.running", gating: "status.gating",
+  needs_you: "status.needsYou", bounced: "status.bounced",
+  submitted: "status.submitted", accepted: "status.accepted",
+};
+const LANE_KEY: Record<string, string> = {
+  backlog: "lane.backlog", working: "lane.working", review: "lane.review", done: "lane.done",
+};
 
 // ---- inline field editors -------------------------------------------------
 
-function EditText({ value, onSave, placeholder, multiline, style }: {
-  value: string; onSave: (v: string) => void; placeholder?: string; multiline?: boolean; style?: any;
+function EditText({ value, onSave, placeholder, multiline, style, autoFocus, onDone }: {
+  value: string; onSave: (v: string) => void; placeholder?: string; multiline?: boolean;
+  style?: any; autoFocus?: boolean; onDone?: () => void;
 }) {
   const t = useTheme();
   const [v, setV] = useState(value);
@@ -42,10 +56,64 @@ function EditText({ value, onSave, placeholder, multiline, style }: {
   useEffect(() => { if (!dirty.current) setV(value); }, [value]);
   return (
     <TextInput value={v} multiline={multiline} placeholder={placeholder} placeholderTextColor={t.txtPlaceholder}
+      autoFocus={autoFocus}
       onChangeText={(x) => { dirty.current = true; setV(x); }}
-      onBlur={() => { dirty.current = false; if (v.trim() !== value) onSave(v.trim()); }}
+      onBlur={() => { dirty.current = false; if (v.trim() !== value) onSave(v.trim()); onDone?.(); }}
       style={[{ color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 8, borderWidth: 1,
         borderColor: t.borderSubtle, padding: 8, fontSize: 14 }, style]} />
+  );
+}
+
+/** The card body, READABLE. The PM writes a structured work package
+ *  (NUTZERGESCHICHTE / FERTIG, WENN / WARUM JETZT / ENTHÄLT); a multiline
+ *  TextInput renders as a ~2-row textarea on web that never grows, so the
+ *  acceptance criteria and steps were clipped mid-line and effectively
+ *  invisible - the exact opposite of the point. Show the whole thing with the
+ *  ALL-CAPS section heads lifted out, and swap to the editor on tap.
+ *  Formatting happens HERE, not in the stored text, so the board's two-line
+ *  preview and the agent's prompt stay clean (no markdown syntax to leak). */
+function DescriptionField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const t = useTheme();
+  const tr = useT();
+  const [editing, setEditing] = useState(false);
+  const text = value ?? "";
+
+  if (editing || !text.trim()) {
+    return (
+      <EditText value={text} onSave={onSave} multiline autoFocus={editing}
+        onDone={() => setEditing(false)}
+        placeholder={tr("card.descPlaceholder")}
+        style={{ minHeight: 200, textAlignVertical: "top", lineHeight: 20 }} />
+    );
+  }
+  const isHead = (l: string) => {
+    const s = l.trim();
+    return s.length > 2 && s.length <= 40 && s === s.toUpperCase() && /[A-ZÄÖÜ]/.test(s);
+  };
+  return (
+    <Pressable onPress={() => setEditing(true)} accessibilityLabel={tr("card.editDescription")}
+      style={{ backgroundColor: t.surface2, borderRadius: 8, borderWidth: 1,
+        borderColor: t.borderSubtle, padding: 10, gap: 2 }}>
+      {text.split("\n").map((line, i) => {
+        const s = line.trim();
+        if (!s) return <View key={i} style={{ height: 8 }} />;
+        if (isHead(line)) {
+          return (
+            <Text key={i} style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700",
+              letterSpacing: 0.6, marginTop: i ? 6 : 0 }}>{s}</Text>
+          );
+        }
+        if (s.startsWith("- ")) {
+          return (
+            <View key={i} style={{ flexDirection: "row", gap: 6 }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 14, lineHeight: 20 }}>•</Text>
+              <Text style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, flex: 1 }}>{s.slice(2)}</Text>
+            </View>
+          );
+        }
+        return <Text key={i} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }}>{s}</Text>;
+      })}
+    </Pressable>
   );
 }
 
@@ -72,10 +140,54 @@ function Picker({ label, value, options, onPick }: {
   );
 }
 
+/** What is actually attached to this card. The agent reads these files off disk
+ *  (the daemon appends their paths to its prompt), so the owner needs to see
+ *  what it was handed - otherwise an attachment is a black hole after sending.
+ *  Silent when the card has none, so it costs nothing on a normal card. */
+function AttachmentList({ id }: { id: string }) {
+  const t = useTheme();
+  const tr = useT();
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["attachments", id], queryFn: () => api.attachments(id) });
+  const files = data ?? [];
+  if (!files.length) return null;
+  const kb = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  return (
+    <>
+      <View style={{ height: 8 }} />
+      <SectionLabel text={tr("card.sec.attachments")} />
+      <View style={{ gap: 6 }}>
+        {files.map((f) => (
+          <View key={f.name} style={{ flexDirection: "row", alignItems: "center", gap: 8,
+            backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+            borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}>
+            <Ionicons name={/\.(png|jpe?g|gif|webp)$/i.test(f.name) ? "image-outline" : "document-outline"}
+              size={15} color={t.txtTertiary} />
+            {/* the daemon prefixes saved files with their index (save_attachments
+                writes "%d_%s"); show the name the owner recognises, but keep
+                f.name for the remove call - that is the on-disk basename. */}
+            <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }}>
+              {f.name.replace(/^\d+_/, "")}
+            </Text>
+            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{kb(f.size)}</Text>
+            <Pressable hitSlop={8} accessibilityLabel={tr("card.removeAttachment", { name: f.name })}
+              onPress={() => api.removeAttachment(id, f.name)
+                .then(() => qc.invalidateQueries({ queryKey: ["attachments", id] }))
+                .catch((e) => Alert.alert(tr("card.attachment"), String((e as Error).message)))}>
+              <Ionicons name="close-circle" size={17} color={t.txtTertiary} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </>
+  );
+}
+
 // ---- overview / detail column --------------------------------------------
 
 function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) => void }) {
   const t = useTheme();
+  const tr = useT();
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const owner = me.data?.role === "owner";
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, enabled: owner });
@@ -90,57 +202,59 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
   async function rewind(commit: string) {
     const go = async () => {
       try { await api.post(`/tracks/${k.id}/rewind`, { commit }); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-      catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+      catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
     };
-    Alert.alert("Dateien zurücksetzen?", "Die aktuellen Dateien werden zuerst gesichert (reversibel). Der Verlauf bleibt.",
-      [{ text: "Abbrechen", style: "cancel" }, { text: "Restore", onPress: go }]);
+    Alert.alert(tr("card.rewind.title"), tr("card.rewind.body"),
+      [{ text: tr("ui.cancel"), style: "cancel" }, { text: tr("card.rewind.restore"), onPress: go }]);
   }
 
   return (
     <View style={{ gap: 10 }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-        {k.status ? <Chip text={k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
-        <Chip text={k.lane} dot={laneColor(t, k.lane)} />
+        {k.status ? <Chip text={STATUS_KEY[k.status] ? tr(STATUS_KEY[k.status]) : k.status.replace(/_/g, " ")}
+          dot={statusColor(t, k.status)} /> : null}
+        <Chip text={LANE_KEY[k.lane] ? tr(LANE_KEY[k.lane]) : k.lane} dot={laneColor(t, k.lane)} />
         {k.mode ? <Chip text={executorLabel(k.mode)} dot={t.ai} /> : null}
         {k.ai_cost > 0 ? <Chip text={`AI $${k.ai_cost.toFixed(2)}`} /> : null}
       </View>
 
       <Panel>
-        <SectionLabel text="task" />
+        <SectionLabel text={tr("card.sec.task")} />
         <EditText value={k.task} onSave={(v) => v && edit({ task: v })} multiline style={{ fontWeight: "600" }} />
         <View style={{ height: 8 }} />
-        <SectionLabel text="description" />
-        <EditText value={k.description ?? ""} onSave={(v) => edit({ description: v })} multiline
-          placeholder="Kontext, Akzeptanzkriterien, Links… (der Worker liest es)" />
+        <SectionLabel text={tr("card.sec.description")} />
+        <DescriptionField value={k.description ?? ""} onSave={(v) => edit({ description: v })} />
+        <AttachmentList id={k.id} />
       </Panel>
 
       <Panel>
-        <SectionLabel text="properties" />
+        <SectionLabel text={tr("card.sec.properties")} />
         <View style={{ gap: 10 }}>
-          <Picker label="Priority" value={k.priority ?? "medium"}
-            options={["urgent", "high", "medium", "low"].map((p) => ({ id: p, label: p }))}
+          <Picker label={tr("card.prop.priority")} value={k.priority ?? "medium"}
+            options={["urgent", "high", "medium", "low"].map((p) => ({ id: p, label: tr(`prio.${p}`) }))}
             onPick={(p) => edit({ priority: p })} />
           <View style={{ gap: 4 }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Due (YYYY-MM-DD)</Text>
+            <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("card.prop.due")}</Text>
             <EditText value={k.due ?? ""} onSave={(v) => edit({ due: v })} placeholder="2026-01-31" />
           </View>
-          <Picker label="Billing" value={billing}
-            options={[{ id: "fixed", label: "Fixed price" }, { id: "tm", label: "Time & material" }, { id: "none", label: "Internal" }]}
+          <Picker label={tr("card.prop.billing")} value={billing}
+            options={[{ id: "fixed", label: tr("card.billing.fixed") }, { id: "tm", label: tr("card.billing.tm") },
+                      { id: "none", label: tr("card.billing.none") }]}
             onPick={(b) => edit({ billing: b })} />
           {billing === "fixed" ? (
             <View style={{ gap: 4 }}>
-              <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Price</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("card.prop.price")}</Text>
               <EditText value={String(k.value ?? "")} onSave={(v) => { const n = parseFloat(v); if (!isNaN(n)) edit({ value: n }); }} placeholder="0" />
             </View>
           ) : null}
           {billing === "tm" ? (
             <View style={{ gap: 4 }}>
-              <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Rate /h</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("card.prop.rate")}</Text>
               <EditText value={String(k.rate ?? "")} onSave={(v) => { const n = parseFloat(v); if (!isNaN(n)) edit({ rate: n }); }} placeholder="0" />
             </View>
           ) : null}
           <View style={{ gap: 4 }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Client</Text>
+            <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("card.prop.client")}</Text>
             <EditText value={k.client ?? ""} onSave={(v) => edit({ client: v })} placeholder="-" />
           </View>
         </View>
@@ -148,28 +262,29 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
 
       {owner && e ? (
         <Panel>
-          <SectionLabel text="economics" />
-          <KVRow k="Billed" v={`${cy}${(e.billed ?? e.value).toFixed(2)}${e.billing === "tm" ? " ~" : ""}`} />
-          <KVRow k="AI cost" v={`$${e.ai_cost.toFixed(2)}`} color={t.ai} />
-          <KVRow k="Margin" v={`${cy}${(e.margin ?? ((e.billed ?? e.value) - e.ai_cost)).toFixed(2)}`} color={t.accent} />
-          <KVRow k="Touches" v={`${e.touches} touch${e.touches === 1 ? "" : "es"}`} />
-          {e.mode ? <KVRow k="Mode" v={e.mode === "auto" ? "auto" : "assisted"} /> : null}
+          <SectionLabel text={tr("card.sec.economics")} />
+          <KVRow k={tr("card.econ.billed")} v={`${cy}${(e.billed ?? e.value).toFixed(2)}${e.billing === "tm" ? " ~" : ""}`} />
+          <KVRow k={tr("card.econ.aiCost")} v={`$${e.ai_cost.toFixed(2)}`} color={t.ai} />
+          <KVRow k={tr("card.econ.margin")} v={`${cy}${(e.margin ?? ((e.billed ?? e.value) - e.ai_cost)).toFixed(2)}`} color={t.accent} />
+          <KVRow k={tr("card.econ.touches")}
+            v={tr(e.touches === 1 ? "card.econ.touchOne" : "card.econ.touchMany", { n: e.touches })} />
+          {e.mode ? <KVRow k={tr("card.econ.mode")} v={tr(e.mode === "auto" ? "card.mode.auto" : "card.mode.assisted")} /> : null}
         </Panel>
       ) : null}
 
       <Panel>
-        <SectionLabel text="technical" />
-        <KVRow k="Branch" v={k.branch || "—"} />
-        <KVRow k="Repo" v={k.repo || "—"} />
-        <KVRow k="Session" v={k.session_id ? k.session_id.slice(0, 12) + "…" : "not started"} />
-        <KVRow k="Turns" v={`${k.turns}`} />
-        <KVRow k="Tokens" v={`${(k.tokens_in ?? 0).toLocaleString()} / ${(k.tokens_out ?? 0).toLocaleString()}`} />
-        {k.models?.length ? <KVRow k="Models" v={k.models.join(", ")} /> : null}
+        <SectionLabel text={tr("card.sec.technical")} />
+        <KVRow k={tr("card.tech.branch")} v={k.branch || "—"} />
+        <KVRow k={tr("card.tech.repo")} v={k.repo || "—"} />
+        <KVRow k={tr("card.tech.session")} v={k.session_id ? k.session_id.slice(0, 12) + "…" : tr("card.notStarted")} />
+        <KVRow k={tr("card.tech.turns")} v={`${k.turns}`} />
+        <KVRow k={tr("card.tech.tokens")} v={`${(k.tokens_in ?? 0).toLocaleString()} / ${(k.tokens_out ?? 0).toLocaleString()}`} />
+        {k.models?.length ? <KVRow k={tr("card.tech.models")} v={k.models.join(", ")} /> : null}
       </Panel>
 
       {turns && turns.length > 0 ? (
         <Panel>
-          <SectionLabel text="ai turns" />
+          <SectionLabel text={tr("card.sec.aiTurns")} />
           {turns.map((tu, i) => {
             const u = tu.usage ?? {};
             const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
@@ -186,15 +301,15 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
 
       {owner && ckpts && ckpts.length > 0 ? (
         <Panel>
-          <SectionLabel text="rewind (files only, reversible)" />
+          <SectionLabel text={tr("card.sec.rewind")} />
           {ckpts.slice().reverse().map((c, i) => (
             <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 }}>
-              <Text style={{ color: t.txtTertiary, fontSize: 11.5, width: 92 }}>turn {c.turn} · {c.ts?.slice(11, 16)}</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 11.5, width: 92 }}>{tr("card.rewind.turn", { n: c.turn })} · {c.ts?.slice(11, 16)}</Text>
               <Text style={{ color: t.txtSecondary, fontSize: 12, flex: 1 }} numberOfLines={1}>{c.reply}</Text>
               <Pressable onPress={() => rewind(c.commit)} hitSlop={6}
                 style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
                 <Ionicons name="arrow-undo-outline" size={12} color={t.txtSecondary} />
-                <Text style={{ color: t.txtSecondary, fontSize: 11.5 }}>restore</Text>
+                <Text style={{ color: t.txtSecondary, fontSize: 11.5 }}>{tr("card.rewind.restore")}</Text>
               </Pressable>
             </View>
           ))}
@@ -212,6 +327,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   seed: { text: string; key: number }; setSeed: (s: { text: string; key: number }) => void; bottomInset: number;
 }) {
   const t = useTheme();
+  const tr = useT();
   const qc = useQueryClient();
   const running = k.status === "running";
   // card chat mode: "worker" steers the card's own worker (default), "agent" talks
@@ -264,9 +380,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       setAgentMsgs((m) => [...m, { role: "user", kind: "text", text, ts: hhmm(), agent: true }]);
       try {
         const r = await api.chat(text, { ...o, card: k.id });
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.reply || r.error || "(keine Antwort)", ts: hhmm(), agent: true }]);
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.reply || r.error || tr("card.chat.noReply"), ts: hhmm(), agent: true }]);
       } catch {
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: "(Agent-Senden fehlgeschlagen)", ts: hhmm(), agent: true }]);
+        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: tr("card.chat.sendFailed"), ts: hhmm(), agent: true }]);
       }
       // the board agent may have moved/deleted/archived cards — refresh the board
       await qc.invalidateQueries({ queryKey: ["tracks"] });
@@ -284,7 +400,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       <View style={{ flex: 1 }}>
         <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
-          {steps.length === 0 ? <Empty text="Noch keine Nachrichten." /> :
+          {steps.length === 0 ? <Empty text={tr("card.chat.noMessages")} /> :
             <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
         </ScrollView>
         {!atBottom ? (
@@ -293,7 +409,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
               backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
               paddingHorizontal: 12, paddingVertical: 7 }}>
             <Ionicons name="arrow-down" size={14} color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>Neueste</Text>
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("card.chat.latest")}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -303,7 +419,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
           unmistakable; Agent is violet, Worker is accent, matching the chat. */}
       <View style={{ paddingHorizontal: 12, paddingTop: 8, gap: 6 }}>
         <View style={{ flexDirection: "row", backgroundColor: t.surface2, borderRadius: 9, borderWidth: 1, borderColor: t.borderSubtle, padding: 2 }}>
-          {([["worker", "Worker", "construct-outline"], ["agent", "Agent", "sparkles-outline"]] as const).map(([id, label, icon]) => {
+          {([["worker", "card.chat.worker", "construct-outline"], ["agent", "card.chat.agent", "sparkles-outline"]] as const).map(([id, label, icon]) => {
             const on = (id === "agent") === agentMode;
             const col = id === "agent" ? t.accent2 : t.accent;
             return (
@@ -311,21 +427,21 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
                 style={{ flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5,
                   backgroundColor: on ? col + "22" : "transparent", borderRadius: 7, paddingVertical: 7 }}>
                 <Ionicons name={icon} size={14} color={on ? col : t.txtTertiary} />
-                <Text style={{ color: on ? col : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "700" : "500" }}>{label}</Text>
+                <Text style={{ color: on ? col : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "700" : "500" }}>{tr(label)}</Text>
               </Pressable>
             );
           })}
         </View>
         <Text numberOfLines={1} style={{ color: agentMode ? t.accent2 : t.txtTertiary, fontSize: 11 }}>
-          {agentMode ? "⌘ Board-Agent — verschieben/löschen/steuern (getrennt vom Worker)"
-            : (k.session_id ? "Worker — Kontext läuft weiter" : "Worker — noch nicht gestartet")}
+          {agentMode ? tr("card.chat.hintAgent")
+            : tr(k.session_id ? "card.chat.hintWorkerLive" : "card.chat.hintWorkerIdle")}
         </Text>
       </View>
 
       <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
-        slashCommands={SLASH} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
-        placeholder={agentMode ? "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'"
-          : k.session_id ? "Worker steuern – Kontext läuft weiter" : "Worker starten…"} />
+        slashCommands={slashCommands(tr)} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
+        placeholder={agentMode ? tr("card.chat.phAgent")
+          : tr(k.session_id ? "card.chat.phWorkerLive" : "card.chat.phWorkerIdle")} />
     </View>
   );
 }
@@ -334,6 +450,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
 
 export default function CardScreen() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
@@ -421,7 +538,7 @@ export default function CardScreen() {
   async function edit(patch: Record<string, unknown>) {
     if (!id) return;
     try { await api.update(id, patch); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-    catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
   }
 
   async function send(text: string, o: SteerOpts) {
@@ -430,13 +547,13 @@ export default function CardScreen() {
       await api.steer(id, text, o);
       await qc.invalidateQueries({ queryKey: ["transcript", id] });
       await qc.invalidateQueries({ queryKey: ["tracks"] });
-    } catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
   }
 
   async function stop() {
     if (!id) return;
     try { await api.cancel(id); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-    catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+    catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
   }
 
   // Lane flow, Jira-style: the header status pill is the primary "move" control,
@@ -444,7 +561,7 @@ export default function CardScreen() {
   const LANES = ["backlog", "working", "review", "done"] as const;
   const laneLabel = (l: string) =>
     ((metrics as { settings?: { policy?: { lane_labels?: Record<string, string> } } })?.settings?.policy?.lane_labels ?? {})[l]
-    ?? l.charAt(0).toUpperCase() + l.slice(1);
+    ?? (LANE_KEY[l] ? tr(LANE_KEY[l]) : l.charAt(0).toUpperCase() + l.slice(1));
   const laneIdx = k ? LANES.indexOf(k.lane as (typeof LANES)[number]) : -1;
   const nextLane = laneIdx >= 0 && laneIdx < LANES.length - 1 ? LANES[laneIdx + 1] : null;
 
@@ -453,24 +570,30 @@ export default function CardScreen() {
     try {
       const res = await api.moveLane(k.id, lane);
       await qc.invalidateQueries({ queryKey: ["tracks"] });
-      // visual cue: did it take? review runs the gate (may bounce); working = dispatched.
-      const r = res as { status?: string; gate_failed?: boolean };
-      const bad = r?.status === "bounced" || !!r?.gate_failed;
-      const working = lane === "working";
-      showToast(bad ? `Abgelehnt → ${laneLabel(lane)} (Gate/Review)`
-                    : working ? `Gestartet → ${laneLabel(lane)} · Agent arbeitet`
-                    : `Verschoben → ${laneLabel(lane)}`, !bad);
-    } catch (e) { showToast("Move fehlgeschlagen: " + String((e as Error).message), false); }
+      // Review/Done are backgrounded by the daemon (gate subprocess + merge +
+      // deploy hook), so there is no verdict to report yet — say what STARTED.
+      // The outcome arrives on the card, woven into this feed as a lifecycle
+      // note, and in the board chat; it is no longer toast-only.
+      if (res.gating) {
+        showToast(tr(lane === "done" ? "card.toast.gateMerge" : "card.toast.gate"));
+      } else if (lane === "working") {
+        showToast(tr("card.toast.started", { lane: laneLabel(lane) }));
+      } else {
+        const bad = res.status === "bounced" || !!res.gate_failed;
+        showToast(tr(bad ? "card.toast.bounced" : "card.toast.moved", { lane: laneLabel(lane) }), !bad);
+      }
+    } catch (e) { showToast(tr("card.toast.moveFailed", { err: String((e as Error).message) }), false); }
   }
   function moveSheet() {
     if (!k) return;
     sheet.show({
       title: k.task,
-      message: "Verschieben nach…",
+      message: tr("card.move.to"),
       // next step first + labelled, then the rest — like Jira's transition list
       options: LANES.filter((l) => l !== k.lane)
         .sort((a, b) => (a === nextLane ? -1 : b === nextLane ? 1 : 0))
-        .map((l) => ({ label: (l === nextLane ? "→ " : "") + laneLabel(l) + (l === nextLane ? "   · nächster Schritt" : ""),
+        .map((l) => ({ label: (l === nextLane ? "→ " : "") + laneLabel(l)
+                         + (l === nextLane ? `   · ${tr("card.move.nextStep")}` : ""),
                        onPress: () => moveTo(l) })),
     });
   }
@@ -479,20 +602,20 @@ export default function CardScreen() {
     sheet.show({
       title: k.task,
       options: [
-        ...(nextLane ? [{ label: "Weiterschieben  →  " + laneLabel(nextLane), onPress: () => moveTo(nextLane) }] : []),
-        { label: "Verschieben nach…", onPress: moveSheet },
+        ...(nextLane ? [{ label: `${tr("card.move.advance")}  →  ${laneLabel(nextLane)}`, onPress: () => moveTo(nextLane) }] : []),
+        { label: tr("card.move.to"), onPress: moveSheet },
         { label: (k.fast_track ? "⚡ Fast-Track deaktivieren" : "⚡ Fast-Track aktivieren")
                   + "  (grün → auto-merge + deploy)", onPress: () => edit({ fast_track: !k.fast_track }) },
-        { label: "Fork", onPress: () => api.fork(k.id) },
-        { label: "Archivieren", onPress: () => api.archive(k.id).then(() => router.back()) },
-        { label: "Löschen", destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
+        { label: tr("card.menu.fork"), onPress: () => api.fork(k.id) },
+        { label: tr("card.menu.archive"), onPress: () => api.archive(k.id).then(() => router.back()) },
+        { label: tr("ui.delete"), destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
       ],
     });
   }
 
   // permission modes — bypass ("Full") is owner-only; current perm first
-  const modeBase = [{ id: "acceptEdits", label: "Edit" }, { id: "plan", label: "Plan" },
-    ...(me?.role === "owner" ? [{ id: "bypassPermissions", label: "Full" }] : [])];
+  const modeBase = [{ id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") },
+    ...(me?.role === "owner" ? [{ id: "bypassPermissions", label: tr("card.perm.full") }] : [])];
   const modeOptions = k
     ? [...modeBase.filter((m) => m.id === k.perm), ...modeBase.filter((m) => m.id !== k.perm)]
     : modeBase;
@@ -502,7 +625,7 @@ export default function CardScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}>
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
-        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }} numberOfLines={1}>{k?.task ?? "Karte"}</Text>
+        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }} numberOfLines={1}>{k?.task ?? tr("card.card")}</Text>
         {running ? <ActivityIndicator size="small" color={t.ai} /> : null}
         {k?.fast_track ? (
           <Pressable onPress={() => edit({ fast_track: false })} hitSlop={6} accessibilityLabel="Fast-Track aus"
@@ -514,7 +637,7 @@ export default function CardScreen() {
         ) : null}
         {k ? (
           // tappable status pill (Jira-style): shows the lane, opens the move sheet
-          <Pressable onPress={moveSheet} hitSlop={8} accessibilityLabel="Status ändern"
+          <Pressable onPress={moveSheet} hitSlop={8} accessibilityLabel={tr("card.changeStatus")}
             style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: t.surface2,
               borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
             <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: laneColor(t, k.lane) }} />
@@ -544,7 +667,7 @@ export default function CardScreen() {
               <Pressable key={x} onPress={() => setTab(x)} style={{ flex: 1, paddingVertical: 10, alignItems: "center",
                 borderBottomWidth: 2, borderBottomColor: tab === x ? t.accent : "transparent" }}>
                 <Text style={{ color: tab === x ? t.accent : t.txtTertiary, fontWeight: "600" }}>
-                  {x === "overview" ? "Overview" : `Chat${k.turns ? ` (${k.turns}t)` : ""}`}
+                  {x === "overview" ? tr("card.tab.overview") : `${tr("nav.chat")}${k.turns ? ` (${k.turns}t)` : ""}`}
                 </Text>
               </Pressable>
             ))}

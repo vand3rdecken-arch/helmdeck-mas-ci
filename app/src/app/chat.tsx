@@ -6,6 +6,7 @@ import { Keyboard, Platform, Pressable, ScrollView, Text, View } from "react-nat
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type ChatMsg, type SteerOpts } from "@/data/client";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
@@ -30,6 +31,7 @@ function toStep(m: ChatMsg): TStep {
 
 export default function ChatScreen() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -79,7 +81,7 @@ export default function ChatScreen() {
       if (turn.current !== id) return;   // cancelled/superseded — drop this reply
       const actions = (r.actions ?? []).map((a) => a.detail || a.tool).filter(Boolean).join("\n");
       setMsgs((m) => [...m, { cls: r.error ? "error" : "bot",
-        text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || "(keine Antwort)"].filter(Boolean).join("\n\n") }]);
+        text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || tr("chat.noReply")].filter(Boolean).join("\n\n") }]);
       qc.invalidateQueries({ queryKey: ["tracks"] });
       qc.invalidateQueries({ queryKey: ["chatHistory"] });   // pull the persisted turn (+ any PM msgs)
     } catch (e) {
@@ -99,7 +101,7 @@ export default function ChatScreen() {
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
-      <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>Board copilot</Text>
+      <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
     </View>
   );
 
@@ -109,7 +111,7 @@ export default function ChatScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
         {header}
-        <Empty text="Der Copilot ist nur für das Team." />
+        <Empty text={tr("chat.teamOnly")} />
       </View>
     );
   }
@@ -121,9 +123,9 @@ export default function ChatScreen() {
         <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
           {msgs.length === 0
-            ? <Empty text="Frag den Copilot über die Arbeit." />
+            ? <Empty text={tr("chat.empty")} />
             : <Transcript steps={msgs.map(toStep)} />}
-          {busy ? <Text style={{ color: t.txtTertiary, fontSize: 12, paddingTop: 8 }}>… denkt</Text> : null}
+          {busy ? <Text style={{ color: t.txtTertiary, fontSize: 12, paddingTop: 8 }}>{tr("chat.thinking")}</Text> : null}
         </ScrollView>
         {!atBottom ? (
           <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
@@ -131,12 +133,12 @@ export default function ChatScreen() {
               backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
               paddingHorizontal: 12, paddingVertical: 7, ...(Platform.OS === "web" ? {} : { elevation: 6 }) }}>
             <Ionicons name="arrow-down" size={14} color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>Neueste</Text>
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("chat.latest")}</Text>
           </Pressable>
         ) : null}
 
         <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
-          placeholder="Frage…" draftKey="board-copilot"
+          placeholder={tr("chat.placeholder")} draftKey="board-copilot"
           bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
         {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>

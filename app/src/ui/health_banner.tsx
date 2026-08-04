@@ -4,6 +4,7 @@ import { Animated, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useHealth } from "@/data/health";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
 // Ambient connection state, mounted once above the whole app. Appears the
@@ -13,6 +14,7 @@ import { useTheme } from "@/theme";
 // blocks touches; the long-poll in _layout reconnects on its own.
 export function HealthBanner() {
   const t = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const { status, detail } = useHealth();
   const visible = status === "offline";
@@ -34,7 +36,7 @@ export function HealthBanner() {
         <Ionicons name="cloud-offline-outline" size={15} color={t.danger} />
         <View style={{ flexShrink: 1 }}>
           <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>
-            Desktop nicht erreichbar – verbinde neu…
+            {tr("health.reconnecting")}
           </Text>
           {detail ? (
             <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11.5 }}>{detail}</Text>

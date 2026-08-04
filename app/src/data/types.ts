@@ -17,6 +17,11 @@ export interface Track {
   archived?: boolean; autopilot?: boolean; fast_track?: boolean;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
 }
+/** POST /tracks/<id>/lane. ->backlog still returns the finished Track;
+ *  ->working/review/done are backgrounded by the daemon (gate subprocess +
+ *  merge + deploy hook) and answer {started, gating} right away. The card then
+ *  carries status "gating" until the real verdict lands on it. */
+export type LaneMove = Partial<Track> & { started?: string; gating?: boolean };
 export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;
   touches: number; value: number; mode: string | null; models: string[];
@@ -62,7 +67,12 @@ export interface Process {
   id: string; request: string; client: string; due: string; status: string;
   steps: Step[]; cost: number; created: string; error?: string;
 }
-export interface Me { name: string; role: string }
+/** `ui` is the PUBLIC slice of policy every role may see (language + lane
+ *  labels). The full settings blob stays owner-only on /settings. */
+export interface Me {
+  name: string; role: string;
+  ui?: { lang?: string; lane_labels?: Record<string, string> };
+}
 export interface HistoryRow { kind: string; detail: string; ts?: string; t?: number }
 export interface Run { id: string; title: string; kind: string; status: string; steps?: number }
 export interface UserRow {
