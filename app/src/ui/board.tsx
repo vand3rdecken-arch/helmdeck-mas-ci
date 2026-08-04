@@ -8,7 +8,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 
 
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
-import type { Track } from "@/data/types";
+import type { Track, LaneMove } from "@/data/types";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { GanttView } from "./board_gantt";
@@ -45,10 +45,24 @@ function laneSort(a: Track, b: Track) {
     || (a.due ?? "9999").localeCompare(b.due ?? "9999");
 }
 const isRunning = (k: Track) => k.status === "running" || k.lane === "working";
+/** The daemon is running this card's gate/merge/deploy right now (backgrounded,
+ *  can take minutes). Without a visible cue the board looked frozen. */
+const isGating = (k: Track) => k.status === "gating";
 
 /** The daemon's verdict after a lane move (ported from archive/web board.tsx
- *  drop()): Review = preview (gate + merge check), Done = land (merge+deploy). */
-function laneVerdict(res: Track, lane: string): string | null {
+ *  drop()): Review = preview (gate + merge check), Done = land (merge+deploy).
+ *
+ *  Review/Done now run in the BACKGROUND (the gate alone is a subprocess with a
+ *  600s ceiling), so the move answers {gating:true} and the real verdict lands
+ *  on the card, in the chat and by push. Acknowledge the START here rather than
+ *  reporting an outcome we don't have yet — the old inline call blocked the
+ *  request for minutes and put the only copy of the reason in a 5s toast. */
+function laneVerdict(res: LaneMove, lane: string): string | null {
+  if (res.gating) {
+    return lane === "done"
+      ? "Gate läuft, dann Merge nach main – Ergebnis kommt auf die Karte und in den Chat"
+      : "Gate läuft – Ergebnis kommt auf die Karte und in den Chat";
+  }
   if (lane === "review") {
     if (res.gate_failed) return "Gate rot – bleibt auf Review: " + (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");
     const k = res.merge_kind;
@@ -104,6 +118,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     (k.review_report && k.lane === "review") ? k.review_report.split("\n")[0] : null;
   const reportColor = k.gate_failed || k.merge_kind === "conflict" ? t.danger : k.merge_kind === "mergeable" ? t.ok : t.txtTertiary;
   const sub =
+    isGating(k) ? "Der Harness prüft und merged – das kann ein paar Minuten dauern." :
     k.lane === "backlog" ? k.description :
     k.status === "running" ? null :
     (k.lane === "working" && k.last_reply) ? k.last_reply :
@@ -130,6 +145,11 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <RunningPulse color={t.ai} />
             <Text style={{ color: t.ai, fontSize: 11, fontWeight: "700" }}>läuft</Text>
+          </View>
+        ) : isGating(k) ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <RunningPulse color={t.accent} />
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>Gate läuft…</Text>
           </View>
         ) : null}
         <Chip text={executorLabel(k.mode)} dot={t.ai} />
@@ -393,7 +413,13 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const qc = useQueryClient();
   // Freshness is driven by the global version long-poll (useGlobalStream); this
   // interval is just a slow safety net if that loop errors.
-  const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 20000 });
+  // While the daemon is gating/merging a card, 20s is far too coarse to feel
+  // like feedback — poll hard until the verdict lands, then back off.
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["tracks"], queryFn: api.tracks,
+    refetchInterval: (q) => (Array.isArray(q.state.data)
+      && (q.state.data as Track[]).some(isGating) ? 2500 : 20000),
+  });
   const [busy, setBusy] = useState(false);
   const [layout, setLayout] = useState("board");
   const [toast, setToast] = useState<string | null>(null);
