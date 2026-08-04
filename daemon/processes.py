@@ -269,8 +269,7 @@ def _priority_dispatch():
         events.emit("process", "-", action="priority_dispatch", card=t["id"])
         threading.Thread(target=_auto_dispatch, args=(t["id"],), daemon=True).start()
 
-AUTOPILOT_RESOLVE_MAX = 2      # RESOLVE ladder: delegate the fix twice, then escalate
-AUTOPILOT_RETRY_SECONDS = 600  # min gap between autopilot attempts on one card
+AUTOPILOT_RETRY_SECONDS = 600  # min gap between autopilot gate re-checks on one card
 
 
 def _stamp(tid, **fields):
@@ -284,67 +283,58 @@ def _stamp(tid, **fields):
 
 
 def _auto_resolve(t):
-    """Bounced autopilot card: DELEGATE the fix to the card's own worker - a
-    real merge conflict goes to conflict resolution, any other bounce steers
-    the worker with the concrete reason. Two attempts, then alert ONCE and
-    leave the card for the human (escalate-with-context, never silently)."""
-    import sessions, events
+    """Bounced autopilot card: run the PM's resilience ladder on it NOW
+    (pm.resolve_card_now) instead of waiting for the PM's idle window - the
+    ladder classifies the bounce (dispatch/dirty/conflict/gate), delegates the
+    matching fix, and RE-SUBMITS so the gate decides. One ladder, one attempt
+    budget: the autopilot only supplies the always-on trigger. When the ladder
+    is exhausted, alert ONCE - with the ladder's own unblock proposal, so the
+    escalation is a decision you can act on, never a bare 'it is stuck'."""
+    import events, pm
     tid = t["id"]
-    if time.time() - (t.get("autopilot_ts") or 0) < AUTOPILOT_RETRY_SECONDS:
-        return                          # a delegated fix is still in flight
-    tries = int(t.get("autopilot_resolves") or 0)
-    if tries >= AUTOPILOT_RESOLVE_MAX or not t.get("worktree"):
-        if not t.get("autopilot_alerted"):
-            _stamp(tid, autopilot_alerted=True)
-            events.emit("process", "-", action="autopilot_escalate", card=tid)
-            try:
-                import notify
-                notify.push_fcm("Autopilot: haengt",
-                                "'%s' - haengt nach %d Fix-Versuchen, schau mal."
-                                % ((t.get("task") or "")[:60], tries), tid)
-            except Exception:
-                pass
+    state = pm.resolve_card_now(tid)
+    if state != "exhausted" or t.get("autopilot_alerted"):
         return
-    _stamp(tid, autopilot_resolves=tries + 1, autopilot_ts=time.time())
-    events.emit("process", "-", action="autopilot_resolve", card=tid, attempt=tries + 1)
-    if t.get("merge_kind") == "conflict":
-        threading.Thread(target=sessions.dispatch_conflict_resolution, args=(tid,),
-                         kwargs={"actor": "autopilot"}, daemon=True).start()
-    else:
-        reason = (" | ".join(t.get("gate_report") or [])
-                  or t.get("last_error") or "Review rot")[:500]
-        instr = ("Die Karte ist beim Review gebounct. Grund: %s. Behebe die Ursache "
-                 "im Code (nur editieren, kein git) und reiche dann neu ein." % reason)
-        threading.Thread(target=sessions.steer, args=(tid, instr),
-                         kwargs={"actor": "autopilot", "source": "autopilot"},
-                         daemon=True).start()
+    _stamp(tid, autopilot_alerted=True)
+    pm.mark_notified(tid)      # exactly ONE ping: don't let the PM push it again
+    events.emit("process", "-", action="autopilot_escalate", card=tid)
+    try:
+        import notify
+        notify.push_fcm("Autopilot: haengt",
+                        "'%s' haengt trotz Fix-Versuchen. %s"
+                        % ((t.get("task") or "")[:50], pm._unblock_proposal(t)), tid)
+    except Exception:
+        pass
 
 
 def _autopilot():
-    """Per-card autopilot: a card with mode='auto' runs its WHOLE lifecycle
-    unattended, so launch cards never sit for weeks on a bounce or an
-    unreviewed delivery:
-      backlog                 -> dispatch itself (WIP headroom respected)
-      bounced                 -> delegate the fix to its own worker (2 tries,
-                                 then alert once) - see _auto_resolve
-      delivered + gate GREEN  -> accept (merge + deploy), the same green-gate
-                                 rule policy.auto_accept_green applies to chain
-                                 steps, opted in per card instead of per board
-    The gate itself is untouched: red still bounces, green is still required
-    before any merge - autopilot only removes the WAITING, not the checks."""
+    """Per-card autopilot: a card flagged autopilot=true keeps MOVING on its
+    own, so launch cards never sit for weeks waiting on a human:
+      backlog  -> dispatch itself (WIP headroom respected)
+      bounced  -> run the PM's resilience ladder immediately, ignoring the PM's
+                  presence/idle window; escalate once when it's exhausted
+      needs_you + policy.auto_accept_green -> accept on a re-verified green gate
+
+    What autopilot does NOT do: merge or deploy on its own authority. The
+    harness rule stands - nothing merges itself unless the OWNER turned on
+    policy.auto_accept_green (default off), and the gate is never bypassed:
+    red still bounces, green is still required. Autopilot removes the WAITING,
+    not the checks and not your accept."""
     import sessions, events
     tracks = sessions.list_tracks()
-    auto = [t for t in tracks if t.get("mode") == "auto" and not t.get("archived")]
+    auto = [t for t in tracks if t.get("autopilot") and not t.get("archived")]
     if not auto:
         return
-    headroom = (events.settings()["capacity"]["wip_limit"]
+    s = events.settings()
+    auto_accept = bool((s.get("policy") or {}).get("auto_accept_green"))
+    headroom = (s["capacity"]["wip_limit"]
                 - sum(1 for t in tracks if t.get("lane") == "working"))
     for t in auto:
         if t.get("status") == "bounced":
             _auto_resolve(t)
-        elif t.get("status") == "needs_you":
-            # delivered; gate was green at submit - re-check (cheap safety,
-            # backed off so a red result doesn't re-run the gate every tick)
+        elif t.get("status") == "needs_you" and auto_accept:
+            # delivered; gate was green at submit - re-check before accepting
+            # (backed off so a red result doesn't re-run the gate every tick)
             if t.get("autopilot_accepted") \
                or time.time() - (t.get("autopilot_ts") or 0) < AUTOPILOT_RETRY_SECONDS:
                 continue
