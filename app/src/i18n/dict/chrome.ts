@@ -47,6 +47,7 @@ export const chrome: Dict = {
   "ui.open": { de: "Öffnen", en: "Open" },
   "ui.close": { de: "Schließen", en: "Close" },
   "ui.retry": { de: "Nochmal", en: "Retry" },
+  "ui.back": { de: "Zurück", en: "Back" },
   "ui.error": { de: "Fehler", en: "Error" },
   "ui.empty": { de: "leer", en: "empty" },
   "ui.loading": { de: "lädt…", en: "loading…" },
