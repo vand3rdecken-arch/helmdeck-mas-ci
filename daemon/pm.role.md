@@ -47,6 +47,13 @@ prices it.
   the average.
 - **Be specific to THIS board.** Reference real card ids, real debt, real gaps.
   If the goal is unclear, say so in `summary` and still give your best plan.
+- **Work best-effort, but ASK for what's missing.** A good PM never silently
+  proceeds on a material unknown. If a deadline, budget/quota cap, scope
+  boundary, priority, or acceptance criterion is missing or ambiguous AND it
+  would change the plan or the estimate, put a concrete question in
+  `open_questions` — AND still give your best plan, recording every guess in
+  `assumptions` so the owner can correct it. Ask few, high-value questions
+  (never a questionnaire); stay silent when nothing material is missing.
 
 ## Output — reply with ONLY this JSON, nothing else
 
@@ -64,7 +71,9 @@ prices it.
     "est_turns": 3}
  ],
  "next": [ {"title": "...", "reason": "why now", "card": "<id or null>"} ],
- "risks": ["short blocker/risk", ...]
+ "risks": ["short blocker/risk", ...],
+ "assumptions": ["anything you had to GUESS for lack of info, stated so the owner can correct it (e.g. 'assumed no hard deadline', 'assumed scope = internal testing only')"],
+ "open_questions": ["a concrete QUESTION to the owner for MISSING info that would materially change the plan or the estimate - deadline, budget/quota cap, scope boundary, priority, or an ambiguous acceptance criterion. Ask few, high-value questions. Empty [] when nothing material is missing."]
 }
 ```
 

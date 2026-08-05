@@ -864,6 +864,27 @@ def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
     return " ".join(parts)
 
 
+def _needs_from_owner(st):
+    """The PM ASKS instead of silently guessing: surface the plan's open_questions
+    (material info the PM is missing) to the owner. Best-effort planning still needs
+    answers a good PM chases. Deduped by content, so the same set isn't re-asked every
+    plan - it re-asks only when the questions actually change, and stays silent when
+    the plan has none."""
+    plan = latest_plan() or {}
+    qs = [q.strip() for q in (plan.get("open_questions") or []) if isinstance(q, str) and q.strip()]
+    if not qs:
+        return
+    import hashlib
+    key = hashlib.sha1("\n".join(qs).encode("utf-8")).hexdigest()[:12]
+    if st.get("asked_questions") == key:
+        return
+    st["asked_questions"] = key
+    _save_loopstate(st)
+    body = "\n".join("• " + q for q in qs[:5])
+    _say("Bevor ich weiterplane, fehlt mir Info — kannst du kurz klären?\n" + body
+         + "\n(Ich plane derweil bestmöglich mit Annahmen weiter; siehe Plan.)")
+
+
 def _goal_has_process(st):
     """True when the current goal is already tracked as a process (the epic)."""
     gp = st.get("goal_process") or {}
@@ -1110,6 +1131,7 @@ def _tick():
     _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
     _goal_process(pm, st)                                    # PMP initiation: new goal -> process (epic) + intake
     _usage_checkin(st)                                       # proactive: flag weekly quota pacing
+    _needs_from_owner(st)                                    # PM ASKS: surface missing-info questions
     _stakeholder_update(st)                                  # PMP core: goal vs budget, keep owner informed
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away
