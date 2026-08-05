@@ -512,10 +512,11 @@ def make_plan(actor="owner"):
     The reviewable brief is the day's plan artifact. One planning brain."""
     import sessions
     items, brief = plan_items()
-    # If the goal is already a PROCESS (epic), the process owns the goal-path cards
-    # (step -> card, dated, in a SoW). Keep the brief as the analysis artifact but do
-    # NOT also flat-file cards - that's the duplication that left tickets unassigned.
-    if _goal_has_process(_loopstate()):
+    # When a goal is set it is managed as a PROCESS (epic): the process owns the goal-path
+    # cards (step -> card, dated, in a SoW), built from THIS plan's vetted milestones once
+    # triage is green. Keep the brief as the analysis artifact but never flat-file cards for
+    # a goal - that was the duplication that left tickets unassigned.
+    if get_goal():
         items = []
     have = {t.get("task", "").strip().lower() for t in sessions.list_tracks()}
     allow = {os.path.normcase(r) for r in (_pm().get("repos") or [])}
@@ -1074,24 +1075,39 @@ def _goal_process(pm, st):
     goal = get_goal()
     if not goal or _goal_has_process(st):
         return
-    try:
-        import processes
-    except Exception:
+    # Build the epic from the BRAIN's plan - but only once that plan passed the golden
+    # triage (Budget/Timeline/Scope green). While it's blocked, the TRIAGE gate/ask drives
+    # (missing deadline/scope/budget/recruitment is surfaced there); we don't commit a
+    # process on a shaky plan. This is the fix for "the process came from the dumb proposer":
+    # the steps ARE the vetted, dated milestones now, not a context-blind checklist.
+    plan = latest_plan() or {}
+    if plan.get("goal") != goal or not _triage_green(plan):
+        return
+    mss = [m for m in (plan.get("milestones") or []) if str(m.get("status")) != "done"]
+    if not mss:
+        return
+    pace = _pace(plan.get("economics") or {})
+    steps = []
+    for m in mss:
+        title = re.sub(r"^\s*M\d+\s*[:\-]\s*", "", (m.get("name") or "").strip())
+        if not title:
+            continue
+        steps.append({"title": title[:120], "desc": _epic_description(m), "mode": "do",
+                      "days": max(1, _days(int(m.get("est_turns") or 0), pace)),
+                      "status": "proposed", "track": None, "due": ""})
+    if not steps:
         return
     try:
-        p = processes.create(goal, client="", due="", actor="pm")
+        import processes
+        p = processes.create(goal, client="", due="", actor="pm", steps=steps)
     except Exception as e:
         print("PM goal_process error:", e)
         return
     st["goal_process"] = {"goal": goal, "pid": p["id"]}
     _save_loopstate(st)
-    _say("Neues Ziel als Prozess (Epic) angelegt: „%s“. Ich breche es gerade in Schritte "
-         "(Milestones mit Tagen) herunter — sichtbar im Prozesse-Tab. Damit Timeline + Budget "
-         "echt werden, brauche ich von dir: (1) **Deadline**? (2) **Scope-Grenze** (z. B. nur "
-         "Internal-Testing oder bis Production)? (3) **Budget/Tempo** — welchen Quota-Anteil pro "
-         "Woche darf das Ziel ziehen? Danach datiere ich die Schritte, verknüpfe die Tickets und "
-         "kann Ziel ↔ Timeline ↔ Kosten laufend gegen das Kontingent analysieren."
-         % goal[:80])
+    _say("Ziel-Plan ist getriaged (Budget/Timeline/Scope grün) — ich hab ihn als Prozess (Epic) "
+         "mit %d datierten Schritten aus dem geprüften Plan angelegt (Prozesse-Tab). Justiere/"
+         "akzeptiere die Schritte, dann laufen die Ziel-Karten." % len(steps))
 
 
 def _goal_process_status(st):
