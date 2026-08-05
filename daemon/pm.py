@@ -435,6 +435,11 @@ def make_plan(actor="owner"):
     The reviewable brief is the day's plan artifact. One planning brain."""
     import sessions
     items, brief = plan_items()
+    # If the goal is already a PROCESS (epic), the process owns the goal-path cards
+    # (step -> card, dated, in a SoW). Keep the brief as the analysis artifact but do
+    # NOT also flat-file cards - that's the duplication that left tickets unassigned.
+    if _goal_has_process(_loopstate()):
+        items = []
     have = {t.get("task", "").strip().lower() for t in sessions.list_tracks()}
     allow = {os.path.normcase(r) for r in (_pm().get("repos") or [])}
     filed = 0
@@ -859,6 +864,64 @@ def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
     return " ".join(parts)
 
 
+def _goal_has_process(st):
+    """True when the current goal is already tracked as a process (the epic)."""
+    gp = st.get("goal_process") or {}
+    return bool(gp.get("pid")) and gp.get("goal") == get_goal()
+
+
+def _goal_process(pm, st):
+    """PMP initiation: a new goal becomes a PROCESS (the epic) so goal <-> timeline
+    <-> cost are analysable through the existing process/SoW machinery instead of a
+    flat card list. Proposes the step breakdown once per goal (processes.create runs
+    the proposer in the background, laying end-to-end due dates), and asks the owner
+    for the deadline/scope/budget so the schedule and budget are real - the intake
+    the PM was missing. The owner reviews/accepts steps in the Prozesse tab; each
+    accepted step becomes a card linked to the process (step.track)."""
+    goal = get_goal()
+    if not goal or _goal_has_process(st):
+        return
+    try:
+        import processes
+    except Exception:
+        return
+    try:
+        p = processes.create(goal, client="", due="", actor="pm")
+    except Exception as e:
+        print("PM goal_process error:", e)
+        return
+    st["goal_process"] = {"goal": goal, "pid": p["id"]}
+    _save_loopstate(st)
+    _say("Neues Ziel als Prozess (Epic) angelegt: „%s“. Ich breche es gerade in Schritte "
+         "(Milestones mit Tagen) herunter — sichtbar im Prozesse-Tab. Damit Timeline + Budget "
+         "echt werden, brauche ich von dir: (1) **Deadline**? (2) **Scope-Grenze** (z. B. nur "
+         "Internal-Testing oder bis Production)? (3) **Budget/Tempo** — welchen Quota-Anteil pro "
+         "Woche darf das Ziel ziehen? Danach datiere ich die Schritte, verknüpfe die Tickets und "
+         "kann Ziel ↔ Timeline ↔ Kosten laufend gegen das Kontingent analysieren."
+         % goal[:80])
+
+
+def _goal_process_status(st):
+    """Compact goal-process view for analysis: (next_open_step_title, next_due,
+    process_due, done, total) or None. Cheap read from processes.json."""
+    gp = st.get("goal_process") or {}
+    if gp.get("goal") != get_goal() or not gp.get("pid"):
+        return None
+    try:
+        import processes
+        p = processes.get(gp["pid"])
+    except Exception:
+        return None
+    if not p:
+        return None
+    steps = p.get("steps") or []
+    done = sum(1 for s in steps if s.get("status") == "done")
+    nxt = next((s for s in steps if s.get("status") != "done"), None)
+    return {"next": (nxt or {}).get("title"), "next_due": (nxt or {}).get("due"),
+            "process_due": p.get("due"), "done": done, "total": len(steps),
+            "status": p.get("status")}
+
+
 def _stakeholder_update(st):
     """PMP core: reconcile GOAL vs BUDGET against the LIVE weekly quota and keep the
     stakeholder (owner) informed - a regular status once a day, plus an immediate
@@ -888,7 +951,17 @@ def _stakeholder_update(st):
     if verdict == "at_risk":
         st["stakeholder_risk"] = risk_key
     _save_loopstate(st)
-    _say(_goal_budget_text(goal, weekly, est, eta, pace, verdict))
+    msg = _goal_budget_text(goal, weekly, est, eta, pace, verdict)
+    ps = _goal_process_status(st)         # timeline straight from the goal's process (epic)
+    if ps and ps.get("total"):
+        line = "Prozess: %d/%d Schritte fertig" % (ps["done"], ps["total"])
+        if ps.get("next"):
+            line += ", nächster Milestone „%s“%s" % (
+                ps["next"][:50], (" bis %s" % ps["next_due"]) if ps.get("next_due") else "")
+        if ps.get("process_due"):
+            line += " · Ziel-Deadline %s" % ps["process_due"]
+        msg += " " + line + "."
+    _say(msg)
 
 
 def _overview_stale(plan, tracks):
@@ -1035,6 +1108,7 @@ def _tick():
     import sessions
     _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
     _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
+    _goal_process(pm, st)                                    # PMP initiation: new goal -> process (epic) + intake
     _usage_checkin(st)                                       # proactive: flag weekly quota pacing
     _stakeholder_update(st)                                  # PMP core: goal vs budget, keep owner informed
     if not _in_window(pm) or not _board_idle(pm):
