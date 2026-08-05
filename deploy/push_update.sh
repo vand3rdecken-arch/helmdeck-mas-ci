@@ -5,7 +5,7 @@
 # OTA; native changes still need `release.sh android`.
 #
 #   bash deploy/push_update.sh                 # export + upload (production)
-#   bash deploy/push_update.sh --no-build      # upload the existing app/dist as-is
+#   bash deploy/push_update.sh --no-build      # upload the existing app/dist-ota as-is
 #   bash deploy/push_update.sh --channel beta  # publish to the "beta" channel
 #
 # Channels: production = /opt/helmdeck-updates (what every stock build follows);
@@ -38,12 +38,14 @@ case "$CHANNEL" in production) CHANNEL="" ;; *[!A-Za-z0-9._-]*) echo "bad channe
 
 if [ "$NO_BUILD" != "1" ]; then
   echo "==> expo export (android)"
-  ( cd app && rm -rf dist && npx expo export --platform android ) || exit 1
+  # export to a SEPARATE dir, not app/dist: app/dist is the WEB build the Electron
+  # desktop serves - clobbering it with the android bundle 404s the desktop.
+  ( cd app && rm -rf dist-ota && npx expo export --platform android --output-dir dist-ota ) || exit 1
 fi
-[ -f app/dist/metadata.json ] || { echo "no app/dist/metadata.json - run without --no-build"; exit 1; }
+[ -f app/dist-ota/metadata.json ] || { echo "no app/dist-ota/metadata.json - run without --no-build"; exit 1; }
 
 echo "==> pack + upload the export"
-tar -C app/dist -czf /tmp/hd-update.tgz . || exit 1
+tar -C app/dist-ota -czf /tmp/hd-update.tgz . || exit 1
 scp "${SSH_OPTS[@]}" /tmp/hd-update.tgz "$TARGET:/tmp/hd-update.tgz" || exit 1
 
 # atomic swap on the VM so the relay never serves a half-written update dir
