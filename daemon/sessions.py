@@ -421,13 +421,24 @@ def machine_root_ok(cwd):
 
 
 def new_machine_task(cwd, task, actor="owner", priority="medium", description="",
-                     dispatch=True, driver="claude", value=None, model=""):
+                     dispatch=True, driver="claude-desktop", value=None, model=""):
     """File (and by default start) a task that runs ON THIS MACHINE in `cwd`.
-    Same card, same audit, same economics - only the workplace differs."""
+    Same card, same audit, same economics - only the workplace differs.
+
+    Driver defaults to claude-desktop (windows-mcp + screen-recording), NOT plain
+    claude: a machine task's whole point is to control this PC/browser, so the
+    agent MUST have the GUI/browser tools. With the plain `claude` driver it can
+    only read/write files and ends up talking instead of acting - exactly how the
+    "open Chrome, log into Play Console, upload the AAB" card drifted and stuck."""
     import events
     pol = machine_policy()
     if not pol.get("enabled", True):
         raise RuntimeError("machine tasks are switched off (policy.machine.enabled=false)")
+    # a machine task with a driver that lacks windows-mcp is toolless by
+    # construction; fall back to claude-desktop rather than silently strand it.
+    dcfg = (events.settings().get("drivers") or {}).get(driver) or {}
+    if "mcp__windows-mcp__*" not in (dcfg.get("allowed_tools") or []):
+        driver = "claude-desktop"
     cwd = os.path.abspath(os.path.expandvars(os.path.expanduser(cwd or os.path.expanduser("~"))))
     if not os.path.isdir(cwd):
         raise RuntimeError("no such directory on this machine: %s" % cwd)
