@@ -44,3 +44,4 @@ example
 google-services.json
 .claude/settings.json
 .vscode/settings.json
+dist-ota/
