@@ -766,6 +766,53 @@ def _launch_checkin(pm, st):
     _say(_i18n.t("pm.launchCheck"))
 
 
+_DE_DOW = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+
+def _fmt_when(iso):
+    """ISO -> 'Mi 05.08. 03:47' (local time) for a human-readable quota date."""
+    from datetime import datetime
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
+        return "%s %02d.%02d. %02d:%02d" % (_DE_DOW[dt.weekday()], dt.day, dt.month, dt.hour, dt.minute)
+    except Exception:
+        return iso or "?"
+
+
+def _usage_flag_text(f):
+    used = f.get("usedPct"); elapsed = f.get("elapsed_pct"); proj = f.get("projected_pct")
+    parts = ["⚠ Quota-Warnung: Wochenlimit zu %s%% verbraucht, aber erst %s%% der "
+             "Woche vorbei." % (round(used), round(elapsed))]
+    if proj is not None:
+        parts.append("Bei diesem Tempo landest du bei ~%s%% zum Reset." % round(proj))
+    if f.get("exhaust_before_reset") and f.get("exhaust_at"):
+        parts.append("Das Wochenlimit ist dann ~%s erschöpft — also VOR dem Reset am %s."
+                     % (_fmt_when(f["exhaust_at"]), _fmt_when(f.get("resetsAt"))))
+    parts.append("Vorschlag: Auto-Dispatch drosseln oder Routine-Karten auf ein günstigeres "
+                 "Modell setzen, damit das Kontingent bis zum Reset reicht. Sag Bescheid, "
+                 "dann passe ich die Policy an.")
+    return " ".join(parts)
+
+
+def _usage_checkin(st):
+    """Proactive quota pacing: flag when the weekly Claude window burns ahead of pace
+    (e.g. 40% by Wednesday, projected over 100% before the Saturday reset). Once per
+    weekly window (keyed on its reset), so it's a heads-up, not a nag - the live usage
+    meter carries the running numbers."""
+    try:
+        import usage
+        flag = usage.weekly_pacing_flag()
+    except Exception:
+        return
+    if not flag:
+        return
+    if st.get("usage_flagged_reset") == (flag.get("resetsAt") or ""):
+        return
+    st["usage_flagged_reset"] = flag.get("resetsAt") or ""
+    _save_loopstate(st)
+    _say(_usage_flag_text(flag))
+
+
 def _overview_stale(plan, tracks):
     """True if the plan's roadmap isn't reflected on the board yet: a card that
     belongs to a dated milestone still lacks that due date (Timeline), or the
@@ -886,6 +933,7 @@ def _tick():
     import sessions
     _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
     _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
+    _usage_checkin(st)                                       # proactive: flag weekly quota pacing
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away
     state, _reason = _state()

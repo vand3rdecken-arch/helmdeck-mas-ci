@@ -505,6 +505,14 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps(pm.status()))
+            if p == "/usage":
+                # Claude subscription usage (5h + weekly rate-limit windows) with pacing,
+                # from the same source as Paseo's usage tab. Owner-only: it's the owner's
+                # account. Cached in usage.py so a poll doesn't hammer the endpoint.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import usage
+                return self._send(200, json.dumps(usage.snapshot()))
             if p == "/automation":
                 # everything about the auto-working machinery in one place: the
                 # night shift (is it on, repos, limits, tonight's plan), the policy

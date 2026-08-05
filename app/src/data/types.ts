@@ -79,3 +79,19 @@ export interface UserRow {
   name: string; role: string; created?: string;
   tokens: { label: string; token: string; created?: string }[];
 }
+
+// Claude subscription usage (from /usage) - the 5h + weekly rate-limit windows.
+export type UsageTone = "ok" | "warning" | "danger" | "default";
+export interface UsagePacing {
+  elapsed_pct: number; ahead_pct: number; projected_pct: number | null;
+  exhaust_at: string | null; reset_hours_left: number;
+  exhaust_before_reset: boolean; flag: boolean;
+}
+export interface UsageWindow {
+  id: string; label: string; usedPct: number | null; remainingPct: number | null;
+  resetsAt: string | null; tone: UsageTone; pacing?: UsagePacing;
+}
+export interface Usage {
+  status: "ok" | "unavailable" | "error"; plan: string | null;
+  windows: UsageWindow[]; fetchedAt?: string; error?: string;
+}

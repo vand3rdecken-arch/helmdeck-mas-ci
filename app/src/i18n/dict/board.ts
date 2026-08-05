@@ -163,6 +163,17 @@ export const board: Dict = {
   "dash.sow.totalMany": { de: "gesamt ({n} SoWs)", en: "total ({n} SoWs)" },
 
   // ---- capacity panel -----------------------------------------------------
+  "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
+  "dash.usage.unavailable": {
+    de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",
+    en: "Usage data unavailable (no Claude login found).",
+  },
+  "dash.usage.used": { de: "{pct}% genutzt", en: "{pct}% used" },
+  "dash.usage.reset": { de: "Reset {when}", en: "resets {when}" },
+  "dash.usage.pace": {
+    de: "⚠ Bei diesem Tempo ~{proj}% zum Reset — Limit ~{when} erschöpft, vor dem Reset.",
+    en: "⚠ At this pace ~{proj}% by reset — limit exhausted ~{when}, before it resets.",
+  },
   "dash.capacity.title": {
     de: "Kapazität — mehr Arbeit annehmen oder automatisieren?",
     en: "Capacity — take more work, or automate?",
