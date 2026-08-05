@@ -5,7 +5,7 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
-import type { Track, LaneMove, Metrics, Me } from "./types";
+import type { Track, LaneMove, Metrics, Me, Usage } from "./types";
 
 export class AuthRequired extends Error {}
 // Transport never reached the daemon (relay down, network, crypto mismatch).
@@ -175,6 +175,7 @@ export const api = {
   // board / cards
   tracks: () => req<Track[]>("GET", "/tracks"),
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
+  usage: () => req<Usage>("GET", "/usage"),
   me: () => req<Me>("GET", "/me"),
   // ->working/review/done are run in the BACKGROUND by the daemon (the gate is a
   // subprocess, the merge + deploy hook follow it), so those reply {started,

@@ -14,6 +14,7 @@ import type { UserRow } from "@/data/types";
 import { LANGS, useT, type Lang } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
+import { UsagePanel } from "@/ui/dash_panels";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { UpdatesPanel } from "@/ui/updates_info";
 
@@ -301,6 +302,10 @@ export default function Settings() {
               <ChipPick options={BACKDROPS} selected={[backdrop]} single
                 onToggle={(b) => { setBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
             </Panel>
+
+            {/* Claude subscription usage (5h + weekly windows) with weekly pacing -
+                the same data the PM flags proactively when the pace runs ahead. */}
+            <UsagePanel />
 
             <Panel>
               <SectionLabel text={tr("settings.sec.business")} />

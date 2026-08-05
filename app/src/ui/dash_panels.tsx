@@ -1,9 +1,9 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { api } from "@/data/client";
-import type { EconCard, Metrics, Sow } from "@/data/types";
+import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -233,6 +233,68 @@ function Meter({ pct, color }: { pct: number; color: string }) {
     <View style={[s.meter, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
       <View style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: "100%", backgroundColor: color, borderRadius: 999 }} />
     </View>
+  );
+}
+
+// ---- Claude usage (rate-limit windows + weekly pacing) ----
+const _DOW = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+function fmtWhen(iso: string | null): string {
+  if (!iso) return "?";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "?";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${_DOW[d.getDay()]} ${p(d.getDate())}.${p(d.getMonth() + 1)}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function toneColor(t: ThemeTokens, tone: UsageTone, accent: string): string {
+  return tone === "danger" ? t.danger : tone === "warning" ? t.warn : accent;
+}
+
+function UsageRow({ w }: { w: UsageWindow }) {
+  const t = useTheme();
+  const tr = useT();
+  const pct = typeof w.usedPct === "number" ? w.usedPct : 0;
+  const col = toneColor(t, w.tone, t.accent);
+  const pacing = w.pacing;
+  const warn = pacing?.flag;
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}>
+        <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{w.label}</Text>
+        <Text style={{ color: col, fontSize: 12.5, fontWeight: "700" }}>{tr("dash.usage.used", { pct: Math.round(pct) })}</Text>
+      </View>
+      <View style={{ marginVertical: 5 }}><Meter pct={pct} color={col} /></View>
+      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.usage.reset", { when: fmtWhen(w.resetsAt) })}</Text>
+      {warn ? (
+        <Text style={{ color: t.warn, fontSize: 11.5, marginTop: 3 }}>
+          {tr("dash.usage.pace", { proj: Math.round(pacing?.projected_pct ?? 0), when: fmtWhen(pacing?.exhaust_at ?? null) })}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** The usage element: Claude subscription rate-limit windows (5h + weekly) with
+ *  pacing. Owner-only; polls /usage every 5 min (the daemon caches it). Renders
+ *  nothing until it has an answer, and only a small note if usage is unavailable. */
+export function UsagePanel() {
+  const t = useTheme();
+  const tr = useT();
+  const { data } = useQuery<Usage>({
+    queryKey: ["usage"], queryFn: api.usage,
+    refetchInterval: 5 * 60 * 1000, staleTime: 4 * 60 * 1000,
+  });
+  if (!data) return null;
+  if (data.status !== "ok" || data.windows.length === 0) {
+    return (
+      <GlassPanel title={tr("dash.usage.title")}>
+        <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("dash.usage.unavailable")}</Text>
+      </GlassPanel>
+    );
+  }
+  return (
+    <GlassPanel title={tr("dash.usage.title")} note={data.plan ?? undefined}>
+      {data.windows.map((w) => <UsageRow key={w.id} w={w} />)}
+    </GlassPanel>
   );
 }
 
