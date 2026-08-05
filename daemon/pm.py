@@ -830,6 +830,67 @@ def _quota_floor():
     return 0 if proj >= 130 else 1     # badly over -> urgent only; ahead -> urgent + high
 
 
+def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
+    g = goal if len(goal) <= 90 else goal[:88] + "…"
+    parts = ["📊 Ziel vs. Budget — Ziel: %s." % g]
+    if weekly is not None:
+        used = weekly.get("usedPct")
+        pac = weekly.get("pacing") or {}
+        proj = pac.get("projected_pct")
+        line = "Budget (Woche): %s%% verbraucht" % round(used) if isinstance(used, (int, float)) else "Budget (Woche): —"
+        if proj is not None:
+            line += ", projiziert %s%% zum Reset (%s)" % (round(proj), _fmt_when(weekly.get("resetsAt")))
+        parts.append(line + ".")
+    if est:
+        parts.append("Zielpfad: ~%s Turns offen, ETA ~%s Tage (Tempo %s/Tag)." % (est, eta, pace))
+    else:
+        parts.append("Noch kein bepreister Plan — sag 'plane', dann rechne ich Zielpfad + ETA.")
+    if verdict == "at_risk":
+        pac = (weekly or {}).get("pacing") or {}
+        parts.append("⚠ Risiko: bei diesem Tempo ist das Wochenkontingent ~%s erschöpft — VOR dem "
+                     "Reset. Dann stockt die Arbeit bis zum Reset und die Ziel-ETA rutscht. "
+                     "Ich fokussiere das Kontingent in DISPATCH schon auf dringende/hohe Karten; "
+                     "sag Bescheid, ob ich Nicht-Ziel-Arbeit härter zurückstelle oder den Slip "
+                     "akzeptieren soll." % _fmt_when(pac.get("exhaust_at")))
+    elif verdict == "tight":
+        parts.append("Budget wird knapp — noch tragbar, aber ich behalte das Tempo im Auge.")
+    else:
+        parts.append("Auf Kurs — das Budget trägt das Tempo bis zum Reset.")
+    return " ".join(parts)
+
+
+def _stakeholder_update(st):
+    """PMP core: reconcile GOAL vs BUDGET against the LIVE weekly quota and keep the
+    stakeholder (owner) informed - a regular status once a day, plus an immediate
+    escalation the moment the budget first puts the goal at risk this window. Managing
+    goal-vs-budget and informing the stakeholder IS the PM's primary job."""
+    goal = get_goal()
+    if not goal:
+        return
+    try:
+        import usage
+        snap = usage.snapshot()
+    except Exception:
+        return
+    weekly = None
+    if snap.get("status") == "ok":
+        weekly = next((w for w in snap.get("windows", []) if w.get("id") == "weekly"), None)
+    budget = (latest_plan() or {}).get("budget") or {}
+    est, eta, pace = budget.get("est_turns_to_goal"), budget.get("eta_days"), budget.get("pace_turns_per_day")
+    pacing = (weekly or {}).get("pacing") or {}
+    used = (weekly or {}).get("usedPct") or 0
+    verdict = "at_risk" if pacing.get("flag") else ("tight" if used >= 80 else "on_track")
+    risk_key = (weekly or {}).get("resetsAt") or ""
+    risk_new = verdict == "at_risk" and st.get("stakeholder_risk") != risk_key
+    if st.get("stakeholder_day") == _today() and not risk_new:
+        return                                       # already updated today, nothing worse
+    st["stakeholder_day"] = _today()
+    if verdict == "at_risk":
+        st["stakeholder_risk"] = risk_key
+    _save_loopstate(st)
+    _say(_goal_budget_text(goal, weekly, est, eta, pace, verdict))
+
+
 def _overview_stale(plan, tracks):
     """True if the plan's roadmap isn't reflected on the board yet: a card that
     belongs to a dated milestone still lacks that due date (Timeline), or the
@@ -975,6 +1036,7 @@ def _tick():
     _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
     _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
     _usage_checkin(st)                                       # proactive: flag weekly quota pacing
+    _stakeholder_update(st)                                  # PMP core: goal vs budget, keep owner informed
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away
     state, _reason = _state()
