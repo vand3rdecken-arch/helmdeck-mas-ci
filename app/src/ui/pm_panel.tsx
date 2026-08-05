@@ -13,6 +13,7 @@ const cur = (n?: number) => "€" + (n ?? 0).toFixed(2);
 // we don't translate them, we only pick an icon from their leading verb. Match
 // both languages so an English workspace keeps its warning/ok icons.
 const STUCK = /^(h(ä|ae)ngt|stuck)/i;
+const WAITING = /^(wartet|waiting)/i;
 const FINISHED = /^(fertig|done|finished)/i;
 const fmtDate = (iso?: string) => {
   if (!iso) return "";
@@ -170,8 +171,8 @@ export function PMPanel({ defaultRepo }: { defaultRepo?: string }) {
             <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{act.state_reason}</Text>
           ) : null}
           {act.now && act.now.length ? act.now.slice(0, 3).map((s, i) => (
-            <ActLine key={i} icon={STUCK.test(s) ? "warning" : FINISHED.test(s) ? "checkmark-circle" : "construct"}
-              color={STUCK.test(s) ? t.danger : FINISHED.test(s) ? t.ok : t.ai} text={s} t={t} />
+            <ActLine key={i} icon={STUCK.test(s) ? "warning" : WAITING.test(s) ? "time-outline" : FINISHED.test(s) ? "checkmark-circle" : "construct"}
+              color={STUCK.test(s) ? t.danger : WAITING.test(s) ? t.warn : FINISHED.test(s) ? t.ok : t.ai} text={s} t={t} />
           )) : (
             <ActLine icon="pause-circle" color={t.txtTertiary}
               text={act.loop_enabled ? tr("pm.nothingRunning") : tr("pm.proactiveOff")} t={t} />

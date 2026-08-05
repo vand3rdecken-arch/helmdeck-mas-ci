@@ -1429,12 +1429,16 @@ def activity():
         if s == "running":
             now.append("arbeitet gerade an: " + lbl(t))
         elif s == "needs_you":
-            now.append("fertig, wartet auf deine Abnahme: " + lbl(t))
+            # needs_you = handed back to YOU - could be "accept my work" OR "I need a
+            # decision/input". We can't tell reliably, so don't claim it's finished.
+            now.append("wartet auf dich: " + lbl(t))
         elif s == "bounced":
-            now.append("hängt (Timeout/Fehler): " + lbl(t))
+            continue        # a bounced card is surfaced ONCE as a blocker below, not here
         else:
             now.append(lbl(t))
-    needs = [lbl(t) for t in tracks if t.get("status") in ("needs_you", "bounced", "submitted")]
+    # "waiting on you" = genuinely handed back (needs_you/submitted). A BOUNCED card is
+    # NOT that - it's stuck/failed, listed only under blockers, never double-counted.
+    needs = [lbl(t) for t in tracks if t.get("status") in ("needs_you", "submitted")]
     blockers = [lbl(t) for t in tracks if t.get("status") == "bounced"]
     rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
