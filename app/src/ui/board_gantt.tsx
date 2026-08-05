@@ -123,33 +123,42 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
 
           {/* one row per card */}
           {sorted.map((r) => {
-            const l = xOf(r.a), w = Math.max(8, xOf(r.b) - l);
-            const late = r.due != null && r.k.lane !== "done" && now > r.due;
+            const planned = (r.k as { _planned?: boolean })._planned;
+            const l = planned ? xOf(now) : xOf(r.a);
+            const w = planned ? Math.max(8, xOf(r.due ?? now) - l) : Math.max(8, xOf(r.b) - l);
+            const late = r.due != null && r.k.lane !== "done" && !planned && now > r.due;
             return (
-              <Pressable key={r.k.id} onPress={() => onOpen(r.k.id)}
-                style={{ flexDirection: "row", alignItems: "center", height: rowH, borderBottomWidth: 1, borderBottomColor: t.borderSubtle }}>
+              <Pressable key={r.k.id} onPress={() => { if (!planned) onOpen(r.k.id); }}
+                style={{ flexDirection: "row", alignItems: "center", height: rowH, borderBottomWidth: 1,
+                  borderBottomColor: t.borderSubtle, opacity: planned ? 0.75 : 1 }}>
                 <View style={{ width: side, paddingHorizontal: 10 }}>
-                  <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 12 }}>{r.k.task}</Text>
+                  <Text numberOfLines={1} style={{ color: planned ? t.txtTertiary : t.txtPrimary, fontSize: 12 }}>
+                    {planned ? "◇ " : ""}{r.k.task}
+                  </Text>
                 </View>
                 <View style={{ width: W, height: rowH, justifyContent: "center" }}>
                   {/* today marker */}
                   <View style={{ position: "absolute", left: xOf(now), top: 0, bottom: 0, width: 1.5, backgroundColor: t.accent }} />
-                  {/* due-date diamond */}
+                  {/* due-date diamond (outline when planned) */}
                   {r.due != null ? (
                     <View style={{
                       position: "absolute", left: xOf(r.due) - 5, top: rowH / 2 - 5, width: 10, height: 10,
-                      transform: [{ rotate: "45deg" }], backgroundColor: late ? t.danger : t.txtTertiary,
+                      transform: [{ rotate: "45deg" }],
+                      backgroundColor: planned ? "transparent" : (late ? t.danger : t.txtTertiary),
+                      borderWidth: planned ? 1.5 : 0, borderColor: t.accent,
                     }} />
                   ) : null}
-                  {/* the bar */}
+                  {/* the bar (dashed ghost when planned) */}
                   <View style={{
                     position: "absolute", left: l, width: w, height: 16, borderRadius: 5,
-                    backgroundColor: laneColor(t, r.k.lane), justifyContent: "center", paddingHorizontal: 6, overflow: "hidden",
+                    backgroundColor: planned ? "transparent" : laneColor(t, r.k.lane),
+                    borderWidth: planned ? 1 : 0, borderColor: t.accent + "88", borderStyle: planned ? "dashed" : "solid",
+                    justifyContent: "center", paddingHorizontal: 6, overflow: "hidden",
                   }}>
                     {w > 44 ? (
-                      <Text numberOfLines={1} style={{ color: "#fff", fontSize: 9.5, fontWeight: "600" }}>
-                        {(r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane))
-                          + (late ? " · " + tr("gantt.overdue") : "")}
+                      <Text numberOfLines={1} style={{ color: planned ? t.accent : "#fff", fontSize: 9.5, fontWeight: "600" }}>
+                        {planned ? tr("gantt.planned")
+                          : ((r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane)) + (late ? " · " + tr("gantt.overdue") : ""))}
                       </Text>
                     ) : null}
                   </View>
