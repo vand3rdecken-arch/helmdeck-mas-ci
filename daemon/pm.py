@@ -162,6 +162,48 @@ def _ask(prompt, model=""):
         return {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
 
 
+VERIFY_PROMPT = """You are a SKEPTICAL plan reviewer - a second, INDEPENDENT pass, not the
+planner. Given a PM plan plus the real economics, the live quota/budget and the board, find
+the reasons this plan is NOT ready to commit to firm estimates. Be adversarial: assume it is
+over-optimistic, and only pass a plan that genuinely holds up.
+
+Check specifically:
+- A milestone with a FIRM est_turns whose effort is actually UNKNOWN (needs a spike first)?
+- A fixed CALENDAR duration (an N-day test / trial / waiting period) estimated as if it were
+  effort instead of wait time?
+- A HUMAN prerequisite / LONG POLE (recruiting people, an approval, an account) that hasn't
+  started, gates everything after it, and isn't Step 1?
+- An unresolved OWNER decision the plan silently assumed away?
+- Budget/quota that cannot actually fund it by any stated deadline?
+
+Reply with ONLY this JSON:
+{"ready": true|false,
+ "gate": "if not ready: the ONE binding reason, in plain owner language",
+ "issues": ["short, concrete problems found"],
+ "must_ask": ["owner decisions/questions that must be answered before firm estimates"]}
+If the plan genuinely holds, ready=true with empty arrays."""
+
+
+def _verify_plan(plan, econ, quota):
+    """The GATE's second opinion (paseo worker/verifier pattern): an independent, skeptical
+    pass that can DOWNGRADE a plan to not-ready (it never upgrades). Catches the over-confident
+    failure - a 14-day calendar test sized as 2 days, a not-yet-started recruiting long-pole,
+    an unresolved decision. Fail-open: if the pass errors, don't block."""
+    try:
+        import turnopts
+        cli_model, _ = turnopts.resolve_model("auto", "verify plan", False, signals={"priority": "high"})
+        keep = {k: plan.get(k) for k in ("goal", "summary", "milestones", "feasibility",
+                                         "assumptions", "open_questions", "budget")}
+        prompt = (VERIFY_PROMPT + "\n\nPLAN:\n" + json.dumps(keep)
+                  + "\n\nECONOMICS:\n" + json.dumps(econ)
+                  + "\n\nQUOTA/BUDGET (live):\n" + json.dumps(quota))
+        v = _ask(prompt, cli_model)
+        return {"ready": bool(v.get("ready", True)), "gate": v.get("gate", "") or "",
+                "issues": v.get("issues") or [], "must_ask": v.get("must_ask") or []}
+    except Exception as e:
+        return {"ready": True, "gate": "", "issues": [], "must_ask": [], "error": str(e)[:120]}
+
+
 def _write_artifact(out):
     try:
         os.makedirs(PLANS, exist_ok=True)
@@ -214,6 +256,7 @@ def brief(goal=None, model=""):
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
     econ = economics()
+    quota = _quota_signal()   # live budget, fed to the planner AND the verifier
     prev = latest_plan()      # MEMORY: read the last plan BEFORE we overwrite it
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
@@ -221,7 +264,7 @@ def brief(goal=None, model=""):
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
-              + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(_quota_signal())
+              + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(quota)
               + _memory(prev, econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
@@ -260,6 +303,18 @@ def brief(goal=None, model=""):
     out["goal"] = goal
     out["model"] = cli_model or "default"
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    # GATE: an independent verifier can only DOWNGRADE readiness, never upgrade it.
+    ver = _verify_plan(out, econ, quota)
+    out["verify"] = ver
+    if not ver.get("ready", True):
+        out["plan_status"] = "blocked"
+        if not (out.get("gate") or "").strip():
+            out["gate"] = ver.get("gate", "")
+    oq = list(out.get("open_questions") or [])          # verifier's must-asks join the questions
+    for q in ver.get("must_ask", []):
+        if isinstance(q, str) and q.strip() and q not in oq:
+            oq.append(q)
+    out["open_questions"] = oq
     _write_artifact(out)
     return out
 
@@ -886,6 +941,33 @@ def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
     return " ".join(parts)
 
 
+def _plan_gate_notice(st):
+    """The planning GATE speaks: when the plan isn't 'ready' - a decision, a spike, or a
+    prerequisite blocks a confident estimate - the PM says so plainly and holds, instead of
+    pretending with a shallow schedule. Once per distinct gate (content-deduped)."""
+    plan = latest_plan() or {}
+    status = plan.get("plan_status") or "ready"
+    if status == "ready":
+        return
+    gate = (plan.get("gate") or "").strip()
+    ver = plan.get("verify") or {}
+    issues = [i for i in (ver.get("issues") or []) if isinstance(i, str) and i.strip()]
+    import hashlib
+    key = hashlib.sha1((status + "|" + gate + "|" + "\n".join(issues)).encode("utf-8")).hexdigest()[:12]
+    if st.get("plan_gate_key") == key:
+        return
+    st["plan_gate_key"] = key
+    _save_loopstate(st)
+    head = ("Ich kann noch nicht seriös schätzen — der Plan ist blockiert."
+            if status == "blocked" else
+            "Bevor ich schätze, braucht es einen Spike (kurze Untersuchung).")
+    msg = head + ((" Gate: %s" % gate) if gate else "")
+    if issues:
+        msg += "\n" + "\n".join("• " + i for i in issues[:4])
+    msg += "\nBis dahin plane ich nur grob und dispatche keine Ziel-Karten auf Basis dieser Schätzung."
+    _say(msg)
+
+
 def _needs_from_owner(st):
     """The PM ASKS instead of silently guessing: surface the plan's open_questions
     (material info the PM is missing) to the owner. Best-effort planning still needs
@@ -1162,6 +1244,7 @@ def _tick():
     _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
     _goal_process(pm, st)                                    # PMP initiation: new goal -> process (epic) + intake
     _usage_checkin(st)                                       # proactive: flag weekly quota pacing
+    _plan_gate_notice(st)                                    # GATE: honest "blocked" over a shallow estimate
     _needs_from_owner(st)                                    # PM ASKS: surface missing-info questions
     _stakeholder_update(st)                                  # PMP core: goal vs budget, keep owner informed
     if not _in_window(pm) or not _board_idle(pm):

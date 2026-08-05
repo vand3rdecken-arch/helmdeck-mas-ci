@@ -69,12 +69,33 @@ prices it.
     decision to make ("Personal- oder Firmen-Play-Console-Account?"), not a passive
     risk. Ordering dependencies between milestones belong in `why_now`.
 
+- **GATE your own plan (logic gates, like a build gate).** A firm estimate is only
+  allowed when you can actually figure out the work. Before you commit numbers, each
+  gate must hold — if any fails, the plan is NOT "ready", and an honest "blocked" beats
+  a shallow confident schedule:
+  - **G1 Clarity** — goal + milestone unambiguous (scope + acceptance clear).
+  - **G2 Decisions resolved** — no blocking OWNER decision open (account, approval,
+    scope fork, "A or B", recruitment strategy). Open decision ⇒ blocked.
+  - **G3 Estimable** — you can size the effort with real confidence. If a milestone's
+    effort is genuinely unknown, DO NOT invent `est_turns`: set `confidence: "low"` and
+    `blocked_by: "spike: <what to investigate first>"`.
+  - **G4 Feasible** — budget/quota AND the calendar allow it (a fixed calendar duration
+    like a 14-day test is WAIT time, not effort; a human prerequisite like recruiting N
+    people is a LONG POLE that must start first and gates everything after it).
+  - **G5 Critical path** — the binding long-pole is Step 1, not buried mid-list.
+  Set overall `plan_status`: `"ready"` (all gates hold) · `"blocked"` (a decision/prereq
+  must be resolved first — name it in `gate`) · `"needs_spike"` (unknown effort needs a
+  spike first). Per milestone set `confidence` ("high|medium|low") and, when not high,
+  `blocked_by`.
+
 ## Output — reply with ONLY this JSON, nothing else
 
 ```json
 {
  "summary": "2-4 sentence CTO briefing: where we are vs the goal + the single most important next move",
  "done_pct": 0,
+ "plan_status": "ready|blocked|needs_spike",
+ "gate": "when not ready: the ONE thing blocking a confident plan (a decision to make, a spike to run, or a prerequisite like recruiting testers). Empty when ready.",
  "milestones": [
    {"name": "M1: ...", "card": "<existing id or null>", "priority": "urgent|high|medium|low",
     "status": "done|in_progress|todo", "repo": "<abs path or null>", "stream": "backend|ux|feature|infra|docs",
@@ -82,7 +103,9 @@ prices it.
     "done_when": ["...", "..."],
     "why_now": "...",
     "steps": ["...", "..."],
-    "est_turns": 3}
+    "est_turns": 3,
+    "confidence": "high|medium|low",
+    "blocked_by": "when confidence is not high: the decision/spike/prerequisite blocking a firm estimate (empty when high)"}
  ],
  "next": [ {"title": "...", "reason": "why now", "card": "<id or null>"} ],
  "risks": ["short blocker/risk", ...],
