@@ -521,16 +521,17 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // OBJECT, not an array — `?? []` doesn't catch that, and calling .filter on
   // it white-screened the whole board. Guard the shape and surface the message.
   const rows: Track[] = Array.isArray(data) ? data : [];
-  // Offer the sample board only where it actually helps: nothing to show AND the
-  // transport is down. Keyed off the HEALTH store (the same signal the offline
-  // banner uses), not the query's error — a refused connection can leave the
-  // query resting on a non-array payload with `error` unset, which is exactly
-  // how a first-launch tester lands here.
-  const offline = useHealth((s) => s.status === "offline");
-  const demoActive = useDemo((s) => s.active);
-  const showDemoInvite = !filter && !demoActive && offline && rows.length === 0 && !isLoading;
   const dataErr = !Array.isArray(data) && data && typeof data === "object"
     ? String((data as { error?: unknown }).error ?? "") : "";
+  // Offer the sample board wherever the board is UNUSABLE with nothing to show:
+  // hard-offline (health store) OR any query error OR an error payload. The
+  // health store alone is too narrow — a reachable-but-unauthenticated daemon
+  // (401, e.g. an emulator hitting 10.0.2.2) round-trips fine so health stays
+  // "ok", yet the board is just as empty and unpaired as a first-launch tester's.
+  const offline = useHealth((s) => s.status === "offline");
+  const demoActive = useDemo((s) => s.active);
+  const showDemoInvite = !filter && !demoActive && rows.length === 0 && !isLoading
+    && (offline || !!error || !!dataErr);
   const shown = rows.filter((k) => {
     if (eff === "needs_you") return (k.status === "needs_you" || k.status === "bounced") && !k.archived;
     if (eff === "archived") return !!k.archived;
