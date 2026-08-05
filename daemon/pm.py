@@ -989,6 +989,58 @@ def _needs_from_owner(st):
          + "\n(Ich plane derweil bestmöglich mit Annahmen weiter; siehe Plan.)")
 
 
+def _triangle_watch(st):
+    """Management by exception: between the DAILY plans, inspect the iron triangle
+    (Budget / Timeline / Scope) against today's baseline and ESCALATE to the owner the
+    moment a corner tilts. Daily planning sets the baseline; this is the ongoing monitor.
+    Deduped by the tilt's content; clears itself when the triangle is level again."""
+    corners = []
+    # BUDGET — the weekly quota is burning ahead of pace
+    try:
+        import usage
+        bf = usage.weekly_pacing_flag()
+    except Exception:
+        bf = None
+    if bf:
+        corners.append("Budget: Wochenkontingent voraus (projiziert ~%s%%, vor dem Reset erschöpft)"
+                       % round(bf.get("projected_pct") or 0))
+    # TIMELINE + SCOPE — from the goal's process (epic)
+    gp = st.get("goal_process") or {}
+    if gp.get("pid") and gp.get("goal") == get_goal():
+        try:
+            import processes
+            p = processes.get(gp["pid"])
+        except Exception:
+            p = None
+        if p:
+            steps = p.get("steps") or []
+            today = time.strftime("%Y-%m-%d")
+            overdue = [s for s in steps if s.get("status") != "done" and (s.get("due") or "9999") < today]
+            if overdue:
+                corners.append("Timeline: %d Schritt(e) über Termin (z. B. „%s“ seit %s)"
+                               % (len(overdue), (overdue[0].get("title") or "")[:40], overdue[0].get("due")))
+            base = st.get("scope_baseline")
+            if not base or base.get("goal") != get_goal():
+                st["scope_baseline"] = {"goal": get_goal(), "n": len(steps)}   # self-baseline
+                _save_loopstate(st)
+            elif len(steps) > base.get("n", len(steps)):
+                corners.append("Scope: %d neue Schritt(e) seit Baseline (%d → %d)"
+                               % (len(steps) - base["n"], base["n"], len(steps)))
+    if not corners:
+        if st.get("triangle_key"):
+            st.pop("triangle_key", None)
+            _save_loopstate(st)
+        return
+    import hashlib
+    key = hashlib.sha1("|".join(corners).encode("utf-8")).hexdigest()[:12]
+    if st.get("triangle_key") == key:
+        return
+    st["triangle_key"] = key
+    _save_loopstate(st)
+    _say("⚠ Dreieck schief — Abweichung von der Tages-Baseline:\n" + "\n".join("• " + c for c in corners)
+         + "\nWelche Ecke ist dir heilig (Zeit/Budget/Scope)? Dann steuere ich gegen; sonst entscheidest du.")
+
+
 def _goal_has_process(st):
     """True when the current goal is already tracked as a process (the epic)."""
     gp = st.get("goal_process") or {}
@@ -1176,8 +1228,8 @@ def _state():
            for t in tracks):
         return ("NOTIFY", "Fertige/haengende Karten melden (mit Vorschlag).")
     acting = _in_window(pm) and _board_idle(pm)          # you're away -> may act
-    if time.time() - st.get("last_plan_ts", 0) >= pm.get("replan_minutes", 120) * 60:
-        return ("PLAN", "Plan ist veraltet - neu planen.") if acting else ("WAIT", "Plan veraltet, aber du bist da.")
+    if st.get("last_plan_day") != _today():
+        return ("PLAN", "Tagesplanung steht aus.") if acting else ("WAIT", "Tagesplan faellig, aber du bist da.")
     plan = latest_plan()
     if plan and _overview_stale(plan, tracks):
         return ("OVERVIEW", "Dashboard + Timeline aus dem Plan bauen.") if acting else ("WAIT", "Uebersicht veraltet, aber du bist da.")
@@ -1243,7 +1295,7 @@ def _tick():
     _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
     _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
     _goal_process(pm, st)                                    # PMP initiation: new goal -> process (epic) + intake
-    _usage_checkin(st)                                       # proactive: flag weekly quota pacing
+    _triangle_watch(st)                                      # MONITOR: escalate when Budget/Timeline/Scope tilts
     _plan_gate_notice(st)                                    # GATE: honest "blocked" over a shallow estimate
     _needs_from_owner(st)                                    # PM ASKS: surface missing-info questions
     _stakeholder_update(st)                                  # PMP core: goal vs budget, keep owner informed
@@ -1254,7 +1306,10 @@ def _tick():
     try:
         if state == "PLAN":
             brief() if auto == "notify" else make_plan(actor="pm")
-            st = _loopstate(); st["last_plan_ts"] = time.time(); _save_loopstate(st)
+            st = _loopstate(); st["last_plan_ts"] = time.time()
+            st["last_plan_day"] = _today()          # daily planning cadence
+            st.pop("scope_baseline", None)          # today's plan re-baselines the triangle
+            _save_loopstate(st)
         elif state == "OVERVIEW":
             _build_overview(latest_plan() or {})         # build Dashboard + Timeline
         elif state == "RESOLVE" and auto == "act":
