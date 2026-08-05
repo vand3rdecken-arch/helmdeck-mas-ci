@@ -142,6 +142,11 @@ export interface PmBrief {
   summary?: string; done_pct?: number; milestones?: PmMilestone[];
   next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
   budget?: PmBudget; economics?: Record<string, unknown>; goal?: string; generated_at?: string;
+  // the golden triage + gate (PM planning gate)
+  plan_status?: "ready" | "blocked" | "needs_spike"; gate?: string;
+  triage?: { budget?: "ok" | "blocked"; timeline?: "ok" | "blocked"; scope?: "ok" | "blocked" };
+  feasibility?: { budget?: string; earliest_done?: string; note?: string };
+  open_questions?: string[];
 }
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }

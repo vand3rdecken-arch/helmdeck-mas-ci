@@ -163,6 +163,14 @@ export const board: Dict = {
   "dash.sow.totalMany": { de: "gesamt ({n} SoWs)", en: "total ({n} SoWs)" },
 
   // ---- capacity panel -----------------------------------------------------
+  "dash.triangle.title": { de: "Ziel & Dreieck", en: "Goal & triangle" },
+  "dash.triangle.budget": { de: "Budget", en: "Budget" },
+  "dash.triangle.timeline": { de: "Timeline", en: "Timeline" },
+  "dash.triangle.scope": { de: "Scope", en: "Scope" },
+  "dash.triangle.blocked": { de: "Plan-Gate ROT", en: "plan gate RED" },
+  "dash.triangle.ready": { de: "Plan-Gate grün — bereit", en: "plan gate green — ready" },
+  "dash.triangle.eta": { de: "ETA ~{n} Tage", en: "ETA ~{n} days" },
+  "dash.triangle.earliest": { de: "frühestens fertig: {when}", en: "earliest done: {when}" },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
   "dash.usage.unavailable": {
     de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",

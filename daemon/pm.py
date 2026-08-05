@@ -1002,8 +1002,9 @@ def _needs_from_owner(st):
     st["asked_questions"] = key
     _save_loopstate(st)
     body = "\n".join("• " + q for q in qs[:5])
-    _say("Bevor ich weiterplane, fehlt mir Info — kannst du kurz klären?\n" + body
-         + "\n(Ich plane derweil bestmöglich mit Annahmen weiter; siehe Plan.)")
+    msg = ("Bevor ich weiterplane, fehlt mir Info — kannst du kurz klären?\n" + body
+           + "\n(Ich plane derweil bestmöglich mit Annahmen weiter; siehe Plan.)")
+    _say(msg)
 
 
 def _triangle_watch(st):
@@ -1054,8 +1055,9 @@ def _triangle_watch(st):
         return
     st["triangle_key"] = key
     _save_loopstate(st)
-    _say("⚠ Dreieck schief — Abweichung von der Tages-Baseline:\n" + "\n".join("• " + c for c in corners)
-         + "\nWelche Ecke ist dir heilig (Zeit/Budget/Scope)? Dann steuere ich gegen; sonst entscheidest du.")
+    msg = ("⚠ Dreieck schief — Abweichung von der Tages-Baseline:\n" + "\n".join("• " + c for c in corners)
+           + "\nWelche Ecke ist dir heilig (Zeit/Budget/Scope)? Dann steuere ich gegen; sonst entscheidest du.")
+    _say(msg)
 
 
 def _goal_has_process(st):
@@ -1105,9 +1107,10 @@ def _goal_process(pm, st):
         return
     st["goal_process"] = {"goal": goal, "pid": p["id"]}
     _save_loopstate(st)
-    _say("Ziel-Plan ist getriaged (Budget/Timeline/Scope grün) — ich hab ihn als Prozess (Epic) "
-         "mit %d datierten Schritten aus dem geprüften Plan angelegt (Prozesse-Tab). Justiere/"
-         "akzeptiere die Schritte, dann laufen die Ziel-Karten." % len(steps))
+    msg = ("Ziel-Plan ist getriaged (Budget/Timeline/Scope grün) — ich hab ihn als Prozess (Epic) "
+           "mit %d datierten Schritten aus dem geprüften Plan angelegt (Prozesse-Tab). Justiere/"
+           "akzeptiere die Schritte, dann laufen die Ziel-Karten." % len(steps))
+    _say(msg)
 
 
 def _goal_process_status(st):
@@ -1306,10 +1309,11 @@ def _dispatch_next(pm, st, day):
             if st.get("quota_held_reset") != key:
                 st["quota_held_reset"] = key; _save_loopstate(st)
                 only = "nur dringende" if floor == 0 else "nur dringende + hohe"
-                _say("Quota-Management: das Wochenkontingent läuft voraus, deshalb halte ich "
-                     "nicht-dringende Karten bis zum Reset zurück (%s Priorität wird noch "
-                     "gestartet). Heb die Priorität an oder sag Bescheid, wenn eine trotzdem "
-                     "sofort laufen soll." % only)
+                msg = ("Quota-Management: das Wochenkontingent läuft voraus, deshalb halte ich "
+                       "nicht-dringende Karten bis zum Reset zurück (%s Priorität wird noch "
+                       "gestartet). Heb die Priorität an oder sag Bescheid, wenn eine trotzdem "
+                       "sofort laufen soll." % only)
+                _say(msg)
             return
         todo = kept
     t = todo[0]
