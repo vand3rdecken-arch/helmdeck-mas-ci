@@ -100,16 +100,24 @@ def _lay_dates(p):
         acc += s.get("days", 1)
         s["due"] = time.strftime("%Y-%m-%d", time.localtime(start + horizon * acc / total))
 
-def create(request_text, client="", due="", actor="owner"):
-    """File a process; proposal runs in the background (status: proposing)."""
+def create(request_text, client="", due="", actor="owner", steps=None):
+    """File a process. With `steps` (a pre-built list, e.g. from the PM's vetted plan
+    milestones) we ADOPT them directly and skip the generic proposer - the steps are
+    already intelligent + gated. Without steps, the background proposer runs as before."""
     pid = time.strftime("%Y%m%d-%H%M%S") + "-proc"
     p = {"id": pid, "request": request_text, "client": client, "due": due,
          "status": "proposing", "steps": [], "cost": 0.0,
          "created": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor}
+    if steps:
+        p["steps"] = steps
+        p["status"] = "ready"
+        _lay_dates(p)
     with _lock:
         ps = _load(); ps.insert(0, p); _save(ps)
     import events
     events.emit("process", pid, action="filed", actor=actor)
+    if steps:
+        return p                       # adopted the plan's steps; no proposer needed
     def go():
         try:
             steps, cost = _propose_steps(request_text)
