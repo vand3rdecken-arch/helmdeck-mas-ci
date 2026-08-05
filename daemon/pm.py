@@ -813,6 +813,23 @@ def _usage_checkin(st):
     _say(_usage_flag_text(flag))
 
 
+def _quota_floor():
+    """The weekly quota IS the budget the PM manages (on a Max plan the bottleneck
+    is quota, not euros). When the current pace runs the window OVER its limit before
+    it resets, the PM spends the remaining budget only on the work that's worth it:
+    this returns the lowest-priority rank still allowed to dispatch (0=urgent .. 3=low),
+    or None when there's headroom to dispatch everything. Cheap (cached snapshot)."""
+    try:
+        import usage
+        f = usage.weekly_pacing_flag()
+    except Exception:
+        return None
+    if not f:
+        return None
+    proj = f.get("projected_pct") or 0
+    return 0 if proj >= 130 else 1     # badly over -> urgent only; ahead -> urgent + high
+
+
 def _overview_stale(plan, tracks):
     """True if the plan's roadmap isn't reflected on the board yet: a card that
     belongs to a dated milestone still lacks that due date (Timeline), or the
@@ -913,6 +930,30 @@ def _dispatch_next(pm, st, day):
     todo = _backlog(sessions.list_tracks(), pm, day)
     if not todo:
         return
+    # BUDGET MANAGEMENT: if the weekly quota is burning ahead of pace, hold
+    # non-urgent cards so the quota lasts to the reset - the PM spends the budget,
+    # it doesn't just warn about it. Silent when it can still run high-prio work;
+    # announces once per window only when it's actually holding everything back.
+    floor = _quota_floor()
+    if floor is not None:
+        rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+        kept = [t for t in todo if rank.get(t.get("priority"), 2) <= floor]
+        if not kept:
+            key = ""
+            try:
+                import usage
+                key = (usage.weekly_pacing_flag() or {}).get("resetsAt") or ""
+            except Exception:
+                pass
+            if st.get("quota_held_reset") != key:
+                st["quota_held_reset"] = key; _save_loopstate(st)
+                only = "nur dringende" if floor == 0 else "nur dringende + hohe"
+                _say("Quota-Management: das Wochenkontingent läuft voraus, deshalb halte ich "
+                     "nicht-dringende Karten bis zum Reset zurück (%s Priorität wird noch "
+                     "gestartet). Heb die Priorität an oder sag Bescheid, wenn eine trotzdem "
+                     "sofort laufen soll." % only)
+            return
+        todo = kept
     t = todo[0]
     day["dispatched"].append(t["id"]); _save_loopstate(st)
     _activity("started", "Gestartet: " + (t.get("task", "")[:70]), card=t["id"])
