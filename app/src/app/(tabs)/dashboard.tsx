@@ -36,8 +36,9 @@ export default function DashboardTab() {
             const showGates = panels.includes("gates");
             return (
               <>
-                {isOwner ? <PMPanel defaultRepo={(data as { settings?: { default_repo?: string } })?.settings?.default_repo} /> : null}
+                {/* triage is the dashboard's FOCUS - first and loud */}
                 {isOwner ? <TrianglePanel /> : null}
+                {isOwner ? <PMPanel defaultRepo={(data as { settings?: { default_repo?: string } })?.settings?.default_repo} /> : null}
                 {isOwner ? <DashCustomize m={data} /> : null}
                 <Tiles m={data} wide={wide} tiles={dashTiles(data)} />
                 {/* On desktop the two gauges sit side by side; the wide tables stay full width. */}
