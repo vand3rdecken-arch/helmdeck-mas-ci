@@ -1,8 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { api } from "@/data/client";
+import { api, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -233,6 +234,61 @@ function Meter({ pct, color }: { pct: number; color: string }) {
     <View style={[s.meter, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
       <View style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: "100%", backgroundColor: color, borderRadius: 999 }} />
     </View>
+  );
+}
+
+// ---- goal ↔ iron triangle (the PM's golden triage on the dashboard) ----
+function TriCorner({ label, state }: { label: string; state?: "ok" | "blocked" }) {
+  const t = useTheme();
+  const col = state === "blocked" ? t.danger : state === "ok" ? t.ok : t.txtTertiary;
+  const ic = state === "blocked" ? "alert-circle" : state === "ok" ? "checkmark-circle" : "ellipse-outline";
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: t.surface2,
+      borderColor: col + "66", borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+      <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={13} color={col} />
+      <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{label}</Text>
+    </View>
+  );
+}
+
+/** The goal as an epic gated by the golden triage: shows the three iron-triangle
+ *  corners (budget/timeline/scope) with green/red, the plan-gate status + gate, ETA
+ *  and earliest-feasible - the PM's planning gate, made visible. Owner-only; renders
+ *  nothing when no goal is set. */
+export function TrianglePanel() {
+  const t = useTheme();
+  const tr = useT();
+  const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
+  const goal = data?.goal || data?.plan?.goal;
+  if (!goal) return null;
+  const plan = data?.plan;
+  const tri = plan?.triage;
+  const status = plan?.plan_status;
+  const feas = plan?.feasibility;
+  return (
+    <GlassPanel title={tr("dash.triangle.title")}>
+      <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600", marginBottom: 8 }} numberOfLines={2}>{goal}</Text>
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <TriCorner label={tr("dash.triangle.budget")} state={tri?.budget} />
+        <TriCorner label={tr("dash.triangle.timeline")} state={tri?.timeline} />
+        <TriCorner label={tr("dash.triangle.scope")} state={tri?.scope} />
+      </View>
+      {status && status !== "ready" ? (
+        <Text style={{ color: t.danger, fontSize: 12, marginBottom: 4 }}>
+          ⚠ {tr("dash.triangle.blocked")}{plan?.gate ? ": " + plan.gate : ""}
+        </Text>
+      ) : status === "ready" ? (
+        <Text style={{ color: t.ok, fontSize: 12, marginBottom: 4 }}>✓ {tr("dash.triangle.ready")}</Text>
+      ) : null}
+      {plan?.budget?.eta_days ? (
+        <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("dash.triangle.eta", { n: plan.budget.eta_days })}</Text>
+      ) : null}
+      {feas?.earliest_done ? (
+        <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>
+          {tr("dash.triangle.earliest", { when: feas.earliest_done })}{feas.note ? " · " + feas.note : ""}
+        </Text>
+      ) : null}
+    </GlassPanel>
   );
 }
 
