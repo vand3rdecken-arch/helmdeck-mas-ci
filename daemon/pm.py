@@ -120,6 +120,27 @@ def _days(turns, pace):
     return max(1, math.ceil(turns / pace)) if turns else 0
 
 
+def _quota_signal():
+    """Compact LIVE budget for the planning brain: the weekly + 5h quota windows so
+    the PM can judge budget-FIT (not just scope). Empty/failsafe when unavailable."""
+    try:
+        import usage
+        s = usage.snapshot()
+    except Exception:
+        return {}
+    if s.get("status") != "ok":
+        return {"status": s.get("status", "unavailable")}
+    out = {"plan": s.get("plan")}
+    for w in s.get("windows", []):
+        if w.get("id") in ("weekly", "five_hour"):
+            e = {"usedPct": w.get("usedPct"), "resetsAt": w.get("resetsAt")}
+            if w.get("id") == "weekly" and w.get("pacing"):
+                e["projectedPct"] = w["pacing"].get("projected_pct")
+                e["exhaustBeforeReset"] = w["pacing"].get("exhaust_before_reset")
+            out[w["id"]] = e
+    return out
+
+
 def _ask(prompt, model=""):
     import copilot
     cmd = ["cmd", "/c", copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
@@ -200,6 +221,7 @@ def brief(goal=None, model=""):
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
+              + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(_quota_signal())
               + _memory(prev, econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
@@ -973,6 +995,15 @@ def _stakeholder_update(st):
         st["stakeholder_risk"] = risk_key
     _save_loopstate(st)
     msg = _goal_budget_text(goal, weekly, est, eta, pace, verdict)
+    feas = (latest_plan() or {}).get("feasibility") or {}   # the brain's budget-fit judgement
+    if feas.get("budget"):
+        de = {"fits": "Budget reicht", "tight": "Budget knapp", "insufficient": "Budget reicht NICHT"}
+        fl = de.get(feas["budget"], feas["budget"])
+        if feas.get("earliest_done"):
+            fl += " · frühestens fertig: %s" % feas["earliest_done"]
+        if feas.get("note"):
+            fl += " (%s)" % feas["note"]
+        msg += " Machbarkeit: %s." % fl
     ps = _goal_process_status(st)         # timeline straight from the goal's process (epic)
     if ps and ps.get("total"):
         line = "Prozess: %d/%d Schritte fertig" % (ps["done"], ps["total"])

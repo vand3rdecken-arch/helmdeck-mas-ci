@@ -54,6 +54,20 @@ prices it.
   `open_questions` — AND still give your best plan, recording every guess in
   `assumptions` so the owner can correct it. Ask few, high-value questions
   (never a questionnaire); stay silent when nothing material is missing.
+- **Reason about FEASIBILITY, not just scope.** You are given the LIVE quota/budget.
+  A process is not a plan — judge whether the goal is ACHIEVABLE and say so:
+  - **Budget fit.** Does the remaining quota/pace realistically fund the goal by its
+    deadline? If the weekly window is projected to exhaust before it resets,
+    throughput is capped — work stalls until the quota refills. State plainly whether
+    the budget **fits / is tight / is insufficient**, and if insufficient, **WHEN it
+    becomes achievable** (the goal spreads across quota resets).
+  - **Timing.** Give the earliest realistic completion given budget AND dependencies —
+    not just the raw-velocity ETA.
+  - **Dependencies as DECISIONS.** Identify what blocks progress, and separate the
+    blockers only the OWNER can resolve — an account/credential, an approval, a scope
+    fork, a tool/vendor choice, an "A or B". Put those in `open_questions` as a
+    decision to make ("Personal- oder Firmen-Play-Console-Account?"), not a passive
+    risk. Ordering dependencies between milestones belong in `why_now`.
 
 ## Output — reply with ONLY this JSON, nothing else
 
@@ -72,6 +86,7 @@ prices it.
  ],
  "next": [ {"title": "...", "reason": "why now", "card": "<id or null>"} ],
  "risks": ["short blocker/risk", ...],
+ "feasibility": {"budget": "fits|tight|insufficient", "earliest_done": "YYYY-MM-DD or a short note", "note": "one sentence: the BINDING constraint - quota/budget, a dependency, or an owner decision - and what would unblock it"},
  "assumptions": ["anything you had to GUESS for lack of info, stated so the owner can correct it (e.g. 'assumed no hard deadline', 'assumed scope = internal testing only')"],
  "open_questions": ["a concrete QUESTION to the owner for MISSING info that would materially change the plan or the estimate - deadline, budget/quota cap, scope boundary, priority, or an ambiguous acceptance criterion. Ask few, high-value questions. Empty [] when nothing material is missing."]
 }
