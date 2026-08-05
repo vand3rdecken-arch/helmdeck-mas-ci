@@ -8,6 +8,8 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 
 
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
+import { useDemo } from "@/data/demo";
+import { useHealth } from "@/data/health";
 import type { Track, LaneMove } from "@/data/types";
 import { t as tt, useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
@@ -453,6 +455,36 @@ function WideKanban({
   );
 }
 
+/** Shown when the board can't reach a daemon. HelmDeck is a companion app, so
+ *  "offline" is also what every first-time visitor sees before pairing — the
+ *  one place where offering the demo actually helps instead of nagging. */
+function DemoInvite() {
+  const t = useTheme();
+  const tr = useT();
+  const router = useRouter();
+  const qc = useQueryClient();
+  const enable = useDemo((s) => s.enable);
+  return (
+    <View style={{ backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+      borderRadius: 14, padding: 16, gap: 10, marginTop: 6 }}>
+      <Text style={{ color: t.txtSecondary, fontSize: 13, lineHeight: 19 }}>{tr("demo.ctaHint")}</Text>
+      <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+        <Pressable
+          onPress={() => { enable(); qc.invalidateQueries(); }}
+          style={{ backgroundColor: t.accent, borderRadius: 11, paddingHorizontal: 16, paddingVertical: 10 }}>
+          <Text style={{ color: "#fff", fontSize: 13.5, fontWeight: "600" }}>{tr("demo.cta")}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push("/scan" as never)}
+          style={{ backgroundColor: t.surface2, borderWidth: 1, borderColor: t.borderSubtle,
+            borderRadius: 11, paddingHorizontal: 16, paddingVertical: 10 }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600" }}>{tr("demo.pairInstead")}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topInset?: number }) {
   const t = useTheme();
   const tr = useT();
@@ -489,6 +521,14 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // OBJECT, not an array — `?? []` doesn't catch that, and calling .filter on
   // it white-screened the whole board. Guard the shape and surface the message.
   const rows: Track[] = Array.isArray(data) ? data : [];
+  // Offer the sample board only where it actually helps: nothing to show AND the
+  // transport is down. Keyed off the HEALTH store (the same signal the offline
+  // banner uses), not the query's error — a refused connection can leave the
+  // query resting on a non-array payload with `error` unset, which is exactly
+  // how a first-launch tester lands here.
+  const offline = useHealth((s) => s.status === "offline");
+  const demoActive = useDemo((s) => s.active);
+  const showDemoInvite = !filter && !demoActive && offline && rows.length === 0 && !isLoading;
   const dataErr = !Array.isArray(data) && data && typeof data === "object"
     ? String((data as { error?: unknown }).error ?? "") : "";
   const shown = rows.filter((k) => {
@@ -525,6 +565,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
       {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || tr("ui.offline")}</Text> : null}
+      {showDemoInvite ? <DemoInvite /> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? (

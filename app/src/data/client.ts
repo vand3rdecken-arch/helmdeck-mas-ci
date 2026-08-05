@@ -1,4 +1,5 @@
 import { useConfig } from "./config";
+import { demoRespond, useDemo } from "./demo";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
 import { t } from "@/i18n/core";
@@ -59,7 +60,20 @@ async function relayReq(method: string, path: string, bodyStr: string): Promise<
   return { status: resp.status ?? 200, body: resp.body ?? "" };
 }
 
+// Demo mode short-circuits the wire entirely (see data/demo.ts): no daemon, no
+// relay, no network. It sits HERE rather than in the screens so that every
+// screen, query and mutation works unchanged — one seam, no per-screen forks.
+async function demoReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const out = demoRespond(method, path, body);
+  // The board long-poll would otherwise spin hot: pace it like a real wait.
+  const wait = path.startsWith("/stream/wait") ? 1200 : 120 + Math.random() * 180;
+  await new Promise((r) => setTimeout(r, wait));
+  useHealth.getState().reportOk();
+  return (out ?? {}) as T;
+}
+
 async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  if (useDemo.getState().active) return demoReq<T>(method, path, body);
   const cfg = useConfig.getState();
   const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
   let status: number, txt: string;

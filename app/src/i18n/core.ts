@@ -9,6 +9,7 @@ import { board } from "./dict/board";
 import { card } from "./dict/card";
 import { chrome } from "./dict/chrome";
 import { composer } from "./dict/composer";
+import { demo } from "./dict/demo";
 import { net } from "./dict/net";
 import { screens } from "./dict/screens";
 import { settings } from "./dict/settings";
@@ -24,7 +25,7 @@ export type Entry = { de: string; en: string };
 export type Dict = Record<string, Entry>;
 
 export const DICT: Dict = {
-  ...chrome, ...board, ...card, ...composer, ...net, ...screens, ...settings,
+  ...chrome, ...board, ...card, ...composer, ...demo, ...net, ...screens, ...settings,
 };
 
 // Module-level current language. Components use useT() (which re-renders on

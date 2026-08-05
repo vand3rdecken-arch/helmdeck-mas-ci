@@ -13,12 +13,14 @@ import { Platform, Pressable, Text, View } from "react-native";
 import { queryClient } from "@/data/query";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
 import { decryptPush, presentDecrypted, registerForPush } from "@/data/push";
 import { t as i18nT } from "@/i18n/core";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 import { HealthBanner } from "@/ui/health_banner";
+import { DemoBanner } from "@/ui/demo_banner";
 import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
@@ -80,6 +82,11 @@ function usePushWiring() {
   useEffect(() => {
     (async () => {
       await useConfig.getState().hydrate();
+      await useDemo.getState().hydrate();   // demo survives a restart, like pairing
+      // hydrate() flips `active` AFTER the first queries may have fetched real
+      // (empty/401) data - refetch so a returning demo session actually shows the
+      // sample board instead of the stale pre-hydrate payload.
+      if (useDemo.getState().active) queryClient.invalidateQueries();
       if (useConfig.getState().relayMode()) registerForPush();
     })();
     // foreground: decrypt sealed data pushes and present them locally
@@ -147,6 +154,7 @@ export default function RootLayout() {
             </Stack>
             <WebStyles />
             <HealthBanner />
+            <DemoBanner />
             <CommandPalette />
             <PromptHost />
           </SafeAreaProvider>
