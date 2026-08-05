@@ -83,6 +83,10 @@ prices it.
     like a 14-day test is WAIT time, not effort; a human prerequisite like recruiting N
     people is a LONG POLE that must start first and gates everything after it).
   - **G5 Critical path** — the binding long-pole is Step 1, not buried mid-list.
+  Fill `triage` with the three iron-triangle corners - `budget` (quota/cost funds it),
+  `timeline` (realistic incl. calendar wait + long-poles), `scope` (bounded, acceptance
+  clear). `plan_status` may be `"ready"` ONLY if all three triage corners are `"ok"`;
+  if any is `"blocked"`, plan_status is not ready and `gate` names the binding corner.
   Set overall `plan_status`: `"ready"` (all gates hold) · `"blocked"` (a decision/prereq
   must be resolved first — name it in `gate`) · `"needs_spike"` (unknown effort needs a
   spike first). Per milestone set `confidence` ("high|medium|low") and, when not high,
@@ -95,6 +99,7 @@ prices it.
  "summary": "2-4 sentence CTO briefing: where we are vs the goal + the single most important next move",
  "done_pct": 0,
  "plan_status": "ready|blocked|needs_spike",
+ "triage": {"budget": "ok|blocked", "timeline": "ok|blocked", "scope": "ok|blocked"},
  "gate": "when not ready: the ONE thing blocking a confident plan (a decision to make, a spike to run, or a prerequisite like recruiting testers). Empty when ready.",
  "milestones": [
    {"name": "M1: ...", "card": "<existing id or null>", "priority": "urgent|high|medium|low",

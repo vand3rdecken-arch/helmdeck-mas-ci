@@ -941,30 +941,46 @@ def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
     return " ".join(parts)
 
 
+def _triage_green(plan):
+    """The HARD gate: goal work may proceed only when the golden triage is green -
+    plan_status 'ready' AND all three iron-triangle corners (budget/timeline/scope) 'ok'.
+    No plan yet -> not green (a goal can't be dispatched without a vetted plan). A legacy
+    plan without a triage block falls back to plan_status alone."""
+    if not plan:
+        return False
+    if (plan.get("plan_status") or "ready") != "ready":
+        return False
+    tri = plan.get("triage") or {}
+    if tri:
+        return all(tri.get(k) == "ok" for k in ("budget", "timeline", "scope"))
+    return True
+
+
 def _plan_gate_notice(st):
     """The planning GATE speaks: when the plan isn't 'ready' - a decision, a spike, or a
     prerequisite blocks a confident estimate - the PM says so plainly and holds, instead of
     pretending with a shallow schedule. Once per distinct gate (content-deduped)."""
     plan = latest_plan() or {}
-    status = plan.get("plan_status") or "ready"
-    if status == "ready":
+    if not get_goal() or _triage_green(plan):     # gate is GREEN (or no goal) -> nothing to say
         return
+    tri = plan.get("triage") or {}
+    red = [k for k in ("budget", "timeline", "scope") if tri.get(k) == "blocked"]
     gate = (plan.get("gate") or "").strip()
     ver = plan.get("verify") or {}
     issues = [i for i in (ver.get("issues") or []) if isinstance(i, str) and i.strip()]
     import hashlib
-    key = hashlib.sha1((status + "|" + gate + "|" + "\n".join(issues)).encode("utf-8")).hexdigest()[:12]
+    key = hashlib.sha1(("|".join(red) + "|" + gate + "|" + "\n".join(issues)).encode("utf-8")).hexdigest()[:12]
     if st.get("plan_gate_key") == key:
         return
     st["plan_gate_key"] = key
     _save_loopstate(st)
-    head = ("Ich kann noch nicht seriös schätzen — der Plan ist blockiert."
-            if status == "blocked" else
-            "Bevor ich schätze, braucht es einen Spike (kurze Untersuchung).")
+    corner = {"budget": "Budget", "timeline": "Timeline", "scope": "Scope"}
+    head = ("Ziel-Plan-Gate ROT — die Triage hält (%s). Kein Dispatch, bis das grün ist."
+            % ", ".join(corner[c] for c in red) if red else
+            "Ziel-Plan-Gate ROT — ich kann noch nicht seriös schätzen. Kein Dispatch, bis geklärt.")
     msg = head + ((" Gate: %s" % gate) if gate else "")
     if issues:
         msg += "\n" + "\n".join("• " + i for i in issues[:4])
-    msg += "\nBis dahin plane ich nur grob und dispatche keine Ziel-Karten auf Basis dieser Schätzung."
     _say(msg)
 
 
@@ -1237,6 +1253,12 @@ def _state():
     # _RESOLVE_MAX Anlaeufe mit anderem Ansatz) BEFORE starting new work
     if pm.get("autonomy", "act") == "act" and _bounced_to_resolve(tracks, pm, day):
         return ("RESOLVE", "Gebouncte Karte entstoeren (delegieren + neu einreichen).") if acting else ("WAIT", "Bounce zu fixen, aber du bist da.")
+    # HARD GATE: a goal exists but its plan hasn't passed the golden triage
+    # (Budget/Timeline/Scope green) -> hold ALL dispatch and surface the gate. Ranks
+    # after PLAN (today's plan runs first) and RESOLVE (unblocking stuck work still runs).
+    if get_goal() and not _triage_green(latest_plan()):
+        return ("TRIAGE", "Gate rot: Budget/Timeline/Scope nicht gruen - kein Dispatch, ich kläre/frage.") \
+            if acting else ("WAIT", "Plan-Gate rot, aber du bist da.")
     paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
     if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
         return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
