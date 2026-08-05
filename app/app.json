@@ -27,6 +27,7 @@
     "android": {
       "package": "app.helmdeck",
       "versionCode": 38,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"],
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
