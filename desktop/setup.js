@@ -162,10 +162,13 @@ async function fetchPython(resourcesDir) {
 /** Hand a job to Claude Code. This is the "use Claude to install" step: rather
  *  than hand-rolling an installer per dependency we describe the goal and let
  *  the agent do it on the user's machine, streaming its output to the screen. */
-function claudeTask(claude, prompt, cwd) {
+function claudeTask(claude, prompt, cwd, mode = "plan") {
   return new Promise((resolve) => {
     say("Claude richtet ein…");
-    const p = spawn(claude.cmd, ["-p", prompt, "--permission-mode", "acceptEdits"],
+    // `plan` is READ-ONLY: onboarding may diagnose freely, but it must never
+    // silently rewrite the user's HelmDeck installation. Only the step that
+    // genuinely has to change the machine (installing a runtime) gets more.
+    const p = spawn(claude.cmd, ["-p", prompt, "--permission-mode", mode],
       { cwd, shell: win, windowsHide: true, env: { ...process.env } });
     let tail = "";
     const onData = (d) => {
@@ -234,7 +237,7 @@ function startSetupServer(ctx) {
           await claudeTask(claude,
             "Install a Python 3.12 runtime on this Windows machine so that `py -3.12 --version` "
             + "works, using winget if available. Do not modify anything else. Report what you did.",
-            ctx.daemonDir);
+            ctx.daemonDir, "acceptEdits");   // this step must actually change the machine
           py = findPython(ctx.resourcesDir);
         }
       }
@@ -252,10 +255,10 @@ function startSetupServer(ctx) {
       if (!(await daemonUp(ctx.daemonPort))) {
         say("Die Instanz antwortet nicht — lasse Claude nachsehen…", "err");
         await claudeTask(claude,
-          "The HelmDeck python daemon in this directory fails to start with `python swarm.py serve 8140`. "
-          + "Run it, read the traceback, fix the cause (missing stdlib-only prerequisite, port in use, "
-          + "syntax error) and report the root cause. Do not refactor unrelated code.",
-          ctx.daemonDir);
+          "The HelmDeck python daemon in this directory does not come up on port " + ctx.daemonPort
+          + ". Diagnose why (port already in use, missing runtime, traceback on start) and report the "
+          + "root cause plus the exact command the user should run. Do not change any files.",
+          ctx.daemonDir);   // read-only: diagnose, never silently rewrite the install
       }
       if (!(await daemonUp(ctx.daemonPort))) { say("Instanz konnte nicht gestartet werden.", "err"); return; }
       say("Instanz läuft auf :" + ctx.daemonPort, "ok");
