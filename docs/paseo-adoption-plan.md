@@ -34,8 +34,24 @@ Goal: no restart/timeout ever destroys a turn again; hung tools + interrupts are
 Verify: throwaway card with a long sleep/adb -> idle-evict fires, session resumes;
 Stop -> cooperative interrupt, context intact; restart mid-turn -> clean "unterbrochen" + resume.
 
-## Phase 2 - Presence-aware notifications
-Goal: no push when the owner is looking at the card; exactly one recipient; typed approvals.
+## Phase 2 - Presence-aware notifications + question channel
+Goal: no push when the owner is looking at the card; exactly one recipient; typed
+approvals; AND the worker can ASK cleanly instead of parking with prose.
+
+- 2.4 (PRIORITISED) Clean multiple-choice questions. Root cause: HelmDeck runs
+  claude headless (`-p`, no canUseTool callback), so the worker can't answer
+  AskUserQuestion interactively and falls back to prose + ends the turn (the
+  "parks / waiting to be done" trap). Paseo intercepts it as
+  permission_requested(kind:question) with options and routes the answer back via
+  respondToPermission. Fix HelmDeck-fittingly: intercept AskUserQuestion in the
+  worker's stream-json -> first-class "question" card state with real option
+  BUTTONS -> owner's pick sent back as the next message so the turn CONTINUES with
+  the choice. [claude_sessions.py, sessions.py, app card_transcript/composer]
+- 2.5 Auto-continue on background completion: a turn that ends while a worker-
+  launched background task is still running (and the worker is "waiting" on it)
+  must trigger a follow-up turn when the task completes, not park the card in
+  needs_you limbo. At minimum, distinguish the cue (waiting on a background task
+  vs waiting on you). [drivers.py, sessions.py]
 - 2.1 Client heartbeat: focusedCardId + appVisible + lastActivityAt (3-min freshness). [app heartbeat, server.py /presence]
 - 2.2 3-tier notify policy: focused->silent, present->in-app, absent->push; "connected"
   != "present"; single push recipient. [notify.py, pm.py]
