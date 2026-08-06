@@ -317,6 +317,18 @@ def _env(cfg):
     the inherited PATH.
     """
     env = dict(os.environ)
+    # Bash tool timeouts (Paseo-parity: bound the TOOL, not the turn). Without
+    # these a single runaway command - a stuck `adb`, an endless poll - hung the
+    # whole turn until the 30-min turn kill or a human hit Stop. Paseo relies on
+    # the agent CLI's own per-tool timeout instead: a command that exceeds its
+    # bound is killed at the TOOL layer and returns an error to the agent, which
+    # then adapts (shorter polls) - no manual Stop needed. A silence/inactivity
+    # watchdog would be wrong here: a legitimate long command (waiting on a
+    # download) also emits no output while it runs, so you cannot tell hung from
+    # busy by silence - only a tool bound distinguishes them. setdefault so the
+    # daemon's own env and a driver's `env` in settings.json still win.
+    env.setdefault("BASH_DEFAULT_TIMEOUT_MS", "120000")   # 2 min default / command
+    env.setdefault("BASH_MAX_TIMEOUT_MS", "300000")       # 5 min ceiling the agent can't exceed
     extra = cfg.get("env") or {}
     prepend = extra.get("PATH+")
     for k, v in extra.items():
