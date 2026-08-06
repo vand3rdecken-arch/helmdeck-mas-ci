@@ -272,6 +272,20 @@ def _cmd_label(text):
     return None
 
 
+def _notif_label(text):
+    """Claude Code injects background-task + harness notifications as role=user
+    messages (that is how the runtime feeds them to the model), so they rendered
+    as the OWNER's own right-aligned message. They are plumbing, not the human
+    talking. A task-notification -> a short neutral note; a bare system-reminder
+    is pure context injection and is dropped from the feed (returns None)."""
+    t = text.lstrip()
+    if t.startswith("<task-notification>") or t.startswith("[SYSTEM NOTIFICATION"):
+        m = re.search(r"<status>(.*?)</status>", t, re.S)
+        st = m.group(1).strip() if m else ""
+        return "⚙ Hintergrund-Task" + (" (" + st + ")" if st else "")
+    return None   # <system-reminder> and friends -> drop as context noise
+
+
 _CTX_SEP = "\n\n---\n\n"
 def _strip_ctx(text):
     """The daemon prepends review/merge context to a steer prompt (sessions.
@@ -357,6 +371,16 @@ def read_transcript(session_id, limit=400):
                 "<command-name>", "<command-message>", "<command-args>",
                 "<local-command-stdout>", "<local-command-stderr>")):
             lbl = _cmd_label(_lead)
+            if lbl:
+                steps.append({"kind": "system", "text": lbl, "ts": ts, "ta": ta})
+            continue
+        # Background-task + harness notifications are injected as role=user too, so
+        # they read as the owner's own message ("<task-notification>..." shown as a
+        # right-aligned bubble). Re-attribute: a task-notification -> a short system
+        # note; a bare system-reminder is dropped as pure context noise.
+        if role == "user" and _lead.lstrip().startswith((
+                "<task-notification>", "[SYSTEM NOTIFICATION", "<system-reminder>")):
+            lbl = _notif_label(_lead)
             if lbl:
                 steps.append({"kind": "system", "text": lbl, "ts": ts, "ta": ta})
             continue
