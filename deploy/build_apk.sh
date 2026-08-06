@@ -24,6 +24,27 @@ printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROI
 node app/plugins/withLanCleartext.js app/android \
   || { echo "[build_apk] network-security-config apply FAILED"; exit 1; }
 
+# Sync the hand-managed native version from app.json BEFORE building. The bump
+# automation (ship.sh) only touches app.json version + versionCode, but the
+# git-ignored app/android is hand-managed and does NOT regenerate: build.gradle's
+# versionName and the AndroidManifest's EXPO_RUNTIME_VERSION were silently left on
+# the old value, so a "1.0.3" bump produced an APK whose runtimeVersion was still
+# 1.0.2 - it matched neither the old nor the new OTA target. Write all three from
+# app.json so the APK, its runtimeVersion, and the OTA target can never drift.
+node -e '
+  const fs = require("fs");
+  const e = JSON.parse(fs.readFileSync("app/app.json", "utf8")).expo;
+  const ver = e.version, vc = String(e.android.versionCode);
+  const g = "app/android/app/build.gradle";
+  fs.writeFileSync(g, fs.readFileSync(g, "utf8")
+    .replace(/versionCode\s+\d+/, "versionCode " + vc)
+    .replace(/versionName\s+"[^"]*"/, "versionName \"" + ver + "\""));
+  const m = "app/android/app/src/main/AndroidManifest.xml";
+  fs.writeFileSync(m, fs.readFileSync(m, "utf8")
+    .replace(/(EXPO_RUNTIME_VERSION"\s+android:value=")[^"]*(")/, "$1" + ver + "$2"));
+  console.log("[build_apk] native version synced from app.json -> " + ver + " / " + vc);
+' || { echo "[build_apk] native version sync FAILED"; exit 1; }
+
 echo "[build_apk] gradle assembleRelease (native, ~10 min first time)"
 ( cd app/android && ./gradlew assembleRelease -x lint --console=plain ) \
   || { echo "[build_apk] APK BUILD FAILED"; exit 1; }
