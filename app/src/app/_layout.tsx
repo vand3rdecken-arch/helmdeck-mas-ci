@@ -8,9 +8,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
-import { queryClient } from "@/data/query";
+import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
@@ -21,6 +21,7 @@ import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
 import { HealthBanner } from "@/ui/health_banner";
 import { DemoBanner } from "@/ui/demo_banner";
+import { Onboard, useShowOnboard } from "@/ui/onboard";
 import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
@@ -151,12 +152,52 @@ function useResumeRefetch() {
   }, []);
 }
 
+// Hydrate the persisted board BEFORE the screens mount, so a cold start paints
+// last-known data instead of an empty spinner (then queries revalidate in the
+// background). Gated with a short timeout so a slow/blocked AsyncStorage read can
+// never hang the launch - after 1s we render regardless and hydrate is a no-op.
+function useCacheGate() {
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    let done = false;
+    const timer = setTimeout(() => { if (!done) setRestored(true); }, 1000);
+    restoreCache().finally(() => { done = true; clearTimeout(timer); setRestored(true); });
+    const stop = startCachePersist();
+    return () => { clearTimeout(timer); stop(); };
+  }, []);
+  return restored;
+}
+
 export default function RootLayout() {
   usePushWiring();
   usePaletteHotkeys();
   useGlobalStream();
   useResumeRefetch();
   useSilentOta();
+  const restored = useCacheGate();
+  // Desktop first run: the instance isn't serving yet, so onboarding owns the
+  // window instead of dropping the user on a board that cannot load.
+  const showOnboard = useShowOnboard();
+  // Hold the tree one tick until the persisted board is hydrated, so screens
+  // mount onto last-known data (instant paint) instead of an empty spinner.
+  if (!restored) {
+    return <View style={{ flex: 1, backgroundColor: tokens.dark.canvas }} />;
+  }
+  if (showOnboard) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider name="dark">
+            <SafeAreaProvider>
+              <StatusBar style="light" />
+              <Onboard />
+              <WebStyles />
+            </SafeAreaProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    );
+  }
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>

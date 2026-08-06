@@ -17,7 +17,8 @@ export function HealthBanner() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const { status, detail } = useHealth();
-  const visible = status === "offline";
+  const visible = status !== "ok";
+  const offline = status === "offline";
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -25,20 +26,24 @@ export function HealthBanner() {
   }, [visible, anim]);
 
   if (!visible) return null;
+  // A brief blip shows a quiet amber "reconnecting…"; only a PERSISTENT outage
+  // escalates to the red "offline" alarm (with the transport detail). Same signal,
+  // proportionate loudness - no red flash for a single dropped poll.
+  const tint = offline ? t.danger : t.warn;
   return (
     <Animated.View pointerEvents="none"
-      style={{ position: "absolute", top: insets.top + 6, left: 12, right: 12, zIndex: 1000, alignItems: "center",
+      style={{ position: "absolute", top: insets.top + 6, left: 12, right: 12, zIndex: 100, alignItems: "center",
         opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }] }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, maxWidth: 520,
-        backgroundColor: t.surface2, borderColor: t.danger + "88", borderWidth: 1, borderRadius: 10,
+        backgroundColor: t.surface2, borderColor: tint + "88", borderWidth: 1, borderRadius: 10,
         paddingHorizontal: 12, paddingVertical: 8,
         shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 6 }}>
-        <Ionicons name="cloud-offline-outline" size={15} color={t.danger} />
+        <Ionicons name={offline ? "cloud-offline-outline" : "sync-outline"} size={15} color={tint} />
         <View style={{ flexShrink: 1 }}>
           <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>
-            {tr("health.reconnecting")}
+            {tr(offline ? "health.offline" : "health.reconnecting")}
           </Text>
-          {detail ? (
+          {offline && detail ? (
             <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11.5 }}>{detail}</Text>
           ) : null}
         </View>
