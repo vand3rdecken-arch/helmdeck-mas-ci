@@ -1279,7 +1279,15 @@ def reorder(ids, actor="owner"):
 
 def cancel_turn(tid, actor="owner"):
     """Stop a running turn (the composer's Stop button). Kills the driver
-    subprocess; the turn returns as '(cancelled)'. Audit records it."""
+    subprocess; the turn returns as '(cancelled)'. Audit records it.
+
+    If there is NO live session but the card is still flagged running, it is a
+    ZOMBIE: a turn that died between daemon restarts (a 1800s kill, a driver
+    crash) leaves status=running with no owning worker, and the old behaviour -
+    cancel returns false, do nothing - left the phone watching a frozen card with
+    a spinner that Stop could never clear. Now Stop unfreezes it exactly like the
+    startup sweep does (bounce + resend note), so the button always does
+    something instead of no-oping on a dead session."""
     import drivers, events
     killed = drivers.cancel(tid)
     if killed:
@@ -1288,6 +1296,21 @@ def cancel_turn(tid, actor="owner"):
         if t:
             from actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "turn CANCELLED by %s" % actor)
+        return {"cancelled": True}
+    # no live session - clear a stuck/zombie card so Stop is never a no-op
+    t = get_track(tid)
+    if t and t.get("status") == "running" and not drivers.has_session(tid):
+        t["status"] = "bounced"
+        t["gate_report"] = [ZOMBIE_NOTE]
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _save_track(t)
+        try:
+            from actionlog import ActionLog
+            ActionLog(t["run_dir"]).log("note", "STOP on a dead session - " + ZOMBIE_NOTE)
+        except Exception:
+            pass
+        events.emit("bounce", tid, reason="stopped_zombie", actor=actor)
+        return {"cancelled": True, "unfroze": True}
     return {"cancelled": killed}
 
 
