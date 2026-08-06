@@ -10,9 +10,15 @@ set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 
 native_fp() {
+  # Fingerprint the NATIVE config only. EXCLUDE the version fields that bump_version
+  # + build_apk.sh change (app.json version/versionCode, the manifest's
+  # EXPO_RUNTIME_VERSION): including them made every post-bump accept look like a
+  # fresh native change and bump again, so the version crept 1.0.2->1.0.3->1.0.4 with
+  # no real native change. Now a version bump never moves the fingerprint, so it
+  # stabilises after one cycle and JS-only accepts stop bumping.
   { sed -n 's/.*\("expo[^"]*"\|"react-native[^"]*"\).*/\1/p' app/package.json
-    cat app/app.json 2>/dev/null
-    cat app/android/app/src/main/AndroidManifest.xml 2>/dev/null
+    grep -vE '"version"[[:space:]]*:|"versionCode"[[:space:]]*:' app/app.json 2>/dev/null
+    grep -v "EXPO_RUNTIME_VERSION" app/android/app/src/main/AndroidManifest.xml 2>/dev/null
   } | sha256sum | cut -d' ' -f1
 }
 
