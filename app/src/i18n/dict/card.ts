@@ -80,6 +80,8 @@ export const card: Dict = {
                            en: "⌘ Board agent — move/delete/steer (separate from the worker)" },
   "card.chat.hintWorkerLive": { de: "Worker — Kontext läuft weiter", en: "Worker — context carries on" },
   "card.chat.hintWorkerIdle": { de: "Worker — noch nicht gestartet", en: "Worker — not started yet" },
+  "card.chat.awaitingYou": { de: "Turn beendet — Worker wartet auf dich. Steuern setzt fort.",
+                             en: "Turn ended — the worker is waiting for you. Steer to continue." },
   "card.chat.phAgent": { de: "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'",
                          en: "Tell the agent what to do — e.g. 'move this card to done'" },
   "card.chat.phWorkerLive": { de: "Worker steuern – Kontext läuft weiter",

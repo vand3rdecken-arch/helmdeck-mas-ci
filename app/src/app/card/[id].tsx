@@ -414,6 +414,22 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         ) : null}
       </View>
 
+      {/* Turn-ended cue: the card sits in the "In Arbeit" lane but its turn is
+          done and waiting on the owner (needs_you/bounced, no live turn). Without
+          this the chat just falls silent after the last tool and reads as frozen
+          ("stucked again") - this makes it unmistakable that it's the owner's move
+          and that steering RESUMES the same context. */}
+      {!running && !agentMode && (k.status === "needs_you" || k.status === "bounced") ? (
+        <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
+            backgroundColor: t.warn + "1A", borderColor: t.warn + "66", borderWidth: 1, borderRadius: 10,
+            paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Ionicons name="hand-left-outline" size={14} color={t.warn} />
+            <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("card.chat.awaitingYou")}</Text>
+          </View>
+        </View>
+      ) : null}
+
       {/* mode switch: steer the card's Worker, or talk to the board Agent. One
           segmented control (not two loose buttons) so the active target is
           unmistakable; Agent is violet, Worker is accent, matching the chat. */}
