@@ -393,6 +393,13 @@ def read_transcript(session_id, limit=400):
             if not (steps and steps[-1].get("kind") == "compaction"):
                 steps.append({"kind": "compaction", "ts": ts, "ta": ta})
             continue
+        # An interrupt (Stop mid-turn, esp. during a tool call) is recorded by
+        # Claude Code as a role=user message '[Request interrupted by user...]'.
+        # That is the harness speaking, not the owner - as a prose bubble it read
+        # like the human typed it. Render it as ONE clean interrupted marker.
+        if role == "user" and _lead.lstrip().startswith("[Request interrupted by user"):
+            steps.append({"kind": "system", "text": "⏹ Turn unterbrochen", "ts": ts, "ta": ta})
+            continue
         if isinstance(content, str):
             if content.strip():
                 steps.append({"role": role, "kind": "text", "text": _strip_ctx(content.strip())[:MAX_TEXT], "ts": ts, "ta": ta})

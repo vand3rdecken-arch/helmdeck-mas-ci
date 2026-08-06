@@ -48,10 +48,75 @@ _cancelled = set()
 
 # --- process-tree kill + orphan reaping (Paseo: utils/tree-kill.ts) ---------
 
-def _tree_kill(proc):
-    """Take the whole process tree down. `proc` is the `cmd /c claude` wrapper,
-    so terminate() alone leaves the real claude/node child (and its MCP children)
-    running - taskkill /T /F on Windows reaps the tree immediately."""
+def _pid_table():
+    """[(pid, ppid, exe)] for every live process (Windows), via a ctypes
+    Toolhelp32 snapshot - no subprocess, no PATH dependency (PowerShell is NOT
+    guaranteed to be on PATH: this very dev box lacks it), and the only reliable
+    way to know a tree BEFORE we start killing it."""
+    if os.name != "nt":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD),
+                    ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_void_p),
+                    ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", ctypes.c_char * 260)]
+
+    k32 = ctypes.windll.kernel32
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k32.CreateToolhelp32Snapshot(0x2, 0)     # TH32CS_SNAPPROCESS
+    if snap in (None, wintypes.HANDLE(-1).value):
+        return []
+    out = []
+    try:
+        e = PROCESSENTRY32()
+        e.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        ok = k32.Process32First(snap, ctypes.byref(e))
+        while ok:
+            out.append((int(e.th32ProcessID), int(e.th32ParentProcessID),
+                        e.szExeFile.decode("mbcs", "replace")))
+            ok = k32.Process32Next(snap, ctypes.byref(e))
+    finally:
+        k32.CloseHandle(snap)
+    return out
+
+
+def _descendants(pid):
+    """All live descendant pids of `pid`, snapshotted BEFORE the kill. taskkill
+    /T walks the tree at kill time - if the parent died first (polite pass), it
+    can no longer see the children, which is exactly how MCP/node orphans leak."""
+    try:
+        table = _pid_table()
+    except Exception:
+        return []
+    kids = {}
+    for p, pp, _exe in table:
+        kids.setdefault(pp, []).append(p)
+    out, stack, seen = [], [pid], {pid}
+    while stack:
+        for c in kids.get(stack.pop(), []):
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
+                stack.append(c)
+    return out
+
+
+def _tree_kill(proc, grace=2.0):
+    """Take the whole process tree down, escalating (Paseo tree-kill parity):
+    polite signal -> grace -> force -> CONFIRM the descendants are gone. `proc`
+    is the `cmd /c claude` wrapper, so terminate() alone leaves the real
+    claude/node child (and its MCP children) running. The polite pass gives
+    claude a chance to flush its session .jsonl; the confirm pass reaps MCP
+    orphans whose parent died first (invisible to taskkill /T by then)."""
     if proc is None:
         return
     try:
@@ -63,14 +128,39 @@ def _tree_kill(proc):
     pid = proc.pid
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+            family = _descendants(pid)                      # snapshot BEFORE killing
+            subprocess.run(["taskkill", "/T", "/PID", str(pid)],   # polite (WM_CLOSE)
                            capture_output=True, timeout=10)
-        else:
-            proc.terminate()
             try:
-                proc.wait(timeout=2)
+                proc.wait(timeout=grace)
             except Exception:
+                pass
+            if proc.poll() is None:                          # ignored -> force
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                               capture_output=True, timeout=10)
+            # confirm: reap surviving descendants one by one. Guarded by the
+            # image check so a recycled pid can never hit an innocent process.
+            try:
+                alive = {p for p, _pp, _exe in _pid_table()}
+            except Exception:
+                alive = set()
+            for cp in family:
+                if cp in alive and _is_agent_pid(cp):
+                    subprocess.run(["taskkill", "/F", "/PID", str(cp)],
+                                   capture_output=True, timeout=10)
+        else:
+            proc.terminate()                                 # SIGTERM
+            try:
+                proc.wait(timeout=grace)
+            except Exception:
+                proc.kill()                                  # SIGKILL
+        try:
+            proc.wait(timeout=5)                             # confirm the wrapper died
+        except Exception:
+            try:
                 proc.kill()
+            except Exception:
+                pass
     except Exception:
         try:
             proc.kill()
@@ -121,17 +211,30 @@ def _forget_pid(pid):
 
 
 def _proc_start_epoch(pid):
-    """OS-reported start time (UTC epoch seconds) of a live pid, or None."""
+    """OS-reported start time (UTC epoch seconds) of a live pid, or None.
+    ctypes GetProcessTimes, not PowerShell: powershell.exe is not guaranteed on
+    PATH (this dev box lacks it), and a silently-failing subprocess here would
+    degrade the pid-reuse guard to the weaker image check without anyone noticing."""
     if os.name != "nt":
         return None
     try:
-        ps = ("$p=Get-Process -Id %d -ErrorAction Stop;"
-              "[int64]($p.StartTime.ToUniversalTime()-(Get-Date '1970-01-01')).TotalSeconds"
-              % pid)
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
-                           capture_output=True, text=True, timeout=10)
-        out = (r.stdout or "").strip()
-        return float(out) if out.lstrip("-").isdigit() else None
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        k32.OpenProcess.restype = wintypes.HANDLE
+        h = k32.OpenProcess(0x1000, False, int(pid))   # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return None
+        try:
+            created, exited, kern, user = (wintypes.FILETIME(), wintypes.FILETIME(),
+                                           wintypes.FILETIME(), wintypes.FILETIME())
+            if not k32.GetProcessTimes(h, ctypes.byref(created), ctypes.byref(exited),
+                                       ctypes.byref(kern), ctypes.byref(user)):
+                return None
+            t100 = (created.dwHighDateTime << 32) | created.dwLowDateTime
+            return t100 / 1e7 - 11644473600.0          # FILETIME (1601) -> epoch (1970)
+        finally:
+            k32.CloseHandle(h)
     except Exception:
         return None
 
@@ -141,10 +244,11 @@ def _is_agent_pid(pid):
     if os.name != "nt":
         return True
     try:
-        r = subprocess.run(["tasklist", "/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"],
-                           capture_output=True, text=True, timeout=10)
-        img = (r.stdout or "").lower()
-        return any(n in img for n in ("claude", "node", "cmd.exe"))
+        for p, _pp, exe in _pid_table():
+            if p == pid:
+                img = (exe or "").lower()
+                return any(n in img for n in ("claude", "node", "cmd"))
+        return False
     except Exception:
         return False
 
@@ -217,7 +321,7 @@ def has_session(tid):
 # Paseo, live worker count is bounded by this idle eviction, not a semaphore.
 
 _IDLE_TTL_DEFAULT = 300.0      # seconds a worker may sit idle before it's reaped
-_SWEEP_INTERVAL = 30.0
+_SWEEP_INTERVAL = 15.0         # Paseo polls its idle collector this often
 _sweeper_started = False
 
 
@@ -232,16 +336,42 @@ def _idle_ttl():
     return _IDLE_TTL_DEFAULT
 
 
+def _running_cards():
+    """Track ids currently flagged status=running in the store. A steer flips
+    the flag BEFORE its turn reaches run_turn's lock, so for a moment the card
+    is running while the session still looks idle - evicting in that window
+    would tree-kill the process under the spawning turn."""
+    try:
+        import sessions
+        return {t.get("id") for t in sessions._load() if t.get("status") == "running"}
+    except Exception:
+        return set()
+
+
 def sweep_idle(ttl=None):
-    """One eviction pass: tree-kill sessions idle longer than ttl. A session mid-
-    turn is protected (its _turn_lock is held, so try-acquire fails). Returns the
-    list of evicted track ids."""
+    """One eviction pass: tree-kill sessions idle longer than ttl. Eviction takes
+    the RUNTIME only - the conversation stays on disk keyed by session id, so the
+    next steer transparently resumes it. Multi-condition guard (Paseo's
+    collectIdleAgents): a session is reaped only when ALL hold -
+      - past the idle TTL,
+      - its card is not flagged running in the store,
+      - no pending control-plane request (an interrupt/set_model in flight),
+      - not marked protected (driver opts `protect_idle` in settings.json),
+      - no turn holds its lock and no turn state is live.
+    Returns the list of evicted track ids."""
     ttl = _idle_ttl() if ttl is None else ttl
     now = _time.time()
+    running = _running_cards()
     evicted = []
     with _sessions_guard:
         for tid, s in list(_sessions.items()):
             if now - s.last_used < ttl:
+                continue
+            if tid in running:
+                continue
+            if s._ctrl:
+                continue
+            if (s.cfg or {}).get("protect_idle"):
                 continue
             # only reap a session with no turn in flight - non-blocking acquire
             if not s._turn_lock.acquire(blocking=False):
@@ -438,7 +568,9 @@ class _ClaudeSession:
         self.sig = _opts_sig(cfg, t)
         self.session_id = t.get("session_id")
         self.adopted_source = t.get("adopted_source")
+        self.run_dir = t.get("run_dir") or ""
         self.proc = None
+        self._drop_results = 0           # stale-result suppression after an interrupt
         self.err_tail = []
         self._alive = False
         self._cur = None                 # current turn's mutable state, or None
@@ -450,6 +582,28 @@ class _ClaudeSession:
 
     # -- lifecycle -------------------------------------------------------
     def _spawn(self):
+        if self.session_id:
+            # Stale-resume degradation: if the session's .jsonl transcript is
+            # gone (cleanup, moved profile), `--resume` would hard-fail the whole
+            # spawn. Degrade to a FRESH session and leave a visible note in the
+            # card feed instead of a dead card.
+            try:
+                import claude_sessions
+                lost = claude_sessions._find_transcript(self.session_id) is None
+            except Exception:
+                lost = False
+            if lost:
+                note = ("Session-Transcript %s… nicht mehr auffindbar - starte eine "
+                        "frische Session (alter Gesprächskontext ist verloren)."
+                        % self.session_id[:8])
+                self.session_id = None
+                self.adopted_source = None
+                if self.run_dir:
+                    try:
+                        from actionlog import ActionLog
+                        ActionLog(self.run_dir).log("note", note)
+                    except Exception:
+                        pass
         argv = [CLAUDE, "-p",
                 "--output-format", "stream-json", "--input-format", "stream-json",
                 "--include-partial-messages", "--verbose",
@@ -474,6 +628,7 @@ class _ClaudeSession:
         self.spawn_time = _time.time()
         _record_pid(self.proc.pid, self.spawn_time)
         self.err_tail = []
+        self._drop_results = 0     # a fresh process can't emit stale frames
         self._alive = True
         threading.Thread(target=self._drain_err, daemon=True).start()
         threading.Thread(target=self._pump, daemon=True).start()
@@ -484,11 +639,15 @@ class _ClaudeSession:
         except Exception:
             return False
 
-    def cancel(self, grace=8.0):
+    def cancel(self, ack_timeout=2.0, grace=8.0):
         """Stop the in-flight turn, Paseo-style: send a SOFT `interrupt` control
-        request first (claude ends the turn cleanly and emits a terminal result,
-        so the process stays alive for the next steer), and only HARD tree-kill as
-        a fallback if the turn doesn't wind down within `grace`."""
+        request and await its ACK ~2s (Paseo awaits query.interrupt() the same
+        way). Acked -> claude winds the turn down and emits a terminal result;
+        the process stays ALIVE and the session resumes on the next steer. No
+        ack -> the stream is wedged: hard tree-kill (still resumable via
+        --resume). Acked but the result doesn't land within `grace` -> release
+        the waiter, KEEP the process, and flag the eventual late result as
+        stale so it can't falsely complete the NEXT turn."""
         _cancelled.add(self.tid)   # so run_turn returns the clean '(cancelled)' sentinel
         cur = self._cur
         if not self.alive() or cur is None:
@@ -497,18 +656,37 @@ class _ClaudeSession:
                 cur["done"].set()
             self.kill()
             return
-        sent = self._send_control("interrupt")
-        if not sent:
+        req_id = self._send_control("interrupt")
+        if not req_id:
             self.kill()
             return
-        # watchdog: if the soft interrupt didn't terminate the turn, kill the tree
-        def _fallback():
-            c = cur
-            if not c["done"].wait(grace):
-                if not c["done"].is_set():
-                    c["done"].set()
+
+        def _escort():
+            slot = self._ctrl.get(req_id)
+            acked = slot["ev"].wait(ack_timeout) if slot else False
+            resp = (slot or {}).get("resp") or {}
+            self._ctrl.pop(req_id, None)
+            if not (acked and resp.get("subtype") == "success"):
+                # interrupt not acknowledged - the stream is hung, kill the tree
+                if not cur["done"].is_set():
+                    cur["done"].set()
                 self.kill()
-        threading.Thread(target=_fallback, daemon=True).start()
+                return
+            if not cur["done"].wait(grace):
+                # acked but the terminal result is dragging (a tool winding
+                # down). Don't kill - the soft path's whole point is a live,
+                # resumable process. Release the waiter and drop the turn's
+                # late result frame when it finally arrives (stale-result
+                # suppression - see _on_event).
+                self._drop_results = 1
+                if cur.get("result") is not None:
+                    # the frame landed in the race window and was consumed
+                    # normally - nothing stale is coming, don't eat the next
+                    # turn's real result.
+                    self._drop_results = 0
+                if not cur["done"].is_set():
+                    cur["done"].set()
+        threading.Thread(target=_escort, daemon=True).start()
 
     def kill(self):
         self._alive = False
@@ -617,6 +795,14 @@ class _ClaudeSession:
                     cur["session_id"] = sid
                     _write(cur["sid_path"], sid)
         elif typ == "result":
+            if self._drop_results > 0:
+                # terminal frame of an ALREADY-RETURNED interrupted turn (its
+                # waiter was released after the interrupt ack). stdout frames
+                # are ordered, so this stale frame always precedes the next
+                # turn's real result - swallow it instead of letting it falsely
+                # complete that turn.
+                self._drop_results -= 1
+                return
             if cur:
                 cur["result"] = ev
                 cur["done"].set()
