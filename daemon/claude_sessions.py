@@ -178,6 +178,18 @@ def read_transcript_live(track, limit=400):
     block is flushed to the .jsonl."""
     sid = live_session_id(track)
     steps = read_transcript(sid, limit) if sid else []
+    # A tool_use with no matching tool_result is flagged running=True. That is
+    # only true while the TURN is live; once the card is at rest (needs_you,
+    # bounced, done) a resultless trailing tool means the turn was KILLED mid-tool
+    # (session teardown, a 1800s kill, a daemon restart) - it is ABANDONED, not
+    # running. Left as running it shows a forever-ticking clock and no final reply
+    # ("Karte fertig aber keine Antwort"). Re-label it so the UI can show
+    # "abgebrochen" + its timestamp instead of a live clock.
+    if (track or {}).get("status") != "running":
+        for st in steps:
+            if st.get("running"):
+                st["running"] = False
+                st["abandoned"] = True
     run_dir = (track or {}).get("run_dir") or ""
     if run_dir:
         try:
