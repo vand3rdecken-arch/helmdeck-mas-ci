@@ -5,10 +5,10 @@ import { QueryClient } from "@tanstack/react-query";
 // data surface that changes often but not every second.
 export const queryClient = new QueryClient({
   defaultOptions: {
-    // refetchOnWindowFocus TRUE + focusManager wired to AppState (see _layout) so
-    // returning from the background refetches immediately - over the relay the board
-    // would otherwise wait out the 20s interval / a stale long-poll ("paired but takes
-    // very long"). On RN "window focus" == the app becoming active.
-    queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 2000 },
+    // Resume-refetch is handled explicitly in _layout (AppState "active" ->
+    // invalidateQueries) rather than via focus, so this stays false: no
+    // focusManager pause-on-background hazard, and desktop web doesn't refetch
+    // on every tab focus.
+    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 2000 },
   },
 });

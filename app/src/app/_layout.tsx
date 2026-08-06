@@ -2,7 +2,7 @@ import "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import type { ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { focusManager, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -135,15 +135,16 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
-// Resume-refetch: react-query has no window on native, so wire its focusManager to
-// AppState - the app becoming "active" (returning from the background) marks queries
-// stale-focused and, with refetchOnWindowFocus on, refetches them at once. Without
-// this the board sat on a spinner until the slow relay poll interval ("paired but
-// takes very long"). Also nudges the live-stream loop to reconnect promptly.
+// Resume-refetch: when the app returns to the foreground, refetch everything so
+// the board doesn't sit on a spinner waiting out the slow relay poll interval
+// ("paired but takes very long"). We ONLY invalidate on "active" - deliberately
+// NOT focusManager.setFocused(false) on background: pausing queries risks leaving
+// them stuck loading if the balancing "active" event is ever missed (chat, already
+// cached, still shows - the board would hang). invalidateQueries alone forces the
+// refetch on return without any pause hazard.
 function useResumeRefetch() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
-      focusManager.setFocused(s === "active");
       if (s === "active") queryClient.invalidateQueries();
     });
     return () => sub.remove();
