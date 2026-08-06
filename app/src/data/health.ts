@@ -6,7 +6,12 @@ import { create } from "zustand";
 // clears it on the first successful round-trip. "Transport" means the wire
 // (relay/LAN/crypto), not app-level 4xx errors - a 409 proves the daemon is
 // reachable and is shown by the caller, not the banner.
-export type ConnStatus = "ok" | "offline";
+export type ConnStatus = "ok" | "reconnecting" | "offline";
+
+// A single dropped long-poll or a relay blip is normal - go soft ("reconnecting")
+// first and only escalate to the red "offline" alarm once failures PERSIST. This
+// is the Paseo behaviour: a brief hiccup shouldn't look like an outage.
+const OFFLINE_AFTER = 3;   // consecutive transport failures before the red banner
 
 interface HealthState {
   status: ConnStatus;
@@ -26,5 +31,8 @@ export const useHealth = create<HealthState>((set, get) => ({
     if (get().status !== "ok" || !get().lastOkAt) set({ status: "ok", detail: "", failures: 0, lastOkAt: Date.now() });
     else set({ lastOkAt: Date.now() });
   },
-  reportFail: (detail) => set((s) => ({ status: "offline", detail, failures: s.failures + 1 })),
+  reportFail: (detail) => set((s) => {
+    const failures = s.failures + 1;
+    return { status: failures >= OFFLINE_AFTER ? "offline" : "reconnecting", detail, failures };
+  }),
 }));

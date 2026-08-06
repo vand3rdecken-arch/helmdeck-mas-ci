@@ -305,8 +305,12 @@ export const screens: Dict = {
 
   // ---- connection health --------------------------------------------------
   "health.reconnecting": {
-    de: "Desktop nicht erreichbar – verbinde neu…",
-    en: "Desktop unreachable – reconnecting…",
+    de: "Verbinde neu…",
+    en: "Reconnecting…",
+  },
+  "health.offline": {
+    de: "Keine Verbindung zum Desktop.",
+    en: "No connection to the desktop.",
   },
   "health.unreachable": { de: "Desktop nicht erreichbar.", en: "Desktop unreachable." },
 };
