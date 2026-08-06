@@ -2,7 +2,7 @@
   "expo": {
     "name": "HelmDeck",
     "slug": "helmdeck",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "helmdeck",
@@ -26,8 +26,10 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 38,
-      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"],
+      "versionCode": 39,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
