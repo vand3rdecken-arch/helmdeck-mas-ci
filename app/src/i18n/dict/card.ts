@@ -134,7 +134,7 @@ export const card: Dict = {
   // transcript / markdown rendering
   "transcript.showMore": { de: "Mehr anzeigen", en: "Show more" },
   "transcript.showLess": { de: "Weniger anzeigen", en: "Show less" },
-  "transcript.aborted": { de: "abgebrochen", en: "aborted" },
+  "transcript.interrupted": { de: "unterbrochen", en: "interrupted" },
   "transcript.thinking": { de: "Gedanken", en: "Thinking" },
   "transcript.todos": { de: "PLAN / TO-DOS", en: "PLAN / TO-DOS" },
   "transcript.plan": { de: "PLAN", en: "PLAN" },

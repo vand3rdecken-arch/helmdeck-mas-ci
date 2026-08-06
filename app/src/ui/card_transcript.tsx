@@ -187,7 +187,7 @@ function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen
         {!s.running && s.abandoned ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
             <Ionicons name="alert-circle-outline" size={11} color={t.warn} />
-            <Text style={{ color: t.warn, fontSize: 10, fontWeight: "600" }}>{tr("transcript.aborted")}</Text>
+            <Text style={{ color: t.warn, fontSize: 10, fontWeight: "600" }}>{tr("transcript.interrupted")}</Text>
             {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>· {tsLabel(s)}</Text> : null}
           </View>
         ) : null}
