@@ -62,3 +62,4 @@ tests/_shots/
 deploy/.native_fp
 deploy/last_apk_smoke.png
 daemon/daemon.pid
+desktop/_probe_setup.js
