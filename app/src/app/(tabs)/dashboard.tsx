@@ -1,11 +1,14 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { ActivityIndicator, Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { useRouter } from "expo-router";
+import { ActivityIndicator, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
 import { PMPanel } from "@/ui/pm_panel";
 
@@ -15,6 +18,7 @@ export default function DashboardTab() {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;
   const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 10000 });
@@ -61,6 +65,17 @@ export default function DashboardTab() {
           })()
         ) : null}
       </ScrollView>
+      {/* same agent chat as the board: floating button (desktop opens the in-page
+          panel over the dimmed dashboard, phone routes to /chat) + the overlay */}
+      <View style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84 }}>
+        <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat")}
+          style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+            alignItems: "center", justifyContent: "center",
+            ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
+        </Pressable>
+      </View>
+      <CopilotOverlay />
     </View>
   );
 }
