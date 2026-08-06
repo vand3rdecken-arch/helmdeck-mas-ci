@@ -1,5 +1,4 @@
 import { useConfig } from "./config";
-import { demoRespond, useDemo } from "./demo";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
 import { t } from "@/i18n/core";
@@ -60,20 +59,7 @@ async function relayReq(method: string, path: string, bodyStr: string): Promise<
   return { status: resp.status ?? 200, body: resp.body ?? "" };
 }
 
-// Demo mode short-circuits the wire entirely (see data/demo.ts): no daemon, no
-// relay, no network. It sits HERE rather than in the screens so that every
-// screen, query and mutation works unchanged — one seam, no per-screen forks.
-async function demoReq<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const out = demoRespond(method, path, body);
-  // The board long-poll would otherwise spin hot: pace it like a real wait.
-  const wait = path.startsWith("/stream/wait") ? 1200 : 120 + Math.random() * 180;
-  await new Promise((r) => setTimeout(r, wait));
-  useHealth.getState().reportOk();
-  return (out ?? {}) as T;
-}
-
 async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  if (useDemo.getState().active) return demoReq<T>(method, path, body);
   const cfg = useConfig.getState();
   const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
   let status: number, txt: string;
@@ -202,8 +188,12 @@ export const api = {
   // Long-poll PUSH: the daemon holds this until the transcript changes (or ~22s)
   // then returns {v, steps}. Works over the sealed relay AND direct — the phone
   // loops it, passing back the last v, for real streaming latency (no SSE).
-  transcriptLive: (id: string, v: string) =>
-    req<{ v: string; steps: Step[] }>("GET", `/tracks/${id}/transcript/live?v=${encodeURIComponent(v)}`),
+  // `have` = number of steps the client already holds -> the daemon returns only
+  // the tail from `base` (delta), so a live turn doesn't re-send the whole 100-227KB
+  // transcript over the relay on every tick. `base` absent -> treat as 0 (full).
+  transcriptLive: (id: string, v: string, have: number) =>
+    req<{ v: string; base?: number; total?: number; steps: Step[] }>(
+      "GET", `/tracks/${id}/transcript/live?v=${encodeURIComponent(v)}&have=${have}`),
   history: (id: string) => req<Step[]>("GET", `/tracks/${id}/history`),
   // attachments already on the card (daemon serves name+size; the file itself
   // comes from /tracks/<id>/attachment/<name>)
