@@ -502,13 +502,20 @@ export default function CardScreen() {
     if (!id) return;
     let alive = true;
     let v = "";
+    let have = 0;
     (async () => {
       while (alive) {
         try {
-          const r = await api.transcriptLive(id, v);
+          const r = await api.transcriptLive(id, v, have);
           if (!alive) break;
           if (r && Array.isArray(r.steps)) {
-            qc.setQueryData(["transcript", id], r.steps);
+            // DELTA merge: keep the settled prefix [0, base) and replace the tail
+            // with what the daemon sent (new steps + overlap). base===0 -> full.
+            const base = typeof r.base === "number" ? r.base : 0;
+            const prev = (qc.getQueryData<TStep[]>(["transcript", id]) ?? []);
+            const merged = base > 0 ? prev.slice(0, base).concat(r.steps) : r.steps;
+            qc.setQueryData(["transcript", id], merged);
+            have = merged.length;
             if (r.v !== v) qc.invalidateQueries({ queryKey: ["history", id] });   // notes too
           }
           v = r?.v ?? v;

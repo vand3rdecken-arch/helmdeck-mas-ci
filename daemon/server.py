@@ -639,14 +639,30 @@ class H(BaseHTTPRequestHandler):
                     return self._send(404, json.dumps({"error": "no such card"}))
                 if user["role"] == "client" and t.get("client") != user["name"]:
                     return self._send(403, json.dumps({"error": "not your card"}))
-                want = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+                q = parse_qs(urlparse(self.path).query)
+                want = (q.get("v") or [""])[0]
                 deadline = _t.time() + 22
                 cur = claude_sessions.transcript_version(t)
                 while str(cur) == want and _t.time() < deadline:
                     _t.sleep(0.35)
                     cur = claude_sessions.transcript_version(t)
+                # DELTA (perf): the client sends how many steps it already holds
+                # (`have`); return only the TAIL - new steps plus a small overlap so
+                # a late tool_result or the end-of-turn abandoned-relabel landing on a
+                # recent step is still picked up. The compute is cheap (~16ms for a
+                # full build); the cost was the RELAY payload - a full transcript is
+                # 100-227KB re-sent on every token/tool tick. The tail is a few KB.
+                # `have` absent/0 -> full transcript (old client + the loop's first
+                # call), so this is backward compatible.
+                steps = claude_sessions.read_transcript_live(t)
+                try:
+                    have = int((q.get("have") or ["0"])[0])
+                except ValueError:
+                    have = 0
+                total = len(steps)
+                base = max(0, min(have, total) - 12) if have > 0 else 0
                 return self._send(200, json.dumps(
-                    {"v": str(cur), "steps": claude_sessions.read_transcript_live(t)}))
+                    {"v": str(cur), "base": base, "total": total, "steps": steps[base:]}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "checkpoints":
                 import sessions
                 t = sessions.get_track(parts[1])
