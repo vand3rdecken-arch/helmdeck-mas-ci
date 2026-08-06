@@ -20,9 +20,11 @@ process.on("uncaughtException", (e) => {
   throw e;
 });
 
+const { startSetupServer } = require("./setup");
+
 const DAEMON_PORT = 8140;
 const WEB_PORT = 3300;
-let daemon = null, web = null, win = null, failed = false;
+let daemon = null, web = null, win = null, failed = false, setupSrv = null;
 
 // packaged: resources/{daemon,app-dist}; dev: repo ../{daemon,app/dist}
 const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
@@ -72,25 +74,27 @@ function fail(msg) {
   app.quit();
 }
 
-function startDaemon() {
-  const py = resolvePython();
+// `py` may be supplied by the setup flow (bundled/just-fetched runtime); without
+// it we fall back to whatever the machine has. A failure here is NO LONGER fatal:
+// first run is exactly the case where Python is missing, and the onboarding
+// screen is what fixes it — killing the app would leave the user nowhere.
+function startDaemon(pyOverride) {
+  const py = pyOverride || resolvePython();
   // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
   daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
     { cwd: daemonDir, env: { ...process.env }, windowsHide: true, shell: process.platform === "win32" });
   daemon.stdout.on("data", (d) => log("daemon", d));
   daemon.stderr.on("data", (d) => log("daemon", d));
-  daemon.on("error", (e) =>
-    fail("Could not start the Python daemon. Install Python 3.12 and make sure "
-      + "the `claude` CLI is available.\n\n" + e.message));
+  daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));
 }
 
 // Mint a device token from the local daemon so the served Expo web UI can talk
 // to it with the same Bearer-token auth the phone uses (no daemon auth weakening,
 // no cookie coupling). Best-effort: the UI still loads if this fails (shows the
 // connect screen). Owner-scoped, same-machine only.
-function mintDesktopToken() {
+function mintDesktopToken(pyOverride) {
   const { spawnSync } = require("child_process");
-  const py = resolvePython();
+  const py = pyOverride || resolvePython();
   try {
     // a helper script (not `-c`) so Windows shell quoting can't mangle it
     const r = spawnSync(py.cmd, [...py.args, "mint_token.py", "owner", "desktop"],
@@ -140,7 +144,12 @@ function createWindow() {
   });
   // hand the Expo web app the daemon URL + a device token via the URL hash, so
   // it connects with Bearer auth exactly like the phone (config.ts reads #cfg).
-  const cfg = Buffer.from(JSON.stringify({ baseUrl: "http://localhost:" + DAEMON_PORT, token: desktopToken })).toString("base64");
+  // `setup` hands the SPA the loopback control endpoint + its per-launch nonce,
+  // so the onboarding screen can provision the machine while the daemon is down.
+  const cfg = Buffer.from(JSON.stringify({
+    baseUrl: "http://localhost:" + DAEMON_PORT, token: desktopToken,
+    setup: setupSrv ? { port: setupSrv.port, nonce: setupSrv.nonce } : undefined,
+  })).toString("base64");
   win.loadURL("http://localhost:" + WEB_PORT + "/#cfg=" + encodeURIComponent(cfg));
   // open external links in the real browser, not a new Electron window
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
@@ -154,7 +163,10 @@ function killTree(proc) {
     else proc.kill("SIGTERM");
   } catch { /* ignore */ }
 }
-function cleanup() { killTree(daemon); killTree(web); daemon = web = null; }
+function cleanup() {
+  killTree(daemon); killTree(web); daemon = web = null;
+  if (setupSrv) { setupSrv.close(); setupSrv = null; }
+}
 
 // Single-instance lock: the daemon is the phone's ONLY way in (it holds the
 // relay bridge). A second launch would spawn a SECOND daemon on the same room,
@@ -178,6 +190,13 @@ if (!app.requestSingleInstanceLock()) {
         app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: [] });
       } catch { /* non-fatal: startup registration is a convenience, not required */ }
     }
+    // The onboarding control plane comes up FIRST and always: it is what the
+    // screen talks to when Python/Claude/the daemon are not there yet.
+    setupSrv = startSetupServer({
+      resourcesDir: root, daemonDir, daemonPort: DAEMON_PORT,
+      startDaemon: (py) => startDaemon(py),
+      mintToken: (py) => { mintDesktopToken(py); return desktopToken; },
+    });
     startDaemon();
     mintDesktopToken();   // issue a device token for the served web UI
     startWeb();
