@@ -1226,7 +1226,49 @@ def _tls_config():
     return (cert, key, tls_port) if (cert and key) else (None, None, tls_port)
 
 
+def _take_singleton_lock(port):
+    """One daemon per machine. A restart used to race the old instance: the new
+    process couldn't bind the port until the old one died, and in that gap the
+    RELAY reverse-tunnel poll dropped - the phone showed "paired but takes very
+    long" until a poll re-established. So on start we cleanly evict a prior
+    daemon (pidfile + tree-kill) and wait for the port to actually free before
+    binding, making restart deterministic instead of a bind race."""
+    import socket, subprocess, time, signal
+    pidfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.pid")
+    try:
+        old = int(open(pidfile).read().strip())
+    except Exception:
+        old = None
+    if old and old != os.getpid():
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(old)],
+                               capture_output=True)
+            else:
+                os.kill(old, signal.SIGTERM)
+            print("SINGLETON: evicted prior daemon pid %d - taking over relay/port %d." % (old, port))
+        except Exception:
+            pass   # already gone
+    # wait for the port to free (old listener socket releasing), up to ~5s
+    for _ in range(50):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", port))
+            s.close()
+            break
+        except OSError:
+            s.close()
+            time.sleep(0.1)
+    try:
+        open(pidfile, "w").write(str(os.getpid()))
+        import atexit
+        atexit.register(lambda: os.path.exists(pidfile) and os.remove(pidfile))
+    except Exception:
+        pass
+
+
 def serve(port=8140):
+    _take_singleton_lock(port)   # evict a prior daemon so the relay poll never races a restart
     import db
     db.init()
     import drivers, atexit

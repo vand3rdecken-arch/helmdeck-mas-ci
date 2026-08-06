@@ -61,3 +61,4 @@ tests/_shots/
 # the emulator smoke screenshot - machine-local, regenerated each ship
 deploy/.native_fp
 deploy/last_apk_smoke.png
+daemon/daemon.pid
