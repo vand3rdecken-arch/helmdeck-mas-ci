@@ -44,6 +44,13 @@ if [ "$NO_BUILD" != "1" ]; then
 fi
 [ -f app/dist-ota/metadata.json ] || { echo "no app/dist-ota/metadata.json - run without --no-build"; exit 1; }
 
+# Record the runtimeVersion this bundle was exported for (policy=appVersion, so it
+# is expo.version). The relay reads this marker to VALIDATE the client's
+# expo-runtime-version instead of echoing it back - without it the crash-loop
+# protection never fires (see relay.py _bundle_rtv). Packed with the export.
+RTV="$(py -3.12 -c "import json;print(json.load(open('app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)"
+[ -n "$RTV" ] && { printf '%s' "$RTV" > app/dist-ota/runtimeVersion; echo "==> bundle runtimeVersion marker: $RTV"; }
+
 echo "==> pack + upload the export"
 tar -C app/dist-ota -czf /tmp/hd-update.tgz . || exit 1
 scp "${SSH_OPTS[@]}" /tmp/hd-update.tgz "$TARGET:/tmp/hd-update.tgz" || exit 1

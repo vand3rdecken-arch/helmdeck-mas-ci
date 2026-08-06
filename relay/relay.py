@@ -43,7 +43,12 @@ ASSETLINKS = [{
         "namespace": "android_app",
         "package_name": "app.helmdeck",
         "sha256_cert_fingerprints": [
-            "75:21:BA:FA:C1:AD:10:08:27:DA:BA:BA:1D:53:75:6A:07:72:B3:95:20:0A:E5:47:D6:6E:63:3C:4F:79:0D:F4"
+            # local upload/sideload key (archive/apk/swarmdeck-release.jks)
+            "75:21:BA:FA:C1:AD:10:08:27:DA:BA:BA:1D:53:75:6A:07:72:B3:95:20:0A:E5:47:D6:6E:63:3C:4F:79:0D:F4",
+            # Play App Signing key - Play RE-SIGNS the bundle, so a store install
+            # presents THIS fingerprint. Without it App Links stay unverified on
+            # store installs and pair links open the browser instead of the app.
+            "72:45:C4:C4:C6:0D:3A:8E:3D:F0:C1:B2:F2:F3:48:78:49:98:3F:E2:2F:07:CE:9A:06:3E:5A:09:AE:79:2D:E2",
         ],
     },
 }]
@@ -268,6 +273,18 @@ def _rollback_directive(base_dir):
         ct = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(os.path.getmtime(p)))
     return {"type": "rollBackToEmbedded", "parameters": {"commitTime": ct}}
 
+def _bundle_rtv(base_dir):
+    """The runtimeVersion the bundle in base_dir was actually EXPORTED for (written
+    by deploy/push_update.sh as a `runtimeVersion` file). None for a legacy bundle
+    that predates the marker - the caller then falls back to the old echo behaviour
+    so an already-published bundle keeps serving after this relay is deployed."""
+    try:
+        with open(os.path.join(base_dir or UPDATES_DIR, "runtimeVersion"), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
 def _build_manifest(platform, base_url, runtime_version, base_dir=None, channel=""):
     base_dir = base_dir or UPDATES_DIR
     meta_path = os.path.join(base_dir, "metadata.json")
@@ -389,7 +406,18 @@ class H(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
             host = self.headers.get("host") or ""
-            man = _build_manifest(platform, "https://" + host, rtv, base_dir, channel)
+            # VALIDATE the runtimeVersion instead of echoing it. The bundle carries
+            # the rtv it was exported for; if the client's native APK is on a
+            # different rtv, serving this JS would crash it on a native module the
+            # APK doesn't ship (the exact case runtimeVersion exists to prevent).
+            # The old code passed the CLIENT's rtv into the manifest, so the client's
+            # check (embedded rtv == manifest rtv) ALWAYS passed - the protection
+            # never fired. Report "no update" on a real mismatch; use the bundle's
+            # true rtv in the manifest. No marker (legacy bundle) -> serve as before.
+            real = _bundle_rtv(base_dir)
+            if real and real != rtv:
+                return self._send(404, json.dumps({"error": "no update for this runtimeVersion"}))
+            man = _build_manifest(platform, "https://" + host, real or rtv, base_dir, channel)
             if not man:
                 return self._send(404, json.dumps({"error": "no update available"}))
             body = json.dumps(man).encode("utf-8")
