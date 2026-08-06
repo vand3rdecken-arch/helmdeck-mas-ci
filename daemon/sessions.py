@@ -559,7 +559,12 @@ def _gate(t):
                                text=True, timeout=600, env=genv)
             if r.returncode != 0:
                 out = (r.stdout + "\n" + r.stderr).strip()
-                problems.append("gate command failed (%s):\n%s" % (cmd[:80], out[-600:]))
+                # Lead with the ACTUAL error, not the command - the command alone
+                # (truncated on mobile) is the "ominous, unresolvable" message. An
+                # empty output means the command couldn't even start (missing
+                # interpreter/tool); say so with the exit code instead of nothing.
+                detail = out[-1200:] if out else "(no output - command could not run; exit %d)" % r.returncode
+                problems.append("gate FAILED:\n%s\n\n(gate command: %s)" % (detail, cmd[:120]))
     return (not problems), problems
 
 def _merge_to_main(t):
@@ -1304,7 +1309,7 @@ def cancel_turn(tid, actor="owner"):
         resumable = _promote_live_session(t)
         note = RESUME_NOTE if resumable else ZOMBIE_NOTE
         t["status"] = "bounced"
-        t["gate_report"] = [note]
+        t["gate_report"] = _interrupt_note_report(t, note)
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _save_track(t)
         try:
@@ -1319,6 +1324,18 @@ def cancel_turn(tid, actor="owner"):
 
 ZOMBIE_NOTE = "daemon restarted mid-turn - resend the last instruction"
 RESUME_NOTE = "Turn unterbrochen - erneut steuern setzt den Kontext fort"
+
+
+def _interrupt_note_report(t, note):
+    """gate_report is the channel the worker is fed on the next steer
+    (_pending_context). An interrupt (zombie sweep / Stop on a dead session) must
+    NOT clobber a REAL gate/merge failure that was already there - overwriting it
+    with 'daemon restarted mid-turn' leaves the worker blind, chasing a phantom
+    cause across 2-3 dead-end steers. Prepend the interrupt note but PRESERVE any
+    substantive prior failure lines (dropping only stacked interrupt notes)."""
+    prior = [l for l in (t.get("gate_report") or [])
+             if RESUME_NOTE not in l and ZOMBIE_NOTE not in l]
+    return [note] + prior
 
 
 def _promote_live_session(t):
@@ -1367,7 +1384,7 @@ def sweep_zombies():
             continue
         note = RESUME_NOTE if _promote_live_session(t) else ZOMBIE_NOTE
         t["status"] = "bounced"
-        t["gate_report"] = [note]
+        t["gate_report"] = _interrupt_note_report(t, note)
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _save_track(t)
         try:
