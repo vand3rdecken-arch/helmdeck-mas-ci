@@ -1,0 +1,10 @@
+# Smoke-Artefakte, die nicht ins Repo gehören: exportierte JS-Bundles (je ~11 MB,
+# jederzeit aus der Quelle reproduzierbar) und Build-/Tunnel-Logs.
+# Die Skripte, EVIDENCE.md und shots/ (der eigentliche Beleg) bleiben versioniert.
+updates/
+updates.*/
+apk/
+*.log
+*.err
+# heruntergeladene Tunnel-Binary - gehört nicht ins Repo
+cloudflared.exe

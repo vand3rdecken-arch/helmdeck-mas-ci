@@ -66,6 +66,25 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$PATH"
 # -> app/build/outputs/apk/release/app-release.apk  (~140MB, signed w/ archive/apk/swarmdeck-release.jks)
 ```
 
+⚠ **Building from a worktree: `ninja: manifest 'build.ninja' still dirty after
+100 tries`.** react-native-screens / -worklets / expo-modules-core die in the
+CMake step, right after CMake warns "object file path cannot be safely placed
+under this directory". Cause is path length: `helmdeck-worktrees/<branch>/app/
+node_modules/...` is ~40 chars deeper than the main repo, so NDK object paths
+blow past the Windows limit. **`subst`-ing a drive letter does NOT help** —
+gradle/CMake canonicalise it straight back to the long path. What works: build
+from a real short path, e.g. mirror `app/` to `C:\hd\app` and run gradle there.
+When mirroring with robocopy, exclude `dist`/`build` **fully qualified** —
+bare `-XD dist build` drops those dirs out of every npm package too and breaks
+autolinking (`Cannot find module '@jridgewell/gen-mapping/dist/…'`).
+
+Other Git-Bash traps when driving the emulator: `adb shell … /sdcard/x` gets
+rewritten to `/Files/Git/sdcard/x` — prefix `MSYS_NO_PATHCONV=1`. And the
+emulator is shared: `deploy/build_apk.sh` does `adb uninstall` + `adb install`
+as its smoke, so a concurrent build can silently replace the APK you are
+testing — check `dumpsys package app.helmdeck | grep version` before trusting a
+measurement.
+
 Native config note: `app/android/` is **git-ignored / hand-managed**. A native
 permission (e.g. CAMERA) must go in BOTH `app/app.json` `plugins` (so a future
 `expo prebuild` reproduces it) AND the hand-managed
