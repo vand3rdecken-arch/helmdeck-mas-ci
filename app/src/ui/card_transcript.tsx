@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -149,6 +149,25 @@ const TOOL_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 const toolIcon = (n: string): keyof typeof Ionicons.glyphMap =>
   TOOL_ICON[n] || (n.startsWith("mcp__") ? "globe-outline" : "settings-outline");
 
+// Live elapsed for a RUNNING tool, so you can tell a slow step from a HUNG one
+// (the recurring "läuft ewig / nichts passiert" question). Ticks every 5s and
+// escalates colour: grey < 1min, amber < 5min, red after - a stuck bash/edit
+// visibly turns amber then red instead of just showing a frozen "…".
+function RunningClock({ ta, t }: { ta?: number; t: ThemeTokens }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const iv = setInterval(() => tick((x) => x + 1), 5000); return () => clearInterval(iv); }, []);
+  if (!ta) return <Text style={{ color: t.warn, fontSize: 10.5 }}>…</Text>;
+  const secs = Math.max(0, Math.floor(Date.now() / 1000 - ta));
+  const label = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m`;
+  const color = secs > 300 ? t.danger : secs > 60 ? t.warn : t.txtTertiary;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+      <Ionicons name="time-outline" size={11} color={color} />
+      <Text style={{ color, fontSize: 10.5, fontWeight: "700" }}>{label}</Text>
+    </View>
+  );
+}
+
 function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen?: boolean }) {
   // Auto-open the running tool and the latest tool so output is visible without
   // a tap (Paseo-style: the tail of the run is expanded, history stays folded).
@@ -163,7 +182,9 @@ function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen
         <Ionicons name={toolIcon(s.tool || "")} size={13} color={err ? t.danger : t.ai} />
         <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>{s.tool}</Text>
         <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>{s.text}</Text>
-        {s.running ? <Text style={{ color: t.warn, fontSize: 10.5 }}>…</Text> : null}
+        {s.running
+          ? <RunningClock ta={s.ta} t={t} />
+          : (s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null)}
         {expandable ? <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={12} color={t.txtTertiary} /> : null}
       </Pressable>
       {open ? (
