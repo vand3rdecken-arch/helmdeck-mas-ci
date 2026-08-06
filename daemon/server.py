@@ -1226,6 +1226,32 @@ def _tls_config():
     return (cert, key, tls_port) if (cert and key) else (None, None, tls_port)
 
 
+def _hydrate_windows_path():
+    """A daemon launched from Git-bash inherits a MinGW-only PATH that LACKS the
+    standard Windows dirs, so `py`, `cmd`, `powershell` and friends are not found.
+    The merge gate (`py ... run_gate.py`, run via cmd.exe) then fails with "'py' is
+    not recognized" even though the gate itself passes - the card looks like it has
+    a code bug when the daemon simply can't invoke the gate. Ensure the core Windows
+    dirs + this interpreter's dir are on PATH so anything the daemon (or a driver it
+    spawns, which inherits os.environ) shells out to resolves, regardless of how the
+    daemon was launched. Append (don't prepend) so a driver's own toolchain still
+    wins. Paseo adoption Phase 4.4. No-op off Windows / when already present."""
+    if os.name != "nt":
+        return
+    import sys
+    root = os.environ.get("SystemRoot") or r"C:\Windows"
+    want = [os.path.join(root, "System32"), root,
+            os.path.join(root, "System32", "WindowsPowerShell", "v1.0"),
+            os.path.dirname(sys.executable)]
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    have = {p.lower() for p in parts if p}
+    add = [d for d in want if d and d.lower() not in have and os.path.isdir(d)]
+    if add:
+        os.environ["PATH"] = os.pathsep.join(parts + add)
+        print("PATH: hydrated with Windows dirs (%s) - gate/tools now resolve" %
+              ", ".join(os.path.basename(d) or d for d in add), flush=True)
+
+
 def _take_singleton_lock(port):
     """One daemon per machine. A restart used to race the old instance: the new
     process couldn't bind the port until the old one died, and in that gap the
@@ -1268,6 +1294,7 @@ def _take_singleton_lock(port):
 
 
 def serve(port=8140):
+    _hydrate_windows_path()      # bash-launched daemons lack Windows dirs on PATH -> gate/py/cmd fail
     _take_singleton_lock(port)   # evict a prior daemon so the relay poll never races a restart
     import db
     db.init()
