@@ -2,14 +2,14 @@ import "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import type { ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { queryClient } from "@/data/query";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
@@ -135,10 +135,26 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
+// Resume-refetch: react-query has no window on native, so wire its focusManager to
+// AppState - the app becoming "active" (returning from the background) marks queries
+// stale-focused and, with refetchOnWindowFocus on, refetches them at once. Without
+// this the board sat on a spinner until the slow relay poll interval ("paired but
+// takes very long"). Also nudges the live-stream loop to reconnect promptly.
+function useResumeRefetch() {
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      focusManager.setFocused(s === "active");
+      if (s === "active") queryClient.invalidateQueries();
+    });
+    return () => sub.remove();
+  }, []);
+}
+
 export default function RootLayout() {
   usePushWiring();
   usePaletteHotkeys();
   useGlobalStream();
+  useResumeRefetch();
   useSilentOta();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
