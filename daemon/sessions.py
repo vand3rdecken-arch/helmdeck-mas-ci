@@ -1297,24 +1297,52 @@ def cancel_turn(tid, actor="owner"):
             from actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "turn CANCELLED by %s" % actor)
         return {"cancelled": True}
-    # no live session - clear a stuck/zombie card so Stop is never a no-op
+    # no live session - clear a stuck/zombie card so Stop is never a no-op, and
+    # promote the interrupted session so re-steering RESUMES it losslessly.
     t = get_track(tid)
     if t and t.get("status") == "running" and not drivers.has_session(tid):
+        resumable = _promote_live_session(t)
+        note = RESUME_NOTE if resumable else ZOMBIE_NOTE
         t["status"] = "bounced"
-        t["gate_report"] = [ZOMBIE_NOTE]
+        t["gate_report"] = [note]
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _save_track(t)
         try:
             from actionlog import ActionLog
-            ActionLog(t["run_dir"]).log("note", "STOP on a dead session - " + ZOMBIE_NOTE)
+            ActionLog(t["run_dir"]).log("note", "STOP on a dead session - " + note)
         except Exception:
             pass
         events.emit("bounce", tid, reason="stopped_zombie", actor=actor)
-        return {"cancelled": True, "unfroze": True}
+        return {"cancelled": True, "unfroze": True, "resumable": resumable}
     return {"cancelled": killed}
 
 
 ZOMBIE_NOTE = "daemon restarted mid-turn - resend the last instruction"
+RESUME_NOTE = "Turn unterbrochen - erneut steuern setzt den Kontext fort"
+
+
+def _promote_live_session(t):
+    """Paseo-style LOSSLESS resume. A turn that died WITH the daemon (a restart, a
+    crash) emitted a rotated `claude --resume` session id to run_dir/
+    live_session.txt, but the track's session_id is only written back AFTER a turn
+    returns - so a killed turn leaves the card pointing at the PRE-steer session.
+    The next steer would then --resume the old conversation and lose the
+    interrupted turn's context. Promoting the live session id fixes that: the next
+    steer resumes the actual interrupted conversation. This is why Paseo can idle
+    a session and silently continue it; we now keep the same context, just surfaced
+    (the owner re-steers to continue). Returns True if a newer session was promoted."""
+    rd = t.get("run_dir") or ""
+    if not rd:
+        return False
+    try:
+        with open(os.path.join(rd, "live_session.txt"), encoding="utf-8") as f:
+            live = f.read().strip()
+    except OSError:
+        return False
+    if live and live != t.get("session_id"):
+        t["session_id"] = live
+        return True
+    return False
 
 def sweep_zombies():
     """Startup pass: a daemon that dies mid-turn leaves cards flagged
@@ -1324,23 +1352,26 @@ def sweep_zombies():
     both UIs already render), audit it, and push - so the owner learns the
     instruction was lost instead of staring at a frozen card.
 
-    (Paseo silently idles a resumed agent, but we can't: session_id is written
-    AFTER the steer completes, so a killed turn leaves the card pointing at the
-    pre-steer session — a silent resume would execute a lost instruction or
-    redrive an already-committed turn. Surfacing the loss is safer for async
-    push-notification-driven ownership.)"""
+    Paseo-parity (the loss is now RECOVERABLE): before surfacing, promote the
+    interrupted session id (run_dir/live_session.txt) onto the track, so
+    re-steering RESUMES the interrupted conversation instead of the pre-steer
+    one. We still surface it (bounce is re-steerable, and async push-driven
+    ownership wants the owner to know a turn was cut) - but the context is no
+    longer thrown away, which is what made Paseo's silent idle-resume feel
+    seamless. Cards with a promotable session get the resume note."""
     import drivers, events, notify
     from actionlog import ActionLog
     swept = []
     for t in _load():
         if t.get("status") != "running" or drivers.has_session(t["id"]):
             continue
+        note = RESUME_NOTE if _promote_live_session(t) else ZOMBIE_NOTE
         t["status"] = "bounced"
-        t["gate_report"] = [ZOMBIE_NOTE]
+        t["gate_report"] = [note]
         t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _save_track(t)
         try:
-            ActionLog(t["run_dir"]).log("note", "ZOMBIE SWEEP - " + ZOMBIE_NOTE)
+            ActionLog(t["run_dir"]).log("note", "ZOMBIE SWEEP - " + note)
         except Exception:
             pass
         events.emit("bounce", t["id"], reason="daemon_restart", actor="daemon")
