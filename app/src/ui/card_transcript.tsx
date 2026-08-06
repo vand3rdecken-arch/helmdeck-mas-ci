@@ -19,7 +19,7 @@ export interface TStep {
   role?: string;
   kind?: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system" | "note" | string;
   cls?: string;
-  text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; ts?: string;
+  text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; abandoned?: boolean; ts?: string;
   ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
   agent?: boolean;   // a board-Agent (copilot) message, not a Worker one
   streaming?: boolean; detail?: ToolDetail;
@@ -169,6 +169,7 @@ function RunningClock({ ta, t }: { ta?: number; t: ThemeTokens }) {
 }
 
 function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen?: boolean }) {
+  const tr = useT();
   // Auto-open the running tool and the latest tool so output is visible without
   // a tap (Paseo-style: the tail of the run is expanded, history stays folded).
   const [open, setOpen] = useState(!!defaultOpen || !!s.running);
@@ -182,9 +183,15 @@ function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen
         <Ionicons name={toolIcon(s.tool || "")} size={13} color={err ? t.danger : t.ai} />
         <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>{s.tool}</Text>
         <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>{s.text}</Text>
-        {s.running
-          ? <RunningClock ta={s.ta} t={t} />
-          : (s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null)}
+        {s.running ? <RunningClock ta={s.ta} t={t} /> : null}
+        {!s.running && s.abandoned ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Ionicons name="alert-circle-outline" size={11} color={t.warn} />
+            <Text style={{ color: t.warn, fontSize: 10, fontWeight: "600" }}>{tr("transcript.aborted")}</Text>
+            {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>· {tsLabel(s)}</Text> : null}
+          </View>
+        ) : null}
+        {!s.running && !s.abandoned && s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
         {expandable ? <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={12} color={t.txtTertiary} /> : null}
       </Pressable>
       {open ? (
