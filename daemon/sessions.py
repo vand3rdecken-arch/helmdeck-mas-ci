@@ -4,7 +4,8 @@ worktree, bound to a RESUMABLE coding session (Claude Code --resume <session_id>
 a track and continue its context; history is never rebuilt. Each steer is recorded into the
 flight recorder (actionlog) so what the session did stays reviewable.
 
-Store: tracks.json (one list). Worktrees: <repo>/../helmdeck-worktrees/<branch>.
+Store: tracks.json (one list). Worktrees: <repo>/../helmdeck-worktrees/<repo-hash>/<branch>
+(the 8-char repo hash proves OWNERSHIP by path shape - see _owned_worktree).
 Permission mode is per-track and defaults to acceptEdits - the worktree is the blast-radius
 control. Escalate a track to bypassPermissions only deliberately (owner decision)."""
 import json, os, re, shutil, subprocess, time
@@ -140,10 +141,148 @@ def is_git_repo(path):
                        capture_output=True, text=True)
     return r.returncode == 0
 
+WORKTREE_DIRNAME = "helmdeck-worktrees"
+
+
+def _repo_hash(repo):
+    """8-char base36 fingerprint of the repo IDENTITY (Paseo
+    deriveWorktreeProjectHash): sha256 over the realpath of the repo ROOT,
+    resolved via `git rev-parse --git-common-dir` so a worktree of the repo
+    hashes the same as the repo itself. First 8 digest bytes -> base36 -> 8
+    chars. Falls back to hashing the given path when git is unreachable -
+    the hash must be computable even over a broken checkout."""
+    import hashlib
+    try:
+        rc, out, _ = _git_try(repo, "rev-parse", "--git-common-dir")
+        if rc != 0 or not out:
+            raise RuntimeError(out)
+        common = os.path.realpath(out if os.path.isabs(out)
+                                  else os.path.join(repo, out))
+        root = os.path.dirname(common) if os.path.basename(common) == ".git" else common
+    except Exception:
+        root = os.path.realpath(repo)
+    n = int.from_bytes(hashlib.sha256(root.encode("utf-8")).digest()[:8], "big")
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    s = ""
+    while n:
+        n, r = divmod(n, 36)
+        s = digits[r] + s
+    return s.zfill(13)[:8]
+
+
 def _worktree_for(repo, branch):
-    base = os.path.abspath(os.path.join(repo, "..", "helmdeck-worktrees"))
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, _slug(branch))
+    base = os.path.abspath(os.path.join(repo, "..", WORKTREE_DIRNAME))
+    wt = os.path.join(base, _repo_hash(repo), _slug(branch))
+    os.makedirs(os.path.dirname(wt), exist_ok=True)
+    return wt
+
+
+def _owned_worktree(path):
+    """Ownership by PATH SHAPE alone (Paseo isPaseoOwnedWorktreeCwd): may this
+    directory be rm'd even when git has forgotten it? Owned iff it sits at
+    <...>/helmdeck-worktrees/<8-char-base36-hash>/<name> - that prefix is
+    HelmDeck-private, nothing else writes there, so the shape is sufficient
+    proof even with git broken. Pre-hash FLAT trees (<...>/helmdeck-worktrees/
+    <name>) are NOT owned: only git may manage those (they could be anything)."""
+    p = os.path.realpath(path)
+    parent = os.path.dirname(p)                    # the <hash> dir
+    grand = os.path.dirname(parent)                # the helmdeck-worktrees dir
+    return bool(os.path.basename(p)) \
+        and os.path.basename(grand) == WORKTREE_DIRNAME \
+        and re.fullmatch(r"[0-9a-z]{8}", os.path.basename(parent)) is not None
+
+
+def _git_state_broken(wt):
+    """True when a worktree's link to its repo is severed (the class 4.1
+    reclaims): .git missing, unreadable, or pointing at an admin dir that no
+    longer exists (half-removed tree, pruned admin dir, moved repo). A .git
+    DIRECTORY means a full repo - never 'broken', never ours to judge."""
+    gitfile = os.path.join(wt, ".git")
+    if os.path.isdir(gitfile):
+        return False
+    if not os.path.exists(gitfile):
+        return True
+    try:
+        with open(gitfile, encoding="utf-8", errors="replace") as f:
+            m = re.search(r"gitdir:\s*(.+)", f.read())
+    except OSError:
+        return True
+    if not m:
+        return True
+    gd = m.group(1).strip()
+    if not os.path.isabs(gd):
+        gd = os.path.join(wt, gd)
+    return not os.path.isdir(gd)
+
+
+# -- per-card dev port (Paseo PASEO_WORKTREE_PORT) ----------------------------
+# Parallel cards each start "the" dev server on the project's default port and
+# fight over it - the second card's server dies or, worse, tests silently hit
+# the FIRST card's build. Paseo reserves a port per worktree and persists it in
+# the worktree metadata; HelmDeck persists it on the track (tracks.json IS the
+# card's durable metadata - a worktree can be reclaimed and regenerated, the
+# card cannot). Allocated once at dispatch, sticky for the card's life, handed
+# to the agent as HELMDECK_DEV_PORT (drivers._env).
+
+DEV_PORT_RANGE = (3401, 3999)   # settings.json "dev_port_range": [lo, hi] overrides
+
+
+def _alloc_dev_port(exclude_tid=None):
+    """A free port no OTHER card has claimed (Paseo's range allocator: random
+    start, scan the whole range wrapping around, skip reserved, bind-check
+    each candidate). Returns None when the range is exhausted - the card still
+    runs, it just gets no reserved port."""
+    import socket, random, events
+    rng = events.settings().get("dev_port_range") or DEV_PORT_RANGE
+    try:
+        lo, hi = int(rng[0]), int(rng[1])
+    except Exception:
+        lo, hi = DEV_PORT_RANGE
+    if lo > hi:
+        lo, hi = hi, lo
+    taken = {t.get("dev_port") for t in _load()
+             if t.get("dev_port") and t.get("id") != exclude_tid}
+    span = hi - lo + 1
+    start = random.randrange(span)
+    for i in range(span):
+        port = lo + (start + i) % span
+        if port in taken:
+            continue
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            continue
+        finally:
+            s.close()
+        return port
+    return None
+
+
+def _base_ref(repo):
+    """The commit a NEW card branch starts from (Paseo
+    resolveBaseBranchForWorktree + normalizeRequiredBaseBranch). Explicit
+    instead of implicit: `worktree add -b` with no start point bases the card
+    on whatever HEAD happens to be - mid-rebase or detached, that is the wrong
+    code. So: name the base branch (rebase-guarded _current_branch), REJECT
+    detached/unborn, and prefer origin/<base> only when it is ahead-or-equal
+    of the local base. (Paseo always prefers origin because the remote is its
+    source of truth; HelmDeck merges cards into the LOCAL checkout, so a stale
+    origin must never win over local commits.) The caller passes --no-track so
+    the card branch never claims that base as upstream."""
+    base = _current_branch(repo)
+    if not base or base == "HEAD":
+        raise RuntimeError("cannot create the card branch: the repo checkout is "
+                           "detached (no base branch) - checkout the base branch first")
+    if _git_try(repo, "rev-parse", "--verify", "-q", base)[0] != 0:
+        raise RuntimeError("cannot create the card branch: base branch '%s' has "
+                           "no commits yet - make an initial commit first" % base)
+    origin = "origin/" + base
+    if (_git_try(repo, "rev-parse", "--verify", "-q", origin)[0] == 0
+            and _git_try(repo, "merge-base", "--is-ancestor", base, origin)[0] == 0):
+        return origin
+    return base
+
 
 def _worktree_of_branch(repo, branch):
     """Path of an EXISTING worktree that already has `branch` checked out, or
@@ -217,6 +356,14 @@ def _turn(t, prompt, model=None, perm=None):
     `perm` overrides (from the chat composer's model + mode controls) win over
     the driver's configured values."""
     import drivers, events
+    # Pre-P4 cards were dispatched without a reserved dev port - claim one on
+    # their next turn so HELMDECK_DEV_PORT is always there (sticky afterwards).
+    if not t.get("machine") and t.get("worktree") and not t.get("dev_port"):
+        port = _alloc_dev_port(exclude_tid=t["id"])
+        if port:
+            def _claim(tt):
+                tt.setdefault("dev_port", port)
+            t = _mutate(t["id"], _claim) or t
     name = t.get("driver") or "claude"
     cfg = events.settings().get("drivers", {}).get(name) or {"type": "claude"}
     model = model or t.get("model")      # card's chosen model (from New Request) unless overridden
@@ -540,6 +687,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     cli_model, _ = turnopts.resolve_model(model, task, bool(att_paths),
         signals={"value": value, "priority": priority})
     t = {"id": tid, "repo": repo, "branch": branch, "worktree": "", "task": task,
+         "dev_port": None,     # reserved at dispatch (_alloc_dev_port), sticky
          # task = the one-line title (Jira summary); description = the long body
          # (Jira/Plane description). Both editable; the agent reads title+desc+files.
          "description": description or "",
@@ -612,7 +760,10 @@ def _start_inner(t):
         if _branch_exists(t["repo"], t["branch"]):
             _git(t["repo"], "worktree", "add", wt, t["branch"])
         else:
-            _git(t["repo"], "worktree", "add", wt, "-b", t["branch"])
+            # Explicit base + --no-track (Paseo): never branch off whatever HEAD
+            # happens to be, and never let the card branch claim an upstream.
+            _git(t["repo"], "worktree", "add", wt,
+                 "-b", t["branch"], "--no-track", _base_ref(t["repo"]))
         _seed_worktree(t["repo"], wt)
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
@@ -622,8 +773,12 @@ def _start_inner(t):
     import events
     events.emit("lane", tid, frm=t.get("lane"), to="working")
 
+    port = t.get("dev_port") or _alloc_dev_port(exclude_tid=tid)
+
     def _begin(tt):
         tt["worktree"] = wt; tt["lane"] = "working"; tt["status"] = "running"
+        if port:
+            tt["dev_port"] = port
     t = _mutate(tid, _begin) or t
     prompt = t["task"]
     if t.get("description"):              # the long-form body (Jira-style)
@@ -921,8 +1076,35 @@ def _git_try(repo, *args):
 
 
 def _current_branch(repo):
+    """Name of the checked-out branch, with Paseo's rebase-HEAD guard
+    (checkout-git.ts getRebaseHeadBranch): during a rebase `rev-parse
+    --abbrev-ref HEAD` says just 'HEAD' (the rebase detaches), which callers
+    would misread as 'no base branch' and bounce dispatch/reclaim mid-rebase.
+    Recover the branch actually being rebased from rebase-merge/head-name or
+    rebase-apply/head-name. Genuinely detached -> 'HEAD' (callers already
+    treat that as blocked)."""
     rc, out, _ = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")
-    return out if rc == 0 else ""
+    if rc != 0:
+        # UNBORN branch (fresh repo, no commit): rev-parse has no commit to
+        # abbreviate, but symbolic-ref still names the branch - _base_ref then
+        # reports 'no commits yet' instead of a misleading 'detached'.
+        rc2, name, _ = _git_try(repo, "symbolic-ref", "--short", "HEAD")
+        return name if rc2 == 0 else ""
+    if out != "HEAD":
+        return out
+    for rel in ("rebase-merge/head-name", "rebase-apply/head-name"):
+        rc2, p, _ = _git_try(repo, "rev-parse", "--git-path", rel)
+        if rc2 != 0 or not p:
+            continue
+        fp = p if os.path.isabs(p) else os.path.join(repo, p)
+        try:
+            with open(fp, encoding="utf-8") as f:
+                name = f.read().strip()
+        except OSError:
+            continue
+        if name:
+            return name[len("refs/heads/"):] if name.startswith("refs/heads/") else name
+    return out
 
 
 # -- WORKTREE RECLAMATION (the second half of the isolation law) --------------
@@ -952,6 +1134,12 @@ def reclaim_worktree(t, log=None, force=False):
                 log.log("note", "WORKTREE behalten - uncommittete Aenderungen in %s" % wt)
             return False
     _git_try(repo, "worktree", "remove", "--force", wt)
+    if os.path.isdir(wt) and _owned_worktree(wt):
+        # git refused (admin dir already gone, repo moved, broken .git file).
+        # Ownership is proven by the PATH SHAPE, so the reclaim survives broken
+        # git state (Paseo deletePaseoWorktree: rm falls through when `worktree
+        # remove` fails). The dirty check above already ran its veto.
+        shutil.rmtree(wt, ignore_errors=True)
     if os.path.isdir(wt):                   # remove refused (locked?) - leave it be
         if log:
             log.log("note", "WORKTREE nicht entfernbar (gesperrt?): %s" % wt)
@@ -977,7 +1165,9 @@ def sweep_worktrees():
     catching trees left by builds from before reclamation existed. Git-driven
     (merged into the integration branch AND clean), so it is independent of card
     status. Returns the number reclaimed."""
-    repos = {t.get("repo") for t in _load() if t.get("repo")}
+    tracks = _load()
+    repos = {t.get("repo") for t in tracks if t.get("repo")}
+    referenced = {os.path.realpath(t["worktree"]) for t in tracks if t.get("worktree")}
     n = 0
     for repo in repos:
         if not repo or not os.path.isdir(repo):
@@ -1005,6 +1195,26 @@ def sweep_worktrees():
             if not os.path.isdir(path):
                 _git_try(repo, "branch", "-D", br)
                 n += 1
+        # ORPHANS the git-driven pass can never see: trees whose link to the
+        # repo is severed (admin dir pruned, half-removed, repo moved), so
+        # `worktree list` no longer reports them and `worktree remove` fails.
+        # Ownership by path shape + a provably broken .git is the reclaim
+        # ticket; a tree ANY card still references is kept (nothing-lost).
+        known = {os.path.realpath(p) for _, p in pairs if p}
+        hashdir = os.path.join(os.path.abspath(os.path.join(repo, "..", WORKTREE_DIRNAME)),
+                               _repo_hash(repo))
+        if os.path.isdir(hashdir):
+            for name in os.listdir(hashdir):
+                path = os.path.join(hashdir, name)
+                if (not os.path.isdir(path)
+                        or os.path.realpath(path) in known
+                        or os.path.realpath(path) in referenced
+                        or not _owned_worktree(path)
+                        or not _git_state_broken(path)):
+                    continue
+                shutil.rmtree(path, ignore_errors=True)
+                if not os.path.isdir(path):
+                    n += 1
         _git_try(repo, "worktree", "prune")
     return n
 
@@ -1859,12 +2069,6 @@ def start_background_watcher(interval=None):
                 print("background watcher error:", e)
 
     threading.Thread(target=loop, daemon=True).start()
-
-
-def _current_branch(repo):
-    r = subprocess.run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"],
-                       capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else ""
 
 
 def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
