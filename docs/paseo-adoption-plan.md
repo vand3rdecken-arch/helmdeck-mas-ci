@@ -1,5 +1,19 @@
 # Paseo adoption plan
 
+## Reference — MANDATORY
+Every card in this plan MUST read the ACTUAL Paseo source, not just this summary:
+`C:\Users\Tien Duy Vo\Downloads\_paseo_src` (TypeScript monorepo). Study the real
+implementation and mirror its approach; do not reverse-engineer from the plan text
+alone. Key files: `packages/server/src/server/agent/providers/claude/agent.ts`
+(session/turn/interrupt/resume), `packages/server/src/server/agent/agent-manager.ts`
+(attention/permission/idle), `packages/server/src/server/agent-attention-policy.ts`
+(presence/notify), `packages/protocol/src/agent-attention-notification.ts`
+(permission kind: tool|plan|question|mode), `packages/protocol/src/agent-types.ts`
+(select/question types), `packages/protocol/src/messages.ts` (tool-call/turn model),
+`packages/server/src/terminal/agent-hooks/*` (activity-state normalisation),
+`packages/server/src/utils/{worktree,tree-kill,spawn}.ts`.
+
+
 Derived from a deep analysis of the Paseo source (`~/Downloads/_paseo_src`,
 2026-08-06). Filtered to what is worth it for HelmDeck (single-owner, claude-
 focused, mobile + daemon). Each phase is a gated worker card: worktree -> checks
