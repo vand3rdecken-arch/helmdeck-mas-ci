@@ -172,6 +172,43 @@ def _lock_for(tid):
             _turn_locks[tid] = _threading.Lock()
         return _turn_locks[tid]
 
+# -- THE one legal write path for existing tracks (Paseo's one-owner principle) --
+# Tracks are whole JSON dicts, and they used to be read+written from >=4 threads
+# at once (steer, cancel, the reconciler, lane moves, answers, archive). Each
+# writer did load -> edit its copy -> save: last-writer-wins, so a stale snapshot
+# could resurrect 'running' and freeze a card (incident 2026-08-07 16:09, 164min).
+# Paseo cannot have this bug because every lifecycle transition runs in ONE
+# stream-event handler (agent-manager.ts ~3600): one owner, no competing writers.
+# _mutate is that owner made explicit: a SHORT per-card mutation lock (NOT
+# _lock_for - that one is held for a whole turn), a FRESH load, fn(t), save.
+# Nothing outside _mutate may write status/gate_report/question/waiting_on/
+# background on an existing track (invariant I1, pinned by test_status_store.py).
+
+_mutate_locks = {}
+_mutate_locks_guard = _threading.Lock()
+
+def _mutate_lock_for(tid):
+    with _mutate_locks_guard:
+        if tid not in _mutate_locks:
+            _mutate_locks[tid] = _threading.Lock()
+        return _mutate_locks[tid]
+
+def _mutate(tid, fn):
+    """Atomically edit one track: lock -> fresh load -> fn(t) -> save -> return t.
+    fn gets the CURRENT stored track (never a caller's stale snapshot) and may
+    return False to skip the save (the no-op / lost-the-race case). Returns the
+    track (fresh), or None if the track does not exist. fn must be QUICK - no
+    model turns, no subprocesses; compute those before calling _mutate."""
+    with _mutate_lock_for(tid):
+        t = _find(_load(), tid)
+        if t is None:
+            return None
+        if fn(t) is False:
+            return t
+        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _save_track(t)
+        return t
+
 def _turn(t, prompt, model=None, perm=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
@@ -224,7 +261,9 @@ def _repair_question(t, log):
         # a repair is a convenience, never a reason to fail a finished turn
         log.log("note", "Frage-Reparatur fehlgeschlagen: %s" % str(e)[:200])
         return None
-    _record_econ(t, meta)          # measured economics: this turn is billed too
+    # measured economics: this turn is billed too. Through _mutate (it runs a
+    # whole model turn, so it is only ever called OUTSIDE the mutation lock).
+    _mutate(t["id"], lambda tt: (_record_econ(tt, meta), None)[1])
     if ask.NO_QUESTION in (out or "")[:200]:
         return None                # worker says it was not actually asking
     question, _ = ask.parse(out or "")
@@ -266,37 +305,44 @@ def waits_for_owner(t):
             and t.get("waiting_on") != "background")
 
 
-def _settle_reply(t, result, log):
-    """Fold a finished turn's REPLY into the card and say what it is waiting on.
-
-    Returns the notify reason: "question" when the worker is waiting on a typed
-    multiple-choice decision (Phase 2.4), else "needs_you".
-
-    This is the one place a reply is interpreted, so the three turn sites
-    (dispatch, machine dispatch, steer) cannot drift apart. The machine block is
-    stripped from BOTH the audit line and last_reply: the owner reads those, and
-    raw protocol JSON in them is noise - the parsed question carries the same
-    information in typed form."""
-    import ask, events
+def _settle_reply_compute(t, result, log):
+    """The SLOW half of interpreting a finished turn's reply - runs OUTSIDE the
+    mutation lock (the question-repair is a whole model turn, the background
+    probe reads the transcript from disk). Pure compute: touches nothing on the
+    stored track. Returns (question, cleaned, bg)."""
+    import ask
     question, cleaned = ask.parse(result or "")
-    log.log("reply", cleaned[:2000])
-    t["last_reply"] = cleaned[:2000]
     if not question and _ask_repair_on(t) and ask.looks_like_question(cleaned):
         question = _repair_question(t, log)
+    bg = None
     if not question:
-        # A turn that does not ask supersedes any older pending question -
-        # leaving a stale one would show buttons for a decision the worker has
-        # already moved past.
-        t.pop("question", None)
-        # ...but it may not be waiting on the OWNER either: a turn that ended
-        # while a background task it launched is still running is waiting on
-        # THAT (Phase 2.5). Saying "waiting for you" there is what parked such
-        # cards in limbo - the owner had nothing to do and no way to know.
+        # A turn may not be waiting on the OWNER: one that ended while a
+        # background task it launched is still running is waiting on THAT
+        # (Phase 2.5). Saying "waiting for you" there parked cards in limbo.
         import claude_sessions
         try:
             bg = claude_sessions.background_wait(t)
         except Exception:
             bg = None                    # a cue is never worth failing a turn
+    return question, cleaned, bg
+
+
+def _settle_reply_apply(t, question, cleaned, bg, log):
+    """The WRITE half - runs INSIDE _mutate as part of the one atomic
+    end-of-turn commit (_finish_turn). Together with _settle_reply_compute this
+    is still the one place a reply is interpreted, so the three turn sites
+    (dispatch, machine dispatch, steer) cannot drift apart. The machine block is
+    stripped from BOTH the audit line and last_reply: the owner reads those, and
+    raw protocol JSON in them is noise - the parsed question carries the same
+    information in typed form. Returns the notify reason."""
+    import ask, events
+    log.log("reply", cleaned[:2000])
+    t["last_reply"] = cleaned[:2000]
+    if not question:
+        # A turn that does not ask supersedes any older pending question -
+        # leaving a stale one would show buttons for a decision the worker has
+        # already moved past.
+        t.pop("question", None)
         if bg:
             t["waiting_on"] = "background"
             # keep the ORIGINAL start time across turns, so the watcher's
@@ -351,24 +397,109 @@ def _record_econ(t, meta):
     return cost
 
 
-def _record_turn(t, meta):
-    """Fold one turn's economics into the track and the event log."""
+def _settle_reply(t, result, log):
+    """Compose the two halves on the CALLER's dict (no store write). Production
+    goes through _finish_turn, which runs the compute half outside and the
+    apply half inside the mutation lock; this seam exists for the settle tests
+    and any caller that manages its own persistence via _mutate."""
+    question, cleaned, bg = _settle_reply_compute(t, result, log)
+    return _settle_reply_apply(t, question, cleaned, bg, log)
+
+
+def _record_turn(t, meta, cp_commit=None):
+    """Fold one turn's economics into the track and the event log. Runs INSIDE
+    _mutate; the rewind checkpoint (a git subprocess) is computed by the caller
+    BEFORE the lock and handed in as `cp_commit`. Returns the turn's cost."""
     # structured failure signal off the driver's result event (not the prose
     # reply) - the night shift reads this instead of grepping last_reply.
     t["last_subtype"] = meta.get("subtype")
     t["last_error"] = meta.get("error") or ""
-    _record_econ(t, meta)
-    # per-turn rewind anchor: snapshot the worktree so a message can be rewound
-    # to (files restored to this point) later. Non-fatal if git isn't available.
-    # NOT for machine cards: their "worktree" is a real folder on the owner's PC
-    # (often his home), and snapshotting every file in it each turn is both slow
-    # and none of our business - rewind is a code-worktree feature.
+    cost = _record_econ(t, meta)
+    if cp_commit:
+        t.setdefault("checkpoints", []).append(
+            {"turn": t.get("turns"), "commit": cp_commit,
+             "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": (t.get("last_reply") or "")[:80]})
+    return cost
+
+
+def _turn_checkpoint(t):
+    """Per-turn rewind anchor: snapshot the worktree so a message can be rewound
+    to (files restored to this point) later. Non-fatal if git isn't available.
+    NOT for machine cards: their "worktree" is a real folder on the owner's PC
+    (often his home), and snapshotting every file in it each turn is both slow
+    and none of our business - rewind is a code-worktree feature. Runs OUTSIDE
+    the mutation lock (a snapshot can take seconds on a big tree)."""
     if t.get("worktree") and not t.get("machine") and os.path.isdir(t["worktree"]):
-        cp = _checkpoint(t["worktree"])
-        if cp:
-            t.setdefault("checkpoints", []).append(
-                {"turn": t.get("turns"), "commit": cp,
-                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": (t.get("last_reply") or "")[:80]})
+        return _checkpoint(t["worktree"])
+    return None
+
+
+def _finish_turn(tid, sid, result, meta, log):
+    """ONE atomic commit per finished turn (Paseo's one-owner turn-completed
+    handler): session rotation + turn count + reply/question/waiting_on +
+    status=needs_you + economics land together under the mutation lock, so no
+    concurrent cancel/sweep snapshot can resurrect 'running' or tear the
+    result apart. Shared by dispatch, machine dispatch and steer. Also emits
+    the typed turn-lifecycle record (turn completed/failed/canceled + usage)
+    into the flight recorder - Phase 3.2's own-event stream, not a flat step.
+    Returns (track, notify_reason)."""
+    t = _find(_load(), tid)
+    if t is None:
+        return None, "needs_you"
+    # slow half first, outside the lock: question repair (a model turn), the
+    # background probe (disk), the rewind snapshot (git).
+    question, cleaned, bg = _settle_reply_compute(t, result, log)
+    cp_commit = _turn_checkpoint(t)
+    box = {}
+
+    def _commit(tt):
+        # session_id can rotate on resume/compaction; keep the latest so the
+        # next steer continues, and REMEMBER the one we're leaving. A rotation
+        # to a fresh .jsonl carries none of the prior conversation - without
+        # this pointer the whole chat "disappears" from the card view; the feed
+        # uses the chain to lead with a "Kontext verdichtet" marker instead.
+        if sid and tt.get("session_id") and sid != tt["session_id"]:
+            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
+            chain.append(tt["session_id"])
+            tt["session_chain"] = chain[-6:]     # bounded - last 6 prior sessions
+        tt["session_id"] = sid or tt.get("session_id")
+        tt["turns"] = tt.get("turns", 0) + 1
+        box["reason"] = _settle_reply_apply(tt, question, cleaned, bg, log)
+        tt["status"] = "needs_you"
+        # A successful turn makes any stale interrupt/zombie note obsolete -
+        # otherwise the card keeps reading "daemon restarted mid-turn" from a
+        # PAST bounce when the turn just ended cleanly.
+        gr = tt.get("gate_report")
+        if isinstance(gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x for x in gr):
+            tt.pop("gate_report", None)
+        box["cost"] = _record_turn(tt, meta, cp_commit)
+
+    t = _mutate(tid, _commit) or t
+    # the turn's lifecycle as its OWN typed event (Paseo turn_completed/
+    # turn_failed/turn_canceled + usage), woven into the card feed by `ta`.
+    _log_turn_end(log, meta, box.get("cost"))
+    return t, box.get("reason", "needs_you")
+
+
+def _log_turn_end(log, meta, cost=None):
+    """Typed turn-lifecycle record for the card feed (Phase 3.2). failed <=>
+    error != null, a Stop is canceled, everything else completed + usage."""
+    u = meta.get("usage") or {}
+    usage = {k: u.get(k, 0) for k in ("input_tokens", "output_tokens",
+                                      "cache_creation_input_tokens",
+                                      "cache_read_input_tokens")} if u else {}
+    try:
+        if meta.get("canceled"):
+            log.log("turn", "Turn abgebrochen", event="canceled")
+        elif meta.get("error") or meta.get("is_error"):
+            log.log("turn", "Turn fehlgeschlagen", event="failed",
+                    error=(meta.get("error") or meta.get("subtype") or "error")[:500],
+                    usage=usage, cost=cost)
+        else:
+            log.log("turn", "Turn abgeschlossen", event="completed",
+                    usage=usage, cost=cost)
+    except Exception:
+        pass                     # the feed record must never fail the turn
 
 # -- lanes: the kanban IS the company structure, just relabeled ----------
 # backlog = request filed (client needs ABC; nothing started, no session yet)
@@ -443,15 +574,17 @@ def _dispatch_failed(t, e):
     err = "DISPATCH FAILED: %s" % e
     from actionlog import ActionLog
     try:
-        ActionLog(t["run_dir"]).log("note", err[:2000])
+        log = ActionLog(t["run_dir"])
+        log.log("note", err[:2000])
+        log.log("turn", "Turn fehlgeschlagen", event="failed", error=str(e)[:500])
     except Exception:
         pass
     events.emit("error", t["id"], where="dispatch", detail=str(e)[:600])
-    cur = _db.track_get(t["id"]) or t
-    cur["status"] = "bounced"
-    cur["last_reply"] = err[:2000]
-    cur["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save_track(cur)
+
+    def _fail(tt):
+        tt["status"] = "bounced"
+        tt["last_reply"] = err[:2000]
+    _mutate(t["id"], _fail)
 
 def _start(tid):
     """Dispatch a backlog request: create the worktree + open its coding session."""
@@ -485,23 +618,20 @@ def _start_inner(t):
     log = ActionLog(t["run_dir"])
     log.log("note", "DISPATCHED -> branch %s" % t["branch"])
     log.log("steer", t["task"])
+    log.log("turn", "Turn gestartet", event="started")
     import events
     events.emit("lane", tid, frm=t.get("lane"), to="working")
-    t["worktree"] = wt; t["lane"] = "working"; t["status"] = "running"
-    _save_track(t)
+
+    def _begin(tt):
+        tt["worktree"] = wt; tt["lane"] = "working"; tt["status"] = "running"
+    t = _mutate(tid, _begin) or t
     prompt = t["task"]
     if t.get("description"):              # the long-form body (Jira-style)
         prompt += "\n\n" + t["description"]
     if t.get("attachments"):             # files filed with the request
         prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
     sid, result, meta = _turn(t, prompt)
-    t = _db.track_get(tid) or t
-    t["session_id"] = sid; t["turns"] = 1
-    reason = _settle_reply(t, result, log)
-    t["status"] = "needs_you"
-    _record_turn(t, meta)
-    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save_track(t)
+    t, reason = _finish_turn(tid, sid, result, meta, log)
     import notify
     notify.card_event(t, reason)
     return t
@@ -585,10 +715,10 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
     t = new_track(cwd, MACHINE_BRANCH, task, lane="backlog", actor=actor,
                   priority=priority, description=description, driver=driver,
                   value=value, model=model, perm=pol.get("perm", "bypassPermissions"))
-    cur = _db.track_get(t["id"]) or t
-    cur["machine"] = True
-    cur["worktree"] = cwd            # the driver's cwd - a real folder, no worktree
-    _save_track(cur)
+    def _mark(tt):
+        tt["machine"] = True
+        tt["worktree"] = cwd         # the driver's cwd - a real folder, no worktree
+    cur = _mutate(t["id"], _mark) or t
     from actionlog import ActionLog
     ActionLog(cur["run_dir"]).log("note", "MACHINE task filed - workplace %s (by %s)" % (cwd, actor))
     events.emit("machine", cur["id"], action="filed", cwd=cwd, actor=actor)
@@ -609,22 +739,19 @@ def _start_machine(t):
     log = ActionLog(t["run_dir"])
     log.log("note", "DISPATCHED (machine) -> %s" % cwd)
     log.log("steer", t["task"])
+    log.log("turn", "Turn gestartet", event="started")
     events.emit("lane", tid, frm=t.get("lane"), to="working")
-    t["worktree"] = cwd; t["lane"] = "working"; t["status"] = "running"
-    _save_track(t)
+
+    def _begin(tt):
+        tt["worktree"] = cwd; tt["lane"] = "working"; tt["status"] = "running"
+    t = _mutate(tid, _begin) or t
     prompt = t["task"]
     if t.get("description"):
         prompt += "\n\n" + t["description"]
     if t.get("attachments"):
         prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
     sid, result, meta = _turn(t, prompt)
-    t = _db.track_get(tid) or t
-    t["session_id"] = sid; t["turns"] = 1
-    reason = _settle_reply(t, result, log)
-    t["status"] = "needs_you"
-    _record_turn(t, meta)
-    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save_track(t)
+    t, reason = _finish_turn(tid, sid, result, meta, log)
     import notify
     notify.card_event(t, reason)
     return t
@@ -637,10 +764,12 @@ def _accept_machine(t, lane, actor, log):
     import events
     if lane == "review":
         log.log("note", "REVIEW (machine): erledigt auf dem Rechner - wartet auf deine Abnahme.")
-        t["status"] = "submitted"; t["lane"] = "review"
-        t["review_report"] = ("Maschinen-Aufgabe - kein Branch, kein Merge. Pruefe das "
-                              "Ergebnis auf dem Rechner und nimm die Karte ab.")
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+
+        def _submit(tt):
+            tt["status"] = "submitted"; tt["lane"] = "review"
+            tt["review_report"] = ("Maschinen-Aufgabe - kein Branch, kein Merge. Pruefe das "
+                                   "Ergebnis auf dem Rechner und nimm die Karte ab.")
+        t = _mutate(t["id"], _submit) or t
         _say_card(t, _i18n.t("say.machineReview"))
         return dict(t, review_preview=True, merge_kind="machine")
     events.emit("touch", t["id"], touch="review", actor=actor)
@@ -652,8 +781,10 @@ def _accept_machine(t, lane, actor, log):
     events.emit("machine", t["id"], action="accepted", cwd=t.get("worktree") or "", actor=actor)
     log.log("note", "ACCEPTED (machine, %s) - AI $%.4f, value %s"
             % (mode, t.get("ai_cost", 0.0), t.get("value")))
-    t["status"] = "accepted"; t["mode"] = mode; t["lane"] = "done"
-    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+
+    def _accept(tt):
+        tt["status"] = "accepted"; tt["mode"] = mode; tt["lane"] = "done"
+    t = _mutate(t["id"], _accept) or t
     events.emit("lane", t["id"], frm="review", to="done")
     _say_card(t, _i18n.t("say.machineAccepted"))
     import notify; notify.card_event(t, "done")
@@ -1094,9 +1225,10 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             events.emit("touch", tid, touch="bounce", actor=actor)
             from actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "BOUNCED by owner - back to Working")
-            t["status"] = "bounced"; t["lane"] = "working"
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            _save_track(t)
+
+            def _bounce(tt):
+                tt["status"] = "bounced"; tt["lane"] = "working"
+            t = _mutate(tid, _bounce) or t
             _say_card(t, _i18n.t("say.bouncedToWorking"))
             return t
         return _start(tid)   # idempotent: resumes position if already started
@@ -1118,18 +1250,21 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         # No chat line here on purpose - the card's own status covers "started",
         # and chains/policy auto-accept through this path too. The chat carries
         # OUTCOMES (what was missing), not progress chatter.
-        t["status"] = "gating"
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+        def _gating(tt):
+            tt["status"] = "gating"
+        t = _mutate(tid, _gating) or t
         ac = _autocommit(t)
         if ac == "markers":
             msg = ("Konfliktmarkierungen sind noch im Worktree offen. Steuere den Agenten: "
                    "'loese die Konfliktmarkierungen (<<<<<<< / >>>>>>>) in den Dateien' - "
                    "nur editieren - und reiche dann neu ein.")
             log.log("note", "CONFLICT MARKERS OPEN - stays on Review to resolve: " + msg[:200])
-            t["status"] = "bounced"; t["lane"] = "review"   # stay on Review, not back to Working
-            t.pop("gate_report", None)                      # the CURRENT blocker is the conflict
-            t["merge_report"] = msg; t["merge_kind"] = "conflict"
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+
+            def _markers(tt):
+                tt["status"] = "bounced"; tt["lane"] = "review"   # stay on Review, not back to Working
+                tt.pop("gate_report", None)                       # the CURRENT blocker is the conflict
+                tt["merge_report"] = msg; tt["merge_kind"] = "conflict"
+            t = _mutate(tid, _markers) or t
             import notify; notify.card_event(t, "bounced")
             _say_card(t, _i18n.t("say.conflictMarkers", detail=msg))
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
@@ -1150,9 +1285,11 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         if not ok:
             punch = " | ".join(p.split("\n")[0] for p in problems)
             log.log("note", "GATE FAILED - stays on Review to fix: " + punch[:400])
-            t["status"] = "bounced"; t["lane"] = "review"; t["gate_report"] = problems   # stay on Review
-            t.pop("merge_report", None); t.pop("merge_kind", None)   # the CURRENT blocker is the gate
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+
+            def _gatefail(tt):
+                tt["status"] = "bounced"; tt["lane"] = "review"; tt["gate_report"] = problems   # stay on Review
+                tt.pop("merge_report", None); tt.pop("merge_kind", None)   # the CURRENT blocker is the gate
+            t = _mutate(tid, _gatefail) or t
             import notify; notify.card_event(t, "bounced")
             # The chat gets the FULL problem text, not the one-line `punch`:
             # a gate failure's actual output (which test, which assertion) lives
@@ -1187,10 +1324,13 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             _clean = kind in ("mergeable", "already_merged", "redundant_uncommitted")
             if not (t.get("fast_track") and _clean):
                 log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
-                t.pop("merge_report", None)
-                t["merge_kind"] = kind; t["review_report"] = msg
-                t["status"] = "submitted"; t["lane"] = "review"
-                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+
+                def _submit(tt):
+                    tt.pop("merge_report", None)
+                    tt.pop("gate_report", None)          # gate just ran green
+                    tt["merge_kind"] = kind; tt["review_report"] = msg
+                    tt["status"] = "submitted"; tt["lane"] = "review"
+                t = _mutate(tid, _submit) or t
                 _VERDICT = {"mergeable": "verdict.mergeable",
                             "already_merged": "verdict.alreadyMerged",
                             "redundant_uncommitted": "verdict.alreadyMerged",
@@ -1222,14 +1362,16 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         events.emit("merge", tid, ok=accept_ok, outcome=kind, detail=mergemsg[:300])
         if not accept_ok:
             log.log("note", "MERGE %s - stays on Review to resolve: %s" % (kind.upper(), mergemsg[:400]))
-            t["status"] = "bounced"; t["lane"] = "review"   # stay on Review, not back to Working
-            t["merge_report"] = mergemsg; t["merge_kind"] = kind
-            t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S"); _save_track(t)
+
+            def _mergefail(tt):
+                tt["status"] = "bounced"; tt["lane"] = "review"   # stay on Review, not back to Working
+                tt["merge_report"] = mergemsg; tt["merge_kind"] = kind
+                tt.pop("gate_report", None)          # gate ran green before the merge
+            t = _mutate(tid, _mergefail) or t
             import notify; notify.card_event(t, "bounced")
             _say_card(t, _i18n.t("say.cannotLand", kind=kind, detail=mergemsg[:400]))
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = kind
             return t
-        t.pop("merge_report", None); t["merge_kind"] = kind
         _NOTE = {"merged": "MERGED -> main", "already_merged": "REDUNDANT (bereits in main) - geschlossen",
                  "redundant_uncommitted": "REDUNDANT (bereits in main; uncommittete Aenderungen ignoriert) - geschlossen"}
         log.log("note", "%s: %s" % (_NOTE.get(kind, "ACCEPTED"), mergemsg[:280]))
@@ -1241,7 +1383,12 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                     tokens_in=t.get("tokens_in", 0), tokens_out=t.get("tokens_out", 0))
         log.log("note", "ACCEPTED (%s) - AI $%.4f, value %s" %
                 (mode, t.get("ai_cost", 0.0), t.get("value")))
-        t["status"] = "accepted"; t["mode"] = mode
+
+        def _accepted(tt):
+            tt.pop("merge_report", None); tt.pop("gate_report", None)
+            tt["merge_kind"] = kind
+            tt["status"] = "accepted"; tt["mode"] = mode
+        t = _mutate(tid, _accepted) or t
         _repo_hook(t, "deploy")    # daemon-side (post-merge), with the secrets agents never see
         # A landing was the QUIETEST outcome of all: no push (card_event was only
         # ever called for bounces) and no chat line. Report it like any other.
@@ -1266,20 +1413,11 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         reclaim_worktree(t, log)   # isolation reclaimed: the work is in main now
         lane = "done"   # Review == Abnahme: a finished card lands in Done
     elif lane == "backlog":
-        t["status"] = "queued"
         # Re-queueing a card IS the "run it again" instruction, so the
-        # auto-dispatchers' one-shot stamps must not survive it. They are
-        # written once (processes._autopilot / _priority_dispatch /
-        # _auto_resolve) and NOTHING else ever clears them, so a re-queued
-        # autopilot card kept autopilot=true but never dispatched again - it
-        # sat in Backlog looking like a normal queued card, which is exactly
-        # the silent waiting the autopilot exists to remove. A fresh queue =
-        # a fresh dispatch/escalation budget. This is also the ONLY retry
-        # handle for a card whose automatic dispatch failed, so every
-        # dispatcher stamp added here must be cleared here too.
-        for k in ("autopilot_dispatched", "autopilot_accepted",
-                  "autopilot_alerted", "autopilot_ts", "priority_dispatched"):
-            t.pop(k, None)
+        # auto-dispatchers' one-shot stamps must not survive it (a re-queued
+        # autopilot card otherwise keeps autopilot=true but never dispatches
+        # again). status=queued + the stamp clearing happen in the _land
+        # mutate below - one writer, no local-copy drift.
         # the chain keeps its OWN stamps on the step (processes.json), which the
         # loop above cannot reach - without this the card came back clean but
         # its step stayed "already dispatched" and never ran again.
@@ -1289,9 +1427,19 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         except Exception as e:      # a board move must not fail on the chain store
             print("clear_step_stamps failed for %s: %s" % (tid, e))
     events.emit("lane", tid, frm=prev, to=lane)
-    t["lane"] = lane
-    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save_track(t)
+    _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
+
+    def _land(tt):
+        tt["lane"] = lane
+        if lane == "backlog":
+            tt["status"] = "queued"
+            for k in ("autopilot_dispatched", "autopilot_accepted",
+                      "autopilot_alerted", "autopilot_ts", "priority_dispatched"):
+                tt.pop(k, None)
+        # the repo hooks ran on the local copy (they are subprocesses and must
+        # stay outside the mutation lock) - persist their outcome here.
+        tt.update(_hooks)
+    t = _mutate(tid, _land) or t
     return t
 
 MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
@@ -1404,24 +1552,28 @@ def _maybe_compact(t, log):
     """Compact the session in place if the live context crossed the high-water
     mark. Self-verifying: /compact must actually SHRINK the context. If it does
     not (an older CLI that treats the slash line as literal input), we learn that
-    once and stop - no no-op cost, no polluting the conversation every turn."""
+    once and stop - no no-op cost, no polluting the conversation every turn.
+    Returns the fresh track (or None if nothing was done)."""
     global _autocompact_supported
     if _autocompact_supported is False:
-        return
+        return None
     ctx = t.get("ctx_tokens", 0)
     if ctx < _COMPACT_AT_TOKENS or not t.get("session_id"):
-        return
+        return None
     pct = min(100, round(ctx / _CTX_WINDOW * 100))
     log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
             "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
     sid, _out, meta = _turn(t, "/compact")
-    if sid and t.get("session_id") and sid != t["session_id"]:
-        _chain = [s for s in (t.get("session_chain") or []) if s != t["session_id"]]
-        _chain.append(t["session_id"])
-        t["session_chain"] = _chain[-6:]
-        t["session_id"] = sid
+
+    def _apply(tt):
+        if sid and tt.get("session_id") and sid != tt["session_id"]:
+            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
+            chain.append(tt["session_id"])
+            tt["session_chain"] = chain[-6:]
+            tt["session_id"] = sid
+        _record_econ(tt, meta)            # measured economics: the compact turn is billed too
+    t = _mutate(t["id"], _apply) or t
     before = ctx
-    _record_econ(t, meta)                 # measured economics: the compact turn is billed too
     after = t.get("ctx_tokens", before)
     if after <= before * 0.75:            # a real compaction frees a big chunk
         _autocompact_supported = True
@@ -1431,6 +1583,7 @@ def _maybe_compact(t, log):
         _autocompact_supported = False
         log.log("note", "AUTO-COMPACT: diese CLI honoriert /compact nicht - fuer diese "
                 "Session abgeschaltet. Kontext-Meter + Nudge bleiben aktiv.")
+    return t
 
 
 def steer(tid, text, perm=None, actor="owner", source="you",
@@ -1450,34 +1603,39 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         tracks = _load(); t = _find(tracks, tid)
     import events, turnopts
     events.emit("touch", tid, touch="steer", actor=actor)
-    # A card on Review that's being resolved (e.g. steering the agent to fix a
-    # conflict) STAYS on Review - steering no longer demotes it to Working. Any
-    # other lane (backlog/done) still means "back to active work".
-    if t["lane"] not in ("working", "review"):
-        events.emit("lane", tid, frm=t["lane"], to="working")
-        t["lane"] = "working"
+    was_bounced = t.get("status") == "bounced"   # routing signal, read BEFORE 'running'
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     if source and source != "you":
         log.log("note", "DELEGATED by %s -> this card's worker" % source)
     log.log("steer", text)               # audit the human's words, not the augmented prompt
-    # Any steer supersedes a pending question - the owner either answered it
-    # through the buttons (this IS that steer) or decided something else
-    # instead. Clearing here, not at turn end, means the panel disappears the
-    # moment the turn starts rather than lingering for the whole turn.
-    t.pop("question", None)
+    log.log("turn", "Turn gestartet", event="started")
     # the card is moving again, so whatever we last pushed about it is stale -
     # the next notification is news and must not be swallowed by the dedup
     import notify
     notify.clear_dedup(tid)
-    t["status"] = "running"; _save_track(t)
+
+    def _begin(tt):
+        # A card on Review that's being resolved (e.g. steering the agent to fix
+        # a conflict) STAYS on Review - steering no longer demotes it to Working.
+        # Any other lane (backlog/done) still means "back to active work".
+        if tt["lane"] not in ("working", "review"):
+            events.emit("lane", tid, frm=tt["lane"], to="working")
+            tt["lane"] = "working"
+        # Any steer supersedes a pending question - the owner either answered it
+        # through the buttons (this IS that steer) or decided something else
+        # instead. Clearing here, not at turn end, means the panel disappears
+        # the moment the turn starts rather than lingering for the whole turn.
+        tt.pop("question", None)
+        tt["status"] = "running"
+    t = _mutate(tid, _begin) or t
     paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)
     # Auto routing sees the card's facts INCLUDING turn count - a card that's
     # already dragged on escalates to the strong model (cheap "escalate on
     # evidence"). An explicit model from the composer still wins.
     cli_model, _ = turnopts.resolve_model(model, text, bool(paths),
         signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns"),
-                 "failed": t.get("status") == "bounced" or bool(t.get("gate_failed")),
+                 "failed": was_bounced or bool(t.get("gate_failed")),
                  "fails": events.consecutive_gate_fails(t["id"])})
     # Hand the worker the daemon-side context it never saw (a merge conflict, a
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
@@ -1491,57 +1649,35 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         # is a stored promise only this thread would clear, and a card frozen
         # on it shows an eternal spinner (Paseo avoids the whole class by
         # deriving lifecycle from the live run; the reconciler is our derive
-        # loop, this is the fast path). Settle on a FRESH load so we can't
-        # resurrect state a concurrent cancel already wrote.
-        t2 = _find(_load(), tid)
-        if t2 and t2.get("status") == "running":
-            t2["status"] = "needs_you"
-            t2["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            _save_track(t2)
+        # loop, this is the fast path). _mutate loads fresh under the card's
+        # mutation lock, so a concurrent cancel's write can't be resurrected.
+        rel = {}
+
+        def _release(tt):
+            if tt.get("status") != "running":
+                return False             # a concurrent cancel already settled it
+            tt["status"] = "needs_you"
+            rel["did"] = True
+        _mutate(tid, _release)
+        if rel.get("did"):
             log.log("note", "turn ABGEBROCHEN (%s) - Karte freigegeben, steuern setzt fort."
                     % str(e)[:160])
+        log.log("turn", "Turn fehlgeschlagen", event="failed", error=str(e)[:500])
         raise
-    # session_id can rotate on resume/compaction; keep the latest so the next
-    # steer continues, and REMEMBER the one we're leaving. A compaction (or a
-    # resume of a full session) rotates to a FRESH .jsonl that carries none of
-    # the prior conversation - without this pointer the whole chat "disappears"
-    # from the card view ("warum ist der ganze Chat verschwunden"). The card feed
-    # uses the chain to lead with a "Kontext verdichtet" marker instead.
-    if sid and t.get("session_id") and sid != t["session_id"]:
-        _chain = [s for s in (t.get("session_chain") or []) if s != t["session_id"]]
-        _chain.append(t["session_id"])
-        t["session_chain"] = _chain[-6:]     # bounded - last 6 prior sessions
-    t["session_id"] = sid or t["session_id"]
-    t["turns"] = t.get("turns", 0) + 1
-    reason = _settle_reply(t, result, log)
-    t["status"] = "needs_you"
-    # A successful turn makes any stale interrupt/zombie note obsolete. Clear it so a
-    # normal turn-end stops showing "daemon restarted mid-turn" from a PAST bounce -
-    # otherwise the card reads as 'the daemon killed my turn' when it just ended
-    # cleanly ("stuck again, did you kill it?" when nothing did).
-    _gr = t.get("gate_report")
-    if isinstance(_gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x for x in _gr):
-        t.pop("gate_report", None)
-    _record_turn(t, meta)
+    # ONE atomic end-of-turn commit: session rotation, turn count, reply/
+    # question/waiting_on, status, economics - all under the mutation lock.
+    t, reason = _finish_turn(tid, sid, result, meta, log)
     # Auto-compact-and-continue: if this turn left the context near the brim,
     # verdict the session NOW (one bounded /compact on the same session) so the
     # next steer keeps headroom and the thread stays continuous - never a
     # dead-end or a fresh-session overflow. Best-effort, self-verifying.
     try:
-        _maybe_compact(t, log)
+        t = _maybe_compact(t, log) or t
     except Exception as _e:
         log.log("note", "auto-compact skipped: %s" % str(_e)[:200])
-    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save_track(t)
     import notify
     notify.card_event(t, reason)
     return t
-
-# Guards the read-verify-clear of a pending question. Deliberately NOT the
-# per-card turn lock (_lock_for): that one is held for the whole turn by _turn,
-# and answering ends in a steer - taking it here would deadlock.
-_answer_guard = _threading.Lock()
-
 
 def answer_question(tid, answers, request_id="", actor="owner"):
     """Answer the worker's pending multiple-choice question (Phase 2.4).
@@ -1558,15 +1694,17 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     Only labels the WORKER offered are accepted (ask.validate_answers), so this
     endpoint cannot be used to inject arbitrary text into a worker's prompt."""
     import ask
-    # CLAIM the question atomically. Answering is backgrounded by the server
-    # (it runs a turn), so two quick taps are two threads: without this both
-    # could read the same pending question and steer the worker twice with
-    # contradictory decisions. Clearing it here - not leaving it to steer() -
-    # makes the second caller lose deterministically.
-    with _answer_guard:
-        t = _find(_load(), tid)
-        if not t:
-            raise RuntimeError("no such track: " + tid)
+    # CLAIM the question atomically via _mutate (the per-card MUTATION lock,
+    # deliberately NOT the turn lock - answering ends in a steer, whose turn
+    # holds that one). Answering is backgrounded by the server, so two quick
+    # taps are two threads: without this both could read the same pending
+    # question and steer the worker twice with contradictory decisions.
+    # Clearing it here - not leaving it to steer() - makes the second caller
+    # lose deterministically. A raise inside fn aborts before the save, so an
+    # invalid answer leaves the panel standing.
+    box = {}
+
+    def _claim(t):
         q = t.get("question")
         if not q:
             raise RuntimeError("no pending question on this card")
@@ -1575,8 +1713,12 @@ def answer_question(tid, answers, request_id="", actor="owner"):
         picks, err = ask.validate_answers(q, answers)
         if err:
             raise ValueError(err)          # invalid: leave the panel standing
+        box["q"], box["picks"] = q, picks
         t.pop("question", None)
-        _save_track(t)
+    t = _mutate(tid, _claim)
+    if t is None:
+        raise RuntimeError("no such track: " + tid)
+    q, picks = box["q"], box["picks"]
     from actionlog import ActionLog
     ActionLog(t["run_dir"]).log("note", ask.answer_note(picks))
     import events
@@ -1639,9 +1781,12 @@ def _sweep_background():
         since = ((t.get("background") or {}).get("since")
                  or _epoch_of(t.get("updated")) or time.time())
         if time.time() - since > _BG_MAX_WAIT_S:
-            t["waiting_on"] = "you"          # give up watching, hand it back
-            t.pop("background", None)
-            _save_track(t)
+            def _giveup(tt):
+                if tt.get("waiting_on") != "background":
+                    return False
+                tt["waiting_on"] = "you"     # give up watching, hand it back
+                tt.pop("background", None)
+            _mutate(t["id"], _giveup)
             continue
         import claude_sessions
         try:
@@ -1654,17 +1799,26 @@ def _sweep_background():
         # turn of the owner's money on a guess.
         if state != "clear":
             continue
+        # Clear the claim BEFORE steering: that is what stops the next pass from
+        # firing this card a second time, and it is why the steer can safely be
+        # detached below. The in-lock recheck makes a racing second watcher pass
+        # lose deterministically.
+        claim = {}
+
+        def _claim(tt):
+            if tt.get("waiting_on") != "background":
+                return False
+            tt["waiting_on"] = "you"
+            tt.pop("background", None)
+            claim["ok"] = True
+        _mutate(t["id"], _claim)
+        if not claim.get("ok"):
+            continue
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log(
             "note", "Hintergrund-Task fertig - Karte laeuft automatisch weiter")
         import events
         events.emit("autocontinue", t["id"], actor="daemon")
-        # Clear the claim BEFORE steering: that is what stops the next pass from
-        # firing this card a second time, and it is why the steer can safely be
-        # detached below.
-        t["waiting_on"] = "you"
-        t.pop("background", None)
-        _save_track(t)
 
         # A continuation is a full turn (up to 1800s). Run it OFF the watcher
         # thread - held inline, one long build's follow-up would stall the whole
@@ -1737,10 +1891,9 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
                 "starting request:\n\n" + (first or "(unknown)")
                 + "\n\nContinue that line of work here.")
         t = new_track(cwd, "fork-" + short, task, lane="backlog", actor=actor)
-        tracks = _load(); tt = _find(tracks, t["id"])
-        if tt:
-            tt["forked_from"] = session_id; _save_track(tt); t = tt
-        return t
+        def _stamp(tt):
+            tt["forked_from"] = session_id
+        return _mutate(t["id"], _stamp) or t
 
     # continue: a card that IS the existing session, running in its own cwd
     tid = _unique_id("adopt-" + short)
@@ -1770,13 +1923,14 @@ def reorder(ids, actor="owner"):
     """Persist manual card order. rank = position in the given (single-lane)
     ordered id list; the board sorts by rank first, so this overrides the
     computed priority/due order - 'policy is data', order is now data too."""
-    tracks = _load()
     changed = 0
     for i, tid in enumerate(ids):
-        t = _find(tracks, tid)
-        if t and t.get("rank") != i:
-            t["rank"] = i
-            _save_track(t)
+        def _rank(tt, i=i):
+            if tt.get("rank") == i:
+                return False
+            tt["rank"] = i
+        t = _mutate(tid, _rank)
+        if t and t.get("rank") == i:
             changed += 1
     return {"reordered": changed}
 
@@ -1800,33 +1954,42 @@ def cancel_turn(tid, actor="owner"):
         if t:
             from actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "turn CANCELLED by %s" % actor)
-            # Reset the card OFF "running" here. Normally the steer thread does this
-            # when _turn returns after the kill, but a racing/dead steer thread (a
-            # daemon restart, overlapping cancels) can leave it stuck at running with
-            # no session - a frozen spinner. The turn is cancelled; it's the owner's
-            # move now.
-            if t.get("status") == "running":
-                t["status"] = "needs_you"
-                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                _save_track(t)
+
+            # Reset the card OFF "running" here. Normally the steer thread does
+            # this when _turn returns after the kill, but a racing/dead steer
+            # thread (a daemon restart, overlapping cancels) can leave it stuck
+            # at running with no session - a frozen spinner. The turn is
+            # cancelled; it's the owner's move now. Through _mutate, so this
+            # write and the steer thread's settle can interleave in any order
+            # and the end state is still needs_you (invariant I3).
+            def _settle(tt):
+                if tt.get("status") != "running":
+                    return False
+                tt["status"] = "needs_you"
+            _mutate(tid, _settle)
         return {"cancelled": True}
     # no live session - clear a stuck/zombie card so Stop is never a no-op, and
     # promote the interrupted session so re-steering RESUMES it losslessly.
     t = get_track(tid)
     if t and t.get("status") == "running" and not drivers.has_session(tid):
-        resumable = _promote_live_session(t)
-        note = RESUME_NOTE if resumable else ZOMBIE_NOTE
-        t["status"] = "bounced"
-        t["gate_report"] = _interrupt_note_report(t, note)
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _save_track(t)
-        try:
-            from actionlog import ActionLog
-            ActionLog(t["run_dir"]).log("note", "STOP on a dead session - " + note)
-        except Exception:
-            pass
-        events.emit("bounce", tid, reason="stopped_zombie", actor=actor)
-        return {"cancelled": True, "unfroze": True, "resumable": resumable}
+        box = {}
+
+        def _unfreeze(tt):
+            if tt.get("status") != "running" or drivers.has_session(tid):
+                return False             # settled (or respawned) since the check
+            box["resumable"] = _promote_live_session(tt)
+            box["note"] = RESUME_NOTE if box["resumable"] else ZOMBIE_NOTE
+            tt["status"] = "bounced"
+            tt["gate_report"] = _interrupt_note_report(tt, box["note"])
+        _mutate(tid, _unfreeze)
+        if "note" in box:
+            try:
+                from actionlog import ActionLog
+                ActionLog(t["run_dir"]).log("note", "STOP on a dead session - " + box["note"])
+            except Exception:
+                pass
+            events.emit("bounce", tid, reason="stopped_zombie", actor=actor)
+            return {"cancelled": True, "unfroze": True, "resumable": box["resumable"]}
     return {"cancelled": killed}
 
 
@@ -1884,6 +2047,31 @@ def _track_idle_s(t):
     return (time.time() - newest) if newest else 1e9
 
 
+PRESENT_IDLE_S = 45      # spawn window: a just-started steer may briefly show
+                         # running before its turn registers - don't coerce it
+
+
+def present(t):
+    """READ-side lifecycle derivation for the API (Paseo's normalizeArchivedStatus,
+    server-side): a stored 'running' is only ever DELIVERED as running while a
+    turn is actually in flight (drivers.turn_active). Otherwise - once past the
+    spawn window - the client gets 'needs_you', WITHOUT touching the stored
+    value. A phantom spinner is thereby impossible no matter what any write race
+    puts in the DB (invariant I2); the reconciler remains the healer of the
+    stored value. Returns a copy when coercing, the original otherwise."""
+    if (t or {}).get("status") != "running":
+        return t
+    import drivers
+    if drivers.turn_active(t["id"]):
+        return t
+    if _track_idle_s(t) <= PRESENT_IDLE_S:
+        return t                       # spawn window - let it settle
+    out = dict(t)
+    out["status"] = "needs_you"
+    out["status_derived"] = True       # marker: coerced at read, not stored
+    return out
+
+
 def sweep_zombies(min_idle_s=0):
     """Reconcile status vs the live session: a card flagged status=running with no
     owning worker is a ZOMBIE (its turn died with a prior daemon, or a dead/racing
@@ -1922,9 +2110,19 @@ def sweep_zombies(min_idle_s=0):
                 # 'running'. Nothing died and nothing was lost - settle QUIETLY
                 # to needs_you (Paseo's running->idle on turn end), no bounce,
                 # no zombie note. Re-steering resumes the live session as-is.
-                t["status"] = "needs_you"
-                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                _save_track(t)
+                did = {}
+
+                def _settle(tt):
+                    # in-lock recheck: a turn may have started (or the steer
+                    # thread settled it) since the snapshot above
+                    if tt.get("status") != "running" or drivers.turn_active(tt["id"]):
+                        return False
+                    tt["status"] = "needs_you"
+                    did["ok"] = True
+                t2 = _mutate(t["id"], _settle)
+                if not did.get("ok"):
+                    continue
+                t = t2
                 try:
                     ActionLog(t["run_dir"]).log(
                         "note", "SETTLED - Turn war schon beendet, Status hing auf "
@@ -1947,13 +2145,19 @@ def sweep_zombies(min_idle_s=0):
                 continue
         else:
             continue
-        note = RESUME_NOTE if _promote_live_session(t) else ZOMBIE_NOTE
-        t["status"] = "bounced"
-        t["gate_report"] = _interrupt_note_report(t, note)
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _save_track(t)
+        box = {}
+
+        def _bounce(tt, st=st):
+            if tt.get("status") != st:
+                return False             # settled by another writer meanwhile
+            box["note"] = RESUME_NOTE if _promote_live_session(tt) else ZOMBIE_NOTE
+            tt["status"] = "bounced"
+            tt["gate_report"] = _interrupt_note_report(tt, box["note"])
+        t = _mutate(t["id"], _bounce) or t
+        if "note" not in box:
+            continue
         try:
-            ActionLog(t["run_dir"]).log("note", "ZOMBIE SWEEP - " + note)
+            ActionLog(t["run_dir"]).log("note", "ZOMBIE SWEEP - " + box["note"])
         except Exception:
             pass
         events.emit("bounce", t["id"], reason="daemon_restart", actor="daemon")
@@ -2008,13 +2212,12 @@ BOOLFIELDS = ("autopilot", "fast_track")
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
     import events
-    tracks = _load()
-    t = _find(tracks, tid)
+
+    def _flag(tt):
+        tt["archived"] = bool(on)
+    t = _mutate(tid, _flag)
     if not t:
         raise RuntimeError("no such track: " + tid)
-    t["archived"] = bool(on)
-    t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _save_track(t)
     events.emit("archive", tid, on=bool(on), actor=actor)
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
@@ -2048,26 +2251,27 @@ def update_track(tid, patch, actor="owner"):
     """Edit a card's request fields after creation. Only benign fields -
     lane/status/economics move through their own verbs."""
     import events
-    tracks = _load()
-    t = _find(tracks, tid)
+    changed = {}
+
+    def _edit(t):
+        for k in EDITABLE:
+            if k not in patch:
+                continue
+            v = patch[k] or None if k in CLEARABLE else patch[k]
+            if k not in CLEARABLE and v is None:
+                continue
+            if k in BOOLFIELDS:
+                v = bool(v)      # "off" arrives as false/0/"" - never as a string
+            if v == t.get(k):
+                continue
+            t[k] = float(v) if k in ("value", "rate") and v is not None else v
+            changed[k] = t[k]
+        if not changed:
+            return False
+    t = _mutate(tid, _edit)
     if not t:
         raise RuntimeError("no such track: " + tid)
-    changed = {}
-    for k in EDITABLE:
-        if k not in patch:
-            continue
-        v = patch[k] or None if k in CLEARABLE else patch[k]
-        if k not in CLEARABLE and v is None:
-            continue
-        if k in BOOLFIELDS:
-            v = bool(v)          # "off" arrives as false/0/"" - never as a string
-        if v == t.get(k):
-            continue
-        t[k] = float(v) if k in ("value", "rate") and v is not None else v
-        changed[k] = t[k]
     if changed:
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _save_track(t)
         events.emit("edit", tid, actor=actor, fields=changed)
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
@@ -2104,9 +2308,7 @@ def apply_board_directives():
         except (RuntimeError, ValueError) as e:
             print("directives: %s failed: %s" % (did, e))
             continue
-        t = get_track(tid)
-        t.setdefault("directives_applied", []).append(did)
-        _save_track(t)
+        _mutate(tid, lambda tt: tt.setdefault("directives_applied", []).append(did) or None)
         applied += 1
     if applied:
         print("directives: applied %d board directive(s)" % applied)
@@ -2117,15 +2319,14 @@ def add_attachments(tid, attachments, actor="owner"):
     the card's run_dir/.attachments and appended to the card's file list; the
     worker sees them on its next turn (prompt lists attached files)."""
     import turnopts, events
-    tracks = _load()
-    t = _find(tracks, tid)
+    t = _find(_load(), tid)
     if not t:
         raise RuntimeError("no such track: " + tid)
     new_paths = turnopts.save_attachments(t["run_dir"], attachments)
     if new_paths:
-        t["attachments"] = (t.get("attachments") or []) + new_paths
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _save_track(t)
+        def _attach(tt):
+            tt["attachments"] = (tt.get("attachments") or []) + new_paths
+        t = _mutate(tid, _attach) or t
         events.emit("edit", tid, actor=actor, fields={"attachments": len(new_paths)})
         from actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "%s attached %d file(s)" % (actor, len(new_paths)))
@@ -2134,15 +2335,14 @@ def add_attachments(tid, attachments, actor="owner"):
 def remove_attachment(tid, name, actor="owner"):
     """Detach a file from the card by its basename (leaves the file on disk -
     append-only audit; the card just stops referencing it)."""
-    tracks = _load()
-    t = _find(tracks, tid)
+    def _detach(t):
+        before = t.get("attachments") or []
+        t["attachments"] = [p for p in before if os.path.basename(p) != name]
+        if len(t["attachments"]) == len(before):
+            return False
+    t = _mutate(tid, _detach)
     if not t:
         raise RuntimeError("no such track: " + tid)
-    before = t.get("attachments") or []
-    t["attachments"] = [p for p in before if os.path.basename(p) != name]
-    if len(t["attachments"]) != len(before):
-        t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _save_track(t)
     return t
 
 def list_checkpoints(tid):
@@ -2167,10 +2367,11 @@ def rewind_files(tid, commit, actor="owner"):
     undo = _checkpoint(wt)                 # safety anchor of the current state
     _git(wt, "checkout", commit, "--", ".")
     if undo:
-        t.setdefault("checkpoints", []).append(
-            {"turn": t.get("turns"), "commit": undo,
-             "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": "(pre-rewind snapshot)"})
-        _save_track(t)
+        def _anchor(tt):
+            tt.setdefault("checkpoints", []).append(
+                {"turn": tt.get("turns"), "commit": undo,
+                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": "(pre-rewind snapshot)"})
+        _mutate(tid, _anchor)
     import events
     events.emit("rewind", tid, commit=commit[:12], undo=(undo or "")[:12], actor=actor)
     from actionlog import ActionLog
@@ -2222,4 +2423,5 @@ def history(tid):
     t = get_track(tid)
     if not t:
         return []
-    return [r for r in read_timeline(t["run_dir"]) if r.get("kind") in ("steer", "reply", "note")]
+    return [r for r in read_timeline(t["run_dir"])
+            if r.get("kind") in ("steer", "reply", "note", "turn")]

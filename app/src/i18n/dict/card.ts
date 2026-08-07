@@ -147,7 +147,12 @@ export const card: Dict = {
   // transcript / markdown rendering
   "transcript.showMore": { de: "Mehr anzeigen", en: "Show more" },
   "transcript.showLess": { de: "Weniger anzeigen", en: "Show less" },
-  "transcript.interrupted": { de: "unterbrochen", en: "interrupted" },
+  // 4-state tool calls + turn lifecycle (Phase 3: running|completed|failed|canceled)
+  "transcript.toolCanceled": { de: "abgebrochen", en: "canceled" },
+  "transcript.toolFailed": { de: "fehlgeschlagen", en: "failed" },
+  "transcript.turnFailed": { de: "Turn fehlgeschlagen", en: "Turn failed" },
+  "transcript.turnCanceled": { de: "Turn abgebrochen", en: "Turn canceled" },
+  "transcript.turnDone": { de: "Turn abgeschlossen", en: "Turn done" },
   "transcript.thinking": { de: "Gedanken", en: "Thinking" },
   "transcript.todos": { de: "PLAN / TO-DOS", en: "PLAN / TO-DOS" },
   "transcript.plan": { de: "PLAN", en: "PLAN" },
