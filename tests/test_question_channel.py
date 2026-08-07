@@ -233,7 +233,37 @@ def test_answer():
         sessions.steer = orig
 
 
+def test_delivered_predicate():
+    """The wiring that keeps the rest of the harness honest.
+
+    Every automation that reads status == needs_you as "the worker is done"
+    must go through sessions.is_delivered, or it will auto-accept a card that is
+    still ASKING (merging an unfinished branch and discarding the question) or
+    announce a background wait as delivered work."""
+    print("is_delivered / waits_for_owner:")
+    plain = {"status": "needs_you"}
+    asking = {"status": "needs_you", "question": {"id": "q-1", "questions": []}}
+    bg = {"status": "needs_you", "waiting_on": "background",
+          "background": {"n": 1}}
+
+    check(sessions.is_delivered(plain), "a plain parked card IS delivered work")
+    check(not sessions.is_delivered(asking),
+          "a card with a pending question is NOT delivered (never auto-accept it)")
+    check(not sessions.is_delivered(bg),
+          "a card waiting on a background task is NOT delivered")
+    check(not sessions.is_delivered({"status": "running"}), "a running card is not delivered")
+    check(not sessions.is_delivered({"status": "bounced"}), "a bounced card is not delivered")
+    check(not sessions.is_delivered(None), "None is handled")
+
+    check(sessions.waits_for_owner(plain), "a parked card wants the owner")
+    check(sessions.waits_for_owner(asking), "an asking card wants the owner")
+    check(sessions.waits_for_owner({"status": "bounced"}), "a bounced card wants the owner")
+    check(not sessions.waits_for_owner(bg),
+          "a background wait is NOT the owner's move")
+
+
 test_parse()
+test_delivered_predicate()
 test_stream_strip()
 test_validate()
 test_heuristic()

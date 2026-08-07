@@ -152,10 +152,15 @@ class H(BaseHTTPRequestHandler):
                 if not tok or given != tok:
                     return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
                 m = events.metrics(sessions.list_tracks())
+                # The glance surface is "what wants ME". A card waiting on its own
+                # background task does not, so it stays off the glasses; a card
+                # asking a question does, and says so.
                 ny = [{"id": t["id"], "task": (t.get("task") or "")[:70],
-                       "client": t.get("client", ""), "status": t.get("status")}
+                       "client": t.get("client", ""), "status": t.get("status"),
+                       "asking": bool(t.get("question"))}
                       for t in sessions.list_tracks()
-                      if t.get("status") == "needs_you" and not t.get("archived")]
+                      if t.get("status") == "needs_you" and not t.get("archived")
+                      and t.get("waiting_on") != "background"]
                 return self._send(200, json.dumps({
                     "needs_you": ny,
                     "econ": {"needs_you": len(ny), "wip": m["capacity"]["wip"],
