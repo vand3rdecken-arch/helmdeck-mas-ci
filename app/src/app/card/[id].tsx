@@ -366,6 +366,13 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
     ...(agentMsgs.length ? [{ kind: "agentbreak", ts: "" } as TStep, ...agentMsgs] : []),
   ], [feed, pending, agentMsgs]);
 
+  // The turn is still PRODUCING while the transcript streams. The machine-card
+  // driver can flip status->needs_you on a first/quick reply while claude keeps
+  // producing the real answer, so the "waiting for you" cue (and the question
+  // panel) would fire on the FIRST message, not the final one. Suppress them while
+  // a streaming step is present - once the stream settles they show correctly.
+  const streaming = steps.some((s) => s.streaming);
+
   // auto-pin to newest — but only when the reader is already near the bottom, so
   // scrolling up to read isn't yanked back down.
   useEffect(() => {
@@ -423,7 +430,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             - a background task -> not your move at all; say so instead of
               claiming the card wants something from you (Phase 2.5)
             - otherwise         -> the plain "your move, steering resumes" cue */}
-      {!running && !agentMode && k.question ? (
+      {!running && !agentMode && !streaming && k.question ? (
         <QuestionPanel cardId={k.id} question={k.question}
           onAnswered={async () => {
             // the answer starts a turn: pull the card (status->running, question
@@ -431,7 +438,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             await qc.invalidateQueries({ queryKey: ["tracks"] });
             await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
           }} />
-      ) : !running && !agentMode && (k.status === "needs_you" || k.status === "bounced") ? (
+      ) : !running && !agentMode && !streaming && (k.status === "needs_you" || k.status === "bounced") ? (
         <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
             backgroundColor: (k.waiting_on === "background" ? t.ai : t.warn) + "1A",
