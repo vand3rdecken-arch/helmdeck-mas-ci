@@ -1,0 +1,116 @@
+# -*- coding: utf-8 -*-
+"""PRESENCE - is the owner actually looking, and at WHAT? (Paseo adoption 2.1/2.2)
+
+The rule this exists to enforce: never buzz the owner's phone about a card he
+is already staring at. HelmDeck pushed on every turn end, so working on the
+board meant being notified about your own work - which is how a notification
+channel trains you to ignore it.
+
+Three levels, and the distinction between the first two is the whole point:
+  connected  - a socket/poll exists. Proves NOTHING; a forgotten browser tab is
+               connected forever.
+  present    - a client reported real USER ACTIVITY within FRESH_S. Presence is
+               derived from the human, not from the transport.
+  focused    - present AND the app is in the foreground AND the card it is
+               showing is the card we are about to notify about.
+
+  focused -> silent   (he is looking at it; a push would be noise)
+  present -> in-app   (he is here but elsewhere; the app can surface it quietly)
+  absent  -> push     (only now is a phone buzz the right instrument)
+
+HelmDeck has exactly ONE push recipient by construction (settings.push.fcm_token
+is a single paired device), so Paseo's "pick one of N devices" problem does not
+arise here - but several CLIENTS (phone, desktop, browser) can report presence,
+and any one of them being focused is enough to stay silent.
+
+State is in memory on purpose: a restarted daemon knows nothing about presence
+and therefore falls back to pushing, which is the safe direction to be wrong in
+(a missed push is worse than an extra one). A live client re-announces within
+one heartbeat interval anyway.
+"""
+import threading, time
+
+# A client heartbeats every ~15s; 3 minutes tolerates ~11 dropped beats before
+# we declare it absent (the card specifies 3-min freshness).
+FRESH_S = 180.0
+
+_clients = {}          # key -> {"focused","visible","activity","device","user"}
+_lock = threading.Lock()
+
+# Everything below is bounded because every field arrives from a client. The
+# store is a dict keyed on client-supplied strings, so without these a buggy
+# (or hostile) client that rotates its `device` on every beat would grow the
+# daemon's memory without limit - and it heartbeats every 15s.
+_MAX_FIELD = 200       # device / focused-card id length
+_MAX_CLIENTS = 64      # far above any real fleet; prevents unbounded growth
+
+
+def _clip(v, n=_MAX_FIELD):
+    if v is None:
+        return None
+    s = str(v)
+    return s[:n] if s else None
+
+
+def record(user, device, focused_card=None, app_visible=True, activity_at=None):
+    """One heartbeat. `key` is per user+device so a phone and a desktop are two
+    independent presences, not one overwriting the other."""
+    key = "%s/%s" % (_clip(user) or "?", _clip(device) or "?")
+    now = time.time()
+    try:
+        at = float(activity_at) if activity_at is not None else now
+    except (TypeError, ValueError):
+        # a malformed timestamp must not 500 the heartbeat - treat it as "now"
+        # and let the freshness window do its job
+        at = now
+    # Clamp a client clock running ahead of us: otherwise a skewed device would
+    # look present forever (Paseo does the same).
+    at = min(at, now)
+    with _lock:
+        _clients[key] = {"user": _clip(user), "device": _clip(device),
+                         "focused": _clip(focused_card),
+                         "visible": bool(app_visible), "activity": at}
+        # drop everything long past the freshness window; it can never make a
+        # notification decision again, it can only consume memory
+        for k in [k for k, c in _clients.items() if now - c["activity"] > FRESH_S * 4]:
+            if k != key:
+                del _clients[k]
+        # hard cap as the last line of defence: evict least-recently-active
+        if len(_clients) > _MAX_CLIENTS:
+            for k, _c in sorted(_clients.items(), key=lambda kv: kv[1]["activity"])[
+                    :len(_clients) - _MAX_CLIENTS]:
+                if k != key:
+                    del _clients[k]
+    return {"ok": True, "fresh_s": FRESH_S}
+
+
+def _live(now=None):
+    now = now or time.time()
+    with _lock:
+        return [c for c in _clients.values() if now - c["activity"] <= FRESH_S]
+
+
+def plan(card_id, now=None):
+    """What to do about an event on `card_id`: "silent" | "inapp" | "push"."""
+    live = _live(now)
+    if not live:
+        return "push"
+    if card_id and any(c["visible"] and c["focused"] == card_id for c in live):
+        return "silent"
+    return "inapp"
+
+
+def snapshot(now=None):
+    """Debug/diagnostic view - who does the daemon think is here."""
+    now = now or time.time()
+    return {"fresh_s": FRESH_S,
+            "clients": [{"user": c["user"], "device": c["device"],
+                         "focused": c["focused"], "visible": c["visible"],
+                         "idle_s": round(now - c["activity"], 1)}
+                        for c in _live(now)]}
+
+
+def clear():
+    """Test hook."""
+    with _lock:
+        _clients.clear()

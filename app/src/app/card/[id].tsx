@@ -9,12 +9,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type SteerOpts } from "@/data/client";
+import { usePresence } from "@/data/presence";
 import type { Track, Me, EconCard } from "@/data/types";
 import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
+import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { useActionSheet } from "@/ui/action_sheet";
 
@@ -414,18 +416,35 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         ) : null}
       </View>
 
-      {/* Turn-ended cue: the card sits in the "In Arbeit" lane but its turn is
-          done and waiting on the owner (needs_you/bounced, no live turn). Without
-          this the chat just falls silent after the last tool and reads as frozen
-          ("stucked again") - this makes it unmistakable that it's the owner's move
-          and that steering RESUMES the same context. */}
-      {!running && !agentMode && (k.status === "needs_you" || k.status === "bounced") ? (
+      {/* What the parked card is waiting on. Three distinct cases, because
+          "the turn ended" alone was ambiguous enough that cards looked stuck:
+            - a typed question  -> real option buttons; answering CONTINUES the
+              same session (Phase 2.4), so it replaces the generic cue entirely
+            - a background task -> not your move at all; say so instead of
+              claiming the card wants something from you (Phase 2.5)
+            - otherwise         -> the plain "your move, steering resumes" cue */}
+      {!running && !agentMode && k.question ? (
+        <QuestionPanel cardId={k.id} question={k.question}
+          onAnswered={async () => {
+            // the answer starts a turn: pull the card (status->running, question
+            // cleared) and the feed so the panel gives way to the live turn.
+            await qc.invalidateQueries({ queryKey: ["tracks"] });
+            await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
+          }} />
+      ) : !running && !agentMode && (k.status === "needs_you" || k.status === "bounced") ? (
         <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
-            backgroundColor: t.warn + "1A", borderColor: t.warn + "66", borderWidth: 1, borderRadius: 10,
+            backgroundColor: (k.waiting_on === "background" ? t.ai : t.warn) + "1A",
+            borderColor: (k.waiting_on === "background" ? t.ai : t.warn) + "66",
+            borderWidth: 1, borderRadius: 10,
             paddingHorizontal: 12, paddingVertical: 7 }}>
-            <Ionicons name="hand-left-outline" size={14} color={t.warn} />
-            <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("card.chat.awaitingYou")}</Text>
+            <Ionicons name={k.waiting_on === "background" ? "hourglass-outline" : "hand-left-outline"}
+              size={14} color={k.waiting_on === "background" ? t.ai : t.warn} />
+            <Text style={{ color: t.txtSecondary, fontSize: 12 }}>
+              {k.waiting_on === "background"
+                ? tr("card.chat.awaitingBackground", { n: k.background?.n ?? 1 })
+                : tr("card.chat.awaitingYou")}
+            </Text>
           </View>
         </View>
       ) : null}
@@ -478,6 +497,15 @@ export default function CardScreen() {
   const sheet = useActionSheet();
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
   const showToast = (text: string, ok = true) => { setToast({ text, ok }); setTimeout(() => setToast(null), 3800); };
+
+  // Presence (Phase 2.1): while this screen is mounted the owner is LOOKING at
+  // this card, so the daemon must not push about it (notify.should_push).
+  // Clearing on unmount is what makes leaving the card resume notifications.
+  useEffect(() => {
+    if (!id) return;
+    usePresence.getState().setFocusedCard(id);
+    return () => usePresence.getState().setFocusedCard(null);
+  }, [id]);
 
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
   // tracks can arrive as a non-array {error} object over the relay (pairing/pin
