@@ -789,6 +789,95 @@ def _git_try(repo, *args):
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
 
+def _current_branch(repo):
+    rc, out, _ = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    return out if rc == 0 else ""
+
+
+# -- WORKTREE RECLAMATION (the second half of the isolation law) --------------
+# HelmDeck's charter gives every card its own git worktree+branch so parallel
+# cards never collide - a real edge over Paseo, which runs one agent in one
+# shared directory. But isolation with no RECLAIM just piles up dead trees:
+# accepted/archived cards left 25 orphaned worktrees behind ("System too full").
+# Paseo stays clean only because it never makes worktrees at all. So we close the
+# loop: when a card reaches a terminal state its tree goes back to the pool.
+
+def reclaim_worktree(t, log=None, force=False):
+    """Give ONE finished card's worktree (and branch) back. Called on a terminal
+    transition (accepted/archived): the work is already in the integration
+    branch, so the tree and branch are safe to drop. Never touches the primary
+    checkout, and KEEPS any tree that still has modified TRACKED files unless
+    force (nothing uncommitted is ever lost - untracked build noise doesn't
+    count). Best-effort: a git hiccup never breaks the accept/archive."""
+    repo, wt, br = t.get("repo"), t.get("worktree"), t.get("branch")
+    if not repo or not wt or not os.path.isdir(wt):
+        return False
+    if os.path.abspath(wt) == os.path.abspath(repo):
+        return False                       # never the main checkout
+    if not force:
+        rc, out, _ = _git_try(wt, "status", "--porcelain", "--untracked-files=no")
+        if rc == 0 and out:
+            if log:
+                log.log("note", "WORKTREE behalten - uncommittete Aenderungen in %s" % wt)
+            return False
+    _git_try(repo, "worktree", "remove", "--force", wt)
+    if os.path.isdir(wt):                   # remove refused (locked?) - leave it be
+        if log:
+            log.log("note", "WORKTREE nicht entfernbar (gesperrt?): %s" % wt)
+        return False
+    integ = _current_branch(repo)
+    if br and br not in ("main", "master") and integ != br:
+        # Delete the branch ONLY if it is merged into the integration branch -
+        # an archived-but-unmerged card keeps its branch so its commits survive
+        # (the worktree is regenerable from the branch; unmerged commits are not).
+        if integ and _git_try(repo, "merge-base", "--is-ancestor", br, integ)[0] == 0:
+            _git_try(repo, "branch", "-D", br)
+        elif log:
+            log.log("note", "BRANCH behalten - nicht gemergt: %s (Worktree entfernt, Commits bleiben)" % br)
+    _git_try(repo, "worktree", "prune")
+    if log:
+        log.log("note", "WORKTREE zurueckgeholt: %s (branch %s) - Arbeit ist gelandet." % (wt, br))
+    return True
+
+
+def sweep_worktrees():
+    """Startup backstop + one-shot cleanup: reclaim EVERY merged, clean card
+    worktree across the repos we know. Complements the per-card reclaim by
+    catching trees left by builds from before reclamation existed. Git-driven
+    (merged into the integration branch AND clean), so it is independent of card
+    status. Returns the number reclaimed."""
+    repos = {t.get("repo") for t in _load() if t.get("repo")}
+    n = 0
+    for repo in repos:
+        if not repo or not os.path.isdir(repo):
+            continue
+        integ = _current_branch(repo)
+        rc, out, _ = _git_try(repo, "worktree", "list", "--porcelain")
+        if rc != 0:
+            continue
+        wt, pairs = None, []
+        for line in out.splitlines():
+            if line.startswith("worktree "):
+                wt = line[len("worktree "):].strip()
+            elif line.startswith("branch "):
+                pairs.append((line[len("branch "):].strip().replace("refs/heads/", ""), wt))
+        for br, path in pairs:
+            if (not path or not br or br in ("main", "master", integ)
+                    or os.path.abspath(path) == os.path.abspath(repo)):
+                continue
+            if _git_try(repo, "merge-base", "--is-ancestor", br, integ)[0] != 0:
+                continue                    # not merged - keep
+            rc3, dirty, _ = _git_try(path, "status", "--porcelain", "--untracked-files=no")
+            if rc3 == 0 and dirty:
+                continue                    # dirty tracked - keep
+            _git_try(repo, "worktree", "remove", "--force", path)
+            if not os.path.isdir(path):
+                _git_try(repo, "branch", "-D", br)
+                n += 1
+        _git_try(repo, "worktree", "prune")
+    return n
+
+
 def _autocommit(t):
     """Clean up + commit uncommitted worktree work on the card's OWN branch (also
     COMPLETES a conflict merge the harness set up), so finishing never dead-ends on
@@ -1174,6 +1263,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             except RuntimeError as e:
                 log.log("note", str(e)[:400])
                 events.emit("connector", tid, action="charter_blocked", detail=str(e)[:300])
+        reclaim_worktree(t, log)   # isolation reclaimed: the work is in main now
         lane = "done"   # Review == Abnahme: a finished card lands in Done
     elif lane == "backlog":
         t["status"] = "queued"
@@ -1886,7 +1976,13 @@ def archive_track(tid, on=True, actor="owner"):
     _save_track(t)
     events.emit("archive", tid, on=bool(on), actor=actor)
     from actionlog import ActionLog
-    ActionLog(t["run_dir"]).log("note", ("ARCHIVED" if on else "UNARCHIVED") + " by " + actor)
+    log = ActionLog(t["run_dir"])
+    log.log("note", ("ARCHIVED" if on else "UNARCHIVED") + " by " + actor)
+    if on:
+        # Archiving is terminal for work views - reclaim the isolation. Safe by
+        # construction: a dirty tree is kept, an unmerged branch is kept (only
+        # the regenerable worktree of a landed/clean card goes).
+        reclaim_worktree(t, log)
     return t
 
 def delete_track(tid, actor="owner"):
