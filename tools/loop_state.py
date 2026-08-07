@@ -218,14 +218,61 @@ def _src_mtime(srcs):
     return newest_mtime(paths)
 
 
+# deploy/ship.sh's AUTHORITATIVE native fingerprint, reproduced byte-for-byte so
+# it equals the value ship.sh writes into deploy/.native_fp. mtime alone lied: an
+# OTA version bump re-touches app.json without changing a single native byte, and
+# the APK then read 'stale' forever (the recurring BUILD nag with nothing to
+# build). The fingerprint EXCLUDES the churning version fields, so it moves only
+# on a real native change - the same call ship.sh makes to decide native-vs-JS.
+_GIT_BASH = (r"C:\Program Files\Git\bin\bash.exe",
+             r"C:\Program Files\Git\usr\bin\bash.exe",
+             r"C:\Program Files (x86)\Git\bin\bash.exe")
+_NATIVE_FP_PIPE = (
+    r'''{ sed -n 's/.*\("expo[^"]*"\|"react-native[^"]*"\).*/\1/p' app/package.json; '''
+    r'''grep -vE '"version"[[:space:]]*:|"versionCode"[[:space:]]*:' app/app.json 2>/dev/null; '''
+    r'''grep -v "EXPO_RUNTIME_VERSION" app/android/app/src/main/AndroidManifest.xml 2>/dev/null; '''
+    r'''} | sha256sum | cut -d' ' -f1''')
+
+
+def _native_fp():
+    """ship.sh's native fingerprint via git-bash (NOT plain `bash`, which resolves
+    to WSL here). Returns "" if it can't be computed, so the caller falls back to
+    the mtime check rather than guessing."""
+    for b in _GIT_BASH:
+        if os.path.exists(b):
+            try:
+                r = subprocess.run([b, "-c", _NATIVE_FP_PIPE], cwd=ROOT,
+                                   capture_output=True, text=True, timeout=20)
+                return r.stdout.strip() if r.returncode == 0 else ""
+            except Exception:
+                return ""
+    return ""
+
+
 def build_stale():
-    """True if a shippable artifact is missing or older than ITS OWN source - so
-    the loop nudges `build_all` before it rests. Only checked once work has gone
-    quiet, so it never runs on every keystroke."""
+    """True if a shippable artifact is missing or its NATIVE inputs changed since
+    the last ship - so the loop nudges a rebuild before it rests. Only checked
+    once work has gone quiet, so it never runs on every keystroke."""
     for art, srcs in ARTIFACT_SRC.items():
         ap = os.path.join(ROOT, art)
         if not os.path.exists(ap):
             return True
+        # Native-vs-JS by ship.sh's own FINGERPRINT (authoritative), not mtime.
+        fp = _native_fp()
+        mp = os.path.join(ROOT, "deploy", ".native_fp")
+        marker = ""
+        if os.path.exists(mp):
+            try:
+                with open(mp, encoding="utf-8") as f:
+                    marker = f.read().strip()
+            except OSError:
+                pass
+        if fp and marker:
+            if fp != marker:
+                return True          # a genuine native change is pending a ship
+            continue                 # fingerprint matches -> the APK is current
+        # fingerprint unavailable (no git-bash, or no marker yet): degrade to the
+        # old mtime signal rather than silently declaring the APK fresh.
         if _src_mtime(srcs) > os.path.getmtime(ap):
             return True
     return False
