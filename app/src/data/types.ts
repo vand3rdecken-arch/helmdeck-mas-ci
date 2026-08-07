@@ -9,6 +9,7 @@ export interface Track {
   status: string; turns: number; last_reply: string;
   value: number; driver: string; priority?: string; due?: string; rank?: number | null;
   ai_cost: number; tokens_in: number; tokens_out: number; models: string[];
+  ctx_tokens?: number;   // current context-window size (last turn's input side) - for the meter
   created: string; updated: string;
   mode?: string; process?: string; process_title?: string;
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;

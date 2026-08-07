@@ -335,6 +335,15 @@ def _record_econ(t, meta):
     t["tokens_in"] = t.get("tokens_in", 0) + u.get("input_tokens", 0) \
         + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
     t["tokens_out"] = t.get("tokens_out", 0) + u.get("output_tokens", 0)
+    # CONTEXT METER (Paseo-parity: contextWindowUsedTokens). tokens_in above is
+    # CUMULATIVE across turns - useless for "how full is the window". The actual
+    # context size = THIS call's input side (the whole conversation is re-sent as
+    # the prompt each turn), so store it separately for the card's meter. Lets the
+    # owner SEE the context filling instead of a surprise "Kontext ist am Ende".
+    ctx = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+           + u.get("cache_read_input_tokens", 0))
+    if ctx:
+        t["ctx_tokens"] = ctx
     for m in meta.get("models") or []:
         if m not in t.setdefault("models", []):
             t["models"].append(m)
