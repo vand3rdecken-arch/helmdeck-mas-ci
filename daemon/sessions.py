@@ -911,7 +911,11 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         if ac is True:
             log.log("note", "COMMITTED worktree changes on the branch before merge")
         # the repo's own quality gate (helmdeck.gate command). The committed
-        # check now trivially passes because we just committed.
+        # check now trivially passes because we just committed. Say it in the CHAT
+        # first: the gate runs daemon-side (outside the agent session), so without
+        # this the card just spins "In Arbeit" / "Gate laeuft" with nothing in the
+        # chat and the owner cannot see WHAT is happening.
+        _say_card(t, _i18n.t("say.gateRunning"))
         ok, problems = _gate(t)
         events.emit("gate", tid, ok=ok, problems=problems)
         if not ok:
@@ -929,6 +933,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
+        _say_card(t, _i18n.t("say.gateGreen"))
         if lane == "review":
             # PREVIEW ONLY: say what a Done would do; the card RESTS on Review.
             kind, msg = _classify_merge(t)
@@ -939,8 +944,10 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             # and retry, ONCE (_autopark guards recursion).
             if _autopark and kind == "conflict" and _is_dirty_block(msg):
                 log.log("note", "AUTO: out-of-worktree blocker (dirty checkout) - delegating to the board-Agent")
+                _say_card(t, _i18n.t("say.mergeBlockedDirty"))
                 summary = park_and_retry_merge(tid, actor="board-Agent (auto)")
                 log.log("note", "AUTO board-Agent: " + summary[:300])
+                _say_card(t, _i18n.t("say.mergeUnblocked", detail=summary[:300]))
                 return _find(_load(), tid) or dict(t)
             events.emit("merge", tid, ok=(kind not in ("conflict", "blocked")),
                         outcome=kind, detail="preview: " + msg[:200])
