@@ -241,6 +241,31 @@ def _ask_repair_on(t):
     return bool(pol.get("ask_repair", True))
 
 
+def is_delivered(t):
+    """True when a parked card is really HANDING WORK BACK, as opposed to
+    sitting on `needs_you` for some other reason.
+
+    Every automation that treats "status == needs_you" as "the worker is done"
+    needs this. Since Phase 2 a card can be parked because it is ASKING the
+    owner a question, or because it is waiting on a background task it started -
+    neither is finished work. Auto-accepting those would merge an unfinished
+    branch and throw the question away, and announcing them as "delivered" is
+    simply wrong. (Both cases existed before; they were just indistinguishable.)"""
+    t = t or {}
+    return (t.get("status") == "needs_you"
+            and not t.get("question")
+            and t.get("waiting_on") != "background")
+
+
+def waits_for_owner(t):
+    """True when the card wants something from the HUMAN right now - finished
+    work to accept, or a question to answer. A background wait is excluded: it
+    is the one parked state that is nobody's move but the machine's."""
+    t = t or {}
+    return (t.get("status") in ("needs_you", "bounced")
+            and t.get("waiting_on") != "background")
+
+
 def _settle_reply(t, result, log):
     """Fold a finished turn's REPLY into the card and say what it is waiting on.
 
