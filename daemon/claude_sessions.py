@@ -178,6 +178,21 @@ def read_transcript_live(track, limit=400):
     block is flushed to the .jsonl."""
     sid = live_session_id(track)
     steps = read_transcript(sid, limit) if sid else []
+    # Chain across a session ROTATION. A compaction (or a resume of a session
+    # that hit the context limit) rotates to a FRESH .jsonl that carries none of
+    # the prior conversation - reading only the live `sid` makes the whole chat
+    # look wiped ("ganzer Chat verschwunden"). When this card has a remembered
+    # prior session (steer records session_chain) and the live thread doesn't
+    # already carry a compaction marker, lead with ONE "Kontext verdichtet"
+    # marker: honest (the earlier turns were summarised away, Paseo-style), cheap
+    # (no re-read of the old file), and reassuring (the break is explained, not
+    # silent). Skip it while the fresh session is still empty - the marker alone
+    # over a blank feed would read as "everything got compacted to nothing".
+    chain = (track or {}).get("session_chain") or []
+    if (chain and steps
+            and not any(s.get("kind") == "compaction" for s in steps)):
+        steps = [{"role": "system", "kind": "compaction", "text": "",
+                  "prev": chain[-1], "ts": ""}] + steps
     # A tool_use with no matching tool_result is flagged running=True. That is
     # only true while the TURN is live; once the card is at rest (needs_you,
     # bounced, done) a resultless trailing tool means the turn was KILLED mid-tool

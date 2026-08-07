@@ -1298,6 +1298,51 @@ def _pending_context(t):
             "instruction refers to it:]\n\n" + "\n\n".join(parts) + "\n\n---\n\n")
 
 
+# -- AUTO-COMPACT-AND-CONTINUE (Paseo parity: auto compaction at the brim) ----
+# A persistent claude -p session fills over turns. Left alone it dead-ends the
+# worker ("mein Kontext ist am Ende") and, worse, the NEXT resume of a full
+# session rotates to a FRESH .jsonl carrying none of the prior conversation -
+# the whole chat "disappears" from the card. So when a turn leaves the context
+# near the brim we run ONE bounded /compact on the same session: it summarises
+# itself in place, the next steer keeps headroom, the thread stays continuous.
+_COMPACT_AT_TOKENS = 160_000     # ~80% of a 200k window - compact before the brim
+_CTX_WINDOW = 200_000
+_autocompact_supported = None    # None=unprobed, True/False learned from first /compact
+
+
+def _maybe_compact(t, log):
+    """Compact the session in place if the live context crossed the high-water
+    mark. Self-verifying: /compact must actually SHRINK the context. If it does
+    not (an older CLI that treats the slash line as literal input), we learn that
+    once and stop - no no-op cost, no polluting the conversation every turn."""
+    global _autocompact_supported
+    if _autocompact_supported is False:
+        return
+    ctx = t.get("ctx_tokens", 0)
+    if ctx < _COMPACT_AT_TOKENS or not t.get("session_id"):
+        return
+    pct = min(100, round(ctx / _CTX_WINDOW * 100))
+    log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
+            "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
+    sid, _out, meta = _turn(t, "/compact")
+    if sid and t.get("session_id") and sid != t["session_id"]:
+        _chain = [s for s in (t.get("session_chain") or []) if s != t["session_id"]]
+        _chain.append(t["session_id"])
+        t["session_chain"] = _chain[-6:]
+        t["session_id"] = sid
+    before = ctx
+    _record_econ(t, meta)                 # measured economics: the compact turn is billed too
+    after = t.get("ctx_tokens", before)
+    if after <= before * 0.75:            # a real compaction frees a big chunk
+        _autocompact_supported = True
+        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
+                "ohne Unterbrechung weiter." % round(after / 1000))
+    else:
+        _autocompact_supported = False
+        log.log("note", "AUTO-COMPACT: diese CLI honoriert /compact nicht - fuer diese "
+                "Session abgeschaltet. Kontext-Meter + Nudge bleiben aktiv.")
+
+
 def steer(tid, text, perm=None, actor="owner", source="you",
           model="", thinking="", attachments=None, mode=None):
     """Continue the track's session (resume - context preserved, NO history rebuild).
@@ -1350,7 +1395,16 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
     sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
-    # session_id can rotate on resume; keep the latest so the next steer continues.
+    # session_id can rotate on resume/compaction; keep the latest so the next
+    # steer continues, and REMEMBER the one we're leaving. A compaction (or a
+    # resume of a full session) rotates to a FRESH .jsonl that carries none of
+    # the prior conversation - without this pointer the whole chat "disappears"
+    # from the card view ("warum ist der ganze Chat verschwunden"). The card feed
+    # uses the chain to lead with a "Kontext verdichtet" marker instead.
+    if sid and t.get("session_id") and sid != t["session_id"]:
+        _chain = [s for s in (t.get("session_chain") or []) if s != t["session_id"]]
+        _chain.append(t["session_id"])
+        t["session_chain"] = _chain[-6:]     # bounded - last 6 prior sessions
     t["session_id"] = sid or t["session_id"]
     t["turns"] = t.get("turns", 0) + 1
     reason = _settle_reply(t, result, log)
@@ -1363,6 +1417,14 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if isinstance(_gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x for x in _gr):
         t.pop("gate_report", None)
     _record_turn(t, meta)
+    # Auto-compact-and-continue: if this turn left the context near the brim,
+    # verdict the session NOW (one bounded /compact on the same session) so the
+    # next steer keeps headroom and the thread stays continuous - never a
+    # dead-end or a fresh-session overflow. Best-effort, self-verifying.
+    try:
+        _maybe_compact(t, log)
+    except Exception as _e:
+        log.log("note", "auto-compact skipped: %s" % str(_e)[:200])
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save_track(t)
     import notify
