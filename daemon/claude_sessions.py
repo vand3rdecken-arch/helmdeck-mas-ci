@@ -193,18 +193,20 @@ def read_transcript_live(track, limit=400):
             and not any(s.get("kind") == "compaction" for s in steps)):
         steps = [{"role": "system", "kind": "compaction", "text": "",
                   "prev": chain[-1], "ts": ""}] + steps
-    # A tool_use with no matching tool_result is flagged running=True. That is
-    # only true while the TURN is live; once the card is at rest (needs_you,
-    # bounced, done) a resultless trailing tool means the turn was KILLED mid-tool
-    # (session teardown, a 1800s kill, a daemon restart) - it is ABANDONED, not
-    # running. Left as running it shows a forever-ticking clock and no final reply
-    # ("Karte fertig aber keine Antwort"). Re-label it so the UI can show
-    # "abgebrochen" + its timestamp instead of a live clock.
+    # A tool_use with no matching tool_result is status=running. That is only
+    # true while the TURN is live; once the card is at rest (needs_you, bounced,
+    # done) a resultless trailing tool means the turn was KILLED mid-tool
+    # (session teardown, a 1800s kill, a daemon restart). In the 4-state model
+    # (Phase 3.1) that is CANCELED - the old ad-hoc `abandoned` flag is kept as
+    # a legacy alias. Left as running it shows a forever-ticking clock and no
+    # final reply ("Karte fertig aber keine Antwort").
     if (track or {}).get("status") != "running":
         for st in steps:
-            if st.get("running"):
+            if st.get("running") or st.get("status") == "running":
                 st["running"] = False
                 st["abandoned"] = True
+                st["status"] = "canceled"
+                st["error"] = None
     run_dir = (track or {}).get("run_dir") or ""
     if run_dir:
         try:
@@ -435,9 +437,13 @@ def read_transcript(session_id, limit=400):
     """Parse a session's jsonl into ordered steps for the card's agent view -
     the full Paseo-style turn view. Steps:
       {kind:text|thinking, role, text, ts}
-      {kind:tool, tool, text(summary), result, ok, ts}   (tool_use paired to its result)
-      {kind:todos, todos:[{content,status}], ts}          (from TodoWrite)
+      {kind:tool, tool, text(summary), result, status, error, ts}
+          status: running|completed|failed|canceled (failed <=> error!=null);
+          `ok`/`running`/`abandoned` kept as legacy aliases of the same facts
+      {kind:turn, event:canceled, ts}                      (Stop mid-turn marker)
+      {kind:todos, todos:[{content,status}], ts}           (from TodoWrite)
       {kind:plan, text, ts}                                (from ExitPlanMode)
+      {kind:compaction, ts}                                (context compacted)
     """
     path = _find_transcript(session_id)
     if not path:
@@ -452,7 +458,10 @@ def read_transcript(session_id, limit=400):
         except ValueError:
             continue
 
-    # pass 1: tool_use_id -> result, so each tool call carries its own output
+    # pass 1: tool_use_id -> result, so each tool call carries its own output.
+    # `interrupted` marks the runtime's own Stop sentinel: that result is not an
+    # ERROR of the tool but the owner's hand - the 4-state model (Paseo
+    # messages.ts ToolCall*Payload) renders it canceled, never failed.
     results = {}
     for d in parsed:
         m = d.get("message")
@@ -461,8 +470,10 @@ def read_transcript(session_id, limit=400):
             continue
         for part in c:
             if isinstance(part, dict) and part.get("type") == "tool_result":
+                rt = _result_text(part)
                 results[part.get("tool_use_id")] = {
-                    "text": _result_text(part)[:MAX_RESULT], "ok": not part.get("is_error")}
+                    "text": rt[:MAX_RESULT], "ok": not part.get("is_error"),
+                    "interrupted": rt.lstrip().startswith("[Request interrupted by user")}
 
     # pass 2: emit steps in order
     steps = []
@@ -532,9 +543,10 @@ def read_transcript(session_id, limit=400):
         # An interrupt (Stop mid-turn, esp. during a tool call) is recorded by
         # Claude Code as a role=user message '[Request interrupted by user...]'.
         # That is the harness speaking, not the owner - as a prose bubble it read
-        # like the human typed it. Render it as ONE clean interrupted marker.
+        # like the human typed it. It is the TURN's lifecycle, so it is a typed
+        # turn_canceled item (Phase 3.2), not a prose/system step.
         if role == "user" and _lead.lstrip().startswith("[Request interrupted by user"):
-            steps.append({"kind": "system", "text": "⏹ Turn unterbrochen", "ts": ts, "ta": ta})
+            steps.append({"kind": "turn", "event": "canceled", "ts": ts, "ta": ta})
             continue
         if isinstance(content, str):
             body = _clean_text(content.strip())
@@ -565,9 +577,21 @@ def read_transcript(session_id, limit=400):
                     steps.append({"kind": "plan", "text": str(inp.get("plan", ""))[:MAX_TEXT], "ts": ts, "ta": ta})
                     continue
                 res = results.get(part.get("id"))
+                # 4-state tool-call model (Phase 3.1, Paseo parity):
+                # running | completed | failed | canceled, failed <=> error!=null.
+                # An interrupt sentinel is canceled (the owner's hand, error null).
+                if res is None:
+                    status, err = "running", None
+                elif res.get("interrupted"):
+                    status, err = "canceled", None
+                elif not res.get("ok", True):
+                    status, err = "failed", (res.get("text") or "error")[:500]
+                else:
+                    status, err = "completed", None
                 step = {"role": role, "kind": "tool", "tool": name,
                         "text": _tool_summary(inp), "result": (res or {}).get("text", ""),
                         "ok": (res or {}).get("ok", True),
+                        "status": status, "error": err,
                         "running": res is None, "ts": ts, "ta": ta}
                 detail = _tool_detail(name, inp)
                 if detail:

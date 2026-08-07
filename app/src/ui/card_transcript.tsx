@@ -15,15 +15,39 @@ export interface ToolDetail {
   file?: string; old?: string; new?: string; content?: string;
   edits?: { old: string; new: string }[];
 }
+// The clean state models (Phase 3, Paseo parity):
+// - a tool call is exactly one of running|completed|failed|canceled
+//   (failed <=> error != null; interrupted/abandoned are canceled)
+// - the turn lifecycle is its OWN event stream (started/completed/failed/
+//   canceled + usage), not inferred from flat steps
+export type ToolStatus = "running" | "completed" | "failed" | "canceled";
+export type TurnEvent = "started" | "completed" | "failed" | "canceled";
+export interface TurnUsage {
+  input_tokens?: number; output_tokens?: number;
+  cache_creation_input_tokens?: number; cache_read_input_tokens?: number;
+}
 export interface TStep {
   role?: string;
-  kind?: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system" | "note" | string;
+  kind?: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system" | "note" | "turn" | "error" | string;
   cls?: string;
   text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; abandoned?: boolean; ts?: string;
+  status?: ToolStatus;           // the 4-state tool-call model
+  error?: string | null;         // non-null exactly when status === "failed"
+  event?: TurnEvent;             // kind === "turn": which lifecycle edge
+  usage?: TurnUsage; cost?: number | null;   // turn-end economics (kind === "turn")
   ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
   agent?: boolean;   // a board-Agent (copilot) message, not a Worker one
   streaming?: boolean; detail?: ToolDetail;
   todos?: { content: string; status: string }[];
+}
+
+// Legacy rows (older daemon / cached feeds) carry only ok/running/abandoned —
+// derive the 4-state status so the UI renders one model, not two.
+export function toolStatus(s: TStep): ToolStatus {
+  if (s.status) return s.status;
+  if (s.running) return "running";
+  if (s.abandoned) return "canceled";
+  return s.ok === false ? "failed" : "completed";
 }
 
 // Display timestamp: the daemon's HH:MM:SS is date-less, so a row from a prior
@@ -170,12 +194,13 @@ function RunningClock({ ta, t }: { ta?: number; t: ThemeTokens }) {
 
 function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen?: boolean }) {
   const tr = useT();
+  const status = toolStatus(s);
   // Auto-open the running tool and the latest tool so output is visible without
   // a tap (Paseo-style: the tail of the run is expanded, history stays folded).
-  const [open, setOpen] = useState(!!defaultOpen || !!s.running);
+  const [open, setOpen] = useState(!!defaultOpen || status === "running");
   const hasResult = !!(s.result && s.result.trim());
   const expandable = hasResult || !!s.detail;
-  const err = s.ok === false;
+  const err = status === "failed";
   return (
     <View style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, backgroundColor: t.surface1, overflow: "hidden" }}>
       <Pressable onPress={() => expandable && setOpen((o) => !o)}
@@ -183,15 +208,22 @@ function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen
         <Ionicons name={toolIcon(s.tool || "")} size={13} color={err ? t.danger : t.ai} />
         <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>{s.tool}</Text>
         <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>{s.text}</Text>
-        {s.running ? <RunningClock ta={s.ta} t={t} /> : null}
-        {!s.running && s.abandoned ? (
+        {status === "running" ? <RunningClock ta={s.ta} t={t} /> : null}
+        {status === "canceled" ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-            <Ionicons name="alert-circle-outline" size={11} color={t.warn} />
-            <Text style={{ color: t.warn, fontSize: 10, fontWeight: "600" }}>{tr("transcript.interrupted")}</Text>
+            <Ionicons name="remove-circle-outline" size={11} color={t.warn} />
+            <Text style={{ color: t.warn, fontSize: 10, fontWeight: "600" }}>{tr("transcript.toolCanceled")}</Text>
             {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>· {tsLabel(s)}</Text> : null}
           </View>
         ) : null}
-        {!s.running && !s.abandoned && s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+        {status === "failed" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Ionicons name="close-circle-outline" size={11} color={t.danger} />
+            <Text style={{ color: t.danger, fontSize: 10, fontWeight: "600" }}>{tr("transcript.toolFailed")}</Text>
+            {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>· {tsLabel(s)}</Text> : null}
+          </View>
+        ) : null}
+        {status === "completed" && s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
         {expandable ? <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={12} color={t.txtTertiary} /> : null}
       </Pressable>
       {open ? (
@@ -246,6 +278,20 @@ function Todos({ s, t }: { s: TStep; t: ThemeTokens }) {
   );
 }
 
+// Turn-end economics label: "in → out" in compact-k form. The usage arrives on
+// the turn's OWN lifecycle event (Phase 3.2), not on a flat step.
+function usageLabel(u?: TurnUsage): string {
+  if (!u) return "";
+  const inn = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  const out = u.output_tokens ?? 0;
+  if (!inn && !out) return "";
+  const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
+  return `${k(inn)} → ${k(out)}`;
+}
+function costLabel(cost?: number | null): string {
+  return typeof cost === "number" && cost > 0 ? ` · $${cost.toFixed(4)}` : "";
+}
+
 // Stable per-row key so React reconciles by identity across each refetch/poll
 // instead of remounting the whole list (which collapsed expanded tool cards and
 // read as a "strange rebuild"). Derived from the sort epoch + kind + a content
@@ -278,6 +324,45 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
             <Ionicons name="sparkles-outline" size={12} color={t.accent2} />
             <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 }}>{tr("transcript.boardAgentDivider")}</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
+          </View>);
+        // Turn lifecycle as first-class items (Phase 3.2/3.3): `started` renders
+        // nothing (the owner's message right above it already marks the turn),
+        // `completed` is a quiet usage line, `canceled` a centered marker,
+        // `failed` a real error card with the error text + usage.
+        if (kind === "turn") {
+          if (s.event === "failed") return (
+            <View key={key} style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12", gap: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Ionicons name="alert-circle" size={13} color={t.danger} />
+                <Text style={{ color: t.danger, fontSize: 12, fontWeight: "700", flex: 1 }}>{tr("transcript.turnFailed")}</Text>
+                {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+              </View>
+              {s.error ? <Text style={{ color: t.txtSecondary, fontFamily: MONO, fontSize: 11.5, lineHeight: 16 }}>{s.error}</Text> : null}
+              {usageLabel(s.usage) ? (
+                <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{usageLabel(s.usage)}{costLabel(s.cost)}</Text>
+              ) : null}
+            </View>);
+          if (s.event === "canceled") return (
+            <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
+              <Text style={{ color: t.warn, fontSize: 11 }}>⏹ {tr("transcript.turnCanceled")}{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
+            </View>);
+          if (s.event === "completed" && usageLabel(s.usage)) return (
+            <View key={key} style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 4, paddingVertical: 1 }}>
+              <Ionicons name="checkmark-circle-outline" size={10} color={t.txtTertiary} />
+              <Text style={{ color: t.txtTertiary, fontSize: 10 }}>
+                {tr("transcript.turnDone")} · {usageLabel(s.usage)}{costLabel(s.cost)}{s.ts ? ` · ${tsLabel(s)}` : ""}
+              </Text>
+            </View>);
+          return null;   // "started" (and a usage-less completed) add no ink
+        }
+        // A stream/runtime error as its own item (Phase 3.3), never a prose bubble.
+        if (kind === "error") return (
+          <View key={key} style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Ionicons name="alert-circle" size={13} color={t.danger} />
+              <Text style={{ color: t.danger, fontSize: 12, flex: 1 }}>{s.text || s.error || ""}</Text>
+              {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+            </View>
           </View>);
         if (kind === "compaction") return (
           <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
