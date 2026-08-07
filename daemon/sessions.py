@@ -1370,13 +1370,32 @@ def _promote_live_session(t):
         return True
     return False
 
-def sweep_zombies():
-    """Startup pass: a daemon that dies mid-turn leaves cards flagged
-    status=running with no owning worker - cancel returns false, the phone
-    watches a card that will never move again. Flip every such track to
-    bounced with a visible note (gate_report is the bounce-reason channel
-    both UIs already render), audit it, and push - so the owner learns the
-    instruction was lost instead of staring at a frozen card.
+def _track_idle_s(t):
+    """Seconds since the card last showed ANY activity (its flight-recorder /
+    live-session files). Distinguishes a true zombie from the brief steer-START
+    window where status is already 'running' but the session is still spawning
+    (has_session False for ~1s). Unknown -> treated as very idle."""
+    rd = t.get("run_dir") or ""
+    newest = 0.0
+    for f in ("actions.jsonl", "live_session.txt", "live_partial.txt"):
+        try:
+            newest = max(newest, os.path.getmtime(os.path.join(rd, f)))
+        except OSError:
+            pass
+    return (time.time() - newest) if newest else 1e9
+
+
+def sweep_zombies(min_idle_s=0):
+    """Reconcile status vs the live session: a card flagged status=running with no
+    owning worker is a ZOMBIE (its turn died with a prior daemon, or a dead/racing
+    steer thread left it stuck). Flip every such track to bounced with a visible
+    note (gate_report is the bounce-reason channel both UIs already render), audit
+    it, and push - so the owner learns the instruction was lost instead of staring
+    at a frozen card.
+
+    min_idle_s=0 at startup (every running-without-session card died with the old
+    daemon - reap all). The PERIODIC reconciler passes min_idle_s>0 so it skips the
+    steer-start race window and only reaps cards genuinely idle that long.
 
     Paseo-parity (the loss is now RECOVERABLE): before surfacing, promote the
     interrupted session id (run_dir/live_session.txt) onto the track, so
@@ -1391,6 +1410,8 @@ def sweep_zombies():
     for t in _load():
         if t.get("status") != "running" or drivers.has_session(t["id"]):
             continue
+        if min_idle_s and _track_idle_s(t) < min_idle_s:
+            continue   # steer just started - session still spawning, not a zombie
         note = RESUME_NOTE if _promote_live_session(t) else ZOMBIE_NOTE
         t["status"] = "bounced"
         t["gate_report"] = _interrupt_note_report(t, note)
@@ -1407,6 +1428,30 @@ def sweep_zombies():
             print("sweep_zombies: push failed for %s: %s" % (t["id"], e))
         swept.append(t["id"])
     return swept
+
+
+def start_zombie_reconciler(interval=20, min_idle_s=45):
+    """Reconcile status vs the live session CONTINUOUSLY (Paseo-parity), not just at
+    boot. HelmDeck's `status` is a STORED field a thread must remember to clear; if
+    that thread dies or races (a daemon restart mid-turn, overlapping Stop presses
+    whose cancel didn't reset status), the card sits frozen at 'running' with no
+    session and, because sweep_zombies only ran at startup, NOTHING noticed until the
+    next restart. Paseo derives lifecycle from the live run and sweeps every 15s, so
+    it self-heals; this background pass gives HelmDeck the same - a stuck card is
+    caught within ~`interval`s. The idle guard skips the steer-start window so a
+    legitimately-spawning turn is never falsely reaped. Idempotent."""
+    import threading
+    def _loop():
+        while True:
+            time.sleep(interval)
+            try:
+                swept = sweep_zombies(min_idle_s=min_idle_s)
+                if swept:
+                    print("RECONCILER: bounced %d stuck running card(s): %s"
+                          % (len(swept), ", ".join(swept)), flush=True)
+            except Exception as e:
+                print("zombie reconciler error: %s" % e, flush=True)
+    threading.Thread(target=_loop, daemon=True).start()
 
 
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
