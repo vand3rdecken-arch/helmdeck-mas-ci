@@ -158,7 +158,7 @@ class H(BaseHTTPRequestHandler):
                 ny = [{"id": t["id"], "task": (t.get("task") or "")[:70],
                        "client": t.get("client", ""), "status": t.get("status"),
                        "asking": bool(t.get("question"))}
-                      for t in sessions.list_tracks()
+                      for t in map(sessions.present, sessions.list_tracks())
                       if t.get("status") == "needs_you" and not t.get("archived")
                       and t.get("waiting_on") != "background"]
                 return self._send(200, json.dumps({
@@ -257,7 +257,9 @@ class H(BaseHTTPRequestHandler):
             # --- orchestrator: branches/sessions (the Paseo half) ---
             if p == "/tracks":
                 import sessions
-                ts = sessions.list_tracks()
+                # present(): stored 'running' is never believed on the way OUT -
+                # only a live turn (drivers.turn_active) may render a spinner.
+                ts = [sessions.present(t) for t in sessions.list_tracks()]
                 if user["role"] == "client":   # clients see only their own cards
                     ts = [t for t in ts if t.get("client") == user["name"]]
                 return self._send(200, json.dumps(ts))
@@ -1404,7 +1406,10 @@ def serve(port=8140):
     _hydrate_windows_path()      # bash-launched daemons lack Windows dirs on PATH -> gate/py/cmd fail
     _take_singleton_lock(port)   # evict a prior daemon so the relay poll never races a restart
     import db
-    db.init()
+    # role="daemon": loading the store AS THE DAEMON structurally devalues any
+    # persisted 'running'/'gating' (db._devalue_persisted_running - the old
+    # serve()-side sweep_zombies call, now part of the load path itself).
+    db.init(role="daemon")
     import drivers, atexit
     reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
     if reaped:
@@ -1412,9 +1417,6 @@ def serve(port=8140):
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
     atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
     import sessions
-    zombies = sessions.sweep_zombies()   # running-flagged cards whose turn died with the old daemon
-    if zombies:
-        print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
         print("SESSIONS: reclaimed %d merged worktree(s)" % reclaimed)  # stays clean by having none at all.

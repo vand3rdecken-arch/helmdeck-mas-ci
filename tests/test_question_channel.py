@@ -166,8 +166,11 @@ def test_settle_and_repair():
         check(len(calls) == 1 and ask.REPAIR in calls[0], "one repair turn spent")
         check(reason == "question", "prose question repaired into a typed question")
         check(t2["question"]["questions"][0]["header"] == "Farbe", "repaired question stored")
-        check(t2["ai_cost"] > 0 and t2["tokens_out"] == 5,
-              "repair turn is BILLED (measured economics) - cost %r" % t2["ai_cost"])
+        # billing goes through sessions._mutate to the STORE (the one write
+        # path, P3.4) - the caller's local dict is deliberately left stale.
+        t2s = db.track_get("t-repair")
+        check(t2s["ai_cost"] > 0 and t2s["tokens_out"] == 5,
+              "repair turn is BILLED (measured economics) - cost %r" % t2s["ai_cost"])
 
         # a worker that declines must not leave a phantom question
         calls.clear()
