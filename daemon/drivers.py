@@ -314,6 +314,29 @@ def has_session(tid):
         return tid in _sessions
 
 
+def turn_active(tid):
+    """True only while a TURN is actually in flight: the worker session exists,
+    its subprocess is alive, and a turn is mutating state (_cur set).
+
+    This is Paseo's lifecycle model made explicit (agent-manager.ts: a
+    ManagedAgentRunning EXISTS only with an active foreground turn - "running"
+    is a derived observation, never a remembered flag). has_session() is
+    deliberately weaker: a persistent worker survives BETWEEN turns for
+    `--resume` - most visibly after a soft cancel, which by design keeps the
+    process for the next steer. Using has_session as the reconciler's liveness
+    test therefore made an idle-after-cancel worker look busy FOREVER, so a
+    card whose status write raced ('running' resurrected by a stale snapshot)
+    froze with a spinner no sweep would ever clear."""
+    with _sessions_guard:
+        s = _sessions.get(tid)
+    if s is None:
+        return False
+    try:
+        return bool(s.alive() and s._cur is not None)
+    except Exception:
+        return False
+
+
 # --- idle eviction + shutdown (Paseo: collectIdleAgents / closeAllAgents) ----
 # A card holds ONE persistent worker, but keeping ALL touched cards' workers
 # alive forever would leak memory on a busy board. So, like Paseo, a worker only

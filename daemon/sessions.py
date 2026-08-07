@@ -1484,7 +1484,23 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # above still logs the human's original text, not this augmentation.
     prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
-    sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
+    try:
+        sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
+    except BaseException as e:
+        # The steer thread must NEVER die leaving 'running' behind - that flag
+        # is a stored promise only this thread would clear, and a card frozen
+        # on it shows an eternal spinner (Paseo avoids the whole class by
+        # deriving lifecycle from the live run; the reconciler is our derive
+        # loop, this is the fast path). Settle on a FRESH load so we can't
+        # resurrect state a concurrent cancel already wrote.
+        t2 = _find(_load(), tid)
+        if t2 and t2.get("status") == "running":
+            t2["status"] = "needs_you"
+            t2["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _save_track(t2)
+            log.log("note", "turn ABGEBROCHEN (%s) - Karte freigegeben, steuern setzt fort."
+                    % str(e)[:160])
+        raise
     # session_id can rotate on resume/compaction; keep the latest so the next
     # steer continues, and REMEMBER the one we're leaving. A compaction (or a
     # resume of a full session) rotates to a FRESH .jsonl that carries none of
@@ -1893,9 +1909,34 @@ def sweep_zombies(min_idle_s=0):
     for t in _load():
         st = t.get("status")
         if st == "running":
-            # genuinely working = has a live session; else a zombie (guard the
-            # brief steer-start window where the session is still spawning)
-            if drivers.has_session(t["id"]) or (min_idle_s and _track_idle_s(t) < min_idle_s):
+            # genuinely working = a TURN is in flight (Paseo: "running" is a
+            # derived observation, not a stored flag). has_session() was the
+            # old test and it lied by design: a soft cancel keeps the worker
+            # process alive for --resume, so an idle-after-cancel worker looked
+            # busy forever and the frozen card was never swept ("stuck again").
+            if drivers.turn_active(t["id"]) or (min_idle_s and _track_idle_s(t) < min_idle_s):
+                continue
+            if drivers.has_session(t["id"]):
+                # Worker alive, NO turn in flight: the turn already ended (or
+                # was cancelled) and a racing status write resurrected
+                # 'running'. Nothing died and nothing was lost - settle QUIETLY
+                # to needs_you (Paseo's running->idle on turn end), no bounce,
+                # no zombie note. Re-steering resumes the live session as-is.
+                t["status"] = "needs_you"
+                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                _save_track(t)
+                try:
+                    ActionLog(t["run_dir"]).log(
+                        "note", "SETTLED - Turn war schon beendet, Status hing auf "
+                        "'running' (Schreib-Rennen). Session lebt - einfach weiter steuern.")
+                except Exception:
+                    pass
+                events.emit("settle", t["id"], reason="stale_running", actor="daemon")
+                try:
+                    notify.card_event(t, "needs_you")
+                except Exception:
+                    pass
+                swept.append(t["id"])
                 continue
         elif st == "gating":
             # the gate runs SYNCHRONOUSLY in a request thread (no session to check),
