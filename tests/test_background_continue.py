@@ -156,6 +156,18 @@ def test_idle_eviction_guard():
     check("c-plain" not in protected, "an ordinary parked card is still evictable")
 
 
+def _settle(steers, want, timeout=5.0):
+    """The continuation runs OFF the watcher thread (a turn can take 30 min and
+    must not stall the loop), so wait for it instead of assuming it already
+    happened - and give a negative case time to prove itself wrong too."""
+    deadline = time.time() + timeout
+    while len(steers) < want and time.time() < deadline:
+        time.sleep(0.02)
+    if want == 0:
+        time.sleep(0.35)          # let a wrong steer show up rather than pass by luck
+    return steers
+
+
 def test_auto_continue():
     print("_sweep_background:")
     steers = []
@@ -167,13 +179,14 @@ def test_auto_continue():
         _track("c-run", "s-run", waiting_on="background",
                background={"n": 1, "names": ["gradle"], "since": time.time()})
         sessions._sweep_background()
-        check(not steers, "a card whose task is still running is not steered")
+        check(not _settle(steers, 0), "a card whose task is still running is not steered")
 
         # reported -> continued automatically
         _write_session("s-fin", [_steer("bau"), _bg_call("t1", "gradle"), _notification("t1")])
         _track("c-fin", "s-fin", waiting_on="background",
                background={"n": 1, "names": ["gradle"], "since": time.time()})
         sessions._sweep_background()
+        _settle(steers, 1)
         check(len(steers) == 1 and steers[0][0] == "c-fin",
               "a finished task continues the card automatically")
         check(steers[0][2].get("source") == "background-task",
@@ -189,7 +202,7 @@ def test_auto_continue():
         _track("c-gone", "s-does-not-exist", waiting_on="background",
                background={"n": 1, "names": ["gradle"], "since": time.time()})
         sessions._sweep_background()
-        check(not steers, "an unreadable transcript is NOT mistaken for completion")
+        check(not _settle(steers, 0), "an unreadable transcript is NOT mistaken for completion")
 
         # give-up window: never auto-steer a task that never reports
         steers.clear()
@@ -198,7 +211,7 @@ def test_auto_continue():
                background={"n": 1, "names": ["gradle"],
                            "since": time.time() - sessions._BG_MAX_WAIT_S - 10})
         sessions._sweep_background()
-        check(not steers, "a task past the max wait is not auto-steered")
+        check(not _settle(steers, 0), "a task past the max wait is not auto-steered")
         check(db.track_get("c-old").get("waiting_on") == "you",
               "it is handed back to the owner instead")
 
@@ -209,7 +222,7 @@ def test_auto_continue():
         _track("c-off", "s-off", waiting_on="background",
                background={"n": 1, "names": ["g"], "since": time.time()})
         sessions._sweep_background()
-        check(not steers, "policy.auto_continue=false disables auto-continue")
+        check(not _settle(steers, 0), "policy.auto_continue=false disables auto-continue")
         events.save_settings({"policy": {"auto_continue": True}})
     finally:
         sessions.steer = orig

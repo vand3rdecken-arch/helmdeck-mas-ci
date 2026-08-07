@@ -125,6 +125,14 @@ MESSAGES = {
         "en": "Done: '{task}' is delivered and waiting for you to accept (or bounce) it. "
               "Tell me, or tap the card.",
     },
+    # a card parked on an unanswered question is NOT delivered - saying so sent
+    # the owner to accept work that was never finished
+    "pm.asking": {
+        "de": "'{task}' braucht eine Entscheidung von dir: {question} "
+              "Tipp die Karte an - da sind Auswahl-Buttons.",
+        "en": "'{task}' needs a decision from you: {question} "
+              "Tap the card - there are option buttons.",
+    },
     "pm.stillStuck": {
         "de": "Achtung: '{task}' haengt weiter - meine Fix-Versuche haben nicht gereicht. {proposal}",
         "en": "Heads up: '{task}' is still stuck - my fix attempts were not enough. {proposal}",

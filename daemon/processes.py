@@ -211,8 +211,11 @@ def sync():
                 if t.get("up_next") != bool(want):
                     t["up_next"] = bool(want)
                     tracks_changed = True
-                # policy: green gate on a finished chain step -> auto-accept
-                if auto_accept and s["ready"] and t.get("status") == "needs_you" \
+                # policy: green gate on a finished chain step -> auto-accept.
+                # is_delivered, not status alone: a card parked on an unanswered
+                # question or a running background task is NOT finished work, and
+                # accepting it would merge the branch and discard the question.
+                if auto_accept and s["ready"] and sessions.is_delivered(t) \
                    and s.get("mode") in auto_modes and not s.get("auto_accepted"):
                     ok, _problems = sessions._gate(t)
                     if ok:
@@ -382,7 +385,7 @@ def _autopilot():
     for t in auto:
         if t.get("status") == "bounced":
             _auto_resolve(t)
-        elif t.get("status") == "needs_you" and auto_accept:
+        elif sessions.is_delivered(t) and auto_accept:
             # delivered; gate was green at submit - re-check before accepting
             # (backed off so a red result doesn't re-run the gate every tick)
             if t.get("autopilot_accepted") \

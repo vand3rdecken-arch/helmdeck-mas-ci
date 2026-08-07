@@ -39,7 +39,7 @@ events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-import ask, sessions
+import ask, claude_sessions, sessions
 from actionlog import ActionLog
 
 _fails = []
@@ -233,7 +233,76 @@ def test_answer():
         sessions.steer = orig
 
 
+def test_harness_turns_are_not_the_owner():
+    """A turn the HARNESS starts must never read as the owner's own message.
+
+    The repair prompt and the auto-continue are fed in as role=user (the only
+    way to send a message), so without re-attribution the owner reads
+    "STOP - do not continue the work" in his own voice - the same defect Claude
+    Code's task-notification envelopes already had."""
+    print("harness-injected turns:")
+    import json as _json, tempfile as _tmp
+    check(ask.harness_tag(ask.REPAIR) == "ask-repair", "the repair prompt is tagged")
+    check(ask.harness_tag(sessions._continue_prompt()) == "background-done",
+          "the auto-continue prompt is tagged")
+    check(ask.harness_tag("Bau das bitte fertig") is None,
+          "a human's message carries no tag")
+    check(ask.harness_tag(None) is None, "non-string input is handled")
+
+    proj = os.path.join(_tmp.mkdtemp(), "proj")
+    os.makedirs(proj)
+    old = claude_sessions.PROJECTS
+    claude_sessions.PROJECTS = os.path.dirname(proj)
+    try:
+        recs = [{"type": "user", "message": {"role": "user", "content": "Bau die Maske"}},
+                {"type": "user", "message": {"role": "user", "content": ask.REPAIR}},
+                {"type": "user", "message": {"role": "user",
+                                             "content": sessions._continue_prompt()}}]
+        with open(os.path.join(proj, "h1.jsonl"), "w", encoding="utf-8") as f:
+            f.write("\n".join(_json.dumps(r) for r in recs))
+        steps = claude_sessions.read_transcript("h1")
+        kinds = [(s.get("kind"), s.get("role")) for s in steps]
+        check(kinds[0] == ("text", "user"), "the owner's own message stays his")
+        check(all(k == "system" for k, _r in kinds[1:]),
+              "both harness turns render as system notes (got %r)" % kinds[1:])
+        check(all("STOP" not in (s.get("text") or "") for s in steps),
+              "the raw harness instruction never reaches the feed")
+    finally:
+        claude_sessions.PROJECTS = old
+
+
+def test_delivered_predicate():
+    """The wiring that keeps the rest of the harness honest.
+
+    Every automation that reads status == needs_you as "the worker is done"
+    must go through sessions.is_delivered, or it will auto-accept a card that is
+    still ASKING (merging an unfinished branch and discarding the question) or
+    announce a background wait as delivered work."""
+    print("is_delivered / waits_for_owner:")
+    plain = {"status": "needs_you"}
+    asking = {"status": "needs_you", "question": {"id": "q-1", "questions": []}}
+    bg = {"status": "needs_you", "waiting_on": "background",
+          "background": {"n": 1}}
+
+    check(sessions.is_delivered(plain), "a plain parked card IS delivered work")
+    check(not sessions.is_delivered(asking),
+          "a card with a pending question is NOT delivered (never auto-accept it)")
+    check(not sessions.is_delivered(bg),
+          "a card waiting on a background task is NOT delivered")
+    check(not sessions.is_delivered({"status": "running"}), "a running card is not delivered")
+    check(not sessions.is_delivered({"status": "bounced"}), "a bounced card is not delivered")
+    check(not sessions.is_delivered(None), "None is handled")
+
+    check(sessions.waits_for_owner(plain), "a parked card wants the owner")
+    check(sessions.waits_for_owner(asking), "an asking card wants the owner")
+    check(sessions.waits_for_owner({"status": "bounced"}), "a bounced card wants the owner")
+    check(not sessions.waits_for_owner(bg),
+          "a background wait is NOT the owner's move")
+
+
 test_parse()
+test_harness_turns_are_not_the_owner()
+test_delivered_predicate()
 test_stream_strip()
 test_validate()
 test_heuristic()

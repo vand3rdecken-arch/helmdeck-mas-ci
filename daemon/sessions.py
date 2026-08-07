@@ -241,6 +241,31 @@ def _ask_repair_on(t):
     return bool(pol.get("ask_repair", True))
 
 
+def is_delivered(t):
+    """True when a parked card is really HANDING WORK BACK, as opposed to
+    sitting on `needs_you` for some other reason.
+
+    Every automation that treats "status == needs_you" as "the worker is done"
+    needs this. Since Phase 2 a card can be parked because it is ASKING the
+    owner a question, or because it is waiting on a background task it started -
+    neither is finished work. Auto-accepting those would merge an unfinished
+    branch and throw the question away, and announcing them as "delivered" is
+    simply wrong. (Both cases existed before; they were just indistinguishable.)"""
+    t = t or {}
+    return (t.get("status") == "needs_you"
+            and not t.get("question")
+            and t.get("waiting_on") != "background")
+
+
+def waits_for_owner(t):
+    """True when the card wants something from the HUMAN right now - finished
+    work to accept, or a question to answer. A background wait is excluded: it
+    is the one parked state that is nobody's move but the machine's."""
+    t = t or {}
+    return (t.get("status") in ("needs_you", "bounced")
+            and t.get("waiting_on") != "background")
+
+
 def _settle_reply(t, result, log):
     """Fold a finished turn's REPLY into the card and say what it is waiting on.
 
@@ -1411,13 +1436,18 @@ def _bg_continue_on(t):
     return bool(pol.get("auto_continue", True))
 
 
-CONTINUE_PROMPT = (
-    "[Automatischer Hinweis des Harness - keine Nachricht vom Owner]\n"
-    "Dein Hintergrund-Task ist fertig. Hol dir seine Ausgabe (BashOutput bzw. "
-    "das Task-Ergebnis) und arbeite genau dort weiter, wo du auf ihn gewartet "
-    "hast. Wenn die Ausgabe zeigt, dass etwas fehlgeschlagen ist, behebe es "
-    "oder sag klar, was der Owner entscheiden muss."
-)
+def _continue_prompt():
+    """Tagged as harness-injected so the card feed renders it as a system note
+    instead of a message the owner appears to have typed (ask.harness_msg)."""
+    import ask
+    return ask.harness_msg(
+        "background-done",
+        "Dein Hintergrund-Task ist fertig - das hier ist ein automatischer "
+        "Hinweis des Harness, keine Nachricht vom Owner.\n"
+        "Hol dir seine Ausgabe (BashOutput bzw. das Task-Ergebnis) und arbeite "
+        "genau dort weiter, wo du auf ihn gewartet hast. Wenn die Ausgabe zeigt, "
+        "dass etwas fehlgeschlagen ist, behebe es oder sag klar, was der Owner "
+        "entscheiden muss.")
 
 
 def _sweep_background():
@@ -1452,13 +1482,25 @@ def _sweep_background():
             "note", "Hintergrund-Task fertig - Karte laeuft automatisch weiter")
         import events
         events.emit("autocontinue", t["id"], actor="daemon")
+        # Clear the claim BEFORE steering: that is what stops the next pass from
+        # firing this card a second time, and it is why the steer can safely be
+        # detached below.
         t["waiting_on"] = "you"
         t.pop("background", None)
         _save_track(t)
-        try:
-            steer(t["id"], CONTINUE_PROMPT, actor="daemon", source="background-task")
-        except Exception as e:
-            print("auto-continue failed for %s: %s" % (t["id"], e))
+
+        # A continuation is a full turn (up to 1800s). Run it OFF the watcher
+        # thread - held inline, one long build's follow-up would stall the whole
+        # loop, so a second card finishing behind it would wait out that entire
+        # turn before anyone noticed. Per-card serialisation still holds: _turn
+        # takes the card's own lock.
+        def _go(tid=t["id"]):
+            try:
+                steer(tid, _continue_prompt(), actor="daemon", source="background-task")
+            except Exception as e:
+                print("auto-continue failed for %s: %s" % (tid, e))
+
+        _threading.Thread(target=_go, daemon=True).start()
 
 
 def _epoch_of(stamp):

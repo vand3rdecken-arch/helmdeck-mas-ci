@@ -577,7 +577,18 @@ def _notify_deliveries(day, tracks, st, pm):
             continue
         s = t.get("status")
         task = (t.get("task") or "").replace("\n", " ")[:60]
-        if s == "needs_you" and t["id"] in disp:
+        if s == "needs_you" and t["id"] in disp and t.get("waiting_on") == "background":
+            continue        # waiting on its OWN background task: not delivered and
+                            # not the owner's move - stay quiet (Phase 2.5)
+        if s == "needs_you" and t["id"] in disp and t.get("question"):
+            # asking, not finished. notify.card_event already pushed this one
+            # through the presence policy (and deduped it), so the PM only
+            # speaks in chat here - a second push would defeat that policy.
+            import ask
+            _say(_i18n.t("pm.asking", task=task,
+                         question=ask.summary(t["question"])[:140]))
+            notified.add(t["id"]); changed = True
+        elif s == "needs_you" and t["id"] in disp:
             if fcm:
                 fcm.push_fcm(_i18n.t("push.pmDone"), _i18n.t("push.pmDoneBody", task=task), t["id"])
             _say(_i18n.t("pm.delivered", task=task))
@@ -1429,16 +1440,25 @@ def activity():
         if s == "running":
             now.append("arbeitet gerade an: " + lbl(t))
         elif s == "needs_you":
-            # needs_you = handed back to YOU - could be "accept my work" OR "I need a
-            # decision/input". We can't tell reliably, so don't claim it's finished.
-            now.append("wartet auf dich: " + lbl(t))
+            # Since Phase 2 the three reasons a card parks ARE distinguishable,
+            # so say which one it is instead of lumping them together.
+            if t.get("waiting_on") == "background":
+                now.append("wartet auf einen Hintergrund-Task: " + lbl(t))
+            elif t.get("question"):
+                now.append("fragt dich etwas: " + lbl(t))
+            else:
+                now.append("wartet auf dich: " + lbl(t))
         elif s == "bounced":
             continue        # a bounced card is surfaced ONCE as a blocker below, not here
         else:
             now.append(lbl(t))
     # "waiting on you" = genuinely handed back (needs_you/submitted). A BOUNCED card is
     # NOT that - it's stuck/failed, listed only under blockers, never double-counted.
-    needs = [lbl(t) for t in tracks if t.get("status") in ("needs_you", "submitted")]
+    # A card waiting on its own background task is nobody's move but the machine's,
+    # so it must not pad the owner's to-do count either.
+    needs = [lbl(t) for t in tracks
+             if t.get("status") == "submitted"
+             or (t.get("status") == "needs_you" and t.get("waiting_on") != "background")]
     blockers = [lbl(t) for t in tracks if t.get("status") == "bounced"]
     rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
