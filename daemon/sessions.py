@@ -1420,13 +1420,18 @@ def _bg_continue_on(t):
     return bool(pol.get("auto_continue", True))
 
 
-CONTINUE_PROMPT = (
-    "[Automatischer Hinweis des Harness - keine Nachricht vom Owner]\n"
-    "Dein Hintergrund-Task ist fertig. Hol dir seine Ausgabe (BashOutput bzw. "
-    "das Task-Ergebnis) und arbeite genau dort weiter, wo du auf ihn gewartet "
-    "hast. Wenn die Ausgabe zeigt, dass etwas fehlgeschlagen ist, behebe es "
-    "oder sag klar, was der Owner entscheiden muss."
-)
+def _continue_prompt():
+    """Tagged as harness-injected so the card feed renders it as a system note
+    instead of a message the owner appears to have typed (ask.harness_msg)."""
+    import ask
+    return ask.harness_msg(
+        "background-done",
+        "Dein Hintergrund-Task ist fertig - das hier ist ein automatischer "
+        "Hinweis des Harness, keine Nachricht vom Owner.\n"
+        "Hol dir seine Ausgabe (BashOutput bzw. das Task-Ergebnis) und arbeite "
+        "genau dort weiter, wo du auf ihn gewartet hast. Wenn die Ausgabe zeigt, "
+        "dass etwas fehlgeschlagen ist, behebe es oder sag klar, was der Owner "
+        "entscheiden muss.")
 
 
 def _sweep_background():
@@ -1465,7 +1470,7 @@ def _sweep_background():
         t.pop("background", None)
         _save_track(t)
         try:
-            steer(t["id"], CONTINUE_PROMPT, actor="daemon", source="background-task")
+            steer(t["id"], _continue_prompt(), actor="daemon", source="background-task")
         except Exception as e:
             print("auto-continue failed for %s: %s" % (t["id"], e))
 

@@ -82,12 +82,45 @@ BRIEF = (
 )
 
 
+# HARNESS-INJECTED PROMPTS
+# ------------------------
+# Some turns are started by the harness itself, not by the owner: the repair
+# turn below, and the auto-continue after a background task finishes. Claude
+# Code records them as role=user (that is the only way to feed a message in), so
+# without a marker the card feed shows them as messages the OWNER typed - the
+# owner reading "STOP - do not continue the work" in his own voice. Claude
+# Code's own injected envelopes (task notifications, slash commands) are
+# re-attributed for exactly this reason; ours must be too.
+#
+# The tag is the first line, so claude_sessions can re-attribute the message to
+# a short neutral system note (and the worker sees an honest "this is the
+# harness talking" header).
+HARNESS_PREFIX = "[[helmdeck:"
+
+
+def harness_msg(tag, text):
+    """Wrap a prompt the HARNESS is sending on its own initiative."""
+    return "%s%s]]\n%s" % (HARNESS_PREFIX, tag, text)
+
+
+def harness_tag(text):
+    """The tag of a harness-injected message, or None for a human's message."""
+    if not isinstance(text, str):
+        return None
+    lead = text.lstrip()
+    if not lead.startswith(HARNESS_PREFIX):
+        return None
+    end = lead.find("]]")
+    return lead[len(HARNESS_PREFIX):end] if end != -1 else None
+
+
 # The REPAIR turn. System-prompt compliance alone is unreliable - a worker that
 # needs a decision reliably writes prose and stops (measured). So when a turn
 # parks on what looks like an open question, the harness asks ONCE, as the
 # immediate instruction, for the same question in protocol form. Deliberately
 # narrow: restate, decide nothing, do no work.
-REPAIR = (
+REPAIR = harness_msg(
+    "ask-repair",
     "STOP - do not continue the work and do not change any files.\n"
     "Your last turn ended with an open question for the owner, but not in the "
     "form he can answer. HelmDeck can only render real buttons from a "

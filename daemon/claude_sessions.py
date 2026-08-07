@@ -408,6 +408,14 @@ def _result_text(part):
     return ""
 
 
+# Labels for HelmDeck's own harness-injected turns (ask.harness_msg tags), so
+# the feed shows WHAT the harness did rather than the instruction it sent.
+_HARNESS_NOTE = {
+    "ask-repair": "⟲ Rückfrage als Auswahl angefordert",
+    "background-done": "⚙ Hintergrund-Task fertig – automatisch fortgesetzt",
+}
+
+
 def read_transcript(session_id, limit=400):
     """Parse a session's jsonl into ordered steps for the card's agent view -
     the full Paseo-style turn view. Steps:
@@ -475,6 +483,18 @@ def read_transcript(session_id, limit=400):
             if lbl:
                 steps.append({"kind": "system", "text": lbl, "ts": ts, "ta": ta})
             continue
+        # HelmDeck's OWN harness-injected turns (the question-repair prompt, the
+        # auto-continue after a background task) are role=user as well - that is
+        # the only way to feed a message in - so without this the owner reads
+        # "STOP - do not continue the work" as his own message. Re-attribute to
+        # a short neutral note, exactly like the envelopes above.
+        if role == "user":
+            import ask
+            _tag = ask.harness_tag(_lead)
+            if _tag:
+                steps.append({"kind": "system", "text": _HARNESS_NOTE.get(
+                    _tag, "⚙ Harness-Hinweis"), "ts": ts, "ta": ta})
+                continue
         # Background-task + harness notifications are injected as role=user too, so
         # they read as the owner's own message ("<task-notification>..." shown as a
         # right-aligned bubble). Re-attribute: a task-notification -> a short system
