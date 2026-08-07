@@ -1277,20 +1277,48 @@ def _take_singleton_lock(port):
     binding, making restart deterministic instead of a bind race."""
     import socket, subprocess, time, signal
     pidfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.pid")
+
+    def _kill(pid, why):
+        if not pid or pid == os.getpid():
+            return
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+            else:
+                os.kill(pid, signal.SIGTERM)
+            print("SINGLETON: evicted %s pid %d - taking over relay/port %d." % (why, pid, port), flush=True)
+        except Exception:
+            pass   # already gone
+
+    def _pids_on_port():
+        """Every PID LISTENING on the port. The pidfile alone is NOT enough: Python's
+        HTTPServer sets SO_REUSEADDR, so on Windows several daemons can silently
+        double-bind the same port and stale ones (old code, no reconciler) keep
+        serving. Kill ALL of them so exactly one daemon owns the port - the leak
+        Paseo avoids by never using SO_REUSEADDR (a 2nd server fails EADDRINUSE)."""
+        found = set()
+        try:
+            out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True, timeout=10).stdout
+            for line in out.splitlines():
+                p = line.split()
+                if len(p) >= 5 and p[0].upper() == "TCP" and p[3].upper() == "LISTENING" \
+                        and p[1].endswith(":%d" % port):
+                    try:
+                        found.add(int(p[4]))
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+        found.discard(os.getpid())
+        return found
+
     try:
         old = int(open(pidfile).read().strip())
     except Exception:
         old = None
-    if old and old != os.getpid():
-        try:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(old)],
-                               capture_output=True)
-            else:
-                os.kill(old, signal.SIGTERM)
-            print("SINGLETON: evicted prior daemon pid %d - taking over relay/port %d." % (old, port))
-        except Exception:
-            pass   # already gone
+    _kill(old, "prior daemon (pidfile)")
+    for pid in _pids_on_port():          # + any stale daemon double-bound to the port
+        _kill(pid, "stale daemon on port")
     # wait for the port to free (old listener socket releasing), up to ~5s
     for _ in range(50):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
