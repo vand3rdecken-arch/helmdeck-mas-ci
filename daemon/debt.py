@@ -334,6 +334,37 @@ DEBT = [
                "origin in the live glance feed so the owner sees where it is.",
         "order": 14,
     },
+    {
+        "id": "ask-protocol-prompt-compliance",
+        "title": "The question channel depends on prompt compliance + one repair turn",
+        "status": "open",
+        "what": "Phase 2.4 routes a worker's open question to real option buttons by "
+                "TEACHING it a <helmdeck-ask> block (ask.BRIEF) and parsing that out "
+                "of the reply. Measured against the shipped CLI (2.1.207), the system "
+                "prompt alone is NOT reliably followed - the worker wrote prose and "
+                "parked in both live probes - so sessions._repair_question spends one "
+                "extra turn asking it to restate the question in protocol form, gated "
+                "by the ask.looks_like_question heuristic. There is no hard channel "
+                "(AskUserQuestion is not offered headless and no can_use_tool "
+                "control_request is ever sent, so it cannot be intercepted).",
+        "why_it_bites": "Two soft edges. (1) The heuristic decides when to spend a "
+                        "turn: a false positive costs one short turn (the worker "
+                        "answers NOQUESTION), a false negative silently falls back to "
+                        "the old prose-and-park behaviour - so coverage is good but "
+                        "not total. (2) If a future CLI or model drifts further from "
+                        "the instruction, the repair turn is the only thing holding "
+                        "the feature up, and its cost scales with every parked turn "
+                        "that looks like a question.",
+        "trigger": "a CLI/model upgrade changing instruction-following, or the repair "
+                   "turn showing up as a noticeable share of spend on the turn events",
+        "fix": "Re-run tests/probe_cli_askuser.py against the new CLI: once it exposes "
+               "AskUserQuestion (or sends control_request/can_use_tool to a "
+               "stream-json client), replace the taught protocol with a real "
+               "interception + park/respond, which needs no compliance and no repair "
+               "turn. Until then, track the askrepair events to see how often the "
+               "fallback carries the feature.",
+        "order": 15,
+    },
 ]
 
 def list_debt():

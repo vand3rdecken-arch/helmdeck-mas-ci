@@ -89,13 +89,81 @@ def push_fcm(title, body, track_id=""):
         return False
 
 
+# Reasons that may NEVER reach the phone, whatever presence says:
+#   background - the card is waiting on its own task, not on the owner
+#   error      - a runtime failure is not an instruction to the owner; it belongs
+#                on the card and in the log. Paseo excludes it from push for the
+#                same reason: being woken by a crash you cannot act on at 3am
+#                teaches you to mute the channel.
+NEVER_PUSH = ("background", "error")
+
+_last_push = {}          # card id -> the dedup key already pushed
+_dedup_lock = __import__("threading").Lock()
+
+
+def _dedup_key(track, status):
+    """What makes this notification DISTINCT. A pending question dedups on the
+    question's id, so a card that asks once is pushed once no matter how many
+    times the turn is re-settled ("first-only", Paseo's rule) - but a NEW
+    question is a new key and does push."""
+    if status == "question":
+        return "question:" + ((track.get("question") or {}).get("id") or "?")
+    return status
+
+
+def should_push(track, status):
+    """(ok, why) - the 3-tier presence policy, in one place so the reason is
+    inspectable instead of buried in an if. `why` is for the log."""
+    if status in NEVER_PUSH:
+        return False, "reason is never pushed"
+    tid = track.get("id", "")
+    key = _dedup_key(track, status)
+    with _dedup_lock:
+        if _last_push.get(tid) == key:
+            return False, "already pushed (dedup %s)" % key
+    import presence
+    decision = presence.plan(tid)
+    if decision == "silent":
+        return False, "owner is looking at this card"
+    if decision == "inapp":
+        return False, "owner is present elsewhere - in-app is enough"
+    with _dedup_lock:
+        _last_push[tid] = key
+    return True, "owner is away"
+
+
+def clear_dedup(track_id):
+    """The card moved on, so the next notification about it is news again.
+    Called when a turn STARTS (the owner steered / answered)."""
+    with _dedup_lock:
+        _last_push.pop(track_id, None)
+
+
 def card_event(track, status):
     """One line per transition the owner must act on. The title follows the
     workspace language (policy.lang); the body is the card's own title, which
-    is the owner's text and never translated."""
+    is the owner's text and never translated.
+
+    `status` is the notify REASON, not the card's status field: a turn that
+    ended on a typed question reports "question" so the owner learns there is a
+    decision waiting (with the question itself as the body) instead of the
+    generic "card finished"."""
     import i18n
-    keys = {"needs_you": "push.needsYou", "bounced": "push.bounced", "done": "push.done"}
+    # NB "background" is deliberately absent: a card waiting on its own
+    # background task is NOT the owner's move, so it must never buzz his phone.
+    # It shows as an in-app cue and auto-continues when the task finishes.
+    keys = {"needs_you": "push.needsYou", "bounced": "push.bounced",
+            "done": "push.done", "question": "push.question"}
     if status not in keys:
         return
+    ok, why = should_push(track, status)
+    if not ok:
+        print("notify: %s/%s suppressed - %s" % (track.get("id", "?"), status, why))
+        return
     body = "%s  [%s]" % (track.get("task", "")[:80], track.get("id", ""))
+    if status == "question":
+        import ask
+        q = ask.summary(track.get("question"))
+        if q:
+            body = "%s\n%s" % (q[:120], track.get("task", "")[:60])
     push_fcm(i18n.t(keys[status]), body, track.get("id", ""))
