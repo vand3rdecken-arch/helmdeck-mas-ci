@@ -31,9 +31,25 @@ MESSAGES = {
         "de": "bleibt auf Review - im Worktree stehen noch offene Konfliktmarkierungen. {detail}",
         "en": "stays on Review - there are still open conflict markers in the worktree. {detail}",
     },
+    "say.gateRunning": {
+        "de": "Gate laeuft - ich pruefe den Stand (compile, Typen, Tests, sauberer Baum). Das dauert ein paar Sekunden.",
+        "en": "Gate running - checking the change (compile, types, tests, clean tree). This takes a few seconds.",
+    },
+    "say.gateGreen": {
+        "de": "Gate gruen - alle Checks bestanden.",
+        "en": "Gate green - all checks passed.",
+    },
     "say.gateRed": {
         "de": "Gate ist rot - bleibt auf Review. Grund:\n{detail}",
         "en": "Gate is red - stays on Review. Reason:\n{detail}",
+    },
+    "say.mergeBlockedDirty": {
+        "de": "Merge blockiert: der Haupt-Checkout hat uncommittete FREMDE Aenderungen (nicht diese Karte). Ich parke sie sicher auf einem wip-Branch (nichts geht verloren) und versuche den Merge erneut.",
+        "en": "Merge blocked: the main checkout has uncommitted OTHER changes (not this card). Parking them safely on a wip branch (nothing lost) and retrying the merge.",
+    },
+    "say.mergeUnblocked": {
+        "de": "board-Agent: {detail}",
+        "en": "board-Agent: {detail}",
     },
     "say.reviewChecked": {
         "de": "auf Review geprueft. {verdict}",
