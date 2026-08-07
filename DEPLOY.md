@@ -69,8 +69,8 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$PATH"
 ⚠ **Building from a worktree: `ninja: manifest 'build.ninja' still dirty after
 100 tries`.** react-native-screens / -worklets / expo-modules-core die in the
 CMake step, right after CMake warns "object file path cannot be safely placed
-under this directory". Cause is path length: `helmdeck-worktrees/<branch>/app/
-node_modules/...` is ~40 chars deeper than the main repo, so NDK object paths
+under this directory". Cause is path length: `helmdeck-worktrees/<repo-hash>/
+<branch>/app/node_modules/...` is ~50 chars deeper than the main repo, so NDK object paths
 blow past the Windows limit. **`subst`-ing a drive letter does NOT help** —
 gradle/CMake canonicalise it straight back to the long path. What works: build
 from a real short path, e.g. mirror `app/` to `C:\hd\app` and run gradle there.

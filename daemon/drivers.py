@@ -461,8 +461,38 @@ def shutdown_all():
     return len(items)
 
 
-def _env(cfg):
-    """The environment the agent's shell inherits.
+# Daemon-internal control keys the AGENT process must not inherit (Paseo's
+# RUNTIME_CONTROL_ENV_KEYS split: internal env = the daemon's own, external
+# env = sanitized for every spawned process). TLS material paths and the
+# daemon's claude-binary override are supervision config, not build env; and
+# BASH_ENV could rewrite the env behind our back in every shell the agent runs
+# (Paseo strips it in createStringCommandShellEnv for the same reason).
+_CONTROL_ENV_KEYS = ("HELMDECK_TLS_CERT", "HELMDECK_TLS_KEY", "HELMDECK_TLS_PORT",
+                     "HELMDECK_CLAUDE", "BASH_ENV")
+
+
+def _card_env(t):
+    """Per-card overlay for the agent env (Paseo resolveWorktreeRuntimeEnv):
+    where the card lives and its reserved dev port, so build/test scripts can
+    bind HELMDECK_DEV_PORT instead of fighting siblings over the project's
+    default port. Deliberately NOT exposed: the source checkout path (Paseo's
+    PASEO_SOURCE_CHECKOUT_PATH) - that is where the secrets live that the
+    worktree was isolated away from."""
+    if not t:
+        return {}
+    out = {}
+    if t.get("dev_port"):
+        out["HELMDECK_DEV_PORT"] = str(t["dev_port"])
+    if t.get("worktree"):
+        out["HELMDECK_WORKTREE"] = str(t["worktree"])
+    if t.get("branch") and not t.get("machine"):
+        out["HELMDECK_BRANCH"] = str(t["branch"])
+    return out
+
+
+def _env(cfg, card=None):
+    """The environment the agent's shell inherits (the EXTERNAL env model -
+    the daemon's own os.environ stays the internal one).
 
     A card runs in an isolated worktree, which keeps cards from trampling each
     other - but isolation alone does not give the agent a BUILD environment. The
@@ -480,6 +510,8 @@ def _env(cfg):
     the inherited PATH.
     """
     env = dict(os.environ)
+    for k in _CONTROL_ENV_KEYS:
+        env.pop(k, None)
     # Bash tool timeouts (Paseo-parity: bound the TOOL, not the turn). Without
     # these a single runaway command - a stuck `adb`, an endless poll - hung the
     # whole turn until the 30-min turn kill or a human hit Stop. Paseo relies on
@@ -492,6 +524,8 @@ def _env(cfg):
     # daemon's own env and a driver's `env` in settings.json still win.
     env.setdefault("BASH_DEFAULT_TIMEOUT_MS", "120000")   # 2 min default / command
     env.setdefault("BASH_MAX_TIMEOUT_MS", "300000")       # 5 min ceiling the agent can't exceed
+    if card:
+        env.update(card)                                  # per-card overlay (_card_env)
     extra = cfg.get("env") or {}
     prepend = extra.get("PATH+")
     for k, v in extra.items():
@@ -518,6 +552,9 @@ def run(cfg, t, prompt):
 _CARD_BRIEF = (
     "You are working ONE HelmDeck card in an isolated git worktree. "
     "You CAN: edit files, run commands/tests/builds, and commit on THIS branch. "
+    "If you start a dev server, bind the port reserved for THIS card in "
+    "$HELMDECK_DEV_PORT (when set) - not the project default - so parallel "
+    "cards never fight over a port. "
     "You CANNOT (by design): merge to main, access secrets (.env/keys), or deploy - "
     "the owner accepts the card on the board, and accepting runs the repo deploy hook. "
     "Therefore NEVER end with just 'I cannot do X'. When your work is done and "
@@ -597,6 +634,7 @@ class _ClaudeSession:
         self.tid = t["id"]
         self.cfg = cfg
         self.worktree = t.get("worktree") or "."
+        self.card_env = _card_env(t)     # HELMDECK_DEV_PORT etc., fixed at spawn
         self.brief = _MACHINE_BRIEF if t.get("machine") else _CARD_BRIEF
         self.sig = _opts_sig(cfg, t)
         self.session_id = t.get("session_id")
@@ -655,7 +693,7 @@ class _ClaudeSession:
                 argv += ["--fork-session"]
         self.proc = subprocess.Popen(_cmd_line(argv), cwd=self.worktree,
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE, env=_env(self.cfg),
+                                     stderr=subprocess.PIPE, env=_env(self.cfg, self.card_env),
                                      text=True, encoding="utf-8", errors="replace",
                                      bufsize=1)
         self.spawn_time = _time.time()
@@ -988,7 +1026,7 @@ def _http(cfg, t, prompt):
 def _cmd(cfg, t, prompt):
     r = subprocess.run(cfg["command"], cwd=t.get("worktree") or ".", shell=True,
                        input=prompt, capture_output=True, text=True,
-                       env=_env(cfg),
+                       env=_env(cfg, _card_env(t)),
                        encoding="utf-8", errors="replace",
                        timeout=cfg.get("timeout", 1800))
     out = r.stdout.strip() or r.stderr.strip()
