@@ -1301,6 +1301,15 @@ def cancel_turn(tid, actor="owner"):
         if t:
             from actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "turn CANCELLED by %s" % actor)
+            # Reset the card OFF "running" here. Normally the steer thread does this
+            # when _turn returns after the kill, but a racing/dead steer thread (a
+            # daemon restart, overlapping cancels) can leave it stuck at running with
+            # no session - a frozen spinner. The turn is cancelled; it's the owner's
+            # move now.
+            if t.get("status") == "running":
+                t["status"] = "needs_you"
+                t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                _save_track(t)
         return {"cancelled": True}
     # no live session - clear a stuck/zombie card so Stop is never a no-op, and
     # promote the interrupted session so re-steering RESUMES it losslessly.
