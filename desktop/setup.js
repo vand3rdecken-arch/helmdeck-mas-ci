@@ -42,9 +42,31 @@ function say(line, kind = "info") {
 // ---------------------------------------------------------------- probes ---
 
 const win = process.platform === "win32";
+
+/** The env every provisioning child gets. A GUI-launched Electron can carry a
+ *  PATH missing the core Windows dirs (same trap the daemon fixes for itself in
+ *  server.py _hydrate_windows_path): then `where`, `cmd`, `powershell` and the
+ *  npm shims silently stop resolving and every probe "fails" on a healthy
+ *  machine. Hydrate once, use everywhere - setup must be reproducible however
+ *  the app was started. */
+function hydratedEnv() {
+  const env = { ...process.env };
+  if (!win) return env;
+  const root = env.SystemRoot || "C:\\Windows";
+  const want = [path.join(root, "System32"), root,
+    path.join(root, "System32", "WindowsPowerShell", "v1.0")];
+  const parts = (env.Path || env.PATH || "").split(path.delimiter).filter(Boolean);
+  const have = new Set(parts.map((p) => p.toLowerCase()));
+  for (const d of want) {
+    if (!have.has(d.toLowerCase()) && fs.existsSync(d)) parts.push(d);
+  }
+  env.Path = parts.join(path.delimiter);
+  return env;
+}
+
 const runQ = (cmd, args, opts = {}) => {
   try {
-    return spawnSync(cmd, args, { shell: win, windowsHide: true, encoding: "utf8", timeout: 20000, ...opts });
+    return spawnSync(cmd, args, { shell: win, windowsHide: true, encoding: "utf8", timeout: 20000, env: hydratedEnv(), ...opts });
   } catch (e) {
     return { status: 1, stdout: "", stderr: String(e && e.message) };
   }
@@ -169,7 +191,7 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
     // silently rewrite the user's HelmDeck installation. Only the step that
     // genuinely has to change the machine (installing a runtime) gets more.
     const p = spawn(claude.cmd, ["-p", prompt, "--permission-mode", mode],
-      { cwd, shell: win, windowsHide: true, env: { ...process.env } });
+      { cwd, shell: win, windowsHide: true, env: hydratedEnv() });
     let tail = "";
     const onData = (d) => {
       tail += d.toString();

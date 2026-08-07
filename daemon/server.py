@@ -1333,6 +1333,76 @@ def _hydrate_windows_path():
               ", ".join(os.path.basename(d) or d for d in add), flush=True)
 
 
+def _hydrate_registry_env():
+    """Windows counterpart of Paseo's inheritLoginShellEnv (Paseo captures the
+    LOGIN-SHELL env on mac/linux and explicitly SKIPS win32 - login-shell-env.ts
+    throws reason:'win32'). On Windows the durable place users and installers
+    declare JAVA_HOME, ANDROID_HOME and PATH additions is the REGISTRY
+    environment (machine + user). A daemon launched from git-bash or a GUI can
+    miss those (var set after login; launcher stripped the env) - and then
+    every gradle/adb build inside a card dies on 'JAVA_HOME is not set' even
+    though the same build works in the owner's own terminal. Merge at start:
+    variables only when absent (a genuinely inherited value wins), PATH
+    entries APPENDED (the inherited toolchain order wins). Read via winreg
+    (stdlib) - NEVER by shelling to powershell, which is not guaranteed to be
+    on PATH (this very dev box lacks it). Paseo adoption Phase 4.4."""
+    if os.name != "nt":
+        return
+    try:
+        import winreg
+    except ImportError:
+        return
+
+    def read_key(root, subkey):
+        vals = {}
+        try:
+            with winreg.OpenKey(root, subkey) as k:
+                i = 0
+                while True:
+                    try:
+                        name, val, typ = winreg.EnumValue(k, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if typ in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) and isinstance(val, str):
+                        vals[name] = val
+        except OSError:
+            pass
+        return vals
+
+    machine = read_key(winreg.HKEY_LOCAL_MACHINE,
+                       r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+    user = read_key(winreg.HKEY_CURRENT_USER, "Environment")
+    merged = dict(machine)
+    merged.update(user)                      # user overrides machine, like Windows does
+    added = []
+    # 1) plain variables first, so PATH entries like %JAVA_HOME%\bin expand next
+    for name, val in merged.items():
+        if name.upper() == "PATH":
+            continue
+        if name not in os.environ:          # os.environ is case-insensitive on nt
+            os.environ[name] = os.path.expandvars(val)
+            added.append(name)
+    # 2) PATH: append registry entries the launcher dropped
+    have = {p.lower().rstrip("\\") for p in os.environ.get("PATH", "").split(os.pathsep) if p}
+    extra = []
+    for src in (machine, user):
+        for key, val in src.items():
+            if key.upper() != "PATH":
+                continue
+            for p in val.split(os.pathsep):
+                p = os.path.expandvars(p.strip())
+                if p and p.lower().rstrip("\\") not in have and os.path.isdir(p):
+                    extra.append(p)
+                    have.add(p.lower().rstrip("\\"))
+    if extra:
+        os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + os.pathsep.join(extra)
+        added.append("PATH+%d" % len(extra))
+    if added:
+        print("ENV: hydrated from registry (%s) - build env present regardless of launcher"
+              % ", ".join(sorted(added)), flush=True)
+
+
 def _take_singleton_lock(port):
     """One daemon per machine. A restart used to race the old instance: the new
     process couldn't bind the port until the old one died, and in that gap the
@@ -1404,6 +1474,7 @@ def _take_singleton_lock(port):
 
 def serve(port=8140):
     _hydrate_windows_path()      # bash-launched daemons lack Windows dirs on PATH -> gate/py/cmd fail
+    _hydrate_registry_env()      # + JAVA_HOME/ANDROID_HOME/user-PATH from the registry (build env)
     _take_singleton_lock(port)   # evict a prior daemon so the relay poll never races a restart
     import db
     # role="daemon": loading the store AS THE DAEMON structurally devalues any
