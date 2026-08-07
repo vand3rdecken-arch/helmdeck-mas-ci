@@ -324,13 +324,11 @@ AUTOPILOT_RETRY_SECONDS = 600  # min gap between autopilot gate re-checks on one
 
 
 def _stamp(tid, **fields):
-    """Persist autopilot bookkeeping fields on a card (fresh load, no clobber)."""
+    """Persist autopilot bookkeeping fields on a card (fresh load, no clobber -
+    through sessions._mutate so a whole-dict save can never resurrect a stale
+    status snapshot)."""
     import sessions
-    t = sessions._find(sessions._load(), tid)
-    if t:
-        t.update(fields)
-        sessions._save_track(t)
-    return t
+    return sessions._mutate(tid, lambda t: t.update(fields))
 
 
 def _auto_resolve(t):

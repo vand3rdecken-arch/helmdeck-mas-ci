@@ -51,7 +51,11 @@ def wait_version(last, timeout=25):
 def current_version():
     return _version
 
-def init():
+def init(role="tool"):
+    """role="daemon" marks THE process that owns the driver sessions (server.
+    serve). Only that process may devalue persisted lifecycle state - a test or
+    tool process has an empty driver table, so from its viewpoint EVERY running
+    card would look dead; letting it 'heal' them would corrupt the live board."""
     c = conn()
     c.execute("""CREATE TABLE IF NOT EXISTS tracks(
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
@@ -64,6 +68,25 @@ def init():
     c.execute("CREATE INDEX IF NOT EXISTS ev_track ON events(track)")
     c.commit()
     _migrate()
+    if role == "daemon":
+        _devalue_persisted_running()
+
+
+def _devalue_persisted_running():
+    """Paseo agent-archive parity (normalizeArchivedStatus): persisted 'running'/
+    'initializing' is NEVER believed when a store is loaded - a fresh daemon by
+    definition holds no live turn, so every running/gating card died with the
+    previous process. Part of the store's daemon boot (not a step serve() must
+    remember): delegating to sessions.sweep_zombies(min_idle_s=0) keeps the
+    behaviour identical - bounce + resume note + live-session promotion."""
+    try:
+        import sessions
+        zombies = sessions.sweep_zombies(min_idle_s=0)
+        if zombies:
+            print("db: devalued %d persisted running/gating card(s) at load: %s"
+                  % (len(zombies), ", ".join(zombies)))
+    except Exception as e:
+        print("db: boot devaluation failed:", e)
 
 def _migrate():
     c = conn()

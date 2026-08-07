@@ -591,16 +591,34 @@ export default function CardScreen() {
   const feed = useMemo<TStep[]>(() => {
     const trans = (transcript ?? []) as TStep[];
     const rows = (hist ?? []) as TStep[];
+    // Turn lifecycle rows (Phase 3.2) are their own typed items, woven in by
+    // epoch like the notes - turn failure/cancel/usage shows in the feed even
+    // though it never appears in the session .jsonl (it is daemon knowledge).
+    const asTurn = (r: TStep): TStep => ({
+      kind: "turn", event: (r as any).event, error: (r as any).error,
+      usage: (r as any).usage, cost: (r as any).cost, ts: r.ts, ta: (r as any).ta });
     if (!trans.length) {
-      return rows.filter((r) => (r.text || (r as any).detail || r.result))
+      return rows.filter((r) => r.kind === "turn" || (r.text || (r as any).detail || r.result))
         .map((r) => r.kind === "steer"
           ? { role: "user", kind: "text", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }
           : r.kind === "reply"
           ? { role: "assistant", kind: "text", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }
+          : r.kind === "turn"
+          ? asTurn(r)
           : { kind: "system", text: (r as any).detail ?? r.text, ts: r.ts, ta: (r as any).ta });
     }
+    // A cancel is recorded TWICE: the CLI writes the interrupt sentinel into
+    // the session .jsonl (a transcript turn-canceled item) and the daemon logs
+    // its own turn-canceled row. When both exist near the same moment, keep
+    // the transcript's - the actionlog row still shows alone for cancels the
+    // .jsonl never saw (timeout kills, daemon restarts).
+    const canceledAt = trans.filter((s) => s.kind === "turn" && (s as any).event === "canceled")
+      .map((s) => s.ta ?? 0);
+    const twin = (r: TStep) => (r as any).event === "canceled" &&
+      canceledAt.some((ta) => Math.abs(((r as any).ta ?? 0) - ta) < 120);
     const notes: TStep[] = rows.filter((r) => r.kind === "note" && ((r as any).detail ?? "").trim())
-      .map((r) => ({ kind: "system", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }));
+      .map((r): TStep => ({ kind: "system", text: (r as any).detail, ts: r.ts, ta: (r as any).ta }))
+      .concat(rows.filter((r) => r.kind === "turn" && !twin(r)).map(asTurn));
     if (!notes.length) return trans;
     // Weave notes into the transcript by absolute epoch (`ta`) — the only sound
     // key. Display `ts` is date-less HH:MM:SS and string-sorting it scrambled

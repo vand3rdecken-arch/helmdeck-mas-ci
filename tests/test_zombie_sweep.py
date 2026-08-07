@@ -44,11 +44,23 @@ def _track(tid, status):
             "turns": 1, "updated": "2026-07-28 22:00:00"}
 
 
+class _LiveTurn:
+    """A worker session WITH a turn in flight. Since 063c94a 'running' is a
+    derived observation (drivers.turn_active: alive AND _cur set), not mere
+    dict membership - a bare object() would read as alive-but-idle and be
+    settled to needs_you, which is exactly the lifecycle contract pinned by
+    test_lifecycle_settle.py."""
+    _cur = {"x": 1}
+
+    def alive(self):
+        return True
+
+
 def test_sweep():
     db.track_put(_track("t-zombie", "running"))       # dead daemon's leftover
     db.track_put(_track("t-live", "running"))         # a turn actually in flight
     db.track_put(_track("t-idle", "needs_you"))       # untouched bystander
-    drivers._sessions["t-live"] = object()            # simulate the live worker
+    drivers._sessions["t-live"] = _LiveTurn()         # simulate the live worker
 
     swept = sessions.sweep_zombies()
 

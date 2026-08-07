@@ -894,8 +894,11 @@ class _ClaudeSession:
 
         if self.tid in _cancelled:            # Stop was pressed - clean, not error
             _cancelled.discard(self.tid)
+            # `canceled` is the structured signal (Paseo turn_canceled): the turn
+            # ended by the owner's hand, not by an error - the lifecycle event
+            # stream renders it as its own typed item, never a failure.
             return self.session_id, "(turn cancelled by you)", \
-                {"usage": {}, "cost_usd": None, "models": []}
+                {"usage": {}, "cost_usd": None, "models": [], "canceled": True}
         if not finished:
             # hung turn: tree-kill the session; the next steer resumes it.
             self.kill()
