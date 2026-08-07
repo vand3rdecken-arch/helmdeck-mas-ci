@@ -1466,13 +1466,25 @@ def _sweep_background():
             "note", "Hintergrund-Task fertig - Karte laeuft automatisch weiter")
         import events
         events.emit("autocontinue", t["id"], actor="daemon")
+        # Clear the claim BEFORE steering: that is what stops the next pass from
+        # firing this card a second time, and it is why the steer can safely be
+        # detached below.
         t["waiting_on"] = "you"
         t.pop("background", None)
         _save_track(t)
-        try:
-            steer(t["id"], _continue_prompt(), actor="daemon", source="background-task")
-        except Exception as e:
-            print("auto-continue failed for %s: %s" % (t["id"], e))
+
+        # A continuation is a full turn (up to 1800s). Run it OFF the watcher
+        # thread - held inline, one long build's follow-up would stall the whole
+        # loop, so a second card finishing behind it would wait out that entire
+        # turn before anyone noticed. Per-card serialisation still holds: _turn
+        # takes the card's own lock.
+        def _go(tid=t["id"]):
+            try:
+                steer(tid, _continue_prompt(), actor="daemon", source="background-task")
+            except Exception as e:
+                print("auto-continue failed for %s: %s" % (tid, e))
+
+        _threading.Thread(target=_go, daemon=True).start()
 
 
 def _epoch_of(stamp):
