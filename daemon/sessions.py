@@ -1415,10 +1415,21 @@ def sweep_zombies(min_idle_s=0):
     from actionlog import ActionLog
     swept = []
     for t in _load():
-        if t.get("status") != "running" or drivers.has_session(t["id"]):
+        st = t.get("status")
+        if st == "running":
+            # genuinely working = has a live session; else a zombie (guard the
+            # brief steer-start window where the session is still spawning)
+            if drivers.has_session(t["id"]) or (min_idle_s and _track_idle_s(t) < min_idle_s):
+                continue
+        elif st == "gating":
+            # the gate runs SYNCHRONOUSLY in a request thread (no session to check),
+            # so a restart mid-gate freezes the card at 'gating' forever. Reap it -
+            # but only once idle past a real gate's runtime (~2min) so a legit slow
+            # gate is never cut. 0 at startup (a gating card then died with the daemon).
+            if _track_idle_s(t) < (120 if min_idle_s else 0):
+                continue
+        else:
             continue
-        if min_idle_s and _track_idle_s(t) < min_idle_s:
-            continue   # steer just started - session still spawning, not a zombie
         note = RESUME_NOTE if _promote_live_session(t) else ZOMBIE_NOTE
         t["status"] = "bounced"
         t["gate_report"] = _interrupt_note_report(t, note)
