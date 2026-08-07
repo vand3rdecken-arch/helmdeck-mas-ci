@@ -1321,6 +1321,13 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     t["turns"] = t.get("turns", 0) + 1
     reason = _settle_reply(t, result, log)
     t["status"] = "needs_you"
+    # A successful turn makes any stale interrupt/zombie note obsolete. Clear it so a
+    # normal turn-end stops showing "daemon restarted mid-turn" from a PAST bounce -
+    # otherwise the card reads as 'the daemon killed my turn' when it just ended
+    # cleanly ("stuck again, did you kill it?" when nothing did).
+    _gr = t.get("gate_report")
+    if isinstance(_gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x for x in _gr):
+        t.pop("gate_report", None)
     _record_turn(t, meta)
     t["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save_track(t)
