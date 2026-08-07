@@ -74,10 +74,16 @@ class H(BaseHTTPRequestHandler):
         if not tok and "token=" in self.path:
             tok = self.path.split("token=")[1].split("&")[0]
         u = auth.resolve(sid=self._sid(), token=tok or None)
-        if u and self.command == "POST":
+        if u and self.command == "POST" and self.path.split("?")[0] != "/presence":
             # presence signal for the idle-time worker. POSTs only: a GET can
             # be the board's auto-refresh in a forgotten browser tab, but a
             # POST is a human doing something - steering, filing, configuring.
+            #
+            # /presence is EXCLUDED deliberately: it is a 15s heartbeat, so
+            # counting it here would mean an app merely left open makes the
+            # board look permanently busy and the PM/night loop would never
+            # find its idle window again. Heartbeats say "he is here", which is
+            # a different question from "he is working" - see presence.py.
             import pm
             pm.touch()
         return u
@@ -337,6 +343,13 @@ class H(BaseHTTPRequestHandler):
                             self.wfile.write(b": ping\n\n"); self.wfile.flush(); idle = 0
                 except (ConnectionAbortedError, BrokenPipeError, OSError):
                     return
+            if p == "/presence":
+                # who the daemon thinks is here (diagnostic for the notify
+                # policy: "why didn't my phone buzz?" has a checkable answer)
+                import presence
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                return self._send(200, json.dumps(presence.snapshot()))
             if p == "/debt":
                 import debt
                 return self._send(200, json.dumps(debt.list_debt()))
@@ -773,8 +786,12 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps({"ok": True}))
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
-            if user["role"] == "client" and p not in ("/tracks/new", "/processes/new") \
-               and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel"))):
+            # answering a question is a steer in typed form (it runs the same
+            # turn), so a client may answer on their OWN card exactly as they
+            # may steer it - the per-card ownership check still runs below.
+            if user["role"] == "client" and p not in ("/tracks/new", "/processes/new", "/presence") \
+               and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel")
+                                                      or p.endswith("/answer"))):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
             if p == "/chat/cancel":
                 if user["role"] == "client":
@@ -1008,6 +1025,18 @@ class H(BaseHTTPRequestHandler):
                             "local testing) - pairing links carry a device token "
                             "and must not cross the network unencrypted"}))
                 return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
+            if p == "/presence":
+                # Client heartbeat (Phase 2.1): who is here, is the app in the
+                # foreground, and which card is on screen. Drives the 3-tier
+                # notify policy in notify.should_push - the daemon stays silent
+                # about a card the owner is already looking at. Every role may
+                # report its own presence; it is about this connection only.
+                import presence
+                return self._send(200, json.dumps(presence.record(
+                    user["name"], body.get("device", "app"),
+                    focused_card=body.get("focused_card"),
+                    app_visible=bool(body.get("app_visible", True)),
+                    activity_at=body.get("last_activity_at"))))
             if p == "/push/register":
                 # the phone announces its FCM token (arrives through the E2EE
                 # relay like every call); the daemon then pushes sealed data
@@ -1190,6 +1219,35 @@ class H(BaseHTTPRequestHandler):
                     tid, text, actor=actor, model=model, thinking=thinking,
                     attachments=attachments, mode=mode))
                 return self._send(200, json.dumps({"started": tid}))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "answer":
+                # Phase 2.4: the owner picks an option on the worker's pending
+                # question. Backgrounded like /steer - it RUNS a turn (the
+                # worker continues with the decision), so holding the request
+                # would block the phone for the length of that turn.
+                import sessions
+                tid = parts[1]
+                if user["role"] == "client":
+                    t = sessions.get_track(tid)
+                    if not t or t.get("client") != user["name"]:
+                        return self._send(403, json.dumps({"error": "not your card"}))
+                t = sessions.get_track(tid)
+                if not t or not t.get("question"):
+                    return self._send(409, json.dumps({"error": "no pending question"}))
+                # validate BEFORE backgrounding, so a bad/stale answer reports
+                # the reason instead of failing invisibly on a worker thread
+                import ask
+                rid = body.get("request_id", "")
+                if rid and rid != (t["question"] or {}).get("id"):
+                    return self._send(409, json.dumps(
+                        {"error": "this question was already answered or replaced"}))
+                picks, err = ask.validate_answers(t["question"], body.get("answers") or {})
+                if err:
+                    return self._send(400, json.dumps({"error": err}))
+                actor = user["name"]
+                answers = body.get("answers") or {}
+                _bg("track:answer:" + tid, lambda: sessions.answer_question(
+                    tid, answers, request_id=rid, actor=actor))
+                return self._send(200, json.dumps({"started": tid, "answered": True}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "cancel":
                 import sessions
                 tid = parts[1]
@@ -1325,6 +1383,7 @@ def serve(port=8140):
     if zombies:
         print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
     sessions.apply_board_directives()    # one-shot board-data patches shipped as repo data
+    sessions.start_background_watcher()  # auto-continue cards whose background task finished
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")

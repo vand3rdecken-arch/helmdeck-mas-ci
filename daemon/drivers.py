@@ -32,6 +32,8 @@ promise, now per-card."""
 import json, os, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
 
+import ask   # the typed question channel taught to every worker (Phase 2.4)
+
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
@@ -337,13 +339,21 @@ def _idle_ttl():
 
 
 def _running_cards():
-    """Track ids currently flagged status=running in the store. A steer flips
-    the flag BEFORE its turn reaches run_turn's lock, so for a moment the card
-    is running while the session still looks idle - evicting in that window
-    would tree-kill the process under the spawning turn."""
+    """Track ids whose session must NOT be evicted.
+
+    (a) status=running: a steer flips the flag BEFORE its turn reaches
+        run_turn's lock, so for a moment the card is running while the session
+        still looks idle - evicting in that window would tree-kill the process
+        under the spawning turn.
+    (b) waiting_on=background: the worker's background task is a CHILD of this
+        session's process tree, so evicting the idle session would tree-kill the
+        very task the card is waiting for (Phase 2.5). A background build easily
+        outlives the 5-minute idle TTL, so without this the feature would kill
+        its own subject - the session stays until the task is done."""
     try:
         import sessions
-        return {t.get("id") for t in sessions._load() if t.get("status") == "running"}
+        return {t.get("id") for t in sessions._load()
+                if t.get("status") == "running" or t.get("waiting_on") == "background"}
     except Exception:
         return set()
 
@@ -491,7 +501,7 @@ _CARD_BRIEF = (
     "verified, end with a short DELIVERED summary and the sentence: "
     "'Ready for Review - move the card to Review; accepting it deploys.' "
     "If something truly blocks you, name the exact blocker and what the owner "
-    "must change (a setting, a secret, a decision)."
+    "must change (a setting, a secret, a decision).\n\n" + ask.BRIEF
 )
 
 # A MACHINE card has no worktree and no branch - its workplace is a real folder
@@ -512,7 +522,7 @@ _MACHINE_BRIEF = (
     "NEVER end with just 'I cannot do X': if one route is blocked, try another, "
     "and if you are truly stuck, name the exact blocker and the one thing the "
     "owner must decide or provide. When it is done, end with a short DELIVERED "
-    "summary of what actually changed on the machine."
+    "summary of what actually changed on the machine.\n\n" + ask.BRIEF
 )
 
 
