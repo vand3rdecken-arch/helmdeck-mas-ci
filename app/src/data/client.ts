@@ -182,6 +182,14 @@ export const api = {
   cancel: (id: string) => req("POST", `/tracks/${id}/cancel`),
   steer: (id: string, text: string, o: SteerOpts = {}) =>
     req("POST", `/tracks/${id}/steer`, { text, ...o }),
+  // Answer the worker's pending question (daemon/ask.py). `answers` maps each
+  // question's header -> the chosen option label (an array when multiSelect).
+  // Backgrounded by the daemon like a steer, because it RUNS the continuing
+  // turn. `requestId` is echoed back so a stale panel is rejected instead of
+  // answering a question the worker has already moved past.
+  answer: (id: string, answers: Record<string, string | string[]>, requestId: string) =>
+    req<{ started: string; answered: boolean }>(
+      "POST", `/tracks/${id}/answer`, { answers, request_id: requestId }),
 
   // card detail feeds
   transcript: (id: string) => req<Step[]>("GET", `/tracks/${id}/transcript`),

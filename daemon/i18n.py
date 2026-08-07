@@ -101,6 +101,7 @@ MESSAGES = {
     "push.needsYou": {"de": "Karte fertig - dein Urteil", "en": "Card finished - your call"},
     "push.bounced": {"de": "Karte gescheitert", "en": "Card failed"},
     "push.done": {"de": "Karte akzeptiert", "en": "Card accepted"},
+    "push.question": {"de": "Worker fragt dich", "en": "Worker is asking you"},
     "push.pmDone": {"de": "PM: fertig", "en": "PM: finished"},
     "push.pmStuck": {"de": "PM: haengt", "en": "PM: stuck"},
     "push.pmDoneBody": {"de": "'{task}' - braucht deine Abnahme.",

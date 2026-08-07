@@ -16,7 +16,35 @@ export interface Track {
   review_preview?: boolean; review_report?: string;
   archived?: boolean; autopilot?: boolean; fast_track?: boolean;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
+  question?: PendingQuestion;
+  waiting_on?: "you" | "background";
+  background?: BackgroundWait;
 }
+/** A worker's typed multiple-choice question (daemon/ask.py). Present only
+ *  while the card is actually waiting on the owner's decision; answering it
+ *  (POST /tracks/<id>/answer) continues the SAME session, so the worker picks
+ *  up where it stopped instead of the card parking on unanswerable prose. */
+export interface PendingQuestion {
+  /** echoed back when answering, so a stale panel can't answer a question the
+   *  worker has already moved past */
+  id: string;
+  kind: "tool" | "plan" | "question" | "mode";
+  asked: string;
+  ta?: number;
+  questions: AskQuestion[];
+}
+export interface AskQuestion {
+  question: string;
+  /** short chip label, also the answer key */
+  header: string;
+  options: AskOption[];
+  multiSelect: boolean;
+  idx?: number;
+}
+export interface AskOption { label: string; description?: string }
+/** What a parked card is waiting on, when it is NOT the owner: a background
+ *  task the worker launched and is still running (Phase 2.5). */
+export interface BackgroundWait { n: number; names?: string[]; since?: number }
 /** POST /tracks/<id>/lane. ->backlog still returns the finished Track;
  *  ->working/review/done are backgrounded by the daemon (gate subprocess +
  *  merge + deploy hook) and answer {started, gating} right away. The card then

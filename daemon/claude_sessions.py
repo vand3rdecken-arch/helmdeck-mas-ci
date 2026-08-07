@@ -195,12 +195,103 @@ def read_transcript_live(track, limit=400):
         try:
             with open(os.path.join(run_dir, "live_partial.txt"), encoding="utf-8") as f:
                 partial = f.read()
+            # strip the question block here too: while the worker streams it,
+            # the owner would otherwise watch raw protocol JSON being typed out.
+            import ask
+            partial = ask.strip_stream(partial)
             if partial.strip():
                 steps.append({"role": "assistant", "kind": "text",
                               "text": partial[:MAX_TEXT], "streaming": True, "ts": ""})
         except OSError:
             pass
     return steps
+
+
+def _is_steer(d):
+    """True for a record that is the OWNER's message opening a turn - not a
+    tool_result, not one of the envelopes Claude Code injects as role=user."""
+    if d.get("type") != "user" or d.get("isMeta") or d.get("isSidechain"):
+        return False
+    m = d.get("message")
+    if not isinstance(m, dict):
+        return False
+    c = m.get("content")
+    if isinstance(c, list) and c and all(
+            isinstance(p, dict) and p.get("type") == "tool_result" for p in c):
+        return False                      # a tool result, not a human turn
+    lead = _first_text(c).lstrip()
+    return not lead.startswith(("<task-notification>", "<system-reminder>",
+                                "<local-command", "<command-", "[SYSTEM NOTIFICATION"))
+
+
+def background_wait(track):
+    """The cue form of background_state(): {"n","names"} or None. A transcript
+    we cannot read reports None (no cue) - only the auto-continue watcher needs
+    to tell "nothing outstanding" from "cannot tell", and it uses
+    background_state() for exactly that."""
+    state, payload = background_state(track)
+    return payload if state == "waiting" else None
+
+
+def background_state(track):
+    """(state, payload) where state is:
+        "waiting" - background tasks launched in the LAST turn have not reported
+        "clear"   - the transcript was read and nothing is outstanding
+        "unknown" - the transcript could not be read at all
+
+    A turn that ends while a `run_in_background` task is still running is not
+    "waiting for you"; labelling it needs_you is what put those cards in limbo.
+    Completion is read off the `<task-notification>` Claude Code injects for the
+    finishing task (it carries the originating <tool-use-id>), so this is the
+    runtime's own signal, not a guess.
+
+    The "unknown" state exists because the auto-continue watcher STEERS on a
+    clear result, and steering costs the owner a real turn: a missing or rotated
+    transcript must never be mistaken for "the build finished"."""
+    sid = live_session_id(track)
+    path = _find_transcript(sid) if sid else None
+    if not path:
+        return "unknown", None
+    recs = []
+    try:
+        lines = _tail_lines(path)
+    except OSError:
+        return "unknown", None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            recs.append(json.loads(line))
+        except ValueError:
+            continue
+    start = 0
+    for i, d in enumerate(recs):       # scope to the last turn only
+        if _is_steer(d):
+            start = i
+    started, done = {}, set()
+    for d in recs[start:]:
+        m = d.get("message")
+        c = m.get("content") if isinstance(m, dict) else None
+        if isinstance(c, list):
+            for p in c:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "tool_use":
+                    inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                    if inp.get("run_in_background"):
+                        started[p.get("id")] = str(
+                            inp.get("description") or inp.get("command")
+                            or p.get("name") or "task")[:80]
+        lead = _first_text(c).lstrip()
+        if lead.startswith("<task-notification>"):
+            hit = re.search(r"<tool-use-id>(.*?)</tool-use-id>", lead, re.S)
+            if hit:
+                done.add(hit.group(1).strip())
+    open_tasks = [v for k, v in started.items() if k not in done]
+    if not open_tasks:
+        return "clear", None
+    return "waiting", {"n": len(open_tasks), "names": open_tasks[:4]}
 
 
 def _tool_summary(inp):
@@ -296,6 +387,16 @@ def _strip_ctx(text):
         if i != -1:
             return text[i + len(_CTX_SEP):].lstrip()
     return text
+
+
+def _clean_text(text):
+    """Everything that must come OFF an author/agent message before the owner
+    reads it: the injected desktop-context block (_strip_ctx) and the worker's
+    machine-readable question block, which is rendered as real option buttons
+    instead (ask.py). Leaving the raw <helmdeck-ask> JSON in the feed would show
+    the owner the protocol rather than the question."""
+    import ask
+    return ask.strip(_strip_ctx(text))
 
 
 def _result_text(part):
@@ -401,8 +502,9 @@ def read_transcript(session_id, limit=400):
             steps.append({"kind": "system", "text": "⏹ Turn unterbrochen", "ts": ts, "ta": ta})
             continue
         if isinstance(content, str):
-            if content.strip():
-                steps.append({"role": role, "kind": "text", "text": _strip_ctx(content.strip())[:MAX_TEXT], "ts": ts, "ta": ta})
+            body = _clean_text(content.strip())
+            if body:
+                steps.append({"role": role, "kind": "text", "text": body[:MAX_TEXT], "ts": ts, "ta": ta})
             continue
         if not isinstance(content, list):
             continue
@@ -410,8 +512,9 @@ def read_transcript(session_id, limit=400):
             if not isinstance(part, dict):
                 continue
             pt = part.get("type")
-            if pt == "text" and (part.get("text") or "").strip():
-                steps.append({"role": role, "kind": "text", "text": _strip_ctx(part["text"].strip())[:MAX_TEXT], "ts": ts, "ta": ta})
+            if pt == "text" and _clean_text((part.get("text") or "").strip()):
+                steps.append({"role": role, "kind": "text",
+                              "text": _clean_text(part["text"].strip())[:MAX_TEXT], "ts": ts, "ta": ta})
             elif pt == "thinking" and (part.get("thinking") or "").strip():
                 steps.append({"role": role, "kind": "thinking", "text": part["thinking"].strip()[:MAX_THINK], "ts": ts, "ta": ta})
             elif pt == "tool_use":

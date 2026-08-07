@@ -15,6 +15,7 @@ import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
+import { usePresenceHeartbeat } from "@/data/presence";
 import { decryptPush, presentDecrypted, registerForPush } from "@/data/push";
 import { t as i18nT } from "@/i18n/core";
 import { ThemeProvider } from "@/theme";
@@ -174,6 +175,7 @@ export default function RootLayout() {
   useGlobalStream();
   useResumeRefetch();
   useSilentOta();
+  usePresenceHeartbeat();
   const restored = useCacheGate();
   // Desktop first run: the instance isn't serving yet, so onboarding owns the
   // window instead of dropping the user on a board that cannot load.
