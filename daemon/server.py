@@ -1415,6 +1415,9 @@ def serve(port=8140):
     zombies = sessions.sweep_zombies()   # running-flagged cards whose turn died with the old daemon
     if zombies:
         print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
+    reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
+    if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
+        print("SESSIONS: reclaimed %d merged worktree(s)" % reclaimed)  # stays clean by having none at all.
     sessions.start_zombie_reconciler()   # + CONTINUOUS reconcile (Paseo 15s-sweep parity): catch a card
                                          # stuck at status=running with no session BETWEEN restarts, live
     sessions.apply_board_directives()    # one-shot board-data patches shipped as repo data
