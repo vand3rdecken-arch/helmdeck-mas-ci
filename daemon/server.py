@@ -1324,6 +1324,8 @@ def serve(port=8140):
     zombies = sessions.sweep_zombies()   # running-flagged cards whose turn died with the old daemon
     if zombies:
         print("SESSIONS: bounced %d zombie running card(s): %s" % (len(zombies), ", ".join(zombies)))
+    sessions.start_zombie_reconciler()   # + CONTINUOUS reconcile (Paseo 15s-sweep parity): catch a card
+                                         # stuck at status=running with no session BETWEEN restarts, live
     sessions.apply_board_directives()    # one-shot board-data patches shipped as repo data
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
