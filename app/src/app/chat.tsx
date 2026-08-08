@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
@@ -39,6 +39,44 @@ function toStep(m: ChatMsg): TStep {
     ts: m.ts,
     agent: m.cls === "pm",   // the PM's proactive messages get the board-agent tag
   };
+}
+
+// A live "thinking" row while the board agent works: pulsing dots + an elapsed
+// clock (like Claude), so the wait reads as active reasoning, not a frozen
+// "denkt". The copilot runs blocking (no token stream yet), so this is the
+// honest signal we can give until the run returns / its actions stream in.
+function ThinkingIndicator() {
+  const t = useTheme();
+  const tr = useT();
+  const d0 = useRef(new Animated.Value(0.25)).current;
+  const d1 = useRef(new Animated.Value(0.25)).current;
+  const d2 = useRef(new Animated.Value(0.25)).current;
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const pulse = (v: Animated.Value, delay: number) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(v, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0.25, duration: 300, useNativeDriver: true }),
+        Animated.delay(360 - delay),
+      ]));
+    const anims = [pulse(d0, 0), pulse(d1, 160), pulse(d2, 320)];
+    anims.forEach((a) => a.start());
+    const iv = setInterval(() => setSecs((s) => s + 1), 1000);
+    return () => { anims.forEach((a) => a.stop()); clearInterval(iv); };
+  }, [d0, d1, d2]);
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 10, paddingLeft: 2 }}>
+      <Ionicons name="sparkles" size={13} color={t.accent2} />
+      <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>{tr("chat.thinking")}</Text>
+      <View style={{ flexDirection: "row", gap: 3, marginLeft: 1 }}>
+        {[d0, d1, d2].map((d, i) => (
+          <Animated.View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: t.accent2, opacity: d }} />
+        ))}
+      </View>
+      {secs >= 2 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>· {secs}s</Text> : null}
+    </View>
+  );
 }
 
 // The chat body (transcript + composer + logic). `onClose` returns to the board:
@@ -141,7 +179,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           {msgs.length === 0
             ? <Empty text={tr("chat.empty")} />
             : <Transcript steps={msgs.map(toStep)} />}
-          {busy ? <Text style={{ color: t.txtTertiary, fontSize: 12, paddingTop: 8 }}>{tr("chat.thinking")}</Text> : null}
+          {busy ? <ThinkingIndicator /> : null}
         </ScrollView>
         {!atBottom ? (
           <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
