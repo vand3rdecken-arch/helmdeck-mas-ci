@@ -185,6 +185,7 @@ def _budget_assess(econ, est_turns, pace):
         snap = {}
     wins = snap.get("windows") or []
     state = "ok"
+    weekly = next((w for w in wins if w.get("id") == "weekly"), None)
     for w in wins:                       # derive the verdict from the real windows
         pac = w.get("pacing") or {}
         up = w.get("usedPct") or 0
@@ -193,14 +194,29 @@ def _budget_assess(econ, est_turns, pace):
             break
         if up >= 80 or (pac.get("projected_pct") or 0) >= 100:
             state = "warn"
-    note = {
-        "ok": "Max-Abo: Budget = Plan-Kapazität. Beim aktuellen Tempo reicht sie bis zum Reset.",
-        "warn": "Max-Abo: Auslastung wird eng - beim aktuellen Tempo nah am Limit vor dem Reset.",
-        "blocked": "Max-Abo: Kontingent ist der Engpass - beim aktuellen Tempo vor dem Reset "
-                   "erschöpft. Tempo drosseln oder Reset abwarten.",
-    }[state]
+    # PM-grade note: reason in VELOCITY x QUOTA, not a flat figure. Name the pace,
+    # the weekly projection at that pace, and the reset - so the verdict reads
+    # like a PM's ("at 9.6/day the weekly quota projects 110% -> exhausts before
+    # the Sun reset"), which is the bottleneck on a flat plan, not euros.
+    vel = econ.get("velocity_turns_per_day") or 0
+    wp = (weekly or {}).get("pacing") or {}
+    proj = wp.get("projected_pct")
+    reset = _fmt_when((weekly or {}).get("resetsAt")) if weekly else ""
+    used = (weekly or {}).get("usedPct")
     if not wins:                         # no Claude login / usage unreachable
         note = "Max-Abo: Budget = Plan-Kapazität (kein €). Nutzungsdaten gerade nicht verfügbar."
+    elif weekly is None:
+        note = "Max-Abo: Budget = Plan-Kapazität (kein €)."
+    else:
+        head = {"ok": "reicht bis zum Reset.",
+                "warn": "wird eng vor dem Reset.",
+                "blocked": "reicht NICHT bis zum Reset - vorher erschöpft."}[state]
+        note = ("Max-Abo: Kontingent ist der Engpass (kein €). Bei %.1f Turns/Tag ist die "
+                "Woche bei %d%%%s, Reset %s - %s%s"
+                % (vel, round(used or 0),
+                   (" → projiziert %d%%" % round(proj)) if proj is not None else "",
+                   reset or "—", head,
+                   " Tempo drosseln oder Reset abwarten." if state == "blocked" else ""))
     b = {"plan": "max", "kind": "usage", "usage_plan": snap.get("plan"),
          "windows": wins,               # full UsageWindow shape - board reuses UsageRow
          "est_turns_to_goal": est_turns,
@@ -208,6 +224,27 @@ def _budget_assess(econ, est_turns, pace):
          "pace_turns_per_day": pace, "eta_days": _days(est_turns, pace),
          "state": state, "note": note}
     return b, state
+
+
+def live_plan():
+    """The cached plan artifact, but with Budget/Timeline/Scope RECOMPUTED from
+    LIVE economics + usage on every read. The triangle (and the budget panel)
+    then always think in the CURRENT velocity/quota - not a figure frozen at
+    plan time (a budget baked into the daily artifact is stale the moment usage
+    moves). The LLM's content (milestones, scope, questions) is preserved; only
+    the measured verdict + budget block are refreshed. Cheap: no LLM call."""
+    plan = latest_plan()
+    if not plan:
+        return plan
+    econ = economics()
+    pace = _pace(econ)
+    cum = sum(int(ms.get("est_turns") or 0) for ms in plan.get("milestones", [])
+              if str(ms.get("status")) != "done")
+    try:
+        _gate_triangle(plan, econ, cum, pace)
+    except Exception as e:
+        print("live_plan gate error:", e)
+    return plan
 
 
 def _gate_triangle(out, econ, est_turns, pace):

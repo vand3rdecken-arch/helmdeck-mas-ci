@@ -430,7 +430,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import pm
                 return self._send(200, json.dumps({"goal": pm.get_goal(),
-                    "economics": pm.economics(), "plan": pm.latest_plan(),
+                    "economics": pm.economics(), "plan": pm.live_plan(),
                     "config": pm._pm(), "activity": pm.activity()}))
             if p == "/sessions/claude":
                 if user["role"] == "client":
