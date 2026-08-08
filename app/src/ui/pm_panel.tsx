@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
 
@@ -26,15 +25,20 @@ function ActLine({ icon, color, text, t }: { icon: keyof typeof Ionicons.glyphMa
 
 /** The PM CONTROL surface: goal, autonomy, consolidate, live activity. All plan
  *  follow-up (launch, milestones, budget, progress, next actions) renders in
- *  TriageFollowUp on the dashboard, keyed to the three triangle corners. */
+ *  TriageFollowUp on the dashboard, keyed to the three triangle corners.
+ *
+ *  It stays COLLAPSED by default: the triangle above already tells the whole
+ *  plan story, so a permanently open block of controls is exactly the clutter
+ *  the owner asked us to clear. One tap opens it; anything urgent (blocker,
+ *  waiting card, quota) still shows on the collapsed row. */
 export function PMPanel() {
   const t = useTheme();
   const tr = useT();          // shadows the module-level static t(): same API, re-renders on switch
-  const router = useRouter();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [goal, setGoal] = useState<string | null>(null);
   const [editGoal, setEditGoal] = useState(false);
+  const [open, setOpen] = useState<boolean | null>(null);   // null = follow the default
 
   const report = useMutation({
     mutationFn: (g?: string) => api.pmReport(g),
@@ -80,27 +84,54 @@ export function PMPanel() {
   const AUTO: { k: "notify" | "ask" | "act"; label: string }[] = [
     { k: "notify", label: tr("pm.notify") }, { k: "ask", label: tr("pm.ask") }, { k: "act", label: tr("pm.act") }];
 
+  // Open until there is a goal to reach for (the only way to set one is in
+  // here), and always while the goal editor is up.
+  const expanded = editGoal || (open ?? !curGoal);
+  const autoLabel = !cfg?.loop_enabled ? tr("pm.proactiveOffShort")
+    : tr("pm.proactiveState", { mode: cfg?.autonomy === "notify" ? tr("pm.notify") : cfg?.autonomy === "ask" ? tr("pm.ask") : tr("pm.act") });
+  // Collapsing must never swallow something that needs the owner.
+  const urgent = act?.quota_paused ? tr("pm.quotaPaused")
+    : act?.blockers?.length ? tr("pm.blocker", { what: act.blockers[0] })
+    : act?.needs_you?.length ? tr("pm.needsAccept", { n: act.needs_you.length })
+    : null;
+
   const card = { backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16 } as const;
 
   return (
-    <View style={[card, { padding: 14, gap: 12 }]}>
-      {/* header */}
+    <View style={[card, { padding: 14, gap: expanded ? 12 : 0 }]}>
+      {/* header - title side and chevron toggle the disclosure; refresh is a
+          SIBLING of both, never nested inside a pressable, so a tap on it
+          cannot also collapse the panel. Chat lives on the FAB. */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name="compass" size={16} color="#fff" />
-        </View>
-        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "700", flex: 1 }}>{tr("pm.title")}</Text>
-        <Pressable onPress={() => router.push("/chat")} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Ionicons name="chatbubble-ellipses-outline" size={15} color={t.accent} />
-          <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("nav.chat")}</Text>
+        <Pressable onPress={() => setOpen(!expanded)}
+          style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: t.accent, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="compass" size={16} color="#fff" />
+          </View>
+          <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "700" }}>{tr("pm.title")}</Text>
+          {expanded ? null : (
+            <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>{autoLabel}</Text>
+          )}
         </Pressable>
         <Pressable onPress={() => report.mutate(undefined)} disabled={report.isPending} hitSlop={8}
           style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface2, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 }}>
           {report.isPending ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={14} color={t.txtSecondary} />}
           <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{report.isPending ? tr("pm.planning") : tr("pm.refresh")}</Text>
         </Pressable>
+        <Pressable onPress={() => setOpen(!expanded)} hitSlop={8}>
+          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={16} color={t.txtTertiary} />
+        </Pressable>
       </View>
 
+      {/* collapsed: only what cannot wait for a tap */}
+      {!expanded && urgent ? (
+        <View style={{ marginTop: 10 }}>
+          <ActLine icon="alert-circle" color={t.warn} text={urgent} t={t} />
+        </View>
+      ) : null}
+
+      {expanded ? (
+        <>
       {/* what the PM is doing — plain language, from real board state */}
       {act ? (
         <View style={{ backgroundColor: t.surface2, borderRadius: 10, padding: 11, gap: 7 }}>
@@ -156,13 +187,16 @@ export function PMPanel() {
           </View>
         </View>
       ) : (
+        /* The triangle above prints the goal in full - repeating it here was
+           the same sentence twice on one screen. Once a goal exists this is
+           only the way back INTO it; without one it stays the full prompt. */
         <Pressable onPress={() => { setGoal(curGoal); setEditGoal(true); }}
-          style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: t.surface2, borderRadius: 8, padding: 10 }}>
-          <Ionicons name="flag-outline" size={14} color={t.txtTertiary} />
-          <Text numberOfLines={2} style={{ color: curGoal ? t.txtSecondary : t.txtTertiary, fontSize: 12.5, flex: 1 }}>
-            {curGoal || tr("pm.noGoal")}
+          style={{ flexDirection: "row", alignItems: "center", gap: 6,
+            backgroundColor: curGoal ? "transparent" : t.surface2, borderRadius: 8, padding: curGoal ? 0 : 10 }}>
+          <Ionicons name={curGoal ? "pencil" : "flag-outline"} size={curGoal ? 13 : 14} color={t.txtTertiary} />
+          <Text numberOfLines={2} style={{ color: t.txtTertiary, fontSize: 12.5, flex: 1 }}>
+            {curGoal ? tr("pm.changeGoal") : tr("pm.noGoal")}
           </Text>
-          <Ionicons name="pencil" size={13} color={t.txtTertiary} />
         </Pressable>
       )}
 
@@ -213,6 +247,8 @@ export function PMPanel() {
         <Text style={{ color: t.txtTertiary, fontSize: 12.5 }}>
           {tr("pm.noPlan")}
         </Text>
+      ) : null}
+        </>
       ) : null}
     </View>
   );
