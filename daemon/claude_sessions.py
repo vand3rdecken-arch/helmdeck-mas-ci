@@ -278,14 +278,26 @@ def background_state(track):
     The "unknown" state exists because the auto-continue watcher STEERS on a
     clear result, and steering costs the owner a real turn: a missing or rotated
     transcript must never be mistaken for "the build finished"."""
-    # Scan the WHOLE session chain (bounded), not just the live file's last
-    # turn. A background task started in an earlier turn - or before a session
-    # ROTATION (every --resume writes a new .jsonl) - was invisible to the old
-    # last-turn scan: background_state lied "clear", the turn ended waiting_on
-    # "you", the idle-eviction guard didn't hold, and the sweeper tree-killed
-    # the very task the card was waiting for ("mittendrin gestorben"). Starts
-    # older than the watcher's max wait are ignored so a long-dead task can't
-    # park a card in "waiting" forever.
+    # PRIMARY source: the driver's FIRST-CLASS registry, maintained at event
+    # time by the pump and persisted on the track (sessions.record_bg - Paseo's
+    # ProviderSubagentStore principle). No transcript scan, no rotation
+    # blindness by construction. The 6h age cap keeps a task that never reports
+    # from parking the card forever.
+    reg = (track or {}).get("bg_tasks")
+    if isinstance(reg, dict):
+        now0 = time.time()
+        open_reg = [v.get("desc", "task") for v in reg.values()
+                    if now0 - (v.get("since") or now0) < 6 * 3600]
+        if open_reg:
+            return "waiting", {"n": len(open_reg), "names": open_reg[:4]}
+        return "clear", None
+    # FALLBACK (repair only - cards from before the registry existed): scan the
+    # session chain. A background task started in an earlier turn - or before a
+    # session ROTATION (every --resume writes a new .jsonl) - was invisible to
+    # the old last-turn scan: background_state lied "clear", the turn ended
+    # waiting_on "you", the idle-eviction guard didn't hold, and the sweeper
+    # tree-killed the very task the card was waiting for ("mittendrin
+    # gestorben"). Starts older than the watcher's max wait are ignored.
     sid = live_session_id(track)
     chain = [s for s in ((track or {}).get("session_chain") or []) if s and s != sid]
     paths = [p for p in (_find_transcript(s) for s in (chain[-3:] + ([sid] if sid else [])))

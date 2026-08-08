@@ -29,8 +29,10 @@ The default settings ship "claude" and "claude-desktop" (windows-mcp allowed +
 screen recording on). Point a card at "claude-desktop" and its agent can drive
 apps/browser on this PC with the whole turn recorded - the flight-recorder
 promise, now per-card."""
-import json, os, shutil, subprocess, threading, time as _time, uuid
+import json, os, re as _re, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
+
+_re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
 
 import ask   # the typed question channel taught to every worker (Phase 2.4)
 
@@ -649,6 +651,11 @@ class _ClaudeSession:
         self.last_used = _time.time()    # for the idle sweeper (Paseo idle TTL)
         self._ctrl = {}                  # request_id -> {"ev":Event,"resp":dict} (control plane)
         self.spawn_time = 0.0            # wall-clock at spawn, for pid-reuse-safe reaping
+        # FIRST-CLASS background-task registry (Paseo's ProviderSubagentStore
+        # principle): maintained AT EVENT TIME by the pump, persisted on the
+        # track - never reconstructed by re-scanning transcripts.
+        self._bg_candidates = {}         # tool_use id -> desc (Task/Agent or run_in_background, result pending)
+        self._bg_open = {}               # tool_use id -> desc (confirmed running in background)
         self._spawn()
 
     # -- lifecycle -------------------------------------------------------
@@ -848,9 +855,60 @@ class _ClaudeSession:
             if cur and not cur["done"].is_set():
                 cur["done"].set()
 
+    # -- background-task registry (event-time, Paseo ProviderSubagentStore) ---
+    def _scan_bg(self, ev):
+        """Fold ONE stream event into the background registry: a Task/Agent or
+        run_in_background tool_use becomes a candidate; its tool_result confirms
+        it ("Async agent launched") or clears it (a sync result); a
+        <task-notification> closes it. On any change the open set is persisted
+        onto the TRACK, so the waiting_on/eviction guard and the auto-continue
+        watcher read first-class state - no transcript re-scans, and a session
+        ROTATION cannot lose a start."""
+        m = ev.get("message") or {}
+        c = m.get("content")
+        changed = False
+        if isinstance(c, list):
+            for p in c:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "tool_use":
+                    inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                    if inp.get("run_in_background") or p.get("name") in ("Task", "Agent"):
+                        self._bg_candidates[p.get("id")] = str(
+                            inp.get("description") or inp.get("command")
+                            or p.get("name") or "task")[:80]
+                elif p.get("type") == "tool_result":
+                    uid = p.get("tool_use_id")
+                    if uid in self._bg_candidates:
+                        txt = p.get("content")
+                        if not isinstance(txt, str):
+                            txt = " ".join(str(x.get("text", "")) for x in txt
+                                           if isinstance(x, dict)) if isinstance(txt, list) else ""
+                        desc = self._bg_candidates.pop(uid)
+                        if "Async agent launched" in (txt or "") or "run_in_background" in (txt or "") \
+                           or "background" in (txt or "")[:200].lower():
+                            self._bg_open[uid] = desc
+                            changed = True
+                elif p.get("type") == "text" and isinstance(p.get("text"), str) \
+                        and p["text"].lstrip().startswith("<task-notification>"):
+                    hit = _re_bg_done.search(p["text"])
+                    if hit and self._bg_open.pop(hit.group(1).strip(), None) is not None:
+                        changed = True
+        if changed:
+            try:
+                import sessions
+                sessions.record_bg(self.tid, dict(self._bg_open))
+            except Exception:
+                pass
+
     def _on_event(self, ev):
         cur = self._cur
         typ = ev.get("type")
+        if typ in ("assistant", "user"):
+            try:
+                self._scan_bg(ev)
+            except Exception:
+                pass                     # registry is best-effort, never the turn
         if typ == "control_response":
             resp = ev.get("response") or {}
             slot = self._ctrl.get(resp.get("request_id"))
