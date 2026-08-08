@@ -45,7 +45,7 @@ function toStep(m: ChatMsg): TStep {
 // clock (like Claude), so the wait reads as active reasoning, not a frozen
 // "denkt". The copilot runs blocking (no token stream yet), so this is the
 // honest signal we can give until the run returns / its actions stream in.
-function ThinkingIndicator() {
+function ThinkingIndicator({ preview }: { preview?: string }) {
   const t = useTheme();
   const tr = useT();
   const d0 = useRef(new Animated.Value(0.25)).current;
@@ -65,16 +65,26 @@ function ThinkingIndicator() {
     const iv = setInterval(() => setSecs((s) => s + 1), 1000);
     return () => { anims.forEach((a) => a.stop()); clearInterval(iv); };
   }, [d0, d1, d2]);
+  // the live reasoning tail (last ~2 lines) - a real Zwischenmeldung instead of a
+  // dead wait; the model streams thinking ~9s before the prose.
+  const tail = (preview || "").replace(/\s+/g, " ").trim().slice(-180);
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 10, paddingLeft: 2 }}>
-      <Ionicons name="sparkles" size={13} color={t.accent2} />
-      <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>{tr("chat.thinking")}</Text>
-      <View style={{ flexDirection: "row", gap: 3, marginLeft: 1 }}>
-        {[d0, d1, d2].map((d, i) => (
-          <Animated.View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: t.accent2, opacity: d }} />
-        ))}
+    <View style={{ paddingTop: 10, paddingLeft: 2, gap: 4 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Ionicons name="sparkles" size={13} color={t.accent2} />
+        <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>{tr("chat.thinking")}</Text>
+        <View style={{ flexDirection: "row", gap: 3, marginLeft: 1 }}>
+          {[d0, d1, d2].map((d, i) => (
+            <Animated.View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: t.accent2, opacity: d }} />
+          ))}
+        </View>
+        {secs >= 2 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>· {secs}s</Text> : null}
       </View>
-      {secs >= 2 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>· {secs}s</Text> : null}
+      {tail ? (
+        <Text numberOfLines={2} style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 15, fontStyle: "italic", paddingLeft: 21 }}>
+          {tail}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -92,11 +102,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // the board agent's live streaming prose while a turn runs - polled from
   // /chat/live so the board chat STREAMS like a card (one shared surface).
   const [stream, setStream] = useState("");
+  const [think, setThink] = useState("");
   useEffect(() => {
-    if (!busy) { setStream(""); return; }
+    if (!busy) { setStream(""); setThink(""); return; }
     let alive = true, to: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      try { const r = await api.chatLive(); if (alive && r) setStream(r.text || ""); } catch { /* keep polling */ }
+      try {
+        const r = await api.chatLive();
+        if (alive && r) { setStream(r.text || ""); setThink(r.thinking || ""); }
+      } catch { /* keep polling */ }
       if (alive) to = setTimeout(poll, 500);
     };
     poll();
@@ -198,7 +212,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true });
                 return s;
               })()} />}
-          {busy && !stream.trim() ? <ThinkingIndicator /> : null}
+          {busy && !stream.trim() ? <ThinkingIndicator preview={think} /> : null}
         </ScrollView>
         {!atBottom ? (
           <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}

@@ -244,7 +244,7 @@ export const api = {
   chat: (text: string, o: SteerOpts & { card?: string } = {}) => req<ChatReply>("POST", "/chat", { text, ...o }),
   chatCancel: () => req("POST", "/chat/cancel", {}),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string }>("GET", "/chat/history"),
-  chatLive: () => req<{ text: string; running: boolean }>("GET", "/chat/live"),
+  chatLive: () => req<{ text: string; thinking?: string; running: boolean }>("GET", "/chat/live"),
 
   models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),
   loopMap: () => req<LoopMap>("GET", "/loop/map"),
