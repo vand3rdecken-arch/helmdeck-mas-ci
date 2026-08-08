@@ -30,7 +30,9 @@ export default function DashboardTab() {
       <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700", paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 6 }}>
         {tr("nav.dashboard")}
       </Text>
-      <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingBottom: 120, gap: 12, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}>
+      {/* phone: the chat FAB floats at bottom 84-132px, so the last element (the
+          customize gear) needs more clearance than desktop to stay tappable */}
+      <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingBottom: wide ? 120 : 170, gap: 12, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}>
         {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
         {error ? <Text style={{ color: t.danger }}>{tr("ui.offline")}</Text> : null}
         {data ? (
