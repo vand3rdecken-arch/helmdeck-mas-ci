@@ -97,7 +97,25 @@ the user clearly asks for a change. Prefer one precise action over many. When a
 card reference is ambiguous, act on nothing and ask in the reply - listing the
 candidates you saw. Moving to review runs the quality gate (may bounce); moving
 to done accepts and advances the process chain. dispatch:true files AND starts
-the card immediately."""
+the card immediately.
+
+PLANNING DISCIPLINE (PMP, but in casual owner language - keep the friendly tone,
+apply the rigor). When you plan, propose next steps, or summarize status, you
+are the CONVERSATIONAL voice of the PM PLAN below - GROUND your answer in it, do
+not improvise a second plan. Every planning/status answer must:
+  1. Lead with OPEN OWNER DECISIONS if any exist ("das brauche ich von dir: ...")
+     - they BLOCK the plan. NEVER offer to "run all steps" while one is open;
+     ask for the decision first.
+  2. Separate what YOU (the agent) will do from what the OWNER must do (a human
+     task like recruiting testers, an account/credential, an approval) - don't
+     file an owner-only task as an agent card.
+  3. Name the top 1-2 RISKS with a one-line response each (from the plan's risks).
+  4. Give the honest FEASIBILITY in one line: do the pace/quota make the dates?
+     (use the plan's triage + feasibility note - if a corner is red, say why).
+  5. For each card you propose, give its "done_when" (1-2 acceptance criteria).
+Keep it short and human - a founder reads it on a phone. If NO PM plan is
+provided, say the goal isn't planned yet and offer to plan it, rather than
+inventing milestones."""
 
 def _sessions():
     try:
@@ -459,6 +477,45 @@ _cancelled = set()
 _ACTIONS_FENCE = re.compile(r"```actions\s*(.*?)```", re.S)
 
 
+def _pm_plan_digest():
+    """The PM's LIVE PMP plan, compact - so the copilot GROUNDS its planning in
+    it (owner decisions, DoD, risks, feasibility, the measured triangle) instead
+    of improvising a second, shallower plan. Empty when no goal is planned."""
+    try:
+        import pm
+        p = pm.live_plan() or {}
+    except Exception:
+        return ""
+    if not (p.get("goal") or p.get("milestones")):
+        return ""
+    L = ["PM PLAN (the PMP-graded plan - GROUND planning/status answers in THIS, "
+         "per the PLANNING DISCIPLINE above):"]
+    if p.get("goal"):
+        L.append("GOAL: " + str(p["goal"])[:220])
+    tri = p.get("triage") or {}
+    rs = p.get("triage_reasons") or {}
+    L.append("TRIAGE budget=%s timeline=%s scope=%s%s" % (
+        tri.get("budget"), tri.get("timeline"), tri.get("scope"),
+        (" | " + " ; ".join("%s red: %s" % (k, str(v)[:110]) for k, v in rs.items())) if rs else ""))
+    feas = p.get("feasibility") or {}
+    if feas.get("note"):
+        L.append("FEASIBILITY: " + str(feas["note"])[:300])
+    for q in (p.get("open_questions") or [])[:4]:
+        L.append("OPEN OWNER DECISION (blocks the plan): " + str(q)[:220])
+    for r in (p.get("risks") or [])[:4]:
+        L.append("RISK: " + str(r)[:180])
+    ms = p.get("milestones") or []
+    if ms:
+        L.append("MILESTONES:")
+        for m in ms[:6]:
+            dw = m.get("done_when") or []
+            L.append("  - %s (due %s, %s%s)%s" % (
+                str(m.get("name"))[:80], m.get("target_date") or "?", m.get("priority") or "?",
+                (", blocked_by: " + str(m.get("blocked_by"))[:70]) if m.get("blocked_by") else "",
+                (" done_when: " + "; ".join(str(x)[:55] for x in dw[:2])) if dw else ""))
+    return "\n".join(L)
+
+
 def _copilot_run_dir(user):
     safe = re.sub(r"[^A-Za-z0-9_-]+", "_", user or "u") or "u"
     d = os.path.join(ROOT, "copilot_runs", safe)
@@ -567,8 +624,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             focus = ("\n\nCURRENT CARD (the user is viewing this - resolve 'this card' / 'it' "
                      "to it; a plain work instruction means steer it): %s | %s | %s"
                      % (ct["id"], ct.get("branch"), (ct.get("task") or "")[:80]))
+    _plan = _pm_plan_digest()
     prompt = SYSTEM + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-        + _snapshot() + focus + "\n\nUSER (%s): %s" % (user, body)
+        + _snapshot() + (("\n\n" + _plan) if _plan else "") \
+        + focus + "\n\nUSER (%s): %s" % (user, body)
     # STREAM (shared with the card surface): stream-json so the prose reply types
     # into the per-user live feed the board chat polls, instead of a blocking
     # black box. The prompt goes in on stdin (it is huge - never a cmd arg).
