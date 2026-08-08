@@ -299,6 +299,25 @@ def brief(goal=None, model=""):
                  "(Leverage gegen €%s flat)." % econ["monthly_eur"]) if is_max
                 else "API: gegen das €-Cap planen.",
     }
+    if is_max:
+        # On the Max plan the budget IS the subscription's usage allowance, not
+        # euros ("Budget ist was der Agent zur Verfuegung hat"). Attach the real
+        # rate-limit windows (same source as /usage: 5h + weekly, with pacing
+        # projection) so the board shows capacity, never a fictitious 200 EUR.
+        try:
+            import usage as _usage
+            snap = _usage.snapshot()
+            if snap.get("windows"):
+                out["budget"]["usage"] = [
+                    {"id": w.get("id"), "label": w.get("label"),
+                     "usedPct": w.get("usedPct"), "resetsAt": w.get("resetsAt"),
+                     "tone": w.get("tone"),
+                     "projectedPct": (w.get("pacing") or {}).get("projected_pct")}
+                    for w in snap["windows"]]
+                if snap.get("plan"):
+                    out["budget"]["usage_plan"] = snap["plan"]
+        except Exception:
+            pass                      # usage view degrades, never breaks the plan
     out["economics"] = econ
     out["goal"] = goal
     out["model"] = cli_model or "default"

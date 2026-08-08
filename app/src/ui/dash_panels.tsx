@@ -318,12 +318,12 @@ function fmtPlanDate(iso?: string): string {
   return `${wd[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function MiniChip({ label }: { label: string }) {
+function MiniChip({ label, color }: { label: string; color?: string }) {
   const t = useTheme();
   return (
-    <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+    <View style={{ backgroundColor: t.surface2, borderColor: color ? color + "66" : t.borderSubtle, borderWidth: 1,
       borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 }}>
-      <Text style={{ color: t.txtSecondary, fontSize: 11.5, fontWeight: "600" }}>{label}</Text>
+      <Text style={{ color: color || t.txtSecondary, fontSize: 11.5, fontWeight: "600" }}>{label}</Text>
     </View>
   );
 }
@@ -373,18 +373,34 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   const pct = Math.max(0, Math.min(100, plan.done_pct ?? 0));
   const cap = m.capacity;
 
+  // Max plan: the budget IS the subscription's usage allowance, not euros
+  // ("Budget ist was der Agent zur Verfuegung hat") - show the real rate-limit
+  // windows with the pacing projection instead of a fictitious flat-euro chip.
+  const isMax = b?.plan === "max";
+  const toneColor = (tone?: string) =>
+    tone === "danger" ? t.danger : tone === "warning" ? t.warn : undefined;
   const budget = (
     <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
-        {b ? <MiniChip label={b.plan === "max" ? tr("pm.flatMonthly", { v: eur(b.fixed_monthly_eur) })
-          : tr("pm.cashToGoal", { v: eur(b.cash_to_goal_eur) })} /> : null}
-        {b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
+        {isMax && b?.usage?.length ? (
+          b.usage.map((w) => (
+            <MiniChip key={w.id || w.label} color={toneColor(w.tone)}
+              label={`${w.label} ${w.usedPct != null ? Math.round(w.usedPct) : "–"}%${
+                w.projectedPct != null ? ` → ${Math.round(w.projectedPct)}%` : ""}`} />
+          ))
+        ) : b ? (
+          <MiniChip label={isMax ? tr("pm.flatMonthly", { v: eur(b.fixed_monthly_eur) })
+            : tr("pm.cashToGoal", { v: eur(b.cash_to_goal_eur) })} />
+        ) : null}
+        {!isMax && b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
         {b?.est_turns_to_goal != null ? <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} /> : null}
-        <MiniChip label={tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} />
-        <MiniChip label={tr("dash.corner.margin", { v: c + m.totals.margin })} />
+        {!isMax ? <MiniChip label={tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} /> : null}
+        {!isMax ? <MiniChip label={tr("dash.corner.margin", { v: c + m.totals.margin })} /> : null}
       </View>
       {feas?.budget ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{feas.budget}</Text> : null}
-      {b?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{b.note}</Text> : null}
+      {isMax && b?.usage?.length ? (
+        <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{tr("dash.corner.usageNote")}</Text>
+      ) : b?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{b.note}</Text> : null}
     </CornerPanel>
   );
 
