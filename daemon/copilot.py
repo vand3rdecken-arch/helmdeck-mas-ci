@@ -95,7 +95,11 @@ bare refusal.
 Rules: answer status questions from the snapshot with NO actions. Only act when
 the user clearly asks for a change. Prefer one precise action over many. When a
 card reference is ambiguous, act on nothing and ask in the reply - listing the
-candidates you saw. Moving to review runs the quality gate (may bounce); moving
+candidates you saw. NO DUPLICATE CARDS: before file_card or machine_task, scan
+the snapshot for an ACTIVE card (backlog/working/review) already covering that
+work - if one exists, STEER it with the new instruction instead of filing a
+second; say which card you reused. File a new card only when nothing active
+matches. Moving to review runs the quality gate (may bounce); moving
 to done accepts and advances the process chain. dispatch:true files AND starts
 the card immediately.
 
