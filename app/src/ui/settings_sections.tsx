@@ -58,8 +58,9 @@ export function Toggle({ label, value, onChange }: { label: string; value: boole
 }
 
 /** A row of selectable pills; multi-select toggles, single-select replaces. */
-export function ChipPick({ options, selected, onToggle, single }:
-  { options: readonly string[]; selected: string[]; onToggle: (v: string) => void; single?: boolean }) {
+export function ChipPick({ options, selected, onToggle, single, labelFor }:
+  { options: readonly string[]; selected: string[]; onToggle: (v: string) => void; single?: boolean;
+    labelFor?: (v: string) => string }) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
@@ -69,7 +70,7 @@ export function ChipPick({ options, selected, onToggle, single }:
           <Pressable key={o} onPress={() => onToggle(o)}
             style={{ backgroundColor: on ? t.accent + "29" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
               borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
-            <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "600" : "500" }}>{o}</Text>
+            <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "600" : "500" }}>{labelFor ? labelFor(o) : o}</Text>
           </Pressable>
         );
       })}
