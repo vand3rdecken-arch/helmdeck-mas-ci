@@ -656,6 +656,11 @@ class _ClaudeSession:
         # track - never reconstructed by re-scanning transcripts.
         self._bg_candidates = {}         # tool_use id -> desc (Task/Agent or run_in_background, result pending)
         self._bg_open = {}               # tool_use id -> desc (confirmed running in background)
+        # resume-attachment evidence (Paseo: session identity is manager state
+        # verified from the runtime's own events, never assumed):
+        self._spawn_resumed = None       # the session id --resume asked for, or None
+        self._resume_echo = False        # init event echoed that id -> attach certain
+        self._first_turn_after_spawn = True
         self._spawn()
 
     # -- lifecycle -------------------------------------------------------
@@ -717,6 +722,9 @@ class _ClaudeSession:
                                      text=True, encoding="utf-8", errors="replace",
                                      bufsize=1)
         self.spawn_time = _time.time()
+        self._spawn_resumed = self.session_id
+        self._resume_echo = False
+        self._first_turn_after_spawn = True
         _record_pid(self.proc.pid, self.spawn_time)
         self.err_tail = []
         self._drop_results = 0     # a fresh process can't emit stale frames
@@ -932,6 +940,13 @@ class _ClaudeSession:
         if typ == "system":
             sid = ev.get("session_id")
             if sid:
+                # resume-attachment evidence: a successful --resume ECHOES the
+                # asked-for id in the init event (verified against the real
+                # CLI). A different id here does NOT prove detachment (forks
+                # and rotate-with-context exist) - the echo only ever CONFIRMS.
+                if (ev.get("subtype") == "init" and self._spawn_resumed
+                        and sid == self._spawn_resumed):
+                    self._resume_echo = True
                 self.session_id = sid
                 if cur:
                     cur["session_id"] = sid
@@ -964,6 +979,10 @@ class _ClaudeSession:
                 u = (ev.get("message") or {}).get("usage")
                 if isinstance(u, dict) and u:
                     cur["ctx_usage"] = u
+                    # the FIRST call's usage is the resume-continuity witness: a
+                    # real continuation carries >= the prior conversation's
+                    # context; a silent fresh start carries only the brief.
+                    cur.setdefault("ctx_first", u)
         elif typ == "stream_event":
             e = ev.get("event") or {}
             if e.get("type") == "content_block_delta" and cur:
@@ -1039,6 +1058,15 @@ class _ClaudeSession:
                 # the LAST assistant call's usage = the real context size (the
                 # result event's usage sums every call of the turn - see _on_event)
                 "ctx_usage": cur.get("ctx_usage") or {}}
+        # resume-attachment evidence for the FIRST turn after a --resume spawn:
+        # sessions._finish_turn refuses to move the session pointer to a session
+        # that demonstrably does NOT contain the conversation.
+        if self._first_turn_after_spawn:
+            self._first_turn_after_spawn = False
+            if self._spawn_resumed:
+                meta["resumed_from"] = self._spawn_resumed
+                meta["resume_echo"] = self._resume_echo
+                meta["ctx_first"] = cur.get("ctx_first") or {}
         return self.session_id or d.get("session_id"), d.get("result", ""), meta
 
 

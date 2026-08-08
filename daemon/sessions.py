@@ -638,6 +638,26 @@ def _turn_checkpoint(t):
     return None
 
 
+def resume_detached(prev_ctx, meta):
+    """True when the FIRST turn after a --resume spawn demonstrably did NOT
+    continue the conversation (the CLI silently started fresh). Evidence, not
+    assumption (Paseo: session identity is verified from the runtime's own
+    signals): the init event ECHOES the resumed id on a certain attach
+    (resume_echo -> never detached), and a real continuation's FIRST API call
+    carries at least the prior context - a fresh boot carries only the brief.
+    Floors keep small histories and CLI-side compaction out of the verdict."""
+    if not meta.get("resumed_from") or meta.get("resume_echo"):
+        return False
+    if (prev_ctx or 0) < 25_000:
+        return False                     # too small a history to judge safely
+    cf = meta.get("ctx_first") or {}
+    first_ctx = (cf.get("input_tokens", 0) + cf.get("cache_creation_input_tokens", 0)
+                 + cf.get("cache_read_input_tokens", 0))
+    if not first_ctx:
+        return False                     # no witness - never flag on absence
+    return first_ctx < 0.5 * prev_ctx
+
+
 def _finish_turn(tid, sid, result, meta, log):
     """ONE atomic commit per finished turn (Paseo's one-owner turn-completed
     handler): session rotation + turn count + reply/question/waiting_on +
@@ -657,16 +677,27 @@ def _finish_turn(tid, sid, result, meta, log):
     box = {}
 
     def _commit(tt):
-        # session_id can rotate on resume/compaction; keep the latest so the
-        # next steer continues, and REMEMBER the one we're leaving. A rotation
-        # to a fresh .jsonl carries none of the prior conversation - without
-        # this pointer the whole chat "disappears" from the card view; the feed
-        # uses the chain to lead with a "Kontext verdichtet" marker instead.
+        # session rotation - GUARDED (the invariant): the pointer only moves
+        # forward to a session that demonstrably CONTAINS the conversation. A
+        # silent fresh start (--resume ignored) once moved the pointer onto an
+        # empty thread and the card lost its whole context ("Voellig falscher
+        # Kontext"); now that rotation is REFUSED - the next steer resumes the
+        # real conversation, and the stray thread is kept in the chain.
         if sid and tt.get("session_id") and sid != tt["session_id"]:
-            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
-            chain.append(tt["session_id"])
-            tt["session_chain"] = chain[-6:]     # bounded - last 6 prior sessions
-        tt["session_id"] = sid or tt.get("session_id")
+            if resume_detached(tt.get("ctx_tokens"), meta):
+                stray = [s for s in (tt.get("session_chain") or []) if s != sid]
+                stray.append(sid)
+                tt["session_chain"] = stray[-6:]
+                log.log("note", "⚠ RESUME kam nicht an (Worker startete frisch) - "
+                        "Session-Zeiger bleibt auf %s; nächstes Steuern setzt die "
+                        "echte Unterhaltung fort." % str(tt["session_id"])[:8])
+            else:
+                chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
+                chain.append(tt["session_id"])
+                tt["session_chain"] = chain[-6:]     # bounded - last 6 prior sessions
+                tt["session_id"] = sid
+        else:
+            tt["session_id"] = sid or tt.get("session_id")
         tt["turns"] = tt.get("turns", 0) + 1
         box["reason"] = _settle_reply_apply(tt, question, cleaned, bg, log)
         tt["status"] = "needs_you"
