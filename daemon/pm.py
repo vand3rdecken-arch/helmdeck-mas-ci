@@ -1437,22 +1437,61 @@ def _dispatch_next(pm, st, day):
         _activity("blocked", "Quota erschoepft - pausiere ~5 Stunden.")
 
 
+def _position(tracks, plan):
+    """Phase 2+3 distilled: WHERE WE STAND, judged by the triangle. Its JSON
+    digest is the delta key - communication fires only when THIS changes."""
+    tri = (plan or {}).get("triage") or {}
+    return {
+        "goal": get_goal(),
+        "done_pct": (plan or {}).get("done_pct"),
+        "triage": {k: tri.get(k) for k in ("budget", "timeline", "scope")},
+        "reasons": (plan or {}).get("triage_reasons") or {},
+        "plan_status": (plan or {}).get("plan_status"),
+        "needs_you": sorted(t["id"] for t in tracks if t.get("status") == "needs_you"),
+        "bounced": sorted(t["id"] for t in tracks if t.get("status") == "bounced"),
+        "open_q": (plan or {}).get("open_questions") or [],
+    }
+
+
 def _tick():
-    """One beat: COMMUNICATE (push, always) then run the current STATE's action -
-    acting states only while you are away. The STATE is the loop now."""
+    """ONE loop, four phases (the owner's model):
+        1 GATHER    all info: board, plan, economics/quota
+        2 STAND     read the last plan + chat -> where we are
+        3 TRIANGLE  judge Budget/Timeline/Scope (measured, in the plan)
+        4 DELTA     communicate ONLY when the position changed
+    then the acting states run - but only while you are away. Proactive on/off +
+    the notify/ask/act ladder is a Settings control now, not a dashboard one."""
+    # 1 - GATHER
     pm = _pm()
     if not pm.get("loop_enabled"):
         return
     st = _loopstate()
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     import sessions
-    _notify_deliveries(day, sessions.list_tracks(), st, pm)  # NOTIFY - not presence-gated
-    _launch_checkin(pm, st)                                  # proactive: ask launch prereqs once
-    _goal_process(pm, st)                                    # PMP initiation: new goal -> process (epic) + intake
-    _triangle_watch(st)                                      # MONITOR: escalate when Budget/Timeline/Scope tilts
-    _plan_gate_notice(st)                                    # GATE: honest "blocked" over a shallow estimate
-    _needs_from_owner(st)                                    # PM ASKS: surface missing-info questions
-    _stakeholder_update(st)                                  # PMP core: goal vs budget, keep owner informed
+    tracks = sessions.list_tracks()
+    plan = latest_plan()
+
+    # deliveries are EVENT-driven (a card just finished/bounced), not a position
+    # delta - always run, they dedup internally.
+    _notify_deliveries(day, tracks, st, pm)
+
+    # 2+3 - STAND, judged by the TRIANGLE
+    pos = _position([t for t in tracks if not t.get("archived")], plan)
+    _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)
+
+    # 4 - COMMUNICATE ONLY ON DELTA. Persist the new digest FIRST so a substep
+    # that re-reads loopstate can't lose it, then run the (internally-deduped)
+    # communication paths. Nothing changed -> the loop stays quiet.
+    if st.get("pos_digest") != _pkey:
+        st["pos_digest"] = _pkey
+        _save_loopstate(st)
+        _launch_checkin(pm, st)      # ask launch prereqs once
+        _goal_process(pm, st)        # new goal -> process (epic) + intake
+        _triangle_watch(st)          # escalate when a corner tilts
+        _plan_gate_notice(st)        # honest "blocked" over a shallow estimate
+        _needs_from_owner(st)        # surface missing-info questions
+        _stakeholder_update(st)      # goal vs budget, keep the owner informed
+
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away
     state, _reason = _state()
