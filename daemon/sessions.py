@@ -319,18 +319,30 @@ def _lock_for(tid):
 # it, and only the newest actually runs its turn - the rest bail after the
 # interrupt fires. (The soft interrupt itself is drivers.cancel, the P1 port.)
 _steer_epoch = {}
+_steer_pending = {}                 # tid -> [text, ...] of the burst (nothing lost)
 _steer_epoch_guard = _threading.Lock()
 
 
-def _bump_steer_epoch(tid):
+def _bump_steer_epoch(tid, text=None):
+    """Bump the epoch AND register this steer's text atomically. A superseded
+    steer's text stays in the pending list, so the WINNING steer bundles every
+    instruction into its one turn - a burst collapses without a single command
+    silently disappearing ("why did my command disappear")."""
     with _steer_epoch_guard:
         _steer_epoch[tid] = _steer_epoch.get(tid, 0) + 1
+        if text is not None:
+            _steer_pending.setdefault(tid, []).append(text)
         return _steer_epoch[tid]
 
 
 def _steer_epoch_current(tid):
     with _steer_epoch_guard:
         return _steer_epoch.get(tid, 0)
+
+
+def _drain_steer_texts(tid):
+    with _steer_epoch_guard:
+        return _steer_pending.pop(tid, [])
 
 # -- THE one legal write path for existing tracks (Paseo's one-owner principle) --
 # Tracks are whole JSON dicts, and they used to be read+written from >=4 threads
@@ -1859,7 +1871,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # the process stays alive, the session resumes), so the interrupted turn
     # releases the lock and this steer runs immediately after. A burst collapses
     # to last-wins via the epoch: only the newest steer survives the bail below.
-    my_epoch = _bump_steer_epoch(tid)
+    my_epoch = _bump_steer_epoch(tid, text)
     if drivers.turn_active(tid):
         log.log("note", "⏹ neue Anweisung ersetzt den laufenden Turn (Interrupt).")
         try:
@@ -1867,7 +1879,15 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         except Exception as _ie:
             log.log("note", "Interrupt fehlgeschlagen: %s" % str(_ie)[:150])
     if _steer_epoch_current(tid) != my_epoch:
-        return t                          # a newer steer superseded this one - it runs
+        # a newer steer superseded this one. AUDIT the command anyway and hand it
+        # to the winner via the pending list - bundled, never silently dropped.
+        log.log("steer", text)
+        log.log("note", "⏫ mit der nächsten Anweisung gebündelt (ein Turn).")
+        return t
+    _burst = _drain_steer_texts(tid)
+    if len(_burst) > 1:
+        text = "\n\n".join(_burst)        # the winner carries the WHOLE burst
+        log.log("note", "%d schnelle Anweisungen zu einem Turn gebündelt." % len(_burst))
     if source and source != "you":
         log.log("note", "DELEGATED by %s -> this card's worker" % source)
     log.log("steer", text)               # audit the human's words, not the augmented prompt

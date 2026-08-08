@@ -74,7 +74,13 @@ def _cancel(tid):
 drivers.cancel = _cancel
 
 
+_delivered = []                          # every prompt that REACHED the session
+                                         # (an interrupted turn's message stays in
+                                         # the conversation history - not lost)
+
+
 def _fake_turn(t, prompt, model=None, perm=None):
+    _delivered.append(prompt)
     ev = threading.Event()
     with _guard:
         _live["active"] = True
@@ -107,7 +113,14 @@ time.sleep(0.6)                          # let the winning turn's 0.4s complete
 
 check(_live["any_interrupt"], "the live turn was soft-interrupted (not queued)")
 check("RUNNING" not in _order, "the original running turn did NOT complete its old goal")
-check(_order == ["S2"], "exactly the newest steer ran - last-wins (order=%s)" % _order)
+check(len(_order) == 1, "exactly ONE turn completed after the burst (order=%s)" % _order)
+# NO COMMAND LOST: each steer either reached the session (delivered - an
+# interrupted turn's message stays in the conversation history) or was bundled
+# into the winning turn's prompt.
+_alltext = "\n".join(_delivered)
+check("S1" in _alltext, "S1 reached the session or was bundled (delivered=%d)" % len(_delivered))
+check("S2" in _alltext and len(_order) == 1 and "S2" in _order[0],
+      "S2 (the newest) completed its turn")
 
 print()
 if _fails:
