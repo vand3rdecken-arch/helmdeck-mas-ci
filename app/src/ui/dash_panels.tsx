@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import React from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { api, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
-import { useT } from "@/i18n";
+import { t as tt, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Empty } from "./kit";
@@ -13,8 +14,12 @@ import { Empty } from "./kit";
 const isWeb = Platform.OS === "web";
 
 // ---- dashboard composition (settings.dashboard) ----
-// The owner picks which of the 6 tiles / 5 panels show; missing config = all on
-// (back-compat). Keys match the archived web dash.tsx so settings interop.
+// The owner picks which of the 6 tiles / 5 panels show. Missing config = NONE:
+// the dashboard concentrates on the triage triangle and its three corners; the
+// econ tiles/tables are opt-in via the customizer (or chat). Operators still get
+// everything - dashboard.tsx passes ALL_* for them explicitly (their payload has
+// no settings and no triage). Keys match the archived web dash.tsx so settings
+// interop.
 export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"] as const;
 export const ALL_PANELS = ["sows", "capacity", "gates", "models", "work"] as const;
 // The customizer names each tile/panel by dict key, so the chip list speaks the
@@ -32,10 +37,10 @@ const LANE_KEY: Record<string, string> = {
   backlog: "lane.backlog", working: "lane.working", review: "lane.review", done: "lane.done",
 };
 export function dashTiles(m?: Metrics): string[] {
-  return m?.settings?.dashboard?.tiles ?? [...ALL_TILES];
+  return m?.settings?.dashboard?.tiles ?? [];
 }
 export function dashPanels(m?: Metrics): string[] {
-  return m?.settings?.dashboard?.panels ?? [...ALL_PANELS];
+  return m?.settings?.dashboard?.panels ?? [];
 }
 
 /** Real frosted glass on the web (CSS backdrop-filter over the glow backdrop);
@@ -255,8 +260,9 @@ function TriCorner({ label, state }: { label: string; state?: "ok" | "blocked" }
 }
 
 /** THE dashboard focus: the goal gated by the golden triage. Big, first, loud - the
- *  three iron-triangle corners (budget/timeline/scope) green/red, a prominent plan-gate
- *  banner with the blocking reason, ETA and the calendar-bound earliest-feasible date.
+ *  three iron-triangle corners (budget/timeline/scope) green/red and a prominent
+ *  plan-gate banner with the blocking reason. Every deep-dive (ETA, milestones,
+ *  money, next actions) lives in TriageFollowUp below, keyed to one corner.
  *  Owner-only; renders nothing when no goal is set. */
 export function TrianglePanel() {
   const t = useTheme();
@@ -268,7 +274,6 @@ export function TrianglePanel() {
   const tri = plan?.triage;
   const status = plan?.plan_status;
   const blocked = !!status && status !== "ready";
-  const feas = plan?.feasibility;
   const bannerCol = blocked ? t.danger : status === "ready" ? t.ok : t.txtTertiary;
   return (
     <GlassPanel title={tr("dash.triangle.title")}>
@@ -282,7 +287,7 @@ export function TrianglePanel() {
       {/* plan-gate banner - the loud focus */}
       {status ? (
         <View style={{ backgroundColor: bannerCol + "1A", borderColor: bannerCol + "55", borderWidth: 1,
-          borderRadius: 12, padding: 12, marginBottom: 10 }}>
+          borderRadius: 12, padding: 12 }}>
           <Text style={{ color: bannerCol, fontSize: 13, fontWeight: "700", marginBottom: blocked && plan?.gate ? 4 : 0 }}>
             {blocked ? "⚠ " + tr("dash.triangle.blocked") : "✓ " + tr("dash.triangle.ready")}
           </Text>
@@ -291,18 +296,176 @@ export function TrianglePanel() {
           ) : null}
         </View>
       ) : null}
-      {/* ETA + calendar-bound earliest done */}
-      <View style={{ flexDirection: "row", gap: 14, flexWrap: "wrap" }}>
-        {plan?.budget?.eta_days ? (
-          <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>{tr("dash.triangle.eta", { n: plan.budget.eta_days })}</Text>
-        ) : null}
-        {feas?.earliest_done ? (
-          <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>{tr("dash.triangle.earliest", { when: feas.earliest_done })}</Text>
-        ) : null}
-      </View>
-      {feas?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16, marginTop: 5 }}>{feas.note}</Text> : null}
     </GlassPanel>
   );
+}
+
+// ---- the three-corner follow-up ---------------------------------------------
+// The rule of this dashboard: below the triangle, EVERY piece of follow-up
+// information belongs to exactly one of the three corners - Budget, Timeline,
+// Scope. What used to sprawl across the PM panel (launch countdown, milestones,
+// budget chips, progress, next actions) lands here, under its corner.
+
+const eur = (n?: number) => "€" + (n ?? 0).toFixed(2);
+const LAUNCH_RE = /store|play|launch|release|deploy/i;
+
+/** Plan dates are day-precise ISO; render as the workspace's short weekday form. */
+function fmtPlanDate(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  const wd = tt("pm.weekdays").split(",");
+  return `${wd[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function MiniChip({ label }: { label: string }) {
+  const t = useTheme();
+  return (
+    <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+      borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 }}>
+      <Text style={{ color: t.txtSecondary, fontSize: 11.5, fontWeight: "600" }}>{label}</Text>
+    </View>
+  );
+}
+
+/** One corner's follow-up card: header repeats the corner's name + green/red
+ *  state so each detail is visibly anchored to its triangle corner. */
+function CornerPanel({ label, state, children, style }: {
+  label: string; state?: "ok" | "blocked"; children: React.ReactNode; style?: ViewStyle;
+}) {
+  const t = useTheme();
+  const tr = useT();
+  const col = state === "blocked" ? t.danger : state === "ok" ? t.ok : t.txtTertiary;
+  const word = state === "blocked" ? tr("dash.triangle.red") : state === "ok" ? tr("dash.triangle.ok") : tr("dash.triangle.unknown");
+  return (
+    <View style={[s.panel, glassStyle(t), { borderColor: t.glassBorder }, style]}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: col }} />
+        <Text style={[s.h3, { color: t.txtPrimary, flex: 1 }]}>{label}</Text>
+        <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boolean; defaultRepo?: string }) {
+  const t = useTheme();
+  const tr = useT();
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
+  const makeCard = useMutation({
+    mutationFn: (task: string) => api.newTrack({ repo: defaultRepo, task, lane: "backlog", priority: "medium" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tracks"] }); Alert.alert("PM", tr("pm.cardCreated")); },
+    onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
+  });
+  const plan = data?.plan;
+  if (!plan) return null;
+  const tri = plan.triage;
+  const b = plan.budget;
+  const feas = plan.feasibility;
+  const c = cur(m);
+  const ms = plan.milestones ?? [];
+  const launch = ms.find((x) => LAUNCH_RE.test((x.name || "") + " " + (x.tasks || []).map((y) => y.title).join(" "))) ?? ms[ms.length - 1];
+  const launchDate = launch?.target_date;
+  const days = launchDate ? Math.ceil((new Date(launchDate + "T00:00:00").getTime() - Date.now()) / 86400000) : undefined;
+  const pct = Math.max(0, Math.min(100, plan.done_pct ?? 0));
+  const cap = m.capacity;
+
+  const budget = (
+    <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
+        {b ? <MiniChip label={b.plan === "max" ? tr("pm.flatMonthly", { v: eur(b.fixed_monthly_eur) })
+          : tr("pm.cashToGoal", { v: eur(b.cash_to_goal_eur) })} /> : null}
+        {b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
+        {b?.est_turns_to_goal != null ? <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} /> : null}
+        <MiniChip label={tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} />
+        <MiniChip label={tr("dash.corner.margin", { v: c + m.totals.margin })} />
+      </View>
+      {feas?.budget ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{feas.budget}</Text> : null}
+      {b?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{b.note}</Text> : null}
+    </CornerPanel>
+  );
+
+  const timeline = (
+    <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}>
+      {launch && (launchDate || days != null) ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+          <Ionicons name="rocket" size={13} color={t.accent} />
+          <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700", flex: 1 }}>{launch.name}</Text>
+          {days != null ? (
+            <Text style={{ color: t.accent, fontSize: 11.5, fontWeight: "800" }}>
+              {days > 0 ? tr("pm.daysLeft", { n: days }) : days === 0 ? tr("pm.today") : tr("pm.daysOver", { n: -days })}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
+        {b?.eta_days != null ? <MiniChip label={tr("pm.eta", { n: b.eta_days })} /> : null}
+        {b?.velocity_turns_per_day != null ? <MiniChip label={tr("pm.perDay", { n: b.velocity_turns_per_day })} /> : null}
+        {feas?.earliest_done ? <MiniChip label={tr("dash.triangle.earliest", { when: feas.earliest_done })} /> : null}
+      </View>
+      {ms.length ? (
+        <View style={{ gap: 6 }}>
+          {ms.map((mm, i) => (
+            <Pressable key={i} disabled={!mm.card} onPress={() => router.push(`/card/${mm.card}` as never)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: t.accent2 }} />
+              <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12, flex: 1 }}>{mm.name}</Text>
+              <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
+                {mm.target_date ? tr("pm.by", { date: fmtPlanDate(mm.target_date) })
+                  : tr("pm.etaDays", { n: mm.cumulative_eta_days ?? mm.eta_days ?? 0 })}
+              </Text>
+              {mm.card ? <Ionicons name="arrow-forward-circle" size={15} color={t.accent} /> : null}
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {feas?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{feas.note}</Text> : null}
+    </CornerPanel>
+  );
+
+  const scope = (
+    <CornerPanel key="scope" label={tr("dash.triangle.scope")} state={tri?.scope} style={wide ? { flex: 1 } : undefined}>
+      <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("pm.progress")}</Text>
+          <Text style={{ color: t.txtSecondary, fontSize: 11, fontWeight: "700" }}>{pct}%</Text>
+        </View>
+        <View style={{ height: 6, borderRadius: 3, backgroundColor: t.surface2, overflow: "hidden" }}>
+          <View style={{ width: `${pct}%`, height: 6, backgroundColor: t.ok }} />
+        </View>
+      </View>
+      {plan.next?.length ? (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700", letterSpacing: 0.5 }}>{tr("pm.nextHeading")}</Text>
+          {plan.next.slice(0, 3).map((n, i) => (
+            <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={{ color: t.accent, fontSize: 11.5, fontWeight: "800", width: 12 }}>{i + 1}</Text>
+              <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 12.5, flex: 1 }}>{n.title}</Text>
+              {n.card ? (
+                <Pressable onPress={() => router.push(`/card/${n.card}` as never)} hitSlop={6}>
+                  <Ionicons name="arrow-forward-circle" size={18} color={t.accent} />
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => Alert.alert(tr("pm.createCardTitle"), n.title, [
+                  { text: tr("ui.cancel"), style: "cancel" },
+                  { text: tr("ui.create"), onPress: () => makeCard.mutate(n.title) }])} hitSlop={6}>
+                  <Ionicons name="add-circle" size={18} color={t.ok} />
+                </Pressable>
+              )}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("dash.corner.wip", { wip: cap.wip, limit: cap.wip_limit, n: cap.headroom })}</Text>
+    </CornerPanel>
+  );
+
+  return wide
+    ? <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>{budget}{timeline}{scope}</View>
+    : <View style={{ gap: 12 }}>{budget}{timeline}{scope}</View>;
 }
 
 // ---- Claude usage (rate-limit windows + weekly pacing) ----

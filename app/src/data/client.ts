@@ -1,4 +1,5 @@
 import { useConfig } from "./config";
+import { demoRespond, useDemo } from "./demo";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
 import { t } from "@/i18n/core";
@@ -60,6 +61,18 @@ async function relayReq(method: string, path: string, bodyStr: string): Promise<
 }
 
 async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  // DEMO seam (the one data/demo.ts documents): with the sample board active,
+  // answer from the fixture and never touch the network. Unmodelled endpoints
+  // answer {} - empty, not a fake success payload. Pairing a real daemon calls
+  // useDemo.disable(), so this path is unreachable in real use.
+  if (useDemo.getState().active) {
+    // The version long-poll must BLOCK like the real daemon (~22s): the global
+    // stream loop re-calls it immediately on success, so an instant answer
+    // would spin that loop hot and starve the UI.
+    if (path.startsWith("/stream/wait")) await new Promise((r) => setTimeout(r, 8000));
+    const d = demoRespond(method, path, body);
+    return (d === undefined ? {} : d) as T;
+  }
   const cfg = useConfig.getState();
   const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
   let status: number, txt: string;
