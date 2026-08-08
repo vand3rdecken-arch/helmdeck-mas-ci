@@ -31,6 +31,18 @@ MESSAGES = {
         "de": "bleibt auf Review - im Worktree stehen noch offene Konfliktmarkierungen. {detail}",
         "en": "stays on Review - there are still open conflict markers in the worktree. {detail}",
     },
+    # -- readable action labels for the card transcript (claude_sessions) -----
+    "tool.read": {"de": "Lesen", "en": "Read"},
+    "tool.edit": {"de": "Bearbeiten", "en": "Edit"},
+    "tool.write": {"de": "Schreiben", "en": "Write"},
+    "tool.run": {"de": "Befehl", "en": "Command"},
+    "tool.search": {"de": "Suchen", "en": "Search"},
+    "tool.web": {"de": "Web", "en": "Web"},
+    "tool.agent": {"de": "Subagent", "en": "Subagent"},
+    "tool.ask": {"de": "Frage an dich", "en": "Question for you"},
+    "tool.plan": {"de": "Plan aktualisiert", "en": "Plan updated"},
+    "tool.pc": {"de": "PC · {tool}", "en": "PC · {tool}"},
+
     "say.gateRunning": {
         "de": "Gate laeuft - ich pruefe den Stand (compile, Typen, Tests, sauberer Baum). Das dauert ein paar Sekunden.",
         "en": "Gate running - checking the change (compile, types, tests, clean tree). This takes a few seconds.",
