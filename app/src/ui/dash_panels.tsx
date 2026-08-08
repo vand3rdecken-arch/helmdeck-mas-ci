@@ -373,39 +373,42 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   const pct = Math.max(0, Math.min(100, plan.done_pct ?? 0));
   const cap = m.capacity;
 
-  // Max plan: the budget IS the subscription's usage allowance, not euros
-  // ("Budget ist was der Agent zur Verfuegung hat") - show the real rate-limit
-  // windows with the pacing projection instead of a fictitious flat-euro chip.
-  const isMax = b?.plan === "max";
-  const toneColor = (tone?: string) =>
-    tone === "danger" ? t.danger : tone === "warning" ? t.warn : undefined;
+  // The budget corner renders GENERICALLY by the PM's computed kind: "usage"
+  // (Max plan - the real rate-limit windows the PM checked, same UsageRow the
+  // Settings panel uses) or "cash" (API plan - euro spend vs cap). The PM owns
+  // the verdict; the board only draws. Adding a plan = a new kind branch.
   const budget = (
     <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
-        {isMax && b?.usage?.length ? (
-          b.usage.map((w) => (
-            <MiniChip key={w.id || w.label} color={toneColor(w.tone)}
-              label={`${w.label} ${w.usedPct != null ? Math.round(w.usedPct) : "–"}%${
-                w.projectedPct != null ? ` → ${Math.round(w.projectedPct)}%` : ""}`} />
-          ))
-        ) : b ? (
-          <MiniChip label={isMax ? tr("pm.flatMonthly", { v: eur(b.fixed_monthly_eur) })
-            : tr("pm.cashToGoal", { v: eur(b.cash_to_goal_eur) })} />
-        ) : null}
-        {!isMax && b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
-        {b?.est_turns_to_goal != null ? <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} /> : null}
-        {!isMax ? <MiniChip label={tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} /> : null}
-        {!isMax ? <MiniChip label={tr("dash.corner.margin", { v: c + m.totals.margin })} /> : null}
-      </View>
-      {feas?.budget ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{feas.budget}</Text> : null}
-      {isMax && b?.usage?.length ? (
-        <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{tr("dash.corner.usageNote")}</Text>
-      ) : b?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16 }}>{b.note}</Text> : null}
+      {b?.kind === "usage" ? (
+        <View>
+          {b.windows?.length ? b.windows.map((w) => <UsageRow key={w.id} w={w} />)
+            : <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("dash.usage.unavailable")}</Text>}
+          {b.est_turns_to_goal != null ? (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 2 }}>
+              <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} />
+            </View>
+          ) : null}
+        </View>
+      ) : (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
+          {b?.projected_eur != null ? <MiniChip label={tr("pm.cashToGoal", { v: eur(b.projected_eur) })} /> : null}
+          {b?.monthly_eur != null ? <MiniChip label={tr("pm.flatMonthly", { v: eur(b.monthly_eur) })} /> : null}
+          {b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
+          {b?.est_turns_to_goal != null ? <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} /> : null}
+          <MiniChip label={tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} />
+        </View>
+      )}
+      {feas?.budget ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16, marginTop: 4 }}>{feas.budget}</Text> : null}
+      {b?.note ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16, marginTop: 2 }}>{b.note}</Text> : null}
     </CornerPanel>
   );
 
+  const reasons = plan.triage_reasons;
+  const GateReason = ({ text }: { text?: string }) =>
+    text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
   const timeline = (
     <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}>
+      <GateReason text={reasons?.timeline} />
       {launch && (launchDate || days != null) ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
           <Ionicons name="rocket" size={13} color={t.accent} />
@@ -444,6 +447,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
 
   const scope = (
     <CornerPanel key="scope" label={tr("dash.triangle.scope")} state={tri?.scope} style={wide ? { flex: 1 } : undefined}>
+      <GateReason text={reasons?.scope} />
       <View style={{ gap: 4 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("pm.progress")}</Text>
