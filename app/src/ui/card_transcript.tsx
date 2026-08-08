@@ -30,7 +30,7 @@ export interface TStep {
   role?: string;
   kind?: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system" | "note" | "turn" | "error" | string;
   cls?: string;
-  text?: string; tool?: string; result?: string; ok?: boolean; running?: boolean; abandoned?: boolean; ts?: string;
+  text?: string; tool?: string; label?: string; result?: string; ok?: boolean; running?: boolean; abandoned?: boolean; ts?: string;
   status?: ToolStatus;           // the 4-state tool-call model
   error?: string | null;         // non-null exactly when status === "failed"
   event?: TurnEvent;             // kind === "turn": which lifecycle edge
@@ -206,7 +206,9 @@ function ToolCard({ s, t, defaultOpen }: { s: TStep; t: ThemeTokens; defaultOpen
       <Pressable onPress={() => expandable && setOpen((o) => !o)}
         style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 9, paddingVertical: 7 }}>
         <Ionicons name={toolIcon(s.tool || "")} size={13} color={err ? t.danger : t.ai} />
-        <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>{s.tool}</Text>
+        {/* the server's human verb ("Bearbeiten", "Befehl", "PC · Click") reads
+            like Paseo's action rows; the raw tool name stays the icon key */}
+        <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700" }}>{s.label || s.tool}</Text>
         <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>{s.text}</Text>
         {status === "running" ? <RunningClock ta={s.ta} t={t} /> : null}
         {status === "canceled" ? (

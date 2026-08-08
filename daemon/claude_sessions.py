@@ -103,6 +103,9 @@ def list_sessions(limit=MAX):
 # --- full turn-by-turn transcript of a session (the Paseo agent view) --------
 _TOOL_KEYS = ("command", "file_path", "path", "url", "pattern", "query",
               "prompt", "description", "notebook_path", "old_string")
+# parsed steps of ROTATED-AWAY sessions (immutable once left) - see the
+# session_chain rendering in read_transcript_live
+_chain_cache = {}
 
 
 def _find_transcript(session_id):
@@ -178,21 +181,31 @@ def read_transcript_live(track, limit=400):
     block is flushed to the .jsonl."""
     sid = live_session_id(track)
     steps = read_transcript(sid, limit) if sid else []
-    # Chain across a session ROTATION. A compaction (or a resume of a session
-    # that hit the context limit) rotates to a FRESH .jsonl that carries none of
-    # the prior conversation - reading only the live `sid` makes the whole chat
-    # look wiped ("ganzer Chat verschwunden"). When this card has a remembered
-    # prior session (steer records session_chain) and the live thread doesn't
-    # already carry a compaction marker, lead with ONE "Kontext verdichtet"
-    # marker: honest (the earlier turns were summarised away, Paseo-style), cheap
-    # (no re-read of the old file), and reassuring (the break is explained, not
-    # silent). Skip it while the fresh session is still empty - the marker alone
-    # over a blank feed would read as "everything got compacted to nothing".
-    chain = (track or {}).get("session_chain") or []
-    if (chain and steps
-            and not any(s.get("kind") == "compaction" for s in steps)):
-        steps = [{"role": "system", "kind": "compaction", "text": "",
-                  "prev": chain[-1], "ts": ""}] + steps
+    # FULL history across session ROTATIONS. A compaction (or a resume of a
+    # session that hit the context limit) rotates to a FRESH .jsonl carrying
+    # none of the prior conversation - reading only the live `sid` made the
+    # whole chat look wiped ("alle Chats einer Karte gehoeren in die Karte").
+    # steer records the sessions it leaves in session_chain; render THEM TOO,
+    # oldest first, each break marked with one "Kontext verdichtet" divider.
+    # Rotated-away sessions are IMMUTABLE, so their parsed steps are cached -
+    # the per-tick cost stays that of the live session alone.
+    chain = [s for s in ((track or {}).get("session_chain") or []) if s and s != sid]
+    if chain:
+        prior = []
+        for old_sid in chain[-4:]:            # bounded: the last 4 prior sessions
+            cached = _chain_cache.get(old_sid)
+            if cached is None:
+                try:
+                    cached = read_transcript(old_sid, limit)
+                except Exception:
+                    cached = []
+                _chain_cache[old_sid] = cached
+                while len(_chain_cache) > 12:  # bounded cache across cards
+                    _chain_cache.pop(next(iter(_chain_cache)))
+            if cached:
+                prior += cached + [{"role": "system", "kind": "compaction",
+                                    "text": "", "prev": old_sid, "ts": ""}]
+        steps = (prior + steps)[-limit:]
     # A tool_use with no matching tool_result is status=running. That is only
     # true while the TURN is live; once the card is at rest (needs_you, bounced,
     # done) a resultless trailing tool means the turn was KILLED mid-tool
@@ -318,6 +331,60 @@ def _tool_summary(inp):
         if isinstance(v, str) and v.strip():
             return v.strip()[:160]
     return ", ".join(list(inp.keys())[:3])
+
+
+# -- readable action labels (Paseo's tool-call-detail-parser, server-side) ----
+# Paseo maps every tool call to a human verb + a concise subject instead of
+# dumping the raw input ("PowerShell $job = Start-Job { & \"C:\\Program F...").
+# Same here: label = what happened, text = the one thing that identifies it
+# (file basename, search pattern, the agent's own description of a command).
+# The raw tool name stays in step["tool"] for icons; the label rides beside it.
+
+def _base(p):
+    return os.path.basename((p or "").rstrip("/\\")) or (p or "")
+
+
+def _first_line(s):
+    return (s or "").strip().splitlines()[0][:120] if (s or "").strip() else ""
+
+
+def _tool_label(name, inp):
+    """(label, text) - a human verb for the action and its concise subject."""
+    import i18n
+    inp = inp or {}
+    n = (name or "").strip()
+    if n.startswith("mcp__"):
+        # mcp__windows-mcp__Click -> "PC · Click"; other servers "server · tool"
+        parts = n.split("__")
+        server = parts[1] if len(parts) > 1 else "mcp"
+        tool = parts[2] if len(parts) > 2 else ""
+        if server == "windows-mcp":
+            return i18n.t("tool.pc", tool=tool), _tool_summary(inp)
+        return "%s · %s" % (server, tool), _tool_summary(inp)
+    if n in ("Read", "NotebookRead"):
+        return i18n.t("tool.read"), _base(inp.get("file_path") or inp.get("path")
+                                          or inp.get("notebook_path"))
+    if n in ("Edit", "MultiEdit", "NotebookEdit"):
+        return i18n.t("tool.edit"), _base(inp.get("file_path") or inp.get("notebook_path"))
+    if n == "Write":
+        return i18n.t("tool.write"), _base(inp.get("file_path"))
+    if n in ("Bash", "PowerShell", "Shell"):
+        # the agent's own description reads best; else the command's first line
+        return i18n.t("tool.run"), (inp.get("description")
+                                    or _first_line(inp.get("command")))
+    if n in ("Grep", "Glob", "Search", "LS"):
+        return i18n.t("tool.search"), (inp.get("pattern") or inp.get("query")
+                                       or inp.get("path") or "")
+    if n in ("WebFetch", "WebSearch"):
+        return i18n.t("tool.web"), (inp.get("url") or inp.get("query") or "")
+    if n in ("Task", "Agent"):
+        return i18n.t("tool.agent"), (inp.get("description")
+                                      or _first_line(inp.get("prompt")))
+    if n == "AskUserQuestion":
+        return i18n.t("tool.ask"), ""
+    if n == "TodoWrite":
+        return i18n.t("tool.plan"), ""
+    return n, _tool_summary(inp)
 
 
 def _tool_detail(name, inp):
@@ -588,8 +655,11 @@ def read_transcript(session_id, limit=400):
                     status, err = "failed", (res.get("text") or "error")[:500]
                 else:
                     status, err = "completed", None
+                _lbl, _sub = _tool_label(name, inp)
                 step = {"role": role, "kind": "tool", "tool": name,
-                        "text": _tool_summary(inp), "result": (res or {}).get("text", ""),
+                        "label": _lbl,
+                        "text": _sub or _tool_summary(inp),
+                        "result": (res or {}).get("text", ""),
                         "ok": (res or {}).get("ok", True),
                         "status": status, "error": err,
                         "running": res is None, "ts": ts, "ta": ta}
