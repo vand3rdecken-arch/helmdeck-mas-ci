@@ -231,6 +231,37 @@ function metrics(): Metrics {
   };
 }
 
+/** The sample PM plan behind the triage-first dashboard: goal, the three
+ *  corners green, milestones and next actions wired to the sample cards, so
+ *  the triangle + follow-up panels have something honest to show. */
+function pmPlan() {
+  const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  return {
+    goal: t("demo.pm.goal"),
+    economics: {},
+    plan: {
+      goal: t("demo.pm.goal"),
+      done_pct: 40,
+      plan_status: "ready",
+      triage: { budget: "ok", timeline: "ok", scope: "ok" },
+      feasibility: { earliest_done: inDays(12), note: t("demo.pm.feasNote") },
+      budget: { plan: "max", fixed_monthly_eur: 90, spent_to_date_eur: 34.5,
+        est_turns_to_goal: 120, velocity_turns_per_day: 18, eta_days: 7 },
+      milestones: [
+        { name: t("demo.pm.m1"), target_date: inDays(2), card: "d2" },
+        { name: t("demo.pm.m2"), target_date: inDays(7), card: "d3" },
+        { name: t("demo.pm.m3"), target_date: inDays(12) },
+      ],
+      next: [
+        { title: t("demo.pm.n1"), card: "d2" },
+        { title: t("demo.pm.n2"), card: "d4" },
+        { title: t("demo.pm.n3") },
+      ],
+    },
+    config: { loop_enabled: true, autonomy: "act" },
+  };
+}
+
 // ------------------------------------------------------------- responder ---
 
 const find = (id: string) => rows.find((r) => r.id === id);
@@ -321,6 +352,6 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   if (["/processes", "/runs", "/sessions/claude", "/history", "/connectors", "/users"].includes(path)) return [];
   if (path === "/settings") return metrics().settings ?? {};
   if (path === "/automation") return {};
-  if (path === "/pm/plan") return { goal: "", economics: {}, plan: null };
+  if (path === "/pm/plan") return pmPlan();
   return undefined;
 }

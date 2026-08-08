@@ -175,6 +175,11 @@ export const board: Dict = {
   "dash.triangle.ready": { de: "Plan-Gate grün — bereit", en: "plan gate green — ready" },
   "dash.triangle.eta": { de: "ETA ~{n} Tage", en: "ETA ~{n} days" },
   "dash.triangle.earliest": { de: "frühestens fertig: {when}", en: "earliest done: {when}" },
+  // ---- triage follow-up: the three corners own every deep-dive -------------
+  "dash.corner.spentToDate": { de: "bisher {v}", en: "{v} spent" },
+  "dash.corner.aiSpend": { de: "KI ${v}", en: "AI ${v}" },
+  "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
+  "dash.corner.wip": { de: "WIP {wip}/{limit} · {n} frei", en: "WIP {wip}/{limit} · {n} free" },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
   "dash.usage.unavailable": {
     de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",

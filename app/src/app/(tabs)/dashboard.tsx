@@ -9,7 +9,7 @@ import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
-import { CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
+import { ALL_PANELS, ALL_TILES, CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, TriageFollowUp, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
 import { PMPanel } from "@/ui/pm_panel";
 
 const isWeb = Platform.OS === "web";
@@ -35,16 +35,24 @@ export default function DashboardTab() {
         {error ? <Text style={{ color: t.danger }}>{tr("ui.offline")}</Text> : null}
         {data ? (
           (() => {
-            const panels = dashPanels(data);
+            // Owner: clean by default - only the triage focus + its three corners;
+            // tiles/panels are opt-in via the customizer. Operators keep all-on
+            // (their payload has no settings and no triage view).
+            const panels = isOwner ? dashPanels(data) : [...ALL_PANELS];
+            const tiles = isOwner ? dashTiles(data) : [...ALL_TILES];
             const showCap = panels.includes("capacity");
             const showGates = panels.includes("gates");
+            const defaultRepo = (data as { settings?: { default_repo?: string } })?.settings?.default_repo;
             return (
               <>
                 {/* triage is the dashboard's FOCUS - first and loud */}
                 {isOwner ? <TrianglePanel /> : null}
-                {isOwner ? <PMPanel defaultRepo={(data as { settings?: { default_repo?: string } })?.settings?.default_repo} /> : null}
+                {/* every follow-up hangs off one of the three corners - nothing else */}
+                {isOwner ? <TriageFollowUp m={data} wide={wide} defaultRepo={defaultRepo} /> : null}
+                {/* the PM control surface: goal, autonomy, consolidate - controls, not metrics */}
+                {isOwner ? <PMPanel /> : null}
                 {isOwner ? <DashCustomize m={data} /> : null}
-                <Tiles m={data} wide={wide} tiles={dashTiles(data)} />
+                <Tiles m={data} wide={wide} tiles={tiles} />
                 {/* On desktop the two gauges sit side by side; the wide tables stay full width. */}
                 {wide && showCap && showGates ? (
                   <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
