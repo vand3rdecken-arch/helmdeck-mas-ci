@@ -530,7 +530,14 @@ def _clean_text(text):
     instead (ask.py). Leaving the raw <helmdeck-ask> JSON in the feed would show
     the owner the protocol rather than the question."""
     import ask
-    return ask.strip(_strip_ctx(text))
+    out = ask.strip(_strip_ctx(text))
+    # NOQUESTION is the ask-repair protocol's decline token ("I wasn't really
+    # asking") - an internal handshake, never a reply. As a bubble it read like
+    # the worker answered the owner with the word "NOQUESTION" ("Questions also
+    # broken"). The record stays in the .jsonl; only the chrome hides it.
+    if out.strip() == ask.NO_QUESTION:
+        return ""
+    return out
 
 
 def _result_text(part):
