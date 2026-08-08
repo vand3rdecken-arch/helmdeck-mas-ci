@@ -698,6 +698,19 @@ class _ClaudeSession:
             # on the first turn. Afterwards the ids differ and this never fires.
             if self.adopted_source and self.adopted_source == self.session_id:
                 argv += ["--fork-session"]
+        # SPAWN FORENSICS: audit whether this worker resumes or starts fresh.
+        # A card once answered with a fresh mind despite a valid session_id and
+        # a CLI-verified resumable transcript ("Voellig falscher Kontext") - and
+        # nothing recorded what the spawn actually did. Now every spawn leaves
+        # the truth in the card feed, so that class is diagnosable in seconds.
+        if self.run_dir:
+            try:
+                from actionlog import ActionLog
+                ActionLog(self.run_dir).log("note", "SESSION spawn: %s%s" % (
+                    ("resume " + self.session_id[:8]) if self.session_id else "FRESH (kein Kontext)",
+                    " +fork" if ("--fork-session" in argv) else ""))
+            except Exception:
+                pass
         self.proc = subprocess.Popen(_cmd_line(argv), cwd=self.worktree,
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, env=_env(self.cfg, self.card_env),
