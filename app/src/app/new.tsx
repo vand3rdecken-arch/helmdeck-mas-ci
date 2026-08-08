@@ -25,7 +25,9 @@ const EXAMPLES = [
   { key: "research", driver: "claude" },
 ] as const;
 
-const PRIORITIES = ["low", "medium", "high"] as const;
+// urgent was missing here (the card edit picker had it) - a card could not be
+// filed as "dringend". Order + labels match the edit picker; localized via prio.*
+const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 
 export default function NewCard() {
   const t = useTheme();
@@ -144,7 +146,8 @@ export default function NewCard() {
         <Panel>
           <Caption text={tr("new.priority")} />
           <View style={{ marginBottom: 10 }}>
-            <ChipPick options={PRIORITIES} selected={[priority]} onToggle={setPriority} single />
+            <ChipPick options={PRIORITIES} selected={[priority]} onToggle={setPriority} single
+              labelFor={(p) => tr(`prio.${p}`)} />
           </View>
           <Caption text={tr("new.due")} />
           <TextInput value={due} onChangeText={setDue} autoCapitalize="none" placeholder="2026-07-31"
