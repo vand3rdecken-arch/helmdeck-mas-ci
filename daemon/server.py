@@ -274,6 +274,14 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import copilot
                 return self._send(200, json.dumps(copilot.history(user["name"])))
+            if p == "/chat/live":
+                # the board agent's STREAMING prose reply while a turn runs, so
+                # the board chat streams like a card (one shared surface). Polled
+                # by the chat only while busy.
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import copilot
+                return self._send(200, json.dumps(copilot.live(user["name"])))
             if p == "/stream/wait":
                 # Board PUSH over the sealed relay (SSE can't tunnel): long-poll
                 # the data version. Blocks until it passes `v` or ~22s, then

@@ -16,9 +16,16 @@ SYSTEM = """You are the HelmDeck board copilot. The user steers an agent-executi
 kanban (cards = agent/human work in lanes backlog/working/review/done; processes =
 step chains that auto-advance). You get a live board snapshot each message.
 
-Reply with ONLY JSON:
-{"reply": "short helpful answer for the user",
- "actions": [ ...zero or more of:
+HOW TO REPLY - this format lets the user watch your answer stream in live:
+1. Write a SHORT helpful reply to the user in plain prose (this is what streams).
+2. IF (and only if) you need to take board actions, append EXACTLY ONE fenced
+   block at the very end, nothing after it:
+```actions
+[ ...zero or more action objects... ]
+```
+No prose after the block. No actions needed -> omit the block entirely.
+
+The action objects (inside the ```actions array) are zero or more of:
    {"type": "file_card", "task": "...", "value": 50, "due": "YYYY-MM-DD", "priority": "urgent|high|medium|low", "driver": "claude|claude-desktop", "dispatch": false}
    {"type": "move", "card": "<id or unique branch/task fragment>", "lane": "backlog|working|review|done"}  (admin: policy.chat_admin_roles)
    {"type": "delete", "card": "<id or fragment>"}  - permanently remove a card (admin: policy.chat_admin_roles)
@@ -37,7 +44,6 @@ Reply with ONLY JSON:
    {"type": "run_connector", "name": "<installed connector>"}  - run it now; items become backlog cards
    {"type": "rollback_connector", "name": "..."}  - restore the previous version (originals are always archived)
    {"type": "schedule_connector", "name": "...", "every_minutes": 60}  - or 0 to unschedule
- ]}
 
 configure may ONLY touch these keys (the flexible half of the workspace):
   policy.lane_labels {backlog,working,review,done: "label"} - rename lanes
@@ -446,6 +452,88 @@ def say(text, cls="pm"):
 _running = {}
 _cancelled = set()
 
+# -- streaming: ONE chat surface with the card (shared Transcript), only the
+# backend differs. The copilot streams its PROSE reply into a per-user live feed
+# the board chat polls (like a card's live_partial), so the board agent "types"
+# live instead of a blocking "denkt". Actions still come as a trailing block.
+_ACTIONS_FENCE = re.compile(r"```actions\s*(.*?)```", re.S)
+
+
+def _copilot_run_dir(user):
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", user or "u") or "u"
+    d = os.path.join(ROOT, "copilot_runs", safe)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _cwrite(path, text):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        pass
+
+
+def _crm(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _strip_actions_live(partial):
+    """The live view of a streaming reply: drop everything from the ```actions
+    fence (or a lone ``` / a leading raw-JSON blob) onward, so the user watches
+    PROSE stream in, not the raw action tail."""
+    if not partial:
+        return partial
+    s = partial.lstrip()
+    if s.startswith("{"):          # legacy JSON-blob reply - nothing prose to show yet
+        return ""
+    for marker in ("```actions", "```"):
+        i = partial.find(marker)
+        if i != -1:
+            return partial[:i].rstrip()
+    return partial
+
+
+def _parse_reply_actions(txt):
+    """(reply_prose, actions[]). New contract: prose reply + optional trailing
+    ```actions [..]``` block. Falls back to the legacy {"reply","actions"} JSON
+    blob, then to 'the whole text is the reply'."""
+    txt = txt or ""
+    mf = _ACTIONS_FENCE.search(txt)
+    if mf:
+        reply = txt[:mf.start()].strip()
+        try:
+            acts = json.loads(mf.group(1).strip())
+            acts = [acts] if isinstance(acts, dict) else acts
+            return reply, (acts if isinstance(acts, list) else [])
+        except ValueError:
+            return reply, []
+    mb = re.search(r"\{.*\}", txt, re.S)      # legacy blob
+    if mb:
+        try:
+            o = json.loads(mb.group(0))
+            if isinstance(o, dict) and ("reply" in o or "actions" in o):
+                return o.get("reply", ""), (o.get("actions") or [])
+        except ValueError:
+            pass
+    return txt.strip(), []
+
+
+def live(user):
+    """The board agent's live streaming reply for /chat/live - the board chat
+    polls this while a turn runs so it streams like a card."""
+    d = _copilot_run_dir(user)
+    text = ""
+    try:
+        with open(os.path.join(d, "live_partial.txt"), encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        pass
+    return {"text": text, "running": user in _running}
+
 
 def cancel(user):
     """Stop this user's in-flight copilot turn (the chat Stop button)."""
@@ -481,8 +569,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                      % (ct["id"], ct.get("branch"), (ct.get("task") or "")[:80]))
     prompt = SYSTEM + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
         + _snapshot() + focus + "\n\nUSER (%s): %s" % (user, body)
-    cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "json",
-           "--permission-mode", "plan"]
+    # STREAM (shared with the card surface): stream-json so the prose reply types
+    # into the per-user live feed the board chat polls, instead of a blocking
+    # black box. The prompt goes in on stdin (it is huge - never a cmd arg).
+    run_dir = _copilot_run_dir(user)
+    live_path = os.path.join(run_dir, "live_partial.txt")
+    sid_path = os.path.join(run_dir, "live_session.txt")
+    _crm(live_path); _crm(sid_path)
+    cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "stream-json",
+           "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
         cmd += ["--model", cli_model]
     if sid:
@@ -490,28 +585,56 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
     # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
     _cancelled.discard(user)
+    # stderr -> DEVNULL: we read stdout line-by-line (the pump), so an undrained
+    # stderr pipe could fill and DEADLOCK the process mid-turn.
     p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+                         stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
     _running[user] = p
+    parts, result, session_id = [], {}, sid
     try:
-        stdout, stderr = p.communicate(input=prompt, timeout=300)
+        p.stdin.write(prompt); p.stdin.close()
+        for line in p.stdout:                       # the pump (like drivers._pump)
+            if user in _cancelled:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            typ = ev.get("type")
+            if typ == "system" and ev.get("session_id"):
+                session_id = ev["session_id"]; _cwrite(sid_path, session_id)
+            elif typ == "stream_event":
+                e = ev.get("event") or {}
+                if e.get("type") == "content_block_delta":
+                    dl = e.get("delta") or {}
+                    if dl.get("type") == "text_delta":
+                        parts.append(dl.get("text", ""))
+                        _cwrite(live_path, _strip_actions_live("".join(parts)))
+            elif typ == "result":
+                result = ev
+        try:
+            p.wait(timeout=8)
+        except Exception:
+            pass
     finally:
         _running.pop(user, None)
+        _crm(live_path)                             # done streaming - clear the live preview
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
         return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}
-    if not (stdout or "").strip():
-        raise RuntimeError("copilot no output: " + (stderr or "").strip()[:200])
-    d = json.loads(stdout)
-    if d.get("session_id"):
-        sess[user] = d["session_id"]
+    txt = result.get("result") or "".join(parts)
+    if not (txt or "").strip():
+        raise RuntimeError("copilot produced no output (turn ended without a result)")
+    sid_final = result.get("session_id") or session_id
+    if sid_final:
+        sess[user] = sid_final
         _save_sessions(sess)
-    txt = d.get("result", "")
-    m = re.search(r"\{.*\}", txt, re.S)
-    try:
-        out = json.loads(m.group(0)) if m else {"reply": txt, "actions": []}
-    except ValueError:
-        out = {"reply": txt, "actions": []}
+    reply_prose, acts_parsed = _parse_reply_actions(txt)
+    out = {"reply": reply_prose, "actions": acts_parsed}
+    d = result                                       # for cost/usage below
     u = d.get("usage") or {}
     usage = {"in": (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
                     + u.get("cache_creation_input_tokens", 0)),

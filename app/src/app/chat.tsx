@@ -89,6 +89,19 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const colMax = wide ? 860 : undefined;
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  // the board agent's live streaming prose while a turn runs - polled from
+  // /chat/live so the board chat STREAMS like a card (one shared surface).
+  const [stream, setStream] = useState("");
+  useEffect(() => {
+    if (!busy) { setStream(""); return; }
+    let alive = true, to: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try { const r = await api.chatLive(); if (alive && r) setStream(r.text || ""); } catch { /* keep polling */ }
+      if (alive) to = setTimeout(poll, 500);
+    };
+    poll();
+    return () => { alive = false; clearTimeout(to); };
+  }, [busy]);
   const qc = useQueryClient();
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -176,10 +189,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       <View style={{ flex: 1 }}>
         <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
-          {msgs.length === 0
+          {msgs.length === 0 && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
-            : <Transcript steps={msgs.map(toStep)} />}
-          {busy ? <ThinkingIndicator /> : null}
+            : <Transcript steps={(() => {
+                const s = msgs.map(toStep);
+                // while streaming, append the board agent's live typing as a
+                // streaming bot step - the SAME row a card worker streams into.
+                if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true });
+                return s;
+              })()} />}
+          {busy && !stream.trim() ? <ThinkingIndicator /> : null}
         </ScrollView>
         {!atBottom ? (
           <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
