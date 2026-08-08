@@ -24,7 +24,7 @@ const { startSetupServer } = require("./setup");
 
 const DAEMON_PORT = 8140;
 const WEB_PORT = 3300;
-let daemon = null, web = null, win = null, failed = false, setupSrv = null;
+let daemon = null, web = null, win = null, failed = false, setupSrv = null, daemonAdopted = false;
 
 // packaged: resources/{daemon,app-dist}; dev: repo ../{daemon,app/dist}
 const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
@@ -78,14 +78,43 @@ function fail(msg) {
 // it we fall back to whatever the machine has. A failure here is NO LONGER fatal:
 // first run is exactly the case where Python is missing, and the onboarding
 // screen is what fixes it — killing the app would leave the user nowhere.
+// Is a daemon already answering on :8140? ANY HTTP reply (even 401) means one is
+// listening. Used to ADOPT it instead of spawning a second (Paseo probe-then-adopt).
+function daemonReachable(cb) {
+  const req = http.get({ host: "127.0.0.1", port: DAEMON_PORT, path: "/tracks", timeout: 1200 },
+    (r) => { r.destroy(); cb(true); });
+  req.on("error", () => cb(false));
+  req.on("timeout", function () { this.destroy(); cb(false); });
+}
+
 function startDaemon(pyOverride) {
-  const py = pyOverride || resolvePython();
-  // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
-  daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
-    { cwd: daemonDir, env: { ...process.env }, windowsHide: true, shell: process.platform === "win32" });
-  daemon.stdout.on("data", (d) => log("daemon", d));
-  daemon.stderr.on("data", (d) => log("daemon", d));
-  daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));
+  // ADOPT-OR-DETACH (Paseo daemon-manager parity). The daemon holds the phone's
+  // relay bridge, so it must NOT be bound to this desktop window's lifecycle:
+  //  1) if one is already reachable (a prior detached session, a relaunch, a
+  //     CLI-started daemon) -> ADOPT it, never spawn a second or evict it;
+  //  2) else spawn it DETACHED + unref -> it keeps its own process group, so a
+  //     crash or tree-kill of Electron can never take the phone offline, and it
+  //     survives a normal window close too (see cleanup()).
+  daemonReachable((up) => {
+    if (up) {
+      daemonAdopted = true;
+      log("daemon", "adopted an already-running daemon on :" + DAEMON_PORT + " (not spawning)\n");
+      return;
+    }
+    const py = pyOverride || resolvePython();
+    const fs = require("fs");
+    // detached needs a real sink, not an inherited pipe that dies with Electron -
+    // append to a log file so the daemon is fully independent yet still logged.
+    let out = "ignore";
+    try { out = fs.openSync(path.join(daemonDir, "daemon.out.log"), "a"); } catch { /* ignore */ }
+    // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
+    daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
+      { cwd: daemonDir, env: { ...process.env }, windowsHide: true,
+        shell: process.platform === "win32", detached: true,
+        stdio: ["ignore", out, out] });
+    daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));
+    daemon.unref();   // let Electron exit without waiting on / tethering the daemon
+  });
 }
 
 // Mint a device token from the local daemon so the served Expo web UI can talk
@@ -164,7 +193,12 @@ function killTree(proc) {
   } catch { /* ignore */ }
 }
 function cleanup() {
-  killTree(daemon); killTree(web); daemon = web = null;
+  // LEAVE THE DAEMON RUNNING. It is detached and holds the phone's relay bridge,
+  // so closing the desktop window must not take the phone offline (Paseo only
+  // stops a *managed* daemon on quit; ours stays a background service the phone
+  // depends on, and an adopted daemon was never ours to stop). A relaunch
+  // adopts it. Only the local UI server + setup control plane are ours to close.
+  killTree(web); web = null;
   if (setupSrv) { setupSrv.close(); setupSrv = null; }
 }
 
