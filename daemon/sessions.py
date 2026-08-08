@@ -344,6 +344,26 @@ def _drain_steer_texts(tid):
     with _steer_epoch_guard:
         return _steer_pending.pop(tid, [])
 
+
+def record_bg(tid, open_tasks):
+    """Persist the driver's FIRST-CLASS background-task registry onto the track
+    (Paseo's ProviderSubagentStore principle: state maintained at event time by
+    the pump, never reconstructed by transcript forensics). `open_tasks` is the
+    driver's current {tool_use_id: desc} of confirmed-running background work.
+    Stored with a started_at stamp per id so a task that never reports ages out
+    honestly. Restart-safe: the track is the store."""
+    def _apply(t):
+        prev = t.get("bg_tasks") if isinstance(t.get("bg_tasks"), dict) else {}
+        if not open_tasks:
+            if not prev:
+                return False
+            t.pop("bg_tasks", None)
+            return None
+        t["bg_tasks"] = {uid: {"desc": desc,
+                               "since": (prev.get(uid) or {}).get("since") or time.time()}
+                         for uid, desc in open_tasks.items()}
+    _mutate(tid, _apply)
+
 # -- THE one legal write path for existing tracks (Paseo's one-owner principle) --
 # Tracks are whole JSON dicts, and they used to be read+written from >=4 threads
 # at once (steer, cancel, the reconciler, lane moves, answers, archive). Each
@@ -2462,6 +2482,21 @@ def sweep_zombies(min_idle_s=0):
     from actionlog import ActionLog
     swept = []
     for t in _load():
+        # STARTUP (min_idle_s==0): every worker tree died with the old daemon -
+        # so did every background agent inside it. A registry entry surviving
+        # here is a zombie by construction: clear it (with a visible note) so
+        # the card doesn't wait on a task that can never report.
+        if not min_idle_s and isinstance(t.get("bg_tasks"), dict) \
+                and not drivers.has_session(t["id"]):
+            names = ", ".join(v.get("desc", "task") for v in t["bg_tasks"].values())[:120]
+            _mutate(t["id"], lambda tt: (tt.pop("bg_tasks", None),
+                                         tt.pop("waiting_on", None), None)[-1])
+            try:
+                ActionLog(t["run_dir"]).log(
+                    "note", "Hintergrund-Task(s) mit dem Daemon-Neustart verloren: %s "
+                    "- steuern startet sie neu." % names)
+            except Exception:
+                pass
         st = t.get("status")
         if st == "running":
             # genuinely working = a TURN is in flight (Paseo: "running" is a
