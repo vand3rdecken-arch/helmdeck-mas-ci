@@ -10,7 +10,10 @@ The loop:
              (CLAUDE.md laws + daemon/charter.py)? Refuse or adjust if not.
     ANALYZE  workorder lacks '## Analysis' - architecture impact + debt delta:
              which modules/laws are touched, does a load-bearing shortcut ship
-             (then register it in daemon/debt.py in the same change)?
+             (then register it in daemon/debt.py in the same change)? Includes
+             the NO-MONKEY-PATCH check (CLAUDE.md law): state must be DERIVED
+             from runtime signals at ONE owner - a shipped heuristic
+             reconstruction is debt, named in the same commit.
     EXECUTE  checks are red - build/fix until green: touched daemon/*.py compile,
              app (Expo) tsc clean, daemon modules import, and DESIGN LINT passes
              (tools/design_lint.py - the enforceable subset of the design skill:
@@ -66,7 +69,11 @@ WORKORDER_TEMPLATE = """# Workorder
 
 ## Analysis
 <architecture impact: modules touched, laws grazed, debt delta (register in
-daemon/debt.py if a shortcut ships)>
+daemon/debt.py if a shortcut ships).
+NO-MONKEY-PATCH check (CLAUDE.md law): does this change DERIVE its state from
+the runtime's own signals at ONE owner - or does it assume a stored flag /
+re-scan artifacts / adopt without evidence? Name which. A shipped heuristic
+reconstruction = a debt entry in the same commit.>
 
 ## Verified
 <what was actually run/judged: checks, e2e, screenshots (UI = judged, not
@@ -307,7 +314,10 @@ def transitions():
         return t
     if not section_filled(wo, "## Analysis"):
         t.append(("ANALYZE", "fill '## Analysis' in .loop/workorder.md - architecture "
-                  "impact + debt delta (register shortcuts in daemon/debt.py)."))
+                  "impact + debt delta (register shortcuts in daemon/debt.py). Include "
+                  "the NO-MONKEY-PATCH check: is state DERIVED from runtime signals at "
+                  "ONE owner, or assumed/re-scanned/adopted-without-evidence? A shipped "
+                  "heuristic = a debt entry in the same commit."))
         return t
 
     ui_work = any(p.startswith("app/src/") and p.endswith((".ts", ".tsx"))
