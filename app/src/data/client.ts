@@ -5,7 +5,7 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
-import type { Track, LaneMove, Metrics, Me, Usage } from "./types";
+import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow } from "./types";
 
 export class AuthRequired extends Error {}
 // Transport never reached the daemon (relay down, network, crypto mismatch).
@@ -135,14 +135,20 @@ export interface PmMilestone {
   est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string;
   why?: string; tasks?: PmTask[];
 }
-/** Max plan: the budget IS the subscription's usage allowance, so the daemon
- *  attaches the real rate-limit windows (same source as /usage) - the board
- *  shows capacity + projection, never a fictitious flat-euro figure. */
-export interface PmBudgetUsage { id?: string; label?: string; usedPct?: number | null;
-  projectedPct?: number | null; resetsAt?: string | null; tone?: string }
-export interface PmBudget { plan?: string; fixed_monthly_eur?: number; cash_to_goal_eur?: number; shadow_eur_to_goal?: number;
-  spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string;
-  usage?: PmBudgetUsage[]; usage_plan?: string }
+/** The PM computes a plan-aware budget block the board renders GENERICALLY by
+ *  `kind`: "usage" (Max plan - the subscription allowance IS the budget, so it
+ *  carries the real /usage windows + a measured verdict) or "cash" (API plan -
+ *  euro spend vs the monthly cap). Adding a plan = a new kind + a render branch,
+ *  nothing hardcoded per screen. `state` (measured) drives the triage colour. */
+export interface PmBudget {
+  plan?: string; kind?: "usage" | "cash"; state?: "ok" | "warn" | "blocked";
+  note?: string; est_turns_to_goal?: number; velocity_turns_per_day?: number;
+  pace_turns_per_day?: number; eta_days?: number;
+  // kind === "usage" (Max)
+  windows?: UsageWindow[]; usage_plan?: string | null;
+  // kind === "cash" (API)
+  monthly_eur?: number; spent_to_date_eur?: number; cash_to_goal_eur?: number; projected_eur?: number;
+}
 export interface PmBrief {
   summary?: string; done_pct?: number; milestones?: PmMilestone[];
   next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
@@ -150,6 +156,9 @@ export interface PmBrief {
   // the golden triage + gate (PM planning gate)
   plan_status?: "ready" | "blocked" | "needs_spike"; gate?: string;
   triage?: { budget?: "ok" | "blocked"; timeline?: "ok" | "blocked"; scope?: "ok" | "blocked" };
+  // WHY a corner is red - filled by the measured triangle gate (pm._gate_triangle),
+  // so a downgrade shows its reason instead of an unexplained red.
+  triage_reasons?: { budget?: string; timeline?: string; scope?: string };
   feasibility?: { budget?: string; earliest_done?: string; note?: string };
   open_questions?: string[];
 }

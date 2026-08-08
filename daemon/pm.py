@@ -141,6 +141,116 @@ def _quota_signal():
     return out
 
 
+def _budget_assess(econ, est_turns, pace):
+    """The PM's CODE-COMPUTED, plan-aware budget verdict + the panel data the
+    board renders. It CHECKS the real bottleneck and BUILDS the block - measured,
+    not the LLM's narrative guess (which said "green" while the weekly quota was
+    pacing to 111%). Stays flexible: the constraint that matters is the plan's:
+
+      Max plan  -> the SUBSCRIPTION USAGE is the budget. kind="usage" carries the
+                   real rate-limit windows (5h + weekly, with pacing), and the
+                   verdict comes from pacing: a window pacing to exhaust before
+                   its reset BLOCKS, near-full WARNS. No euros anywhere.
+      API plan  -> € spend vs the monthly cap is the budget. kind="cash" carries
+                   spent / projected / cap, verdict from projected-vs-cap.
+
+    Returns (budget_dict, state) where state in {"ok","warn","blocked"} - the
+    caller overrides triage.budget with it (measured economics beats the guess)."""
+    plan = econ.get("plan", "max")
+    if plan == "api":
+        cap = econ.get("monthly_eur") or 0
+        spent = econ.get("spend_to_date", 0.0)
+        to_goal = round(est_turns * econ.get("avg_cost_per_turn", 0.0), 2)
+        projected = round(spent + to_goal, 2)
+        state = "ok"
+        if cap:
+            if projected >= cap:
+                state = "blocked"
+            elif projected >= 0.8 * cap:
+                state = "warn"
+        b = {"plan": "api", "kind": "cash", "monthly_eur": cap,
+             "spent_to_date_eur": spent, "cash_to_goal_eur": to_goal,
+             "projected_eur": projected, "est_turns_to_goal": est_turns,
+             "velocity_turns_per_day": econ.get("velocity_turns_per_day"),
+             "pace_turns_per_day": pace, "eta_days": _days(est_turns, pace),
+             "state": state,
+             "note": "API: Projektion €%.2f gegen Cap €%s (Turns × Ø-Kosten)."
+                     % (projected, cap or "—")}
+        return b, state
+    # -- Max / flat plan: the usage allowance IS the budget --------------------
+    try:
+        import usage as _usage
+        snap = _usage.snapshot()
+    except Exception:
+        snap = {}
+    wins = snap.get("windows") or []
+    state = "ok"
+    for w in wins:                       # derive the verdict from the real windows
+        pac = w.get("pacing") or {}
+        up = w.get("usedPct") or 0
+        if up >= 95 or pac.get("exhaust_before_reset") or pac.get("flag"):
+            state = "blocked"
+            break
+        if up >= 80 or (pac.get("projected_pct") or 0) >= 100:
+            state = "warn"
+    note = {
+        "ok": "Max-Abo: Budget = Plan-Kapazität. Beim aktuellen Tempo reicht sie bis zum Reset.",
+        "warn": "Max-Abo: Auslastung wird eng - beim aktuellen Tempo nah am Limit vor dem Reset.",
+        "blocked": "Max-Abo: Kontingent ist der Engpass - beim aktuellen Tempo vor dem Reset "
+                   "erschöpft. Tempo drosseln oder Reset abwarten.",
+    }[state]
+    if not wins:                         # no Claude login / usage unreachable
+        note = "Max-Abo: Budget = Plan-Kapazität (kein €). Nutzungsdaten gerade nicht verfügbar."
+    b = {"plan": "max", "kind": "usage", "usage_plan": snap.get("plan"),
+         "windows": wins,               # full UsageWindow shape - board reuses UsageRow
+         "est_turns_to_goal": est_turns,
+         "velocity_turns_per_day": econ.get("velocity_turns_per_day"),
+         "pace_turns_per_day": pace, "eta_days": _days(est_turns, pace),
+         "state": state, "note": note}
+    return b, state
+
+
+def _gate_triangle(out, econ, est_turns, pace):
+    """Adversarially gate the golden triangle (Budget/Timeline/Scope). The LLM
+    plan proposed each corner's colour from narrative; this replaces that with a
+    MEASURED verdict that can only DOWNGRADE (green -> red), never upgrade a red
+    the planner set. Attaches out['budget'] (plan-aware panel data) and, per
+    downgraded corner, out['triage_reasons'][corner] so the board can say WHY.
+
+    - Budget: the real bottleneck. Max -> subscription usage/pacing; API -> euro
+      vs the monthly cap (_budget_assess). A window pacing to exhaust before its
+      reset, or a projection over the cap, turns Budget red.
+    - Timeline: measured VELOCITY. No turns yet (pace 0) => the ETA is a guess,
+      not a commitment => red. Otherwise the launch date IS the measured ETA, so
+      the planner can't be more optimistic than the math.
+    - Scope: readiness. A plan the verifier left not-ready (open owner decision,
+      undefined scope) can't be green scope, whatever the planner wrote."""
+    tri = out.get("triage")
+    if not isinstance(tri, dict):
+        tri = {}
+        out["triage"] = tri
+    reasons = out.setdefault("triage_reasons", {})
+
+    def downgrade(corner, reason):
+        tri[corner] = "blocked"
+        reasons[corner] = reason
+
+    # -- Budget: measured usage/pacing or euro-vs-cap ------------------------
+    out["budget"], bstate = _budget_assess(econ, est_turns, pace)
+    if bstate == "blocked":
+        downgrade("budget", out["budget"].get("note"))
+
+    # -- Timeline: measured velocity underwrites the ETA --------------------
+    if not pace or pace <= 0:
+        downgrade("timeline", "Kein gemessenes Tempo (noch keine Turns) - die ETA ist "
+                              "geschätzt, keine belastbare Zusage.")
+
+    # -- Scope: a not-ready plan can't be green scope -----------------------
+    if out.get("plan_status") in ("blocked", "needs_spike"):
+        downgrade("scope", reasons.get("scope")
+                  or "Plan ist nicht abnahmereif (offene Entscheidung / unklarer Scope).")
+
+
 def _ask(prompt, model=""):
     import copilot
     cmd = ["cmd", "/c", copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
@@ -284,40 +394,6 @@ def brief(goal=None, model=""):
         # the milestone reads "by Thu" not just "~3d".
         ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
     est_turns = cum
-    is_max = econ["plan"] == "max"
-    out["budget"] = {
-        "plan": econ["plan"],
-        "fixed_monthly_eur": econ["monthly_eur"],
-        "cash_to_goal_eur": 0.0 if is_max else round(est_turns * econ["avg_cost_per_turn"], 2),
-        "shadow_eur_to_goal": round(est_turns * econ["avg_cost_per_turn"], 2),
-        "spent_to_date_eur": econ["spend_to_date"],
-        "est_turns_to_goal": est_turns,
-        "velocity_turns_per_day": econ["velocity_turns_per_day"],
-        "pace_turns_per_day": pace,
-        "eta_days": _days(est_turns, pace),
-        "note": ("Max-Abo: Engpass ist Quota/Zeit, nicht €. Schatten-€ = API-Äquivalent "
-                 "(Leverage gegen €%s flat)." % econ["monthly_eur"]) if is_max
-                else "API: gegen das €-Cap planen.",
-    }
-    if is_max:
-        # On the Max plan the budget IS the subscription's usage allowance, not
-        # euros ("Budget ist was der Agent zur Verfuegung hat"). Attach the real
-        # rate-limit windows (same source as /usage: 5h + weekly, with pacing
-        # projection) so the board shows capacity, never a fictitious 200 EUR.
-        try:
-            import usage as _usage
-            snap = _usage.snapshot()
-            if snap.get("windows"):
-                out["budget"]["usage"] = [
-                    {"id": w.get("id"), "label": w.get("label"),
-                     "usedPct": w.get("usedPct"), "resetsAt": w.get("resetsAt"),
-                     "tone": w.get("tone"),
-                     "projectedPct": (w.get("pacing") or {}).get("projected_pct")}
-                    for w in snap["windows"]]
-                if snap.get("plan"):
-                    out["budget"]["usage_plan"] = snap["plan"]
-        except Exception:
-            pass                      # usage view degrades, never breaks the plan
     out["economics"] = econ
     out["goal"] = goal
     out["model"] = cli_model or "default"
@@ -334,6 +410,12 @@ def brief(goal=None, model=""):
         if isinstance(q, str) and q.strip() and q not in oq:
             oq.append(q)
     out["open_questions"] = oq
+    # CRITICAL GATE over the golden triangle - AFTER the verifier so it sees the
+    # final plan_status. The LLM PROPOSES each corner; this MEASURED check only
+    # DOWNGRADES (ok -> blocked), never beautifies - without it the triangle was
+    # the planner's own optimism ("Budget gruen" at 111% weekly pacing). Same
+    # "only tightens" law as the verifier and gate-before-review.
+    _gate_triangle(out, econ, est_turns, pace)
     _write_artifact(out)
     return out
 
