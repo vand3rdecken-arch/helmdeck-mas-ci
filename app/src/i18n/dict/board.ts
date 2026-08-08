@@ -177,6 +177,10 @@ export const board: Dict = {
   "dash.triangle.earliest": { de: "frühestens fertig: {when}", en: "earliest done: {when}" },
   // ---- triage follow-up: the three corners own every deep-dive -------------
   "dash.corner.spentToDate": { de: "bisher {v}", en: "{v} spent" },
+  "dash.corner.usageNote": {
+    de: "Max-Abo: Budget = Plan-Kapazität (Auslastung → Projektion bis Reset), kein Geld.",
+    en: "Max plan: budget = plan capacity (usage → projection until reset), not money.",
+  },
   "dash.corner.aiSpend": { de: "KI ${v}", en: "AI ${v}" },
   "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
   "dash.corner.wip": { de: "WIP {wip}/{limit} · {n} frei", en: "WIP {wip}/{limit} · {n} free" },

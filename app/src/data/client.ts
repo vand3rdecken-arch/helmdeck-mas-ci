@@ -135,8 +135,14 @@ export interface PmMilestone {
   est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string;
   why?: string; tasks?: PmTask[];
 }
+/** Max plan: the budget IS the subscription's usage allowance, so the daemon
+ *  attaches the real rate-limit windows (same source as /usage) - the board
+ *  shows capacity + projection, never a fictitious flat-euro figure. */
+export interface PmBudgetUsage { id?: string; label?: string; usedPct?: number | null;
+  projectedPct?: number | null; resetsAt?: string | null; tone?: string }
 export interface PmBudget { plan?: string; fixed_monthly_eur?: number; cash_to_goal_eur?: number; shadow_eur_to_goal?: number;
-  spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string }
+  spent_to_date_eur?: number; est_turns_to_goal?: number; velocity_turns_per_day?: number; pace_turns_per_day?: number; eta_days?: number; note?: string;
+  usage?: PmBudgetUsage[]; usage_plan?: string }
 export interface PmBrief {
   summary?: string; done_pct?: number; milestones?: PmMilestone[];
   next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
