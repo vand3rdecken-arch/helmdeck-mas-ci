@@ -529,12 +529,16 @@ def _record_econ(t, meta):
         + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
     t["tokens_out"] = t.get("tokens_out", 0) + u.get("output_tokens", 0)
     # CONTEXT METER (Paseo-parity: contextWindowUsedTokens). tokens_in above is
-    # CUMULATIVE across turns - useless for "how full is the window". The actual
-    # context size = THIS call's input side (the whole conversation is re-sent as
-    # the prompt each turn), so store it separately for the card's meter. Lets the
-    # owner SEE the context filling instead of a surprise "Kontext ist am Ende".
-    ctx = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-           + u.get("cache_read_input_tokens", 0))
+    # CUMULATIVE across turns - useless for "how full is the window". And the
+    # result event's `usage` SUMS every API call of the turn - a long multi-call
+    # turn read as millions of "context" tokens (the 6634k/100% meter) and
+    # falsely tripped auto-compact. The truthful source is the LAST assistant
+    # call's own usage (meta.ctx_usage, captured by the driver, Paseo-style):
+    # its input side = the context size at that moment. No fallback to the
+    # summed value - a missing reading means NO update, never a wrong one.
+    cu = meta.get("ctx_usage") or {}
+    ctx = (cu.get("input_tokens", 0) + cu.get("cache_creation_input_tokens", 0)
+           + cu.get("cache_read_input_tokens", 0))
     if ctx:
         t["ctx_tokens"] = ctx
     for m in meta.get("models") or []:
@@ -748,15 +752,19 @@ def _start(tid):
         _dispatch_failed(t, e)
         raise
 
-def _start_inner(t):
-    if t.get("machine"):
-        return _start_machine(t)
-    tid = t["id"]
+def _ensure_worktree(t):
+    """Make sure the card's worktree EXISTS, (re)creating it from the branch if
+    needed, and return its path. The worktree is regenerable state (the branch
+    holds the commits) - so a missing directory must never be a hard error:
+    dispatch uses this, and steer SELF-HEALS through it instead of dying with
+    WinError 267 (spawn cwd invalid) when the tree is gone (reclaimed, cleaned
+    by hand, or never created because a bad branch name broke dispatch)."""
     wt = _worktree_for(t["repo"], t["branch"])
     existing = _worktree_of_branch(t["repo"], t["branch"])
     if existing and os.path.isdir(existing):
-        wt = existing                       # reuse a prior checkout (e.g. legacy dir)
+        return existing                     # reuse a prior checkout (e.g. legacy dir)
     if not os.path.exists(wt):
+        _git_try(t["repo"], "worktree", "prune")   # drop a stale registration of this path
         if _branch_exists(t["repo"], t["branch"]):
             _git(t["repo"], "worktree", "add", wt, t["branch"])
         else:
@@ -765,6 +773,14 @@ def _start_inner(t):
             _git(t["repo"], "worktree", "add", wt,
                  "-b", t["branch"], "--no-track", _base_ref(t["repo"]))
         _seed_worktree(t["repo"], wt)
+    return wt
+
+
+def _start_inner(t):
+    if t.get("machine"):
+        return _start_machine(t)
+    tid = t["id"]
+    wt = _ensure_worktree(t)
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "DISPATCHED -> branch %s" % t["branch"])
@@ -1852,6 +1868,19 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # above still logs the human's original text, not this augmentation.
     prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
+    # SELF-HEAL a missing worktree before spawning into it. The tree is
+    # regenerable from the branch; without this, a reclaimed/hand-deleted/never-
+    # created tree made EVERY steer die with WinError 267 (spawn cwd invalid) -
+    # a dead-end the owner cannot steer out of, on a card that is otherwise fine.
+    if (not t.get("machine") and t.get("branch")
+            and not os.path.isdir(t.get("worktree") or "")):
+        try:
+            wt_new = _ensure_worktree(t)
+            t["worktree"] = wt_new
+            _mutate(tid, lambda tt: tt.__setitem__("worktree", wt_new))
+            log.log("note", "WORKTREE neu erzeugt (%s) - war verschwunden, Branch haelt den Stand." % wt_new)
+        except Exception as _we:
+            log.log("note", "WORKTREE fehlt und Neuaufbau schlug fehl: %s" % str(_we)[:200])
     try:
         sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
     except BaseException as e:

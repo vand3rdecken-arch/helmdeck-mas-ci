@@ -883,6 +883,16 @@ class _ClaudeSession:
             if cur:
                 cur["parts"].clear()
                 _flush_cur(cur)
+                # Context meter source (Paseo: read the LAST message's usage).
+                # Each assistant message carries the usage of ITS OWN API call,
+                # whose input side (input+cache) = the actual context size at
+                # that moment. The terminal result event instead SUMS usage over
+                # every call of the turn - a 40-call turn reads as millions of
+                # "context" tokens (the 6634k/100% meter) and falsely trips the
+                # auto-compact threshold on every long turn. Keep the last one.
+                u = (ev.get("message") or {}).get("usage")
+                if isinstance(u, dict) and u:
+                    cur["ctx_usage"] = u
         elif typ == "stream_event":
             e = ev.get("event") or {}
             if e.get("type") == "content_block_delta" and cur:
@@ -954,7 +964,10 @@ class _ClaudeSession:
                 # structured failure signal read straight off the result event
                 # (Paseo branches on subtype instead of grepping the prose reply).
                 "subtype": d.get("subtype"), "is_error": bool(d.get("is_error")),
-                "error": _result_error(d)}
+                "error": _result_error(d),
+                # the LAST assistant call's usage = the real context size (the
+                # result event's usage sums every call of the turn - see _on_event)
+                "ctx_usage": cur.get("ctx_usage") or {}}
         return self.session_id or d.get("session_id"), d.get("result", ""), meta
 
 
