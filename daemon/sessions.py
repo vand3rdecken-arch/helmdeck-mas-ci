@@ -311,6 +311,27 @@ def _lock_for(tid):
             _turn_locks[tid] = _threading.Lock()
         return _turn_locks[tid]
 
+# INTERRUPT-AND-REPLACE (Paseo parity). A steer that arrives mid-turn must take
+# effect NOW - Paseo's replaceAgentRun soft-interrupts the live turn and starts
+# the new prompt on the same session. HelmDeck used to QUEUE it behind the whole
+# running turn (the per-card _lock_for), so a second message only landed minutes
+# later. This epoch collapses a burst of steers to LAST-WINS: each steer bumps
+# it, and only the newest actually runs its turn - the rest bail after the
+# interrupt fires. (The soft interrupt itself is drivers.cancel, the P1 port.)
+_steer_epoch = {}
+_steer_epoch_guard = _threading.Lock()
+
+
+def _bump_steer_epoch(tid):
+    with _steer_epoch_guard:
+        _steer_epoch[tid] = _steer_epoch.get(tid, 0) + 1
+        return _steer_epoch[tid]
+
+
+def _steer_epoch_current(tid):
+    with _steer_epoch_guard:
+        return _steer_epoch.get(tid, 0)
+
 # -- THE one legal write path for existing tracks (Paseo's one-owner principle) --
 # Tracks are whole JSON dicts, and they used to be read+written from >=4 threads
 # at once (steer, cancel, the reconciler, lane moves, answers, archive). Each
@@ -1827,11 +1848,26 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if not t.get("session_id"):
         _start(tid)                      # steering a backlog card dispatches it first
         tracks = _load(); t = _find(tracks, tid)
-    import events, turnopts
+    import events, turnopts, drivers
     events.emit("touch", tid, touch="steer", actor=actor)
     was_bounced = t.get("status") == "bounced"   # routing signal, read BEFORE 'running'
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
+    # INTERRUPT-AND-REPLACE: if a turn is live, soft-interrupt it and start THIS
+    # instruction now (Paseo's replaceAgentRun), instead of queuing behind it on
+    # the per-card lock. drivers.cancel is the cooperative interrupt (~2s ack,
+    # the process stays alive, the session resumes), so the interrupted turn
+    # releases the lock and this steer runs immediately after. A burst collapses
+    # to last-wins via the epoch: only the newest steer survives the bail below.
+    my_epoch = _bump_steer_epoch(tid)
+    if drivers.turn_active(tid):
+        log.log("note", "⏹ neue Anweisung ersetzt den laufenden Turn (Interrupt).")
+        try:
+            drivers.cancel(tid)
+        except Exception as _ie:
+            log.log("note", "Interrupt fehlgeschlagen: %s" % str(_ie)[:150])
+    if _steer_epoch_current(tid) != my_epoch:
+        return t                          # a newer steer superseded this one - it runs
     if source and source != "you":
         log.log("note", "DELEGATED by %s -> this card's worker" % source)
     log.log("steer", text)               # audit the human's words, not the augmented prompt
@@ -1903,6 +1939,13 @@ def steer(tid, text, perm=None, actor="owner", source="you",
                     % str(e)[:160])
         log.log("turn", "Turn fehlgeschlagen", event="failed", error=str(e)[:500])
         raise
+    # REPLACE HANDOFF: this turn was soft-interrupted to make room for a NEWER
+    # steer (the epoch moved and the driver returned the cancelled sentinel).
+    # Don't settle - the newer steer owns the card and will finish it. Settling
+    # here would flap the status mid-replace.
+    if _steer_epoch_current(tid) != my_epoch and "cancelled" in (result or "").lower():
+        log.log("turn", "Turn ersetzt", event="canceled")
+        return t
     # ONE atomic end-of-turn commit: session rotation, turn count, reply/
     # question/waiting_on, status, economics - all under the mutation lock.
     t, reason = _finish_turn(tid, sid, result, meta, log)
