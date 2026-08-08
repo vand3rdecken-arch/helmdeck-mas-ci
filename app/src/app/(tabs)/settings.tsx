@@ -15,6 +15,7 @@ import { LANGS, useT, type Lang } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { UsagePanel } from "@/ui/dash_panels";
+import { PMControls } from "@/ui/pm_panel";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { UpdatesPanel } from "@/ui/updates_info";
 
@@ -306,6 +307,15 @@ export default function Settings() {
             {/* Claude subscription usage (5h + weekly windows) with weekly pacing -
                 the same data the PM flags proactively when the pace runs ahead. */}
             <UsagePanel />
+
+            {/* The planning loop's CONTROLS - goal, proactive on/off + the
+                notify/ask/act ladder, replan, consolidate. Moved off the
+                dashboard so the overview stays clean; the board shows what the
+                loop is DOING, the steering of it lives here. */}
+            <Panel>
+              <SectionLabel text={tr("pm.title")} />
+              <PMControls />
+            </Panel>
 
             <Panel>
               <SectionLabel text={tr("settings.sec.business")} />

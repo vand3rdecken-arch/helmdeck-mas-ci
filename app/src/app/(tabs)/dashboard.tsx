@@ -9,8 +9,8 @@ import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
-import { ALL_PANELS, ALL_TILES, CapacityPanel, dashPanels, dashTiles, DashCustomize, GatesPanel, ModelsPanel, SowPanel, Tiles, TriageFollowUp, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
-import { PMPanel } from "@/ui/pm_panel";
+import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, Tiles, TriageFollowUp, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
+import { PMStatusPanel } from "@/ui/pm_panel";
 
 const isWeb = Platform.OS === "web";
 
@@ -37,25 +37,29 @@ export default function DashboardTab() {
         {error ? <Text style={{ color: t.danger }}>{tr("ui.offline")}</Text> : null}
         {data ? (
           (() => {
-            // Owner: clean by default - only the triage focus + its three corners;
-            // tiles/panels are opt-in via the customizer. Operators keep all-on
-            // (their payload has no settings and no triage view).
-            const panels = isOwner ? dashPanels(data) : [...ALL_PANELS];
-            const tiles = isOwner ? dashTiles(data) : [...ALL_TILES];
+            // OWNER: a very clean overview - only the single planning loop's
+            // three-corner triangle (the measured Budget/Timeline/Scope
+            // assessment), its follow-ups, and the loop's status + deltas.
+            // Every metric panel + the PM controls moved off here (controls ->
+            // Settings). OPERATOR keeps the classic all-on metrics view (no
+            // triage/settings surface on their payload).
+            const defaultRepo = (data as { settings?: { default_repo?: string } })?.settings?.default_repo;
+            if (isOwner) {
+              return (
+                <>
+                  <TrianglePanel />
+                  <TriageFollowUp m={data} wide={wide} defaultRepo={defaultRepo} />
+                  <PMStatusPanel />
+                </>
+              );
+            }
+            const panels = [...ALL_PANELS];
+            const tiles = [...ALL_TILES];
             const showCap = panels.includes("capacity");
             const showGates = panels.includes("gates");
-            const defaultRepo = (data as { settings?: { default_repo?: string } })?.settings?.default_repo;
             return (
               <>
-                {/* triage is the dashboard's FOCUS - first and loud */}
-                {isOwner ? <TrianglePanel /> : null}
-                {/* every follow-up hangs off one of the three corners - nothing else */}
-                {isOwner ? <TriageFollowUp m={data} wide={wide} defaultRepo={defaultRepo} /> : null}
-                {/* the PM control surface: goal, autonomy, consolidate - controls, not metrics */}
-                {isOwner ? <PMPanel /> : null}
-                {isOwner ? <DashCustomize m={data} /> : null}
                 <Tiles m={data} wide={wide} tiles={tiles} />
-                {/* On desktop the two gauges sit side by side; the wide tables stay full width. */}
                 {wide && showCap && showGates ? (
                   <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
                     <View style={{ flex: 1 }}><CapacityPanel m={data} /></View>
