@@ -1930,7 +1930,13 @@ def steer(tid, text, perm=None, actor="owner", source="you",
 
 
 def _maybe_fast_track_ship(t, log):
-    """Background auto-submit for fast_track cards after a clean turn end."""
+    """Fast-track = every finished turn is DEPLOYED for testing while the card
+    STAYS exactly where it is (owner: "keep the card in the same state but
+    still deploy everything so I can test - not automatically review/done").
+    So: background gate -> merge -> deploy, NO lane change, NO status change,
+    the card never closes and the owner keeps steering the same session. The
+    gate still guards main (red = no deploy, reasons in the chat); the accept
+    flow on Review stays the human judgement it always was."""
     if not (t.get("fast_track") and not t.get("machine")
             and t.get("status") == "needs_you" and not t.get("question")):
         return
@@ -1947,18 +1953,39 @@ def _maybe_fast_track_ship(t, log):
     if not ((rc == 0 and dirty) or ahead):
         return                          # chat-only turn - nothing to deploy
     tid = t["id"]
-    log.log("note", "FAST-TRACK: Turn fertig -> reiche selbst ein (Gate + Merge + Deploy).")
+    log.log("note", "FAST-TRACK: Turn fertig -> Gate + Merge + Deploy im Hintergrund. "
+            "Die Karte bleibt in Arbeit.")
 
     def _ship():
+        from actionlog import ActionLog
+        import events
+        lg = ActionLog(t["run_dir"])
         try:
-            move_lane(tid, "review", actor="fast-track")
+            if _autocommit(t) == "markers":
+                lg.log("note", "FAST-TRACK: offene Konfliktmarkierungen - nicht deployed.")
+                return
+            ok, problems = _gate(t)
+            events.emit("gate", tid, ok=ok, source="fast-track")
+            if not ok:
+                lg.log("note", "FAST-TRACK: Gate rot - NICHT deployed, Karte bleibt "
+                       "in Arbeit. Grund:\n%s" % "\n".join(problems)[:500])
+                return
+            accept_ok, kind, msg = _merge_to_main(t)
+            events.emit("merge", tid, ok=bool(accept_ok), outcome=kind,
+                        detail="fast-track: " + (msg or "")[:200])
+            if not accept_ok:
+                lg.log("note", "FAST-TRACK: Merge nicht moeglich (%s) - nicht deployed. %s"
+                       % (kind, (msg or "")[:300]))
+                return
+            hk = _repo_hook(t, "deploy")   # None = no hook configured
+            lg.log("note", "FAST-TRACK deployed (%s)%s - teste auf dem Handy; die Karte "
+                   "bleibt in Arbeit, steuern geht einfach weiter."
+                   % (kind, " · ACHTUNG: Deploy-Hook rot" if hk is False else ""))
         except Exception as e:
             try:
-                ActionLog(t["run_dir"]).log(
-                    "note", "FAST-TRACK Einreichen fehlgeschlagen: %s" % str(e)[:200])
+                lg.log("note", "FAST-TRACK fehlgeschlagen: %s" % str(e)[:250])
             except Exception:
                 pass
-    from actionlog import ActionLog
     _threading.Thread(target=_ship, daemon=True).start()
 
 
