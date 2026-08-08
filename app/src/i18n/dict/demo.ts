@@ -73,6 +73,18 @@ export const demo: Dict = {
   "demo.filesResult": { de: "{n} Dateien", en: "{n} files" },
   "demo.testsResult": { de: "18 bestanden", en: "18 passed" },
 
+  // ---- sample PM plan (the triage-first dashboard) --------------------------
+  "demo.pm.goal": { de: "MVP in den Play Store: Board, Chat und Abnahme rund",
+                    en: "MVP into the Play Store: board, chat and review polished" },
+  "demo.pm.m1": { de: "Passwort-Reset abnehmen", en: "Accept the password reset" },
+  "demo.pm.m2": { de: "Umsatz-Dashboard fertigstellen", en: "Finish the revenue dashboard" },
+  "demo.pm.m3": { de: "Play-Store-Release", en: "Play Store release" },
+  "demo.pm.n1": { de: "Passwort-Reset reviewen & abnehmen", en: "Review & accept the password reset" },
+  "demo.pm.n2": { de: "Rückfrage zur Migration beantworten", en: "Answer the migration question" },
+  "demo.pm.n3": { de: "Store-Listing-Texte schreiben", en: "Write the store listing copy" },
+  "demo.pm.feasNote": { de: "Kalendergebunden: Abnahme-Slots nur werktags.",
+                        en: "Calendar-bound: review slots on weekdays only." },
+
   // ---- sample chat / replies ------------------------------------------------
   "demo.chat.q": { de: "Wie stehen wir diese Woche?", en: "How are we doing this week?" },
   "demo.chat.a": {
