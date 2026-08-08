@@ -1916,7 +1916,51 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         log.log("note", "auto-compact skipped: %s" % str(_e)[:200])
     import notify
     notify.card_event(t, reason)
+    # FAST-TRACK = ship EVERY finished turn, hands-free. The flag used to fire
+    # only when the OWNER dragged the card to Review - which is exactly the
+    # manual push fast-track exists to remove ("man muss immer noch schieben,
+    # also kein Vorteil"). Now a fast_track card SUBMITS ITSELF when its turn
+    # ends: gate -> merge -> deploy hook run in the background, and the change
+    # is testable without touching the board. The gate still guards (red gate
+    # bounces back with the report), a pending question still parks the card
+    # (the owner's decision comes first), and a turn that produced NOTHING new
+    # to ship is skipped so a chat-only turn can't close the card.
+    _maybe_fast_track_ship(t, log)
     return t
+
+
+def _maybe_fast_track_ship(t, log):
+    """Background auto-submit for fast_track cards after a clean turn end."""
+    if not (t.get("fast_track") and not t.get("machine")
+            and t.get("status") == "needs_you" and not t.get("question")):
+        return
+    wt = t.get("worktree") or ""
+    if not os.path.isdir(wt):
+        return
+    # anything to ship? dirty tree OR branch commits not yet in the integration
+    rc, dirty, _ = _git_try(wt, "status", "--porcelain")
+    ahead = False
+    integ = _current_branch(t.get("repo") or "")
+    if integ and t.get("branch"):
+        ahead = _git_try(t["repo"], "merge-base", "--is-ancestor",
+                         t["branch"], integ)[0] != 0
+    if not ((rc == 0 and dirty) or ahead):
+        return                          # chat-only turn - nothing to deploy
+    tid = t["id"]
+    log.log("note", "FAST-TRACK: Turn fertig -> reiche selbst ein (Gate + Merge + Deploy).")
+
+    def _ship():
+        try:
+            move_lane(tid, "review", actor="fast-track")
+        except Exception as e:
+            try:
+                ActionLog(t["run_dir"]).log(
+                    "note", "FAST-TRACK Einreichen fehlgeschlagen: %s" % str(e)[:200])
+            except Exception:
+                pass
+    from actionlog import ActionLog
+    _threading.Thread(target=_ship, daemon=True).start()
+
 
 def answer_question(tid, answers, request_id="", actor="owner"):
     """Answer the worker's pending multiple-choice question (Phase 2.4).
