@@ -1067,7 +1067,15 @@ class H(BaseHTTPRequestHandler):
                 repo = body.get("repo") or events.settings().get("default_repo")
                 branch = body.get("branch"); task = body.get("task")
                 if task and not branch:   # preset flow: task alone is enough
-                    branch = "req-" + "".join(ch if ch.isalnum() else "-" for ch in task.lower())[:24]
+                    # ASCII-ONLY slug. isalnum() alone is Unicode-true, so a task
+                    # like "Dashboard zu überfüllt" put umlauts into the git ref;
+                    # on Windows (cp1252 consoles, mojibake in tracks.json) that
+                    # produced a branch git never created - the card then hit
+                    # WinError 267 (worktree cwd invalid) on every steer.
+                    _de = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+                    _t = task.lower().translate(_de)
+                    branch = "req-" + "".join(
+                        ch if (ch.isascii() and ch.isalnum()) else "-" for ch in _t)[:24]
                 if not (repo and branch and task):
                     return self._send(400, json.dumps({"error": "task required (+ repo unless default_repo is set in settings)"}))
                 if not sessions.is_git_repo(repo):
