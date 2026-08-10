@@ -77,6 +77,9 @@ export interface Metrics {
     dashboard?: { tiles?: string[]; panels?: string[] };
     appearance?: { backdrop?: string };
   };
+  /** flat = Max subscription: ai_cost/ai_spend are API-equivalent references,
+   *  not spend, and margins already exclude them daemon-side. */
+  ai_billing?: "flat" | "metered";
   cards: EconCard[];
   sows: Sow[];
   capacity: { wip: number; wip_limit: number; touches_today: number;
@@ -100,7 +103,10 @@ export interface Process {
  *  labels). The full settings blob stays owner-only on /settings. */
 export interface Me {
   name: string; role: string;
-  ui?: { lang?: string; lane_labels?: Record<string, string> };
+  ui?: { lang?: string; lane_labels?: Record<string, string>;
+    /** flat = Max subscription (quota, not cash) → cost surfaces show tokens;
+     *  metered = API pay-per-token → $ amounts are real spend. */
+    ai_billing?: "flat" | "metered" };
 }
 export interface HistoryRow { kind: string; detail: string; ts?: string; t?: number }
 export interface Run { id: string; title: string; kind: string; status: string; steps?: number }

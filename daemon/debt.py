@@ -365,6 +365,32 @@ DEBT = [
                "fallback carries the feature.",
         "order": 15,
     },
+    {
+        "id": "ai-billing-workspace-global",
+        "title": "AI billing mode (flat vs metered) is one workspace-wide switch",
+        "status": "open",
+        "what": "events.ai_billing() maps settings.pm.plan to a single display "
+                "contract for the WHOLE board: 'max' -> flat (cost surfaces show "
+                "tokens, margins skip the phantom $), anything else -> metered. "
+                "Every turn still gets priced (measured economics untouched); only "
+                "the rendering and margin math read the switch. Per-card billing "
+                "does not exist because every driver shells out to the same "
+                "claude CLI login today.",
+        "why_it_bites": "On a 'mixed' plan (some turns on the Max quota, some on "
+                        "API keys) the switch falls back to metered for everything: "
+                        "flat cards then show $-amounts again - the exact bug this "
+                        "fixed, now only for the flat half of the fleet. There is "
+                        "no per-turn record of WHICH plan billed it, so the split "
+                        "cannot be reconstructed from events.jsonl later.",
+        "trigger": "adding a driver with its own API key, or setting "
+                   "settings.pm.plan = 'mixed'",
+        "fix": "Stamp the billing mode per TURN at record time (sessions._record_econ "
+               "writes meta into the turn event; add billing='flat'|'metered' from "
+               "the driver's auth source), roll it up per card in events.metrics(), "
+               "and let the UI render each card by its own mode instead of the "
+               "workspace switch.",
+        "order": 16,
+    },
 ]
 
 def list_debt():
