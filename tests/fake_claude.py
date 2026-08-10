@@ -68,6 +68,20 @@ def main():
         if os.environ.get("FAKE_HANG") == "1" or text == "__HANG__":
             hanging = True
             continue
+        if text.startswith("__NULLRESULT__"):
+            # Resume-after-hard-kill artifact: the CLI first flushes the DEAD
+            # prior turn's leftover result (empty, zero usage, no error), THEN
+            # the real turn streams and completes. The driver must drop the
+            # null frame and return the real result.
+            emit({"type": "result", "subtype": "success", "result": "",
+                  "usage": {}, "session_id": SID})
+            emit({"type": "stream_event",
+                  "event": {"type": "content_block_delta",
+                            "delta": {"type": "text_delta", "text": "real:"}}})
+            emit({"type": "result", "subtype": "success", "result": "real-answer",
+                  "total_cost_usd": 0.002, "usage": {"input_tokens": 9, "output_tokens": 3},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         if text.startswith("__LOOP__"):
             # A worker stuck in a loop: n IDENTICAL tool_use frames (same name +
             # input) before the result, to exercise the burn detector.

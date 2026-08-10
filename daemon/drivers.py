@@ -1032,6 +1032,23 @@ class _ClaudeSession:
                     cur["session_id"] = sid
                     _write(cur["sid_path"], sid)
         elif typ == "result":
+            # NULL-result guard: resuming a session whose previous turn was
+            # HARD-KILLED (tree-kill on timeout/restart) makes the CLI emit the
+            # dead turn's leftover result almost immediately - empty text, no
+            # usage, no error. Taking that as THIS turn's result ended the turn
+            # after ~6s with an empty reply while the real work ran on OWNERLESS
+            # until the idle sweeper reaped it ("Broke up in the middle",
+            # 2026-08-10 18:35). Evidence, not timing: a REAL model turn always
+            # carries usage (input_tokens > 0); a frame with zero usage, zero
+            # text and no error carries nothing - drop it and keep waiting.
+            u = ev.get("usage") or {}
+            if (self._first_turn_after_spawn and self._spawn_resumed
+                    and not ev.get("is_error")
+                    and not str(ev.get("result") or "").strip()
+                    and not any(v for v in u.values() if isinstance(v, (int, float)))):
+                if cur is not None:
+                    cur["null_results"] = cur.get("null_results", 0) + 1
+                return
             if self._drop_results > 0:
                 # terminal frame of an ALREADY-RETURNED interrupted turn (its
                 # waiter was released after the interrupt ack). stdout frames
