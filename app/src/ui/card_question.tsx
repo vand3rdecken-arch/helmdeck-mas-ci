@@ -11,7 +11,7 @@
 // and (b) the feed is replaced wholesale on every long-poll tick, which would
 // throw away half-made selections.
 import { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "@/data/client";
@@ -72,6 +72,15 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
   // other in the same state slot.
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // The panel is PINNED above the composer (it must survive the feed being
+  // replaced on every long-poll tick, which would drop a half-made choice). But
+  // pinned + full-height hid the whole conversation behind it ("kann nicht sehen
+  // was vorher kam"). So it is now COLLAPSIBLE and height-capped: even expanded
+  // it never eats more than ~half the screen (the question+options scroll inside
+  // that cap), and one tap on the header collapses it to a single line so the
+  // transcript is fully readable - Paseo-style, the question never blocks history.
+  const [open, setOpen] = useState(true);
+  const { height: winH } = useWindowDimensions();
 
   const qs = question.questions ?? [];
   const q = qs[Math.min(idx, qs.length - 1)];
@@ -130,8 +139,13 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
       <View style={{
         backgroundColor: t.accent + "14", borderColor: t.accent + "66", borderWidth: 1,
         borderRadius: 12, padding: 11, gap: 9,
+        // Never taller than ~half the viewport: the transcript above always
+        // keeps room, and the question's own body scrolls within this cap.
+        maxHeight: open ? Math.round(winH * 0.5) : undefined,
       }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+        <Pressable onPress={() => setOpen(!open)} accessibilityRole="button"
+          accessibilityLabel={open ? tr("card.q.collapse") : tr("card.q.expand")}
+          style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
           <Ionicons name="help-circle" size={16} color={t.accent} />
           <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 }}>
             {tr("card.q.title")}
@@ -142,25 +156,38 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
               ? tr("card.q.progress", { n: idx + 1, total: qs.length })
               : tr("card.q.count", { n: q.options.length })}
           </Text>
-        </View>
+          {/* the toggle: chevron-up = "collapse", chevron-down = "expand" */}
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color={t.txtSecondary} />
+        </Pressable>
 
-        <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600", lineHeight: 19 }}>
-          {q.question}
-        </Text>
-
-        {/* Long option lists must not push the composer off screen, so the
-            choices scroll inside the panel rather than growing it. The cap is
-            generous enough that 3 full rows are visible and a 4th is only
-            partly cut - a hard 260 sliced an option in half with no hint that
-            more existed, which read as a rendering bug. The count in the header
-            plus a visible scrollbar make the rest discoverable. */}
-        <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ gap: 6 }}
-          showsVerticalScrollIndicator persistentScrollbar>
-          {q.options.map((o) => (
-            <Option key={o.label} label={o.label} description={o.description}
-              on={chosen.includes(o.label)} multi={q.multiSelect}
-              onPress={() => choose(o.label)} t={t} />
-          ))}
+        {!open ? (
+          // Collapsed: one tappable preview line so the transcript is fully
+          // visible; tap anywhere on the card to expand and answer.
+          <Pressable onPress={() => setOpen(true)}>
+            <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 17 }}>
+              {q.question}
+            </Text>
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600", marginTop: 4 }}>
+              {answeredAll ? tr("card.q.tapAnswer") : tr("card.q.tapExpand")}
+            </Text>
+          </Pressable>
+        ) : (
+        <>
+        {/* Question text + options scroll TOGETHER inside the height cap, so a
+            long question or a long option list never pushes the free-text box
+            and the answer button off screen (the whole panel is bounded above). */}
+        <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 9 }}
+          showsVerticalScrollIndicator persistentScrollbar keyboardShouldPersistTaps="handled">
+          <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600", lineHeight: 19 }}>
+            {q.question}
+          </Text>
+          <View style={{ gap: 6 }}>
+            {q.options.map((o) => (
+              <Option key={o.label} label={o.label} description={o.description}
+                on={chosen.includes(o.label)} multi={q.multiSelect}
+                onPress={() => choose(o.label)} t={t} />
+            ))}
+          </View>
         </ScrollView>
 
         {/* The Paseo "Other" escape hatch: none of the offered options ever has
@@ -227,6 +254,8 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
               color={answered(q) ? "#fff" : t.txtTertiary} />
           </Pressable>
         </View>
+        </>
+        )}
       </View>
     </View>
   );
