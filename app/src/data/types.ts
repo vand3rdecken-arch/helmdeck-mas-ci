@@ -10,6 +10,10 @@ export interface Track {
   value: number; driver: string; priority?: string; due?: string; rank?: number | null;
   ai_cost: number; tokens_in: number; tokens_out: number; models: string[];
   ctx_tokens?: number;   // current context-window size (last turn's input side) - for the meter
+  /** the model's context WINDOW, derived daemon-side from the model id ([1m] =
+   *  1M) and from evidence (a successful call proves a lower bound). The meter
+   *  divides by this - hardcoded 200k showed 97% on a 1M card really at 23%. */
+  ctx_window?: number;
   created: string; updated: string;
   mode?: string; process?: string; process_title?: string;
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;

@@ -633,6 +633,15 @@ def _record_econ(t, meta):
     for m in meta.get("models") or []:
         if m not in t.setdefault("models", []):
             t["models"].append(m)
+    # CONTEXT WINDOW - derived from the runtime's own evidence, never assumed.
+    # The meter divided by a hardcoded 200k, so a card on a 1M model showed
+    # "97% - Kontext fast voll" at a real ~23% (the Tester card carried a
+    # 230k call through fine while the banner cried overflow). Two witnesses,
+    # both from the CLI itself: the model id carries the window (the "[1m]"
+    # suffix in modelUsage), and any SUCCESSFUL call's context proves a lower
+    # bound (a window cannot be smaller than what it just held).
+    win = 1_000_000 if any("[1m]" in m for m in (t.get("models") or [])) else _CTX_WINDOW
+    t["ctx_window"] = max(win, t.get("ctx_window") or 0, t.get("ctx_tokens") or 0)
     events.emit("turn", t["id"], cost=round(cost, 6), usage=u, models=meta.get("models") or [])
     return cost
 

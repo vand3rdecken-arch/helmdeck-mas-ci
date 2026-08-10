@@ -493,7 +493,10 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
             Amber >75%, red >90%; near full, say steering compacts+continues. */}
         {!agentMode && k.ctx_tokens ? (() => {
-          const pct = Math.min(100, Math.round((k.ctx_tokens / 200000) * 100));
+          {/* window from the daemon (derived from the model's own evidence -
+              a [1m] model has a 1M window; hardcoded 200k showed a false "97%
+              fast voll" on a card that was really at ~23%) */}
+          const pct = Math.min(100, Math.round((k.ctx_tokens / (k.ctx_window || 200000)) * 100));
           const col = pct >= 90 ? t.danger : pct >= 75 ? t.warn : t.txtTertiary;
           return (
             <View style={{ gap: 3, marginTop: 3 }}>
