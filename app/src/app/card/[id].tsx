@@ -14,7 +14,7 @@ import type { Track, Me, EconCard } from "@/data/types";
 import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
-import { fmtTok, useAiFlat } from "@/ui/billing";
+import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
@@ -220,7 +220,7 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
         <Chip text={LANE_KEY[k.lane] ? tr(LANE_KEY[k.lane]) : k.lane} dot={laneColor(t, k.lane)} />
         {k.mode ? <Chip text={executorLabel(k.mode)} dot={t.ai} /> : null}
         {k.ai_cost > 0 ? <Chip text={flat
-          ? tr("board.aiTok", { tok: fmtTok((k.tokens_in ?? 0) + (k.tokens_out ?? 0)) })
+          ? planLabel(tr, e?.plan_pct, (k.tokens_in ?? 0) + (k.tokens_out ?? 0))
           : `AI $${k.ai_cost.toFixed(2)}`} /> : null}
       </View>
 
@@ -271,7 +271,12 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
           <SectionLabel text={tr("card.sec.economics")} />
           <KVRow k={tr("card.econ.billed")} v={`${cy}${(e.billed ?? e.value).toFixed(2)}${e.billing === "tm" ? " ~" : ""}`} />
           {flat
-            ? <KVRow k={tr("card.econ.aiUse")} v={tr("card.econ.aiUseVal", { tok: fmtTok((e.tokens_in ?? 0) + (e.tokens_out ?? 0)) })} color={t.ai} />
+            ? <KVRow k={tr("card.econ.aiUse")}
+                v={e.plan_pct != null && e.plan_pct > 0
+                  ? tr("card.econ.aiUsePlan", { pct: fmtPlanPct(e.plan_pct),
+                      tok: fmtTok((e.tokens_in ?? 0) + (e.tokens_out ?? 0)) })
+                  : tr("card.econ.aiUseVal", { tok: fmtTok((e.tokens_in ?? 0) + (e.tokens_out ?? 0)) })}
+                color={t.ai} />
             : <KVRow k={tr("card.econ.aiCost")} v={`$${e.ai_cost.toFixed(2)}`} color={t.ai} />}
           <KVRow k={tr("card.econ.margin")} v={`${cy}${(e.margin ?? ((e.billed ?? e.value) - (flat ? 0 : e.ai_cost))).toFixed(2)}`} color={t.accent} />
           <KVRow k={tr("card.econ.touches")}

@@ -9,7 +9,7 @@ import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/da
 import { t as tt, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
-import { fmtTok, useAiFlat } from "./billing";
+import { fmtPlanPct, fmtTok, useAiFlat } from "./billing";
 import { Empty } from "./kit";
 
 const isWeb = Platform.OS === "web";
@@ -95,8 +95,12 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
   const c = cur(m);
   const byKey: Record<string, { value: string; label: string }> = {
     value_delivered: { value: c + T.value_delivered, label: tr("dash.tile.valueDelivered") },
+    // flat: the SHARE OF THE SUBSCRIPTION is the cost. Tokens are the fallback
+    // for when the daemon cannot calibrate (no Claude login, freshly reset week).
     ai_spend: flat
-      ? { value: fmtTok(totalTokens(m)) + " Tok", label: tr("dash.tile.aiSpendFlat") }
+      ? (T.plan_pct != null && T.plan_pct > 0
+        ? { value: fmtPlanPct(T.plan_pct), label: tr("dash.tile.aiPlanShare") }
+        : { value: fmtTok(totalTokens(m)) + " Tok", label: tr("dash.tile.aiSpendFlat") })
       : { value: "$" + T.ai_spend.toFixed(2), label: tr("dash.tile.aiSpend") },
     margin: { value: c + T.margin, label: tr(flat ? "dash.tile.marginFlat" : "dash.tile.margin") },
     yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: tr("dash.tile.yield", { a: y0, b: y1 }) },
@@ -215,8 +219,9 @@ export function SowPanel({ m }: { m: Metrics }) {
     { key: "cards", label: tr("dash.sow.col.cards"), num: true, render: (r: Sow) => String(r.cards) },
     { key: "hours", label: tr("dash.sow.col.hours"), num: true, render: (r: Sow) => r.hours.toFixed(1) },
     { key: "billed", label: tr("dash.sow.col.billed"), num: true, render: (r: Sow) => c + r.billed.toFixed(2) },
-    { key: "ai_cost", label: tr(flat ? "dash.sow.col.aiFlat" : "dash.sow.col.aiCost"), num: true,
-      render: (r: Sow) => (flat ? tr("dash.flatIncl") : r.ai_cost.toFixed(2)) },
+    { key: "ai_cost", label: tr(flat ? "dash.sow.col.aiPlan" : "dash.sow.col.aiCost"), num: true,
+      render: (r: Sow) => (!flat ? r.ai_cost.toFixed(2)
+        : r.plan_pct != null && r.plan_pct > 0 ? fmtPlanPct(r.plan_pct) : tr("dash.flatIncl")) },
     { key: "margin", label: tr("dash.sow.col.margin"), num: true, render: (r: Sow) => c + r.margin.toFixed(2), color: (r: Sow) => (r.margin >= 0 ? t.ok : t.danger) },
   ];
   const foot = sows.length ? (
@@ -229,7 +234,10 @@ export function SowPanel({ m }: { m: Metrics }) {
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{sows.reduce((a, x) => a + x.cards, 0)}</Text>
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{sows.reduce((a, x) => a + x.hours, 0).toFixed(1)}</Text>
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{c}{sows.reduce((a, x) => a + x.billed, 0).toFixed(2)}</Text>
-      <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{flat ? tr("dash.flatIncl") : sows.reduce((a, x) => a + x.ai_cost, 0).toFixed(2)}</Text>
+      <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{!flat
+        ? sows.reduce((a, x) => a + x.ai_cost, 0).toFixed(2)
+        : (() => { const p = sows.reduce((a, x) => a + (x.plan_pct ?? 0), 0);
+                   return p > 0 ? fmtPlanPct(p) : tr("dash.flatIncl"); })()}</Text>
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{c}{sows.reduce((a, x) => a + x.margin, 0).toFixed(2)}</Text>
     </View>
   ) : null;
@@ -407,8 +415,10 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
           {b?.monthly_eur != null ? <MiniChip label={tr("pm.flatMonthly", { v: eur(b.monthly_eur) })} /> : null}
           {b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
           {b?.est_turns_to_goal != null ? <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} /> : null}
-          <MiniChip label={flat ? tr("dash.corner.aiUse", { v: fmtTok(totalTokens(m)) })
-            : tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} />
+          <MiniChip label={!flat ? tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })
+            : m.totals.plan_pct != null && m.totals.plan_pct > 0
+              ? tr("dash.corner.aiPlan", { v: fmtPlanPct(m.totals.plan_pct) })
+              : tr("dash.corner.aiUse", { v: fmtTok(totalTokens(m)) })} />
         </View>
       )}
       {feas?.budget ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16, marginTop: 4 }}>{feas.budget}</Text> : null}
@@ -622,16 +632,22 @@ export function ModelsPanel({ m }: { m: Metrics }) {
   const by = m.ai_by_model ?? {};
   const rows = Object.entries(by).map(([model, b]) => ({ model: model.replace("claude-", ""), ...b }));
   if (rows.length === 0) return null;
+  const calibrated = m.plan_calibration != null;
   const cols: Col[] = [
     { key: "model", label: tr("dash.models.col.model"), flex: 1.6 },
     { key: "turns", label: tr("dash.models.col.turns"), num: true },
     { key: "tok_in", label: tr("dash.models.col.tokIn"), num: true, render: (r) => r.tok_in.toLocaleString() },
     { key: "tok_out", label: tr("dash.models.col.tokOut"), num: true, render: (r) => r.tok_out.toLocaleString() },
-    // flat plan: the quoting unit is tokens per turn against the quota - a $
-    // column would present subscription work as pay-per-token spend.
+    // flat plan: a $ column would present subscription work as pay-per-token
+    // spend. ONE quoting column replaces the two money ones - share of the plan
+    // per turn when the quota could be calibrated, tokens per turn when not.
     ...(flat
-      ? [{ key: "tokturn", label: tr("dash.models.col.tokPerTurn"), num: true,
-           render: (r: any) => (r.turns ? fmtTok((r.tok_in + r.tok_out) / r.turns) : "-") } as Col]
+      ? [calibrated
+        ? { key: "planturn", label: tr("dash.models.col.planPerTurn"), num: true,
+            render: (r: any) => (r.plan_pct_per_turn != null && r.plan_pct_per_turn > 0
+              ? fmtPlanPct(r.plan_pct_per_turn) : "-") } as Col
+        : { key: "tokturn", label: tr("dash.models.col.tokPerTurn"), num: true,
+            render: (r: any) => (r.turns ? fmtTok((r.tok_in + r.tok_out) / r.turns) : "-") } as Col]
       : [{ key: "cost", label: tr("dash.models.col.cost"), num: true, render: (r: any) => r.cost.toFixed(2) } as Col,
          { key: "avg", label: tr("dash.models.col.avg"), num: true, render: (r: any) => r.avg_cost_per_turn.toFixed(3) } as Col]),
   ];
@@ -686,7 +702,9 @@ export function WorkPanel({ m }: { m: Metrics }) {
                 <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 1 }]}>{LANE_KEY[x.lane] ? tr(LANE_KEY[x.lane]) : x.lane}</Text>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.3 }]}>{models}</Text>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.4, textAlign: "right" }]}>{tin.toLocaleString()}/{tout.toLocaleString()}</Text>
-                <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{flat ? tr("dash.flatIncl") : x.ai_cost.toFixed(2)}</Text>
+                <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{!flat
+                  ? x.ai_cost.toFixed(2)
+                  : x.plan_pct != null && x.plan_pct > 0 ? fmtPlanPct(x.plan_pct) : tr("dash.flatIncl")}</Text>
                 <Text style={[s.td, { color: t.txtSecondary, flex: 0.8, textAlign: "right" }]}>{x.touches}</Text>
                 <View style={{ flex: 1.4, gap: 2, justifyContent: "center", paddingRight: 6 }}>
                   <View style={{ height: 4, borderRadius: 999, backgroundColor: t.ai, width: `${Math.max(2, Math.round((100 * x.ai_cost) / maxA))}%` }} />

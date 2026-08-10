@@ -372,6 +372,12 @@ DEBT = [
         "what": "events.ai_billing() maps settings.pm.plan to a single display "
                 "contract for the WHOLE board: 'max' -> flat (cost surfaces show "
                 "tokens, margins skip the phantom $), anything else -> metered. "
+                "plan='auto' (default) detects the mode from the ONE workspace "
+                "login (usage.login_method: subscription OAuth -> flat, API key / "
+                "Console login -> metered) and assumes Claude Code's precedence - "
+                "a stored login always wins over an env ANTHROPIC_API_KEY, since "
+                "the CLI only uses a key the owner explicitly approved "
+                "(customApiKeyResponses), which we cannot see from outside. "
                 "Every turn still gets priced (measured economics untouched); only "
                 "the rendering and margin math read the switch. Per-card billing "
                 "does not exist because every driver shells out to the same "
@@ -382,14 +388,44 @@ DEBT = [
                         "fixed, now only for the flat half of the fleet. There is "
                         "no per-turn record of WHICH plan billed it, so the split "
                         "cannot be reconstructed from events.jsonl later.",
-        "trigger": "adding a driver with its own API key, or setting "
-                   "settings.pm.plan = 'mixed'",
+        "trigger": "adding a driver with its own API key, setting "
+                   "settings.pm.plan = 'mixed', or the owner approving an env "
+                   "API key inside Claude Code while a subscription login "
+                   "exists - auto would keep saying flat while turns bill cash",
         "fix": "Stamp the billing mode per TURN at record time (sessions._record_econ "
                "writes meta into the turn event; add billing='flat'|'metered' from "
                "the driver's auth source), roll it up per card in events.metrics(), "
                "and let the UI render each card by its own mode instead of the "
                "workspace switch.",
         "order": 16,
+    },
+    {
+        "id": "plan-share-calibration",
+        "title": "Plan share is calibrated from OUR tokens against the ACCOUNT's quota",
+        "status": "open",
+        "what": "events.plan_calibration() turns a card's tokens into '% of the "
+                "subscription' by dividing the tokens this board burned inside the "
+                "live weekly window by that window's utilization "
+                "(tokens_per_pct = tokens_in_window / used_pct). Anthropic's usage "
+                "endpoint publishes a percentage and never the absolute limit, so "
+                "there is no exact allowance to divide by. "
+                "settings.pm.plan_tokens_week overrides it when the owner knows the "
+                "real number.",
+        "why_it_bites": "used_pct covers the WHOLE Anthropic account - Claude Code in "
+                        "the owner's own terminal, claude.ai, other machines - while "
+                        "the numerator counts only turns this daemon recorded. Every "
+                        "token spent outside HelmDeck shrinks the implied allowance "
+                        "and inflates every card's percentage proportionally: burn "
+                        "half the quota outside the board and cards read ~2x their "
+                        "true share. It is an estimate, rendered with '~', never an "
+                        "invoice.",
+        "trigger": "owner reports card percentages that don't reconcile with the "
+                   "usage panel, or heavy Claude use outside HelmDeck",
+        "fix": "Use the absolute window limit if the usage endpoint ever exposes one; "
+               "otherwise track the delta (account utilization minus our recorded "
+               "tokens) as an explicit 'outside this board' slice, show it in the "
+               "usage panel, and calibrate against the remainder.",
+        "order": 17,
     },
 ]
 
