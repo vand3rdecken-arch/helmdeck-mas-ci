@@ -2115,8 +2115,10 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     already answered) is rejected instead of steering the worker with an answer
     to a question it has moved past.
 
-    Only labels the WORKER offered are accepted (ask.validate_answers), so this
-    endpoint cannot be used to inject arbitrary text into a worker's prompt."""
+    The answer is either one of the worker's offered labels or the owner's own
+    free text (the Paseo 'Other' escape hatch) - see ask.validate_answers. Free
+    text is no injection risk: the owner is authenticated and could type the
+    same thing through /steer anyway."""
     import ask
     # CLAIM the question atomically via _mutate (the per-card MUTATION lock,
     # deliberately NOT the turn lock - answering ends in a steer, whose turn
@@ -2147,7 +2149,7 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     ActionLog(t["run_dir"]).log("note", ask.answer_note(picks))
     import events
     events.emit("answer", tid, actor=actor, qkind=q.get("kind"),
-                picks=[p["labels"] for p in picks])
+                picks=[ask._pick_parts(p) for p in picks])
     # steer() clears the pending question itself and runs the turn under the
     # per-card lock, so the worker continues with the decision.
     return steer(tid, ask.answer_prompt(picks), actor=actor, source="answer")
