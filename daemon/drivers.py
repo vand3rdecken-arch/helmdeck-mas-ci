@@ -29,7 +29,7 @@ The default settings ship "claude" and "claude-desktop" (windows-mcp allowed +
 screen recording on). Point a card at "claude-desktop" and its agent can drive
 apps/browser on this PC with the whole turn recorded - the flight-recorder
 promise, now per-card."""
-import json, os, re as _re, shutil, subprocess, threading, time as _time, uuid
+import hashlib, json, os, re as _re, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
 
 _re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
@@ -349,6 +349,7 @@ def turn_active(tid):
 
 _IDLE_TTL_DEFAULT = 300.0      # seconds a worker may sit idle before it's reaped
 _SWEEP_INTERVAL = 15.0         # Paseo polls its idle collector this often
+_BURN_REPEATS = 5              # identical consecutive tool calls that look like a loop
 _sweeper_started = False
 
 
@@ -958,6 +959,40 @@ class _ClaudeSession:
             except Exception:
                 pass
 
+    def _burn_watch(self, ev, cur):
+        """Loop detector (the token-burn signal). A worker stuck in a loop keeps
+        STREAMING - so the inactivity watchdog never fires - and burns tokens
+        until Stop. Only the driver sees the frames, so it FOLDS the signal here
+        (never judges): count identical consecutive tool_use calls (name + input
+        hash); at the threshold, and again at each doubling (5, 10, 20 - not
+        every frame), hand it to sessions.flag_burn, which persists it and lets
+        the PM decide whether it's a legit retry or a real loop. Best-effort:
+        any error here must never disturb the turn."""
+        if ev.get("type") != "assistant":
+            return
+        try:
+            for p in ((ev.get("message") or {}).get("content") or []):
+                if not isinstance(p, dict) or p.get("type") != "tool_use":
+                    continue
+                blob = json.dumps(p.get("input"), sort_keys=True, default=str)
+                sig = "%s:%s" % (p.get("name"), hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12])
+                if sig == cur.get("burn_sig"):
+                    cur["burn_n"] = cur.get("burn_n", 1) + 1
+                else:
+                    cur["burn_sig"], cur["burn_n"], cur["burn_fired"] = sig, 1, 0
+                n = cur["burn_n"]
+                level = _BURN_REPEATS if not cur.get("burn_fired") else cur["burn_fired"] * 2
+                if n >= level:
+                    cur["burn_fired"] = level
+                    try:
+                        import sessions
+                        sessions.flag_burn(self.tid, {
+                            "n": n, "name": p.get("name"), "sig": sig, "sample": blob[:200]})
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     def _on_event(self, ev):
         cur = self._cur
         if cur is not None:
@@ -968,6 +1003,7 @@ class _ClaudeSession:
             # tool calls, gradle builds) is never killed mid-run - only a truly
             # wedged process (no frame for the whole idle window) is.
             cur["last_event"] = _time.time()
+            self._burn_watch(ev, cur)
         typ = ev.get("type")
         if typ in ("assistant", "user"):
             try:

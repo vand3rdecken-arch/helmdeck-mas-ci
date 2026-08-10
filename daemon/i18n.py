@@ -119,6 +119,9 @@ MESSAGES = {
     "push.pmDoneBody": {"de": "'{task}' - braucht deine Abnahme.",
                         "en": "'{task}' - needs your acceptance."},
     "push.pmStuckBody": {"de": "'{task}' - {proposal}", "en": "'{task}' - {proposal}"},
+    "push.pmBurn": {"de": "Worker haengt in einer Schleife", "en": "Worker stuck in a loop"},
+    "push.pmBurnBody": {"de": "'{task}': {n}x {tool} wiederholt - eingreifen?",
+                        "en": "'{task}': {n}x {tool} repeated - step in?"},
     # the per-card autopilot escalating on its own (processes._auto_resolve)
     "push.autopilotStuck": {"de": "Autopilot: haengt", "en": "Autopilot: stuck"},
     "push.autopilotStuckBody": {
@@ -157,6 +160,12 @@ MESSAGES = {
     },
     "pm.freeAgain": {"de": "Geschafft: '{task}' ist wieder frei{note}",
                      "en": "Sorted: '{task}' is unblocked again{note}"},
+    "pm.burnStuck": {
+        "de": "Der Worker der Karte '{task}' wiederholt denselben Schritt ({n}x {tool}) und "
+              "kommt nicht weiter. Ich habe {corr} Korrektur(en) versucht - bitte schau drauf.",
+        "en": "The worker on '{task}' keeps repeating the same step ({n}x {tool}) and is not "
+              "getting anywhere. I tried {corr} correction(s) - please take a look.",
+    },
     "pm.launchCheck": {
         "de": "Koordinations-Check fuers Play-Store-Deploy (highest prio: in den Store) - das "
               "brauche nur ich VON DIR, den Rest treibe ich selbst als Karten: "
