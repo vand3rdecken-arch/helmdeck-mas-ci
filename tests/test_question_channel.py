@@ -130,8 +130,14 @@ def test_validate():
     _p, e2b = ask.validate_answers(q, {"Farbe": "   "})
     check(e2b and _p is None, "empty answer rejected")
     # Free text is length-capped (a model/client can't shove an unbounded blob).
-    p2c, _ = ask.validate_answers(q, {"Farbe": "x" * 5000})
-    check(p2c and len(p2c[0]["custom"][0]) <= ask.MAX_FREE_LEN, "free text length-capped")
+    p2c, _ = ask.validate_answers(q, {"Farbe": "x" * (ask.MAX_FREE_LEN + 5000)})
+    check(p2c and len(p2c[0]["custom"][0]) == ask.MAX_FREE_LEN, "free text length-capped")
+    # a real multi-paragraph answer (well under the cap) must NOT be truncated -
+    # the whole point of raising MAX_FREE_LEN past a steer-sized paste.
+    long_answer = ("Absatz eins. " * 400).strip()   # ~5200 chars, still < MAX_FREE_LEN
+    p2d, e2d = ask.validate_answers(q, {"Farbe": long_answer})
+    check(not e2d and p2d[0]["custom"] == [long_answer],
+          "a long pasted answer is kept whole, not truncated mid-sentence")
     _p, e3 = ask.validate_answers(q, {})
     check(e3 and _p is None, "missing answer rejected")
     _p, e4 = ask.validate_answers(q, {"Farbe": ["Rot", "Blau"]})

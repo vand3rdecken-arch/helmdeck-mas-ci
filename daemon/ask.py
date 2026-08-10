@@ -293,7 +293,12 @@ def summary(question):
     return head + (" (+%d)" % (len(qs) - 1) if len(qs) > 1 else "")
 
 
-MAX_FREE_LEN = 2000        # the owner's own words - matches a steer's freedom
+# /steer has NO length cap at all - the comment here used to claim parity with
+# that but 2000 chars is one short paragraph, and it silently TRUNCATED a real
+# answer (a multi-paragraph draft the owner pasted in) mid-sentence with no
+# error. 20000 is generous for pasted prose/drafts while still bounded against
+# an absurd payload landing in the worker's next prompt through this channel.
+MAX_FREE_LEN = 20000
 
 
 def validate_answers(question, answers):
