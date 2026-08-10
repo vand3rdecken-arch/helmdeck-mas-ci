@@ -176,6 +176,106 @@ def consecutive_gate_fails(track, ev=None):
         fails = 0 if e.get("ok") else fails + 1
     return fails
 
+def plan_effective(s=None):
+    """Resolve settings.pm.plan to the plan that actually bills this board.
+
+    "auto" (the default) DETECTS it from the CLI's real auth instead of asking
+    the owner to know their own billing - the same signal Paseo's usage tab
+    keys off: a stored Claude Code login whose subscriptionType names a flat
+    plan (Max/Pro) burns quota; a login without one is a Console account and an
+    ANTHROPIC_API_KEY is per-token - both bill real money. Explicit
+    "max"/"api"/"mixed" stay as owner overrides for the day the detection is
+    wrong. Returns (plan, source) with plan in {"max","api","mixed"} and source
+    naming the evidence ("setting", "oauth:max", "api_key", "default")."""
+    plan = ((s or settings()).get("pm") or {}).get("plan", "auto")
+    if plan and plan != "auto":
+        return plan, "setting"
+    try:
+        import usage
+        lm = usage.login_method()
+    except Exception:
+        lm = {}
+    if lm.get("method") == "oauth":
+        sub = lm.get("subscription")
+        # subscription login = flat quota; a Console login (no subscriptionType)
+        # bills the workspace per token even though it is OAuth.
+        return ("max", "oauth:%s" % sub) if sub else ("api", "oauth:console")
+    if lm.get("method") == "api_key":
+        return "api", "api_key"
+    # no Claude auth found at all (fresh box, creds unreadable): keep the old
+    # default - flat - so cost surfaces never invent $-spend out of nothing.
+    return "max", "default"
+
+
+def ai_billing(s=None):
+    """How the AI on this board is BILLED - the display contract, not the meter.
+    plan_effective() names the Anthropic plan (auto-detected by default): "max"
+    is the flat subscription - a turn burns quota, not cash, so the measured $
+    figure is an API-equivalent reference and must never render as spend. "api"
+    (and "mixed", where at least some turns are per-token) bill real money per
+    token. Every turn keeps being priced either way (measured-economics law);
+    only what the number MEANS differs."""
+    plan, _src = plan_effective(s)
+    return "flat" if plan == "max" else "metered"
+
+WEEK_SEC = 7 * 24 * 3600
+MIN_CALIB_PCT = 2.0     # below this the division amplifies rounding into nonsense
+
+def _ts_epoch(ts):
+    try:
+        return time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M:%S"))
+    except Exception:
+        return 0.0
+
+def turn_tokens(e):
+    """Every token a turn drew against the plan - cache reads included, because
+    the allowance counts them even though they are cheap in API dollars."""
+    u = e.get("usage") or {}
+    return (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+            + u.get("cache_read_input_tokens", 0) + u.get("output_tokens", 0))
+
+def plan_calibration(ev=None, s=None):
+    """What ONE PERCENT of the Claude subscription costs, in tokens.
+
+    On a flat plan the honest unit is SHARE OF THE PLAN. Dollars are a foreign
+    currency (the API price list prices nothing that was bought), and a raw
+    token count means nothing without the allowance it is drawn against - "73k
+    tokens" answers no question the owner has. "3.2% of a weekly quota" does.
+
+    Anthropic's usage endpoint reports each window as a percentage and never
+    publishes the absolute limit, so we CALIBRATE against it: the tokens this
+    board burned inside the live weekly window correspond to that window's
+    utilization ->
+        tokens_per_pct = tokens_in_window / used_pct
+    An owner-set settings.pm.plan_tokens_week (the real allowance, if they know
+    it) wins over the measurement. Returns None when there is nothing to
+    calibrate against - no Claude login, a just-reset window, or no recorded
+    turns - and every caller then falls back to showing tokens."""
+    s = s or settings()
+    per_week = ((s.get("pm") or {}).get("plan_tokens_week") or 0)
+    if per_week > 0:
+        return {"tokens_per_pct": float(per_week) / 100.0, "source": "configured",
+                "window": "weekly", "used_pct": None, "observed_tokens": None}
+    try:
+        import usage as _usage
+        snap = _usage.cached()          # never blocks; None while the cache is cold
+    except Exception:
+        return None
+    if not snap or snap.get("status") != "ok":
+        return None
+    w = next((x for x in snap.get("windows", []) if x.get("id") == "weekly"), None)
+    used = (w or {}).get("usedPct")
+    if not isinstance(used, (int, float)) or used < MIN_CALIB_PCT:
+        return None
+    cutoff = time.time() - WEEK_SEC
+    tok = sum(turn_tokens(e) for e in (ev if ev is not None else read_events())
+              if e.get("kind") == "turn" and _ts_epoch(e.get("ts", "")) >= cutoff)
+    if tok <= 0:
+        return None
+    return {"tokens_per_pct": tok / float(used), "source": "measured",
+            "window": "weekly", "used_pct": used, "observed_tokens": tok,
+            "resets_at": w.get("resetsAt")}
+
 def price_turn(models, usage, cost_usd=None):
     """Dollar cost of one session turn. CLI-reported total wins; else price the
     token counts against the settings table (first matching model substring)."""
@@ -228,6 +328,21 @@ def metrics(tracks):
     """Everything the dashboard shows, computed fresh from events + tracks."""
     s = settings()
     ev = read_events()
+    # flat (Max subscription): AI cost is measured but is NOT cash, so margins
+    # must not subtract it - the phantom-$ would misprice every card. metered
+    # (API): the measured cost is real spend and margins carry it.
+    billing_mode = ai_billing(s)
+    flat = billing_mode == "flat"
+    # On the flat plan the consumption unit is share-of-subscription, not tokens
+    # and certainly not tokens x API price. None = not calibratable right now,
+    # and every surface falls back to the raw token count.
+    calib = plan_calibration(ev, s) if flat else None
+    per_pct = (calib or {}).get("tokens_per_pct") or 0.0
+    def plan_pct(tok):
+        # 4 decimals, not 2: a single cheap turn is a few thousandths of a
+        # percent and rounding it to 0.0 would render "-" (no consumption)
+        # instead of the honest "<0.01%". The UI does the human rounding.
+        return round(tok / per_pct, 4) if per_pct > 0 else None
     tariff = s["capacity"]["tariff"]
     today = time.strftime("%Y-%m-%d")
     by_track = {}
@@ -260,9 +375,11 @@ def metrics(tracks):
                       "lane": t.get("lane"), "ai_cost": round(ai, 4), "touches": touches,
                       "time_seconds": round(secs, 1), "project_id": t.get("project_id"),
                       "value": value, "billing": billing, "rate": rate,
-                      "billed": round(billed, 2), "margin": round(billed - ai, 2),
+                      "billed": round(billed, 2),
+                      "margin": round(billed - (0.0 if flat else ai), 2),
                       "mode": mode, "models": t.get("models", []),
-                      "tokens_in": t.get("tokens_in", 0), "tokens_out": t.get("tokens_out", 0)})
+                      "tokens_in": t.get("tokens_in", 0), "tokens_out": t.get("tokens_out", 0),
+                      "plan_pct": plan_pct(t.get("tokens_in", 0) + t.get("tokens_out", 0))})
 
     done = [c for c in cards if c["lane"] == "done"]
     gated = {}   # first gate outcome per track (first-pass yield)
@@ -290,6 +407,10 @@ def metrics(tracks):
     for b in by_model.values():
         b["cost"] = round(b["cost"], 4)
         b["avg_cost_per_turn"] = round(b["cost"] / b["turns"], 4) if b["turns"] else 0
+        # the quoting number on a flat plan: what one turn of this model eats
+        # out of the subscription, in percent.
+        b["plan_pct_per_turn"] = (plan_pct((b["tok_in"] + b["tok_out"]) / b["turns"])
+                                  if b["turns"] else None)
     touches_today = sum(tariff.get(e.get("touch"), 1) for e in ev
                         if e["kind"] == "touch" and e["ts"][:10] == today)
     actors = {}
@@ -321,8 +442,9 @@ def metrics(tracks):
         if not pid:
             continue
         r = sow_agg.setdefault(pid, {"billed": 0.0, "ai_cost": 0.0, "hours": 0.0,
-                                     "cards": 0, "done": 0})
+                                     "cards": 0, "done": 0, "tokens": 0})
         r["billed"] += c["billed"]; r["ai_cost"] += c["ai_cost"]
+        r["tokens"] += c["tokens_in"] + c["tokens_out"]
         r["hours"] += c["time_seconds"] / 3600.0; r["cards"] += 1
         r["done"] += 1 if c["lane"] == "done" else 0
     sows = []
@@ -332,7 +454,8 @@ def metrics(tracks):
                      "status": m.get("status"), "due": m.get("due", ""),
                      "cards": r["cards"], "done": r["done"], "hours": round(r["hours"], 2),
                      "billed": round(r["billed"], 2), "ai_cost": round(r["ai_cost"], 4),
-                     "margin": round(r["billed"] - r["ai_cost"], 2),
+                     "margin": round(r["billed"] - (0.0 if flat else r["ai_cost"]), 2),
+                     "plan_pct": plan_pct(r["tokens"]),
                      "all_done": r["cards"] > 0 and r["done"] == r["cards"]})
     sows.sort(key=lambda x: -x["margin"])
 
@@ -340,9 +463,12 @@ def metrics(tracks):
     # SoW rollup and the totals never double-count.
     value_done = sum(c["billed"] for c in cards)
     ai_all = sum(c["ai_cost"] for c in cards)
+    tok_all = sum(c["tokens_in"] + c["tokens_out"] for c in cards)
     touch_all = sum(c["touches"] for c in cards) or 1
     return {
         "settings": s,
+        "ai_billing": billing_mode,
+        "plan_calibration": calib,
         "cards": cards,
         "sows": sows,
         "capacity": {"wip": wip, "wip_limit": s["capacity"]["wip_limit"],
@@ -355,6 +481,8 @@ def metrics(tracks):
         "ai_by_model": dict(sorted(by_model.items(), key=lambda kv: -kv[1]["cost"])),
         "totals": {"value_delivered": round(value_done, 2),
                    "ai_spend": round(ai_all, 4),
-                   "margin": round(value_done - ai_all, 2),
+                   "ai_tokens": tok_all,
+                   "plan_pct": plan_pct(tok_all),
+                   "margin": round(value_done - (0.0 if flat else ai_all), 2),
                    "leverage_per_touch": round(value_done / touch_all, 2)},
     }

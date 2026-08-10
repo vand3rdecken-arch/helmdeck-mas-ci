@@ -14,6 +14,7 @@ import type { Track, Me, EconCard } from "@/data/types";
 import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
+import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
@@ -190,6 +191,7 @@ function AttachmentList({ id }: { id: string }) {
 function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) => void }) {
   const t = useTheme();
   const tr = useT();
+  const flat = useAiFlat();
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const owner = me.data?.role === "owner";
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, enabled: owner });
@@ -217,7 +219,9 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
           dot={statusColor(t, k.status)} /> : null}
         <Chip text={LANE_KEY[k.lane] ? tr(LANE_KEY[k.lane]) : k.lane} dot={laneColor(t, k.lane)} />
         {k.mode ? <Chip text={executorLabel(k.mode)} dot={t.ai} /> : null}
-        {k.ai_cost > 0 ? <Chip text={`AI $${k.ai_cost.toFixed(2)}`} /> : null}
+        {k.ai_cost > 0 ? <Chip text={flat
+          ? planLabel(tr, e?.plan_pct, (k.tokens_in ?? 0) + (k.tokens_out ?? 0))
+          : `AI $${k.ai_cost.toFixed(2)}`} /> : null}
       </View>
 
       <Panel>
@@ -266,8 +270,15 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
         <Panel>
           <SectionLabel text={tr("card.sec.economics")} />
           <KVRow k={tr("card.econ.billed")} v={`${cy}${(e.billed ?? e.value).toFixed(2)}${e.billing === "tm" ? " ~" : ""}`} />
-          <KVRow k={tr("card.econ.aiCost")} v={`$${e.ai_cost.toFixed(2)}`} color={t.ai} />
-          <KVRow k={tr("card.econ.margin")} v={`${cy}${(e.margin ?? ((e.billed ?? e.value) - e.ai_cost)).toFixed(2)}`} color={t.accent} />
+          {flat
+            ? <KVRow k={tr("card.econ.aiUse")}
+                v={e.plan_pct != null && e.plan_pct > 0
+                  ? tr("card.econ.aiUsePlan", { pct: fmtPlanPct(e.plan_pct),
+                      tok: fmtTok((e.tokens_in ?? 0) + (e.tokens_out ?? 0)) })
+                  : tr("card.econ.aiUseVal", { tok: fmtTok((e.tokens_in ?? 0) + (e.tokens_out ?? 0)) })}
+                color={t.ai} />
+            : <KVRow k={tr("card.econ.aiCost")} v={`$${e.ai_cost.toFixed(2)}`} color={t.ai} />}
+          <KVRow k={tr("card.econ.margin")} v={`${cy}${(e.margin ?? ((e.billed ?? e.value) - (flat ? 0 : e.ai_cost))).toFixed(2)}`} color={t.accent} />
           <KVRow k={tr("card.econ.touches")}
             v={tr(e.touches === 1 ? "card.econ.touchOne" : "card.econ.touchMany", { n: e.touches })} />
           {e.mode ? <KVRow k={tr("card.econ.mode")} v={tr(e.mode === "auto" ? "card.mode.auto" : "card.mode.assisted")} /> : null}
@@ -294,7 +305,7 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
               <View key={i} style={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}>
                 <Text style={{ color: t.txtTertiary, fontSize: 11.5, width: 60 }}>{tu.ts?.slice(5, 16) ?? ""}</Text>
                 <Text style={{ color: t.txtSecondary, fontSize: 11.5, width: 90 }} numberOfLines={1}>{(tu.models?.[0] ?? "-").replace("claude-", "")}</Text>
-                <Text style={{ color: t.txtSecondary, fontSize: 11.5, flex: 1 }}>{tin.toLocaleString()}/{(u.output_tokens ?? 0).toLocaleString()} · ${(tu.cost ?? 0).toFixed(3)}</Text>
+                <Text style={{ color: t.txtSecondary, fontSize: 11.5, flex: 1 }}>{tin.toLocaleString()}/{(u.output_tokens ?? 0).toLocaleString()}{flat ? "" : ` · $${(tu.cost ?? 0).toFixed(3)}`}</Text>
               </View>
             );
           })}

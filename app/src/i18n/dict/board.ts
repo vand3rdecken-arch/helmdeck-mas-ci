@@ -63,6 +63,11 @@ export const board: Dict = {
   "board.step": { de: "Schritt {n}", en: "step {n}" },
   "board.process": { de: "Prozess", en: "process" },
   "board.due": { de: "fällig {d}", en: "due {d}" },
+  // flat plan (Max-Abo): a card's AI figure is its SHARE OF THE SUBSCRIPTION.
+  // aiTok/tokShort stay as the fallback for when the quota can't be calibrated.
+  "board.aiPlan": { de: "KI {pct} vom Abo", en: "AI {pct} of plan" },
+  "board.aiTok": { de: "KI {tok} Tok", en: "AI {tok} tok" },
+  "board.tokShort": { de: "{tok} Tok", en: "{tok} tok" },
   "board.mode.auto": { de: "auto · KI", en: "auto · AI" },
   "board.mode.assisted": { de: "begleitet · Mensch", en: "assisted · human" },
 
@@ -112,7 +117,13 @@ export const board: Dict = {
   // ---- dashboard tiles ----------------------------------------------------
   "dash.tile.valueDelivered": { de: "Wert geliefert", en: "value delivered" },
   "dash.tile.aiSpend": { de: "KI-Ausgaben", en: "AI spend" },
+  // flat (Max-Abo): consumption in tokens, never a $ figure - the subscription
+  // is a flatrate, so per-card dollars would misread as pay-per-token spend.
+  "dash.tile.aiSpendFlat": { de: "KI-Verbrauch — Flat, im Abo inkl.", en: "AI usage — flat, incl. in plan" },
+  // the flat plan's real cost unit: how much of the subscription the board ate.
+  "dash.tile.aiPlanShare": { de: "KI-Verbrauch — Anteil am Abo (Woche)", en: "AI usage — share of plan (week)" },
   "dash.tile.margin": { de: "Marge (Wert − KI)", en: "margin (value − AI)" },
+  "dash.tile.marginFlat": { de: "Marge (KI im Abo inkl.)", en: "margin (AI incl. in plan)" },
   "dash.tile.yield": { de: "First-Pass-Quote ({a}/{b})", en: "first-pass yield ({a}/{b})" },
   "dash.tile.automation": { de: "Automatisierungsgrad ({a}/{b} auto)", en: "automation rate ({a}/{b} auto)" },
   "dash.tile.leverage": { de: "Wert pro Touch-Einheit", en: "value per touch unit" },
@@ -146,6 +157,10 @@ export const board: Dict = {
     de: "abgerechnet = anerkannter Umsatz (Festpreis bei Lieferung · T&M wächst mit den Stunden · keins = intern). Marge = abgerechnet − KI-Kosten.",
     en: "billed = recognized revenue (fixed price on delivery · T&M accrues with hours · none = internal). margin = billed − AI cost.",
   },
+  "dash.sow.noteFlat": {
+    de: "abgerechnet = anerkannter Umsatz (Festpreis bei Lieferung · T&M wächst mit den Stunden · keins = intern). KI läuft im Max-Abo (Flatrate): kein Geld pro Karte, Marge = abgerechnet. Die KI-Spalte zeigt den Anteil am Wochenkontingent (~ = aus dem laufenden Fenster geschätzt).",
+    en: "billed = recognized revenue (fixed price on delivery · T&M accrues with hours · none = internal). AI runs on the flat Max plan: no cash per card, margin = billed. The AI column shows the share of the weekly allowance (~ = estimated from the live window).",
+  },
   "dash.sow.empty": {
     de: "Noch keine prozessgruppierte Arbeit. Ein Prozess bündelt seine Karten zu einem SoW; die Abrechnung pro Karte rollt hier auf.",
     en: "No process-grouped work yet. A process groups its cards into one SoW; per-card billing rolls up here.",
@@ -157,7 +172,9 @@ export const board: Dict = {
   "dash.sow.col.hours": { de: "Stunden", en: "hours" },
   "dash.sow.col.billed": { de: "abgerechnet", en: "billed" },
   "dash.sow.col.aiCost": { de: "KI $", en: "AI $" },
+  "dash.sow.col.aiPlan": { de: "KI (% Abo)", en: "AI (% plan)" },
   "dash.sow.col.margin": { de: "Marge", en: "margin" },
+  "dash.flatIncl": { de: "inkl.", en: "incl." },
   "dash.sow.delivered": { de: "geliefert", en: "delivered" },
   "dash.sow.progress": { de: "{done}/{cards} fertig", en: "{done}/{cards} done" },
   "dash.sow.totalOne": { de: "gesamt (1 SoW)", en: "total (1 SoW)" },
@@ -182,6 +199,8 @@ export const board: Dict = {
     en: "Max plan: budget = plan capacity (usage → projection until reset), not money.",
   },
   "dash.corner.aiSpend": { de: "KI ${v}", en: "AI ${v}" },
+  "dash.corner.aiUse": { de: "KI {v} Tok (Flat)", en: "AI {v} tok (flat)" },
+  "dash.corner.aiPlan": { de: "KI {v} vom Abo", en: "AI {v} of plan" },
   "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
   "dash.corner.wip": { de: "WIP {wip}/{limit} · {n} frei", en: "WIP {wip}/{limit} · {n} free" },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
@@ -239,16 +258,24 @@ export const board: Dict = {
   "dash.models.col.tokOut": { de: "Tok raus", en: "tok out" },
   "dash.models.col.cost": { de: "gesamt $", en: "total $" },
   "dash.models.col.avg": { de: "$/Turn", en: "$/turn" },
+  "dash.models.col.tokPerTurn": { de: "Tok/Turn", en: "tok/turn" },
+  "dash.models.col.planPerTurn": { de: "% Abo/Turn", en: "% plan/turn" },
+  "dash.models.noteFlat": {
+    de: "Max-Abo (Flatrate): Verbrauch zählt gegen das Kontingent, nicht in $. „% Abo/Turn“ ist deine Angebotszahl — was ein Turn dieses Modells vom Wochenkontingent frisst (~ = aus dem laufenden Fenster geschätzt).",
+    en: "Max plan (flat): usage counts against the quota, not in $. “% plan/turn” is your quoting number — what one turn of this model eats of the weekly allowance (~ = estimated from the live window).",
+  },
 
   // ---- work panel ---------------------------------------------------------
   "dash.work.title": { de: "Erledigte Arbeit", en: "Work done" },
   "dash.work.legendAi": { de: "KI ($)", en: "AI ($)" },
+  "dash.work.legendAiFlat": { de: "KI (Anteil am Abo)", en: "AI (share of plan)" },
   "dash.work.legendHuman": { de: "Mensch (Touch-Einheiten)", en: "human (touch units)" },
   "dash.work.col.card": { de: "Karte", en: "card" },
   "dash.work.col.lane": { de: "Lane", en: "lane" },
   "dash.work.col.model": { de: "Modell", en: "model" },
   "dash.work.col.tok": { de: "Tok rein/raus", en: "tok in/out" },
   "dash.work.col.aiCost": { de: "KI $", en: "AI $" },
+  "dash.work.col.aiFlat": { de: "KI (% Abo)", en: "AI (% plan)" },
   "dash.work.col.touch": { de: "Touch", en: "touch" },
   "dash.work.col.split": { de: "Split", en: "split" },
   "dash.work.col.value": { de: "Wert", en: "value" },
