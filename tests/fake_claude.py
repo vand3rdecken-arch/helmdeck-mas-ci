@@ -68,6 +68,20 @@ def main():
         if os.environ.get("FAKE_HANG") == "1" or text == "__HANG__":
             hanging = True
             continue
+        if text.startswith("__LOOP__"):
+            # A worker stuck in a loop: n IDENTICAL tool_use frames (same name +
+            # input) before the result, to exercise the burn detector.
+            try: n = int(text.split(":", 1)[1])
+            except (IndexError, ValueError): n = 6
+            for _ in range(n):
+                emit({"type": "assistant", "session_id": SID,
+                      "message": {"role": "assistant", "content": [
+                          {"type": "tool_use", "id": "tu", "name": "Bash",
+                           "input": {"command": "adb reconnect"}}]}})
+            emit({"type": "result", "subtype": "success", "result": "loop-done",
+                  "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         if text == "__ERR__":
             emit({"type": "result", "subtype": "error_during_execution",
                   "is_error": True, "errors": ["boom: usage limit reached"],

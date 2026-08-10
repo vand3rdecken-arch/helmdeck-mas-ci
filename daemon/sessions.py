@@ -401,6 +401,42 @@ def _mutate(tid, fn):
         _save_track(t)
         return t
 
+def flag_burn(tid, evidence):
+    """The driver saw N identical consecutive tool calls (a likely loop that is
+    burning tokens - drivers._burn_watch). NEVER auto-kill: a retry-with-backoff
+    can be legitimate. Persist the signal First-Class (one owner, event time) and
+    hand the JUDGEMENT to the PM, which knows the card + goal and escalates to
+    the owner only if its own correction doesn't take."""
+    box = {}
+
+    def _set(tt):
+        if tt.get("status") != "running":
+            return False                 # the turn already ended - nothing to correct
+        cur = dict(tt.get("burn") or {})
+        cur.update(evidence)
+        cur["ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        cur.setdefault("corrections", 0)
+        tt["burn"] = cur
+        box["ok"] = True
+    t = _mutate(tid, _set)
+    if t is None or not box.get("ok"):
+        return
+    try:
+        from actionlog import ActionLog
+        ActionLog(t["run_dir"]).log(
+            "note", "⚠ Worker wiederholt denselben Schritt (%dx %s) - PM prueft"
+            % (evidence.get("n", 0), evidence.get("name", "")))
+    except Exception:
+        pass
+    import events
+    events.emit("burn", tid, n=evidence.get("n"), name=evidence.get("name"))
+    try:
+        import pm
+        pm.review_burn(tid)
+    except Exception:
+        pass
+
+
 def _turn(t, prompt, model=None, perm=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
@@ -724,6 +760,12 @@ def _finish_turn(tid, sid, result, meta, log):
         gr = tt.get("gate_report")
         if isinstance(gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x for x in gr):
             tt.pop("gate_report", None)
+        # A turn that ended CLEANLY (real reply, not an error) broke out of any
+        # loop, so the burn signal is stale - clear it. A looping turn never
+        # reaches a clean end (the PM's correction interrupts it, or it errors),
+        # so its `corrections` count survives to drive escalation.
+        if tt.get("burn") and not meta.get("is_error") and not meta.get("canceled"):
+            tt.pop("burn", None)
         box["cost"] = _record_turn(tt, meta, cp_commit)
 
     t = _mutate(tid, _commit) or t

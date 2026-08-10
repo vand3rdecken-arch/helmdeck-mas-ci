@@ -896,6 +896,107 @@ def mark_notified(tid):
             _save_loopstate(st)
 
 
+# -- BURN GUARD: the PM judges a driver-flagged loop and acts on the ladder ----
+# The driver folds the mechanical signal (N identical tool calls - it alone sees
+# the frames); the PM owns the JUDGEMENT (legit retry vs. real loop, it knows the
+# card + goal) and the owner is the LAST instance (escalated to only if the PM's
+# own correction doesn't take). Same shape as resolve_card_now: classify ->
+# correct -> re-check -> escalate, bounded by _RESOLVE_MAX.
+_burn_lock = threading.Lock()
+_burn_active = set()
+
+
+def review_burn(tid):
+    """Entry point (called by sessions.flag_burn). Judges on its OWN thread so the
+    driver's event pump never blocks on a model call; one review per card at a
+    time."""
+    with _burn_lock:
+        if tid in _burn_active:
+            return
+        _burn_active.add(tid)
+    threading.Thread(target=_review_burn, args=(tid,), daemon=True, name="pm-burn").start()
+
+
+def _burn_judge(b, t):
+    """One model call: is the repetition a legit retry or a real loop? Returns
+    {verdict: legit|loop, why, fix}. A judge failure defaults to 'loop' - the
+    signal already crossed the threshold, and a wrong correction only costs a
+    detour turn (interrupt-and-replace keeps the session)."""
+    prompt = (
+        "Ein Worker-Agent hat denselben Tool-Aufruf %d Mal HINTEREINANDER gemacht:\n"
+        "  Tool: %s\n  Input (gekuerzt): %s\n"
+        "Aufgabe der Karte: %s\n\n"
+        "Ist das ein LEGITIMER Retry (Warten/Polling mit Backoff, bewusste Wiederholung) "
+        "oder ein sinnloser LOOP (immer derselbe fehlschlagende Schritt)?\n"
+        "Antworte NUR als JSON: {\"verdict\":\"legit\"|\"loop\",\"why\":\"kurz\","
+        "\"fix\":\"eine konkrete Kurskorrektur an den Worker, falls loop\"}"
+        % (b.get("n", 0), b.get("name", ""), (b.get("sample") or "")[:200],
+           (t.get("task") or "")[:200]))
+    try:
+        d = _ask(prompt)
+        v = str(d.get("verdict", "")).lower()
+        return {"verdict": "legit" if v == "legit" else "loop",
+                "why": d.get("why", ""), "fix": d.get("fix", "")}
+    except Exception:
+        return {"verdict": "loop", "why": "Urteil fehlgeschlagen", "fix": ""}
+
+
+def _push_burn(t, task, b):
+    n, tool, corr = b.get("n", 0), b.get("name", ""), b.get("corrections", 0)
+    try:
+        import notify
+        notify.push_fcm(_i18n.t("push.pmBurn"),
+                        _i18n.t("push.pmBurnBody", task=task, n=n, tool=tool), t["id"])
+    except Exception:
+        pass
+    _say(_i18n.t("pm.burnStuck", task=task, n=n, tool=tool, corr=corr))
+
+
+def _review_burn(tid):
+    import sessions
+    try:
+        t = sessions._find(sessions._load(), tid)
+        b = (t or {}).get("burn")
+        if not t or not b or t.get("status") != "running":
+            return                              # turn already ended - nothing to correct
+        task = (t.get("task") or "").replace("\n", " ")[:60]
+        corrections = b.get("corrections", 0)
+        if corrections >= _RESOLVE_MAX:         # corrected enough - hand it to the owner
+            _activity("blocked", "Loop besteht trotz %d Korrekturen - eskaliere: %s"
+                      % (corrections, task), card=tid)
+            _push_burn(t, task, b)
+            return
+        verdict = _burn_judge(b, t)
+        if verdict["verdict"] == "legit":
+            _activity("resolve", "Wiederholung ist legitim (%s) - lasse laufen: %s"
+                      % ((verdict.get("why") or "Backoff/Warten")[:60], task), card=tid)
+            return
+        if _pm().get("autonomy", "act") == "notify":   # advise-only: never touch the worker
+            _activity("blocked", "Loop-Verdacht (%dx %s) - melde an Owner: %s"
+                      % (b.get("n"), b.get("name"), task), card=tid)
+            _push_burn(t, task, b)
+            return
+        fix = verdict.get("fix") or (
+            "Du wiederholst denselben Schritt (%s) %dx mit gleichem Ergebnis. Brich diesen "
+            "Ansatz ab, lies die letzte Fehlermeldung woertlich und mach den kleinsten ANDEREN "
+            "Schritt, der die Ursache trifft." % (b.get("name"), b.get("n")))
+
+        def _bump(tt):
+            if tt.get("burn"):
+                tt["burn"]["corrections"] = corrections + 1
+        sessions._mutate(tid, _bump)
+        _activity("resolve", "Loop erkannt - korrigiere Worker (Versuch %d): %s"
+                  % (corrections + 1, task), card=tid)
+        # steer-while-running = interrupt-and-replace: breaks the loop and
+        # continues the SAME session with the correction (a36d962).
+        sessions.steer(tid, fix, actor="pm", source="pm-burn")
+    except Exception as e:
+        _activity("resolve", "Burn-Review-Fehler: %s" % str(e)[:120], card=tid)
+    finally:
+        with _burn_lock:
+            _burn_active.discard(tid)
+
+
 def resolve_card_now(tid):
     """Run ONE rung of the resilience ladder for a SPECIFIC card, outside the
     proactive loop's gating (loop_enabled / window / idle / repo allowlist).
