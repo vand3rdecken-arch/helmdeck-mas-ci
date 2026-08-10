@@ -67,8 +67,11 @@ REQUEST:
 %s"""
 
 def _propose_steps(request_text):
-    r = subprocess.run(["cmd", "/c", CLAUDE, "-p", "--output-format", "json",
-                        "--permission-mode", "plan"],
+    import drivers
+    # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
+    # args on a .cmd shim (see drivers._real_claude_exe).
+    r = subprocess.run(drivers._cmd_line([CLAUDE, "-p", "--output-format", "json",
+                                          "--permission-mode", "plan"]),
                        input=PROPOSE_PROMPT % request_text,
                        capture_output=True, text=True, timeout=300)
     d = json.loads(r.stdout)

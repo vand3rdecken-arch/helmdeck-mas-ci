@@ -643,12 +643,18 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     think_path = os.path.join(run_dir, "live_thinking.txt")
     sid_path = os.path.join(run_dir, "live_session.txt")
     _crm(live_path); _crm(think_path); _crm(sid_path)
-    cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "stream-json",
-           "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
+    # drivers._cmd_line, NOT ["cmd","/c",...]: routing claude.cmd through cmd.exe
+    # silently mangles quoted arguments (it ate the card workers' --resume - see
+    # drivers._real_claude_exe). These args are quote-free today; the spawn form
+    # must not be a trap waiting for the first one that isn't.
+    import drivers
+    argv = [CLAUDE, "-p", "--output-format", "stream-json",
+            "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
-        cmd += ["--model", cli_model]
+        argv += ["--model", cli_model]
     if sid:
-        cmd += ["--resume", sid]
+        argv += ["--resume", sid]
+    cmd = drivers._cmd_line(argv)
     # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
     # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
     _cancelled.discard(user)
