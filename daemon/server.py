@@ -1467,6 +1467,41 @@ def _take_singleton_lock(port):
         found.discard(os.getpid())
         return found
 
+    def _running_turns():
+        """Card ids with a LIVE turn, read straight from the store. The old
+        daemon's workers are its process CHILDREN, so evicting it tree-kills
+        them mid-run - the owner lost the same 15-minute machine turn to a
+        deploy twice in one evening ('killed during run' / 'Broke up in the
+        middle'). The store is the shared truth both daemons can see; the
+        driver pidfile is NOT (it read {} during a live turn)."""
+        try:
+            import db
+            return [d.get("id") for d in db.tracks_all() if d.get("status") == "running"]
+        except Exception:
+            return []
+
+    # GRACE before eviction: a restart is a deploy, a live turn is the owner's
+    # running work - the deploy waits, bounded. HELMDECK_RESTART_GRACE=0 forces
+    # the old brutal behaviour (emergency: the old daemon IS the problem).
+    grace = float(os.environ.get("HELMDECK_RESTART_GRACE", "600"))
+    waited = 0.0
+    while grace > 0:
+        if not _pids_on_port():
+            break                        # no live daemon = a STALE running flag,
+                                         # not a live turn (boot devaluation fixes it)
+        live = _running_turns()
+        if not live:
+            break
+        if waited >= grace:
+            print("SINGLETON: grace expired (%ds) - evicting despite live turn(s): %s"
+                  % (int(grace), ", ".join(live)), flush=True)
+            break
+        if waited % 30 < 5:
+            print("SINGLETON: waiting for live turn(s) to finish before eviction: %s "
+                  "(%ds/%ds)" % (", ".join(live), int(waited), int(grace)), flush=True)
+        time.sleep(5)
+        waited += 5
+
     try:
         old = int(open(pidfile).read().strip())
     except Exception:
