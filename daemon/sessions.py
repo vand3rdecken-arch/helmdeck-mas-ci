@@ -319,18 +319,50 @@ def _lock_for(tid):
 # it, and only the newest actually runs its turn - the rest bail after the
 # interrupt fires. (The soft interrupt itself is drivers.cancel, the P1 port.)
 _steer_epoch = {}
+_steer_pending = {}                 # tid -> [text, ...] of the burst (nothing lost)
 _steer_epoch_guard = _threading.Lock()
 
 
-def _bump_steer_epoch(tid):
+def _bump_steer_epoch(tid, text=None):
+    """Bump the epoch AND register this steer's text atomically. A superseded
+    steer's text stays in the pending list, so the WINNING steer bundles every
+    instruction into its one turn - a burst collapses without a single command
+    silently disappearing ("why did my command disappear")."""
     with _steer_epoch_guard:
         _steer_epoch[tid] = _steer_epoch.get(tid, 0) + 1
+        if text is not None:
+            _steer_pending.setdefault(tid, []).append(text)
         return _steer_epoch[tid]
 
 
 def _steer_epoch_current(tid):
     with _steer_epoch_guard:
         return _steer_epoch.get(tid, 0)
+
+
+def _drain_steer_texts(tid):
+    with _steer_epoch_guard:
+        return _steer_pending.pop(tid, [])
+
+
+def record_bg(tid, open_tasks):
+    """Persist the driver's FIRST-CLASS background-task registry onto the track
+    (Paseo's ProviderSubagentStore principle: state maintained at event time by
+    the pump, never reconstructed by transcript forensics). `open_tasks` is the
+    driver's current {tool_use_id: desc} of confirmed-running background work.
+    Stored with a started_at stamp per id so a task that never reports ages out
+    honestly. Restart-safe: the track is the store."""
+    def _apply(t):
+        prev = t.get("bg_tasks") if isinstance(t.get("bg_tasks"), dict) else {}
+        if not open_tasks:
+            if not prev:
+                return False
+            t.pop("bg_tasks", None)
+            return None
+        t["bg_tasks"] = {uid: {"desc": desc,
+                               "since": (prev.get(uid) or {}).get("since") or time.time()}
+                         for uid, desc in open_tasks.items()}
+    _mutate(tid, _apply)
 
 # -- THE one legal write path for existing tracks (Paseo's one-owner principle) --
 # Tracks are whole JSON dicts, and they used to be read+written from >=4 threads
@@ -606,6 +638,26 @@ def _turn_checkpoint(t):
     return None
 
 
+def resume_detached(prev_ctx, meta):
+    """True when the FIRST turn after a --resume spawn demonstrably did NOT
+    continue the conversation (the CLI silently started fresh). Evidence, not
+    assumption (Paseo: session identity is verified from the runtime's own
+    signals): the init event ECHOES the resumed id on a certain attach
+    (resume_echo -> never detached), and a real continuation's FIRST API call
+    carries at least the prior context - a fresh boot carries only the brief.
+    Floors keep small histories and CLI-side compaction out of the verdict."""
+    if not meta.get("resumed_from") or meta.get("resume_echo"):
+        return False
+    if (prev_ctx or 0) < 25_000:
+        return False                     # too small a history to judge safely
+    cf = meta.get("ctx_first") or {}
+    first_ctx = (cf.get("input_tokens", 0) + cf.get("cache_creation_input_tokens", 0)
+                 + cf.get("cache_read_input_tokens", 0))
+    if not first_ctx:
+        return False                     # no witness - never flag on absence
+    return first_ctx < 0.5 * prev_ctx
+
+
 def _finish_turn(tid, sid, result, meta, log):
     """ONE atomic commit per finished turn (Paseo's one-owner turn-completed
     handler): session rotation + turn count + reply/question/waiting_on +
@@ -625,16 +677,44 @@ def _finish_turn(tid, sid, result, meta, log):
     box = {}
 
     def _commit(tt):
-        # session_id can rotate on resume/compaction; keep the latest so the
-        # next steer continues, and REMEMBER the one we're leaving. A rotation
-        # to a fresh .jsonl carries none of the prior conversation - without
-        # this pointer the whole chat "disappears" from the card view; the feed
-        # uses the chain to lead with a "Kontext verdichtet" marker instead.
+        # session rotation - GUARDED (the invariant): the pointer only moves
+        # forward to a session that demonstrably CONTAINS the conversation. A
+        # silent fresh start (--resume ignored) once moved the pointer onto an
+        # empty thread and the card lost its whole context ("Voellig falscher
+        # Kontext"); now that rotation is REFUSED - the next steer resumes the
+        # real conversation, and the stray thread is kept in the chain.
         if sid and tt.get("session_id") and sid != tt["session_id"]:
-            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
-            chain.append(tt["session_id"])
-            tt["session_chain"] = chain[-6:]     # bounded - last 6 prior sessions
-        tt["session_id"] = sid or tt.get("session_id")
+            old = tt["session_id"]
+            chain = [s for s in (tt.get("session_chain") or []) if s != old]
+            chain.append(old)
+            tt["session_chain"] = chain[-6:]         # bounded - last 6 prior sessions
+            tt["session_id"] = sid
+            if resume_detached(tt.get("ctx_tokens"), meta):
+                # --resume did NOT re-attach: the CLI silently started a FRESH
+                # session for this turn (a compacted/overflowed tip that plain
+                # --resume can't continue). The conversation's LIVE HEAD is now
+                # this new session - it holds THIS turn's steer + reply, proven
+                # by the result we just read off it - so the pointer FOLLOWS it
+                # (Paseo accept-and-rebind: agent.ts handleSystemMessage accepts
+                # the changed session id, emits a visible notice, never fails the
+                # turn). The old head drops into the chain, where
+                # read_transcript_live still renders it as prior history.
+                #
+                # This SUPERSEDES the old "refuse to advance, keep pointer on the
+                # old head" rule. That rule predated chain-rendering and, once the
+                # chain rendered, actively HID the turn: the pointer stayed on the
+                # old session, so THIS turn's steer was drawn at the TOP as
+                # ancient chain history (out of order - the owner's message looked
+                # lost), and every future steer re-resumed the same unattachable
+                # session, spawning orphan after orphan. Context (the worker's
+                # in-memory history) was already gone the moment resume failed;
+                # advancing loses nothing further and restores chronology.
+                log.log("note", "⚠ Kontext verloren: die Session liess sich nicht "
+                        "fortsetzen (%s…), der Worker hat frisch begonnen (%s…). "
+                        "Der bisherige Verlauf bleibt sichtbar; ab hier baut er "
+                        "auf der neuen Session auf." % (str(old)[:8], str(sid)[:8]))
+        else:
+            tt["session_id"] = sid or tt.get("session_id")
         tt["turns"] = tt.get("turns", 0) + 1
         box["reason"] = _settle_reply_apply(tt, question, cleaned, bg, log)
         tt["status"] = "needs_you"
@@ -1790,47 +1870,41 @@ def _pending_context(t):
 # the whole chat "disappears" from the card. So when a turn leaves the context
 # near the brim we run ONE bounded /compact on the same session: it summarises
 # itself in place, the next steer keeps headroom, the thread stays continuous.
-_COMPACT_AT_TOKENS = 160_000     # ~80% of a 200k window - compact before the brim
+_COMPACT_AT_TOKENS = 160_000     # ~80% of a 200k window - the high-water mark
 _CTX_WINDOW = 200_000
-_autocompact_supported = None    # None=unprobed, True/False learned from first /compact
+
+# PROACTIVE /compact INJECTION IS DISABLED (was the corruption source).
+# ---------------------------------------------------------------------------
+# Sending "/compact" as a turn (the previous behaviour) left the session's
+# .jsonl tip in a state that a later `claude -p --resume` could not re-attach
+# to: the CLI silently started a FRESH session, and with the old pointer-refuse
+# rule that dead-ended the card (measured: the "Fix AI-Kosten-Tracking" card,
+# 2026-08-10 - a steer landed in an orphan session and vanished from the feed).
+# It was also mis-detected: the shrink check (`after <= before*0.75`) read the
+# summed result usage, not the compacted context, and often verdicted a working
+# /compact as "not honored".
+#
+# The safety net /compact was meant to provide - "never a fresh-session
+# overflow that wipes the chat" - is now provided CORRECTLY by graceful
+# rotation: when a full session can't be resumed, _finish_turn's
+# accept-and-rebind advances the pointer to the continuation session (Paseo
+# parity) and keeps the old one in session_chain, so the transcript stays whole
+# and chronological and no steer is lost. The context meter (ctx_tokens) still
+# tells the owner how full the window is.
+#
+# Registered as a capability gap in daemon/debt.py [auto-compaction-disabled]:
+# proactive summarisation returns only via a fork-based compaction (fork the
+# session, THEN compact the fork, so the resumable original is never mutated) -
+# the only corruption-free way to compact against the raw stream-json CLI.
+_autocompact_supported = False   # nothing reads this today; seam kept for the
+                                 # fork-based reimplementation (debt.py entry)
 
 
 def _maybe_compact(t, log):
-    """Compact the session in place if the live context crossed the high-water
-    mark. Self-verifying: /compact must actually SHRINK the context. If it does
-    not (an older CLI that treats the slash line as literal input), we learn that
-    once and stop - no no-op cost, no polluting the conversation every turn.
-    Returns the fresh track (or None if nothing was done)."""
-    global _autocompact_supported
-    if _autocompact_supported is False:
-        return None
-    ctx = t.get("ctx_tokens", 0)
-    if ctx < _COMPACT_AT_TOKENS or not t.get("session_id"):
-        return None
-    pct = min(100, round(ctx / _CTX_WINDOW * 100))
-    log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
-            "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
-    sid, _out, meta = _turn(t, "/compact")
-
-    def _apply(tt):
-        if sid and tt.get("session_id") and sid != tt["session_id"]:
-            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
-            chain.append(tt["session_id"])
-            tt["session_chain"] = chain[-6:]
-            tt["session_id"] = sid
-        _record_econ(tt, meta)            # measured economics: the compact turn is billed too
-    t = _mutate(t["id"], _apply) or t
-    before = ctx
-    after = t.get("ctx_tokens", before)
-    if after <= before * 0.75:            # a real compaction frees a big chunk
-        _autocompact_supported = True
-        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
-                "ohne Unterbrechung weiter." % round(after / 1000))
-    else:
-        _autocompact_supported = False
-        log.log("note", "AUTO-COMPACT: diese CLI honoriert /compact nicht - fuer diese "
-                "Session abgeschaltet. Kontext-Meter + Nudge bleiben aktiv.")
-    return t
+    """Disabled - see the block above. Returns None so callers keep the fresh
+    track. The threshold constants and this seam stay for the fork-based
+    reimplementation ([auto-compaction-disabled] in debt.py)."""
+    return None
 
 
 def steer(tid, text, perm=None, actor="owner", source="you",
@@ -1859,7 +1933,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # the process stays alive, the session resumes), so the interrupted turn
     # releases the lock and this steer runs immediately after. A burst collapses
     # to last-wins via the epoch: only the newest steer survives the bail below.
-    my_epoch = _bump_steer_epoch(tid)
+    my_epoch = _bump_steer_epoch(tid, text)
     if drivers.turn_active(tid):
         log.log("note", "⏹ neue Anweisung ersetzt den laufenden Turn (Interrupt).")
         try:
@@ -1867,7 +1941,15 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         except Exception as _ie:
             log.log("note", "Interrupt fehlgeschlagen: %s" % str(_ie)[:150])
     if _steer_epoch_current(tid) != my_epoch:
-        return t                          # a newer steer superseded this one - it runs
+        # a newer steer superseded this one. AUDIT the command anyway and hand it
+        # to the winner via the pending list - bundled, never silently dropped.
+        log.log("steer", text)
+        log.log("note", "⏫ mit der nächsten Anweisung gebündelt (ein Turn).")
+        return t
+    _burst = _drain_steer_texts(tid)
+    if len(_burst) > 1:
+        text = "\n\n".join(_burst)        # the winner carries the WHOLE burst
+        log.log("note", "%d schnelle Anweisungen zu einem Turn gebündelt." % len(_burst))
     if source and source != "you":
         log.log("note", "DELEGATED by %s -> this card's worker" % source)
     log.log("steer", text)               # audit the human's words, not the augmented prompt
@@ -2044,8 +2126,10 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     already answered) is rejected instead of steering the worker with an answer
     to a question it has moved past.
 
-    Only labels the WORKER offered are accepted (ask.validate_answers), so this
-    endpoint cannot be used to inject arbitrary text into a worker's prompt."""
+    The answer is either one of the worker's offered labels or the owner's own
+    free text (the Paseo 'Other' escape hatch) - see ask.validate_answers. Free
+    text is no injection risk: the owner is authenticated and could type the
+    same thing through /steer anyway."""
     import ask
     # CLAIM the question atomically via _mutate (the per-card MUTATION lock,
     # deliberately NOT the turn lock - answering ends in a steer, whose turn
@@ -2076,7 +2160,7 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     ActionLog(t["run_dir"]).log("note", ask.answer_note(picks))
     import events
     events.emit("answer", tid, actor=actor, qkind=q.get("kind"),
-                picks=[p["labels"] for p in picks])
+                picks=[ask._pick_parts(p) for p in picks])
     # steer() clears the pending question itself and runs the turn under the
     # per-card lock, so the worker continues with the decision.
     return steer(tid, ask.answer_prompt(picks), actor=actor, source="answer")
@@ -2442,6 +2526,21 @@ def sweep_zombies(min_idle_s=0):
     from actionlog import ActionLog
     swept = []
     for t in _load():
+        # STARTUP (min_idle_s==0): every worker tree died with the old daemon -
+        # so did every background agent inside it. A registry entry surviving
+        # here is a zombie by construction: clear it (with a visible note) so
+        # the card doesn't wait on a task that can never report.
+        if not min_idle_s and isinstance(t.get("bg_tasks"), dict) \
+                and not drivers.has_session(t["id"]):
+            names = ", ".join(v.get("desc", "task") for v in t["bg_tasks"].values())[:120]
+            _mutate(t["id"], lambda tt: (tt.pop("bg_tasks", None),
+                                         tt.pop("waiting_on", None), None)[-1])
+            try:
+                ActionLog(t["run_dir"]).log(
+                    "note", "Hintergrund-Task(s) mit dem Daemon-Neustart verloren: %s "
+                    "- steuern startet sie neu." % names)
+            except Exception:
+                pass
         st = t.get("status")
         if st == "running":
             # genuinely working = a TURN is in flight (Paseo: "running" is a

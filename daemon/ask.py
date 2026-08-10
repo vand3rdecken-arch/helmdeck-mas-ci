@@ -293,11 +293,22 @@ def summary(question):
     return head + (" (+%d)" % (len(qs) - 1) if len(qs) > 1 else "")
 
 
+MAX_FREE_LEN = 2000        # the owner's own words - matches a steer's freedom
+
+
 def validate_answers(question, answers):
-    """(picks, error). `answers` maps question header -> chosen label(s); a list
-    is accepted for multiSelect. Only labels the WORKER offered are accepted -
-    the owner's client must not be able to inject arbitrary text into the
-    worker's next prompt through this channel."""
+    """(picks, error). `answers` maps question header -> chosen answer(s); a list
+    is accepted for multiSelect.
+
+    An answer is EITHER one of the labels the worker offered OR the owner's own
+    free text (the Paseo 'Other' escape hatch). Free text used to be rejected
+    here 'so the client cannot inject arbitrary text into the worker's next
+    prompt' - but that guard was moot: the owner is the authenticated principal
+    and can already inject any text he likes through /steer. Blocking it here
+    only cost him the ability to answer with anything the worker failed to
+    foresee, which is exactly what he asked to have back. Free text is length-
+    capped and tagged as HIS words in answer_prompt so the worker can tell a
+    typed answer from a preset pick."""
     if not isinstance(answers, dict):
         return None, "answers must be an object"
     qs = (question or {}).get("questions") or []
@@ -310,15 +321,36 @@ def validate_answers(question, answers):
             return None, "missing answer for '%s'" % q["header"]
         chosen = got if isinstance(got, list) else [got]
         valid = {o["label"] for o in q["options"]}
-        labels = [str(c) for c in chosen if str(c) in valid]
-        if not labels:
-            return None, "no valid option chosen for '%s'" % q["header"]
+        labels, custom = [], []
+        for c in chosen:
+            s = str(c).strip()
+            if not s:
+                continue
+            if s in valid:
+                if s not in labels:
+                    labels.append(s)
+            elif s not in custom:
+                custom.append(s[:MAX_FREE_LEN])
+        if not labels and not custom:
+            return None, "no answer given for '%s'" % q["header"]
         if not q.get("multiSelect"):
-            labels = labels[:1]
-        picks.append({"question": q["question"], "header": q["header"], "labels": labels})
+            # single-select: exactly one answer. A preset pick wins if both
+            # somehow arrive, otherwise the one typed answer stands.
+            if labels:
+                labels, custom = labels[:1], []
+            else:
+                custom = custom[:1]
+        picks.append({"question": q["question"], "header": q["header"],
+                      "labels": labels, "custom": custom})
     if not picks:
         return None, "nothing to answer"
     return picks, ""
+
+
+def _pick_parts(p):
+    """Rendered answer fragments for a pick: preset labels verbatim, free text
+    quoted so the worker sees it is the owner's own phrasing, not an option."""
+    return list(p.get("labels", [])) + ['"%s"' % c for c in p.get("custom", [])]
 
 
 def answer_prompt(picks):
@@ -327,7 +359,7 @@ def answer_prompt(picks):
     treating the answer as a fresh, contextless instruction."""
     lines = ["[Antwort auf deine Rueckfrage]"]
     for p in picks:
-        lines.append("%s -> %s" % (p["question"], ", ".join(p["labels"])))
+        lines.append("%s -> %s" % (p["question"], ", ".join(_pick_parts(p))))
     lines.append("")
     lines.append("Arbeite mit dieser Entscheidung genau dort weiter, wo du "
                  "aufgehoert hast. Frag nicht erneut nach dem, was hier "
@@ -338,4 +370,4 @@ def answer_prompt(picks):
 def answer_note(picks):
     """The audit line recorded in the card's flight recorder."""
     return "FRAGE beantwortet: " + "; ".join(
-        "%s -> %s" % (p["header"], ", ".join(p["labels"])) for p in picks)
+        "%s -> %s" % (p["header"], ", ".join(_pick_parts(p))) for p in picks)
