@@ -95,7 +95,11 @@ bare refusal.
 Rules: answer status questions from the snapshot with NO actions. Only act when
 the user clearly asks for a change. Prefer one precise action over many. When a
 card reference is ambiguous, act on nothing and ask in the reply - listing the
-candidates you saw. Moving to review runs the quality gate (may bounce); moving
+candidates you saw. NO DUPLICATE CARDS: before file_card or machine_task, scan
+the snapshot for an ACTIVE card (backlog/working/review) already covering that
+work - if one exists, STEER it with the new instruction instead of filing a
+second; say which card you reused. File a new card only when nothing active
+matches. Moving to review runs the quality gate (may bounce); moving
 to done accepts and advances the process chain. dispatch:true files AND starts
 the card immediately.
 
@@ -580,16 +584,19 @@ def _parse_reply_actions(txt):
 
 
 def live(user):
-    """The board agent's live streaming reply for /chat/live - the board chat
-    polls this while a turn runs so it streams like a card."""
+    """The board agent's live streaming reply + reasoning for /chat/live - the
+    board chat polls this while a turn runs so it streams like a card AND shows a
+    live 'thinking' preview during the pre-output reasoning (no dead 40s wait)."""
     d = _copilot_run_dir(user)
-    text = ""
-    try:
-        with open(os.path.join(d, "live_partial.txt"), encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        pass
-    return {"text": text, "running": user in _running}
+
+    def _rd(name):
+        try:
+            with open(os.path.join(d, name), encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+    return {"text": _rd("live_partial.txt"), "thinking": _rd("live_thinking.txt"),
+            "running": user in _running}
 
 
 def cancel(user):
@@ -633,8 +640,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # black box. The prompt goes in on stdin (it is huge - never a cmd arg).
     run_dir = _copilot_run_dir(user)
     live_path = os.path.join(run_dir, "live_partial.txt")
+    think_path = os.path.join(run_dir, "live_thinking.txt")
     sid_path = os.path.join(run_dir, "live_session.txt")
-    _crm(live_path); _crm(sid_path)
+    _crm(live_path); _crm(think_path); _crm(sid_path)
     cmd = ["cmd", "/c", CLAUDE, "-p", "--output-format", "stream-json",
            "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
@@ -649,7 +657,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
     _running[user] = p
-    parts, result, session_id = [], {}, sid
+    parts, think, result, session_id = [], [], {}, sid
     try:
         p.stdin.write(prompt); p.stdin.close()
         for line in p.stdout:                       # the pump (like drivers._pump)
@@ -672,6 +680,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     if dl.get("type") == "text_delta":
                         parts.append(dl.get("text", ""))
                         _cwrite(live_path, _strip_actions_live("".join(parts)))
+                    elif dl.get("type") == "thinking_delta":
+                        # stream the REASONING too - it starts ~9s before the
+                        # prose, so the chat shows live progress instead of a
+                        # dead "denkt 40s" wait. Rolling tail (last ~600 chars).
+                        think.append(dl.get("thinking", ""))
+                        _cwrite(think_path, "".join(think)[-600:])
             elif typ == "result":
                 result = ev
         try:
@@ -680,7 +694,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             pass
     finally:
         _running.pop(user, None)
-        _crm(live_path)                             # done streaming - clear the live preview
+        _crm(live_path); _crm(think_path)           # done streaming - clear the live preview
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
         return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}

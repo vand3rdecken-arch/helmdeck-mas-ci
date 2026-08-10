@@ -29,8 +29,10 @@ The default settings ship "claude" and "claude-desktop" (windows-mcp allowed +
 screen recording on). Point a card at "claude-desktop" and its agent can drive
 apps/browser on this PC with the whole turn recorded - the flight-recorder
 promise, now per-card."""
-import json, os, shutil, subprocess, threading, time as _time, uuid
+import json, os, re as _re, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
+
+_re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
 
 import ask   # the typed question channel taught to every worker (Phase 2.4)
 
@@ -649,6 +651,16 @@ class _ClaudeSession:
         self.last_used = _time.time()    # for the idle sweeper (Paseo idle TTL)
         self._ctrl = {}                  # request_id -> {"ev":Event,"resp":dict} (control plane)
         self.spawn_time = 0.0            # wall-clock at spawn, for pid-reuse-safe reaping
+        # FIRST-CLASS background-task registry (Paseo's ProviderSubagentStore
+        # principle): maintained AT EVENT TIME by the pump, persisted on the
+        # track - never reconstructed by re-scanning transcripts.
+        self._bg_candidates = {}         # tool_use id -> desc (Task/Agent or run_in_background, result pending)
+        self._bg_open = {}               # tool_use id -> desc (confirmed running in background)
+        # resume-attachment evidence (Paseo: session identity is manager state
+        # verified from the runtime's own events, never assumed):
+        self._spawn_resumed = None       # the session id --resume asked for, or None
+        self._resume_echo = False        # init event echoed that id -> attach certain
+        self._first_turn_after_spawn = True
         self._spawn()
 
     # -- lifecycle -------------------------------------------------------
@@ -691,12 +703,28 @@ class _ClaudeSession:
             # on the first turn. Afterwards the ids differ and this never fires.
             if self.adopted_source and self.adopted_source == self.session_id:
                 argv += ["--fork-session"]
+        # SPAWN FORENSICS: audit whether this worker resumes or starts fresh.
+        # A card once answered with a fresh mind despite a valid session_id and
+        # a CLI-verified resumable transcript ("Voellig falscher Kontext") - and
+        # nothing recorded what the spawn actually did. Now every spawn leaves
+        # the truth in the card feed, so that class is diagnosable in seconds.
+        if self.run_dir:
+            try:
+                from actionlog import ActionLog
+                ActionLog(self.run_dir).log("note", "SESSION spawn: %s%s" % (
+                    ("resume " + self.session_id[:8]) if self.session_id else "FRESH (kein Kontext)",
+                    " +fork" if ("--fork-session" in argv) else ""))
+            except Exception:
+                pass
         self.proc = subprocess.Popen(_cmd_line(argv), cwd=self.worktree,
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, env=_env(self.cfg, self.card_env),
                                      text=True, encoding="utf-8", errors="replace",
                                      bufsize=1)
         self.spawn_time = _time.time()
+        self._spawn_resumed = self.session_id
+        self._resume_echo = False
+        self._first_turn_after_spawn = True
         _record_pid(self.proc.pid, self.spawn_time)
         self.err_tail = []
         self._drop_results = 0     # a fresh process can't emit stale frames
@@ -848,9 +876,60 @@ class _ClaudeSession:
             if cur and not cur["done"].is_set():
                 cur["done"].set()
 
+    # -- background-task registry (event-time, Paseo ProviderSubagentStore) ---
+    def _scan_bg(self, ev):
+        """Fold ONE stream event into the background registry: a Task/Agent or
+        run_in_background tool_use becomes a candidate; its tool_result confirms
+        it ("Async agent launched") or clears it (a sync result); a
+        <task-notification> closes it. On any change the open set is persisted
+        onto the TRACK, so the waiting_on/eviction guard and the auto-continue
+        watcher read first-class state - no transcript re-scans, and a session
+        ROTATION cannot lose a start."""
+        m = ev.get("message") or {}
+        c = m.get("content")
+        changed = False
+        if isinstance(c, list):
+            for p in c:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "tool_use":
+                    inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                    if inp.get("run_in_background") or p.get("name") in ("Task", "Agent"):
+                        self._bg_candidates[p.get("id")] = str(
+                            inp.get("description") or inp.get("command")
+                            or p.get("name") or "task")[:80]
+                elif p.get("type") == "tool_result":
+                    uid = p.get("tool_use_id")
+                    if uid in self._bg_candidates:
+                        txt = p.get("content")
+                        if not isinstance(txt, str):
+                            txt = " ".join(str(x.get("text", "")) for x in txt
+                                           if isinstance(x, dict)) if isinstance(txt, list) else ""
+                        desc = self._bg_candidates.pop(uid)
+                        if "Async agent launched" in (txt or "") or "run_in_background" in (txt or "") \
+                           or "background" in (txt or "")[:200].lower():
+                            self._bg_open[uid] = desc
+                            changed = True
+                elif p.get("type") == "text" and isinstance(p.get("text"), str) \
+                        and p["text"].lstrip().startswith("<task-notification>"):
+                    hit = _re_bg_done.search(p["text"])
+                    if hit and self._bg_open.pop(hit.group(1).strip(), None) is not None:
+                        changed = True
+        if changed:
+            try:
+                import sessions
+                sessions.record_bg(self.tid, dict(self._bg_open))
+            except Exception:
+                pass
+
     def _on_event(self, ev):
         cur = self._cur
         typ = ev.get("type")
+        if typ in ("assistant", "user"):
+            try:
+                self._scan_bg(ev)
+            except Exception:
+                pass                     # registry is best-effort, never the turn
         if typ == "control_response":
             resp = ev.get("response") or {}
             slot = self._ctrl.get(resp.get("request_id"))
@@ -861,6 +940,13 @@ class _ClaudeSession:
         if typ == "system":
             sid = ev.get("session_id")
             if sid:
+                # resume-attachment evidence: a successful --resume ECHOES the
+                # asked-for id in the init event (verified against the real
+                # CLI). A different id here does NOT prove detachment (forks
+                # and rotate-with-context exist) - the echo only ever CONFIRMS.
+                if (ev.get("subtype") == "init" and self._spawn_resumed
+                        and sid == self._spawn_resumed):
+                    self._resume_echo = True
                 self.session_id = sid
                 if cur:
                     cur["session_id"] = sid
@@ -893,6 +979,10 @@ class _ClaudeSession:
                 u = (ev.get("message") or {}).get("usage")
                 if isinstance(u, dict) and u:
                     cur["ctx_usage"] = u
+                    # the FIRST call's usage is the resume-continuity witness: a
+                    # real continuation carries >= the prior conversation's
+                    # context; a silent fresh start carries only the brief.
+                    cur.setdefault("ctx_first", u)
         elif typ == "stream_event":
             e = ev.get("event") or {}
             if e.get("type") == "content_block_delta" and cur:
@@ -968,6 +1058,15 @@ class _ClaudeSession:
                 # the LAST assistant call's usage = the real context size (the
                 # result event's usage sums every call of the turn - see _on_event)
                 "ctx_usage": cur.get("ctx_usage") or {}}
+        # resume-attachment evidence for the FIRST turn after a --resume spawn:
+        # sessions._finish_turn refuses to move the session pointer to a session
+        # that demonstrably does NOT contain the conversation.
+        if self._first_turn_after_spawn:
+            self._first_turn_after_spawn = False
+            if self._spawn_resumed:
+                meta["resumed_from"] = self._spawn_resumed
+                meta["resume_echo"] = self._resume_echo
+                meta["ctx_first"] = cur.get("ctx_first") or {}
         return self.session_id or d.get("session_id"), d.get("result", ""), meta
 
 

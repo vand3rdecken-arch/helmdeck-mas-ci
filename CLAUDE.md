@@ -24,6 +24,15 @@ well-formed → propose the commit when work goes quiet).
   git-ignored - never commit them.
 - UI changes: screenshot and JUDGE (readability, centering, theming,
   collisions), don't just confirm rendering. The owner reviews UI hard.
+- NO MONKEY PATCHES (owner-decreed, the Paseo principle): load-bearing state is
+  DERIVED and VERIFIED from the runtime's own signals, folded in at EVENT TIME,
+  mutated at exactly ONE owner - never assumed from a stored flag, never
+  reconstructed by re-scanning artifacts, never adopted without evidence.
+  Precedents to imitate: `drivers.turn_active` (lifecycle is an observation),
+  `sessions.record_bg` (background registry at event time),
+  `sessions.resume_detached` (the session pointer only advances on proof).
+  A heuristic reconstruction that ships anyway is a SHORTCUT -> register it in
+  `daemon/debt.py` in the same commit.
 
 ## Run / verify
 

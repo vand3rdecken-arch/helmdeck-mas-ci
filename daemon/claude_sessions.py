@@ -278,29 +278,63 @@ def background_state(track):
     The "unknown" state exists because the auto-continue watcher STEERS on a
     clear result, and steering costs the owner a real turn: a missing or rotated
     transcript must never be mistaken for "the build finished"."""
+    # PRIMARY source: the driver's FIRST-CLASS registry, maintained at event
+    # time by the pump and persisted on the track (sessions.record_bg - Paseo's
+    # ProviderSubagentStore principle). No transcript scan, no rotation
+    # blindness by construction. The 6h age cap keeps a task that never reports
+    # from parking the card forever.
+    reg = (track or {}).get("bg_tasks")
+    if isinstance(reg, dict):
+        now0 = time.time()
+        open_reg = [v.get("desc", "task") for v in reg.values()
+                    if now0 - (v.get("since") or now0) < 6 * 3600]
+        if open_reg:
+            return "waiting", {"n": len(open_reg), "names": open_reg[:4]}
+        return "clear", None
+    # FALLBACK (repair only - cards from before the registry existed): scan the
+    # session chain. A background task started in an earlier turn - or before a
+    # session ROTATION (every --resume writes a new .jsonl) - was invisible to
+    # the old last-turn scan: background_state lied "clear", the turn ended
+    # waiting_on "you", the idle-eviction guard didn't hold, and the sweeper
+    # tree-killed the very task the card was waiting for ("mittendrin
+    # gestorben"). Starts older than the watcher's max wait are ignored.
     sid = live_session_id(track)
-    path = _find_transcript(sid) if sid else None
-    if not path:
+    chain = [s for s in ((track or {}).get("session_chain") or []) if s and s != sid]
+    paths = [p for p in (_find_transcript(s) for s in (chain[-3:] + ([sid] if sid else [])))
+             if p]
+    if not paths:
         return "unknown", None
     recs = []
-    try:
-        lines = _tail_lines(path)
-    except OSError:
-        return "unknown", None
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+    readable = False
+    for path in paths:
         try:
-            recs.append(json.loads(line))
-        except ValueError:
+            lines = _tail_lines(path)
+            readable = True
+        except OSError:
             continue
-    start = 0
-    for i, d in enumerate(recs):       # scope to the last turn only
-        if _is_steer(d):
-            start = i
-    started, done = {}, set()
-    for d in recs[start:]:
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                recs.append(json.loads(line))
+            except ValueError:
+                continue
+    if not readable:
+        return "unknown", None
+    max_age = 6 * 3600                 # matches sessions._BG_MAX_WAIT_S
+    now = time.time()
+
+    def _age(d):
+        try:
+            from datetime import datetime
+            return now - datetime.fromisoformat(
+                (d.get("timestamp") or "").replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return None
+
+    started, agent_uses, results, done = {}, {}, {}, set()
+    for d in recs:
         m = d.get("message")
         c = m.get("content") if isinstance(m, dict) else None
         if isinstance(c, list):
@@ -309,15 +343,31 @@ def background_state(track):
                     continue
                 if p.get("type") == "tool_use":
                     inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                    age = _age(d)
+                    if age is not None and age > max_age:
+                        continue       # long-dead start - never parks the card
                     if inp.get("run_in_background"):
                         started[p.get("id")] = str(
                             inp.get("description") or inp.get("command")
                             or p.get("name") or "task")[:80]
+                    elif p.get("name") in ("Task", "Agent"):
+                        # subagents launch ASYNC by default (no run_in_background
+                        # flag) - whether one is a background task shows in its
+                        # tool_result ("Async agent launched"), paired below
+                        agent_uses[p.get("id")] = str(
+                            inp.get("description") or "agent")[:80]
+                elif p.get("type") == "tool_result":
+                    txt = p.get("content")
+                    txt = txt if isinstance(txt, str) else _first_text(txt)
+                    results[p.get("tool_use_id")] = str(txt or "")[:120]
         lead = _first_text(c).lstrip()
         if lead.startswith("<task-notification>"):
             hit = re.search(r"<tool-use-id>(.*?)</tool-use-id>", lead, re.S)
             if hit:
                 done.add(hit.group(1).strip())
+    for uid, desc in agent_uses.items():
+        if "Async agent launched" in results.get(uid, ""):
+            started[uid] = desc        # a live background AGENT (the scam-check case)
     open_tasks = [v for k, v in started.items() if k not in done]
     if not open_tasks:
         return "clear", None
@@ -480,7 +530,14 @@ def _clean_text(text):
     instead (ask.py). Leaving the raw <helmdeck-ask> JSON in the feed would show
     the owner the protocol rather than the question."""
     import ask
-    return ask.strip(_strip_ctx(text))
+    out = ask.strip(_strip_ctx(text))
+    # NOQUESTION is the ask-repair protocol's decline token ("I wasn't really
+    # asking") - an internal handshake, never a reply. As a bubble it read like
+    # the worker answered the owner with the word "NOQUESTION" ("Questions also
+    # broken"). The record stays in the .jsonl; only the chrome hides it.
+    if out.strip() == ask.NO_QUESTION:
+        return ""
+    return out
 
 
 def _result_text(part):
