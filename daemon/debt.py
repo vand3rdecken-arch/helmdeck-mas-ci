@@ -366,6 +366,30 @@ DEBT = [
         "order": 15,
     },
     {
+        "id": "auto-compaction-disabled",
+        "title": "Proactive context compaction is off - no summarisation at the brim",
+        "status": "open",
+        "what": "sessions._maybe_compact used to inject a '/compact' turn at ~80% "
+                "context to summarise the session in place. That corrupted the "
+                "session tip (a later --resume silently started fresh, losing the "
+                "worker's context and, before accept-and-rebind, hiding the steer) "
+                "and was mis-detected as unsupported. It is now a no-op; graceful "
+                "rotation in _finish_turn handles overflow instead.",
+        "why_it_bites": "A very long card now fills to the hard 200k window and, on "
+                        "the next resume, rotates to a fresh session (context lost, "
+                        "but visible + chronological) instead of being summarised at "
+                        "160k. The owner only has the context meter as a warning; "
+                        "there is no in-place summarisation to extend a session.",
+        "trigger": "a card whose single session runs long enough to approach 200k",
+        "fix": "Fork-based compaction: fork the session (--fork-session gives a new "
+               "attachable id), THEN /compact the FORK, so the resumable original is "
+               "never mutated; verify the fork actually shrank (read the compacted "
+               "context, not the summed result usage) before adopting it as the "
+               "pointer. Re-enable _maybe_compact around that. Verify against the "
+               "raw stream-json CLI, which is what corrupted the in-place path.",
+        "order": 16,
+    },
+    {
         "id": "ai-billing-workspace-global",
         "title": "AI billing mode (flat vs metered) is one workspace-wide switch",
         "status": "open",
@@ -397,7 +421,7 @@ DEBT = [
                "the driver's auth source), roll it up per card in events.metrics(), "
                "and let the UI render each card by its own mode instead of the "
                "workspace switch.",
-        "order": 16,
+        "order": 17,
     },
     {
         "id": "plan-share-calibration",
@@ -425,7 +449,7 @@ DEBT = [
                "otherwise track the delta (account utilization minus our recorded "
                "tokens) as an explicit 'outside this board' slice, show it in the "
                "usage panel, and calibrate against the remainder.",
-        "order": 17,
+        "order": 18,
     },
 ]
 
