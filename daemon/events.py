@@ -268,13 +268,27 @@ def plan_calibration(ev=None, s=None):
     if not isinstance(used, (int, float)) or used < MIN_CALIB_PCT:
         return None
     cutoff = time.time() - WEEK_SEC
-    tok = sum(turn_tokens(e) for e in (ev if ev is not None else read_events())
-              if e.get("kind") == "turn" and _ts_epoch(e.get("ts", "")) >= cutoff)
+    rows = [e for e in (ev if ev is not None else read_events())
+            if e.get("kind") == "turn" and _ts_epoch(e.get("ts", "")) >= cutoff]
+    tok = sum(turn_tokens(e) for e in rows)
     if tok <= 0:
         return None
-    return {"tokens_per_pct": tok / float(used), "source": "measured",
-            "window": "weekly", "used_pct": used, "observed_tokens": tok,
-            "resets_at": w.get("resetsAt")}
+    # COST calibration beside the token one. Raw tokens over-weight cache
+    # reads ~10x (a cache-read token draws ~0.1x of a fresh input token from
+    # the plan, exactly like its API price) - so a card with cache-heavy turns
+    # (long tool loops) showed a SMALLER "% vom Abo" than a card with fewer
+    # but cache-light turns: upside down from what it really consumed ("viel
+    # mehr activities und trotzdem weniger %"). The measured per-turn $
+    # (price_turn) already weights every token class correctly, so the plan
+    # share divides measured cost by the window's cost-per-utilization-percent.
+    cost = sum(float(e.get("cost") or 0.0) for e in rows)
+    out = {"tokens_per_pct": tok / float(used), "source": "measured",
+           "window": "weekly", "used_pct": used, "observed_tokens": tok,
+           "resets_at": w.get("resetsAt")}
+    if cost > 0:
+        out["cost_per_pct"] = cost / float(used)
+        out["observed_cost"] = round(cost, 4)
+    return out
 
 def price_turn(models, usage, cost_usd=None):
     """Dollar cost of one session turn. CLI-reported total wins; else price the
@@ -338,10 +352,16 @@ def metrics(tracks):
     # and every surface falls back to the raw token count.
     calib = plan_calibration(ev, s) if flat else None
     per_pct = (calib or {}).get("tokens_per_pct") or 0.0
-    def plan_pct(tok):
+    cost_per_pct = (calib or {}).get("cost_per_pct") or 0.0
+    def plan_pct(tok, cost=None):
         # 4 decimals, not 2: a single cheap turn is a few thousandths of a
         # percent and rounding it to 0.0 would render "-" (no consumption)
         # instead of the honest "<0.01%". The UI does the human rounding.
+        # COST basis wins when calibrated: raw tokens over-weight cache reads
+        # ~10x, ranking a cache-heavy card BELOW a lighter one that actually
+        # drew less from the plan (see plan_calibration).
+        if cost is not None and cost_per_pct > 0:
+            return round(float(cost) / cost_per_pct, 4)
         return round(tok / per_pct, 4) if per_pct > 0 else None
     tariff = s["capacity"]["tariff"]
     today = time.strftime("%Y-%m-%d")
@@ -379,7 +399,8 @@ def metrics(tracks):
                       "margin": round(billed - (0.0 if flat else ai), 2),
                       "mode": mode, "models": t.get("models", []),
                       "tokens_in": t.get("tokens_in", 0), "tokens_out": t.get("tokens_out", 0),
-                      "plan_pct": plan_pct(t.get("tokens_in", 0) + t.get("tokens_out", 0))})
+                      "plan_pct": plan_pct(t.get("tokens_in", 0) + t.get("tokens_out", 0),
+                                           cost=ai)})
 
     done = [c for c in cards if c["lane"] == "done"]
     gated = {}   # first gate outcome per track (first-pass yield)
@@ -409,7 +430,8 @@ def metrics(tracks):
         b["avg_cost_per_turn"] = round(b["cost"] / b["turns"], 4) if b["turns"] else 0
         # the quoting number on a flat plan: what one turn of this model eats
         # out of the subscription, in percent.
-        b["plan_pct_per_turn"] = (plan_pct((b["tok_in"] + b["tok_out"]) / b["turns"])
+        b["plan_pct_per_turn"] = (plan_pct((b["tok_in"] + b["tok_out"]) / b["turns"],
+                                           cost=b["cost"] / b["turns"])
                                   if b["turns"] else None)
     touches_today = sum(tariff.get(e.get("touch"), 1) for e in ev
                         if e["kind"] == "touch" and e["ts"][:10] == today)
@@ -455,7 +477,7 @@ def metrics(tracks):
                      "cards": r["cards"], "done": r["done"], "hours": round(r["hours"], 2),
                      "billed": round(r["billed"], 2), "ai_cost": round(r["ai_cost"], 4),
                      "margin": round(r["billed"] - (0.0 if flat else r["ai_cost"]), 2),
-                     "plan_pct": plan_pct(r["tokens"]),
+                     "plan_pct": plan_pct(r["tokens"], cost=r["ai_cost"]),
                      "all_done": r["cards"] > 0 and r["done"] == r["cards"]})
     sows.sort(key=lambda x: -x["margin"])
 
@@ -482,7 +504,7 @@ def metrics(tracks):
         "totals": {"value_delivered": round(value_done, 2),
                    "ai_spend": round(ai_all, 4),
                    "ai_tokens": tok_all,
-                   "plan_pct": plan_pct(tok_all),
+                   "plan_pct": plan_pct(tok_all, cost=ai_all),
                    "margin": round(value_done - (0.0 if flat else ai_all), 2),
                    "leverage_per_touch": round(value_done / touch_all, 2)},
     }
