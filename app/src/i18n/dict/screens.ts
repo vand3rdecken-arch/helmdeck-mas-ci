@@ -168,6 +168,7 @@ export const screens: Dict = {
   "processes.clientChip": { de: "Client: {name}", en: "client: {name}" },
   "processes.dueChip": { de: "fällig {due}", en: "due {due}" },
   "processes.aiCost": { de: "KI ${amount}", en: "AI ${amount}" },
+  "processes.aiFlat": { de: "KI im Abo inkl.", en: "AI incl. in plan" },
   "processes.proposing": { de: "Agent schlägt Schritte vor…", en: "Agent is proposing steps…" },
   "processes.proposeFailed": { de: "Vorschlag fehlgeschlagen", en: "Proposal failed" },
   "processes.newProcess": { de: "Neuer Prozess", en: "New process" },

@@ -14,6 +14,7 @@ import type { Track, LaneMove } from "@/data/types";
 import { t as tt, useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "./billing";
 import { GanttView } from "./board_gantt";
 import { LiveThumb } from "./board_live";
 import { Chip, Dot, Empty } from "./kit";
@@ -149,6 +150,7 @@ function RunningPulse({ color }: { color: string }) {
 function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const t = useTheme();
   const tr = useT();
+  const flat = useAiFlat();
   const router = useRouter();
   const tint = k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
@@ -212,7 +214,9 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         {k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
         {k.due ? <Chip text={tr("board.due", { d: k.due })} /> : null}
         {k.value > 0 ? <Chip text={`€${k.value}`} /> : null}
-        {k.ai_cost > 0 ? <Chip text={`AI $${k.ai_cost.toFixed(2)}`} /> : null}
+        {k.ai_cost > 0 ? <Chip text={flat
+          ? planLabel(tr, e?.plan_pct, (k.tokens_in ?? 0) + (k.tokens_out ?? 0))
+          : `AI $${k.ai_cost.toFixed(2)}`} /> : null}
         {e && e.touches > 0 ? <Chip text={`${e.touches}t`} /> : null}
         {e?.mode ? <Chip text={tr(e.mode === "auto" ? "board.mode.auto" : "board.mode.assisted")} dot={e.mode === "auto" ? t.ai : t.human} /> : null}
         {k.client ? <Chip text={k.client} /> : null}
@@ -261,6 +265,9 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
 function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () => void }) {
   const t = useTheme();
   const tr = useT();
+  const flat = useAiFlat();
+  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
+  const planPct = metrics?.cards?.find((c) => c.id === k.id)?.plan_pct;
   return (
     <Pressable onPress={onOpen} onLongPress={onMove} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
       <Dot color={statusColor(t, k.status)} />
@@ -270,7 +277,10 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
       {k.priority && k.priority !== "medium" ? <Text style={{ color: k.priority === "urgent" ? t.danger : t.warn, fontSize: 10.5 }}>{prioLabel(tr, k.priority)}</Text> : null}
       {k.due ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.due}</Text> : null}
       {k.value > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>€{k.value}</Text> : null}
-      {k.ai_cost > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>${k.ai_cost.toFixed(2)}</Text> : null}
+      {k.ai_cost > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{flat
+        ? (planPct != null && planPct > 0 ? fmtPlanPct(planPct)
+           : tr("board.tokShort", { tok: fmtTok((k.tokens_in ?? 0) + (k.tokens_out ?? 0)) }))
+        : `$${k.ai_cost.toFixed(2)}`}</Text> : null}
       {k.updated ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.updated}</Text> : null}
     </Pressable>
   );

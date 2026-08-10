@@ -12,6 +12,7 @@ import { api } from "@/data/client";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { useAiFlat } from "@/ui/billing";
 import { Chip, Dot, Empty, Panel, ScreenHeader } from "@/ui/kit";
 
 const isWeb = Platform.OS === "web";
@@ -204,6 +205,7 @@ function Pipeline({ p }: { p: Process }) {
 }
 
 function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
+  const flat = useAiFlat();
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
@@ -248,7 +250,7 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
         {p.status ? <Chip text={p.status} /> : null}
         {p.client ? <Chip text={tr("processes.clientChip", { name: p.client })} /> : null}
         {p.due ? <Chip text={tr("processes.dueChip", { due: p.due })} /> : null}
-        {p.cost && p.cost > 0 ? <Chip text={tr("processes.aiCost", { amount: p.cost.toFixed(2) })} /> : null}
+        {p.cost && p.cost > 0 ? <Chip text={flat ? tr("processes.aiFlat") : tr("processes.aiCost", { amount: p.cost.toFixed(2) })} /> : null}
       </View>
       {p.status === "proposing" ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("processes.proposing")}</Text> : null}
       {p.status === "failed" ? <Text style={{ color: t.danger, fontSize: 12 }}>{p.error ?? tr("processes.proposeFailed")}</Text> : null}

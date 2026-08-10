@@ -57,11 +57,22 @@ export interface EconCard {
   tokens_in: number; tokens_out: number;
   billing?: "fixed" | "tm" | "none"; rate?: number | null;
   billed?: number; margin?: number; time_seconds?: number;
+  /** flat plan only: this card's share of the subscription, in percent of a
+   *  weekly quota. null when the daemon can't calibrate → fall back to tokens. */
+  plan_pct?: number | null;
 }
 export interface Sow {
   id: string; name: string; client: string; status?: string; due?: string;
   cards: number; done: number; hours: number; billed: number;
-  ai_cost: number; margin: number; all_done: boolean;
+  ai_cost: number; margin: number; all_done: boolean; plan_pct?: number | null;
+}
+/** How the daemon converted tokens into "% of the plan". source "measured" =
+ *  calibrated against the live weekly quota window (an estimate — it divides
+ *  OUR tokens by the ACCOUNT's utilization); "configured" = owner-set
+ *  settings.pm.plan_tokens_week. Absent/null = not calibratable right now. */
+export interface PlanCalibration {
+  tokens_per_pct: number; source: "measured" | "configured"; window: string;
+  used_pct?: number | null; observed_tokens?: number | null; resets_at?: string;
 }
 export interface Metrics {
   settings?: {
@@ -77,6 +88,10 @@ export interface Metrics {
     dashboard?: { tiles?: string[]; panels?: string[] };
     appearance?: { backdrop?: string };
   };
+  /** flat = Max subscription: ai_cost/ai_spend are API-equivalent references,
+   *  not spend, and margins already exclude them daemon-side. */
+  ai_billing?: "flat" | "metered";
+  plan_calibration?: PlanCalibration | null;
   cards: EconCard[];
   sows: Sow[];
   capacity: { wip: number; wip_limit: number; touches_today: number;
@@ -84,8 +99,10 @@ export interface Metrics {
   yield_first_pass: [number, number];
   automation: [number, number];
   gate_failures: [string, number][];
-  ai_by_model?: Record<string, { turns: number; cost: number; tok_in: number; tok_out: number; avg_cost_per_turn: number }>;
-  totals: { value_delivered: number; ai_spend: number; margin: number; leverage_per_touch: number };
+  ai_by_model?: Record<string, { turns: number; cost: number; tok_in: number; tok_out: number;
+    avg_cost_per_turn: number; plan_pct_per_turn?: number | null }>;
+  totals: { value_delivered: number; ai_spend: number; margin: number; leverage_per_touch: number;
+    ai_tokens?: number; plan_pct?: number | null };
 }
 export interface Step {
   title: string; desc: string; mode: string; days: number; status: string;
@@ -100,7 +117,10 @@ export interface Process {
  *  labels). The full settings blob stays owner-only on /settings. */
 export interface Me {
   name: string; role: string;
-  ui?: { lang?: string; lane_labels?: Record<string, string> };
+  ui?: { lang?: string; lane_labels?: Record<string, string>;
+    /** flat = Max subscription (quota, not cash) → cost surfaces show tokens;
+     *  metered = API pay-per-token → $ amounts are real spend. */
+    ai_billing?: "flat" | "metered" };
 }
 export interface HistoryRow { kind: string; detail: string; ts?: string; t?: number }
 export interface Run { id: string; title: string; kind: string; status: string; steps?: number }
