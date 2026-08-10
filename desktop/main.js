@@ -28,7 +28,26 @@ let daemon = null, web = null, win = null, failed = false, setupSrv = null, daem
 
 // packaged: resources/{daemon,app-dist}; dev: repo ../{daemon,app/dist}
 const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
-const daemonDir = path.join(root, "daemon");
+// THE REAL BRAIN pointer. The packaged install ships its own daemon COPY under
+// resources/daemon - a fresh state dir with no relay pairing, no users.json and
+// stale code. Spawning THAT (when the adopt probe missed) put a sandbox brain
+// on :8140: the phone's room was never polled and the minted token was invalid
+// against the real daemon - "Desktop nicht erreichbar" on both ends. One state
+// dir must be the single owner, so resources/daemon-dir.txt (one line: the
+// absolute path of the real daemon dir) redirects spawn AND token mint there;
+// only a dir that actually contains swarm.py is accepted, else fall back to
+// the bundled copy (a fresh install with no pointer keeps working).
+function resolveDaemonDir() {
+  const bundled = path.join(root, "daemon");
+  try {
+    const fs = require("fs");
+    const p = fs.readFileSync(path.join(root, "daemon-dir.txt"), "utf8").trim();
+    if (p && fs.existsSync(path.join(p, "swarm.py"))) return p;
+    if (p) log("daemon", "daemon-dir.txt points at '" + p + "' but no swarm.py there - using the bundled copy\n");
+  } catch { /* no pointer file: bundled copy */ }
+  return bundled;
+}
+const daemonDir = resolveDaemonDir();
 // The UI is now the single Expo/React-Native web export (expo export --platform
 // web), replacing the old Next.js server. Same static SPA that ships to the
 // phone/web; the desktop just serves it locally and points it at the daemon.
@@ -80,11 +99,19 @@ function fail(msg) {
 // screen is what fixes it — killing the app would leave the user nowhere.
 // Is a daemon already answering on :8140? ANY HTTP reply (even 401) means one is
 // listening. Used to ADOPT it instead of spawning a second (Paseo probe-then-adopt).
-function daemonReachable(cb) {
-  const req = http.get({ host: "127.0.0.1", port: DAEMON_PORT, path: "/tracks", timeout: 1200 },
+// Retried: a single 1.2s shot raced a daemon that was busy or mid-restart and
+// the miss spawned a SECOND daemon over the live one (SO_REUSEADDR lets both
+// bind on Windows) - observed in the field. Three tries ~2.7s apart makes
+// "there is a daemon, adopt it" the outcome of every transient blip; a real
+// absence still resolves in under 3s of extra startup.
+function daemonReachable(cb, tries = 3) {
+  const miss = () => (tries > 1
+    ? setTimeout(() => daemonReachable(cb, tries - 1), 700)
+    : cb(false));
+  const req = http.get({ host: "127.0.0.1", port: DAEMON_PORT, path: "/tracks", timeout: 2000 },
     (r) => { r.destroy(); cb(true); });
-  req.on("error", () => cb(false));
-  req.on("timeout", function () { this.destroy(); cb(false); });
+  req.on("error", miss);
+  req.on("timeout", function () { this.destroy(); miss(); });
 }
 
 function startDaemon(pyOverride) {
