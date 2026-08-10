@@ -684,18 +684,35 @@ def _finish_turn(tid, sid, result, meta, log):
         # Kontext"); now that rotation is REFUSED - the next steer resumes the
         # real conversation, and the stray thread is kept in the chain.
         if sid and tt.get("session_id") and sid != tt["session_id"]:
+            old = tt["session_id"]
+            chain = [s for s in (tt.get("session_chain") or []) if s != old]
+            chain.append(old)
+            tt["session_chain"] = chain[-6:]         # bounded - last 6 prior sessions
+            tt["session_id"] = sid
             if resume_detached(tt.get("ctx_tokens"), meta):
-                stray = [s for s in (tt.get("session_chain") or []) if s != sid]
-                stray.append(sid)
-                tt["session_chain"] = stray[-6:]
-                log.log("note", "⚠ RESUME kam nicht an (Worker startete frisch) - "
-                        "Session-Zeiger bleibt auf %s; nächstes Steuern setzt die "
-                        "echte Unterhaltung fort." % str(tt["session_id"])[:8])
-            else:
-                chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
-                chain.append(tt["session_id"])
-                tt["session_chain"] = chain[-6:]     # bounded - last 6 prior sessions
-                tt["session_id"] = sid
+                # --resume did NOT re-attach: the CLI silently started a FRESH
+                # session for this turn (a compacted/overflowed tip that plain
+                # --resume can't continue). The conversation's LIVE HEAD is now
+                # this new session - it holds THIS turn's steer + reply, proven
+                # by the result we just read off it - so the pointer FOLLOWS it
+                # (Paseo accept-and-rebind: agent.ts handleSystemMessage accepts
+                # the changed session id, emits a visible notice, never fails the
+                # turn). The old head drops into the chain, where
+                # read_transcript_live still renders it as prior history.
+                #
+                # This SUPERSEDES the old "refuse to advance, keep pointer on the
+                # old head" rule. That rule predated chain-rendering and, once the
+                # chain rendered, actively HID the turn: the pointer stayed on the
+                # old session, so THIS turn's steer was drawn at the TOP as
+                # ancient chain history (out of order - the owner's message looked
+                # lost), and every future steer re-resumed the same unattachable
+                # session, spawning orphan after orphan. Context (the worker's
+                # in-memory history) was already gone the moment resume failed;
+                # advancing loses nothing further and restores chronology.
+                log.log("note", "⚠ Kontext verloren: die Session liess sich nicht "
+                        "fortsetzen (%s…), der Worker hat frisch begonnen (%s…). "
+                        "Der bisherige Verlauf bleibt sichtbar; ab hier baut er "
+                        "auf der neuen Session auf." % (str(old)[:8], str(sid)[:8]))
         else:
             tt["session_id"] = sid or tt.get("session_id")
         tt["turns"] = tt.get("turns", 0) + 1
@@ -1853,47 +1870,40 @@ def _pending_context(t):
 # the whole chat "disappears" from the card. So when a turn leaves the context
 # near the brim we run ONE bounded /compact on the same session: it summarises
 # itself in place, the next steer keeps headroom, the thread stays continuous.
-_COMPACT_AT_TOKENS = 160_000     # ~80% of a 200k window - compact before the brim
+_COMPACT_AT_TOKENS = 160_000     # ~80% of a 200k window - the high-water mark
 _CTX_WINDOW = 200_000
-_autocompact_supported = None    # None=unprobed, True/False learned from first /compact
+
+# PROACTIVE /compact INJECTION IS DISABLED (was the corruption source).
+# ---------------------------------------------------------------------------
+# Sending "/compact" as a turn (the previous behaviour) left the session's
+# .jsonl tip in a state that a later `claude -p --resume` could not re-attach
+# to: the CLI silently started a FRESH session, and with the old pointer-refuse
+# rule that dead-ended the card (measured: the "Fix AI-Kosten-Tracking" card,
+# 2026-08-10 - a steer landed in an orphan session and vanished from the feed).
+# It was also mis-detected: the shrink check (`after <= before*0.75`) read the
+# summed result usage, not the compacted context, and often verdicted a working
+# /compact as "not honored".
+#
+# The safety net /compact was meant to provide - "never a fresh-session
+# overflow that wipes the chat" - is now provided CORRECTLY by graceful
+# rotation: when a full session can't be resumed, _finish_turn's
+# accept-and-rebind advances the pointer to the continuation session (Paseo
+# parity) and keeps the old one in session_chain, so the transcript stays whole
+# and chronological and no steer is lost. The context meter (ctx_tokens) still
+# tells the owner how full the window is.
+#
+# Registered as a capability gap in daemon/debt.py [auto-compaction-disabled]:
+# proactive summarisation returns only via a fork-based compaction (fork the
+# session, THEN compact the fork, so the resumable original is never mutated) -
+# the only corruption-free way to compact against the raw stream-json CLI.
+_autocompact_supported = False   # kept: legacy readers still branch on it
 
 
 def _maybe_compact(t, log):
-    """Compact the session in place if the live context crossed the high-water
-    mark. Self-verifying: /compact must actually SHRINK the context. If it does
-    not (an older CLI that treats the slash line as literal input), we learn that
-    once and stop - no no-op cost, no polluting the conversation every turn.
-    Returns the fresh track (or None if nothing was done)."""
-    global _autocompact_supported
-    if _autocompact_supported is False:
-        return None
-    ctx = t.get("ctx_tokens", 0)
-    if ctx < _COMPACT_AT_TOKENS or not t.get("session_id"):
-        return None
-    pct = min(100, round(ctx / _CTX_WINDOW * 100))
-    log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
-            "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
-    sid, _out, meta = _turn(t, "/compact")
-
-    def _apply(tt):
-        if sid and tt.get("session_id") and sid != tt["session_id"]:
-            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
-            chain.append(tt["session_id"])
-            tt["session_chain"] = chain[-6:]
-            tt["session_id"] = sid
-        _record_econ(tt, meta)            # measured economics: the compact turn is billed too
-    t = _mutate(t["id"], _apply) or t
-    before = ctx
-    after = t.get("ctx_tokens", before)
-    if after <= before * 0.75:            # a real compaction frees a big chunk
-        _autocompact_supported = True
-        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
-                "ohne Unterbrechung weiter." % round(after / 1000))
-    else:
-        _autocompact_supported = False
-        log.log("note", "AUTO-COMPACT: diese CLI honoriert /compact nicht - fuer diese "
-                "Session abgeschaltet. Kontext-Meter + Nudge bleiben aktiv.")
-    return t
+    """Disabled - see the block above. Returns None so callers keep the fresh
+    track. The threshold constants and this seam stay for the fork-based
+    reimplementation ([auto-compaction-disabled] in debt.py)."""
+    return None
 
 
 def steer(tid, text, perm=None, actor="owner", source="you",
