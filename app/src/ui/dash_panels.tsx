@@ -9,6 +9,7 @@ import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/da
 import { t as tt, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { fmtTok, useAiFlat } from "./billing";
 import { Empty } from "./kit";
 
 const isWeb = Platform.OS === "web";
@@ -80,16 +81,24 @@ export function Tile({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** Board-wide token consumption - the flat plan's cost figure ($ would lie). */
+function totalTokens(m: Metrics): number {
+  return (m.cards ?? []).reduce((a, x) => a + (x.tokens_in ?? 0) + (x.tokens_out ?? 0), 0);
+}
+
 export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: string[] }) {
   const tr = useT();
+  const flat = useAiFlat();
   const T = m.totals;
   const [y0, y1] = m.yield_first_pass ?? [0, 0];
   const [a0, a1] = m.automation ?? [0, 0];
   const c = cur(m);
   const byKey: Record<string, { value: string; label: string }> = {
     value_delivered: { value: c + T.value_delivered, label: tr("dash.tile.valueDelivered") },
-    ai_spend: { value: "$" + T.ai_spend.toFixed(2), label: tr("dash.tile.aiSpend") },
-    margin: { value: c + T.margin, label: tr("dash.tile.margin") },
+    ai_spend: flat
+      ? { value: fmtTok(totalTokens(m)) + " Tok", label: tr("dash.tile.aiSpendFlat") }
+      : { value: "$" + T.ai_spend.toFixed(2), label: tr("dash.tile.aiSpend") },
+    margin: { value: c + T.margin, label: tr(flat ? "dash.tile.marginFlat" : "dash.tile.margin") },
     yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: tr("dash.tile.yield", { a: y0, b: y1 }) },
     automation: { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: tr("dash.tile.automation", { a: a0, b: a1 }) },
     leverage: { value: c + T.leverage_per_touch, label: tr("dash.tile.leverage") },
@@ -196,6 +205,7 @@ function Table({ cols, rows, foot }: { cols: Col[]; rows: any[]; foot?: React.Re
 export function SowPanel({ m }: { m: Metrics }) {
   const t = useTheme();
   const tr = useT();
+  const flat = useAiFlat();
   const c = cur(m);
   const sows = m.sows ?? [];
   const cols: Col[] = [
@@ -205,7 +215,8 @@ export function SowPanel({ m }: { m: Metrics }) {
     { key: "cards", label: tr("dash.sow.col.cards"), num: true, render: (r: Sow) => String(r.cards) },
     { key: "hours", label: tr("dash.sow.col.hours"), num: true, render: (r: Sow) => r.hours.toFixed(1) },
     { key: "billed", label: tr("dash.sow.col.billed"), num: true, render: (r: Sow) => c + r.billed.toFixed(2) },
-    { key: "ai_cost", label: tr("dash.sow.col.aiCost"), num: true, render: (r: Sow) => r.ai_cost.toFixed(2) },
+    { key: "ai_cost", label: tr(flat ? "dash.sow.col.aiFlat" : "dash.sow.col.aiCost"), num: true,
+      render: (r: Sow) => (flat ? tr("dash.flatIncl") : r.ai_cost.toFixed(2)) },
     { key: "margin", label: tr("dash.sow.col.margin"), num: true, render: (r: Sow) => c + r.margin.toFixed(2), color: (r: Sow) => (r.margin >= 0 ? t.ok : t.danger) },
   ];
   const foot = sows.length ? (
@@ -218,13 +229,13 @@ export function SowPanel({ m }: { m: Metrics }) {
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{sows.reduce((a, x) => a + x.cards, 0)}</Text>
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{sows.reduce((a, x) => a + x.hours, 0).toFixed(1)}</Text>
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{c}{sows.reduce((a, x) => a + x.billed, 0).toFixed(2)}</Text>
-      <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{sows.reduce((a, x) => a + x.ai_cost, 0).toFixed(2)}</Text>
+      <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{flat ? tr("dash.flatIncl") : sows.reduce((a, x) => a + x.ai_cost, 0).toFixed(2)}</Text>
       <Text style={[s.td, { color: t.txtPrimary, flex: 1, textAlign: "right", fontWeight: "700" }]}>{c}{sows.reduce((a, x) => a + x.margin, 0).toFixed(2)}</Text>
     </View>
   ) : null;
   return (
     <GlassPanel title={tr("dash.sow.title")}
-      note={sows.length ? tr("dash.sow.note") : undefined}>
+      note={sows.length ? tr(flat ? "dash.sow.noteFlat" : "dash.sow.note") : undefined}>
       {sows.length ? <Table cols={cols} rows={sows} foot={foot} />
         : <Empty text={tr("dash.sow.empty")} />}
     </GlassPanel>
@@ -352,6 +363,7 @@ function CornerPanel({ label, state, children, style }: {
 export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boolean; defaultRepo?: string }) {
   const t = useTheme();
   const tr = useT();
+  const flat = useAiFlat();
   const router = useRouter();
   const qc = useQueryClient();
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
@@ -395,7 +407,8 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
           {b?.monthly_eur != null ? <MiniChip label={tr("pm.flatMonthly", { v: eur(b.monthly_eur) })} /> : null}
           {b?.spent_to_date_eur != null ? <MiniChip label={tr("dash.corner.spentToDate", { v: eur(b.spent_to_date_eur) })} /> : null}
           {b?.est_turns_to_goal != null ? <MiniChip label={tr("pm.turns", { n: b.est_turns_to_goal })} /> : null}
-          <MiniChip label={tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} />
+          <MiniChip label={flat ? tr("dash.corner.aiUse", { v: fmtTok(totalTokens(m)) })
+            : tr("dash.corner.aiSpend", { v: m.totals.ai_spend.toFixed(2) })} />
         </View>
       )}
       {feas?.budget ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16, marginTop: 4 }}>{feas.budget}</Text> : null}
@@ -605,6 +618,7 @@ export function GatesPanel({ m }: { m: Metrics }) {
 
 export function ModelsPanel({ m }: { m: Metrics }) {
   const tr = useT();
+  const flat = useAiFlat();
   const by = m.ai_by_model ?? {};
   const rows = Object.entries(by).map(([model, b]) => ({ model: model.replace("claude-", ""), ...b }));
   if (rows.length === 0) return null;
@@ -613,11 +627,16 @@ export function ModelsPanel({ m }: { m: Metrics }) {
     { key: "turns", label: tr("dash.models.col.turns"), num: true },
     { key: "tok_in", label: tr("dash.models.col.tokIn"), num: true, render: (r) => r.tok_in.toLocaleString() },
     { key: "tok_out", label: tr("dash.models.col.tokOut"), num: true, render: (r) => r.tok_out.toLocaleString() },
-    { key: "cost", label: tr("dash.models.col.cost"), num: true, render: (r) => r.cost.toFixed(2) },
-    { key: "avg", label: tr("dash.models.col.avg"), num: true, render: (r) => r.avg_cost_per_turn.toFixed(3) },
+    // flat plan: the quoting unit is tokens per turn against the quota - a $
+    // column would present subscription work as pay-per-token spend.
+    ...(flat
+      ? [{ key: "tokturn", label: tr("dash.models.col.tokPerTurn"), num: true,
+           render: (r: any) => (r.turns ? fmtTok((r.tok_in + r.tok_out) / r.turns) : "-") } as Col]
+      : [{ key: "cost", label: tr("dash.models.col.cost"), num: true, render: (r: any) => r.cost.toFixed(2) } as Col,
+         { key: "avg", label: tr("dash.models.col.avg"), num: true, render: (r: any) => r.avg_cost_per_turn.toFixed(3) } as Col]),
   ];
   return (
-    <GlassPanel title={tr("dash.models.title")} note={tr("dash.models.note")}>
+    <GlassPanel title={tr("dash.models.title")} note={tr(flat ? "dash.models.noteFlat" : "dash.models.note")}>
       <Table cols={cols} rows={rows} />
     </GlassPanel>
   );
@@ -628,6 +647,7 @@ export function ModelsPanel({ m }: { m: Metrics }) {
 export function WorkPanel({ m }: { m: Metrics }) {
   const t = useTheme();
   const tr = useT();
+  const flat = useAiFlat();
   const c = cur(m);
   const cards = m.cards ?? [];
   let maxA = 0.01, maxH = 1;
@@ -635,7 +655,7 @@ export function WorkPanel({ m }: { m: Metrics }) {
   return (
     <GlassPanel title={tr("dash.work.title")}>
       <View style={[s.row, { gap: 12, marginBottom: 8 }]}>
-        <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.ai }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("dash.work.legendAi")}</Text></View>
+        <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.ai }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr(flat ? "dash.work.legendAiFlat" : "dash.work.legendAi")}</Text></View>
         <View style={[s.row, { gap: 4 }]}><View style={[s.sq, { backgroundColor: t.human }]} /><Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("dash.work.legendHuman")}</Text></View>
       </View>
       {/* wide table -> horizontal scroll keeps every column readable on phone */}
@@ -647,7 +667,7 @@ export function WorkPanel({ m }: { m: Metrics }) {
             <Text style={[s.th, { color: t.txtTertiary, flex: 1 }]}>{tr("dash.work.col.lane")}</Text>
             <Text style={[s.th, { color: t.txtTertiary, flex: 1.3 }]}>{tr("dash.work.col.model")}</Text>
             <Text style={[s.th, { color: t.txtTertiary, flex: 1.4, textAlign: "right" }]}>{tr("dash.work.col.tok")}</Text>
-            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>{tr("dash.work.col.aiCost")}</Text>
+            <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>{tr(flat ? "dash.work.col.aiFlat" : "dash.work.col.aiCost")}</Text>
             <Text style={[s.th, { color: t.txtTertiary, flex: 0.8, textAlign: "right" }]}>{tr("dash.work.col.touch")}</Text>
             <Text style={[s.th, { color: t.txtTertiary, flex: 1.4 }]}>{tr("dash.work.col.split")}</Text>
             <Text style={[s.th, { color: t.txtTertiary, flex: 1, textAlign: "right" }]}>{tr("dash.work.col.value")}</Text>
@@ -655,7 +675,7 @@ export function WorkPanel({ m }: { m: Metrics }) {
             <Text style={[s.th, { color: t.txtTertiary, flex: 0.9 }]}>{tr("dash.work.col.mode")}</Text>
           </View>
           {cards.length === 0 ? <Empty text={tr("dash.work.empty")} /> : cards.map((x: EconCard) => {
-            const margin = x.margin ?? (x.value - x.ai_cost);
+            const margin = x.margin ?? (x.value - (flat ? 0 : x.ai_cost));
             const models = x.models?.length ? x.models.map((mm) => mm.replace("claude-", "")).join(", ") : "-";
             const tin = x.tokens_in ?? 0, tout = x.tokens_out ?? 0;
             const billedVal = x.billed ?? x.value;
@@ -666,7 +686,7 @@ export function WorkPanel({ m }: { m: Metrics }) {
                 <Text numberOfLines={1} style={[s.td, { color: t.txtTertiary, flex: 1 }]}>{LANE_KEY[x.lane] ? tr(LANE_KEY[x.lane]) : x.lane}</Text>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.3 }]}>{models}</Text>
                 <Text numberOfLines={1} style={[s.td, { color: t.txtSecondary, flex: 1.4, textAlign: "right" }]}>{tin.toLocaleString()}/{tout.toLocaleString()}</Text>
-                <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{x.ai_cost.toFixed(2)}</Text>
+                <Text style={[s.td, { color: t.txtSecondary, flex: 1, textAlign: "right" }]}>{flat ? tr("dash.flatIncl") : x.ai_cost.toFixed(2)}</Text>
                 <Text style={[s.td, { color: t.txtSecondary, flex: 0.8, textAlign: "right" }]}>{x.touches}</Text>
                 <View style={{ flex: 1.4, gap: 2, justifyContent: "center", paddingRight: 6 }}>
                   <View style={{ height: 4, borderRadius: 999, backgroundColor: t.ai, width: `${Math.max(2, Math.round((100 * x.ai_cost) / maxA))}%` }} />

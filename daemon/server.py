@@ -521,7 +521,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({
                     "name": user["name"], "role": user["role"],
                     "ui": {"lang": pol.get("lang", "de"),
-                           "lane_labels": pol.get("lane_labels") or {}},
+                           "lane_labels": pol.get("lane_labels") or {},
+                           # flat (Max subscription) vs metered (API): every
+                           # role renders AI-cost chips, and a flat plan must
+                           # never read as $-spend - so the mode rides here.
+                           "ai_billing": events.ai_billing()},
                 }))
             if p == "/settings":
                 import events

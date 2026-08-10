@@ -176,6 +176,17 @@ def consecutive_gate_fails(track, ev=None):
         fails = 0 if e.get("ok") else fails + 1
     return fails
 
+def ai_billing(s=None):
+    """How the AI on this board is BILLED - the display contract, not the meter.
+    settings.pm.plan (pm.py) names the Anthropic plan: "max" is the flat
+    subscription - a turn burns quota, not cash, so the measured $ figure is an
+    API-equivalent reference and must never render as spend. "api" (and "mixed",
+    where at least some turns are per-token) bill real money per token. Every
+    turn keeps being priced either way (measured-economics law); only what the
+    number MEANS differs."""
+    plan = ((s or settings()).get("pm") or {}).get("plan", "max")
+    return "flat" if plan == "max" else "metered"
+
 def price_turn(models, usage, cost_usd=None):
     """Dollar cost of one session turn. CLI-reported total wins; else price the
     token counts against the settings table (first matching model substring)."""
@@ -228,6 +239,11 @@ def metrics(tracks):
     """Everything the dashboard shows, computed fresh from events + tracks."""
     s = settings()
     ev = read_events()
+    # flat (Max subscription): AI cost is measured but is NOT cash, so margins
+    # must not subtract it - the phantom-$ would misprice every card. metered
+    # (API): the measured cost is real spend and margins carry it.
+    billing_mode = ai_billing(s)
+    flat = billing_mode == "flat"
     tariff = s["capacity"]["tariff"]
     today = time.strftime("%Y-%m-%d")
     by_track = {}
@@ -260,7 +276,8 @@ def metrics(tracks):
                       "lane": t.get("lane"), "ai_cost": round(ai, 4), "touches": touches,
                       "time_seconds": round(secs, 1), "project_id": t.get("project_id"),
                       "value": value, "billing": billing, "rate": rate,
-                      "billed": round(billed, 2), "margin": round(billed - ai, 2),
+                      "billed": round(billed, 2),
+                      "margin": round(billed - (0.0 if flat else ai), 2),
                       "mode": mode, "models": t.get("models", []),
                       "tokens_in": t.get("tokens_in", 0), "tokens_out": t.get("tokens_out", 0)})
 
@@ -332,7 +349,7 @@ def metrics(tracks):
                      "status": m.get("status"), "due": m.get("due", ""),
                      "cards": r["cards"], "done": r["done"], "hours": round(r["hours"], 2),
                      "billed": round(r["billed"], 2), "ai_cost": round(r["ai_cost"], 4),
-                     "margin": round(r["billed"] - r["ai_cost"], 2),
+                     "margin": round(r["billed"] - (0.0 if flat else r["ai_cost"]), 2),
                      "all_done": r["cards"] > 0 and r["done"] == r["cards"]})
     sows.sort(key=lambda x: -x["margin"])
 
@@ -343,6 +360,7 @@ def metrics(tracks):
     touch_all = sum(c["touches"] for c in cards) or 1
     return {
         "settings": s,
+        "ai_billing": billing_mode,
         "cards": cards,
         "sows": sows,
         "capacity": {"wip": wip, "wip_limit": s["capacity"]["wip_limit"],
@@ -355,6 +373,6 @@ def metrics(tracks):
         "ai_by_model": dict(sorted(by_model.items(), key=lambda kv: -kv[1]["cost"])),
         "totals": {"value_delivered": round(value_done, 2),
                    "ai_spend": round(ai_all, 4),
-                   "margin": round(value_done - ai_all, 2),
+                   "margin": round(value_done - (0.0 if flat else ai_all), 2),
                    "leverage_per_touch": round(value_done / touch_all, 2)},
     }
