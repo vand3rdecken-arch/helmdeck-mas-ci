@@ -588,16 +588,52 @@ _MACHINE_BRIEF = (
 )
 
 
+def _real_claude_exe(cmd_path):
+    """The actual executable behind an npm `claude.cmd` shim, or None.
+
+    THE SILENT CONTEXT KILLER (found 2026-08-10, 'warum immer Kontext
+    verloren'): running claude.cmd via `cmd /s /c "<list2cmdline(argv)>"` is
+    NOT quote-safe. Our --append-system-prompt brief contains JSON double
+    quotes (the <helmdeck-ask> protocol); list2cmdline escapes them as \\" but
+    cmd.exe does not understand backslash escaping, and the .cmd shim re-parses
+    %* a second time. The argument boundaries shift and the TRAILING args are
+    swallowed - `--resume <sid>` is last, so every respawn silently started a
+    FRESH session instead of resuming (reproduced deterministically: the same
+    argv resumes fine as an argv list against the real exe, and loses the
+    session as a cmd-string through the shim; the BatBadBut class - .cmd
+    targets are not safely quotable, CVE-2024-24576).
+
+    So: never exec the shim. Resolve what it points at (npm layout:
+    <dir>\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe, or
+    cli.js + node.exe for older installs) and spawn THAT as a plain argv list,
+    which CreateProcess + CommandLineToArgvW quote correctly."""
+    d = os.path.dirname(os.path.abspath(cmd_path))
+    exe = os.path.join(d, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+    if os.path.isfile(exe):
+        return [exe]
+    js = os.path.join(d, "node_modules", "@anthropic-ai", "claude-code", "cli.js")
+    node = os.path.join(d, "node.exe")
+    if os.path.isfile(js) and os.path.isfile(node):
+        return [node, js]
+    return None
+
+
 def _cmd_line(argv):
-    """Windows can't spawn a .cmd/.bat directly (claude ships as claude.cmd), so
-    we route through cmd.exe. `cmd /c "<a>" "<b>"` is a TRAP: cmd strips the
-    outermost quote pair, so a spaced executable path (C:\\Program Files\\...)
-    breaks the moment the last arg is also quoted. `cmd /s /c "<whole line>"`
-    strips ONLY the wrapping quotes and runs the inner verbatim - the documented-
-    correct form. On non-Windows, return the argv list unchanged."""
+    """Spawn form for the agent CLI. On Windows a .cmd shim cannot be spawned
+    directly by CreateProcess, and routing it through `cmd /s /c` mangles
+    quoted arguments (see _real_claude_exe - it silently ate `--resume`).
+    Prefer resolving the shim to its real executable and returning a PLAIN
+    ARGV LIST; the cmd.exe string form survives only as the last-resort
+    fallback for a shim we cannot see through - with the known quote hazard."""
     if os.name != "nt":
         return argv
-    return 'cmd /s /c "%s"' % subprocess.list2cmdline(argv)
+    head = str(argv[0]).lower()
+    if head.endswith((".cmd", ".bat")):
+        real = _real_claude_exe(argv[0])
+        if real:
+            return real + list(argv[1:])
+        return 'cmd /s /c "%s"' % subprocess.list2cmdline(argv)
+    return list(argv)
 
 
 def _write(path, text):
