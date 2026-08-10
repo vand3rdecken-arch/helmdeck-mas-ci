@@ -1896,7 +1896,8 @@ _CTX_WINDOW = 200_000
 # proactive summarisation returns only via a fork-based compaction (fork the
 # session, THEN compact the fork, so the resumable original is never mutated) -
 # the only corruption-free way to compact against the raw stream-json CLI.
-_autocompact_supported = False   # kept: legacy readers still branch on it
+_autocompact_supported = False   # nothing reads this today; seam kept for the
+                                 # fork-based reimplementation (debt.py entry)
 
 
 def _maybe_compact(t, log):

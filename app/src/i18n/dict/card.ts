@@ -81,7 +81,7 @@ export const card: Dict = {
   "card.chat.hintWorkerLive": { de: "Worker — Kontext läuft weiter", en: "Worker — context carries on" },
   "card.chat.hintWorkerIdle": { de: "Worker — noch nicht gestartet", en: "Worker — not started yet" },
   "card.chat.context": { de: "Kontext {k}k · {pct}%", en: "Context {k}k · {pct}%" },
-  "card.chat.contextFull": { de: "Kontext fast voll — steuern komprimiert & setzt fort", en: "Context nearly full — steering compacts & continues" },
+  "card.chat.contextFull": { de: "Kontext fast voll — bei Überlauf startet eine frische Session, der Verlauf bleibt sichtbar", en: "Context nearly full — on overflow a fresh session starts, the history stays visible" },
   "card.chat.awaitingYou": { de: "Turn beendet — Worker wartet auf dich. Steuern setzt fort.",
                              en: "Turn ended — the worker is waiting for you. Steer to continue." },
   "card.chat.awaitingBackground": { de: "Worker wartet auf {n} Hintergrund-Task — nicht auf dich.",
@@ -160,6 +160,10 @@ export const card: Dict = {
   "transcript.plan": { de: "PLAN", en: "PLAN" },
   "transcript.boardAgent": { de: "Board-Agent", en: "Board agent" },
   "transcript.boardAgentDivider": { de: "BOARD-AGENT", en: "BOARD AGENT" },
-  "transcript.compacted": { de: "Kontext verdichtet", en: "Context compacted" },
+  // Chain-break divider. Since /compact injection was removed (a0853d4) a
+  // session_chain break is always a ROTATION (new session, context not carried
+  // in full) - never an in-place compaction, which keeps its session id. The
+  // old "Kontext verdichtet" label claimed a summarisation that never happened.
+  "transcript.compacted": { de: "Frühere Session — Verlauf wird unten fortgesetzt", en: "Earlier session — history continues below" },
   "transcript.code": { de: "Code", en: "code" },
 };
