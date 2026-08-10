@@ -73,6 +73,22 @@ def main():
                   "is_error": True, "errors": ["boom: usage limit reached"],
                   "result": "", "session_id": SID})
             continue
+        if text.startswith("__SLOW__"):
+            # A long-but-PRODUCTIVE turn: dribble a delta every 0.4s N times
+            # (default 8 => ~3.2s of activity) BEFORE the result, so the
+            # inactivity watchdog is exercised - each delta must reset it.
+            import time as _t
+            try: n = int(text.split(":", 1)[1])
+            except (IndexError, ValueError): n = 8
+            for _ in range(n):
+                _t.sleep(0.4)
+                emit({"type": "stream_event",
+                      "event": {"type": "content_block_delta",
+                                "delta": {"type": "text_delta", "text": "."}}})
+            emit({"type": "result", "subtype": "success", "result": "slow-done",
+                  "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         emit({"type": "stream_event",
               "event": {"type": "content_block_delta",
                         "delta": {"type": "text_delta", "text": "echo:"}}})

@@ -960,6 +960,14 @@ class _ClaudeSession:
 
     def _on_event(self, ev):
         cur = self._cur
+        if cur is not None:
+            # Liveness heartbeat for the inactivity watchdog: ANY frame from the
+            # CLI (a token, a tool_use, a tool_result, a control response) means
+            # the turn is making progress. run_turn bounds SILENCE, not wall-
+            # clock, so a long-but-productive turn (a big machine card: many
+            # tool calls, gradle builds) is never killed mid-run - only a truly
+            # wedged process (no frame for the whole idle window) is.
+            cur["last_event"] = _time.time()
         typ = ev.get("type")
         if typ in ("assistant", "user"):
             try:
@@ -1050,7 +1058,7 @@ class _ClaudeSession:
         _rm(live_path); _rm(sid_path)
         cur = {"parts": [], "result": None, "session_id": self.session_id,
                "done": threading.Event(), "live_path": live_path,
-               "sid_path": sid_path, "last_flush": 0.0}
+               "sid_path": sid_path, "last_flush": 0.0, "last_event": _time.time()}
         self._cur = cur
         msg = json.dumps({"type": "user",
                           "message": {"role": "user", "content": prompt}})
@@ -1061,8 +1069,36 @@ class _ClaudeSession:
             self._cur = None
             self.kill()
             raise RuntimeError("claude session write failed: %s" % e)
-        timeout = self.cfg.get("timeout", 1800 if self.cfg.get("allowed_tools") else 600)
-        finished = cur["done"].wait(timeout)
+        # INACTIVITY watchdog, not a wall-clock cap (Paseo bounds the TOOL, not
+        # the turn). A fixed 1800s wall-clock killed long-but-PRODUCTIVE turns
+        # mid-run ("killed during run" on a machine card doing gradle builds +
+        # many tool calls). A single tool cannot run longer than the tool cap
+        # (BASH_MAX_TIMEOUT_MS, 5 min - see _env), so once no frame at all has
+        # arrived for `idle` seconds the process is genuinely wedged, not busy.
+        # `idle` sits well above the tool cap; `hard` is an OPTIONAL absolute
+        # ceiling (0/None = none) for a degenerate turn that dribbles output
+        # forever. Poll in slices so a cancel is noticed promptly.
+        idle = self.cfg.get("idle_timeout", 900)     # 15 min of TOTAL silence = hung
+        hard = self.cfg.get("timeout")               # optional absolute cap; default none
+        # Poll finer than the idle window so silence (and a cancel) is noticed
+        # promptly, but never hot-spin: a few seconds in production, sub-second
+        # when a test dials idle right down.
+        poll = min(5.0, max(0.5, idle / 4.0))
+        start = _time.time()
+        finished, why = False, ""
+        while True:
+            if cur["done"].wait(poll):
+                finished = True
+                break
+            if self.tid in _cancelled:
+                break                                # cancel path handles it below
+            now = _time.time()
+            if now - cur.get("last_event", start) > idle:
+                why = "no output for %ds" % idle
+                break
+            if hard and now - start > hard:
+                why = "exceeded hard cap %ss" % hard
+                break
         self._cur = None
         _rm(live_path); _rm(sid_path)
 
@@ -1074,11 +1110,11 @@ class _ClaudeSession:
             return self.session_id, "(turn cancelled by you)", \
                 {"usage": {}, "cost_usd": None, "models": [], "canceled": True}
         if not finished:
-            # hung turn: tree-kill the session; the next steer resumes it.
+            # wedged turn: tree-kill the session; the next steer resumes it.
             self.kill()
             raise RuntimeError(
-                "claude turn exceeded %ss - session killed; steer again to resume. %s"
-                % (timeout, "".join(self.err_tail).strip()[-200:]))
+                "claude turn stalled (%s) - session killed; steer again to resume. %s"
+                % (why, "".join(self.err_tail).strip()[-200:]))
         d = cur["result"]
         if not d:
             # pump ended with no result: the process died mid-turn.
