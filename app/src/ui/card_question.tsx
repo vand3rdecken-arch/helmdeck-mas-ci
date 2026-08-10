@@ -11,11 +11,11 @@
 // and (b) the feed is replaced wholesale on every long-poll tick, which would
 // throw away half-made selections.
 import { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "@/data/client";
-import type { PendingQuestion } from "@/data/types";
+import type { AskQuestion, PendingQuestion } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -67,24 +67,34 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
   // header -> chosen labels. A Set per question so multiSelect is natural and
   // single-select is just "replace the set".
   const [picked, setPicked] = useState<Record<string, string[]>>({});
+  // header -> the owner's own typed answer (the Paseo "Other" escape hatch),
+  // kept beside `picked` so a preset choice and free text never clobber each
+  // other in the same state slot.
+  const [custom, setCustom] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   const qs = question.questions ?? [];
   const q = qs[Math.min(idx, qs.length - 1)];
   if (!q) return null;
   const chosen = picked[q.header] ?? [];
+  const freeText = (custom[q.header] ?? "").trim();
+  const answered = (x: AskQuestion) => (picked[x.header] ?? []).length > 0 || (custom[x.header] ?? "").trim().length > 0;
   const last = idx >= qs.length - 1;
-  const answeredAll = qs.every((x) => (picked[x.header] ?? []).length > 0);
+  const answeredAll = qs.every(answered);
 
   async function submit(next: Record<string, string[]>) {
     setBusy(true);
     try {
       // single-select travels as a plain string (what the daemon renders back
-      // to the worker); multiSelect keeps the array
+      // to the worker); multiSelect keeps the array. Free text rides the same
+      // channel: appended for multiSelect, or standing alone for single-select.
       const answers: Record<string, string | string[]> = {};
       for (const x of qs) {
         const v = next[x.header] ?? [];
-        answers[x.header] = x.multiSelect ? v : v[0];
+        const c = (custom[x.header] ?? "").trim();
+        answers[x.header] = x.multiSelect
+          ? (c ? [...v, c] : v)
+          : (c || v[0]);
       }
       await api.answer(cardId, answers, question.id);
       onAnswered();
@@ -104,6 +114,15 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
       ? (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label])
       : [label];
     setPicked({ ...picked, [q.header]: next });
+    // single-select is one answer: tapping an option retracts a typed one so
+    // the two never both count. multiSelect keeps free text as an extra answer.
+    if (!q.multiSelect && freeText) setCustom({ ...custom, [q.header]: "" });
+  }
+
+  function typeOwn(text: string) {
+    setCustom({ ...custom, [q.header]: text });
+    // mirror choose(): on single-select, typing retracts any tapped option.
+    if (!q.multiSelect && text.trim() && chosen.length) setPicked({ ...picked, [q.header]: [] });
   }
 
   return (
@@ -144,6 +163,30 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
           ))}
         </ScrollView>
 
+        {/* The Paseo "Other" escape hatch: none of the offered options ever has
+            to be the answer - the owner can always type his own, exactly as he
+            can in a fresh steer. On single-select this and the options are the
+            same answer slot (choose()/typeOwn() keep them mutually exclusive);
+            on multiSelect it is one more selected answer. */}
+        <View style={{ gap: 5 }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600", letterSpacing: 0.3 }}>
+            {tr("card.q.otherLabel")}
+          </Text>
+          <TextInput
+            value={custom[q.header] ?? ""}
+            onChangeText={typeOwn}
+            placeholder={tr("card.q.otherPh")}
+            placeholderTextColor={t.txtTertiary}
+            multiline
+            accessibilityLabel={tr("card.q.otherLabel")}
+            style={{
+              color: t.txtPrimary, fontSize: 13, minHeight: 38,
+              backgroundColor: t.surface2,
+              borderColor: freeText ? t.accent : t.borderSubtle, borderWidth: 1,
+              borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9,
+            }} />
+        </View>
+
         <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 15 }}>
           {tr("card.q.hint")}
         </Text>
@@ -162,14 +205,14 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
           {/* Always present, so the panel never depends on a tap that silently
               sends: selecting is one step, answering is another. */}
           <Pressable
-            disabled={busy || chosen.length === 0 || (last && !answeredAll)}
+            disabled={busy || !answered(q) || (last && !answeredAll)}
             onPress={() => (last ? void submit(picked) : setIdx(idx + 1))}
             accessibilityRole="button"
-            accessibilityState={{ disabled: chosen.length === 0 }}
+            accessibilityState={{ disabled: !answered(q) }}
             style={{
               flexDirection: "row", alignItems: "center", gap: 5,
-              backgroundColor: chosen.length ? t.accent : t.surface2,
-              borderColor: chosen.length ? t.accent : t.borderSubtle, borderWidth: 1,
+              backgroundColor: answered(q) ? t.accent : t.surface2,
+              borderColor: answered(q) ? t.accent : t.borderSubtle, borderWidth: 1,
               opacity: busy ? 0.6 : 1,
               borderRadius: 9, paddingHorizontal: 14, paddingVertical: 9,
             }}>
@@ -177,11 +220,11 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
                 as t.accent), so on an accent fill the label vanished entirely.
                 White on accent is the house idiom - see the composer's send
                 button. */}
-            <Text style={{ color: chosen.length ? "#fff" : t.txtTertiary, fontSize: 13, fontWeight: "700" }}>
+            <Text style={{ color: answered(q) ? "#fff" : t.txtTertiary, fontSize: 13, fontWeight: "700" }}>
               {tr(last ? "card.q.send" : "card.q.next")}
             </Text>
             <Ionicons name={last ? "arrow-up" : "chevron-forward"} size={14}
-              color={chosen.length ? "#fff" : t.txtTertiary} />
+              color={answered(q) ? "#fff" : t.txtTertiary} />
           </Pressable>
         </View>
       </View>

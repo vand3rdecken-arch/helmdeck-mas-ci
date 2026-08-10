@@ -94,6 +94,8 @@ export const card: Dict = {
   "card.q.next": { de: "Weiter", en: "Next" },
   "card.q.back": { de: "Zurück", en: "Back" },
   "card.q.send": { de: "Antworten", en: "Answer" },
+  "card.q.otherPh": { de: "Eigene Antwort eingeben…", en: "Type your own answer…" },
+  "card.q.otherLabel": { de: "Oder eigene Antwort", en: "Or your own answer" },
   "card.q.failedTitle": { de: "Antwort fehlgeschlagen", en: "Answer failed" },
   "card.chat.phAgent": { de: "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'",
                          en: "Tell the agent what to do — e.g. 'move this card to done'" },
