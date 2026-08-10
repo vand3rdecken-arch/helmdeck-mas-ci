@@ -10,6 +10,7 @@ the PM flags that BEFORE the wall, not after. See pacing() and pm.py's usage che
 """
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -154,6 +155,26 @@ def _plan(oauth):
     return "%s %s" % (label, tier) if tier else label
 
 
+def login_method():
+    """What the spawned claude CLI actually authenticates WITH - the signal the
+    auto billing mode keys off (events.plan_effective). Paseo's usage tab keys
+    off the same file: a stored Claude Code login means subscription quota.
+
+    Precedence mirrors Claude Code's own: a stored OAuth login is used
+    unconditionally, while an ANTHROPIC_API_KEY in the environment only bills
+    once the owner has explicitly approved it in the CLI (customApiKeyResponses)
+    - so the login wins whenever both exist. A login WITHOUT a subscriptionType
+    is a Console (per-token) account, not a flat plan."""
+    oauth = (_read_creds() or {}).get("claudeAiOauth") or {}
+    if oauth.get("accessToken"):
+        return {"method": "oauth",
+                "subscription": oauth.get("subscriptionType") or None,
+                "plan": _plan(oauth)}
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return {"method": "api_key", "subscription": None, "plan": None}
+    return {"method": None, "subscription": None, "plan": None}
+
+
 def snapshot(force=False):
     """The usage view: plan + windows (five_hour, weekly, weekly_opus) with tone and,
     for the weekly window, pacing. Cached; returns {'status': 'unavailable'} if there is
@@ -206,6 +227,41 @@ def snapshot(force=False):
     _cache["at"] = time.time()
     _cache["data"] = out
     return out
+
+
+def cached(refresh=True):
+    """The snapshot WITHOUT ever blocking on the network - for hot paths like
+    events.metrics(), which the board polls every few seconds and which must not
+    inherit a 15s HTTP timeout. Returns the cached snapshot (or None while the
+    cache is still cold) and kicks a one-at-a-time background refresh when it is
+    stale, so the cache warms itself even if nobody opens the usage panel."""
+    data = _cache["data"]
+    if refresh and (data is None or time.time() - _cache["at"] >= CACHE_TTL):
+        _kick_refresh()
+    return data
+
+
+_refreshing = threading.Lock()
+_last_try = [0.0]
+
+
+def _kick_refresh():
+    # back off on ATTEMPT, not on success: an unavailable endpoint (no Claude
+    # login, offline) never fills the cache, and gating on _cache["at"] alone
+    # would fire a fresh HTTP attempt on every single metrics poll.
+    if time.time() - _last_try[0] < CACHE_TTL:
+        return
+    if not _refreshing.acquire(blocking=False):
+        return                      # a refresh is already in flight
+    _last_try[0] = time.time()
+    def run():
+        try:
+            snapshot(force=True)
+        except Exception:
+            pass                    # cache simply stays cold; callers fall back
+        finally:
+            _refreshing.release()
+    threading.Thread(target=run, daemon=True).start()
 
 
 def weekly_pacing_flag():

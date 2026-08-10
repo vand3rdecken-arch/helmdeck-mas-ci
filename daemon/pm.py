@@ -23,8 +23,15 @@ PLANS = os.path.join(ROOT, "pm")
 
 PM_DEFAULTS = {
     "goal": "",
-    "plan": "max",              # "max" (flat quota) | "api" (per-token €) | "mixed"
+    # "auto" detects the plan from the CLI's real auth (events.plan_effective:
+    # subscription login -> "max", API key / Console login -> "api"); the
+    # explicit values stay as owner overrides.
+    "plan": "auto",             # "auto" | "max" (flat quota) | "api" (per-token €) | "mixed"
     "monthly_eur": 200,
+    # the weekly plan allowance in TOKENS, if the owner knows it. 0 = derive it
+    # from the live usage window (events.plan_calibration), which is how cost
+    # surfaces turn a card's tokens into "% of the subscription".
+    "plan_tokens_week": 0,
     "quota_turns_per_day": 0,   # 0 = derive pace from measured velocity
     "role_extra": "",           # house additions appended to the role charter
     # -- the single proactive loop (absorbs the old nightshift ticker) --
@@ -91,8 +98,14 @@ def economics():
     if created:
         span_days = max(1.0, (datetime.strptime(time.strftime(fmt), fmt) - min(created)).total_seconds() / 86400.0)
     pm = _pm()
+    # the RESOLVED plan ("max"/"api"), not the raw setting: _budget_assess picks
+    # its bottleneck (quota windows vs € cap) off this, and with plan="auto" the
+    # raw value names no plan at all. plan_source keeps the evidence visible.
+    plan_eff, plan_src = events.plan_effective()
     return {
-        "plan": pm.get("plan", "max"),
+        "plan": plan_eff,
+        "plan_source": plan_src,
+        "plan_setting": pm.get("plan", "auto"),
         "monthly_eur": pm.get("monthly_eur", 200),
         "spend_to_date": round(spend, 4),
         "turns_to_date": turns,

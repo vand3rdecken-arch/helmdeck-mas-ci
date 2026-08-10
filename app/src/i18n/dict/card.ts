@@ -50,6 +50,8 @@ export const card: Dict = {
   // flat plan (Max-Abo): consumption, not cash - never render it as $-cost
   "card.econ.aiUse": { de: "KI-Verbrauch", en: "AI usage" },
   "card.econ.aiUseVal": { de: "{tok} Tok · im Max-Abo inkl. (Flat)", en: "{tok} tok · incl. in Max plan (flat)" },
+  // the unit that answers "was this card expensive?": share of the allowance
+  "card.econ.aiUsePlan": { de: "{pct} vom Wochenkontingent · {tok} Tok", en: "{pct} of the weekly allowance · {tok} tok" },
   "card.econ.margin": { de: "Marge", en: "Margin" },
   "card.econ.touches": { de: "Eingriffe", en: "Touches" },
   "card.econ.touchOne": { de: "{n} Eingriff", en: "{n} touch" },
