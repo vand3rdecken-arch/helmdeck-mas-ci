@@ -302,10 +302,13 @@ def _gate_triangle(out, econ, est_turns, pace):
 
 
 def _ask(prompt, model=""):
-    import copilot
-    cmd = ["cmd", "/c", copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
+    import copilot, drivers
+    # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
+    # args on a .cmd shim (see drivers._real_claude_exe).
+    argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
     if model:
-        cmd += ["--model", model]
+        argv += ["--model", model]
+    cmd = drivers._cmd_line(argv)
     p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     stdout, stderr = p.communicate(input=prompt, timeout=300)
