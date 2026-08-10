@@ -205,9 +205,17 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
             placeholder={tr("card.q.otherPh")}
             placeholderTextColor={t.txtTertiary}
             multiline
+            scrollEnabled
             accessibilityLabel={tr("card.q.otherLabel")}
             style={{
               color: t.txtPrimary, fontSize: 13, minHeight: 38,
+              // Capped, NOT open-ended: a multiline TextInput with no maxHeight
+              // grows with its content, and pasting a long answer pushed the
+              // hint + Antworten-button out of the panel's own height cap
+              // (visually clipped/unreachable - "can't paste long answer").
+              // Past this height it scrolls INTERNALLY instead of growing, so
+              // the button stays put and any length of pasted text still works.
+              maxHeight: 120,
               backgroundColor: t.surface2,
               borderColor: freeText ? t.accent : t.borderSubtle, borderWidth: 1,
               borderRadius: 9, paddingHorizontal: 11, paddingVertical: 9,
