@@ -12,8 +12,10 @@ What this pins:
     block never leaks into the prose the owner reads.
  2. Malformed / degenerate blocks are ignored rather than crashing or rendering
     a dead panel (fewer than 2 options is not a choice).
- 3. validate_answers accepts ONLY labels the worker offered - this endpoint
-    cannot be used to inject text into a worker's next prompt.
+ 3. validate_answers accepts either an offered label OR the owner's own free
+    text (the Paseo 'Other' escape hatch, a0853d4/4730f9e) - free text is no
+    injection risk, the authenticated owner can /steer any text anyway - while
+    still rejecting an EMPTY answer and capping the free text's length.
  4. _settle_reply stores the question, clears a stale one, and spends a repair
     turn exactly when a parked reply looks like a prose question - with the
     repair's spend BILLED (measured-economics law).
@@ -117,8 +119,19 @@ def test_validate():
     check(not err and picks[0]["labels"] == ["Rot"], "valid pick accepted")
     check("Rot" in ask.answer_prompt(picks), "answer prompt carries the choice")
 
-    _p, e2 = ask.validate_answers(q, {"Farbe": "rm -rf /"})
-    check(e2 and _p is None, "arbitrary text rejected (no prompt injection)")
+    # Free text is now ACCEPTED as the owner's own answer (the 'Other' hatch):
+    # it lands in `custom`, not `labels`, and answer_prompt quotes it so the
+    # worker can tell a typed answer from a preset pick.
+    p2, e2 = ask.validate_answers(q, {"Farbe": "irgendwas eigenes"})
+    check(not e2 and p2[0]["custom"] == ["irgendwas eigenes"] and not p2[0]["labels"],
+          "free text accepted as the owner's own answer")
+    check('"irgendwas eigenes"' in ask.answer_prompt(p2), "free text quoted in the answer prompt")
+    # An EMPTY / whitespace answer is still rejected - nothing to answer with.
+    _p, e2b = ask.validate_answers(q, {"Farbe": "   "})
+    check(e2b and _p is None, "empty answer rejected")
+    # Free text is length-capped (a model/client can't shove an unbounded blob).
+    p2c, _ = ask.validate_answers(q, {"Farbe": "x" * 5000})
+    check(p2c and len(p2c[0]["custom"][0]) <= ask.MAX_FREE_LEN, "free text length-capped")
     _p, e3 = ask.validate_answers(q, {})
     check(e3 and _p is None, "missing answer rejected")
     _p, e4 = ask.validate_answers(q, {"Farbe": ["Rot", "Blau"]})
