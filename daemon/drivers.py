@@ -34,6 +34,17 @@ import urllib.request
 
 _re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
 
+
+def _text_of(content):
+    """Flatten a stream part's `content` (a str, or a list of {text} blocks) to
+    plain text - background scanning reads tool_result / task-notification text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(str(x.get("text", "")) for x in content if isinstance(x, dict))
+    return ""
+
+
 import ask   # the typed question channel taught to every worker (Phase 2.4)
 
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
@@ -702,6 +713,19 @@ class _ClaudeSession:
 
     # -- lifecycle -------------------------------------------------------
     def _spawn(self):
+        # finishAll (Paseo sidechain-tracker): a fresh SUBPROCESS means every
+        # background task the prior one launched is a dead child (tree-killed on
+        # timeout/restart/crash) - reconcile them to 'canceled' so a dead build
+        # never lingers as a phantom the card waits on. Skipped on the very
+        # first spawn of a brand-new card (no bg_tasks yet -> a cheap no-op).
+        # In-memory candidates/open reset too: this process starts them clean.
+        self._bg_candidates = {}
+        self._bg_open = {}
+        try:
+            import sessions
+            sessions.reconcile_bg(self.tid)
+        except Exception:
+            pass
         if self.session_id:
             # Stale-resume degradation: if the session's .jsonl transcript is
             # gone (cleanup, moved profile), `--resume` would hard-fail the whole
@@ -924,40 +948,43 @@ class _ClaudeSession:
         ROTATION cannot lose a start."""
         m = ev.get("message") or {}
         c = m.get("content")
-        changed = False
-        if isinstance(c, list):
-            for p in c:
-                if not isinstance(p, dict):
-                    continue
-                if p.get("type") == "tool_use":
-                    inp = p.get("input") if isinstance(p.get("input"), dict) else {}
-                    if inp.get("run_in_background") or p.get("name") in ("Task", "Agent"):
-                        self._bg_candidates[p.get("id")] = str(
-                            inp.get("description") or inp.get("command")
-                            or p.get("name") or "task")[:80]
-                elif p.get("type") == "tool_result":
-                    uid = p.get("tool_use_id")
-                    if uid in self._bg_candidates:
-                        txt = p.get("content")
-                        if not isinstance(txt, str):
-                            txt = " ".join(str(x.get("text", "")) for x in txt
-                                           if isinstance(x, dict)) if isinstance(txt, list) else ""
-                        desc = self._bg_candidates.pop(uid)
-                        if "Async agent launched" in (txt or "") or "run_in_background" in (txt or "") \
-                           or "background" in (txt or "")[:200].lower():
-                            self._bg_open[uid] = desc
-                            changed = True
-                elif p.get("type") == "text" and isinstance(p.get("text"), str) \
-                        and p["text"].lstrip().startswith("<task-notification>"):
-                    hit = _re_bg_done.search(p["text"])
-                    if hit and self._bg_open.pop(hit.group(1).strip(), None) is not None:
-                        changed = True
-        if changed:
-            try:
-                import sessions
-                sessions.record_bg(self.tid, dict(self._bg_open))
-            except Exception:
-                pass
+        if not isinstance(c, list):
+            return
+        import sessions
+        for p in c:
+            if not isinstance(p, dict):
+                continue
+            if p.get("type") == "tool_use":
+                inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                if inp.get("run_in_background") or p.get("name") in ("Task", "Agent"):
+                    title = str(inp.get("description") or p.get("name") or "task")[:80]
+                    detail = str(inp.get("command") or inp.get("prompt")
+                                 or inp.get("description") or "")[:600]
+                    self._bg_candidates[p.get("id")] = (title, detail)
+            elif p.get("type") == "tool_result":
+                uid = p.get("tool_use_id")
+                if uid in self._bg_candidates:
+                    txt = _text_of(p.get("content"))
+                    title, detail = self._bg_candidates.pop(uid)
+                    if "Async agent launched" in txt or "run_in_background" in txt \
+                       or "background" in txt[:200].lower():
+                        self._bg_open[uid] = title
+                        try:
+                            sessions.bg_upsert(self.tid, uid, title=title,
+                                               detail=detail, status="running")
+                        except Exception:
+                            pass
+            elif p.get("type") == "text" and isinstance(p.get("text"), str) \
+                    and p["text"].lstrip().startswith("<task-notification>"):
+                hit = _re_bg_done.search(p["text"])
+                if hit:
+                    uid = hit.group(1).strip()
+                    if self._bg_open.pop(uid, None) is not None:
+                        try:
+                            sessions.bg_upsert(self.tid, uid, status="completed",
+                                               result=_text_of(p["text"])[:400])
+                        except Exception:
+                            pass
 
     def _burn_watch(self, ev, cur):
         """Loop detector (the token-burn signal). A worker stuck in a loop keeps

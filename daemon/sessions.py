@@ -345,24 +345,71 @@ def _drain_steer_texts(tid):
         return _steer_pending.pop(tid, [])
 
 
-def record_bg(tid, open_tasks):
-    """Persist the driver's FIRST-CLASS background-task registry onto the track
-    (Paseo's ProviderSubagentStore principle: state maintained at event time by
-    the pump, never reconstructed by transcript forensics). `open_tasks` is the
-    driver's current {tool_use_id: desc} of confirmed-running background work.
-    Stored with a started_at stamp per id so a task that never reports ages out
-    honestly. Restart-safe: the track is the store."""
+_BG_HISTORY_CAP = 12       # terminal tasks kept for the app; running ones never dropped
+BG_TERMINAL = ("completed", "failed", "canceled")
+
+
+def bg_upsert(tid, uid, title=None, detail=None, status="running", result=None):
+    """Fold ONE background-task LIFECYCLE event onto the track - Paseo's
+    ProviderSubagentStore.apply(): a descriptor per task with an explicit status
+    (running -> completed|failed|canceled), maintained at EVENT TIME by the pump,
+    never reconstructed by transcript forensics. A launch upserts 'running', a
+    <task-notification> 'completed'; reconcile_bg cancels survivors of a dead
+    process. Terminal tasks are kept (bounded) so the app can show what the
+    worker did and how it ended - clickable, like Paseo."""
+    if not uid:
+        return
     def _apply(t):
-        prev = t.get("bg_tasks") if isinstance(t.get("bg_tasks"), dict) else {}
-        if not open_tasks:
-            if not prev:
-                return False
-            t.pop("bg_tasks", None)
-            return None
-        t["bg_tasks"] = {uid: {"desc": desc,
-                               "since": (prev.get(uid) or {}).get("since") or time.time()}
-                         for uid, desc in open_tasks.items()}
+        tasks = dict(t.get("bg_tasks") or {})
+        cur = dict(tasks.get(uid) or {})
+        now = time.time()
+        cur.setdefault("since", now)
+        cur.setdefault("title", title or "task")
+        if title:
+            cur["title"] = title[:80]
+        if detail:
+            cur["detail"] = detail[:600]
+        cur["status"] = status
+        if result is not None:
+            cur["result"] = str(result)[:2000]
+        cur["updated"] = now
+        tasks[uid] = cur
+        # bound the TERMINAL history (last N by finish time); a running task is
+        # never evicted - it is load-bearing for the waiting_on gate.
+        terminal = sorted(((u, v) for u, v in tasks.items()
+                           if v.get("status") in BG_TERMINAL),
+                          key=lambda kv: kv[1].get("updated", 0))
+        for u, _v in terminal[:max(0, len(terminal) - _BG_HISTORY_CAP)]:
+            tasks.pop(u, None)
+        t["bg_tasks"] = tasks
     _mutate(tid, _apply)
+
+
+def reconcile_bg(tid, status="canceled", why="Prozess beendet, bevor der Task meldete"):
+    """finishAll (Paseo sidechain-tracker.finishAll): a background task is a CHILD
+    of the worker process, so when that process dies - a timeout tree-kill, a
+    daemon restart, a crash - every still-running task died with it and can never
+    report. Transition them to a terminal status so a dead build never lingers as
+    a phantom the card waits on forever (the 'wartet auf N Hintergrund-Task' that
+    only ever grew). Returns how many were reconciled."""
+    box = {}
+    def _apply(t):
+        tasks = t.get("bg_tasks")
+        if not isinstance(tasks, dict):
+            return False
+        n = 0
+        for v in tasks.values():
+            if v.get("status", "running") == "running":
+                v["status"] = status
+                v["updated"] = time.time()
+                v.setdefault("result", why)
+                v.setdefault("title", v.get("desc") or "task")   # migrate pre-P2 entries
+                n += 1
+        if not n:
+            return False
+        box["n"] = n
+    _mutate(tid, _apply)
+    return box.get("n", 0)
 
 # -- THE one legal write path for existing tracks (Paseo's one-owner principle) --
 # Tracks are whole JSON dicts, and they used to be read+written from >=4 threads
@@ -2266,6 +2313,16 @@ def _sweep_background():
             continue
         if not _bg_continue_on(t):
             continue
+        # ORPHAN reconciliation (finishAll): a background task is a child of the
+        # worker process. If this daemon holds NO live session for the card (a
+        # restart wiped the registry, or the worker crashed) and no turn is in
+        # flight, the tasks died with their parent - flip the still-running ones
+        # to 'canceled' NOW instead of parking the card for the full 6h. The
+        # continue-on-clear path below then resumes the worker to pick up.
+        import drivers
+        if not drivers.has_session(t["id"]) and not drivers.turn_active(t["id"]):
+            if reconcile_bg(t["id"]):
+                t = _find(_load(), t["id"]) or t
         since = ((t.get("background") or {}).get("since")
                  or _epoch_of(t.get("updated")) or time.time())
         if time.time() - since > _BG_MAX_WAIT_S:

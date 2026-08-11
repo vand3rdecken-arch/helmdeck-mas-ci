@@ -24,6 +24,19 @@ export interface Track {
   question?: PendingQuestion;
   waiting_on?: "you" | "background";
   background?: BackgroundWait;
+  /** Paseo ProviderSubagentStore: one descriptor per background task the worker
+   *  launched, with an explicit lifecycle status - so the card can show what the
+   *  worker is doing and how each task ended (clickable), not just a count. Keyed
+   *  by the launching tool_use id. */
+  bg_tasks?: Record<string, BgTask>;
+}
+export interface BgTask {
+  title: string;
+  status: "running" | "completed" | "failed" | "canceled";
+  since?: number;      // epoch seconds it was launched
+  updated?: number;    // epoch seconds of the last state change
+  detail?: string;     // the command / prompt that launched it
+  result?: string;     // the task-notification output, or why it was canceled
 }
 /** A worker's typed multiple-choice question (daemon/ask.py). Present only
  *  while the card is actually waiting on the owner's decision; answering it
