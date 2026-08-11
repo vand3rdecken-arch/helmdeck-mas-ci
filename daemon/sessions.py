@@ -2640,15 +2640,22 @@ def sweep_zombies(min_idle_s=0):
         # the card doesn't wait on a task that can never report.
         if not min_idle_s and isinstance(t.get("bg_tasks"), dict) \
                 and not drivers.has_session(t["id"]):
-            names = ", ".join(v.get("desc", "task") for v in t["bg_tasks"].values())[:120]
-            _mutate(t["id"], lambda tt: (tt.pop("bg_tasks", None),
-                                         tt.pop("waiting_on", None), None)[-1])
-            try:
-                ActionLog(t["run_dir"]).log(
-                    "note", "Hintergrund-Task(s) mit dem Daemon-Neustart verloren: %s "
-                    "- steuern startet sie neu." % names)
-            except Exception:
-                pass
+            names = ", ".join((v.get("title") or v.get("desc") or "task")
+                              for v in t["bg_tasks"].values() if v.get("status", "running") == "running")[:120]
+            # reconcile (finishAll), don't DELETE: the descriptors survive as
+            # 'canceled' so the owner can still see what the worker was running
+            # and that the restart ended it (Paseo clickable history). Only the
+            # waiting_on gate is cleared so the card is handed back.
+            n = reconcile_bg(t["id"], why="Mit dem Daemon-Neustart abgebrochen")
+            _mutate(t["id"], lambda tt: tt.__setitem__("waiting_on", "you")
+                    if tt.get("waiting_on") == "background" else None)
+            if n:
+                try:
+                    ActionLog(t["run_dir"]).log(
+                        "note", "Hintergrund-Task(s) mit dem Daemon-Neustart abgebrochen: %s "
+                        "- steuern startet sie neu." % names)
+                except Exception:
+                    pass
         st = t.get("status")
         if st == "running":
             # genuinely working = a TURN is in flight (Paseo: "running" is a
