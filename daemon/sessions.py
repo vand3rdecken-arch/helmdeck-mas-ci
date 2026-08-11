@@ -2419,9 +2419,18 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
     if not os.path.isdir(cwd):
         raise RuntimeError("session working dir not found: " + cwd)
     # one session = one card (the Paseo invariant). Two cards sharing a
-    # session id would both mirror the same ever-growing conversation.
+    # session id would both mirror the same ever-growing conversation. The
+    # CHAIN counts too: a rotated-away session is that card's own history
+    # (read_transcript_live renders it); adopting it would spawn a second card
+    # writing into the middle of another card's conversation. lane=done stays
+    # exempt (deliberate: finished work releases its session for re-adoption) -
+    # the UI still LINKS those to the owning card instead, which is the better
+    # flow (open the card, steer it), but the API keeps the escape hatch.
     for ex in _load():
-        if ex.get("session_id") == session_id and ex.get("lane") != "done":
+        if ex.get("lane") == "done":
+            continue
+        if session_id == ex.get("session_id") \
+                or session_id in (ex.get("session_chain") or []):
             raise RuntimeError("session already on the board as card " + ex["id"])
     short = (session_id or "sess")[:8]
 
