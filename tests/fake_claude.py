@@ -68,6 +68,21 @@ def main():
         if os.environ.get("FAKE_HANG") == "1" or text == "__HANG__":
             hanging = True
             continue
+        if text == "__BGLAUNCH__":
+            # Launch a run_in_background task: tool_use + a tool_result that
+            # confirms it went async, then the turn's result. The driver's
+            # _scan_bg must record a 'running' descriptor on the track.
+            emit({"type": "assistant", "session_id": SID, "message": {"role": "assistant",
+                  "content": [{"type": "tool_use", "id": "bg1", "name": "Bash",
+                               "input": {"command": "gradle assembleRelease",
+                                         "run_in_background": True}}]}})
+            emit({"type": "assistant", "session_id": SID, "message": {"role": "assistant",
+                  "content": [{"type": "tool_result", "tool_use_id": "bg1",
+                               "content": "Async agent launched (bg1)"}]}})
+            emit({"type": "result", "subtype": "success", "result": "launched",
+                  "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         if text.startswith("__NULLRESULT__"):
             # Resume-after-hard-kill artifact: the CLI first flushes the DEAD
             # prior turn's leftover result (empty, zero usage, no error), THEN

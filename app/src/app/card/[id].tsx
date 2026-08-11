@@ -17,6 +17,7 @@ import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
+import { BackgroundTasks } from "@/ui/card_background";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { useActionSheet } from "@/ui/action_sheet";
@@ -465,6 +466,13 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             </Text>
           </View>
         </View>
+      ) : null}
+
+      {/* Clickable background-task list (Paseo parity) - shown whenever the card
+          has any task descriptors, so finished/canceled ones stay inspectable
+          too, not only while actively waiting. */}
+      {!agentMode && k.bg_tasks && Object.keys(k.bg_tasks).length > 0 ? (
+        <BackgroundTasks tasks={k.bg_tasks} />
       ) : null}
 
       {/* mode switch: steer the card's Worker, or talk to the board Agent. One

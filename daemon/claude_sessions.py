@@ -279,17 +279,25 @@ def background_state(track):
     clear result, and steering costs the owner a real turn: a missing or rotated
     transcript must never be mistaken for "the build finished"."""
     # PRIMARY source: the driver's FIRST-CLASS registry, maintained at event
-    # time by the pump and persisted on the track (sessions.record_bg - Paseo's
+    # time by the pump and persisted on the track (sessions.bg_upsert - Paseo's
     # ProviderSubagentStore principle). No transcript scan, no rotation
     # blindness by construction. The 6h age cap keeps a task that never reports
     # from parking the card forever.
     reg = (track or {}).get("bg_tasks")
     if isinstance(reg, dict):
         now0 = time.time()
-        open_reg = [v.get("desc", "task") for v in reg.values()
-                    if now0 - (v.get("since") or now0) < 6 * 3600]
+        # ONLY status=='running' blocks the card. completed/failed/canceled
+        # tasks stay in the registry (bounded) for the clickable history but do
+        # NOT count as outstanding - the reconciliation (sessions.reconcile_bg)
+        # is what flips a dead process's tasks to 'canceled', which is why the
+        # phantom "waiting on N" no longer grows. Missing status = an old-format
+        # entry from before P2 -> treated as running (safe, ages out at 6h).
+        open_reg = [v for v in reg.values()
+                    if v.get("status", "running") == "running"
+                    and now0 - (v.get("since") or now0) < 6 * 3600]
         if open_reg:
-            return "waiting", {"n": len(open_reg), "names": open_reg[:4]}
+            names = [v.get("title") or v.get("desc") or "task" for v in open_reg[:4]]
+            return "waiting", {"n": len(open_reg), "names": names}
         return "clear", None
     # FALLBACK (repair only - cards from before the registry existed): scan the
     # session chain. A background task started in an earlier turn - or before a
