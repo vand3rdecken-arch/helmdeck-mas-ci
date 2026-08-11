@@ -32,3 +32,36 @@ export async function saveDraft(draftKey: string, text: string): Promise<void> {
     else await SecureStore.setItemAsync(k, text);
   } catch { /* storage unavailable */ }
 }
+
+// Composer picker state (model / thinking level / agent-permission mode) — same
+// per-surface key, separate namespace so it never collides with the plain-text
+// draft above. Without this the pickers were bare useState: any remount of the
+// Composer (e.g. the card screen's `!k ? <Spinner> : <Chat>` branch flips for a
+// tick whenever /tracks races back a non-array error object over the relay,
+// which every turn triggers via invalidateQueries) silently reset the chosen
+// model back to "auto" — reported as "model choice doesn't survive a turn".
+export interface ComposerOpts { model?: string; thinking?: string; mode?: string }
+
+export async function loadOpts(draftKey: string): Promise<ComposerOpts> {
+  try {
+    const raw = isWeb
+      ? globalThis.localStorage?.getItem(storeKey("opts." + draftKey))
+      : await SecureStore.getItemAsync(storeKey("opts." + draftKey));
+    return raw ? (JSON.parse(raw) as ComposerOpts) : {};
+  } catch { return {}; }
+}
+
+export async function saveOpts(draftKey: string, opts: ComposerOpts): Promise<void> {
+  const k = storeKey("opts." + draftKey);
+  try {
+    const hasAny = opts.model || opts.thinking || opts.mode;
+    if (!hasAny) {
+      if (isWeb) globalThis.localStorage?.removeItem(k);
+      else await SecureStore.deleteItemAsync(k);
+      return;
+    }
+    const raw = JSON.stringify(opts);
+    if (isWeb) globalThis.localStorage?.setItem(k, raw);
+    else await SecureStore.setItemAsync(k, raw);
+  } catch { /* storage unavailable */ }
+}

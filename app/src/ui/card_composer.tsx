@@ -7,7 +7,7 @@ import {
   type Attach, filesToAttachments, isWeb, MAX_FILES, MAX_MB, mergeAttachments, pickFiles,
   pickImages, recoverPendingImages, takePhoto,
 } from "@/data/attachments";
-import { loadDraft, saveDraft } from "@/data/drafts";
+import { loadDraft, loadOpts, saveDraft, saveOpts } from "@/data/drafts";
 import { useT } from "@/i18n";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
@@ -63,6 +63,31 @@ export function Composer({
     loadDraft(draftKey).then((d) => { if (live && d) setTextRaw(d); });
     return () => { live = false; };
   }, [draftKey]);
+
+  // picker persistence (model / thinking / mode) — same write-through-on-pick,
+  // restore-on-mount shape as the text draft above. Explicit setters only (not
+  // a blanket effect on [model, thinking, mode]): a save-on-every-change effect
+  // would fire with the useState DEFAULTS on the very first render, racing the
+  // async load below and permanently clobbering a real saved choice before it
+  // is ever read back.
+  function pickModel(id: string) { setModel(id); if (draftKey) saveOpts(draftKey, { model: id, thinking, mode }); }
+  function pickThinking(id: string) { setThinking(id); if (draftKey) saveOpts(draftKey, { model, thinking: id, mode }); }
+  function pickMode(id: string) { setMode(id); if (draftKey) saveOpts(draftKey, { model, thinking, mode: id }); }
+  useEffect(() => {
+    if (!draftKey) return;
+    let live = true;
+    loadOpts(draftKey).then((o) => {
+      if (!live) return;
+      if (o.model) setModel(o.model);
+      if (o.thinking !== undefined) setThinking(o.thinking);
+      // Restored unvalidated, like model above: modeOptions is itself async
+      // (an API-loaded prop) and may not have arrived yet when this runs. An
+      // id that turns out stale just fails the `.find()` in modeLabel and
+      // renders nothing — never a crash — so there is nothing to guard here.
+      if (o.mode) setMode(o.mode);
+    });
+    return () => { live = false; };
+  }, [draftKey]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // external injection (rewind from transcript)
   if (seed && seed.key !== seedKey) { setSeedKey(seed.key); setText(seed.text); }
@@ -191,13 +216,13 @@ export function Composer({
           <Ionicons name="sparkles-outline" size={13} color={model !== "auto" ? t.accent : t.txtSecondary} />
           <Text style={{ color: model !== "auto" ? t.accent : t.txtSecondary, fontSize: 12 }}>{modelLabel}</Text>
         </Pressable>
-        <Pressable onPress={() => { const i = THINK.findIndex((x) => x.id === thinking); setThinking(THINK[(i + 1) % THINK.length].id); }}
+        <Pressable onPress={() => { const i = THINK.findIndex((x) => x.id === thinking); pickThinking(THINK[(i + 1) % THINK.length].id); }}
           style={toolBtn(thinking !== "")}>
           <Ionicons name="bulb-outline" size={13} color={thinking !== "" ? t.accent : t.txtSecondary} />
           <Text style={{ color: thinking !== "" ? t.accent : t.txtSecondary, fontSize: 12 }}>{thinkShort}</Text>
         </Pressable>
         {modeOptions && modeOptions.length > 1 ? (
-          <Pressable onPress={() => { const i = modeOptions.findIndex((m) => m.id === mode); setMode(modeOptions[(i + 1) % modeOptions.length].id); }}
+          <Pressable onPress={() => { const i = modeOptions.findIndex((m) => m.id === mode); pickMode(modeOptions[(i + 1) % modeOptions.length].id); }}
             style={toolBtn(true)}>
             <Ionicons name="options-outline" size={13} color={t.accent} />
             <Text style={{ color: t.accent, fontSize: 12 }}>{modeLabel}</Text>
@@ -311,7 +336,7 @@ export function Composer({
                   : typeof raw === "string" ? raw : (raw.label || raw.id);
                 const desc = typeof raw === "string" ? "" : (raw.desc || "");
                 return (
-                  <Pressable key={id} onPress={() => { setModel(id); setPicker(false); }}
+                  <Pressable key={id} onPress={() => { pickModel(id); setPicker(false); }}
                     style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
                     <Ionicons name={id === model ? "radio-button-on" : "radio-button-off"} size={16} color={id === model ? t.accent : t.txtTertiary} />
                     <View style={{ flex: 1 }}>
