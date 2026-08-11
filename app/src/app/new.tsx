@@ -59,6 +59,12 @@ export default function NewCard() {
   const [showSess, setShowSess] = useState(false);
   const [adoptId, setAdoptId] = useState<string | null>(null);
   const [adoptCwd, setAdoptCwd] = useState("");
+  // Set when the picked session is ALREADY bound to a card (s.card, from the
+  // daemon's track-derived annotation). Picking one used to just link away to
+  // that card - a dead end for "ich will hier weiterarbeiten". The logical
+  // action is the same fork_conversation the card menu offers: split the
+  // existing conversation into THIS new card, source untouched.
+  const [adoptCard, setAdoptCard] = useState<string | null>(null);
   const { data: sessions, isLoading: sessLoading } = useQuery<ClaudeSession[]>({
     queryKey: ["claude-sessions"], queryFn: api.claudeSessions, enabled: showSess,
   });
@@ -82,8 +88,19 @@ export default function NewCard() {
     setBusy(true);
     setErr("");
     try {
-      // A picked session -> adopt it as a card (mode "continue"), with any typed
-      // text carried as the first steer. Same one button either way.
+      // A session already bound to a card -> fork ITS CONVERSATION into a new
+      // card (sessions.fork_conversation) instead of adopting: adopting would
+      // just bounce with "session already on the board", and forking is the
+      // logical move anyway - a fresh card that keeps the context but grows
+      // independently, exactly what picking an in-progress conversation means.
+      if (adoptCard) {
+        const res = await api.forkChat(adoptCard, task.trim());
+        if (res?.error) { setErr(res.error); return; }
+        done(res?.id ? `/card/${res.id}` : "/");
+        return;
+      }
+      // An UNBOUND session -> adopt it as a card (mode "continue"), with any
+      // typed text carried as the first steer. Same one button either way.
       if (adoptId) {
         const res = await api.adoptClaude({
           session_id: adoptId, cwd: adoptCwd, mode: "continue", first: task.trim(),
@@ -136,34 +153,37 @@ export default function NewCard() {
                 <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 10 }}>{tr("new.noSessions")}</Text>
               )}
               {sessions?.map((s) => {
-                const sel = s.id === adoptId;
-                // Already bound to a card (daemon derives this from the track
-                // store): selecting it would only bounce at submit with
-                // "session already on the board" - a dead end. Render it as a
-                // LINK to its card instead of a selectable option.
-                if (s.card) {
-                  return (
-                    <Pressable key={s.id} onPress={() => router.push(`/card/${s.card}` as never)}
-                      style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: t.glassBorder, opacity: 0.75 }}>
-                      <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
-                        <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }} numberOfLines={1}>{s.project || tr("new.session")}</Text>
-                        <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{s.last_active}</Text>
-                        <View style={{ flex: 1 }} />
-                        <Text style={{ color: t.accent, fontSize: 10.5, fontWeight: "600" }}>{tr("new.onBoard")}</Text>
-                      </View>
-                      <Text style={{ color: t.txtSecondary, fontSize: 11.5 }} numberOfLines={1}>{s.first || tr("new.noText")}</Text>
-                    </Pressable>
-                  );
-                }
+                // Already bound to a card (daemon-derived from the track store):
+                // selecting it FORKS that card's conversation into this new one
+                // (adoptCard, handled in file()) instead of adopting - adopting
+                // would just bounce with "session already on the board", and a
+                // fork is what picking an in-progress conversation actually
+                // means. Still one uniform tap-to-select row, not a dead-end
+                // link; a small badge says what will happen.
+                const sel = s.card ? s.id === adoptCard : s.id === adoptId;
                 return (
                   <Pressable key={s.id}
-                    onPress={() => { setAdoptId(sel ? null : s.id); setAdoptCwd(sel ? "" : s.cwd); }}
+                    onPress={() => {
+                      if (s.card) {
+                        setAdoptCard(sel ? null : s.card);
+                        setAdoptId(null); setAdoptCwd("");
+                      } else {
+                        setAdoptId(sel ? null : s.id); setAdoptCwd(sel ? "" : s.cwd);
+                        setAdoptCard(null);
+                      }
+                    }}
                     style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: t.glassBorder,
                       borderLeftWidth: 2, borderLeftColor: sel ? t.accent : "transparent",
                       backgroundColor: sel ? t.surface2 : "transparent" }}>
                     <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
                       <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }} numberOfLines={1}>{s.project || tr("new.session")}</Text>
                       <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{s.last_active}</Text>
+                      {s.card ? (
+                        <>
+                          <View style={{ flex: 1 }} />
+                          <Text style={{ color: t.accent, fontSize: 10.5, fontWeight: "600" }}>{tr("new.willFork")}</Text>
+                        </>
+                      ) : null}
                     </View>
                     <Text style={{ color: t.txtSecondary, fontSize: 11.5 }} numberOfLines={1}>{s.first || tr("new.noText")}</Text>
                   </Pressable>
@@ -171,7 +191,7 @@ export default function NewCard() {
               })}
             </View>
           )}
-          <SectionLabel text={tr(adoptId ? "new.firstInstruction" : "new.taskLabel")} />
+          <SectionLabel text={tr((adoptId || adoptCard) ? "new.firstInstruction" : "new.taskLabel")} />
           <TextInput value={task} onChangeText={setTask} multiline placeholder={tr("new.taskPlaceholder")}
             placeholderTextColor={t.txtPlaceholder} style={[field, { minHeight: 90 }]} />
           <View style={{ height: 10 }} />
@@ -220,8 +240,10 @@ export default function NewCard() {
           <Pressable onPress={() => router.back()} style={{ flex: 1, borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, padding: 12, alignItems: "center" }}>
             <Text style={{ color: t.txtSecondary }}>{tr("ui.cancel")}</Text>
           </Pressable>
-          <Pressable onPress={file} disabled={busy || (!adoptId && !task.trim())} style={{ flex: 1, backgroundColor: t.accent, borderRadius: 8, padding: 12, alignItems: "center", opacity: busy || (!adoptId && !task.trim()) ? 0.5 : 1 }}>
-            <Text style={{ color: "#fff", fontWeight: "600" }}>{tr(adoptId ? "new.adopt" : "ui.create")}</Text>
+          <Pressable onPress={file} disabled={busy || (!adoptId && !adoptCard && !task.trim())}
+            style={{ flex: 1, backgroundColor: t.accent, borderRadius: 8, padding: 12, alignItems: "center",
+              opacity: busy || (!adoptId && !adoptCard && !task.trim()) ? 0.5 : 1 }}>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{tr(adoptCard ? "card.menu.forkChat" : adoptId ? "new.adopt" : "ui.create")}</Text>
           </Pressable>
         </View>
       </ScrollView>

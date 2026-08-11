@@ -30,10 +30,10 @@ function glass(t: ThemeTokens) {
     : { backgroundColor: t.surface1 };
 }
 
-function SessionRow({ sv, onAdopt, onOpenCard, busy }: {
+function SessionRow({ sv, onAdopt, onFork, busy }: {
   sv: ClaudeSession;
   onAdopt: (sv: ClaudeSession, mode: "continue" | "fork") => void;
-  onOpenCard: (id: string) => void;
+  onFork: (sv: ClaudeSession) => void;
   busy: string;
 }) {
   const t = useTheme();
@@ -49,11 +49,13 @@ function SessionRow({ sv, onAdopt, onOpenCard, busy }: {
       <Text style={{ color: t.txtTertiary, fontSize: 10.5 }} numberOfLines={1}>{sv.cwd}</Text>
       {sv.card ? (
         // Already bound to a card - "continue" would only bounce with "session
-        // already on the board" (one session, one owning card). Link to it
-        // instead of offering a dead-end button.
-        <Pressable onPress={() => onOpenCard(sv.card as string)}
-          style={[s.btn, { alignSelf: "flex-start", marginTop: 8, backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
-          <Text style={{ color: t.accent, fontSize: 11.5, fontWeight: "600" }}>{tr("sessions.onBoard")}</Text>
+        // already on the board" (one session, one owning card). The logical
+        // action is exactly sessions.fork_conversation (same as the card
+        // menu's "Konversation forken"): split it into a NEW card that keeps
+        // the context, source untouched - not a dead-end link away.
+        <Pressable onPress={() => onFork(sv)} disabled={!!busy}
+          style={[s.btn, { alignSelf: "flex-start", marginTop: 8, backgroundColor: t.accent, borderColor: t.accent, opacity: busy ? 0.6 : 1 }]}>
+          <Text style={{ color: "#fff", fontSize: 11.5, fontWeight: "700" }}>{busy === sv.id + "chatfork" ? "…" : tr("sessions.forkChat")}</Text>
         </Pressable>
       ) : (
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
@@ -106,6 +108,22 @@ export default function Sessions() {
     }
   }
 
+  async function forkChat(sv: ClaudeSession) {
+    if (!sv.card) return;
+    setBusy(sv.id + "chatfork");
+    setErr("");
+    try {
+      const r = await api.forkChat(sv.card, sv.first);
+      if (r?.error) { setErr(r.error); return; }
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      if (r?.id) router.push(`/card/${r.id}`);
+    } catch (e) {
+      setErr(String((e as Error).message));
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <ScreenHeader title={tr("nav.sessions")} onBack={() => router.back()} />
@@ -123,8 +141,7 @@ export default function Sessions() {
         ) : null}
         {data && data.length === 0 ? <Empty text={tr("sessions.empty")} /> : null}
         {(data ?? []).map((sv: ClaudeSession, i: number) => (
-          <SessionRow key={sv.id ?? i} sv={sv} onAdopt={adopt}
-            onOpenCard={(id) => router.push(`/card/${id}` as never)} busy={busy} />
+          <SessionRow key={sv.id ?? i} sv={sv} onAdopt={adopt} onFork={forkChat} busy={busy} />
         ))}
       </ScrollView>
     </View>
