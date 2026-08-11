@@ -206,6 +206,10 @@ export const api = {
   update: (id: string, patch: Record<string, unknown>) => req("POST", `/tracks/${id}/update`, patch),
   archive: (id: string) => req("POST", `/tracks/${id}/archive`),
   fork: (id: string, from = "") => req("POST", `/tracks/${id}/fork`, { from }),
+  // Split the CONVERSATION into a new card (keeps context) - distinct from
+  // fork() above, which forks the code at a ref with a fresh session.
+  forkChat: (id: string, first = "") =>
+    req<{ id?: string; error?: string }>("POST", `/tracks/${id}/fork-chat`, { first }),
   del: (id: string) => req("POST", `/tracks/${id}/delete`),
   cancel: (id: string) => req("POST", `/tracks/${id}/cancel`),
   steer: (id: string, text: string, o: SteerOpts = {}) =>

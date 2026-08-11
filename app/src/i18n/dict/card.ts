@@ -142,7 +142,8 @@ export const card: Dict = {
   "card.fastTrack.hint": { de: "  (grün → auto-merge + deploy)",
                            en: "  (green → auto-merge + deploy)" },
   "card.fastTrack.off": { de: "Fast-Track aus", en: "Turn fast-track off" },
-  "card.menu.fork": { de: "Fork", en: "Fork" },
+  "card.menu.fork": { de: "Code forken", en: "Fork code" },
+  "card.menu.forkChat": { de: "Konversation forken", en: "Fork conversation" },
   "card.menu.archive": { de: "Archivieren", en: "Archive" },
 
   // move toasts

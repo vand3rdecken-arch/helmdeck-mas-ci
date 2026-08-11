@@ -1171,6 +1171,18 @@ class H(BaseHTTPRequestHandler):
                         parts[1], from_ref=body.get("ref", ""), actor=user["name"])))
                 except RuntimeError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "fork-chat":
+                # split a crowded card's CONVERSATION into a new card (keeps
+                # context, unlike /fork which forks code at a ref with a fresh
+                # session - see sessions.fork_conversation).
+                import sessions
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                try:
+                    return self._send(200, json.dumps(sessions.fork_conversation(
+                        parts[1], first=body.get("first", ""), actor=user["name"])))
+                except RuntimeError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "delete":
                 import sessions
                 if user["role"] != "owner":

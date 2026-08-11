@@ -2949,6 +2949,73 @@ def rewind_files(tid, commit, actor="owner"):
                                 % (commit[:8], (undo or "?")[:8], actor))
     return {"ok": True, "undo": undo}
 
+def fork_conversation(tid, first="", actor="owner"):
+    """Fork this card's LIVE CONVERSATION into a new sibling card: same context
+    up to now, growing independently from here - so a crowded card (many
+    unrelated threads steered into one) can be split without losing what it
+    already knows. Different from fork_track (which forks the CODE at a ref
+    with a FRESH session - no context carried).
+
+    Mechanism: reuses the adopted_source pattern already proven for adopting an
+    external Claude Code session (adopt_session, drivers.py:765) - the new card
+    is seeded with the source's CURRENT session id, but adopted_source is set to
+    that same id, so the driver's first spawn adds --fork-session. The CLI then
+    clones the conversation into a FRESH session id on that first turn; the
+    source card's own session is never touched or resumed-into. After that
+    first turn, session_chain carries the pre-fork id, so the split-off card's
+    transcript still SHOWS the shared history (read_transcript_live renders
+    session_chain), then continues on its own below it - the owner sees exactly
+    where the fork happened, not a history-less blank card.
+
+    Isolation: a MACHINE card has no code-isolation model (its "worktree" is a
+    real folder) - the new card shares the same cwd, same as filing two machine
+    cards there today. A git card gets its OWN worktree (checked out at the
+    source's CURRENT branch tip) so two cards never write into the same
+    checkout at once - a chat split is not a licence for concurrent edits."""
+    import events
+    src = get_track(tid)
+    if not src:
+        raise RuntimeError("no such card: " + tid)
+    sid = src.get("session_id")
+    if not sid:
+        raise RuntimeError("this card has no conversation yet to fork - steer it at least once first")
+    new_id = _unique_id("chatfork")
+    run_dir = os.path.join(REC, new_id)
+    os.makedirs(run_dir, exist_ok=True)
+    machine = bool(src.get("machine"))
+    if machine:
+        worktree = src.get("worktree", "")
+        branch = src.get("branch", "(no git)")
+    else:
+        branch = "chatfork-" + _slug(src.get("branch", ""))[:20] + "-" + new_id.split("-")[-1][-4:]
+        worktree = _worktree_for(src["repo"], branch)
+        if os.path.exists(worktree):
+            raise RuntimeError("fork worktree already exists")
+        _git(src["repo"], "worktree", "add", worktree, "-b", branch, src.get("branch", "HEAD"))
+    t = {"id": new_id, "repo": src["repo"], "branch": branch, "worktree": worktree,
+         "machine": machine,
+         "task": (first or ("Fork of the conversation from card %s" % tid))[:400],
+         "client": src.get("client", ""), "session_id": sid,
+         "perm": src.get("perm", DEFAULT_PERM), "lane": "working",
+         "status": "needs_you", "turns": 0, "run_dir": run_dir, "last_reply": "",
+         "value": src.get("value", 0), "driver": src.get("driver", "claude"),
+         "priority": src.get("priority", "medium"), "due": src.get("due", ""),
+         "model": "", "attachments": [],
+         # remembered so the FIRST steer forks AWAY from the source session
+         # instead of resuming into it (same guard adopt_session relies on)
+         "adopted_source": sid,
+         "forked_from": tid, "forked_from_session": sid,
+         "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
+         "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+         "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
+    from actionlog import ActionLog
+    ActionLog(run_dir).log("note", "KONVERSATION FORKED von Karte %s (Session %s...)"
+                           % (tid, sid[:8]))
+    events.emit("chatfork", new_id, source_card=tid, session=sid, actor=actor)
+    _save_track(t)
+    return t
+
+
 def fork_track(tid, from_ref="", actor="owner"):
     """Fork a NEW card from this card's state (its branch tip, or a specific
     commit hash). Append-only: creates a new branch/worktree/session off the
