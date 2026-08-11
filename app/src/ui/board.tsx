@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Platform, Pre
 import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
@@ -501,6 +502,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const router = useRouter();
   const label = useLaneLabels();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   // Freshness is driven by the global version long-poll (useGlobalStream); this
   // interval is just a slow safety net if that loop errors.
   // While the daemon is gating/merging a card, 20s is far too coarse to feel
@@ -590,7 +592,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   return (
     <>
     <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingTop: topInset + (wide ? 8 : 8),
-      paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
+      paddingBottom: 120 + insets.bottom, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
       {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || tr("ui.offline")}</Text> : null}
@@ -634,7 +636,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       )}
     </ScrollView>
     {toast ? (
-      <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 24, alignItems: "center" }}>
+      <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 24 + insets.bottom, alignItems: "center" }}>
         <View style={{ maxWidth: 560, backgroundColor: t.surface1, borderColor: t.borderStrong, borderWidth: 1,
           borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
           ...(isWeb ? { boxShadow: "0 6px 20px rgba(0,0,0,0.35)" } as any : { elevation: 6 }) }}>

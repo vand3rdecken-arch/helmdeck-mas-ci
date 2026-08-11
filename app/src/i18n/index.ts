@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/data/client";
 
-import { DICT, getLang, render, setLang, type Lang } from "./core";
+import { DICT, deviceLang, getLang, render, setLang, type Lang } from "./core";
 
 export {
   allKeys, dict, getLang, LANGS, setLang, t, type Dict, type Entry, type Lang,
@@ -31,7 +31,9 @@ export {
 export function useLang(): Lang {
   const { data } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const raw = (data as { ui?: { lang?: string } } | undefined)?.ui?.lang;
-  const lang: Lang = raw === "en" ? "en" : "de";
+  // A pinned workspace language wins; otherwise (demo / unpaired, where `raw` is
+  // undefined) follow the device instead of defaulting everyone to German.
+  const lang: Lang = raw === "en" ? "en" : raw === "de" ? "de" : deviceLang();
   if (lang !== getLang()) setLang(lang);   // keep the non-React t() in sync
   return lang;
 }
