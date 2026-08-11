@@ -11,7 +11,12 @@ import { Panel, SectionLabel } from "@/ui/kit";
 import { Caption, ChipPick, fieldStyle } from "@/ui/settings_sections";
 
 // Shape of one entry from claude_sessions.list_sessions (daemon/claude_sessions.py).
-type ClaudeSession = { id: string; cwd: string; project: string; first: string; last_active: string };
+type ClaudeSession = {
+  id: string; cwd: string; project: string; first: string; last_active: string;
+  /** set by the daemon (claude_sessions.list_sessions) when this session is
+   *  already bound to a card - continuing it would only bounce at submit. */
+  card?: string;
+};
 
 // Ported from archive/web/components/modal.tsx (EXAMPLES). Tapping a chip seeds
 // the task text and, where the web example set one, the driver. Both the chip
@@ -132,6 +137,24 @@ export default function NewCard() {
               )}
               {sessions?.map((s) => {
                 const sel = s.id === adoptId;
+                // Already bound to a card (daemon derives this from the track
+                // store): selecting it would only bounce at submit with
+                // "session already on the board" - a dead end. Render it as a
+                // LINK to its card instead of a selectable option.
+                if (s.card) {
+                  return (
+                    <Pressable key={s.id} onPress={() => router.push(`/card/${s.card}` as never)}
+                      style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: t.glassBorder, opacity: 0.75 }}>
+                      <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
+                        <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }} numberOfLines={1}>{s.project || tr("new.session")}</Text>
+                        <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{s.last_active}</Text>
+                        <View style={{ flex: 1 }} />
+                        <Text style={{ color: t.accent, fontSize: 10.5, fontWeight: "600" }}>{tr("new.onBoard")}</Text>
+                      </View>
+                      <Text style={{ color: t.txtSecondary, fontSize: 11.5 }} numberOfLines={1}>{s.first || tr("new.noText")}</Text>
+                    </Pressable>
+                  );
+                }
                 return (
                   <Pressable key={s.id}
                     onPress={() => { setAdoptId(sel ? null : s.id); setAdoptCwd(sel ? "" : s.cwd); }}

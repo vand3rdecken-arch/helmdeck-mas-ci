@@ -97,7 +97,28 @@ def list_sessions(limit=MAX):
                 "mtime": mtime,
             })
     out.sort(key=lambda s: s["mtime"], reverse=True)
-    return out[:limit]
+    out = out[:limit]
+    # Annotate sessions ALREADY BOUND to a card (derived from the track store -
+    # the one owner of that binding - never guessed from paths). The worktree
+    # filter above misses machine/adopted cards (their cwd is a real folder,
+    # e.g. the home dir), so the picker offered them, the owner selected one,
+    # and only the SUBMIT bounced with "session already on the board" - a
+    # dead end. With `card` set, the app renders the row as a link to the
+    # owning card instead of a selectable option.
+    try:
+        import sessions as _s
+        owner = {}
+        for t in _s._load():
+            for sid in [t.get("session_id")] + list(t.get("session_chain") or []):
+                if sid:
+                    owner[sid] = t["id"]
+        for s in out:
+            tid = owner.get(s["id"])
+            if tid:
+                s["card"] = tid
+    except Exception:
+        pass                       # annotation is best-effort, the guard still holds
+    return out
 
 
 # --- full turn-by-turn transcript of a session (the Paseo agent view) --------

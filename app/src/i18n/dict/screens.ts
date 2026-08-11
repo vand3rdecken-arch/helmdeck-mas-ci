@@ -214,6 +214,7 @@ export const screens: Dict = {
   "sessions.session": { de: "Sitzung", en: "session" },
   "sessions.noText": { de: "(kein Text)", en: "(no text)" },
   "sessions.continue": { de: "▶ Fortsetzen", en: "▶ Continue" },
+  "sessions.onBoard": { de: "→ Karte öffnen (bereits auf dem Board)", en: "→ open card (already on the board)" },
   "sessions.branch": { de: "⑂ Verzweigen", en: "⑂ Branch" },
   "sessions.asCard": { de: "Session als Card", en: "Session as card" },
   "sessions.asCardBody": { de: "Öffne die Card, um fortzusetzen.", en: "Open the card to continue." },
