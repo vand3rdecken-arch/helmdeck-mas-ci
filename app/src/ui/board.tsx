@@ -183,8 +183,19 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         ...(tint && isWeb ? { boxShadow: "0 1px 2px rgba(0,0,0,0.28), 0 6px 18px rgba(0,0,0,0.22)" } as any : null),
       }]}
     >
+      {/* Visible menu affordance. The card menu used to be LONG-PRESS only,
+          which is undiscoverable and unreachable with a mouse - on desktop the
+          menu was simply inaccessible. This ⋯ opens the same action sheet on a
+          plain tap. A nested Pressable captures the touch, so it does not also
+          open the card. */}
+      <Pressable onPress={() => onMove(k)} hitSlop={8}
+        accessibilityRole="button" accessibilityLabel={tr("board.card.menu")}
+        style={{ position: "absolute", top: 4, right: 4, zIndex: 5,
+          padding: 6, borderRadius: 8 }}>
+        <Ionicons name="ellipsis-horizontal" size={16} color={t.txtTertiary} />
+      </Pressable>
       {tint ? (
-        <Text style={{ color: tint, fontSize: 11.5, fontWeight: "600" }}>
+        <Text style={{ color: tint, fontSize: 11.5, fontWeight: "600", paddingRight: 22 }}>
           {k.status === "needs_you" ? tr("board.card.replyReady") : tr("board.card.bounced")}
         </Text>
       ) : null}
@@ -283,6 +294,11 @@ function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () 
            : tr("board.tokShort", { tok: fmtTok((k.tokens_in ?? 0) + (k.tokens_out ?? 0)) }))
         : `$${k.ai_cost.toFixed(2)}`}</Text> : null}
       {k.updated ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.updated}</Text> : null}
+      {/* tap-reachable menu (long-press is unreachable with a mouse) */}
+      <Pressable onPress={onMove} hitSlop={8} accessibilityRole="button"
+        accessibilityLabel={tr("board.card.menu")} style={{ padding: 4 }}>
+        <Ionicons name="ellipsis-horizontal" size={15} color={t.txtTertiary} />
+      </Pressable>
     </Pressable>
   );
 }
@@ -359,13 +375,14 @@ function DraggableCard({
 }
 
 function WideKanban({
-  tracks, label, qc, onError, onInfo,
+  tracks, label, qc, onError, onInfo, onMove,
 }: {
   tracks: Track[];
   label: (l: string) => string;
   qc: QueryClient;
   onError: (m: string) => void;
   onInfo: (m: string | null) => void;
+  onMove: (k: Track) => void;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -453,7 +470,10 @@ function WideKanban({
                 <React.Fragment key={k.id}>
                   {indicator?.lane === lane && indicator.index === i ? <Ins /> : null}
                   <DraggableCard k={k} onMoveTarget={onMoveTarget} onDropCard={onDropCard} onMeasure={onMeasure}>
-                    <Card k={k} onMove={() => {}} />
+                    {/* real onMove, not a no-op: the ⋯ menu button inside the
+                        card needs it, and long-press is unreachable with a mouse
+                        on desktop (the card menu was inaccessible there). */}
+                    <Card k={k} onMove={onMove} />
                   </DraggableCard>
                 </React.Fragment>
               ))
@@ -614,7 +634,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         <GanttView tracks={[...shown, ...plannedRows]} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: four column plates side by side, drag to move/reorder
-        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert(tr("ui.error"), m)} onInfo={showToast} />
+        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert(tr("ui.error"), m)} onInfo={showToast} onMove={onMove} />
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);

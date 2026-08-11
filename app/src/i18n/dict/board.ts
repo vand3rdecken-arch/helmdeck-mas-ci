@@ -58,6 +58,7 @@ export const board: Dict = {
   },
   "board.card.delivered": { de: "Geliefert: {text}", en: "Delivered: {text}" },
   "board.card.replyReady": { de: "● Antwort da – tippen", en: "● reply is in – tap" },
+  "board.card.menu": { de: "Kartenmenü", en: "Card menu" },
   "board.card.bounced": { de: "● abgelehnt – ansehen", en: "● bounced – take a look" },
   "board.noGit": { de: "(kein Git)", en: "(no git)" },
   "board.step": { de: "Schritt {n}", en: "step {n}" },

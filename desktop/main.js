@@ -174,7 +174,18 @@ function startWeb() {
     }
     fs.readFile(file, (err, buf) => {
       if (err) { res.writeHead(404); return res.end("not found"); }
-      res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
+      // NEVER cache the SPA shell. Without this, Electron heuristically caches
+      // index.html to disk and serves a STALE bundle after an app-dist refresh -
+      // so a shipped fix silently never reaches the window even across restarts
+      // (the "auf dem Desktop kommt nichts an" class). Hashed JS/CSS assets carry
+      // a content hash in their filename, so they are safe (in fact good) to
+      // cache; only the entry documents must always be revalidated.
+      const ext = path.extname(file);
+      const noStore = ext === ".html" || ext === ".json" || ext === "";
+      res.writeHead(200, {
+        "Content-Type": MIME[ext] || "application/octet-stream",
+        "Cache-Control": noStore ? "no-store, must-revalidate" : "public, max-age=31536000, immutable",
+      });
       res.end(buf);
     });
   });
@@ -206,7 +217,9 @@ function createWindow() {
     baseUrl: "http://localhost:" + DAEMON_PORT, token: desktopToken,
     setup: setupSrv ? { port: setupSrv.port, nonce: setupSrv.nonce } : undefined,
   })).toString("base64");
-  win.loadURL("http://localhost:" + WEB_PORT + "/#cfg=" + encodeURIComponent(cfg));
+  // ?v=<launch time> busts any residual disk cache so a refreshed app-dist is
+  // ALWAYS what the window loads (belt-and-suspenders with the no-store header).
+  win.loadURL("http://localhost:" + WEB_PORT + "/?v=" + Date.now() + "#cfg=" + encodeURIComponent(cfg));
   // open external links in the real browser, not a new Electron window
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   win.on("closed", () => { win = null; });
