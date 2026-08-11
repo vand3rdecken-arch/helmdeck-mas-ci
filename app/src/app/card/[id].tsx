@@ -717,6 +717,26 @@ export default function CardScreen() {
                        onPress: () => moveTo(l) })),
     });
   }
+  // Split the conversation into a new card (keeps context - unlike code Fork,
+  // which starts a fresh session). The button must show what happened: a bare
+  // fire-and-forget call here would repeat the "stucked here" silent-failure
+  // class from the new-card form (Alert.alert is a no-op on desktop web).
+  async function forkChat() {
+    if (!k) return;
+    try {
+      const res = await api.forkChat(k.id);
+      if (res?.error) { showToast(res.error, false); return; }
+      if (res?.id) router.push(`/card/${res.id}` as never);
+    } catch (e) { showToast(String((e as Error).message), false); }
+  }
+  async function forkCode() {
+    if (!k) return;
+    try {
+      const res = await api.fork(k.id) as { id?: string; error?: string };
+      if (res?.error) { showToast(res.error, false); return; }
+      if (res?.id) router.push(`/card/${res.id}` as never);
+    } catch (e) { showToast(String((e as Error).message), false); }
+  }
   function menu() {
     if (!k) return;
     sheet.show({
@@ -726,7 +746,8 @@ export default function CardScreen() {
         { label: tr("card.move.to"), onPress: moveSheet },
         { label: tr(k.fast_track ? "card.fastTrack.disable" : "card.fastTrack.enable")
                   + tr("card.fastTrack.hint"), onPress: () => edit({ fast_track: !k.fast_track }) },
-        { label: tr("card.menu.fork"), onPress: () => api.fork(k.id) },
+        ...(k.session_id ? [{ label: tr("card.menu.forkChat"), onPress: forkChat }] : []),
+        { label: tr("card.menu.fork"), onPress: forkCode },
         { label: tr("card.menu.archive"), onPress: () => api.archive(k.id).then(() => router.back()) },
         { label: tr("ui.delete"), destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
       ],
@@ -765,7 +786,9 @@ export default function CardScreen() {
             <Ionicons name="chevron-down" size={12} color={t.txtTertiary} />
           </Pressable>
         ) : null}
-        <Pressable onPress={menu} hitSlop={10}><Ionicons name="ellipsis-horizontal" size={22} color={t.txtSecondary} /></Pressable>
+        <Pressable onPress={menu} hitSlop={10} accessibilityRole="button" accessibilityLabel={tr("board.card.menu")}>
+          <Ionicons name="ellipsis-horizontal" size={22} color={t.txtSecondary} />
+        </Pressable>
       </View>
 
       {!k ? <ActivityIndicator color={t.accent} style={{ marginTop: 30 }} /> : wide ? (
