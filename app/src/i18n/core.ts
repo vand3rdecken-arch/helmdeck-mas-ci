@@ -29,10 +29,27 @@ export const DICT: Dict = {
   ...chrome, ...board, ...card, ...composer, ...demo, ...net, ...onboard, ...screens, ...settings,
 };
 
+/** The device's language, used ONLY as the fallback when the workspace hasn't
+ *  pinned one (demo mode and the unpaired first run both arrive here with no
+ *  settings.policy.lang). Before this, that fallback was a hard "de", so every
+ *  English-locale visitor — i.e. almost every closed-test tester — saw a German
+ *  board. Hermes ships Intl on Android and iOS, so reading the locale needs no
+ *  native module. Defaults to "en" for the international audience if detection
+ *  ever throws (older Hermes without Intl). */
+export function deviceLang(): Lang {
+  try {
+    const loc = Intl.DateTimeFormat().resolvedOptions().locale || "";
+    return loc.toLowerCase().startsWith("de") ? "de" : "en";
+  } catch {
+    return "en";
+  }
+}
+
 // Module-level current language. Components use useT() (which re-renders on
 // change); plain helpers outside React - laneVerdict, sorters, transport errors
-// - import t() directly and read this.
-let current: Lang = "de";
+// - import t() directly and read this. Seeded from the device so pre-mount
+// helpers match the UI; useLang() overrides it once /me resolves a real policy.
+let current: Lang = deviceLang();
 
 export function setLang(l: Lang) { current = l; }
 export function getLang(): Lang { return current; }
