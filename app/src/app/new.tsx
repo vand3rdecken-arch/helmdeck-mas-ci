@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -44,6 +44,10 @@ export default function NewCard() {
   const [client, setClient] = useState("");
   const [driver, setDriver] = useState("");
   const [busy, setBusy] = useState(false);
+  // Inline error: Alert.alert is a NO-OP on react-native-web (desktop), so a
+  // rejected create/adopt used to fail completely silently - the owner clicked
+  // and nothing visible happened ("stucked here"). Show it in the form instead.
+  const [err, setErr] = useState("");
   // Adopt-an-existing-Claude-session flow (ported from archive/web modal). The
   // list is only fetched once the section is opened; picking a session flips the
   // submit action from "create card" to "continue session".
@@ -59,8 +63,19 @@ export default function NewCard() {
   // (same source the web modal uses). Selector when present, text input otherwise.
   const drivers = Object.keys(metrics?.settings?.drivers ?? {});
 
+  // Close the form DETERMINISTICALLY on success. router.back() is a no-op when
+  // /new was reached without back-history (common on desktop), which left the
+  // card created but the form still open - the owner saw "nothing happened" and
+  // clicked again, filing duplicates. Navigate to a concrete destination
+  // instead: the adopted/created card, or the board.
+  function done(dest: string) {
+    void qc.invalidateQueries({ queryKey: ["tracks"] });
+    router.replace(dest as never);
+  }
+
   async function file() {
     setBusy(true);
+    setErr("");
     try {
       // A picked session -> adopt it as a card (mode "continue"), with any typed
       // text carried as the first steer. Same one button either way.
@@ -68,12 +83,11 @@ export default function NewCard() {
         const res = await api.adoptClaude({
           session_id: adoptId, cwd: adoptCwd, mode: "continue", first: task.trim(),
         });
-        if (res?.error) { Alert.alert(tr("new.rejected"), res.error); return; }
-        await qc.invalidateQueries({ queryKey: ["tracks"] });
-        router.back();
+        if (res?.error) { setErr(res.error); return; }
+        done(res?.id ? `/card/${res.id}` : "/");
         return;
       }
-      if (!task.trim()) return;
+      if (!task.trim()) { setErr(tr("new.taskRequired")); return; }
       const body: Record<string, unknown> = {
         task: task.trim(), repo: repo.trim(), lane: "backlog", priority,
       };
@@ -84,10 +98,9 @@ export default function NewCard() {
       // The daemon can reject with a 200-body {error} (bad repo, WIP limit…),
       // so inspect it rather than assuming success.
       const res = await api.newTrack(body) as { error?: string };
-      if (res?.error) { Alert.alert(tr("new.rejected"), res.error); return; }
-      await qc.invalidateQueries({ queryKey: ["tracks"] });
-      router.back();
-    } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
+      if (res?.error) { setErr(res.error); return; }
+      done("/");
+    } catch (e) { setErr(String((e as Error).message)); }
     finally { setBusy(false); }
   }
 
@@ -174,6 +187,12 @@ export default function NewCard() {
               placeholderTextColor={t.txtPlaceholder} style={field} />
           )}
         </Panel>
+        {err ? (
+          <View style={{ backgroundColor: t.danger + "1A", borderColor: t.danger + "66", borderWidth: 1,
+            borderRadius: 8, padding: 10 }}>
+            <Text style={{ color: t.danger, fontSize: 12.5 }}>{err}</Text>
+          </View>
+        ) : null}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Pressable onPress={() => router.back()} style={{ flex: 1, borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 8, padding: 12, alignItems: "center" }}>
             <Text style={{ color: t.txtSecondary }}>{tr("ui.cancel")}</Text>
