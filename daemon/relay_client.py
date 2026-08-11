@@ -21,8 +21,13 @@ _pin_lock = threading.Lock()
 # One pairing code admits ONE new device, and only this many seconds after the
 # owner issued it. Both bounds make the code lifecycle deterministic: the
 # newest code works once, old codes/windows are dead, nothing pins by accident.
+# No cap on TOTAL paired devices: the security boundary is the single-use,
+# owner-only code (POST /relay/pair requires role=="owner" - server.py), not a
+# device count. An arbitrary "8" only capped legitimate multi-device owners
+# (a tester recruitment run, a family, several test phones) while doing
+# nothing for security - a device still needs a fresh owner-issued code either
+# way, at any count.
 PAIR_TTL = 900
-MAX_DEVICES = 8
 
 
 def insecure_url(url):
@@ -85,9 +90,6 @@ def _admit(pub):
             return False, ("pairing code expired (valid %d minutes, single "
                            "use) - generate a fresh one on the desktop"
                            % (PAIR_TTL // 60))
-        if len(pubs) >= MAX_DEVICES:
-            return False, ("device limit reached (%d) - unpair on the desktop "
-                           "first" % MAX_DEVICES)
         pubs.append(pub)
         rel["phone_pubs"] = pubs
         rel["phone_pub"] = pubs[0]      # push target + legacy mirror

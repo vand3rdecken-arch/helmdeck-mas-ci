@@ -83,15 +83,17 @@ rel = events.settings()["relay"]
 check("legacy stays push target ([0] mirrored)",
       rel["phone_pubs"][0] == "LEGACY" and rel["phone_pub"] == "LEGACY", str(rel["phone_pubs"]))
 
-# 7. Device cap: the (MAX+1)th device is refused even inside a fresh window.
+# 7. No cap on total paired devices: each one still needs its OWN fresh
+#    owner-issued single-use code (the real boundary, checked in steps 1-5),
+#    so admitting many in a row is safe and none are refused for "over limit".
 reset()
-for i in range(rc.MAX_DEVICES):
+N = 12   # comfortably past the old MAX_DEVICES=8 to prove the cap is gone
+for i in range(N):
     rc.pairing_payload()
     ok, reason = rc._admit("PUB-%d" % i)
-    check("device %d admitted" % i, ok, reason)
-rc.pairing_payload()
-ok, reason = rc._admit("PUB-OVER")
-check("device over cap refused", not ok and "limit" in reason, reason)
+    check("device %d admitted (no cap)" % i, ok, reason)
+pubs = events.settings()["relay"]["phone_pubs"]
+check("all %d devices pinned" % N, len(pubs) == N, str(len(pubs)))
 
 # 8. Concurrency: the same new device racing itself pins exactly once.
 reset()
