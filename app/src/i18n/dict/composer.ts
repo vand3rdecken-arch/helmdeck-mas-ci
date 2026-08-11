@@ -63,7 +63,7 @@ export const composer: Dict = {
   "new.title": { de: "Neue Karte", en: "New card" },
   "new.rejected": { de: "Abgelehnt", en: "Rejected" },
   "new.taskRequired": { de: "Bitte gib zuerst eine Aufgabe ein.", en: "Please enter a task first." },
-  "new.onBoard": { de: "→ bereits auf dem Board", en: "→ already on the board" },
+  "new.willFork": { de: "→ wird abgezweigt", en: "→ will be forked" },
   "new.examples": { de: "beispiel-aufgaben", en: "example tasks" },
   "new.adoptSession": { de: "Bestehende Claude-Session übernehmen",
                         en: "Adopt an existing Claude session" },
