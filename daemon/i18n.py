@@ -122,6 +122,13 @@ MESSAGES = {
     "push.pmBurn": {"de": "Worker haengt in einer Schleife", "en": "Worker stuck in a loop"},
     "push.pmBurnBody": {"de": "'{task}': {n}x {tool} wiederholt - eingreifen?",
                         "en": "'{task}': {n}x {tool} repeated - step in?"},
+    # PM escalations through the presence-aware pipe (pm._escalate -> notify.escalate)
+    "push.pmAlert": {"de": "PM: Achtung", "en": "PM: heads-up"},
+    "push.pmCost": {"de": "PM: Karte ueber Budget", "en": "PM: card over budget"},
+    "push.pmCtx": {"de": "PM: Kontext laeuft voll", "en": "PM: context filling up"},
+    "push.pmQuota": {"de": "PM: Wochenkontingent laeuft voraus",
+                     "en": "PM: weekly quota ahead of pace"},
+    "push.pmTriangle": {"de": "PM: Dreieck schief", "en": "PM: triangle tilted"},
     # the per-card autopilot escalating on its own (processes._auto_resolve)
     "push.autopilotStuck": {"de": "Autopilot: haengt", "en": "Autopilot: stuck"},
     "push.autopilotStuckBody": {

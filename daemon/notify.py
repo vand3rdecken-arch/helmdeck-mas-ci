@@ -139,6 +139,26 @@ def clear_dedup(track_id):
         _last_push.pop(track_id, None)
 
 
+def escalate(title, body, track_id=""):
+    """PM escalation delivery: the SAME 3-tier presence policy as card_event,
+    for PM-authored alerts (cost watchdog, triangle tilt, quota pacing) whose
+    chat line has already landed via pm._say. Dedup is the CALLER's job - the
+    PM content-hashes / level-ladders its escalations - so this deliberately
+    skips _last_push and only decides delivery:
+      focused on that card -> silent (the alert is on his screen)
+      present elsewhere    -> in-app (the chat line is enough)
+      absent               -> sealed FCM push
+    track_id may be "" for goal-level alerts: then no client can be 'focused'
+    and only the present/absent split applies - absent still pushes, which is
+    the safe direction to be wrong in."""
+    import presence
+    decision = presence.plan(track_id)
+    if decision != "push":
+        print("notify: escalation suppressed (%s) - %s" % (decision, title))
+        return False
+    return push_fcm(title, body, track_id)
+
+
 def card_event(track, status):
     """One line per transition the owner must act on. The title follows the
     workspace language (policy.lang); the body is the card's own title, which
