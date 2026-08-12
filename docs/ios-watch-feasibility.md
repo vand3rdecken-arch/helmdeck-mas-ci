@@ -319,3 +319,54 @@ eine Ausgabe, zwei Plattformen. Empfehlung: **wenn iOS-Schritt 1 (Apple-Konto +
 EAS-Setup) gemacht wird, den Mac-Desktop-Build direkt danebenlegen** (~1–2
 zusätzliche Tage) statt ihn separat zu terminieren — der teure Teil (Konto,
 Signing-Grundlagen) ist derselbe.
+
+---
+
+## 6. „Lovable-artiger App-Builder statt selbst bauen?" — und die Flutter-Frage
+
+Naheliegender Einwand: Gibt es nicht einen KI-App-Builder (Lovable-Klasse), der
+Build **und** Publish für iOS + Mac-Desktop übernimmt, statt dass wir EAS/
+Electron selbst betreiben? Zwei Ebenen, sauber getrennt:
+
+### 6.1 Die harte Grenze: kein Builder kann dieses Repo „adoptieren"
+
+Alle diese Tools — egal ob No-Code (Bubble, Adalo, Glide) oder KI-Codegen
+(Lovable, Bolt, v0, FlutterFlow, RN-Generatoren) — sind **Greenfield-Builder**:
+man baut *in* ihrem Modell neu, man importiert keine bestehende Codebase. Es
+gibt keinen Pfad, der die vorhandene HelmDeck-App (custom E2EE mit `tweetnacl`,
+custom Relay-Protokoll, gewachsene State-/Query-/OTA-Logik) in ein solches Tool
+einliest. Ein Builder ergibt nur Sinn für einen **Neuanfang**, nicht für dieses
+Repo.
+
+### 6.2 Flutter/FlutterFlow ⇒ **kompletter Rewrite in Dart**
+
+Der einzige verbreitete Builder, der iOS **und** nativen Mac-Desktop aus *einer*
+Codebase publisht, ist **FlutterFlow** (Flutter kompiliert nativ zu macOS,
+Windows, Linux). Aber Flutter bedeutet **Dart**, und die App ist React Native /
+TypeScript. Ein Wechsel heißt neu schreiben:
+
+- die gesamte UI (RN-Komponenten → Flutter-Widgets),
+- die E2EE — `tweetnacl` (Curve25519/XSalsa20-Poly1305) → ein Dart-Crypto-Paket,
+  **byte-kompatibel zu `daemon/e2ee.py` (PyNaCl) neu zu verifizieren**, sonst
+  bricht das gesamte Pairing/Relay,
+- der Relay-Transport (`app/src/data/client.ts`) + OTA + State/Query.
+
+Das ist der Neubau des **ganzen Clients**, nicht „ein Tool nutzen". Bewertung:
+**lohnt nicht.** Der einzige Gewinn wäre „Mac-Desktop aus derselben Codebase" —
+und den liefert Electron (§5) aus dem bestehenden Web-Export schon fast gratis.
+
+### 6.3 Was bliebe: RN-Familie, aber ohne Builder
+
+Builder aus der **React-Native/Expo-Familie** würden zwar bei TypeScript
+bleiben, aber auch sie generieren *neuen* RN-Code — sie adoptieren das Repo
+nicht (§6.1). Der realistische Weg für HelmDeck bleibt daher: die **bestehende
+Expo-App über EAS** bauen (§2), **kein Builder dazwischen**. Der Aufwand steckt
+nicht im „Build-Tool" (EAS ist gelöst), sondern in Push (§1.3) und Signing/
+Verify (§2) — daran ändert kein App-Builder etwas.
+
+> **Offen / zu verifizieren:** Ein aktueller, belastbarer Vergleich konkreter
+> Anbieter (Rork, Draftbit, Thunkable, Base44 u. a. — Stand 2026, Publish-Wege,
+> Preise) steht aus, weil `WebSearch`/`WebFetch` in dieser Worker-Karte gesperrt
+> sind (siehe Karten-Vorschlag `docs/cards/fix-websearch-permission.md`). Die
+> obige Framework-Aussage (Flutter = Rewrite; RN-Familie = kein Sprachwechsel,
+> aber kein Repo-Import) ist davon **unabhängig** und gilt so oder so.
