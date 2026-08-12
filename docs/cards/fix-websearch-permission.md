@@ -1,8 +1,10 @@
 # Karten-Vorschlag: WebSearch/WebFetch in Worker-Karten freischalten
 
-> **Status:** Vorschlag (ready to file). Diese Datei ist die Card-Spezifikation —
-> den echten Board-Eintrag legt der Owner an (ein Worker im isolierten Worktree
-> kann das Board/den Daemon nicht anfassen, by design). Eine Karte, ein Tap.
+> **Status:** UMGESETZT (2026-08-12, Karte `chat-fix--websearch-webfetch-`).
+> `permissions.allow` enthält jetzt `WebSearch` + `WebFetch`; beide Tools in der
+> Fix-Karte live verifiziert (4× WebSearch, 1× WebFetch, kein Permission-Fehler)
+> und der §6.3-Vorbehalt in `docs/ios-watch-feasibility.md` per verifiziertem
+> Anbieter-Vergleich (§6.4) aufgelöst.
 
 ## Problem
 

@@ -364,9 +364,36 @@ Expo-App über EAS** bauen (§2), **kein Builder dazwischen**. Der Aufwand steck
 nicht im „Build-Tool" (EAS ist gelöst), sondern in Push (§1.3) und Signing/
 Verify (§2) — daran ändert kein App-Builder etwas.
 
-> **Offen / zu verifizieren:** Ein aktueller, belastbarer Vergleich konkreter
-> Anbieter (Rork, Draftbit, Thunkable, Base44 u. a. — Stand 2026, Publish-Wege,
-> Preise) steht aus, weil `WebSearch`/`WebFetch` in dieser Worker-Karte gesperrt
-> sind (siehe Karten-Vorschlag `docs/cards/fix-websearch-permission.md`). Die
-> obige Framework-Aussage (Flutter = Rewrite; RN-Familie = kein Sprachwechsel,
-> aber kein Repo-Import) ist davon **unabhängig** und gilt so oder so.
+### 6.4 Anbieter-Vergleich (verifiziert Stand August 2026)
+
+Online nachgeprüft per `WebSearch`/`WebFetch` am 2026-08-12 (Permission-Fix aus
+`docs/cards/fix-websearch-permission.md` umgesetzt); ersetzt den früheren
+„Offen / zu verifizieren"-Vorbehalt.
+
+| Anbieter | Output | Publish iOS | Mac-Desktop | Repo-Import | Preis (Stand 08/2026) |
+|---|---|---|---|---|---|
+| **Rork** | RN/Expo (KI-Codegen); „Rork Max" zusätzlich natives Swift | ja, geführter Flow zu App Store Connect/TestFlight (eigener Apple-Dev-Account + Expo-Token nötig; laut Reviews teils hakelig, Fallback = GitHub-Sync/Code-Export) | nein | **nein** | Free 5 Credits/Monat; Pro $20/Monat; Max $200/Monat |
+| **Draftbit** | RN/Expo, voller Quellcode-Export; seit 2025/26 KI-Agent-Sandbox (u. a. Claude Code) | ja, 1-Click-Publishing + Code-Export ab Standard | nein | **nein** (generiert neuen Code) | Free; Standard $20/Monat; höhere Tiers $29–249/Monat |
+| **Thunkable** | proprietär, **kein Code-Export** (Lock-in) | ja, aber Publishing erst ab ~$37/Monat (jährlich) bzw. $189/Monat (monatlich) | nein | **nein** | ab $15/Monat, Publishing-Tiers s. links |
+| **Base44** | Web-App/PWA; „native" nur als WebView-Wrapper (IPA/AAB auf Builder-Plan) | faktisch nein — Apple lehnt Wrapper regelmäßig ab (Guideline 4.2), iOS-PWA ohne zuverlässigen Push | nein | **nein** | Web-App-Pricing, für uns irrelevant |
+| **FlutterFlow** | Flutter/Dart, Code-Download ab Basic | ja | **ja** (Flutter kompiliert nativ zu macOS/Win/Linux) | **nein** (§6.2: Rewrite) | Free; Basic $39; Growth $80; Business $150/Monat |
+
+Randnotiz mit Gewicht: Apple hat im März 2026 Replit und Vibecode unter
+Guideline 2.5.2 (Ausführung beliebigen Codes) aus dem App Store entfernt —
+No-Code/KI-Builder-Publishing steht generell unter verschärfter Review.
+
+**Ergebnis:** Der Vergleich bestätigt §6.1–6.3 vollständig. Kein Anbieter
+importiert ein bestehendes Repo; der einzige mit echtem Mac-Desktop-Publish
+(FlutterFlow) verlangt den Dart-Rewrite (§6.2). Empfehlung unverändert:
+bestehende Expo-App über EAS (§2), Mac-Desktop über Electron (§5), kein
+Builder dazwischen.
+
+Quellen (abgerufen 2026-08-12): [Rork Pricing (No Code MBA)](https://www.nocode.mba/articles/rork-pricing),
+[Rork Max](https://rork.com/max), [Rork Review (toolworthy)](https://www.toolworthy.ai/tool/rork),
+[Draftbit Review/Code-Export (aiidelist)](https://aiidelist.com/ide/draftbit),
+[Draftbit Pricing (Capterra)](https://www.capterra.com/p/185882/Draftbit/),
+[Thunkable Review $189/mo Publishing (Adalo)](https://www.adalo.com/posts/thunkable-review/),
+[Thunkable (lowcode.agency)](https://www.lowcode.agency/nocode-tools/thunkable),
+[Base44 = Web/PWA (newly.app)](https://newly.app/base44-for-mobile-apps),
+[Base44-Wrapper-Grenzen (median.co)](https://median.co/blog/how-to-convert-your-base44-web-app-into-a-native-app),
+[FlutterFlow Pricing](https://flutterflow.io/pricing).

@@ -16,7 +16,9 @@
     "allow": [
       "Bash(bash deploy/push_ntfy.sh*)",
       "Bash(bash deploy/push_relay.sh*)",
-      "Bash(bash deploy/cloudflare_tunnel.sh*)"
+      "Bash(bash deploy/cloudflare_tunnel.sh*)",
+      "WebSearch",
+      "WebFetch"
     ]
   }
 }
