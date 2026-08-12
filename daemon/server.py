@@ -1561,6 +1561,9 @@ def serve(port=8140):
     sessions.start_zombie_reconciler()   # + CONTINUOUS reconcile (Paseo 15s-sweep parity): catch a card
                                          # stuck at status=running with no session BETWEEN restarts, live
     sessions.apply_board_directives()    # one-shot board-data patches shipped as repo data
+    stamped = sessions.backfill_outcomes()  # one-shot: stamp reviewed outcomes onto pre-outcome
+    if stamped:                             # done cards (pays debt legacy-outcome-on-read)
+        print("SESSIONS: backfilled outcome on %d legacy done card(s)" % stamped)
     sessions.start_background_watcher()  # auto-continue cards whose background task finished
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):

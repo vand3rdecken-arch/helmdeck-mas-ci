@@ -151,12 +151,15 @@ def _snapshot():
         # needs_you carries its open question; a FINISHED card carries its RESULT
         # (outcome, persisted at accept). Without the second half, an owner
         # decision answered in a card's final reply resurfaced as "open" in the
-        # PM plan triage - the planner reads THIS snapshot. Cards accepted before
-        # the outcome field existed still hold their last_reply: derive on read.
+        # PM plan triage - the planner reads THIS snapshot. Only the STORED
+        # outcome is read: legacy pre-outcome cards were stamped once by
+        # sessions.backfill_outcomes (daemon start, agent-reviewed values) -
+        # never re-derived per read, so a heuristic change can't silently
+        # rewrite what a finished card is remembered for.
         if t.get("status") == "needs_you":
             tail = " last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")
         elif t.get("lane") == "done":
-            o = t.get("outcome") or sessions.extract_outcome(t.get("last_reply"))
+            o = t.get("outcome") or ""
             tail = (" outcome=" + o[:150].replace("\n", " ")) if o else ""
         else:
             tail = ""
