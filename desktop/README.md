@@ -57,6 +57,25 @@ cache **without** those symlinks, so it just works. If you build with the raw
 Developer Mode** (Settings -> Privacy & security -> For developers), run the
 build in an **elevated** PowerShell, or just use `build-win.ps1`.
 
+## Auto-update (Paseo mechanism)
+
+The packaged app follows the relay's `desktop` OTA channel silently - Paseo's
+desktop auto-update behaviour, taken from the real Paseo source (the referenced
+files are cited in `desktop_update.py`): silent check at start + every 30 min,
+10 s retry while a download is pending, download + per-file sha256 verify in
+the background, silent swap of `resources/app-dist` on quit (revalidated
+against the feed, 5 s deadline, no forced relaunch) or at next launch. The
+tray supervisor (`tray.py`) runs the same check on the same cadence and swaps
+while the window app isn't running, so updates land even if the window is
+never opened. Publishing happens automatically in `deploy/push_update.sh`
+(so every accept/ship reaches the desktop like it reaches the phone). The
+previous bundle is kept as `app-dist.old`; there is no automatic rollback
+(Paseo has none either) - swap `.old` back by hand to recover. Dev runs
+(`npm start`) never auto-update, exactly like Paseo. Scope is the OTA scope:
+the UI bundle. A change to the shell itself (`main.js`, `setup.js`,
+electron-builder config) still needs the installer - the same line the phone
+draws between an OTA and a native APK.
+
 ## Notes
 
 - **Icon**: drop a `assets/icon.ico` (>=256px) and uncomment `win.icon` in

@@ -54,6 +54,18 @@ const daemonDir = resolveDaemonDir();
 const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__dirname, "..", "app", "dist");
 let desktopToken = "";
 
+// Auto-update (Paseo mechanism, see updater.js): packaged builds silently
+// follow the relay's "desktop" OTA channel - check at start + every 30 min,
+// download + verify in the background, swap in on quit. Dev runs are exempt
+// exactly like Paseo ("Auto-update is not available in development mode").
+let updater = null;
+if (app.isPackaged) {
+  const { createUpdater, readRelayUrl } = require("./updater");
+  const feedBase = readRelayUrl(path.join(daemonDir, "settings.json"));
+  if (feedBase) updater = createUpdater({ feedBase, appDistDir, log });
+  else log("update", "no relay configured - desktop OTA dormant\n");
+}
+
 // find a working Python 3: probe candidates with `--version` and use the first
 // that runs, so we don't depend on `py` alone being on PATH.
 function resolvePython() {
@@ -273,12 +285,28 @@ if (!app.requestSingleInstanceLock()) {
     });
     startDaemon();
     mintDesktopToken();   // issue a device token for the served web UI
+    // A verified staged bundle (own download, or one the tray staged while the
+    // window was closed) lands BEFORE the web server starts, so this launch
+    // already serves it - the launch half of the phone's expo-updates flow.
+    if (updater) updater.applyStagedAtStartup();
     startWeb();
     waitForWeb(createWindow);
+    if (updater) updater.start();   // silent check now, then every 30 min
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0 && !failed) createWindow(); });
   });
 }
 
 app.on("window-all-closed", () => app.quit());
+// Paseo quit lifecycle (main.ts + quit-lifecycle.ts): when a downloaded update
+// is staged, hold the first quit, revalidate it against the feed within the 5s
+// deadline, swap it in silently (no forced relaunch), then really exit. With
+// nothing staged the quit is untouched.
+let quittingForUpdate = false;
+app.on("before-quit", (e) => {
+  if (quittingForUpdate || !updater || !updater.hasStage()) return;
+  quittingForUpdate = true;
+  e.preventDefault();
+  updater.applyOnQuit().catch(() => false).then(() => app.exit(0));
+});
 app.on("before-quit", cleanup);
 process.on("exit", cleanup);
