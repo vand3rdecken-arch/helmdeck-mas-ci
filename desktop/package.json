@@ -8,7 +8,8 @@
     "start": "electron .",
     "build:web": "npm --prefix ../app run export:web",
     "dist": "npm run build:web && electron-builder --config electron-builder.yml",
-    "dist:win": "npm run build:web && electron-builder --win --config electron-builder.yml"
+    "dist:win": "npm run build:web && electron-builder --win --config electron-builder.yml",
+    "release": "bash ../deploy/release_desktop.sh"
   },
   "devDependencies": {
     "electron": "^33.2.0",
