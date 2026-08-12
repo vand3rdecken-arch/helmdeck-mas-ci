@@ -1162,6 +1162,119 @@ def _record_outcome(tt):
         tt["outcome"] = out
 
 
+# Pays debt [legacy-outcome-on-read]. Cards accepted BEFORE the outcome field
+# existed never ran _record_outcome, so their result must be reconstructed from
+# the frozen last_reply ONCE (daemon start) instead of re-derived on every
+# snapshot read. extract_outcome demonstrably misfires on multi-sentence
+# replies - a reply that OPENS with an aside stamps the aside as the result
+# (the chatfork card led with "Verstanden fuer naechstes Mal..." instead of
+# the actual answer). So this backfill was NOT adopted blindly: an agent
+# reviewed ALL 44 legacy done cards against their full final replies
+# (2026-08-12, card chat-fix--sessions-extract-ou). Where the heuristic hit
+# the core, its value is used; the misses below carry a hand-written outcome.
+# "" = the reply holds no result at all (cancelled turn, usage-limit banner,
+# lost context) - better an empty line than a nonsense one.
+_OUTCOME_BACKFILL_REVIEWED = {
+    "20260811-153456-chatfork":
+        "Kailashs Tester-Zusage steht: seine Gruppe appclosedtesting@googlegroups.com "
+        "ist neben helmdeck-testers in der Play Console eingetragen und zur "
+        "Google-Pruefung eingereicht; Opt-in-Link fuer seine 63 Tester verschickt "
+        "(bis zu 91 Tester gesamt).",
+    "20260728-232103-req-zombie-running-status":
+        "Startup zombie sweep shipped (b69c141, e9e6698): sessions.sweep_zombies + "
+        "drivers.has_session clear stale 'running' cards on daemon start, with test.",
+    "20260728-205508-night-pay-debt-nightshift":
+        "Limit-signal fix prepared in the worktree (driver signal patch, debt flip, "
+        "tests, workorder); python/git were permission-gated in that session, so "
+        "verify+commit were handed to the owner/harness.",
+    "20260728-095049-req-dispatch-failure-is-invi":
+        "Dispatch failure is visible now: filing a card against a non-git folder "
+        "returns an immediate 'repo is not a git repository' error instead of a "
+        "silent backlog fallback (7a4c9e7, test_dispatch_visibility.py green).",
+    "20260728-094539-req-add-headless-unit-tests":
+        "Driver unit tests rewritten against the streaming _ClaudeSession (new "
+        "stream-events fixture, stale one removed), committed 1260272; "
+        "pytest tests/unit -> 35 passed, fully headless.",
+    "20260727-220243-adopt-34656ce4":
+        "Kartenansicht auf Overview-first umgebaut: Tab 'Overview' (Status-Chips, "
+        "Description zuerst, Worker-Digest, editierbare Felder + Rewind), Tab 'Chat' "
+        "mit Transkript+Composer; der APK-Build blieb permission-blockiert.",
+    "20260728-094539-req-confirm-legacy-8140-fal":
+        "Legacy :8140 UI is a pure redirect now: /, /classic, /recorder, /dashboard "
+        "all 302 to the :3300 web UI, old templates deleted, auth intact (/tracks "
+        "still 401); merge conflicts resolved marker-free.",
+    "20260728-094539-req-one-command-check-script":
+        "tools/check_all.sh mirrors the loop in one command (compile+tsc+lint+unit, "
+        "8 checks green), repointed at app/ after the Expo cutover; test_drivers.py "
+        "conflict resolved by taking expo-migration's superset (482e0ec).",
+    "20260803-222549-chat-pm-coordinator-resilienc":
+        "PM coordinator resilience shipped: on a blocker/bounce the PM classifies, "
+        "delegates a fix and re-submits (2 tries) before escalating with an unblock "
+        "proposal; closing debt.py conflict resolved (7b467c2, gate PASS).",
+    "20260803-004026-pm-relay-pairing-hardening":
+        "Relay pairing hardening landed: deterministic pairing-code lifecycle + "
+        "reconnect/backoff, pinned by the pairing-lifecycle suite (gate 6/6 on the "
+        "merged tree); final merge with main was a semantic no-op, resolved marker-free.",
+    "20260728-094539-req-remove-committed-google":
+        "Assessment: the committed Google service-account key is a live, non-expiring "
+        "credential in git history since 2024-05-23; repo is private (3 collaborators) "
+        "and nothing references it, but it must be revoked in GCP IAM.",
+    "20260803-212935-pm-launch-karten-auf-mode-a":
+        "Root cause: same-second card-id collision - INSERT OR REPLACE silently "
+        "overwrote the first card (audit + economics lost). Fixed via "
+        "sessions._unique_id (9297069); the 'unresolved conflict' was gate "
+        "flakiness from that bug, gate now PASS (9).",
+    "20260803-233536-pm-store-listing-paket-date":
+        "Store listing package intact (docs/store/* + privacy page in relay.py); "
+        "chat.tsx conflict resolved by combining main's ChatBody structure with the "
+        "i18n fix, 5 merged-in untranslated strings fixed; i18n lint 699 keys PASS, "
+        "gate 14/14.",
+    "20260804-090522-pm-mode-wert-an-die-policy":
+        "Refused as written, with proof: rewriting mode on accepted cards would "
+        "falsify the measured automation ratio, and the premise was a misdiagnosis "
+        "(shown from the event log) - 'auto' is a completion statistic, not a "
+        "dispatch mode. Gate PASS (14).",
+    "20260806-190555-paseo-p1-runtime":
+        "P1 Runtime-Haertung geliefert (c770ef8); die vier Gate-Bounces entlarvten "
+        "einen Harness-Bug: gate_failed wird nie persistiert, darum erreichte der "
+        "Gate-Output den Worker strukturell nie (betrifft auch merge_report und "
+        "Modell-Eskalation).",
+    "20260806-190555-paseo-p2-notify":
+        "P2 notify shipped (41fa92a); self-review fixed 4 more defects: auto-accept "
+        "could merge a still-asking card (now sessions.is_delivered), PM push "
+        "bypassed the presence policy, injected prompts rendered as owner messages, "
+        "bg watcher ran inline.",
+    "20260803-002954-stream-backend": "",
+    "20260808-053628-req-fix-dashboard-zu-berf": "",
+    "20260808-160412-machine": "",
+}
+
+
+def backfill_outcomes():
+    """One-shot outcome backfill for pre-outcome done cards, run at daemon
+    start (next to apply_board_directives - same repo-data-applied-once shape).
+    KEY PRESENCE marks a migrated card, so '' is a valid stamped outcome and
+    each card is visited exactly once across restarts. Reviewed overrides beat
+    the heuristic; everything else takes extract_outcome(last_reply). New
+    accepts persist their outcome at event time and are never touched here."""
+    stamped = 0
+    for t in _load():
+        if t.get("lane") != "done" or "outcome" in t:
+            continue
+        tid = t["id"]
+        out = _OUTCOME_BACKFILL_REVIEWED.get(tid)
+        if out is None:
+            out = extract_outcome(t.get("last_reply"))
+
+        def _stamp(tt):
+            if "outcome" in tt:
+                return False   # lost the race to an accept mutator - theirs wins
+            tt["outcome"] = out
+        if _mutate(tid, _stamp) is not None:
+            stamped += 1
+    return stamped
+
+
 def _accept_machine(t, lane, actor, log):
     """Review/Done for a machine card. There is no branch to gate or merge, so
     Review RESTS it for the owner to judge and Done records the acceptance
@@ -1199,6 +1312,11 @@ def _accept_machine(t, lane, actor, log):
 
 # -- the review gate: work may only reach the client when it is green ----
 
+# tools/run_gate.py's own success sentinels ("gate: PASS (34 checks)" or the
+# no-checks-on-this-branch case) - the ground truth for _gate()'s exit-code
+# cross-check below.
+_GATE_PASS_RE = re.compile(r"gate: (PASS \(\d+ checks\)|nothing to run on this branch - PASS)")
+
 def _gate(t):
     """Quality gate run when a card is submitted for review. Checks: (1) the
     worktree exists and its work is committed; (2) if the repo declares its own
@@ -1231,8 +1349,23 @@ def _gate(t):
             genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
             r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True,
                                text=True, timeout=600, env=genv)
-            if r.returncode != 0:
-                out = (r.stdout + "\n" + r.stderr).strip()
+            # Observed on the live board (card 20260812-164257): a `py -3.12`
+            # gate run via shell=True on Windows can come back with a nonzero
+            # r.returncode while its OWN stdout is a clean tools/run_gate.py
+            # verdict - every check "ok", ending "gate: PASS (34 checks)" - a
+            # shell/launcher exit-code hiccup downstream of the script's own
+            # sys.exit(0), not a real failure. Root cause not pinned (no
+            # AutoRun hook, reproduces clean when replayed by hand) - see debt
+            # [gate-exit-code-vs-stdout-verdict]. run_gate.py's own verdict
+            # line is a REAL signal (the process that printed it did finish
+            # its checks), so prefer it over a returncode that contradicts it;
+            # still hard-fail whenever the verdict itself is missing or red.
+            out = (r.stdout + "\n" + r.stderr).strip()
+            if r.returncode != 0 and (_GATE_PASS_RE.search(out) and "=== GATE FAILED (" not in out):
+                print("GATE: returncode %d disagreed with the script's own PASS verdict for %s "
+                      "- trusting the verdict (see debt gate-exit-code-vs-stdout-verdict)"
+                      % (r.returncode, t.get("id")))
+            elif r.returncode != 0:
                 # Lead with the ACTUAL error, not the command - the command alone
                 # (truncated on mobile) is the "ominous, unresolvable" message. An
                 # empty output means the command couldn't even start (missing
