@@ -24,6 +24,23 @@ Runs `expo export --platform android` and uploads the JS bundle to the relay's
 **two** launches (1st downloads, 2nd applies). Verify on the phone: **More tab
 footer** shows the new `OTA <id>`.
 
+### Desktop OTA rides the same push (Paseo auto-update)
+`push_update.sh` also exports the **web** bundle and publishes it + a
+`desktop.json` manifest to the relay's `desktop` channel dir
+(`/opt/helmdeck-updates-desktop`, served by the existing `/updates/assets`
+route - no relay change). The desktop follows it silently with Paseo's exact
+mechanism (verified in `_paseo_src`, constants cited in
+`desktop/desktop_update.py`): **check at start + every 30 min, 10 s retry
+while a download is pending, silent apply on quit** (revalidated, 5 s
+deadline) - plus the always-on `desktop/tray.py` supervisor checks on the same
+cadence and swaps the installed app's `resources/app-dist` whenever the
+Electron shell isn't running, so the owner never reinstalls. Every file is
+sha256-verified against the manifest before a swap; the previous bundle stays
+as `app-dist.old` (manual rollback: swap it back). A desktop publish failure
+warns loudly but never blocks the phone OTA. Verify: tray menu shows
+`Update: aktuell/angewendet`, or check `desktop.json` id vs
+`<install>/resources/app-dist/.hd-update.json`.
+
 ### ⚠ CRITICAL: after a native APK, push a matching OTA
 The **relay is the source of truth**: on launch the app pulls the relay's bundle
 for its runtimeVersion **even if that bundle is older**, and it overwrites the
