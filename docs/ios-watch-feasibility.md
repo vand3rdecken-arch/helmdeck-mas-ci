@@ -3,7 +3,8 @@
 **Analyse-Stand:** 2026-08-12, Branch-Basis `b3f756e`. Reine Analyse — kein Code,
 keine Migration. Grundlage: `app/app.json`, `app/package.json`, `app/src/data/*`
 (Transport/Push/OTA/E2EE), `app/plugins/withLanCleartext.js`, `relay/relay.py`,
-`daemon/notify.py`, `DEPLOY.md`, `deploy/*.sh`.
+`daemon/notify.py`, `DEPLOY.md`, `deploy/*.sh`, `desktop/main.js`,
+`desktop/electron-builder.yml`, `desktop/tray.py`.
 
 **Kurzfazit vorweg:** Die App ist überraschend iOS-freundlich. Der gesamte
 Transport ist plain `fetch` + Long-Poll über den versiegelten Relay (kein
@@ -275,3 +276,46 @@ dem iPhone, OTA-Kanal steht — Push fehlt noch), dann 3 (Push + Watch W1), dann
 5. Nach zwei Wochen Alltagsnutzung entscheiden, ob W2/NSE je eine Karte wert
 sind. Wichtigste vorgelagerte Sachentscheidung: per-Plattform-`runtimeVersion`
 (§2.3), sonst koppelt jeder Android-Native-Bump den iOS-OTA-Kanal ab.
+
+---
+
+## 5. Mac Desktop-App (Electron) — Nebenbefund
+
+Nicht Teil der ursprünglichen Frage (iPhone/Watch), aber nah genug dran, um
+mitzunehmen: `desktop/main.js` ist die Electron-Hülle, die den Python-Daemon
+spawnt und die Expo-Web-Export-SPA lokal serviert. Befund: **strukturell
+bereits plattformneutral geschrieben**, nicht Windows-verdrahtet.
+
+### 5.1 Was schon passt
+
+| Baustein | Befund |
+|---|---|
+| `resolvePython()` (`main.js:59-72`) | verzweigt bereits auf `process.platform !== "win32"` → `python3`/`python` statt `py -3.12`. **Läuft unverändert auf Mac.** |
+| Daemon-Spawn, Adopt-or-Detach, `killTree` | `process.platform === "win32"` bereits abgefragt (taskkill vs. `SIGTERM`) — der POSIX-Zweig existiert, ist nur ungetestet. |
+| `app.setLoginItemSettings({ openAtLogin: true })` | plattformneutrale Electron-API, funktioniert auf macOS identisch (Login Items). |
+| lokal servierte SPA (`app/dist`, statischer HTTP-Server auf `WEB_PORT`) | reines Node, kein Windows-Bezug. |
+
+### 5.2 Was fehlt
+
+| Lücke | Aufwand |
+|---|---|
+| `desktop/electron-builder.yml` konfiguriert nur `win:` (NSIS) — kein `mac:`-Block (Target `dmg`/`zip`, `category`, `hardenedRuntime: true`, Entitlements-Datei) | klein, ~0,5 T |
+| Icon: nur `assets/icon.ico` — macOS braucht `.icns` | klein (Konvertierung aus vorhandenem PNG/Icon-Set) |
+| **Code-Signing + Notarization**: braucht ein „Developer ID Application“-Zertifikat. **Kein separates Konto nötig** — dasselbe Apple-Developer-Programm (99 €/Jahr) aus §2.2 deckt Mac-Signing und iOS-Provisioning gleichzeitig ab. Notarization läuft über Apples Notary-Service; **kein eigener Mac erforderlich**, das lässt sich von einem macOS-Runner in GitHub Actions treiben (electron-builder unterstützt `notarize` eingebaut) | ~0,5–1 T (CI-Pipeline einrichten, Cert/Keychain-Handling in Actions) |
+| `desktop/tray.py` — der separate Windows-Tray-Supervisor (Autostart über `winreg`-Run-Key, `pythonw.exe`-Auflösung, `CREATE_NO_WINDOW`) ist **echt Windows-only**. Für Mac bräuchte es ein launchd-`.plist`-Pendant (LaunchAgent statt Registry-Key); `pystray` selbst ist plattformneutral (nutzt `rumps` unter der Haube auf macOS) | ~1 T, **optional** — nur nötig, falls der Tray-Supervisor-Pfad (nicht die Haupt-Electron-App) mitgezogen werden soll |
+
+### 5.3 Urteil
+
+Ein Mac-Desktop-Build ist **deutlich billiger als die iOS-Mobile-App**: keine
+Push-Baustelle, keine fehlenden nativen Module, kein TestFlight-90-Tage-
+Rhythmus (ein signiertes `.dmg` läuft dauerhaft, kein Ablauf). Reine
+Packaging-/Signing-Arbeit. **Aufwand: ≈ 1–2 Tage** (electron-builder-Mac-Target
++ Icon + Notarization-CI), **plus optional 1 Tag** für den launchd-Ersatz von
+`tray.py`, falls der Autostart-Supervisor mitgezogen werden soll.
+
+**Synergie mit §2:** Das Apple-Developer-Konto (99 €/Jahr), das für iOS/
+TestFlight ohnehin nötig ist, deckt Mac-Notarization **kostenneutral mit ab** —
+eine Ausgabe, zwei Plattformen. Empfehlung: **wenn iOS-Schritt 1 (Apple-Konto +
+EAS-Setup) gemacht wird, den Mac-Desktop-Build direkt danebenlegen** (~1–2
+zusätzliche Tage) statt ihn separat zu terminieren — der teure Teil (Konto,
+Signing-Grundlagen) ist derselbe.
