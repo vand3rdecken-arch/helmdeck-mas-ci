@@ -149,6 +149,33 @@ check(out.get("status") == "accepted" and out.get("lane") == "done",
 check("Autostart-Task angelegt" in store["c-mach"].get("outcome", ""),
       "machine accept persists the outcome too (both accept mutators)")
 
+# -- 2c. accepting an ALREADY LANDED card is a no-op, never a re-gate ----------
+# Live incident (card 20260812-164257): lane='done' is written only AFTER the
+# deploy hook, so a card that had already merged+deployed still read
+# lane=review for ~22s. A second Done in that window started a concurrent
+# cycle whose gate hit the just-reclaimed worktree and BOUNCED a card that had
+# shipped. A repeat accept must settle the card, not re-run gate/merge.
+_gate_calls = []
+_merge_calls = []
+_real_gate, _real_merge = sessions._gate, sessions._merge_to_main
+sessions._gate = lambda t: (_gate_calls.append(t["id"]), (True, []))[1]
+sessions._merge_to_main = lambda t: (_merge_calls.append(t["id"]),
+                                     (True, "merged", "gemergt"))[1]
+
+out = sessions.move_lane("c-repo", "done", actor="owner")   # c-repo is accepted already
+check(_gate_calls == [] and _merge_calls == [],
+      "re-accepting a landed card runs NO gate and NO merge (got gate=%r merge=%r)"
+      % (_gate_calls, _merge_calls))
+check(out.get("status") == "accepted" and out.get("lane") == "done",
+      "the re-accept settles the card in Done instead of bouncing it")
+check(not out.get("gate_report") and not out.get("merge_failed"),
+      "a landed card is never handed a gate punch list by a second accept")
+check("29 organische" in store["c-repo"].get("outcome", ""),
+      "the outcome recorded at the real accept survives the re-accept")
+sessions._gate, sessions._merge_to_main = _real_gate, _real_merge
+sessions._gate = lambda t: (True, [])
+sessions._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
+
 # -- 3. the snapshot carries the result of FINISHED cards -----------------------
 card("c-open", lane="working", status="needs_you", last_reply="Welche DB soll ich nehmen?")
 card("c-work", lane="working", status="running", last_reply="Ich arbeite noch.")
