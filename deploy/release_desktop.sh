@@ -63,9 +63,11 @@ if [ "$NO_BUILD" != "1" ]; then
   done
   if [ "$BUILT" != "1" ]; then
     # powershell absent (it can be off the PATH on this box) - build inline with
-    # the same steps: deps, winCodeSign-without-darwin, web export, electron-builder.
+    # the same steps: icon, deps, winCodeSign-without-darwin, web export, build.
     echo "==> powershell not found - inline bash build"
     ( cd desktop
+      # icon.ico is git-ignored (generated from icon-1024.png); NSIS needs it.
+      [ -f assets/icon.ico ] || py -3.12 ../tools/make_icon.py || exit 1
       [ -d node_modules/electron-builder ] || npm install || exit 1
       cache="$LOCALAPPDATA/electron-builder/Cache/winCodeSign"
       z="node_modules/7zip-bin/win/x64/7za.exe"
@@ -75,8 +77,13 @@ if [ "$NO_BUILD" != "1" ]; then
         "$z" x "$arc" "-o$cache/winCodeSign-2.6.0" "-xr!darwin" -y >/dev/null || true
       fi
       npm run build:web || exit 1
+      # electron-builder rewrites package.json in place for extraMetadata (drops
+      # scripts/devDeps) - snapshot + restore so the source tree stays intact.
+      cp package.json .package.json.bak
       npx electron-builder --win --config electron-builder.yml \
-        -c.extraMetadata.version="$VERSION" || exit 1
+        -c.extraMetadata.version="$VERSION"; rc=$?
+      mv .package.json.bak package.json
+      [ "$rc" = "0" ] || exit 1
     ) || { echo "!!! build failed"; exit 1; }
   fi
 fi
@@ -117,6 +124,17 @@ mv "$SUMS.new" "$SUMS"
 echo "==> uploading $EXE + SHA256SUMS.txt to $TAG"
 gh release upload "$TAG" -R "$REPO" --clobber "$EXE_PATH" "$SUMS" \
   || { echo "!!! upload failed"; exit 1; }
+
+# --clobber only replaces a same-named asset; an OLDER desktop installer has a
+# different filename (0.2.1 vs 0.2.2) and would linger. Remove any stale
+# HelmDeck-Setup-*.exe that is not the one we just uploaded.
+for a in $(gh release view "$TAG" -R "$REPO" --json assets -q '.assets[].name' 2>/dev/null); do
+  case "$a" in
+    HelmDeck-Setup-*-x64.exe)
+      [ "$a" = "$EXE" ] || { echo "==> removing stale asset $a"; \
+        gh release delete-asset "$TAG" -R "$REPO" "$a" -y 2>/dev/null || true; } ;;
+  esac
+done
 
 [ -n "$NOTES_FILE" ] && {
   echo "==> updating release notes from $NOTES_FILE"
