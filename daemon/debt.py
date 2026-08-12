@@ -477,6 +477,42 @@ DEBT = [
                "sessions._OUTCOME_BACKFILL_REVIEWED.",
         "order": 19,
     },
+    {
+        "id": "gate-exit-code-vs-stdout-verdict",
+        "title": "sessions._gate trusts run_gate.py's PRINTED verdict over a "
+                 "contradicting OS-level returncode",
+        "status": "open",
+        "what": "Card 20260812-164257 (chat-fix--sessions-extract-ou) bounced with "
+                "gate_report = 'gate FAILED:' wrapping a body of 34 straight 'ok' "
+                "lines ending in tools/run_gate.py's own 'gate: PASS (34 checks)' - "
+                "i.e. r.returncode was nonzero even though the script ran every "
+                "check green and reached its own sys.exit(0). Replaying the exact "
+                "daemon invocation by hand (same HELMDECK_REPO, same cwd, same "
+                "cmd.exe shell=True path) came back clean both times - not "
+                "reliably reproducible on demand. No HKCU/HKLM Command Processor "
+                "AutoRun hook is set (ruled out as a cause). _gate() now regexes "
+                "stdout for run_gate.py's own success sentinel and trusts it over "
+                "a disagreeing returncode, logging the mismatch to the daemon "
+                "console instead of bouncing the card on it.",
+        "why_it_bites": "A card can get bounced by the gate for NOTHING - its own "
+                        "work is fully green - which reads as a random, "
+                        "unexplained rejection and burns a review cycle. The fix "
+                        "closes the symptom but is itself a text-match heuristic "
+                        "over run_gate.py's print format (fragile if that format "
+                        "changes without updating _GATE_PASS_RE) standing in for "
+                        "an OS/shell-level root cause that was never pinned down.",
+        "trigger": "another card bounces with a gate_report whose body is all "
+                   "'ok' lines ending in 'gate: PASS (...)', or editing "
+                   "run_gate.py's PASS/FAIL print strings without updating "
+                   "sessions._GATE_PASS_RE alongside them",
+        "fix": "Pin the real root cause (capture r.returncode AND stdout/stderr "
+               "on every gate run, not just failures, so the next occurrence has "
+               "full evidence instead of a single anecdote) - most likely "
+               "candidates: a Windows shell=True/cmd.exe exit-code relay glitch "
+               "under load, or a py-launcher subprocess-teardown quirk. Once "
+               "pinned, fix at the source and drop the stdout-verdict override.",
+        "order": 20,
+    },
 ]
 
 def list_debt():

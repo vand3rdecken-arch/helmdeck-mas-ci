@@ -1312,6 +1312,11 @@ def _accept_machine(t, lane, actor, log):
 
 # -- the review gate: work may only reach the client when it is green ----
 
+# tools/run_gate.py's own success sentinels ("gate: PASS (34 checks)" or the
+# no-checks-on-this-branch case) - the ground truth for _gate()'s exit-code
+# cross-check below.
+_GATE_PASS_RE = re.compile(r"gate: (PASS \(\d+ checks\)|nothing to run on this branch - PASS)")
+
 def _gate(t):
     """Quality gate run when a card is submitted for review. Checks: (1) the
     worktree exists and its work is committed; (2) if the repo declares its own
@@ -1344,8 +1349,23 @@ def _gate(t):
             genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
             r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True,
                                text=True, timeout=600, env=genv)
-            if r.returncode != 0:
-                out = (r.stdout + "\n" + r.stderr).strip()
+            # Observed on the live board (card 20260812-164257): a `py -3.12`
+            # gate run via shell=True on Windows can come back with a nonzero
+            # r.returncode while its OWN stdout is a clean tools/run_gate.py
+            # verdict - every check "ok", ending "gate: PASS (34 checks)" - a
+            # shell/launcher exit-code hiccup downstream of the script's own
+            # sys.exit(0), not a real failure. Root cause not pinned (no
+            # AutoRun hook, reproduces clean when replayed by hand) - see debt
+            # [gate-exit-code-vs-stdout-verdict]. run_gate.py's own verdict
+            # line is a REAL signal (the process that printed it did finish
+            # its checks), so prefer it over a returncode that contradicts it;
+            # still hard-fail whenever the verdict itself is missing or red.
+            out = (r.stdout + "\n" + r.stderr).strip()
+            if r.returncode != 0 and (_GATE_PASS_RE.search(out) and "=== GATE FAILED (" not in out):
+                print("GATE: returncode %d disagreed with the script's own PASS verdict for %s "
+                      "- trusting the verdict (see debt gate-exit-code-vs-stdout-verdict)"
+                      % (r.returncode, t.get("id")))
+            elif r.returncode != 0:
                 # Lead with the ACTUAL error, not the command - the command alone
                 # (truncated on mobile) is the "ominous, unresolvable" message. An
                 # empty output means the command couldn't even start (missing
