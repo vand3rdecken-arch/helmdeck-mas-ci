@@ -451,6 +451,27 @@ DEBT = [
                "usage panel, and calibrate against the remainder.",
         "order": 18,
     },
+    {
+        "id": "legacy-outcome-on-read",
+        "title": "Pre-outcome done cards get their outcome derived at snapshot READ time",
+        "status": "open",
+        "what": "Cards accepted before the outcome field existed never ran "
+                "sessions._record_outcome, so copilot._snapshot falls back to "
+                "sessions.extract_outcome(last_reply) on every read for lane=done "
+                "cards without a stored outcome. New accepts persist outcome at "
+                "EVENT TIME (the accept mutators) - only the legacy tail is "
+                "reconstructed on read.",
+        "why_it_bites": "Read-time derivation is the reconstruction pattern the "
+                        "Paseo law bans for load-bearing state: if extract_outcome's "
+                        "heuristics change, a legacy card's remembered result "
+                        "silently changes with them, and the PM plan reads it.",
+        "trigger": "editing extract_outcome, or auditing why an old done card's "
+                   "snapshot line differs from its actual final reply",
+        "fix": "One-shot backfill: on daemon start (or a migration), stamp "
+               "outcome = extract_outcome(last_reply) onto every lane=done card "
+               "missing it, then drop the read-time fallback in copilot._snapshot.",
+        "order": 19,
+    },
 ]
 
 def list_debt():
