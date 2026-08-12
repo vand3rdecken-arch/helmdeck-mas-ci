@@ -148,11 +148,22 @@ def _snapshot():
                  "project/repo must include ONLY that repo's cards):")
     for t in sessions.list_tracks():
         repo = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "?"
+        # needs_you carries its open question; a FINISHED card carries its RESULT
+        # (outcome, persisted at accept). Without the second half, an owner
+        # decision answered in a card's final reply resurfaced as "open" in the
+        # PM plan triage - the planner reads THIS snapshot. Cards accepted before
+        # the outcome field existed still hold their last_reply: derive on read.
+        if t.get("status") == "needs_you":
+            tail = " last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")
+        elif t.get("lane") == "done":
+            o = t.get("outcome") or sessions.extract_outcome(t.get("last_reply"))
+            tail = (" outcome=" + o[:150].replace("\n", " ")) if o else ""
+        else:
+            tail = ""
         lines.append("- id=%s repo=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
             t["id"], repo, t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
-            t["task"][:90].replace("\n", " "),
-            (" last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")) if t.get("status") == "needs_you" else ""))
+            t["task"][:90].replace("\n", " "), tail))
     try:
         import connectors as _c
         cs = _c.list_connectors()
