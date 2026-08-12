@@ -46,6 +46,10 @@ PM_DEFAULTS = {
     #   "ask"    = also file backlog cards (reversible), but never auto-dispatch
     #   "act"    = also dispatch within the WIP/quota gates (merge/accept stay gated)
     "autonomy": "act",
+    # -- per-card cost/scope watchdog (_cost_watch: code thresholds, no LLM) --
+    "watch_cost_floor_eur": 5.0,   # min € growth since the last level before escalating
+    "watch_cost_factor": 3.0,      # ...and the card must sit at 3x its last level
+    "watch_ctx_floor": 150_000,    # context tokens considered runaway (window nearly full)
 }
 
 
@@ -1159,7 +1163,7 @@ def _usage_checkin(st):
         return
     st["usage_flagged_reset"] = flag.get("resetsAt") or ""
     _save_loopstate(st)
-    _say(_usage_flag_text(flag))
+    _escalate(_usage_flag_text(flag), title=_i18n.t("push.pmQuota"))
 
 
 def _quota_floor():
@@ -1323,7 +1327,78 @@ def _triangle_watch(st):
     _save_loopstate(st)
     msg = ("⚠ Dreieck schief — Abweichung von der Tages-Baseline:\n" + "\n".join("• " + c for c in corners)
            + "\nWelche Ecke ist dir heilig (Zeit/Budget/Scope)? Dann steuere ich gegen; sonst entscheidest du.")
-    _say(msg)
+    _escalate(msg, title=_i18n.t("push.pmTriangle"))
+
+
+def _cost_watch(st, tracks):
+    """PER-CARD COST/SCOPE WATCHDOG - pure code thresholds, deliberately NOT
+    LLM-judged (a judge call per tick would itself be spend, and runaway burn
+    needs no judgement, only arithmetic). The €843/226M-token card ran three
+    DAYS with the owner actively steering and not one ping: every existing
+    guard is either presence-gated (_board_idle) or watches the WEEK
+    (_usage_checkin) - nothing watched ONE card's burn. Modeled on
+    _triangle_watch: self-baseline, escalate on measured drift, clear/re-arm.
+
+    Per working card, from its own persisted meters (sessions._record_econ):
+      ai_cost    - cumulative €. Escalates when the card grew BOTH by
+                   watch_cost_floor_eur AND to watch_cost_factor x its last
+                   level, then RE-ARMS at the new level (5 -> 15 -> 45 ...).
+                   Monotonic spend can never 'come back under', so
+                   re-baselining at each escalation is what 'clears' this
+                   corner - the €843 card gets a ladder of pings, not a single
+                   €5 ping on day one.
+      ctx_tokens - the CURRENT window fill. Absolute floor (watch_ctx_floor):
+                   escalate once when crossed, clear when compaction brings it
+                   back under, re-escalate on the next crossing.
+    Baselines live in loopstate (survive restarts); a card leaving 'working'
+    drops its entry and re-baselines fresh on re-entry. Runs on EVERY tick,
+    NOT behind the acting (_in_window/_board_idle) gates - the failure mode is
+    burn WHILE the owner is around."""
+    pm = _pm()
+    floor = float(pm.get("watch_cost_floor_eur") or 0) or 5.0
+    factor = float(pm.get("watch_cost_factor") or 0) or 3.0
+    ctx_floor = int(pm.get("watch_ctx_floor") or 0) or 150_000
+    watch = st.setdefault("cost_watch", {})
+    working = {t["id"]: t for t in tracks
+               if t.get("lane") == "working" and not t.get("archived")}
+    changed = False
+    for tid in [k for k in watch if k not in working]:
+        del watch[tid]; changed = True           # left 'working' -> fresh next time
+    for tid, t in working.items():
+        cost = float(t.get("ai_cost") or 0.0)
+        ctx = int(t.get("ctx_tokens") or 0)
+        w = watch.get(tid)
+        if w is None:                            # first tick in 'working' = baseline
+            watch[tid] = {"base": cost, "level": cost, "ctx_hot": False}
+            changed = True
+            continue
+        task = (t.get("task") or "").replace("\n", " ")[:60]
+        lvl = float(w.get("level") or 0.0)
+        if cost - lvl >= floor and cost >= factor * lvl:
+            w["level"] = cost; changed = True
+            base = float(w.get("base") or 0.0)
+            _activity("blocked", "Kosten-Drift: +€%.2f seit Arbeitsbeginn - eskaliere: %s"
+                      % (cost - base, task), card=tid)
+            _escalate("💸 Kosten-Watchdog: „%s“ steht bei €%.2f KI-Kosten - +€%.2f seit "
+                      "Arbeitsbeginn (Baseline €%.2f). Läuft die Karte noch auf ihr Ziel "
+                      "zu? Prüf sie kurz: stoppen, steuern oder bewusst weiterlaufen "
+                      "lassen. Nächste Meldung erst wieder bei ~€%.0f."
+                      % (task, cost, cost - base, base, max(factor * cost, cost + floor)),
+                      tid=tid, title=_i18n.t("push.pmCost"))
+        hot = ctx >= ctx_floor
+        if hot and not w.get("ctx_hot"):
+            w["ctx_hot"] = True; changed = True
+            _activity("blocked", "Kontext-Drift: ~%dk Tokens Fenster - eskaliere: %s"
+                      % (ctx // 1000, task), card=tid)
+            _escalate("🧠 Kontext-Watchdog: „%s“ schleppt ~%dk Tokens Kontext (Schwelle "
+                      "%dk) - jeder weitere Turn zahlt das fast volle Fenster. Karte "
+                      "kompaktieren, aufteilen oder abschliessen."
+                      % (task, ctx // 1000, ctx_floor // 1000),
+                      tid=tid, title=_i18n.t("push.pmCtx"))
+        elif not hot and w.get("ctx_hot"):
+            w["ctx_hot"] = False; changed = True     # compacted back under - re-armed
+    if changed:
+        _save_loopstate(st)
 
 
 def _goal_has_process(st):
@@ -1629,6 +1704,11 @@ def _tick():
     # delta - always run, they dedup internally.
     _notify_deliveries(day, tracks, st, pm)
 
+    # per-card burn watchdog: code thresholds, and like the deliveries NOT
+    # behind the acting/idle gates below - the €843 card burned precisely
+    # WHILE the owner was present and steering it.
+    _cost_watch(st, tracks)
+
     # 2+3 - STAND, judged by the TRIANGLE
     pos = _position([t for t in tracks if not t.get("archived")], plan)
     _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)
@@ -1705,6 +1785,41 @@ def _say(text):
         copilot.say(text, cls="pm")
     except Exception:
         pass
+
+
+def _escalation_tid():
+    """Presence anchor for GOAL-LEVEL escalations (triangle tilt, quota pacing):
+    they have no card of their own, but presence.plan wants a card id to decide
+    silent/in-app/push. Use the most recently touched working card - that is
+    where the owner's attention would be; with none, "" still gives the correct
+    present/absent split (nobody can be 'focused' on no card)."""
+    try:
+        import sessions
+        working = [t for t in sessions.list_tracks()
+                   if t.get("lane") == "working" and not t.get("archived")]
+        if working:
+            return max(working, key=lambda t: t.get("updated")
+                       or t.get("created") or "")["id"]
+    except Exception:
+        pass
+    return ""
+
+
+def _escalate(text, tid="", title=""):
+    """An ESCALATION, vs. _say (chat only): the chat line always lands, AND the
+    alert goes through notify's presence-aware pipe so it reaches the phone as
+    a sealed FCM push when the owner is actually AWAY - the route Burn Guard
+    proved (_push_burn). _say alone let the €843 card burn for days: its
+    warnings sat in a chat nobody had open. Dedup stays with the caller
+    (content hash / level ladder); notify.escalate only decides delivery
+    (silent / in-app / push)."""
+    _say(text)
+    try:
+        import notify
+        notify.escalate(title or _i18n.t("push.pmAlert"), text[:180],
+                        tid or _escalation_tid())
+    except Exception as e:
+        print("pm: escalate push failed:", e)
 
 
 def _read_activity(n=20):
