@@ -13,6 +13,16 @@
 # builds whose expo-channel-name matches (app.json updates.requestHeaders).
 # Publishing also clears any rollback marker for that channel (the dir swap).
 #
+# Desktop OTA (Paseo auto-update for the Electron shell): the same run ALSO
+# exports the web bundle and publishes it + a desktop.json manifest to the
+# "desktop" channel dir (/opt/helmdeck-updates-desktop, or -desktop-<name>).
+# The desktop clients (desktop/updater.js in the Electron app, desktop/tray.py
+# via desktop_update.py) poll that manifest silently - check at start + every
+# 30 min, download + sha256-verify, swap in on quit / when the shell is idle -
+# so the desktop follows every publish without a reinstall, like the phone.
+# A desktop-side failure warns loudly but never blocks the phone OTA that
+# already shipped.
+#
 # Needs .env with RELAY_HOST / RELAY_SSH_* (same as push_relay.sh).
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
@@ -78,3 +88,43 @@ curl -s -m20 -H "expo-platform: android" -H "expo-runtime-version: $RTV" \
      "https://$RELAY_DOMAIN/updates/manifest" \
   | head -c 240
 echo
+
+# ---- desktop channel (phone OTA above already shipped; failures here WARN) ----
+desktop_publish() {
+  local DCHAN="desktop${CHANNEL:+-$CHANNEL}"
+  if [ "$NO_BUILD" != "1" ]; then
+    echo "==> expo export (web) for the desktop channel"
+    # separate dir for the same reason as dist-ota: app/dist is what a local
+    # Electron dev run serves, and dist-ota is the android bundle.
+    ( cd app && rm -rf dist-desktop && npx expo export --platform web --output-dir dist-desktop ) || return 1
+  fi
+  [ -f app/dist-desktop/index.html ] || { echo "no app/dist-desktop/index.html - web export missing"; return 1; }
+  echo "==> desktop.json manifest"
+  py -3.12 deploy/desktop_manifest.py app/dist-desktop "$RTV" || return 1
+
+  echo "==> pack + upload the desktop export ($DCHAN)"
+  tar -C app/dist-desktop -czf /tmp/hd-desktop.tgz . || return 1
+  scp "${SSH_OPTS[@]}" /tmp/hd-desktop.tgz "$TARGET:/tmp/hd-desktop.tgz" || return 1
+  # same atomic swap as the phone dir; the channel dir sits BESIDE the root
+  # updates dir, so neither swap can take the other along.
+  ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' -- "$DCHAN" <<'REMOTE' || return 1
+set -e
+DEST="/opt/helmdeck-updates-$1"
+sudo rm -rf "$DEST.new"
+sudo mkdir -p "$DEST.new"
+sudo tar -C "$DEST.new" -xzf /tmp/hd-desktop.tgz
+sudo rm -rf "$DEST.old"
+[ -d "$DEST" ] && sudo mv "$DEST" "$DEST.old" || true
+sudo mv "$DEST.new" "$DEST"
+sudo chmod -R a+rX "$DEST"
+echo "published to $DEST: $(sudo test -f "$DEST/desktop.json" && echo ok)"
+REMOTE
+
+  echo "==> verify live desktop manifest"
+  curl -s -m20 "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN" | head -c 200
+  echo
+}
+if ! desktop_publish; then
+  echo "!!! DESKTOP OTA PUBLISH FAILED - the phone update above is live, but the"
+  echo "!!! desktop stays on its old bundle until the next successful publish."
+fi
