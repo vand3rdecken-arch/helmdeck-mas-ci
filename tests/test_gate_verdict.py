@@ -110,6 +110,21 @@ def test_crash_with_no_verdict_still_bounces():
           "no verdict printed at all (a crash) still bounces, never silently passes")
 
 
+def test_reclaimed_worktree_reports_itself():
+    # After a card lands, reclaim_worktree empties the tree; on Windows the
+    # now-empty DIRECTORY often survives (a shell still holds it open), so
+    # os.path.exists(wt) still says yes. The gate must recognise that instead
+    # of running the suite in an empty dir and emitting one
+    # "can't open file ...: No such file or directory" per test.
+    wt = tempfile.mkdtemp()          # exists, but holds no .git and no files
+    ok, problems = sessions._gate({"repo": wt, "worktree": wt, "id": "t-reclaimed"})
+    check(not ok and problems, "a reclaimed worktree fails the gate (not a silent pass)")
+    check(any("reclaimed" in p for p in problems),
+          "the reason names the RECLAIMED TREE, not a wall of missing test files")
+    check(not any("No such file or directory" in p for p in problems),
+          "no misleading per-test 'No such file' spam in the punch list")
+
+
 def test_clean_pass_returncode_zero_unaffected():
     # the ordinary green-gate path (matching returncode + verdict) is
     # untouched by the new cross-check.
@@ -123,6 +138,7 @@ if __name__ == "__main__":
     test_pass_verdict_overrides_nonzero_returncode()
     test_real_failure_still_bounces()
     test_crash_with_no_verdict_still_bounces()
+    test_reclaimed_worktree_reports_itself()
     test_clean_pass_returncode_zero_unaffected()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)

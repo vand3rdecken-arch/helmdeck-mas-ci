@@ -1326,6 +1326,18 @@ def _gate(t):
     wt = t.get("worktree")
     if not wt or not os.path.exists(wt):
         return False, ["never dispatched - nothing to submit"]
+    # A RECLAIMED worktree leaves the directory behind but empty and unlinked
+    # from git: reclaim_worktree deletes the contents, and on Windows the
+    # now-empty dir often survives because a shell still holds it open ("WORKTREE
+    # nicht entfernbar (gesperrt?)"). os.path.exists then still says yes, so
+    # without this check the gate command runs inside an empty dir and reports
+    # "can't open file ...: No such file or directory" once per test - a punch
+    # list that reads like a catastrophic code failure but only means the tree
+    # is gone. Say what actually happened.
+    if not os.path.exists(os.path.join(wt, ".git")):
+        return False, ["worktree reclaimed (no .git at %s) - nothing to gate. A card "
+                       "whose work already landed needs no re-accept; otherwise "
+                       "re-dispatch it so the tree is rebuilt from the branch." % wt]
     try:
         dirty = _git(wt, "status", "--porcelain")
         if dirty:
@@ -1828,6 +1840,26 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         return _start(tid)   # idempotent: resumes position if already started
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
+    # ALREADY LANDED - an accept is IDEMPOTENT. status='accepted' is only ever
+    # set after a successful merge, so a repeat move to Review/Done has nothing
+    # left to gate or land. Re-running the cycle is not merely wasteful, it is
+    # destructive: the first accept's reclaim_worktree has (correctly) emptied
+    # the worktree, so the second run's gate finds no test files and BOUNCES a
+    # card that already shipped.
+    #
+    # Observed live on card 20260812-164257: Done at 17:32:45 gated green,
+    # merged 2 commits and ran the deploy hook; because lane='done' is written
+    # only AFTER that ~22s hook, the card still read lane=review, so a second
+    # Done at 17:34:32 started a concurrent cycle whose gate (17:34:53) hit the
+    # just-reclaimed tree and bounced the card with a bogus "No such file or
+    # directory" punch list. Accepting twice must never un-land a card.
+    if t.get("status") == "accepted" and lane in ("review", "done"):
+        log.log("note", "ALREADY LANDED - accept is a no-op (no re-gate, no re-merge)")
+
+        def _settle(tt):
+            tt["lane"] = "done"
+            tt.pop("gate_report", None); tt.pop("merge_report", None)
+        return _mutate(tid, _settle) or t
     if t.get("machine") and lane in ("review", "done"):
         # no branch, no merge - the owner's accept IS the gate (see _accept_machine)
         return _accept_machine(t, lane, actor, log)
