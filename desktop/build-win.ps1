@@ -39,15 +39,35 @@ if ($arc) {
   Write-Host "     build then fails on a symlink error, just run this script a 2nd time.)"
 }
 
+# The window/installer icon (assets\icon.ico) is git-ignored - generated from
+# the tracked icon-1024.png. Regenerate it on a clean checkout, else NSIS dies
+# with "cannot find specified resource assets/icon.ico".
+if (-not (Test-Path "assets\icon.ico")) {
+  Write-Host "==> generating assets\icon.ico (tools\make_icon.py)"
+  py -3.12 (Join-Path $PSScriptRoot "..\tools\make_icon.py")
+  if ($LASTEXITCODE -ne 0) { throw "icon generation failed" }
+}
+
 Write-Host "==> building the UI (Expo web export) + the NSIS installer"
 npm run build:web
 if ($LASTEXITCODE -ne 0) { throw "web export failed" }
 # -Version -> electron-builder extraMetadata override, so the installer name +
-# app version reflect the release without a committed package.json bump.
+# app version reflect the release without a committed package.json bump. NB:
+# electron-builder REWRITES package.json in place when extraMetadata is set
+# (drops scripts/devDependencies) - snapshot it and restore it afterward so a
+# release build never corrupts the source tree.
 $ebArgs = @("--win", "--config", "electron-builder.yml")
-if ($Version) { $ebArgs += "-c.extraMetadata.version=$Version" }
-npx electron-builder @ebArgs
-if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
+$pkgBak = $null
+if ($Version) {
+  $ebArgs += "-c.extraMetadata.version=$Version"
+  $pkgBak = [IO.File]::ReadAllText("package.json")
+}
+try {
+  npx electron-builder @ebArgs
+  if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
+} finally {
+  if ($pkgBak -ne $null) { [IO.File]::WriteAllText("package.json", $pkgBak) }
+}
 
 Write-Host ""
 Write-Host "DONE. Installer -> release\ (HelmDeck-Setup-<version>-x64.exe)"
