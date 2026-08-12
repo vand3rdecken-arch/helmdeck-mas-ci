@@ -36,6 +36,9 @@ except ImportError:
 import pystray
 from PIL import Image, ImageDraw
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import desktop_update   # Paseo auto-update engine (see its docstring)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DAEMON_DIR = os.path.join(ROOT, "daemon")
 SETTINGS = os.path.join(DAEMON_DIR, "settings.json")
@@ -47,7 +50,7 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 _proc = None                 # the daemon WE spawned (None if adopted/external)
 _stop = threading.Event()
-_state = {"daemon": False, "relay": "unbekannt"}
+_state = {"daemon": False, "relay": "unbekannt", "update": "prüft …"}
 
 
 # ---------------------------------------------------------------- daemon health
@@ -111,6 +114,94 @@ def _supervise(icon):
             _state.update(new)
             _apply_icon(icon)
         _stop.wait(4)
+
+
+# ------------------------------------------------------------ desktop auto-update
+# Paseo's auto-update, hooked into the always-on supervisor (this tray) so the
+# desktop follows every published update even when the Electron window is never
+# opened or never closed. Timing IS Paseo's (desktop_update.py cites the exact
+# source files): silent check at start + every 30 min, 10 s retry while a
+# download is pending, silent apply - never a dialog. The supervise loop above
+# is untouched; this runs in its own thread.
+
+def _packaged_appdist():
+    """Where the installed Electron shell keeps the bundle it serves. Derived
+    from the NSIS installer's own uninstall registration (evidence, not a
+    guessed path). electron-builder's NSIS omits InstallLocation and the owner
+    installs to a custom dir (allowToChangeInstallationDirectory), so the
+    install dir comes from the UninstallString/DisplayIcon paths that key
+    records. Fallback: the default per-user dir. None when no packaged install
+    exists - then there is nothing to update here."""
+    cands = []
+    if winreg:
+        try:
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                               r"Software\Microsoft\Windows\CurrentVersion\Uninstall")
+        except OSError:
+            k = None
+        if k:
+            try:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(k, i); i += 1
+                    except OSError:
+                        break
+                    try:
+                        with winreg.OpenKey(k, sub) as sk:
+                            name, _ = winreg.QueryValueEx(sk, "DisplayName")
+                            if not str(name).strip().lower().startswith("helmdeck"):
+                                continue
+                            for val in ("InstallLocation", "UninstallString", "DisplayIcon"):
+                                try:
+                                    v, _ = winreg.QueryValueEx(sk, val)
+                                except OSError:
+                                    continue
+                                p = str(v).strip().strip('"').split('"')[0].strip()
+                                d = p if val == "InstallLocation" else os.path.dirname(p)
+                                if d:
+                                    cands.append(os.path.join(d, "resources", "app-dist"))
+                    except OSError:
+                        continue
+            finally:
+                k.Close()
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        cands.append(os.path.join(local, "Programs", "HelmDeck", "resources", "app-dist"))
+    for c in cands:
+        if os.path.isdir(c):
+            return c
+    return None
+
+
+def _update_once():
+    """One silent cycle. Returns (status-text, retry-soon)."""
+    base = desktop_update.read_relay_url(SETTINGS)
+    if not base:
+        return "aus (kein Relay gekoppelt)", False
+    target = _packaged_appdist()
+    if not target:
+        return "aus (keine Desktop-App installiert)", False
+    try:
+        # while the Electron shell serves, only STAGE - the shell swaps on its
+        # own quit/start (Paseo installs on quit, never under a live app)
+        r = desktop_update.sync_target(base, target,
+                                       allow_swap=lambda: not desktop_update.shell_busy())
+        return {"up-to-date": "aktuell",
+                "staged": "bereit – App übernimmt beim Beenden",
+                "applied": "angewendet ✓"}.get(r, r), False
+    except Exception as e:
+        # Paseo: a failed SILENT check is logged and retried, never surfaced
+        return "Fehler, neuer Versuch: %s" % str(e)[:60], True
+
+
+def _update_loop(icon):
+    while not _stop.is_set():
+        text, retry = _update_once()
+        if _state["update"] != text:
+            _state["update"] = text
+            _apply_icon(icon)
+        _stop.wait(desktop_update.PENDING_RECHECK if retry else desktop_update.CHECK_INTERVAL)
 
 
 # ------------------------------------------------------------------- tray icon
@@ -218,6 +309,7 @@ def _menu():
     return pystray.Menu(
         pystray.MenuItem(lambda i: "Daemon: %s" % ("läuft ✓" if _state["daemon"] else "aus ✕"), None, enabled=False),
         pystray.MenuItem(lambda i: "Relay: %s" % _state["relay"], None, enabled=False),
+        pystray.MenuItem(lambda i: "Update: %s" % _state["update"], None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Web-UI / Handy koppeln", _open_ui, default=True),
         pystray.MenuItem("Daemon neu starten", _restart_daemon),
@@ -234,6 +326,7 @@ def main():
         _set_autostart(True)
     icon = pystray.Icon("HelmDeck", _icon_image(False), "HelmDeck", _menu())
     threading.Thread(target=_supervise, args=(icon,), daemon=True).start()
+    threading.Thread(target=_update_loop, args=(icon,), daemon=True).start()
     icon.run()
 
 

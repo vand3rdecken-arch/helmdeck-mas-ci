@@ -6,6 +6,8 @@ directories:
 # plain resources so the app can spawn them (Python daemon, Next standalone server)
 files:
   - main.js
+  - setup.js
+  - updater.js   # the relay OTA auto-updater main.js require()s - must be in the asar
   - package.json
 extraResources:
   # the Python daemon source (the brain + runner). Secrets and per-user data are
