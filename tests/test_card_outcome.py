@@ -12,9 +12,14 @@ Under test (all three seams):
      (DELIVERED convention preferred, hand-off boilerplate stripped)
   2. BOTH accept paths persist it at event time: move_lane -> done (repo card)
      and _accept_machine -> done (machine card)
-  3. copilot._snapshot shows outcome= for finished cards (stored outcome, or
-     derived from last_reply for legacy pre-outcome accepts) while keeping
-     last_reply= for needs_you - and nothing for a quietly working card
+  3. copilot._snapshot shows outcome= for finished cards (STORED outcome only -
+     never derived per read) while keeping last_reply= for needs_you - and
+     nothing for a quietly working card
+  4. sessions.backfill_outcomes stamps legacy pre-outcome done cards exactly
+     once at daemon start: reviewed overrides beat the heuristic, junk replies
+     stamp '' (key presence = migrated), non-done and already-stamped cards
+     are untouched, and a second run is a no-op
+     (pays debt legacy-outcome-on-read)
 
 Self-sandboxing: an in-memory board, gate/merge/hooks/notify monkeypatched -
 no daemon, no git, no network, no LLM."""
@@ -159,12 +164,61 @@ check("outcome=" in line["c-repo"] and "29 organische" in line["c-repo"],
       "snapshot: an accepted card SHOWS its outcome (PM triage reads this)")
 check("outcome=" in line["c-mach"],
       "snapshot: an accepted machine card shows its outcome")
-check("outcome=" in line["c-old"] and "OTA-Pipeline repariert" in line["c-old"],
-      "snapshot: legacy done card (no stored outcome) derives one from last_reply")
+check("outcome=" not in line["c-old"],
+      "snapshot: NO read-time derivation - an unstamped legacy card stays "
+      "silent until the one-shot backfill runs (Paseo law)")
 check("last_reply=" in line["c-open"] and "Welche DB" in line["c-open"],
       "snapshot: needs_you still carries its open question")
 check("last_reply=" not in line["c-work"] and "outcome=" not in line["c-work"],
       "snapshot: a quietly working card stays quiet (no reply spam)")
+
+# -- 4. the one-shot backfill (debt legacy-outcome-on-read) ---------------------
+# the chatfork shape that PROVED the heuristic wrong: the reply opens with an
+# off-topic aside, the actual answer comes later - reviewed override must win
+CHATFORK = "20260811-153456-chatfork"
+card(CHATFORK, lane="done", status="accepted",
+     last_reply="## DELIVERED\n\nVerstanden fuer naechstes Mal - habe das als "
+                "dauerhafte Erinnerung gespeichert.\n\nUnd die Sache ist "
+                "geloest: Kailash hat die Gruppen-Adresse geliefert.")
+# a junk final reply (cancelled turn) reviewed to '' - stamped but never shown
+CANCELLED = "20260808-053628-req-fix-dashboard-zu-berf"
+card(CANCELLED, lane="done", status="accepted", last_reply="(turn cancelled by you)")
+# unreviewed legacy card: heuristic value is stamped ONCE
+card("c-leg", lane="done", status="accepted",
+     last_reply="DELIVERED: Relay-Neustart automatisiert, Tray-Supervisor aktiv.")
+# not done / already stamped: backfill must not touch these
+card("c-back", lane="backlog", status="resting", last_reply="DELIVERED: nix.")
+store["c-repo"]["outcome_before"] = store["c-repo"]["outcome"]
+
+n = sessions.backfill_outcomes()
+check(n == 4, "backfill stamps exactly the unstamped done cards (got %d)" % n)
+check("appclosedtesting@googlegroups.com" in store[CHATFORK]["outcome"]
+      and "Erinnerung" not in store[CHATFORK]["outcome"],
+      "chatfork: reviewed outcome (Kailash's tester group) beats the "
+      "aside-first heuristic miss")
+check(store[CANCELLED]["outcome"] == "",
+      "junk reply: reviewed to '' - key present, no nonsense sentence")
+check("Relay-Neustart automatisiert" in store["c-leg"]["outcome"],
+      "unreviewed legacy card: heuristic value stamped at migration time")
+check("outcome" not in store["c-back"],
+      "non-done card is left alone")
+check(store["c-repo"]["outcome"] == store["c-repo"]["outcome_before"],
+      "event-time outcome from a real accept is never overwritten")
+check(sessions.backfill_outcomes() == 0,
+      "second run is a no-op (key presence = migrated, incl. '' stamps)")
+
+snap = copilot._snapshot()
+line = {tid: next(l for l in snap.splitlines() if ("id=%s " % tid) in l)
+        for tid in (CHATFORK, CANCELLED, "c-old", "c-leg")}
+check("outcome=" in line[CHATFORK] and "appclosedtesting" in line[CHATFORK],
+      "snapshot after backfill: chatfork shows the REAL result "
+      "(the done-when of the fix card)")
+check("outcome=" not in line[CANCELLED],
+      "snapshot after backfill: ''-stamped junk card shows no outcome line")
+check("outcome=" in line["c-old"] and "OTA-Pipeline repariert" in line["c-old"],
+      "snapshot after backfill: legacy card now shows its stamped outcome")
+check("outcome=" in line["c-leg"],
+      "snapshot after backfill: heuristic-stamped legacy card shows it too")
 
 print()
 if _fails:

@@ -454,12 +454,12 @@ DEBT = [
     {
         "id": "legacy-outcome-on-read",
         "title": "Pre-outcome done cards get their outcome derived at snapshot READ time",
-        "status": "open",
+        "status": "paid",
         "what": "Cards accepted before the outcome field existed never ran "
-                "sessions._record_outcome, so copilot._snapshot falls back to "
+                "sessions._record_outcome, so copilot._snapshot fell back to "
                 "sessions.extract_outcome(last_reply) on every read for lane=done "
                 "cards without a stored outcome. New accepts persist outcome at "
-                "EVENT TIME (the accept mutators) - only the legacy tail is "
+                "EVENT TIME (the accept mutators) - only the legacy tail was "
                 "reconstructed on read.",
         "why_it_bites": "Read-time derivation is the reconstruction pattern the "
                         "Paseo law bans for load-bearing state: if extract_outcome's "
@@ -467,9 +467,14 @@ DEBT = [
                         "silently changes with them, and the PM plan reads it.",
         "trigger": "editing extract_outcome, or auditing why an old done card's "
                    "snapshot line differs from its actual final reply",
-        "fix": "One-shot backfill: on daemon start (or a migration), stamp "
-               "outcome = extract_outcome(last_reply) onto every lane=done card "
-               "missing it, then drop the read-time fallback in copilot._snapshot.",
+        "fix": "PAID (card chat-fix--sessions-extract-ou, 2026-08-12): "
+               "sessions.backfill_outcomes() stamps outcome once at daemon start "
+               "(key presence = migrated, so '' is a valid stamp); the read-time "
+               "fallback in copilot._snapshot is gone. NOT adopted blindly: an "
+               "agent reviewed all 44 legacy done cards against their full final "
+               "replies - 19 heuristic misses (aside-first replies like chatfork, "
+               "merge-meta, junk) carry hand-written values in "
+               "sessions._OUTCOME_BACKFILL_REVIEWED.",
         "order": 19,
     },
 ]
