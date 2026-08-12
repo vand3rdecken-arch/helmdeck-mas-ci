@@ -1,8 +1,14 @@
 # HelmDeck - Windows installer build (one command).
 #
 #   powershell -ExecutionPolicy Bypass -File build-win.ps1
+#   powershell -ExecutionPolicy Bypass -File build-win.ps1 -Version 0.2.2
 #
 # Produces:  release\HelmDeck-Setup-<version>-x64.exe
+#
+# -Version stamps the installer/app version WITHOUT editing package.json (the
+# committed version can lag the released one - 0.2.1 was built from a committed
+# 0.2.0). Omit it to use package.json's version. deploy/release_desktop.sh
+# passes this so a GitHub release gets the right filename + auto-update version.
 #
 # It works around electron-builder's winCodeSign cache, which contains macOS
 # symlinks that fail to extract on Windows unless the user has the symlink
@@ -11,6 +17,7 @@
 # have Developer Mode on, this step is harmless.
 #
 # Requirements on this machine (same as HelmDeck): Python 3.12 + the `claude` CLI.
+param([string]$Version = "")
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -32,8 +39,15 @@ if ($arc) {
   Write-Host "     build then fails on a symlink error, just run this script a 2nd time.)"
 }
 
-Write-Host "==> building the UI (Next standalone) + the NSIS installer"
-npm run dist:win
+Write-Host "==> building the UI (Expo web export) + the NSIS installer"
+npm run build:web
+if ($LASTEXITCODE -ne 0) { throw "web export failed" }
+# -Version -> electron-builder extraMetadata override, so the installer name +
+# app version reflect the release without a committed package.json bump.
+$ebArgs = @("--win", "--config", "electron-builder.yml")
+if ($Version) { $ebArgs += "-c.extraMetadata.version=$Version" }
+npx electron-builder @ebArgs
+if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
 
 Write-Host ""
 Write-Host "DONE. Installer -> release\ (HelmDeck-Setup-<version>-x64.exe)"

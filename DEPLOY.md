@@ -63,6 +63,38 @@ Recovery if a bad bundle already shipped: `deploy/rollback_update.sh --embedded`
 
 ---
 
+## 1b) Desktop installer → GitHub release
+
+The Windows desktop app is distributed as an NSIS installer on the GitHub
+"Downloads" release (`github.com/Tienduyvo/helmdeck`). OTA now covers the UI
+bundle (§1), but the app *shell* (main.js, the auto-updater, electron-builder
+config) can only ship as a new installer — the desktop's native-vs-OTA line.
+So whenever the shell changes (like adding the auto-updater), cut a new
+installer and update the release:
+
+```bash
+bash deploy/release_desktop.sh --version 0.2.2 --latest \
+     --notes deploy/release_notes_desktop.md
+```
+
+What it does (one command; `gh` must be authed — `gh auth status`):
+- builds `HelmDeck-Setup-<version>-x64.exe` via `build-win.ps1 -Version` (the
+  winCodeSign workaround; falls back to an inline bash build if `powershell` is
+  off the PATH),
+- uploads it to the target release (`--latest` = newest tag, or `--tag vX`,
+  creating it if new), **clobbering** the old desktop `.exe`,
+- refreshes `SHA256SUMS.txt` in place — keeps the APK line, replaces the
+  desktop line,
+- with `--notes`, sets the release body.
+
+Pick `--version` **above the last published one** (the committed
+`desktop/package.json` version can lag — 0.2.1 was built from a committed
+0.2.0; `-Version` stamps the installer without a package.json bump). Rehearse
+with `--dry-run` (build + checksum, no upload) or `--no-build` (reuse an
+existing `desktop/release/*.exe`). Since 0.2.2 the installed app auto-updates
+its UI, so this manual step is only for shell releases — the once-per-user
+install that grants auto-update, then never again for JS-only changes.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):
