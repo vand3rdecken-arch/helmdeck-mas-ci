@@ -1,0 +1,14 @@
+// HelmDeck public-launch waitlist worker (M4 prep).
+// Deploy:  cd deploy/waitlist && npx wrangler deploy
+// Secret:  npx wrangler secret put EXPORT_TOKEN   (owner CSV export auth)
+{
+  "name": "helmdeck-waitlist",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "kv_namespaces": [
+    {
+      "binding": "WAITLIST",
+      "id": "762164d2bc4343b8b22f24755f017453"
+    }
+  ]
+}
