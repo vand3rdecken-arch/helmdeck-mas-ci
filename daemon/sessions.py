@@ -2507,13 +2507,18 @@ def _continue_prompt():
 
 
 def _sweep_background():
-    """One pass: continue every card whose background task has finished."""
+    """One pass: continue every card whose background task has finished.
+
+    Two jobs with DIFFERENT gates, and they must not share one. Keeping
+    waiting_on honest - orphan reconciliation, the give-up window, clearing the
+    cue once nothing is outstanding - runs for EVERY waiting card. Only the
+    auto-steer is gated on lane + policy.auto_continue. They used to be gated
+    together, so a card with auto_continue off (or parked outside
+    working/review) kept its "wartet auf Hintergrund-Task" cue forever after
+    the tasks were long done - and with it the idle-eviction protection
+    (drivers._running_cards), leaking the very session it no longer needed."""
     for t in _load():
         if t.get("waiting_on") != "background" or t.get("status") == "running":
-            continue
-        if t.get("lane") not in ("working", "review"):
-            continue
-        if not _bg_continue_on(t):
             continue
         # ORPHAN reconciliation (finishAll): a background task is a child of the
         # worker process. If this daemon holds NO live session for the card (a
@@ -2562,6 +2567,14 @@ def _sweep_background():
         if not claim.get("ok"):
             continue
         from actionlog import ActionLog
+        # steer only ACTIVE work, and only if the owner allows auto-continue;
+        # otherwise the cue is cleared (above) and the card honestly waits on
+        # the owner instead of on a task that has already reported.
+        if t.get("lane") not in ("working", "review") or not _bg_continue_on(t):
+            ActionLog(t["run_dir"]).log(
+                "note", "Hintergrund-Task fertig - Karte wartet auf dich "
+                "(kein Auto-Continue)")
+            continue
         ActionLog(t["run_dir"]).log(
             "note", "Hintergrund-Task fertig - Karte laeuft automatisch weiter")
         import events

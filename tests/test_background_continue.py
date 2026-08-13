@@ -223,7 +223,22 @@ def test_auto_continue():
                background={"n": 1, "names": ["g"], "since": time.time()})
         sessions._sweep_background()
         check(not _settle(steers, 0), "policy.auto_continue=false disables auto-continue")
+        # ...but the kill-switch gates only the STEER. The cue must still fall
+        # back to 'you' when nothing is outstanding - stuck at 'background' the
+        # card looked blocked forever AND kept idle-eviction protection.
+        check(db.track_get("c-off").get("waiting_on") == "you",
+              "cue still clears with auto-continue off (done task never blocks)")
         events.save_settings({"policy": {"auto_continue": True}})
+
+        # off the active lanes: same split - no steer, but the cue clears
+        steers.clear()
+        _write_session("s-lane", [_steer("bau"), _bg_call("t1", "g"), _notification("t1")])
+        _track("c-lane", "s-lane", lane="done", waiting_on="background",
+               background={"n": 1, "names": ["g"], "since": time.time()})
+        sessions._sweep_background()
+        check(not _settle(steers, 0), "a card off working/review is not steered")
+        check(db.track_get("c-lane").get("waiting_on") == "you",
+              "its cue clears anyway (no eternal eviction protection)")
     finally:
         sessions.steer = orig
 
