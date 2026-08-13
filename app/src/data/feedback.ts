@@ -1,9 +1,8 @@
 import * as WebBrowser from "expo-web-browser";
 
-/** Public feedback board (Canny or Userjot). Owner decides the tool and board;
- *  paste the board URL here and the "Feedback geben" row in More appears.
- *  Empty string = feature hidden (no dead link for testers). */
-export const FEEDBACK_BOARD_URL = "";
+/** Public feedback board (owner picked Userjot). Empty string = the
+ *  "Feedback geben" row in More stays hidden (no dead link for testers). */
+export const FEEDBACK_BOARD_URL = "https://helmdeck.userjot.com";
 
 /** In-app browser tab (Custom Tab / SFSafariViewController) so the tester
  *  stays "inside" the app; falls back to a normal tab on web. */
