@@ -287,7 +287,10 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   if (path === "/models") return [{ id: "claude-opus-4-8", label: "Opus 4.8" }];
   if (path === "/chat/history") {
     return { messages: chatLog.map((c) => ({ cls: c.cls, ts: c.ts, text: c.textKey ? t(c.textKey) : (c.text ?? "") })),
-             session_id: "demo" };
+             session_id: "demo",
+             // card-parity PM-session stats so the demo shows the meter + usage line
+             stats: { turns: 4, cost: 0.31, tokens_in: 58200, tokens_out: 4400,
+                      ctx_tokens: 62000, ctx_window: 200000, plan_pct: 0.35 } };
   }
 
   if (path === "/chat" && method === "POST") {
