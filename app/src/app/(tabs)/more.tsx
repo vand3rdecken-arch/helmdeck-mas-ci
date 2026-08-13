@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
@@ -123,6 +124,15 @@ export default function MoreTab() {
               <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
             </Pressable>
           ))}
+          {FEEDBACK_BOARD_URL ? (
+            <Pressable onPress={openFeedbackBoard}
+              style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
+                borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+              <Ionicons name="megaphone-outline" size={18} color={t.txtSecondary} />
+              <Text style={{ color: t.txtPrimary, fontSize: 14, flex: 1 }}>{tr("nav.feedback")}</Text>
+              <Ionicons name="open-outline" size={16} color={t.txtTertiary} />
+            </Pressable>
+          ) : null}
         </Panel>
         <VersionFooter />
       </ScrollView>
