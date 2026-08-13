@@ -58,6 +58,9 @@ export const composer: Dict = {
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
   "chat.latest": { de: "Neueste", en: "Latest" },
   "chat.close": { de: "Chat schließen", en: "Close chat" },
+  // {cost} arrives pre-rendered: planLabel() on the flat plan ("KI ~x % vom
+  // Abo" / "KI 34k Tok"), the measured "AI $x.xx" on a metered plan.
+  "chat.usage": { de: "PM-Session · {turns} Turns · {cost}", en: "PM session · {turns} turns · {cost}" },
 
   // -- new card ------------------------------------------------------------
   "new.title": { de: "Neue Karte", en: "New card" },
