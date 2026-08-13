@@ -12,6 +12,7 @@ import { useTheme } from "@/theme";
 import { planLabel, useAiFlat } from "@/ui/billing";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { ContextMeter } from "@/ui/context_meter";
 import { Empty } from "@/ui/kit";
 
 // Desktop copilot is an IN-PAGE overlay (not a route), so the board stays mounted
@@ -230,30 +231,13 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         ) : null}
 
         <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>
-          {/* Context meter — the SAME bar a card chat shows (card/[id].tsx), fed
-              by the PM session's own evidence: the daemon keeps the last call's
-              context fill + a window derived from the model id (never a blind
-              200k). Like the card it updates per finished turn, because that is
-              when the runtime reports usage. Amber >75%, red >90%. */}
-          {stats?.ctx_tokens ? (() => {
-            const pct = Math.min(100, Math.round((stats.ctx_tokens / (stats.ctx_window || 200000)) * 100));
-            const col = pct >= 90 ? t.danger : pct >= 75 ? t.warn : t.txtTertiary;
-            return (
-              <View style={{ gap: 3, paddingHorizontal: 14, paddingTop: 6 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: t.borderSubtle, overflow: "hidden" }}>
-                    <View style={{ width: `${pct}%`, height: 3, backgroundColor: col }} />
-                  </View>
-                  <Text style={{ color: col, fontSize: 10 }}>
-                    {tr("card.chat.context", { k: Math.round(stats.ctx_tokens / 1000), pct })}
-                  </Text>
-                </View>
-                {pct >= 90 ? (
-                  <Text style={{ color: t.danger, fontSize: 10 }}>{tr("card.chat.contextFull")}</Text>
-                ) : null}
-              </View>
-            );
-          })() : null}
+          {/* Context meter — the SAME component the card chat renders (see
+              ui/context_meter.tsx), fed by the PM session's own evidence: the
+              daemon keeps the last call's context fill + a window derived from
+              the model id (never a blind 200k). Like the card it updates per
+              finished turn, because that is when the runtime reports usage. */}
+          <ContextMeter tokens={stats?.ctx_tokens} window={stats?.ctx_window}
+            style={{ paddingHorizontal: 14, paddingTop: 6 }} />
           {/* Usage line for the running PM session: turns + consumption. On the
               flat plan the honest unit is share-of-subscription (tokens as the
               fallback), on a metered plan the measured $ (owner decree). */}

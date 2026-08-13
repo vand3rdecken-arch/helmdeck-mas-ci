@@ -18,6 +18,7 @@ import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
 import { Composer } from "@/ui/card_composer";
 import { BackgroundTasks } from "@/ui/card_background";
+import { ContextMeter } from "@/ui/context_meter";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { useActionSheet } from "@/ui/action_sheet";
@@ -499,29 +500,8 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         </Text>
         {/* Context meter (Paseo-parity): the worker's window fills over a long card
             and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
-            Amber >75%, red >90%; near full, say steering compacts+continues. */}
-        {!agentMode && k.ctx_tokens ? (() => {
-          {/* window from the daemon (derived from the model's own evidence -
-              a [1m] model has a 1M window; hardcoded 200k showed a false "97%
-              fast voll" on a card that was really at ~23%) */}
-          const pct = Math.min(100, Math.round((k.ctx_tokens / (k.ctx_window || 200000)) * 100));
-          const col = pct >= 90 ? t.danger : pct >= 75 ? t.warn : t.txtTertiary;
-          return (
-            <View style={{ gap: 3, marginTop: 3 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: t.borderSubtle, overflow: "hidden" }}>
-                  <View style={{ width: `${pct}%`, height: 3, backgroundColor: col }} />
-                </View>
-                <Text style={{ color: col, fontSize: 10 }}>
-                  {tr("card.chat.context", { k: Math.round(k.ctx_tokens / 1000), pct })}
-                </Text>
-              </View>
-              {pct >= 90 ? (
-                <Text style={{ color: t.danger, fontSize: 10 }}>{tr("card.chat.contextFull")}</Text>
-              ) : null}
-            </View>
-          );
-        })() : null}
+            Shared with the board/PM chat - see ui/context_meter.tsx. */}
+        {!agentMode ? <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window} style={{ marginTop: 3 }} /> : null}
       </View>
 
       <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
