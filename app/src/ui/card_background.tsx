@@ -1,10 +1,13 @@
-// The worker's background tasks, as a clickable list (Paseo parity: each
-// subagent/background job is a first-class descriptor with its own status and
-// output, not just a count). Tap a row to see the command that launched it and
-// how it ended - so "wartet auf N Hintergrund-Task" becomes inspectable instead
-// of an opaque number that used to grow forever.
+// The worker's background tasks as ONE compact, expandable line - Paseo's
+// SubagentsTrack (packages/app/src/subagents/track.tsx): a single collapsed
+// header row above the composer ("N subagents · M running", chevron), which
+// expands into a max-height scroll of rows. Finished/canceled tasks stay in
+// the EXPANDED list as clickable history (Paseo keeps them until archived;
+// our daemon bounds them at 12) - they no longer occupy the chat as a
+// permanent always-open list. Tap a row for the command that launched it and
+// how it ended.
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { BgTask } from "@/data/types";
@@ -43,8 +46,7 @@ function Row({ task, t, tr, now }: {
   return (
     <Pressable onPress={() => body ? setOpen(!open) : undefined}
       accessibilityRole="button"
-      style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
-        borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8 }}>
+      style={{ paddingHorizontal: 10, paddingVertical: 8 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Ionicons name={ICON[task.status]} size={15} color={col} />
         <Text numberOfLines={1} style={{ flex: 1, color: t.txtPrimary, fontSize: 12.5,
@@ -79,9 +81,18 @@ function Row({ task, t, tr, now }: {
   );
 }
 
-export function BackgroundTasks({ tasks }: { tasks: Record<string, BgTask> }) {
+const LIST_MAX_HEIGHT = 200;   // Paseo SUBAGENTS_LIST_MAX_HEIGHT
+
+export function BackgroundTasks({ tasks, waiting }: {
+  tasks: Record<string, BgTask>;
+  /** the card is parked ON these tasks (waiting_on === "background") - the
+   *  header then says "not your move" instead of a bare count, replacing the
+   *  separate blocker pill so background state is exactly ONE line. */
+  waiting?: boolean;
+}) {
   const t = useTheme();
   const tr = useT();
+  const [expanded, setExpanded] = useState(false);
   const now = Date.now();
   const list = Object.values(tasks || {});
   if (!list.length) return null;
@@ -91,14 +102,37 @@ export function BackgroundTasks({ tasks }: { tasks: Record<string, BgTask> }) {
   list.sort((a, b) => (order[a.status] - order[b.status])
     || (b.updated || b.since || 0) - (a.updated || a.since || 0));
   const running = list.filter((x) => x.status === "running").length;
+  const live = running > 0;
+  const label = waiting && live ? tr("card.bg.lineWaiting", { m: running })
+    : live ? tr("card.bg.lineLive", { n: list.length, m: running })
+    : tr("card.bg.line", { n: list.length });
   return (
-    <View style={{ paddingHorizontal: 12, paddingTop: 8, gap: 6 }}>
-      <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600", letterSpacing: 0.3 }}>
-        {running > 0 ? tr("card.bg.headerLive", { n: running }) : tr("card.bg.header")}
-      </Text>
-      {list.map((task, i) => (
-        <Row key={i} task={task} t={t} tr={tr} now={now} />
-      ))}
+    <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
+      <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle,
+        borderWidth: 1, borderRadius: 9, overflow: "hidden" }}>
+        <Pressable onPress={() => setExpanded(!expanded)}
+          accessibilityRole="button" accessibilityLabel={label}
+          style={{ flexDirection: "row", alignItems: "center", gap: 7,
+            paddingHorizontal: 10, paddingVertical: 8 }}>
+          <Ionicons name={expanded ? "chevron-down" : "chevron-forward"}
+            size={13} color={t.txtTertiary} />
+          <Ionicons name={live ? "hourglass-outline" : "checkmark-done-outline"}
+            size={14} color={live ? t.ai : t.txtTertiary} />
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 12,
+            color: live ? t.txtPrimary : t.txtSecondary,
+            fontWeight: live ? "600" : "500" }}>
+            {label}
+          </Text>
+        </Pressable>
+        {expanded ? (
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}
+            style={{ maxHeight: LIST_MAX_HEIGHT, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+            {list.map((task, i) => (
+              <Row key={i} task={task} t={t} tr={tr} now={now} />
+            ))}
+          </ScrollView>
+        ) : null}
+      </View>
     </View>
   );
 }
