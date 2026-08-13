@@ -114,6 +114,14 @@ export interface Step {
   tool?: string; input?: unknown; result?: string; name?: string;
 }
 export interface ChatMsg { cls: string; text: string; ts?: string }
+/** The PM session's measured economics (daemon: copilot._fold_stats) — the
+ *  board chat's card-parity context meter + usage line read this. ctx_tokens/
+ *  ctx_window mirror a card's fields (window derived from model evidence, not
+ *  assumed); plan_pct is the flat plan's share-of-subscription when calibrated. */
+export interface ChatStats {
+  turns: number; cost: number; tokens_in: number; tokens_out: number;
+  ctx_tokens?: number; ctx_window?: number; plan_pct?: number | null;
+}
 // POST /chat returns the copilot's answer, not a ChatMsg: {reply, actions, ...}
 // (or {error} on a rejection). Keep ChatMsg for /chat/history entries.
 export interface ChatReply { reply?: string; error?: string; cost?: number;
@@ -247,7 +255,7 @@ export const api = {
   // copilot chat
   chat: (text: string, o: SteerOpts & { card?: string } = {}) => req<ChatReply>("POST", "/chat", { text, ...o }),
   chatCancel: () => req("POST", "/chat/cancel", {}),
-  chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string }>("GET", "/chat/history"),
+  chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
   chatLive: () => req<{ text: string; thinking?: string; running: boolean }>("GET", "/chat/live"),
 
   models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),

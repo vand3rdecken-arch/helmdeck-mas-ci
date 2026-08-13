@@ -9,6 +9,7 @@ import { create } from "zustand";
 import { api, type ChatMsg, type SteerOpts } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { planLabel, useAiFlat } from "@/ui/billing";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { Empty } from "@/ui/kit";
@@ -137,6 +138,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // moves on its own); don't clobber optimistic messages mid-turn (busy).
   const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory, enabled: me?.role !== "client", refetchInterval: 8000 });
   const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, enabled: me?.role !== "client" });
+  // PM-session economics (card parity): context fill + spend, folded by the
+  // daemon per finished turn (copilot._fold_stats) and served with the history.
+  const stats = data?.stats;
+  const flat = useAiFlat();
 
   useEffect(() => { if (data?.messages && !busy) setMsgs(data.messages); }, [data, busy]);
 
@@ -225,6 +230,42 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         ) : null}
 
         <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>
+          {/* Context meter — the SAME bar a card chat shows (card/[id].tsx), fed
+              by the PM session's own evidence: the daemon keeps the last call's
+              context fill + a window derived from the model id (never a blind
+              200k). Like the card it updates per finished turn, because that is
+              when the runtime reports usage. Amber >75%, red >90%. */}
+          {stats?.ctx_tokens ? (() => {
+            const pct = Math.min(100, Math.round((stats.ctx_tokens / (stats.ctx_window || 200000)) * 100));
+            const col = pct >= 90 ? t.danger : pct >= 75 ? t.warn : t.txtTertiary;
+            return (
+              <View style={{ gap: 3, paddingHorizontal: 14, paddingTop: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: t.borderSubtle, overflow: "hidden" }}>
+                    <View style={{ width: `${pct}%`, height: 3, backgroundColor: col }} />
+                  </View>
+                  <Text style={{ color: col, fontSize: 10 }}>
+                    {tr("card.chat.context", { k: Math.round(stats.ctx_tokens / 1000), pct })}
+                  </Text>
+                </View>
+                {pct >= 90 ? (
+                  <Text style={{ color: t.danger, fontSize: 10 }}>{tr("card.chat.contextFull")}</Text>
+                ) : null}
+              </View>
+            );
+          })() : null}
+          {/* Usage line for the running PM session: turns + consumption. On the
+              flat plan the honest unit is share-of-subscription (tokens as the
+              fallback), on a metered plan the measured $ (owner decree). */}
+          {stats && stats.turns > 0 ? (
+            <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 10, paddingHorizontal: 14, paddingTop: 3 }}>
+              {tr("chat.usage", {
+                turns: stats.turns,
+                cost: flat ? planLabel(tr, stats.plan_pct, (stats.tokens_in ?? 0) + (stats.tokens_out ?? 0))
+                  : `AI $${(stats.cost ?? 0).toFixed(2)}`,
+              })}
+            </Text>
+          ) : null}
           <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"
             bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
