@@ -59,6 +59,7 @@ export const useDemo = create<DemoState>((set) => ({
 // Rows carry i18n KEYS; `materialize` turns them into display text per request.
 
 const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+const epoch = (minutesAgo: number) => Math.round(Date.now() / 1000 - minutesAgo * 60);
 
 type Row = Omit<Track, "task" | "client" | "last_reply"> & {
   taskKey?: string; task?: string;
@@ -103,6 +104,20 @@ const SEED: Row[] = [
     lane: "working", status: "needs_you", turns: 3, value: 400, ai_cost: 0.62,
     tokens_in: 31_000, tokens_out: 4_200, priority: "hoch",
     created: iso(180), updated: iso(6),
+    // parked ON a background task (Phase 2.5): shows the compact one-line
+    // task track (expandable) instead of the "waiting for you" pill.
+    // Commands/tool output stay untranslated, like every branch name here.
+    waiting_on: "background",
+    bg_tasks: {
+      tu1: { title: "npx expo export --platform web", status: "running",
+             since: epoch(8), detail: "npx expo export --platform web" },
+      tu2: { title: "py -3.12 -m pytest tests/", status: "completed",
+             since: epoch(40), updated: epoch(12),
+             detail: "py -3.12 -m pytest tests/", result: "142 passed, 0 failed" },
+      tu3: { title: "eas build --platform android", status: "canceled",
+             since: epoch(90), updated: epoch(60),
+             detail: "eas build --platform android --profile preview" },
+    },
   }),
   row({
     id: "d5", taskKey: "demo.c5.task", lane: "backlog",

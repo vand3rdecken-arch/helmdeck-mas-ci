@@ -440,8 +440,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
           "the turn ended" alone was ambiguous enough that cards looked stuck:
             - a typed question  -> real option buttons; answering CONTINUES the
               same session (Phase 2.4), so it replaces the generic cue entirely
-            - a background task -> not your move at all; say so instead of
-              claiming the card wants something from you (Phase 2.5)
+            - a background task -> not your move at all; the compact task line
+              below carries that (Paseo parity: ONE line, not pill + list) -
+              the pill stays only for pre-registry cards with no bg_tasks
             - otherwise         -> the plain "your move, steering resumes" cue */}
       {!running && !agentMode && !streaming && k.question ? (
         <QuestionPanel cardId={k.id} question={k.question}
@@ -451,7 +452,8 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             await qc.invalidateQueries({ queryKey: ["tracks"] });
             await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
           }} />
-      ) : !running && !agentMode && !streaming && (k.status === "needs_you" || k.status === "bounced") ? (
+      ) : !running && !agentMode && !streaming && (k.status === "needs_you" || k.status === "bounced")
+          && !(k.waiting_on === "background" && k.bg_tasks && Object.keys(k.bg_tasks).length > 0) ? (
         <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
             backgroundColor: (k.waiting_on === "background" ? t.ai : t.warn) + "1A",
@@ -469,11 +471,13 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         </View>
       ) : null}
 
-      {/* Clickable background-task list (Paseo parity) - shown whenever the card
-          has any task descriptors, so finished/canceled ones stay inspectable
-          too, not only while actively waiting. */}
+      {/* Background tasks as ONE compact expandable line (Paseo SubagentsTrack):
+          shown whenever the card has task descriptors, so finished/canceled
+          ones stay inspectable inside the expansion - and it carries the
+          "waiting, not your move" state itself when the card is parked on
+          them, replacing a second blocker pill. */}
       {!agentMode && k.bg_tasks && Object.keys(k.bg_tasks).length > 0 ? (
-        <BackgroundTasks tasks={k.bg_tasks} />
+        <BackgroundTasks tasks={k.bg_tasks} waiting={k.waiting_on === "background"} />
       ) : null}
 
       {/* mode switch: steer the card's Worker, or talk to the board Agent. One
@@ -577,7 +581,15 @@ export default function CardScreen() {
             have = merged.length;
             if (r.v !== v) qc.invalidateQueries({ queryKey: ["history", id] });   // notes too
           }
-          v = r?.v ?? v;
+          // Unchanged version = the poll returned WITHOUT news: the daemon's
+          // ~22s hold expired, or demo mode answered instantly (it cannot hold
+          // a request open). Pause before re-polling - without this the demo
+          // seam turned the loop into a zero-delay spin that pegged the main
+          // thread and froze every card screen. On a version CHANGE the next
+          // poll fires immediately, so live streaming latency is untouched.
+          const nv = r?.v ?? v;
+          if (nv === v && alive) await new Promise((res) => setTimeout(res, 1500));
+          v = nv;
         } catch {
           if (!alive) break;
           await new Promise((res) => setTimeout(res, 2500));   // backoff, then retry
