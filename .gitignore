@@ -30,6 +30,7 @@ daemon/*.imported
 daemon/tracks.json.imported
 .loop/
 daemon/copilot_log.json
+daemon/copilot_stats.json
 daemon/driver_pids.json
 daemon/nightshift/state.json
 daemon/restart_stdout.log
