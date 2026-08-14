@@ -503,6 +503,22 @@ def _turn(t, prompt, model=None, perm=None):
     name = t.get("driver") or "claude"
     cfg = events.settings().get("drivers", {}).get(name) or {"type": "claude"}
     model = model or t.get("model")      # card's chosen model (from New Request) unless overridden
+    # NO turn may fall through to the CLI's global default. Only steer()'s
+    # composer path used to resolve "auto"; every harness-initiated turn
+    # (dispatch, auto-continue after a background task, the ask-repair call)
+    # passed no model, so the spawned CLI ran on whatever the OWNER'S OWN
+    # interactive `/model` was last set to - measured live 2026-08-14: cards
+    # believed to be on Auto (sonnet-tier) silently billed fable-5 turns
+    # because the owner's terminal happened to be set there. Auto is resolved
+    # HERE, at the one choke point every turn passes through, from the card's
+    # own facts - deliberate routing always, global leak never. An explicit
+    # model (composer pick or the card's stored choice) still wins untouched.
+    if not model or model == "auto":
+        import turnopts
+        model, _ = turnopts.resolve_model("auto", prompt, signals={
+            "value": t.get("value"), "priority": t.get("priority"),
+            "turns": t.get("turns"), "failed": bool(t.get("gate_failed")),
+            "fails": events.consecutive_gate_fails(t["id"])})
     if model:
         cfg = {**cfg, "model": model}
     if perm:

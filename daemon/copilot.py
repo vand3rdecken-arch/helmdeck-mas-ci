@@ -834,7 +834,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     sid = sess.get(user)
     paths = turnopts.save_attachments(os.path.join(ROOT, ".copilot_attachments", user),
                                       attachments)
-    cli_model, _ = turnopts.resolve_model(model, message, bool(paths))
+    # "" (no explicit pick) routes as Auto - never falls through to the CLI's
+    # global default, which is whatever the owner's interactive /model was
+    # last set to (the same leak fixed in sessions._turn, 2026-08-14).
+    cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths))
     body = turnopts.augment_prompt(message, thinking, paths)
     focus = ""
     if card:
