@@ -341,7 +341,12 @@ function createWindow() {
   if (failed) return;
   win = new BrowserWindow({
     width: 1360, height: 900, title: "HelmDeck", backgroundColor: "#0b0f14",
-    icon: path.join(__dirname, "assets", "icon.ico"),   // taskbar/window: the fanned-card mark
+    // taskbar/window: the fanned-card mark. macOS ignores this entirely (the
+    // Dock icon comes from the .app bundle's .icns) and a .ico is not a format
+    // it can read, so don't hand it one.
+    ...(process.platform === "darwin"
+      ? {}
+      : { icon: path.join(__dirname, "assets", "icon.ico") }),
     autoHideMenuBar: true, webPreferences: { contextIsolation: true },
   });
   // hand the Expo web app the daemon URL + a device token via the URL hash, so
@@ -396,7 +401,13 @@ if (!app.requestSingleInstanceLock()) {
     // (a dev `electron .` run must not wire the dev binary into startup).
     if (app.isPackaged) {
       try {
-        app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: [] });
+        // On macOS the login item IS the .app bundle, registered by the OS -
+        // handing it process.execPath (the helper binary buried in
+        // Contents/MacOS) registers a path the user cannot recognise and
+        // Ventura+ may refuse. openAtLogin alone is the supported form there.
+        app.setLoginItemSettings(process.platform === "darwin"
+          ? { openAtLogin: true }
+          : { openAtLogin: true, path: process.execPath, args: [] });
       } catch { /* non-fatal: startup registration is a convenience, not required */ }
     }
     // The onboarding control plane comes up FIRST and always: it is what the
@@ -420,7 +431,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-app.on("window-all-closed", () => app.quit());
+// macOS keeps an app alive with no windows (the Dock icon stays lit, Cmd-Q or
+// the Dock quits it) and the "activate" handler above already re-opens the
+// window. Quitting on last-window-close there would be un-Mac-like AND would
+// make the tray-less Mac build unreachable after one accidental red button.
+app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 // Paseo quit lifecycle (main.ts + quit-lifecycle.ts): when a downloaded update
 // is staged, hold the first quit, revalidate it against the feed within the 5s
 // deadline, swap it in silently (no forced relaunch), then really exit. With

@@ -13,6 +13,7 @@ Deterministic (Pillow only, 4x supersampled). Re-run after tweaking geometry:
     py -3.12 tools/make_icon.py
 Outputs:
     desktop/assets/icon-1024.png, desktop/assets/icon.ico   (Windows/Electron)
+    desktop/assets/icon-mac-1024.png                        (macOS icon grid)
     app/assets/images/icon.png                              (Expo unified)
     app/assets/images/favicon.png                           (web tab)
     app/assets/images/android-icon-background.png           (adaptive bg)
@@ -138,6 +139,30 @@ def make_master(rounded_tile=True):
     return tile.resize((1024, 1024), Image.LANCZOS)
 
 
+def mac_master(master):
+    """The same tile placed on Apple's macOS icon grid.
+
+    Windows and Android hand the icon to a system that masks or frames it, so
+    a full-bleed 1024 tile is right there. macOS does NOT: it draws the PNG as
+    given, and every stock icon leaves a transparent margin with a soft contact
+    shadow under the squircle. A full-bleed tile in a Dock of inset ones reads
+    as oversized and unfinished - so the mac variant is the body at Apple's
+    824/1024 grid size, centred, with that shadow.
+    """
+    BODY, PAD = 824, 100                       # Apple's macOS app-icon grid
+    out = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+    body = master.resize((BODY, BODY), Image.LANCZOS)
+    # contact shadow: the body's own silhouette, black, nudged down and blurred
+    sil = Image.new("RGBA", (BODY, BODY), (0, 0, 0, 0))
+    sil.paste((0, 0, 0, 115), mask=body.split()[3])
+    shadow = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+    shadow.alpha_composite(sil, (PAD, PAD + 20))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(22))
+    out.alpha_composite(shadow)
+    out.alpha_composite(body, (PAD, PAD))
+    return out
+
+
 def save_png(img, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path)
@@ -151,6 +176,8 @@ def main():
     os.makedirs(DESK, exist_ok=True)
     master.save(os.path.join(DESK, "icon.ico"), sizes=ico_sizes)
     print("wrote", os.path.join(DESK, "icon.ico"))
+
+    save_png(mac_master(master), os.path.join(DESK, "icon-mac-1024.png"))
 
     # Expo unified icon + web favicon share the same rounded tile
     save_png(master, os.path.join(APPIMG, "icon.png"))

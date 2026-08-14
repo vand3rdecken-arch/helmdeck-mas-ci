@@ -556,6 +556,52 @@ DEBT = [
                "distribution certificate already has.",
         "order": 21,
     },
+    {
+        "id": "mac-build-never-executed",
+        "title": "The macOS build target is configured but has never actually run",
+        "status": "open",
+        "what": "desktop/electron-builder.yml now carries a full mac target "
+                "(dmg + zip, arm64 + x64, hardened runtime, entitlements, gated "
+                "notarization), desktop/build-mac.sh drives it and "
+                ".github/workflows/desktop-mac.yml runs it on macos-14. NONE of "
+                "it has been executed on macOS. The evidence behind it is: the "
+                "config validates against electron-builder's own scheme.json "
+                "(both the committed shape and the notarize-object override), "
+                "and electron-builder 25.1.8 loads the file and then stops at "
+                "exactly one line - 'Build for macOS is supported only on "
+                "macOS'. That is the strongest signal a Windows box can "
+                "produce, and it is still not a build. Two reasons it could go "
+                "no further: there is no macOS here, and at the time "
+                "github.com/Tienduyvo/helmdeck held ONLY README.md + release "
+                "assets - the source had never been pushed, so no runner had "
+                "anything to check out. That half is now DECIDED (owner, "
+                "2026-08-14: one repo - the source goes into the same public "
+                "repo as the builds) and tooled: deploy/publish_source.sh "
+                "audits history for secrets and oversized blobs and pushes "
+                "main. Still nobody has run it, and no runner has run.",
+        "why_it_bites": "A green-looking config is not a green build. What a "
+                        "schema cannot catch: whether `expo export` survives a "
+                        "cold macOS runner, whether hdiutil produces both dmgs, "
+                        "whether the PNG->icns conversion accepts our icon, "
+                        "whether the entitlement set is the RIGHT one for "
+                        "spawning python3/claude under the hardened runtime "
+                        "(only a notarized run on real hardware proves that), "
+                        "and whether Squirrel.Mac accepts the zip feed. Each is "
+                        "a separate way the first real run can red, and none is "
+                        "visible until someone runs it.",
+        "trigger": "the first `bash deploy/publish_source.sh`, or the first "
+                   "`bash desktop/build-mac.sh` on any Mac",
+        "fix": "1) bash deploy/publish_source.sh (audit + push main over SSH - "
+               "the gh token has no `workflow` scope, so HTTPS is rejected). "
+               "2) Actions -> desktop-mac -> Run workflow, with NO secrets: "
+               "the unsigned build is the honest smoke test and is designed to "
+               "pass on its own. Flip to 'paid' only when a run "
+               "produced all four artifacts + latest-mac.yml and the workflow's "
+               "verify step (hdiutil imageinfo per dmg) passed. "
+               "Signing/notarization is the SECOND milestone: add the cert + "
+               "ASC secrets, confirm `spctl --assess` accepts the app.",
+        "order": 22,
+    },
 ]
 
 def list_debt():

@@ -1,0 +1,157 @@
+# Build the HelmDeck macOS desktop app on a real macOS runner.
+#
+# WHY THIS FILE EXISTS: the owner's box is Windows, and codesign / hdiutil /
+# notarytool are macOS-only. There is no cross-build. So the Mac artifact is
+# produced here, by GitHub's macos runner, and nowhere else.
+#
+# The build is designed to SUCCEED WITH NO SECRETS AT ALL: no certificate ->
+# an unsigned .dmg/.zip, still a complete app, still proof the target builds.
+# Add the signing secrets later and the same workflow starts signing and
+# notarizing without a line changing (desktop/build-mac.sh decides).
+#
+# Optional repository secrets:
+#   MAC_CSC_LINK          base64 of the Developer ID Application .p12
+#   MAC_CSC_KEY_PASSWORD  its password
+#   ASC_API_KEY_P8        contents of AuthKey_XXXXXXXXXX.p8   (notarization)
+#   ASC_KEY_ID            the key id
+#   ASC_ISSUER_ID         the issuer uuid
+#   APPLE_TEAM_ID         developer.apple.com -> Membership details
+name: desktop-mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp (blank = desktop/package.json)"
+        required: false
+        default: ""
+      release_tag:
+        description: "Attach the artifacts to this release tag (blank = artifacts only)"
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "app/**"
+      - "daemon/**"
+      - ".github/workflows/desktop-mac.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "app/**"
+      - "daemon/**"
+      - ".github/workflows/desktop-mac.yml"
+
+# a second push to the same branch supersedes the first - a 20-minute mac build
+# per intermediate commit is the fastest way to exhaust the macOS runner minutes.
+concurrency:
+  group: desktop-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # macos-14+ is Apple silicon; it cross-compiles the x64 target fine, which
+    # is why one job produces both arches.
+    runs-on: macos-14
+    timeout-minutes: 60
+    permissions:
+      contents: write        # only used by the optional release-upload step
+    env:
+      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Expo's export step phones home otherwise and can stall a cold runner.
+      EXPO_NO_TELEMETRY: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            desktop/package-lock.json
+
+      # electron + the mac zip/dmg tooling are ~200 MB per run otherwise.
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('desktop/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - name: Install app + desktop dependencies
+        run: |
+          (cd app && npm ci)
+          (cd desktop && npm ci)
+
+      # Written to a file because notarytool wants a path, not a blob. Skipped
+      # entirely when the secret is absent - build-mac.sh then just doesn't
+      # notarize. Never echoed.
+      - name: Stage the App Store Connect API key
+        if: env.ASC_KEY_ID != ''
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          mkdir -p ~/.private_keys
+          key=~/.private_keys/AuthKey_${ASC_KEY_ID}.p8
+          printf '%s' "$ASC_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "ASC_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Build (dmg + zip, arm64 + x64)
+        run: bash desktop/build-mac.sh ${{ inputs.version && format('--version {0}', inputs.version) || '' }}
+
+      # Proof the target really produced what it claims, before anything is
+      # published: both arches, both formats, plus the auto-update feed. A
+      # silently missing x64 slice would otherwise only surface on a user's Mac.
+      - name: Verify the artifact set
+        run: |
+          cd desktop/release
+          ls -la
+          missing=0
+          for pat in "*-arm64.dmg" "*-x64.dmg" "*-arm64.zip" "*-x64.zip" "latest-mac.yml"; do
+            # shellcheck disable=SC2086
+            if ! compgen -G "$pat" > /dev/null; then echo "!!! missing: $pat"; missing=1; fi
+          done
+          [ "$missing" = "0" ] || exit 1
+          for d in *.dmg; do
+            hdiutil imageinfo "$d" > /dev/null || { echo "!!! unreadable dmg: $d"; exit 1; }
+          done
+          if [ -n "${CSC_LINK:-}" ]; then
+            app="$(find . -maxdepth 3 -name 'HelmDeck.app' -print -quit)"
+            codesign --verify --deep --strict --verbose=2 "$app" || exit 1
+            spctl --assess --type execute --verbose "$app" || \
+              echo "note: spctl rejected it - expected until notarization is on"
+          else
+            echo "unsigned build (no MAC_CSC_LINK) - skipping signature checks"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helmdeck-macos
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.blockmap
+            desktop/release/latest-mac.yml
+
+      # Opt-in, never automatic: publishing is the owner's call (the same
+      # discipline deploy/release_desktop.sh keeps for Windows).
+      - name: Attach to a release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.release_tag }}" --clobber \
+            desktop/release/*.dmg desktop/release/*.zip \
+            desktop/release/latest-mac.yml desktop/release/*.blockmap

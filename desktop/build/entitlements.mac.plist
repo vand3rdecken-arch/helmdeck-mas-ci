@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the MAIN HelmDeck.app binary under the hardened runtime.
+
+  Declaring a custom entitlements file REPLACES electron-builder's built-in
+  default, so every line Electron itself needs has to be restated here - the
+  three JIT/memory ones are not optional extras, they are what a V8 process
+  needs to start at all once the hardened runtime is on.
+
+  disable-library-validation is the HelmDeck-specific one, and the reason this
+  file exists rather than the default: HelmDeck's whole job is to spawn the
+  Python daemon (swarm.py) and the `claude` CLI - executables the user
+  installed, signed by somebody else or not signed at all. Library validation
+  would refuse to let a hardened process load code that is not signed by the
+  same team, which is exactly the "Desktop nicht erreichbar" failure mode with
+  a Gatekeeper twist. Kept deliberately narrow: NO App Sandbox (this is direct
+  distribution, not the Mac App Store), no camera/mic/contacts, no
+  apple-events - HelmDeck automates nothing it does not spawn itself.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>
