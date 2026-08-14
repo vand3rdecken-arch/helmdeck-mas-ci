@@ -17,6 +17,7 @@ export const chrome: Dict = {
   "nav.automation": { de: "Automatik", en: "Automation" },
   "nav.settings": { de: "Einstellungen", en: "Settings" },
   "nav.chat": { de: "Chat", en: "Chat" },
+  "nav.feedback": { de: "Feedback geben", en: "Give feedback" },
 
   // lanes (defaults; policy.lane_labels still overrides per workspace)
   "lane.backlog": { de: "Backlog", en: "Backlog" },

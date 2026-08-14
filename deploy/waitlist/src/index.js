@@ -18,6 +18,10 @@
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 
+// Owner-picked Userjot board (matches app/src/data/feedback.ts) - update both
+// in lockstep if the board URL ever changes.
+const FEEDBACK_URL = "https://helmdeck.userjot.com";
+
 const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
 <defs>
 <linearGradient id="t" x1="0" y1="0" x2="0" y2="1">
@@ -206,7 +210,7 @@ footer a:hover{color:var(--ink-2)}
     </details>
   </section>
 </main>
-<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a></footer>
+<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a></footer>
 <script>
 (function(){
   var I18N = {
