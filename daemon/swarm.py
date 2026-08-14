@@ -10,6 +10,14 @@
 """
 import sys, time
 
+# Line-buffer stdout/stderr regardless of launcher (Electron/tray redirect to a
+# file, which Python block-buffers by default - a crash before the buffer fills
+# left daemon.out.log looking untouched even though the process ran for a
+# while). Belt-and-suspenders alongside PYTHONUNBUFFERED set by the launchers.
+for _s in (sys.stdout, sys.stderr):
+    try: _s.reconfigure(line_buffering=True)
+    except Exception: pass
+
 def wincap_test():
     import wincap
     from runs import new_run, finish_run

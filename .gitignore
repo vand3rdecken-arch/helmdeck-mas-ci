@@ -35,6 +35,8 @@ daemon/driver_pids.json
 daemon/nightshift/state.json
 daemon/restart_stdout.log
 daemon/restart_stderr.log
+daemon/daemon.out.log
+app/dist-desktop/
 web/devserver.log
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
@@ -43,6 +45,7 @@ daemon/helmdeck.db-shm
 plane-selfhost/.env
 plane-selfhost/*.env
 backups/
+docs
 
 # local credentials - never commit
 daemon/certs/

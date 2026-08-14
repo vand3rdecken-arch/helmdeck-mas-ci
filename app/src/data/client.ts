@@ -1,3 +1,4 @@
+import { track } from "./analytics";
 import { useConfig } from "./config";
 import { demoRespond, useDemo } from "./demo";
 import { open, seal } from "./e2ee";
@@ -208,28 +209,34 @@ export const api = {
   // subprocess, the merge + deploy hook follow it), so those reply {started,
   // gating} instead of the finished Track. The verdict arrives on the card
   // (status/gate_report/merge_report), in the chat and by push - not here.
-  moveLane: (id: string, lane: string) => req<LaneMove>("POST", `/tracks/${id}/lane`, { lane }),
+  // Card actions carry a coarse analytics event at the call site (the api layer
+  // is their single owner) - action names + lane only, never ids or titles.
+  moveLane: (id: string, lane: string) => { track("card_move", { lane }); return req<LaneMove>("POST", `/tracks/${id}/lane`, { lane }); },
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),
-  newTrack: (b: Record<string, unknown>) => req("POST", "/tracks/new", b),
+  newTrack: (b: Record<string, unknown>) => { track("card_new"); return req("POST", "/tracks/new", b); },
   update: (id: string, patch: Record<string, unknown>) => req("POST", `/tracks/${id}/update`, patch),
-  archive: (id: string) => req("POST", `/tracks/${id}/archive`),
-  fork: (id: string, from = "") => req("POST", `/tracks/${id}/fork`, { from }),
+  archive: (id: string) => { track("card_archive"); return req("POST", `/tracks/${id}/archive`); },
+  fork: (id: string, from = "") => { track("card_fork"); return req("POST", `/tracks/${id}/fork`, { from }); },
   // Split the CONVERSATION into a new card (keeps context) - distinct from
   // fork() above, which forks the code at a ref with a fresh session.
   forkChat: (id: string, first = "") =>
     req<{ id?: string; error?: string }>("POST", `/tracks/${id}/fork-chat`, { first }),
-  del: (id: string) => req("POST", `/tracks/${id}/delete`),
-  cancel: (id: string) => req("POST", `/tracks/${id}/cancel`),
-  steer: (id: string, text: string, o: SteerOpts = {}) =>
-    req("POST", `/tracks/${id}/steer`, { text, ...o }),
+  del: (id: string) => { track("card_delete"); return req("POST", `/tracks/${id}/delete`); },
+  cancel: (id: string) => { track("card_cancel"); return req("POST", `/tracks/${id}/cancel`); },
+  steer: (id: string, text: string, o: SteerOpts = {}) => {
+    track("card_steer");
+    return req("POST", `/tracks/${id}/steer`, { text, ...o });
+  },
   // Answer the worker's pending question (daemon/ask.py). `answers` maps each
   // question's header -> the chosen option label (an array when multiSelect).
   // Backgrounded by the daemon like a steer, because it RUNS the continuing
   // turn. `requestId` is echoed back so a stale panel is rejected instead of
   // answering a question the worker has already moved past.
-  answer: (id: string, answers: Record<string, string | string[]>, requestId: string) =>
-    req<{ started: string; answered: boolean }>(
-      "POST", `/tracks/${id}/answer`, { answers, request_id: requestId }),
+  answer: (id: string, answers: Record<string, string | string[]>, requestId: string) => {
+    track("card_answer");
+    return req<{ started: string; answered: boolean }>(
+      "POST", `/tracks/${id}/answer`, { answers, request_id: requestId });
+  },
 
   // card detail feeds
   transcript: (id: string) => req<Step[]>("GET", `/tracks/${id}/transcript`),
@@ -253,7 +260,10 @@ export const api = {
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 
   // copilot chat
-  chat: (text: string, o: SteerOpts & { card?: string } = {}) => req<ChatReply>("POST", "/chat", { text, ...o }),
+  chat: (text: string, o: SteerOpts & { card?: string } = {}) => {
+    track("chat_message", { scope: o.card ? "card" : "board" });
+    return req<ChatReply>("POST", "/chat", { text, ...o });
+  },
   chatCancel: () => req("POST", "/chat/cancel", {}),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
   chatLive: () => req<{ text: string; thinking?: string; running: boolean }>("GET", "/chat/live"),

@@ -100,8 +100,35 @@ def test_sweep():
     drivers._sessions.pop("t-live", None)
 
 
+def test_escalation():
+    """A card that keeps taking the daemon down with it - not just failing its
+    own turn - must stop being told to blindly retry once the pattern repeats.
+    consecutive_bounces is derived from the event trail (no stored counter),
+    mirroring consecutive_gate_fails' contract."""
+    tid = "t-repeat-crash"
+    for i in range(sessions._BOUNCE_ESCALATE_AT):
+        db.track_put(_track(tid, "running"))
+        swept = sessions.sweep_zombies()
+        check(tid in swept, "sweep %d catches the re-crashed card" % (i + 1))
+        z = db.track_get(tid)
+        note = (z.get("gate_report") or [""])[0]
+        if i + 1 < sessions._BOUNCE_ESCALATE_AT:
+            check(note == sessions.ZOMBIE_NOTE,
+                  "bounce %d/%d still the routine note" % (i + 1, sessions._BOUNCE_ESCALATE_AT))
+        else:
+            check(str(i + 1) in note and "fork" in note.lower(),
+                  "bounce %d/%d escalates with a fork suggestion, not a blind retry"
+                  % (i + 1, sessions._BOUNCE_ESCALATE_AT))
+    check(events.consecutive_bounces(tid) == sessions._BOUNCE_ESCALATE_AT,
+          "consecutive_bounces counts the run")
+    # a real completed turn resets the streak (mirrors consecutive_gate_fails)
+    events.emit("turn", tid, cost=0.01, usage={}, models=[])
+    check(events.consecutive_bounces(tid) == 0, "a completed turn resets the streak")
+
+
 if __name__ == "__main__":
     test_sweep()
+    test_escalation()
     print()
     if _fails:
         print("FAILED: %d check(s)" % len(_fails))

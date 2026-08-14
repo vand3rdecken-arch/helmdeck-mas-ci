@@ -299,4 +299,13 @@ export const settings: Dict = {
     de: "Noch kein Plan. Ziel setzen und „Aktualisieren\" — der PM erstellt Milestones, Timeline und Prioritäten.",
     en: "No plan yet. Set a goal and hit \"Refresh\" — the PM builds milestones, a timeline and priorities.",
   },
+
+  // ---- privacy / analytics (device-local, More tab) ----
+  "settings.privacy.section": { de: "Datenschutz", en: "privacy" },
+  "settings.privacy.analyticsToggle": { de: "Anonyme Nutzungsstatistiken senden",
+                                        en: "Send anonymous usage analytics" },
+  "settings.privacy.hint": {
+    de: "Anonyme Ereignisse (App-Start, Karten-Aktionen, Login) via PostHog, EU-Cloud. Keine Inhalte, keine Namen, keine Karten-Titel.",
+    en: "Anonymous events (app open, card actions, login) via PostHog, EU cloud. No content, no names, no card titles.",
+  },
 };
