@@ -95,6 +95,110 @@ existing `desktop/release/*.exe`). Since 0.2.2 the installed app auto-updates
 its UI, so this manual step is only for shell releases — the once-per-user
 install that grants auto-update, then never again for JS-only changes.
 
+## 1c) macOS desktop build → a macOS runner, never this box
+
+The Mac app is the same Electron shell, same daemon, same `app/dist` — only the
+packaging differs. What does **not** transfer is the toolchain: `codesign`,
+`hdiutil` and `notarytool` exist only on macOS, so there is **no cross-build
+from Windows**. electron-builder says so itself and stops immediately:
+
+```
+⨯ Build for macOS is supported only on macOS
+```
+
+So the Mac artifact is built by GitHub's macOS runner:
+`.github/workflows/desktop-mac.yml` (`runs-on: macos-14`, Apple silicon, which
+cross-compiles the x64 slice too). Trigger it from the Actions tab
+(**workflow_dispatch** — optional `version` to stamp, optional `release_tag` to
+attach the artifacts to a release) or let it run on a push touching
+`desktop/**`, `app/**` or `daemon/**`. On a Mac, the same build is one command:
+
+```bash
+bash desktop/build-mac.sh --version 0.2.3        # dmg + zip, arm64 + x64
+```
+
+Output in `desktop/release/`: `HelmDeck-<v>-{arm64,x64}.dmg` for humans,
+`HelmDeck-<v>-{arm64,x64}.zip` **for the auto-updater** — Squirrel.Mac (what
+`native-updater.js` drives via electron-updater) can only apply a zipped `.app`,
+it cannot read a `.dmg` — plus `latest-mac.yml`, the feed pointing at the zip.
+
+**The build succeeds with no secrets at all** — it just produces an *unsigned*
+app: Gatekeeper quarantines it and the auto-updater cannot apply updates to it
+(Squirrel.Mac requires a valid signature). Add the repo secrets and the same
+workflow starts signing, then notarizing, with no file changing:
+
+| secret | effect |
+| --- | --- |
+| `MAC_CSC_LINK` + `MAC_CSC_KEY_PASSWORD` | Developer ID `.p12` → signed build |
+| `ASC_API_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID` | → notarized (**all four**, on top of signing) |
+
+The ASC key is the *same* App Store Connect key `deploy/ios_credentials.sh`
+already uses (§2b) — one key notarizes macOS and signs iOS.
+
+Traps already paid for here:
+- `notarize` stays `false` in `electron-builder.yml`; `build-mac.sh` turns it on
+  with `-c.mac.notarize.teamId=<team>`. The **object** form is deliberate —
+  `-c.mac.notarize=true` reaches electron-builder as the *string* `"true"`,
+  truthy but carrying no team id.
+- Custom `entitlements` **replace** electron-builder's defaults, so
+  `desktop/build/entitlements.mac.plist` restates the three JIT ones Electron
+  needs *plus* `disable-library-validation` — without it a hardened HelmDeck
+  cannot spawn the Python daemon or the `claude` CLI (code it did not sign).
+- The Mac icon is a **tracked** PNG (`desktop/assets/icon-mac-1024.png`, on
+  Apple's inset 824/1024 grid) that electron-builder converts to `.icns`, so a
+  clean CI checkout needs neither Pillow nor `iconutil` — unlike `icon.ico`,
+  which is git-ignored and must be regenerated before every Windows build.
+- No signing identity ⇒ `build-mac.sh` exports `CSC_IDENTITY_AUTO_DISCOVERY=false`.
+  Without it electron-builder hunts an empty keychain and *fails* the build
+  instead of producing a clean unsigned one.
+
+## 1d) Publishing the source — what the macOS runner needs
+
+CI can only build what it can check out, and until 2026-08-14 the local clone
+had **no git remote at all**: `github.com/Tienduyvo/helmdeck` was a download
+shelf holding `README.md` plus release assets, everything uploaded by `gh`.
+Owner's decision: **one repo** — the source goes into that same public repo,
+next to the builds. Not a second source repo.
+
+```bash
+bash deploy/publish_source.sh --dry-run     # audit only, pushes nothing
+bash deploy/publish_source.sh               # audit, then push main
+```
+
+It is an audit that ends in a push, re-run in full every time — `.gitignore`
+only ever protected the *present*, and a push publishes *history*. Audit as of
+this commit: 2244 blobs, **zero** credential matches; no `settings.json` /
+`users.json` / `*.db` / `*.jks` / `*.p8` ever committed; the one interesting
+literal is a `*.trycloudflare.com` quick-tunnel URL from 26 old blobs, verified
+**dead** (no DNS).
+
+Three traps it guards, each one load-bearing:
+
+- **Never `--all` / `--mirror`.** Branch `wip-expo-migration-20260812-223553`
+  parks a 136 MB APK, an 81 MB `.exe` and a 78 MB `.aab` under
+  `deploy/release_v1.0.7/`. GitHub **hard-rejects any file over 100 MB**, so
+  that push fails outright — and it would publish ~20 stale card branches too.
+  `main` is clean (largest blob 14.8 MB), which is the whole point of pushing a
+  single branch.
+- **The root `README.md` is the public product page**, not the dev map: Play
+  links, the SmartScreen note, the privacy policy. Pushing the old internal
+  README would have silently replaced a live page. So the landing text now *is*
+  `README.md` (byte-identical to what was published — verified by blob hash,
+  plus an appended `## Development` pointer) and the internal map moved to
+  [`docs/repo-map.md`](docs/repo-map.md). The script refuses to push a
+  `README.md` with no `## Downloads` section.
+- **Use SSH, not HTTPS.** The owner's `gh` token scopes are
+  `admin:public_key, gist, read:org, read:packages, repo` — **no `workflow`**,
+  so an HTTPS push touching `.github/workflows/` is rejected with *"refusing to
+  allow an OAuth App to create or update workflow"*. The script wires
+  `git@github.com:…` for exactly this reason.
+
+Public repo ⇒ **macOS runner minutes are free and unmetered** (private would
+bill 10×, ~200 free minutes/month ≈ 10 Mac builds). After the push: Actions →
+`desktop-mac` → *Run workflow*. With no secrets set that produces an unsigned
+`.dmg`/`.zip` — and that unsigned run is the honest smoke test that closes debt
+item `mac-build-never-executed`.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):
