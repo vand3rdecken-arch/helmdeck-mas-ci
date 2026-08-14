@@ -367,26 +367,37 @@ DEBT = [
     },
     {
         "id": "auto-compaction-disabled",
-        "title": "Proactive context compaction is off - no summarisation at the brim",
-        "status": "open",
-        "what": "sessions._maybe_compact used to inject a '/compact' turn at ~80% "
-                "context to summarise the session in place. That corrupted the "
-                "session tip (a later --resume silently started fresh, losing the "
-                "worker's context and, before accept-and-rebind, hiding the steer) "
-                "and was mis-detected as unsupported. It is now a no-op; graceful "
-                "rotation in _finish_turn handles overflow instead.",
-        "why_it_bites": "A very long card now fills to the hard 200k window and, on "
-                        "the next resume, rotates to a fresh session (context lost, "
-                        "but visible + chronological) instead of being summarised at "
-                        "160k. The owner only has the context meter as a warning; "
-                        "there is no in-place summarisation to extend a session.",
-        "trigger": "a card whose single session runs long enough to approach 200k",
-        "fix": "Fork-based compaction: fork the session (--fork-session gives a new "
-               "attachable id), THEN /compact the FORK, so the resumable original is "
-               "never mutated; verify the fork actually shrank (read the compacted "
-               "context, not the summed result usage) before adopting it as the "
-               "pointer. Re-enable _maybe_compact around that. Verify against the "
-               "raw stream-json CLI, which is what corrupted the in-place path.",
+        "title": "Proactive context compaction was off - misdiagnosed, re-enabled in place",
+        "status": "paid",
+        "what": "sessions._maybe_compact injects a '/compact' turn at ~80% context "
+                "to summarise the session in place. It was disabled 2026-08-10 "
+                "(a0853d4) after the 'Fix AI-Kosten-Tracking' incident, blamed for "
+                "corrupting the session tip so a later --resume silently started "
+                "fresh, and for a shrink-check that read summed usage instead of "
+                "compacted context.",
+        "why_it_bites": "Turned out to be a misdiagnosis: both blamed causes were "
+                        "ALREADY fixed by other commits before the disable landed. "
+                        "The shrink-check bug was fixed by 66930bb (2026-08-08, TWO "
+                        "DAYS earlier) when ctx_tokens moved to last-call-only usage "
+                        "(meta.ctx_usage). The '--resume silently started fresh' "
+                        "symptom was the claude.cmd shim eating the trailing "
+                        "'--resume <sid>' arg under `cmd /s /c` - ANY --resume could "
+                        "silently miss, not just a post-compact one - fixed by "
+                        "ea09780 (2026-08-10, the SAME DAY, 5h after the disable). "
+                        "Compaction was never actually the corruption source; it "
+                        "just happened to be the session in front of the shim bug "
+                        "when it was caught.",
+        "trigger": "n/a - re-enabled 2026-08-14",
+        "fix": "PAID: restored _maybe_compact's original self-verifying logic "
+               "(probe /compact once, learn True/False from whether ctx_tokens "
+               "actually shrank by >=25%) instead of building fork-based "
+               "compaction - forking a session to compact it was solving a "
+               "corruption problem that had already been fixed elsewhere. "
+               "accept-and-rebind (_finish_turn, Weg B) stays as-is: it is a "
+               "correct safety net for ANY unresumable session, not just a "
+               "post-compact one, so it remains regardless of compaction. Watch "
+               "the AUTO-COMPACT log line on the next card that crosses 160k to "
+               "confirm this CLI still honors /compact in-place.",
         "order": 16,
     },
     {

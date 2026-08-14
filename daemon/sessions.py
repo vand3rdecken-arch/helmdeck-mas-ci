@@ -2173,38 +2173,68 @@ def _pending_context(t):
 _COMPACT_AT_TOKENS = 160_000     # ~80% of a 200k window - the high-water mark
 _CTX_WINDOW = 200_000
 
-# PROACTIVE /compact INJECTION IS DISABLED (was the corruption source).
-# ---------------------------------------------------------------------------
-# Sending "/compact" as a turn (the previous behaviour) left the session's
-# .jsonl tip in a state that a later `claude -p --resume` could not re-attach
-# to: the CLI silently started a FRESH session, and with the old pointer-refuse
-# rule that dead-ended the card (measured: the "Fix AI-Kosten-Tracking" card,
-# 2026-08-10 - a steer landed in an orphan session and vanished from the feed).
-# It was also mis-detected: the shrink check (`after <= before*0.75`) read the
-# summed result usage, not the compacted context, and often verdicted a working
-# /compact as "not honored".
-#
-# The safety net /compact was meant to provide - "never a fresh-session
-# overflow that wipes the chat" - is now provided CORRECTLY by graceful
-# rotation: when a full session can't be resumed, _finish_turn's
-# accept-and-rebind advances the pointer to the continuation session (Paseo
-# parity) and keeps the old one in session_chain, so the transcript stays whole
-# and chronological and no steer is lost. The context meter (ctx_tokens) still
-# tells the owner how full the window is.
-#
-# Registered as a capability gap in daemon/debt.py [auto-compaction-disabled]:
-# proactive summarisation returns only via a fork-based compaction (fork the
-# session, THEN compact the fork, so the resumable original is never mutated) -
-# the only corruption-free way to compact against the raw stream-json CLI.
-_autocompact_supported = False   # nothing reads this today; seam kept for the
-                                 # fork-based reimplementation (debt.py entry)
+# RE-ENABLED 2026-08-14 (was disabled 2026-08-10 as a0853d4; see debt.py
+# [auto-compaction-disabled] history). BOTH things blamed for the "/compact
+# corruption" were already root-caused and fixed by OTHER commits before this
+# one was reinstated - the corruption was never actually /compact:
+#   1. "shrink check read summed usage, not compacted context" - true of this
+#      function's original Aug 7 form, but ctx_tokens has read the last-call-
+#      only usage (meta.ctx_usage, Paseo-style, see _record_econ above) since
+#      66930bb (2026-08-08 - TWO DAYS before the disable commit). The shrink
+#      check below was already comparing against the right number.
+#   2. "a later --resume silently started a FRESH session" - the actual cause
+#      was the claude.cmd shim eating the trailing `--resume <sid>` arg when
+#      exec'd via `cmd /s /c` (ANY --resume could silently miss, compaction or
+#      not). Fixed by ea09780 (2026-08-10, the SAME DAY, 5h after the disable
+#      commit): drivers now spawn the real exe as an argv list, never the
+#      shim. The incident that got compaction blamed (Fix AI-Kosten-Tracking,
+#      2026-08-10) is fully explained by the shim bug alone.
+# accept-and-rebind (_finish_turn, Weg B) stays as the safety net for ANY
+# unresumable session (idle eviction, a killed process, a genuinely corrupt
+# tip) - compaction was never the only way to hit that path. This function
+# stays self-verifying (probes once, learns True/False) so a CLI that doesn't
+# honor /compact costs nothing per turn.
+_autocompact_supported = None    # None=unprobed, True/False learned from first /compact
 
 
 def _maybe_compact(t, log):
-    """Disabled - see the block above. Returns None so callers keep the fresh
-    track. The threshold constants and this seam stay for the fork-based
-    reimplementation ([auto-compaction-disabled] in debt.py)."""
-    return None
+    """Compact the session in place if the live context crossed the high-water
+    mark. Self-verifying: /compact must actually SHRINK the context (ctx_tokens
+    is the last-call-only reading, not summed - a real compaction is visible
+    there). If it does not (an older CLI that treats the slash line as literal
+    input), we learn that once and stop - no no-op cost, no polluting the
+    conversation every turn. Returns the fresh track (or None if nothing was
+    done)."""
+    global _autocompact_supported
+    if _autocompact_supported is False:
+        return None
+    ctx = t.get("ctx_tokens", 0)
+    if ctx < _COMPACT_AT_TOKENS or not t.get("session_id"):
+        return None
+    pct = min(100, round(ctx / _CTX_WINDOW * 100))
+    log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
+            "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
+    sid, _out, meta = _turn(t, "/compact")
+
+    def _apply(tt):
+        if sid and tt.get("session_id") and sid != tt["session_id"]:
+            chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
+            chain.append(tt["session_id"])
+            tt["session_chain"] = chain[-6:]
+            tt["session_id"] = sid
+        _record_econ(tt, meta)            # measured economics: the compact turn is billed too
+    t = _mutate(t["id"], _apply) or t
+    before = ctx
+    after = t.get("ctx_tokens", before)
+    if after <= before * 0.75:            # a real compaction frees a big chunk
+        _autocompact_supported = True
+        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
+                "ohne Unterbrechung weiter." % round(after / 1000))
+    else:
+        _autocompact_supported = False
+        log.log("note", "AUTO-COMPACT: diese CLI honoriert /compact nicht - fuer diese "
+                "Session abgeschaltet. Kontext-Meter + Nudge bleiben aktiv.")
+    return t
 
 
 def steer(tid, text, perm=None, actor="owner", source="you",
