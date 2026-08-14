@@ -17,11 +17,33 @@ scopes are account-wide, not per-platform.
 
   py -3.12 deploy/mac_credentials.py --create [--out DIR] [--password PW]
       Generates a private key + CSR locally (openssl, never touches the
-      account), POSTs the CSR to Apple, and bundles the signed cert + key
-      into a password-protected .p12. This DOES consume account quota - a
-      real certificate is minted. --out defaults to a folder OUTSIDE the
-      repo (mirrors ios_credentials.sh's refusal to let the .p8 sit inside
-      one); --password defaults to a fresh random one, printed once since
+      account) and tries to POST the CSR to Apple. --out defaults to a
+      folder OUTSIDE the repo (mirrors ios_credentials.sh's refusal to let
+      the .p8 sit inside one).
+
+      VERIFIED 2026-08-15 against the real account: the POST comes back
+      HTTP 403 "This operation can only be performed by the Account
+      Holder" - EVERY API key hits this, regardless of role (Admin
+      included), because Apple treats Developer ID Application certificate
+      creation the same as ASC-key management and push keys
+      (deploy/ios_credentials.sh's own "still demand a human Apple ID"
+      section) - it is walled off from ALL API-key auth, not just this
+      key's role. --create still attempts the POST (in case Apple ever
+      lifts this), but on that specific 403 it stops and prints the manual
+      step instead of failing blind: upload the CSR it already wrote at
+      <out>/mac_developer_id.csr.pem to
+      https://developer.apple.com/account/resources/certificates/add
+      ("Developer ID" -> "Developer ID Application") in a real, 2FA'd
+      Account Holder browser session, download the resulting .cer, then
+      run --finish.
+
+  py -3.12 deploy/mac_credentials.py --finish CERT_PATH [--key KEY_PATH]
+                                      [--out DIR] [--password PW]
+      Second half of --create once a human has done the one step no API
+      key can: bundles the manually-downloaded .cer with the private key
+      --create already generated (--key defaults to
+      <out>/mac_developer_id.key.pem) into a password-protected .p12.
+      --password defaults to a fresh random one, printed once since
       Apple-style secrets are not re-servable.
 
   py -3.12 deploy/mac_credentials.py --secrets FILE.p12 --password PW
@@ -85,6 +107,12 @@ def _token(env):
         algorithm="ES256", headers={"kid": env["ASC_KEY_ID"], "typ": "JWT"})
 
 
+class AccountHolderOnly(Exception):
+    """Apple rejected the call with the 403 that means no API key - any
+    role - can do this; only the human Account Holder can, in a 2FA'd
+    browser session."""
+
+
 def _api(env, method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(
@@ -95,8 +123,10 @@ def _api(env, method, path, body=None):
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.load(r)
     except urllib.error.HTTPError as ex:
-        body = ex.read().decode(errors="replace")
-        fail("ASC API %s %s -> HTTP %s: %s" % (method, path, ex.code, body[:500]))
+        raw = ex.read().decode(errors="replace")
+        if ex.code == 403 and "Account Holder" in raw:
+            raise AccountHolderOnly(raw)
+        fail("ASC API %s %s -> HTTP %s: %s" % (method, path, ex.code, raw[:500]))
 
 
 def _run(cmd, **kw):
@@ -124,14 +154,47 @@ def cmd_check():
           "reuse an existing cert's .p12 if you already have it saved, don't re-mint blindly")
 
 
-# --- --create ------------------------------------------------------------
-def cmd_create(out_dir, password):
-    env = _env()
+def _guard_out_dir(out_dir):
     out_dir = os.path.abspath(out_dir)
     if out_dir == ROOT or out_dir.startswith(ROOT + os.sep):
         fail("--out sits INSIDE the repo (%s) - a private key + .p12 must never be "
              "committable, point --out somewhere outside the repo, e.g. C:/hd/secrets" % out_dir)
     os.makedirs(out_dir, exist_ok=True)
+    return out_dir
+
+
+def _normalize_cert(cert_bytes, cert_path):
+    """Apple's certificateContent / a downloaded .cer can be DER or PEM -
+    write whichever openssl actually accepts as PEM."""
+    with tempfile.NamedTemporaryFile(delete=False) as tf:
+        tf.write(cert_bytes)
+        raw_path = tf.name
+    try:
+        der = subprocess.run(["openssl", "x509", "-inform", "DER", "-in", raw_path, "-out", cert_path],
+                              capture_output=True, text=True)
+        if der.returncode != 0:
+            pem = subprocess.run(["openssl", "x509", "-inform", "PEM", "-in", raw_path, "-out", cert_path],
+                                  capture_output=True, text=True)
+            if pem.returncode != 0:
+                fail("certificate parsed as neither DER nor PEM:\nDER: %s\nPEM: %s"
+                     % (der.stderr, pem.stderr))
+    finally:
+        os.unlink(raw_path)
+
+
+def _bundle_p12(key_path, cert_path, p12_path, password):
+    pw = password or secrets.token_urlsafe(24)
+    _run(["openssl", "pkcs12", "-export", "-inkey", key_path, "-in", cert_path,
+          "-out", p12_path, "-passout", "pass:%s" % pw, "-name", "HelmDeck Developer ID Application"])
+    print("==> wrote %s" % p12_path)
+    print("==> p12 password (save this now, shown once): %s" % pw)
+    print("==> next: py -3.12 deploy/mac_credentials.py --secrets %s --password <the password above>" % p12_path)
+
+
+# --- --create ------------------------------------------------------------
+def cmd_create(out_dir, password):
+    env = _env()
+    out_dir = _guard_out_dir(out_dir)
 
     key_path = os.path.join(out_dir, "mac_developer_id.key.pem")
     csr_path = os.path.join(out_dir, "mac_developer_id.csr.pem")
@@ -144,40 +207,48 @@ def cmd_create(out_dir, password):
           "-subj", "/CN=HelmDeck Developer ID Application/O=HelmDeck"])
 
     csr_b64 = base64.b64encode(open(csr_path, "rb").read()).decode()
-    print("==> POSTing CSR to App Store Connect (certificateType=DEVELOPER_ID_APPLICATION) - "
-          "this MINTS a real certificate against the account's quota")
-    d = _api(env, "POST", "/v1/certificates", {
-        "data": {
-            "type": "certificates",
-            "attributes": {"certificateType": "DEVELOPER_ID_APPLICATION", "csrContent": csr_b64},
-        }
-    })
+    print("==> POSTing CSR to App Store Connect (certificateType=DEVELOPER_ID_APPLICATION)")
+    try:
+        d = _api(env, "POST", "/v1/certificates", {
+            "data": {
+                "type": "certificates",
+                "attributes": {"certificateType": "DEVELOPER_ID_APPLICATION", "csrContent": csr_b64},
+            }
+        })
+    except AccountHolderOnly:
+        print("==> Apple: 403 'This operation can only be performed by the Account Holder' -")
+        print("    confirmed 2026-08-15, this is NOT a role problem with this key - no API key,")
+        print("    of any role, can create a Developer ID Application certificate. Manual step:")
+        print("    1. As the Account Holder, in a real browser (Apple ID + 2FA):")
+        print("       https://developer.apple.com/account/resources/certificates/add")
+        print("       -> 'Developer ID' -> 'Developer ID Application'")
+        print("    2. Upload the CSR already sitting at: %s" % csr_path)
+        print("    3. Download the resulting certificate (.cer)")
+        print("    4. py -3.12 deploy/mac_credentials.py --finish <downloaded>.cer")
+        return
+
     cert = d["data"]
     a = cert["attributes"]
-    raw = base64.b64decode(a["certificateContent"])
-    with tempfile.NamedTemporaryFile(delete=False) as tf:
-        tf.write(raw)
-        raw_path = tf.name
-    try:
-        der = subprocess.run(["openssl", "x509", "-inform", "DER", "-in", raw_path, "-out", cert_path],
-                              capture_output=True, text=True)
-        if der.returncode != 0:
-            pem = subprocess.run(["openssl", "x509", "-inform", "PEM", "-in", raw_path, "-out", cert_path],
-                                  capture_output=True, text=True)
-            if pem.returncode != 0:
-                fail("certificateContent from Apple parsed as neither DER nor PEM:\nDER: %s\nPEM: %s"
-                     % (der.stderr, pem.stderr))
-    finally:
-        os.unlink(raw_path)
-
-    pw = password or secrets.token_urlsafe(24)
-    _run(["openssl", "pkcs12", "-export", "-inkey", key_path, "-in", cert_path,
-          "-out", p12_path, "-passout", "pass:%s" % pw, "-name", "HelmDeck Developer ID Application"])
-
+    _normalize_cert(base64.b64decode(a["certificateContent"]), cert_path)
     print("==> minted: id=%s serial=%s expires=%s" % (cert["id"], a.get("serialNumber"), a.get("expirationDate")))
-    print("==> wrote %s" % p12_path)
-    print("==> p12 password (save this now, shown once): %s" % pw)
-    print("==> next: py -3.12 deploy/mac_credentials.py --secrets %s --password <the password above>" % p12_path)
+    _bundle_p12(key_path, cert_path, p12_path, password)
+
+
+# --- --finish --------------------------------------------------------------
+def cmd_finish(cert_arg, key_path, out_dir, password):
+    out_dir = _guard_out_dir(out_dir)
+    key_path = key_path or os.path.join(out_dir, "mac_developer_id.key.pem")
+    if not os.path.exists(key_path):
+        fail("no private key at %s - pass --key, or re-run --create first "
+             "(it writes the key before it ever contacts Apple)" % key_path)
+    if not os.path.exists(cert_arg):
+        fail("no certificate at %s" % cert_arg)
+
+    cert_path = os.path.join(out_dir, "mac_developer_id.cert.pem")
+    p12_path = os.path.join(out_dir, "mac_developer_id.p12")
+    _normalize_cert(open(cert_arg, "rb").read(), cert_path)
+    print("==> bundling %s + %s" % (key_path, cert_path))
+    _bundle_p12(key_path, cert_path, p12_path, password)
 
 
 # --- --secrets -----------------------------------------------------------
@@ -204,6 +275,12 @@ if __name__ == "__main__":
         out_dir = args[args.index("--out") + 1] if "--out" in args else "C:/hd/secrets"
         pw = args[args.index("--password") + 1] if "--password" in args else None
         cmd_create(out_dir, pw)
+    elif "--finish" in args:
+        cert_arg = args[args.index("--finish") + 1]
+        out_dir = args[args.index("--out") + 1] if "--out" in args else "C:/hd/secrets"
+        key_path = args[args.index("--key") + 1] if "--key" in args else None
+        pw = args[args.index("--password") + 1] if "--password" in args else None
+        cmd_finish(cert_arg, key_path, out_dir, pw)
     elif "--secrets" in args:
         p12 = args[args.index("--secrets") + 1]
         pw = args[args.index("--password") + 1] if "--password" in args else None
