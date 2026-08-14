@@ -688,6 +688,14 @@ def _record_econ(t, meta):
     # suffix in modelUsage), and any SUCCESSFUL call's context proves a lower
     # bound (a window cannot be smaller than what it just held).
     win = 1_000_000 if any("[1m]" in m for m in (t.get("models") or [])) else _CTX_WINDOW
+    # A call that PROVED more context than the standard window is itself window
+    # evidence: no 200k window could have held it, so the session runs on the 1M
+    # tier even when the model id lacks the "[1m]" suffix. Without this the old
+    # max(win, ctx) lower-bound pinned the meter at exactly 100% forever (478k
+    # of "478k") while the CLI - which knows its real window - sat at ~48% and
+    # correctly refused to compact: a red meter nothing would ever clear.
+    if (t.get("ctx_tokens") or 0) > _CTX_WINDOW:
+        win = 1_000_000
     t["ctx_window"] = max(win, t.get("ctx_window") or 0, t.get("ctx_tokens") or 0)
     events.emit("turn", t["id"], cost=round(cost, 6), usage=u, models=meta.get("models") or [])
     return cost
@@ -2209,9 +2217,15 @@ def _maybe_compact(t, log):
     if _autocompact_supported is False:
         return None
     ctx = t.get("ctx_tokens", 0)
-    if ctx < _COMPACT_AT_TOKENS or not t.get("session_id"):
+    # high-water mark scales with the session's DERIVED window (ctx_window is
+    # runtime evidence, incl. the proof-beyond-200k 1M inference above) - the
+    # fixed 160k mark made a 1M-tier session "compact" at a real ~16% fill,
+    # burning a full-context /compact turn while the CLI (which knows its real
+    # window) rightly saw no reason to shrink anything.
+    window = max(t.get("ctx_window") or 0, _CTX_WINDOW)
+    if ctx < 0.8 * window or not t.get("session_id"):
         return None
-    pct = min(100, round(ctx / _CTX_WINDOW * 100))
+    pct = min(100, round(ctx / window * 100))
     log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
             "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
     sid, _out, meta = _turn(t, "/compact")
