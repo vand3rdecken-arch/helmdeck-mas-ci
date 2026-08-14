@@ -182,6 +182,11 @@ def _fold_stats(user, result, ctx_usage):
     # uses (sessions._record_econ): the "[1m]" id suffix names a 1M window,
     # and any successful call's context proves a lower bound.
     win = 1_000_000 if any("[1m]" in x for x in (m.get("models") or [])) else sessions._CTX_WINDOW
+    # proof-beyond-200k = 1M-tier evidence (sessions._record_econ parity): a
+    # call that carried more than the standard window can only have run on the
+    # 1M tier; the bare lower-bound pinned the meter at a permanent red 100%.
+    if int(m.get("ctx_tokens") or 0) > sessions._CTX_WINDOW:
+        win = 1_000_000
     m["ctx_window"] = max(win, int(m.get("ctx_window") or 0), int(m.get("ctx_tokens") or 0))
     _save_stats(st)
     return m
@@ -561,9 +566,12 @@ def _maybe_compact(user):
     ctx = st.get("ctx_tokens") or 0
     sess = _sessions()
     sid = sess.get(user)
-    if ctx < sessions._COMPACT_AT_TOKENS or not sid:
+    # scale the mark with the DERIVED window (sessions._maybe_compact parity):
+    # a fixed 160k made a 1M-tier PM session probe /compact at ~16% real fill.
+    window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
+    if ctx < 0.8 * window or not sid:
         return None
-    pct = min(100, round(ctx / sessions._CTX_WINDOW * 100))
+    pct = min(100, round(ctx / window * 100))
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--include-partial-messages",
             "--verbose", "--permission-mode", "plan", "--resume", sid]
     cmd = drivers._cmd_line(argv)

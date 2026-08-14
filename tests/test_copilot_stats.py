@@ -57,10 +57,13 @@ m = c._fold_stats("owner", {"usage": {}, "modelUsage": {"claude-sonnet-5[1m]": {
                             "total_cost_usd": 0.0}, {})
 check(m["ctx_window"] == 1000000, "[1m] model id -> 1M window")
 
-# 4) a successful call's context is a lower bound on an unknown window
+# 4) a successful call BEYOND the standard window proves the 1M tier - the old
+#    bare lower-bound (window == ctx) pinned the meter at a permanent red 100%
+#    (seen live 2026-08-14: 478k of "478k" while the CLI sat at ~48% of its
+#    real 1M window and rightly refused to compact).
 m2 = c._fold_stats("other", {"usage": {}, "modelUsage": {}, "total_cost_usd": 0.0},
                    {"input_tokens": 260000})
-check(m2["ctx_window"] == 260000, "held context proves the window's lower bound")
+check(m2["ctx_window"] == 1000000, "proof beyond 200k -> 1M-tier window, not a pinned 100%")
 
 # 5) history() serves the stats; plan_pct is None when not calibratable
 c._calib.update({"t": time.time(), "flat": False, "v": None})
