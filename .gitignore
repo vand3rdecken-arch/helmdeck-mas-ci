@@ -45,6 +45,7 @@ daemon/helmdeck.db-shm
 plane-selfhost/.env
 plane-selfhost/*.env
 backups/
+docs
 
 # local credentials - never commit
 daemon/certs/
