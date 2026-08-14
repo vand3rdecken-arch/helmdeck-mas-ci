@@ -214,9 +214,17 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
  *   mintToken(py)   -> string (owner device token for the local UI)
  */
 function startSetupServer(ctx) {
+  // Probe results are CACHED once positive: /setup/state is polled every few
+  // seconds by the connect screen, and findPython/findClaude shell out per
+  // candidate on every call - during a slow daemon boot (a 60-90s worktree
+  // sweep, seen live 2026-08-14) that spawned a fresh console window every
+  // ~3s, cascading ~28 windows across the desktop. A found runtime doesn't
+  // un-install mid-run; a MISSING one is re-probed (so installing Python
+  // while the setup screen is open is still picked up on the next poll).
+  let _pyProbe = null, _claudeProbe = null;
   const state = async () => {
-    const py = findPython(ctx.resourcesDir);
-    const claude = findClaude();
+    const py = _pyProbe || (_pyProbe = findPython(ctx.resourcesDir));
+    const claude = _claudeProbe || (_claudeProbe = findClaude());
     return {
       python: !!py, pythonBundled: !!(py && py.bundled),
       claude: !!claude, claudeVersion: claude ? claude.version : "",

@@ -120,17 +120,27 @@ const nativeUpdater = createNativeUpdater({ log, isPackaged: app.isPackaged });
 // can't find a bare name (unverified to ever be needed here, kept safe).
 function probeVersion(cmd, args) {
   const { spawnSync } = require("child_process");
-  try {
-    const r = spawnSync(cmd, [...args, "--version"], { windowsHide: true });
-    if (r.status === 0) return true;
-  } catch { /* fall through to the shell fallback */ }
-  try {
-    const r = spawnSync(cmd, [...args, "--version"], { shell: true, windowsHide: true });
-    return r.status === 0;
-  } catch { return false; }
+  // spawnSync NEVER throws on a missing executable - ENOENT comes back in
+  // r.error with status null. The first cut of this fallback caught only
+  // THROWN errors, so "py not on Electron's PATH" (the packaged app's normal
+  // state) fell through to the cmd.exe probe on EVERY call - and while the
+  // daemon was slow to boot, the setup screen's poll re-probed every ~3s,
+  // popping a fresh visible console window each time (the ~28-window cascade,
+  // 2026-08-14 17:01-17:03). The shell fallback exists ONLY for the exotic
+  // case where CreateProcess can't resolve a bare name that cmd.exe can
+  // (per-user App Paths registrations) - so only take it on ENOENT, never on
+  // a real nonzero exit, and cache the whole resolution (below) so probing
+  // happens once per app run, not once per status poll.
+  const r = spawnSync(cmd, [...args, "--version"], { windowsHide: true });
+  if (r.status === 0) return true;
+  if (!r.error || r.error.code !== "ENOENT") return false;
+  const r2 = spawnSync(cmd, [...args, "--version"], { shell: true, windowsHide: true });
+  return r2.status === 0;
 }
 
+let _pyCache = null;
 function resolvePython() {
+  if (_pyCache) return _pyCache;
   const win = process.platform === "win32";
   const cands = win
     ? [["py", ["-3.12"]], ["py", ["-3"]], ["python", []], ["python3", []]]
@@ -138,8 +148,11 @@ function resolvePython() {
   for (const [cmd, args] of cands) {
     if (!probeVersion(cmd, args)) continue;
     const real = win ? realInterpreter(cmd, args) : null;
-    return real ? { cmd: real, args: [] } : { cmd, args };
+    _pyCache = real ? { cmd: real, args: [] } : { cmd, args };
+    return _pyCache;
   }
+  // no candidate answered - do NOT cache the guess, so a Python installed
+  // after app start is picked up on the next call.
   return win ? { cmd: "py", args: ["-3.12"] } : { cmd: "python3", args: [] };
 }
 
