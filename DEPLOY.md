@@ -135,6 +135,26 @@ workflow starts signing, then notarizing, with no file changing:
 The ASC key is the *same* App Store Connect key `deploy/ios_credentials.sh`
 already uses (§2b) — one key notarizes macOS and signs iOS.
 
+`MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD` come from `deploy/mac_credentials.py`
+— it mints the Developer ID Application cert itself, no Xcode/Keychain
+needed: a CSR is just PKCS#10, so openssl builds one on Windows and the ASC
+API (same key, same JWT shape as `deploy/asc_build_state.py`) signs it.
+
+```
+py -3.12 deploy/mac_credentials.py --check                 # read-only, run first
+py -3.12 deploy/mac_credentials.py --create [--out DIR]     # mints a REAL cert - quota-limited
+py -3.12 deploy/mac_credentials.py --secrets FILE.p12 --password PW
+```
+
+`--check` lists any Developer ID Application certs the account already holds
+— re-running `--create` against an account that already has one just burns
+another slot of Apple's quota, so check before minting. `--create` writes the
+private key + `.p12` **outside** the repo (refuses an `--out` under it, same
+guard `ios_credentials.sh` puts on the `.p8`) and prints the `.p12` password
+once — Apple-style secrets are not re-servable, save it before running
+`--secrets`. `--secrets` is a deliberate separate step: it is the one that
+actually writes to the real repo via `gh secret set`.
+
 Traps already paid for here:
 - `notarize` stays `false` in `electron-builder.yml`; `build-mac.sh` turns it on
   with `-c.mac.notarize.teamId=<team>`. The **object** form is deliberate —
