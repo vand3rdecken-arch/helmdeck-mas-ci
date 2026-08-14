@@ -1,35 +1,31 @@
-# HelmDeck Desktop 0.2.2 (Windows)
+# HelmDeck Desktop 0.2.3 (Windows)
 
-**The desktop app now auto-updates.** This is the change that closes the gap
-the 0.2.1 notes flagged ("the desktop app has no auto-update channel"). From
-this build on, HelmDeck desktop follows the same relay update channel the phone
-already uses — so you install this **once by hand**, and every future UI update
-arrives silently.
+**Fixes the auto-update chain.** The previous installed build was missing the
+auto-updater from its packaged app shell (a stale build predating that
+feature), so the desktop silently fell behind the phone's UI — a manual sync
+was needed to catch it up. This build carries the updater for real.
 
-## What's new since 0.2.1
+## What's new since 0.2.2
 
-- **Silent auto-update (Paseo mechanism).** On launch and every 30 minutes the
-  app quietly checks the relay for a newer UI bundle, downloads and verifies it
-  (per-file SHA-256), and applies it on the next quit — no reinstall. The
-  always-on tray supervisor does the same even when the window is closed, and
-  shows a passive **Update: …** line in its menu.
-- **Safe by construction.** An update is applied only after every file matches
-  the signed manifest; the previous bundle is kept as `app-dist.old` as a
-  manual rollback reserve. A failed check is silent and simply retried.
+- **Auto-update chain restored.** Same silent relay-polling mechanism as
+  designed for 0.2.2 (check on launch + every 30 min, per-file SHA-256
+  verify, apply on quit) - this build actually ships it.
+- **Crash-log capture hardened.** The daemon's stdout/stderr log file open
+  now retries on a transient sharing violation instead of silently falling
+  back to no capture - a healthy daemon could previously run its whole life
+  with zero captured output if the very first open attempt lost a race.
 
 ## Do I need to update manually?
 
-- **On 0.2.1 or older:** yes, once — download and run `HelmDeck-Setup-0.2.2-x64.exe`
-  below. The auto-updater lives in the app shell, which an update channel can't
-  replace (same reason a phone needs a new APK for native changes).
-- **On 0.2.2 or newer:** no — future UI updates install themselves. You only
-  re-download when the app *shell* itself changes (a new installer release).
+- **Yes, once** - download and run `HelmDeck-Setup-0.2.3-x64.exe` below.
+  After this, future UI updates install themselves; you only re-download
+  when the app *shell* itself changes again.
 
 ## Install
 
 | File | What |
 |---|---|
-| `HelmDeck-Setup-0.2.2-x64.exe` | Windows desktop installer |
+| `HelmDeck-Setup-0.2.3-x64.exe` | Windows desktop installer |
 
 **Windows + SmartScreen:** the installer is not code-signed yet, so Windows will
 warn. *More info → Run anyway.* Verify the download against `SHA256SUMS.txt`.

@@ -33,18 +33,43 @@ const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..")
 // stale code. Spawning THAT (when the adopt probe missed) put a sandbox brain
 // on :8140: the phone's room was never polled and the minted token was invalid
 // against the real daemon - "Desktop nicht erreichbar" on both ends. One state
-// dir must be the single owner, so resources/daemon-dir.txt (one line: the
-// absolute path of the real daemon dir) redirects spawn AND token mint there;
-// only a dir that actually contains swarm.py is accepted, else fall back to
-// the bundled copy (a fresh install with no pointer keeps working).
+// dir must be the single owner, so a pointer file (one line: the absolute path
+// of the real daemon dir) redirects spawn AND token mint there.
+//
+// THE POINTER MUST OUTLIVE A REINSTALL (found live 2026-08-14): NSIS replaces
+// the whole resources/ folder on every installer run, so a pointer kept ONLY
+// at resources/daemon-dir.txt died with the very next update and silently
+// fell back to the bundled sandbox - "Desktop nicht erreichbar" after every
+// upgrade, with no error, because the catch below existed to keep a genuinely
+// FRESH install working and couldn't tell that apart from a broken redirect.
+// Electron's userData dir is untouched by an installer by design, so it is
+// now the primary pointer location; resources/daemon-dir.txt is read once as
+// a migration source (a hand-set redirect from before this fix, or the setup
+// wizard) and copied into userData so it survives from here on.
 function resolveDaemonDir() {
+  const fs = require("fs");
   const bundled = path.join(root, "daemon");
+  const userPointer = path.join(app.getPath("userData"), "daemon-dir.txt");
+  const legacyPointer = path.join(root, "daemon-dir.txt");
+  const valid = (p) => p && fs.existsSync(path.join(p, "swarm.py"));
+
   try {
-    const fs = require("fs");
-    const p = fs.readFileSync(path.join(root, "daemon-dir.txt"), "utf8").trim();
-    if (p && fs.existsSync(path.join(p, "swarm.py"))) return p;
-    if (p) log("daemon", "daemon-dir.txt points at '" + p + "' but no swarm.py there - using the bundled copy\n");
-  } catch { /* no pointer file: bundled copy */ }
+    const p = fs.readFileSync(userPointer, "utf8").trim();
+    if (valid(p)) return p;
+    if (p) log("daemon", "userData daemon-dir.txt points at '" + p + "' but no swarm.py "
+      + "there - falling back\n");
+  } catch { /* no userData pointer yet - fall through to migration/bundled */ }
+
+  try {
+    const p = fs.readFileSync(legacyPointer, "utf8").trim();
+    if (valid(p)) {
+      try { fs.writeFileSync(userPointer, p); } catch { /* migration best-effort */ }
+      return p;
+    }
+    if (p) log("daemon", "resources/daemon-dir.txt points at '" + p + "' but no swarm.py "
+      + "there - using the bundled copy\n");
+  } catch { /* no legacy pointer: genuinely fresh install, bundled copy is correct */ }
+
   return bundled;
 }
 const daemonDir = resolveDaemonDir();
@@ -148,18 +173,33 @@ function startDaemon(pyOverride) {
     // holding the file, or the just-evicted prior daemon's handle not yet
     // released) - silently falling back to "ignore" on the FIRST try meant a
     // healthy daemon could run its whole life with zero captured output.
-    // Retry a few times before giving up.
-    let out = "ignore";
+    // Retry a few times before giving up. If the canonical name STILL won't
+    // open (a lingering process holding it in a mode that denies new opens,
+    // outliving the process that set it - not just a transient AV/indexer
+    // brush) fall back to a PID-suffixed file instead of losing capture for
+    // this whole run: a frozen canonical log with an unrelated pinned handle
+    // must not silence every daemon start until a reboot clears the pin.
+    let out = "ignore", usedPath = null;
     const logPath = path.join(daemonDir, "daemon.out.log");
+    const fallbackPath = path.join(daemonDir, "daemon.out." + process.pid + ".log");
     let openErr = null;
-    for (let i = 0; i < 5; i++) {
-      try { out = fs.openSync(logPath, "a"); openErr = null; break; }
-      catch (e) { openErr = e; }
-      const until = Date.now() + 150;
-      while (Date.now() < until) { /* short synchronous backoff */ }
+    for (const candidate of [logPath, fallbackPath]) {
+      openErr = null;
+      for (let i = 0; i < 5; i++) {
+        try { out = fs.openSync(candidate, "a"); openErr = null; usedPath = candidate; break; }
+        catch (e) { openErr = e; }
+        const until = Date.now() + 150;
+        while (Date.now() < until) { /* short synchronous backoff */ }
+      }
+      if (!openErr) break;
     }
-    if (openErr) log("daemon", "could not open daemon.out.log after retries - "
-      + "output NOT captured: " + openErr.message + "\n");
+    if (openErr) {
+      log("daemon", "could not open daemon.out.log OR its PID fallback - "
+        + "output NOT captured: " + openErr.message + "\n");
+    } else if (usedPath === fallbackPath) {
+      log("daemon", "daemon.out.log unavailable (held by another process) - "
+        + "logging to " + fallbackPath + " instead\n");
+    }
     // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
     daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
       // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F

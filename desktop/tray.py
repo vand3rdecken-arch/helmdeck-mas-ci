@@ -85,13 +85,27 @@ def _python_for_daemon():
     return exe
 
 
-def _spawn_daemon():
+def _open_daemon_log():
     # stdout/stderr into the SAME daemon.out.log the Electron shell appends to
     # (single log regardless of which supervisor started this run) - a crash
     # under DEVNULL left zero trace anywhere, which is what made "it keeps
-    # crashing" unfalsifiable. PYTHONUNBUFFERED so a line already written
-    # survives even an abrupt taskkill /F (no flush window needed).
-    out = open(os.path.join(DAEMON_DIR, "daemon.out.log"), "a", encoding="utf-8")
+    # crashing" unfalsifiable. If the canonical name is pinned by a lingering
+    # process that outlived whatever set it (main.js parity: a reboot clears
+    # it, but a supervisor must not go dark until then), fall back to a
+    # PID-suffixed file instead of losing capture for this whole run.
+    canonical = os.path.join(DAEMON_DIR, "daemon.out.log")
+    try:
+        return open(canonical, "a", encoding="utf-8")
+    except OSError:
+        fallback = os.path.join(DAEMON_DIR, "daemon.out.%d.log" % os.getpid())
+        f = open(fallback, "a", encoding="utf-8")
+        f.write("[tray] daemon.out.log unavailable (held by another process) - "
+                "logging here instead\n")
+        return f
+
+
+def _spawn_daemon():
+    out = _open_daemon_log()
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     return subprocess.Popen(
         [_python_for_daemon(), "swarm.py", "serve"],
