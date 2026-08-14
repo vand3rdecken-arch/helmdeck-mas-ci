@@ -94,7 +94,13 @@ say "no credential patterns found"
 # Pushing main overwrites github.com/<repo>/README.md, which is the public
 # download page (Play links, SmartScreen note, privacy policy). Swapping it for
 # an internal repo map is a silent regression of a live page, so guard it.
-if ! grep -q '^## Downloads' README.md 2>/dev/null; then
+#
+# Read it from $BRANCH, NOT the working tree. Auditing a branch while checked
+# out somewhere else is the normal case, and the first version of this check
+# read ./README.md - so it happily green-lit a branch whose README was the
+# internal map, because the WORKTREE's copy was the right one. A guard that
+# inspects something other than what it is guarding is worse than none.
+if ! git show "$BRANCH:README.md" 2>/dev/null | grep -q '^## Downloads'; then
   fail "README.md has no '## Downloads' section - it looks like the internal
     map, not the public landing page. Pushing it would replace the product page
     users land on (see docs/repo-map.md for where the dev map went)."
