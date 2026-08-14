@@ -2190,6 +2190,12 @@ def _pending_context(t):
     gr = t.get("gate_report")
     if t.get("gate_failed") and gr:
         parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
+    elif isinstance(gr, list) and any(RESUME_NOTE in x or ZOMBIE_NOTE in x for x in gr):
+        # A zombie-sweep/Stop interrupt (no gate involved) also stashes its note
+        # in gate_report - the only channel _pending_context reads. Without this
+        # branch a bare "continue" after an interrupt resumes BLIND: the worker
+        # never learns its turn was cut, only that a new instruction arrived.
+        parts.append("Note from the desktop since your last turn:\n" + "\n".join(gr))
     # Thrash guard: if this card has failed its gate several times in a row, a
     # naive rewrite-and-retry keeps burning the budget (SageRoute's rewrite/retest
     # trap). Tell the worker to stop rewriting and change approach - break the loop.
