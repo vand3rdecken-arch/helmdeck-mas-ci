@@ -22,6 +22,7 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "app.helmdeck",
+      "runtimeVersion": "1.0.5",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",

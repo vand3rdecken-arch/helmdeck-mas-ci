@@ -257,19 +257,104 @@ bash deploy/ios_credentials.sh --build                    # production .ipa
 bash deploy/ios_credentials.sh --build --profile internal # ad-hoc, needs UDIDs
 ```
 `internal` installs only on devices registered with `npx eas-cli device:create`;
-`production` needs no UDIDs. **Not yet exercised** — a first `--build` queues a real
-cloud build, so it is left as its own step rather than smuggled into the credential
-work. It is also the only true proof of the unattended path: there is no
-`credentials:list`, and `credentials:configure-build` has no `--non-interactive`
-flag (it rejects one), so the cheap check does not exist. If `--build` ever reports
+`production` needs no UDIDs. If `--build` ever reports
 `MissingCredentialsNonInteractiveError`, the certificate did not persist and step 4
 must be repeated.
+
+**Exercised 2026-08-14 (card `proc-20260814-s5`, from a different worktree than
+setup ran in — proof the credentials really live on EAS, not locally):**
+`bash deploy/ios_credentials.sh --build` succeeded unattended, build `e67d1247`,
+clean log. Artifact:
+`https://expo.dev/artifacts/eas/HuTPOLX77F1-MJkIbcK7HKKceWfy8wUwIR7jAl-3jBw.ipa`.
+Prerequisite done first: `app.json → ios.runtimeVersion` set to a fixed literal,
+decoupled from the shared `expo.version` `ship.sh` bumps for Android (§5 R5 in
+`docs/ios-requirements.md`, "vor dem ersten iOS-Build umsetzen").
 
 **Still requires a human Apple ID + 2FA** (these ignore the API key —
 `AppStoreApi.js` routes them through `ensureUserAuthenticatedAsync`):
 ASC API key management itself, and **push notification keys**. HelmDeck ships
 `expo-notifications`, so iOS push will need one interactive session later. It is
 not needed for signing or building.
+
+**[NEU] A THIRD thing needs it too, discovered running `eas submit` for the
+first time: "ensuring your app exists on App Store Connect".** Even with the
+ASC API key exported, `eas submit --platform ios --latest --non-interactive`
+dies with *"Set ascAppId in the submit profile (eas.json) or re-run this
+command in interactive mode"*; dropping `--non-interactive` doesn't help from
+a card either — it prints *"Log in to your Apple Developer account to
+continue"* and then the same TTY-less `Input is required, but stdin is not
+readable. Failed to display prompt: Apple ID:` as the credential setup's first
+run. Unlike certificate/profile creation, this step is **not** unattended-safe
+even after a one-time bootstrap — `ensureAscAppAsync` hard-routes through user
+auth every time an `ascAppId` isn't already pinned in `eas.json`. Fix once a
+human has created the app record in App Store Connect (or logged in
+interactively to let eas-cli create it): copy the app's numeric ASC ID into
+`app/eas.json → submit.production.ios.ascAppId`, and every later
+`eas submit --non-interactive` skips this step entirely.
+
+Both halves of that are verified in eas-cli source, not guessed:
+- `submit/ios/AppProduce.js` `createAppStoreConnectAppAsync` calls
+  `ensureUserAuthenticatedAsync(...)` **unconditionally** — that is why no
+  amount of API-key env gets you past app creation.
+- `submit/ios/IosSubmitCommand.js` `resolveAscAppIdentifierAsync`: if
+  `profile.ascAppId` is set it returns immediately, never reaching AppProduce.
+  The one thing it still runs, `ensureTestFlightSetupForExistingAppAsync`,
+  takes the `AuthenticationMode.API_KEY` branch when `hasAscEnvVars()` and
+  `EXPO_APPLE_TEAM_ID` are present (and is best-effort/try-catch anyway).
+
+**CDP co-pilot for the human half:** `deploy/asc_guide.py` attaches to the
+persistent HelmDeck Chrome (same standard as `daemon/browsercap.py`) so the
+owner does only password + 2FA, and the numeric app ID is **read back out of
+the live DOM** instead of transcribed by hand:
+```bash
+py -3.12 deploy/asc_guide.py open    # launch/attach + open App Store Connect
+py -3.12 deploy/asc_guide.py where   # url + title + headings (login? app list?)
+py -3.12 deploy/asc_guide.py shot    # -> shots/asc.png
+py -3.12 deploy/asc_guide.py appid   # the ascAppId for app.helmdeck
+```
+Creating the record by hand: My Apps → **+** → New App → Platform *iOS*,
+Bundle ID `app.helmdeck` (already registered, so it is in the dropdown), a
+**globally unique** App Store name, any unique SKU, Full Access.
+
+⚠ **Do not read the result off the Apps page.** Right after the record was
+created here, that list still rendered **"No Apps"** — a stale SPA view — while
+`GET /v1/apps` already returned the app. Trusting the screen would have meant
+re-creating an app that existed. `asc_guide.py apps|appid` therefore query the
+App Store Connect **API** with the same `.p8`; the browser verbs exist only to
+carry the human through password + 2FA.
+
+### 2c) TestFlight submit — DONE 2026-08-14
+
+```bash
+cd app && npx eas-cli submit --platform ios --latest --non-interactive --wait
+```
+Result: build `e67d1247` → submission `da233c48`, *"Submitted your app to Apple
+App Store Connect!"*. Live state:
+```bash
+py -3.12 deploy/asc_build_state.py --wait   # Apple's own processing verdict
+```
+That verdict matters: `eas submit` returning only proves the .ipa *reached*
+Apple. Processing is a real gate (bad slice / entitlement / Info.plist ⇒
+`INVALID`), and with no macOS on this box it is the strongest automated
+statement available about the artifact — R2 in
+`docs/ios-watch-feasibility.md` still stands, the final "does it launch" is a
+human tap on the phone.
+
+**Live values:** ASC app id `6801637667`, bundle `app.helmdeck`, SKU
+`helmdeck-001`, primary language German, TestFlight group *Team (Expo)*
+(auto-created by eas-cli).
+
+⚠ **The submit key is a THIRD credential slot**, separate from the build
+credentials, and it surprised this card: after the app-exists step passes,
+eas-cli says *"App Store Connect API Keys cannot be set up in --non-interactive
+mode"*. The exported `EXPO_ASC_*` env is **not** consulted here —
+`AscApiKeySource.js` only accepts (a) all three of
+`ascApiKeyPath`/`ascApiKeyId`/`ascApiKeyIssuerId` in the submit profile, or
+(b) a key stored on EAS via `SetUpAscApiKey`, which needs a TTY. Route (a) is
+what `eas.json` currently uses, which makes submit **work on this box only** —
+registered as debt `ios-submit-local-asc-key`. Route (b) is the portable fix:
+one interactive `npx eas-cli credentials -p ios` from cmd.exe, then delete the
+three fields.
 
 ⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
 hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
