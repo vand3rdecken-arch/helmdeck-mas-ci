@@ -79,10 +79,16 @@ const daemonDir = resolveDaemonDir();
 const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__dirname, "..", "app", "dist");
 let desktopToken = "";
 
-// Auto-update (Paseo mechanism, see updater.js): packaged builds silently
-// follow the relay's "desktop" OTA channel - check at start + every 30 min,
-// download + verify in the background, swap in on quit. Dev runs are exempt
-// exactly like Paseo ("Auto-update is not available in development mode").
+// Auto-update: TWO layers, because they cover different code.
+//  - updater.js (relay OTA, see that file): the UI bundle ONLY - fast,
+//    silent, follows the same channel the phone uses.
+//  - native-updater.js (electron-updater, Paseo parity): the WHOLE app,
+//    main.js/app.asar included - the only path a shell-code fix (found live
+//    2026-08-14 chasing the daemon's own stdout capture) can ever reach an
+//    installed machine without a hand-run .exe. Runs independently of the
+//    UI-bundle sync; either can apply without the other.
+// Dev runs are exempt from both, exactly like Paseo ("Auto-update is not
+// available in development mode").
 let updater = null;
 if (app.isPackaged) {
   const { createUpdater, readRelayUrl } = require("./updater");
@@ -90,6 +96,8 @@ if (app.isPackaged) {
   if (feedBase) updater = createUpdater({ feedBase, appDistDir, log });
   else log("update", "no relay configured - desktop OTA dormant\n");
 }
+const { createNativeUpdater } = require("./native-updater");
+const nativeUpdater = createNativeUpdater({ log, isPackaged: app.isPackaged });
 
 // find a working Python 3: probe candidates with `--version` and use the first
 // that runs, so we don't depend on `py` alone being on PATH.
@@ -393,7 +401,8 @@ if (!app.requestSingleInstanceLock()) {
     if (updater) updater.applyStagedAtStartup();
     startWeb();
     waitForWeb(createWindow);
-    if (updater) updater.start();   // silent check now, then every 30 min
+    if (updater) updater.start();   // silent check now, then every 30 min (UI bundle)
+    nativeUpdater.start();          // silent check now, then every 30 min (whole app)
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0 && !failed) createWindow(); });
   });
 }
