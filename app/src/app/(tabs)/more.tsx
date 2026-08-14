@@ -5,11 +5,13 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAnalytics } from "@/data/analytics";
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
+import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
 
 // route → nav key + icon for the phone's "everything else" list
@@ -40,6 +42,8 @@ export default function MoreTab() {
   const [pairKind, setPairKind] = useState<"info" | "ok" | "err">("info");
   const [pairBusy, setPairBusy] = useState(false);
   const paired = relayMode();
+  const analyticsOn = useAnalytics((s) => s.enabled);
+  const setAnalytics = useAnalytics((s) => s.setEnabled);
 
   // Apply the code, then PROVE the connection with a real round-trip before
   // claiming success — a parsed-but-dead code (expired window, relay down,
@@ -112,6 +116,11 @@ export default function MoreTab() {
             style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center" }}>
             <Text style={{ color: "#fff", fontWeight: "600" }}>{tr("ui.save")}</Text>
           </Pressable>
+        </Panel>
+        <Panel>
+          <SectionLabel text={tr("settings.privacy.section")} />
+          <Hint text={tr("settings.privacy.hint")} />
+          <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
         </Panel>
         <Panel style={{ padding: 0 }}>
           {LINKS.map(([route, labelKey, icon], i) => (
