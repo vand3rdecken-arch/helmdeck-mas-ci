@@ -11,6 +11,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { queryClient, restoreCache, startCachePersist } from "@/data/query";
+import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
@@ -76,6 +77,17 @@ function usePaletteHotkeys() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+// Product analytics: hydrate the persisted opt-out FIRST, then log the launch -
+// so an opted-out device never sends even the app_open.
+function useAnalyticsBoot() {
+  useEffect(() => {
+    (async () => {
+      await useAnalytics.getState().hydrate();
+      track("app_open", { platform: Platform.OS });
+    })();
   }, []);
 }
 
@@ -170,6 +182,7 @@ function useCacheGate() {
 }
 
 export default function RootLayout() {
+  useAnalyticsBoot();
   usePushWiring();
   usePaletteHotkeys();
   useGlobalStream();
