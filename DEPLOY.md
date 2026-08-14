@@ -150,6 +150,72 @@ rebuild the APK; relay/HTTPS need nothing.
 
 ---
 
+## 2b) iOS signing & credentials (EAS)
+
+iOS has no local path on this box — there is no Xcode and no macOS, so the build
+runs on EAS and the **signing assets live in EAS, not in the repo**. Nothing here
+is a secret you may commit; the certificate and profile stay on Expo's servers.
+
+State as of this section: the project is **linked** —
+`@tienduyvo/helmdeck`, projectId `a0ea8905-52a1-4223-b102-1dfd9e98d561`, recorded
+in `app/app.json` as `extra.eas.projectId` + `owner`. `eas.json` already carries an
+`internal` (ad-hoc/device) and a `production` (App Store) profile.
+
+Prereqs an agent cannot supply:
+- **Apple Developer Program** enrollment (paid, per year). Without it Apple issues
+  no distribution certificate at all — every command below fails at the same step.
+- An Apple sign-in. `eas credentials` has **no `--non-interactive` flag** (checked:
+  its only flag is `-p/--platform`), so it cannot be driven from a headless card.
+
+Two ways to give EAS the Apple access. Pick one:
+
+**A — interactive Apple ID + 2FA** (fastest once, re-prompts later):
+```bash
+cd app
+npx eas-cli credentials -p ios      # → Sign in with Apple ID, enter the 2FA code
+# choose: production → "Set up new credentials" → let EAS manage
+```
+EAS then creates the Distribution Certificate and the Provisioning Profile itself
+and stores both server-side. The 2FA session is short-lived: a later build from a
+new shell asks again, and it can never run unattended.
+
+**B — App Store Connect API key** (recommended for this repo): App Store Connect →
+*Users and Access* → *Integrations* → *Keys* → **+**, role *App Manager*, download
+the `.p8` **once** (Apple never shows it again). Then feed it to EAS:
+```bash
+cd app
+npx eas-cli credentials -p ios      # → App Store Connect API Key → Add a new key
+# supply: Issuer ID, Key ID, path to the .p8
+```
+After that, certificate + profile creation and every future build are
+non-interactive — an agent card can run them, no 2FA in the loop. Keep the `.p8`
+out of the repo (it is a secret; `archive/` and the ignore rules already cover the
+Android keystore — do the same here).
+
+Verify (either path) — this is the check that the signing assets really exist:
+```bash
+cd app
+npx eas-cli credentials -p ios      # the summary lists cert + profile, expiry, UDIDs
+npx eas-cli build -p ios --profile internal    # ad-hoc install for a test device
+```
+`--profile internal` needs the test iPhone's UDID registered
+(`npx eas-cli device:create`); `--profile production` produces an App Store `.ipa`
+and needs no UDIDs.
+
+⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
+hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
+an empty `extra.router` here. Diff `app/app.json` after any `eas` command and keep
+only what you meant to change; the CAMERA permission is already delivered by the
+`expo-camera` plugin entry.
+
+⚠ Running `eas` from a worktree needs `app/node_modules` — the worktrees never get
+their own install. Junction it first (`shots/link.py` is the pattern:
+`_winapi.CreateJunction(r"C:\hd\app\node_modules", "<worktree>/app/node_modules")`),
+otherwise every `eas` command dies with *"Failed to resolve plugin for module
+expo-router"*.
+
+---
+
 ## 3) Get the APK onto the phone
 
 - **Relay** (served at `https://<relay>/apk/helmdeck.apk`):
