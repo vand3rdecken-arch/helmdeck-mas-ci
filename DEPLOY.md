@@ -135,25 +135,37 @@ workflow starts signing, then notarizing, with no file changing:
 The ASC key is the *same* App Store Connect key `deploy/ios_credentials.sh`
 already uses (§2b) — one key notarizes macOS and signs iOS.
 
-`MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD` come from `deploy/mac_credentials.py`
-— it mints the Developer ID Application cert itself, no Xcode/Keychain
-needed: a CSR is just PKCS#10, so openssl builds one on Windows and the ASC
-API (same key, same JWT shape as `deploy/asc_build_state.py`) signs it.
+`MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD` come from `deploy/mac_credentials.py`.
+No Xcode/Keychain needed for the CSR — it's plain PKCS#10, openssl builds one
+on Windows — but **creating the certificate itself is not reachable by any
+API key**: VERIFIED 2026-08-15, the ASC API returns 403 "This operation can
+only be performed by the Account Holder" for `DEVELOPER_ID_APPLICATION`, for
+the same Admin-role key that mints iOS distribution certs fine. This is not
+a key-role problem (retrying with a different role key changes nothing) —
+Apple walls this operation off from all API-key auth, the same bucket
+`deploy/ios_credentials.sh` already documents for ASC-key management and
+push keys. So the flow is CSR-by-script, cert-by-human, bundle-by-script:
 
 ```
-py -3.12 deploy/mac_credentials.py --check                 # read-only, run first
-py -3.12 deploy/mac_credentials.py --create [--out DIR]     # mints a REAL cert - quota-limited
+py -3.12 deploy/mac_credentials.py --check                  # read-only, run first
+py -3.12 deploy/mac_credentials.py --create [--out DIR]     # writes key+CSR; POST 403s -
+                                                              # prints the manual step below
+# --- one human, in a browser, as the Account Holder, with 2FA ---
+#   https://developer.apple.com/account/resources/certificates/add
+#   -> "Developer ID" -> "Developer ID Application" -> upload the CSR --create wrote
+#   -> download the resulting .cer
+py -3.12 deploy/mac_credentials.py --finish DOWNLOADED.cer   # bundles key+cert -> .p12
 py -3.12 deploy/mac_credentials.py --secrets FILE.p12 --password PW
 ```
 
 `--check` lists any Developer ID Application certs the account already holds
-— re-running `--create` against an account that already has one just burns
-another slot of Apple's quota, so check before minting. `--create` writes the
-private key + `.p12` **outside** the repo (refuses an `--out` under it, same
-guard `ios_credentials.sh` puts on the `.p8`) and prints the `.p12` password
-once — Apple-style secrets are not re-servable, save it before running
-`--secrets`. `--secrets` is a deliberate separate step: it is the one that
-actually writes to the real repo via `gh secret set`.
+— re-submitting a CSR against an account that already has one just burns
+another slot of Apple's quota, so check before minting. `--create`/`--finish`
+write the private key + `.p12` **outside** the repo (refuses an `--out`
+under it, same guard `ios_credentials.sh` puts on the `.p8`) and print the
+`.p12` password once — Apple-style secrets are not re-servable, save it
+before running `--secrets`. `--secrets` is a deliberate separate step: it is
+the one that actually writes to the real repo via `gh secret set`.
 
 Traps already paid for here:
 - `notarize` stays `false` in `electron-builder.yml`; `build-mac.sh` turns it on
