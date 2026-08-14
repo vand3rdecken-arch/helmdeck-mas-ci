@@ -765,6 +765,14 @@ class H(BaseHTTPRequestHandler):
                                      reg.get("default_role", "client"))
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+                # optional enrichment only - never touches the user record
+                # above, never blocks/fails the signup if Loops is down.
+                email = (body.get("email") or "").strip()
+                if email:
+                    import loops_client
+                    threading.Thread(target=loops_client.signup_contact,
+                                     args=(email, body.get("name", "")),
+                                     daemon=True).start()
                 sid = auth.login(body["name"], body["password"])
                 return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
             if p == "/auth/login":
