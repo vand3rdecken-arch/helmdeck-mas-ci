@@ -201,7 +201,7 @@ if __name__ == "__main__":
     if "--check" in args:
         cmd_check()
     elif "--create" in args:
-        out_dir = args[args.index("--out") + 1] if "--out" in args else os.path.join(ROOT, "..", "hd-mac-secrets")
+        out_dir = args[args.index("--out") + 1] if "--out" in args else "C:/hd/secrets"
         pw = args[args.index("--password") + 1] if "--password" in args else None
         cmd_create(out_dir, pw)
     elif "--secrets" in args:
