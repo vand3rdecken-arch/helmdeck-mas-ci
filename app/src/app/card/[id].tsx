@@ -364,11 +364,27 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  // drop an optimistic echo once the real feed carries that same user text
+  // drop an optimistic echo once the real feed carries that same user text.
+  // Dedup by TEXT ALONE breaks on a repeated message (e.g. "continue" sent
+  // twice): the moment the feed refetches, the OLD occurrence already matches
+  // the new echo's text and it's stripped instantly, before the real steer
+  // even lands - the message silently "vanishes". Instead each echo carries
+  // its position among same-text occurrences (feed + already-pending, at the
+  // moment it was queued) and is only dropped once the feed's count for that
+  // text has actually caught up past that position.
   useEffect(() => {
     if (!pending.length) return;
-    const seen = new Set<string>(feed.filter((s) => s.role === "user").map((s) => (s.text ?? "").trim()));
-    setPending((p) => p.filter((e) => !seen.has((e.text ?? "").trim())));
+    const counts = new Map<string, number>();
+    for (const s of feed) {
+      if (s.role !== "user") continue;
+      const key = (s.text ?? "").trim();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    setPending((p) => p.filter((e) => {
+      const key = (e.text ?? "").trim();
+      const feedCount = counts.get(key) ?? 0;
+      return feedCount <= ((e as unknown as { baseline?: number }).baseline ?? 0);
+    }));
   }, [feed]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // the rendered feed = the worker story + optimistic echoes, then (clearly
@@ -410,8 +426,14 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       await qc.invalidateQueries({ queryKey: ["tracks"] });
       return;
     }
-    // worker: echo instantly, then steer; retract the echo if the send throws
-    const echo: TStep = { role: "user", kind: "text", text, ts: hhmm() };
+    // worker: echo instantly, then steer; retract the echo if the send throws.
+    // baseline = this occurrence's rank among same-text messages already in
+    // feed + already-pending, so the reconcile effect can tell THIS repeat
+    // apart from an earlier identical one (see effect above).
+    const key = text.trim();
+    const baseline = feed.filter((s) => s.role === "user" && (s.text ?? "").trim() === key).length
+      + pending.filter((e) => (e.text ?? "").trim() === key).length;
+    const echo = { role: "user", kind: "text", text, ts: hhmm(), baseline } as TStep & { baseline: number };
     setPending((p) => [...p, echo]);
     try { await onSend(text, o); }
     catch { setPending((p) => p.filter((e) => e !== echo)); }
