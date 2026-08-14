@@ -152,6 +152,53 @@ Traps already paid for here:
   Without it electron-builder hunts an empty keychain and *fails* the build
   instead of producing a clean unsigned one.
 
+## 1d) Publishing the source — what the macOS runner needs
+
+CI can only build what it can check out, and until 2026-08-14 the local clone
+had **no git remote at all**: `github.com/Tienduyvo/helmdeck` was a download
+shelf holding `README.md` plus release assets, everything uploaded by `gh`.
+Owner's decision: **one repo** — the source goes into that same public repo,
+next to the builds. Not a second source repo.
+
+```bash
+bash deploy/publish_source.sh --dry-run     # audit only, pushes nothing
+bash deploy/publish_source.sh               # audit, then push main
+```
+
+It is an audit that ends in a push, re-run in full every time — `.gitignore`
+only ever protected the *present*, and a push publishes *history*. Audit as of
+this commit: 2244 blobs, **zero** credential matches; no `settings.json` /
+`users.json` / `*.db` / `*.jks` / `*.p8` ever committed; the one interesting
+literal is a `*.trycloudflare.com` quick-tunnel URL from 26 old blobs, verified
+**dead** (no DNS).
+
+Three traps it guards, each one load-bearing:
+
+- **Never `--all` / `--mirror`.** Branch `wip-expo-migration-20260812-223553`
+  parks a 136 MB APK, an 81 MB `.exe` and a 78 MB `.aab` under
+  `deploy/release_v1.0.7/`. GitHub **hard-rejects any file over 100 MB**, so
+  that push fails outright — and it would publish ~20 stale card branches too.
+  `main` is clean (largest blob 14.8 MB), which is the whole point of pushing a
+  single branch.
+- **The root `README.md` is the public product page**, not the dev map: Play
+  links, the SmartScreen note, the privacy policy. Pushing the old internal
+  README would have silently replaced a live page. So the landing text now *is*
+  `README.md` (byte-identical to what was published — verified by blob hash,
+  plus an appended `## Development` pointer) and the internal map moved to
+  [`docs/repo-map.md`](docs/repo-map.md). The script refuses to push a
+  `README.md` with no `## Downloads` section.
+- **Use SSH, not HTTPS.** The owner's `gh` token scopes are
+  `admin:public_key, gist, read:org, read:packages, repo` — **no `workflow`**,
+  so an HTTPS push touching `.github/workflows/` is rejected with *"refusing to
+  allow an OAuth App to create or update workflow"*. The script wires
+  `git@github.com:…` for exactly this reason.
+
+Public repo ⇒ **macOS runner minutes are free and unmetered** (private would
+bill 10×, ~200 free minutes/month ≈ 10 Mac builds). After the push: Actions →
+`desktop-mac` → *Run workflow*. With no secrets set that produces an unsigned
+`.dmg`/`.zip` — and that unsigned run is the honest smoke test that closes debt
+item `mac-build-never-executed`.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):
