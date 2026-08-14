@@ -368,6 +368,23 @@ their own install. Junction it first (`shots/link.py` is the pattern:
 otherwise every `eas` command dies with *"Failed to resolve plugin for module
 expo-router"*.
 
+### 2d) TestFlight metadata — Beta App Review Detail, localizations, "What to Test"
+
+Internal testing (this app's fixed scope) needs none of this to distribute a
+build, but leaving it empty means a later switch to external testing starts
+from zero. Content lives in `docs/store/ASC_METADATA.md` — read section 1
+first (export compliance is a legal call, deliberately left to the owner,
+not automated) — and is applied via:
+
+```bash
+py -3.12 deploy/asc_metadata_draft.py show          # read-only
+py -3.12 deploy/asc_metadata_draft.py apply --yes   # writes the draft (PATCH/POST, never submits for review)
+```
+
+Same `.env` requirement as `asc_build_state.py`/`asc_guide.py`. Fill in
+`contactPhone` in the doc before running `apply` — no phone number is
+invented.
+
 ---
 
 ## 3) Get the APK onto the phone
