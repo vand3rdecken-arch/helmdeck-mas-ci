@@ -57,10 +57,16 @@ OVER="$(printf '%s\n' "$SIZES" | awk -v L="$LIMIT_HARD" '$1>L')"
 printf '%s\n' "$SIZES" | awk -v L="$LIMIT_WARN" '$1>L{printf "    warn: %.1f MB  %s\n", $1/1048576, $2}'
 
 # ---- 2. secret-shaped PATHS ever added on this branch ----------------------
+# The dangerous JSONs are the DAEMON's runtime state (the list .gitignore
+# protects: settings/users/tracks/sessions/processes/copilot_*/plane_links).
+# Matching those basenames anywhere over-fires on tool config - .claude/
+# settings.json (hooks + permissions, deliberately tracked), app/.vscode/
+# settings.json - so the state files are anchored to a daemon/ directory while
+# the genuinely-always-secret shapes (keys, keystores, DBs, .env) stay global.
 say "checking for secret-shaped paths in $BRANCH history"
 BADPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
   | sort -u \
-  | grep -iE '(^|/)(settings|users|tracks|processes|copilot_log|copilot_sessions|plane_links)\.json$|(^|/)helmdeck\.db|\.db$|\.db-|\.jks$|\.keystore$|\.p8$|\.p12$|\.mobileprovision$|(^|/)\.env($|\.)|(^|/)id_(rsa|ed25519)$|\.pem$' \
+  | grep -iE '(^|/)daemon/(settings|users|tracks|sessions|processes|copilot_log|copilot_stats|copilot_sessions|plane_links|driver_pids|recorder_pids)\.json$|(^|/)daemon/events\.jsonl$|\.db$|\.db-(wal|shm)$|\.jks$|\.keystore$|\.p8$|\.p12$|\.mobileprovision$|(^|/)[^/]*\.env$|(^|/)id_(rsa|ed25519)$|\.pem$' \
   || true)"
 [ -z "$BADPATHS" ] || {
   printf '    %s\n' $BADPATHS
