@@ -18,9 +18,17 @@ daemon/browsercap.py, so the Apple session survives between runs.
   py -3.12 deploy/asc_guide.py apps     # list the apps ASC shows, with their IDs
   py -3.12 deploy/asc_guide.py appid    # print the numeric ascAppId for app.helmdeck
 
-The read-back verbs are the point: `appid` derives the ID from the live DOM/URL
-of the owner's authenticated session, so what lands in eas.json is observed, not
-retyped.
+The read-back verbs are the point: what lands in eas.json is observed, not
+retyped. Note `appid` asks the App Store Connect API, NOT the page.
+
+⚠ Do not trust the ASC web UI as the source of truth here. Right after the app
+record was created on 2026-08-14 the Apps list still rendered "No Apps" - a
+stale SPA view - while `GET /v1/apps` already returned the app and its id. A
+DOM-based read would have concluded the creation had failed and sent the card
+off to re-create an app that existed. The API is the runtime's own signal; the
+rendered page is a cache. `apps`/`appid` therefore go to the API, and the
+browser verbs (`open`/`where`/`shot`) exist only to get the HUMAN through
+password + 2FA, which the API key cannot do.
 """
 import json
 import os
@@ -156,69 +164,66 @@ def cmd_where():
     pw.stop()
 
 
-def _harvest(p):
-    """Every /app/<id> link ASC renders, with its row text. ASC is a heavy SPA, so
-    read the DOM rather than guessing a REST endpoint."""
-    js = """() => {
-      const out = [];
-      document.querySelectorAll('a[href*="/app/"]').forEach(a => {
-        const m = (a.getAttribute('href')||'').match(/\\/app\\/(\\d{6,})/);
-        if (!m) return;
-        const row = a.closest('tr,li,div') || a;
-        out.push({id: m[1], text: ((row.innerText||a.innerText||'').trim()).slice(0,200)});
-      });
-      return out;
-    }"""
-    try:
-        rows = p.evaluate(js)
-    except Exception:
-        rows = []
-    seen, uniq = set(), []
-    for r in rows:
-        if r["id"] in seen:
-            continue
-        seen.add(r["id"])
-        uniq.append(r)
-    return uniq
+# (a DOM scraper for the Apps list lived here and was deleted: it read "No Apps"
+#  from a stale SPA view minutes after the record existed. _api_apps() replaced it.)
+
+
+def _api_apps():
+    """Authoritative app list, straight from App Store Connect via the .p8. No
+    browser, no login - the same key eas-cli uses."""
+    import jwt
+    env = {}
+    envf = os.path.join(ROOT, ".env")
+    if os.path.exists(envf):
+        for line in open(envf, encoding="utf-8-sig"):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    kid = env.get("ASC_KEY_ID") or os.environ.get("ASC_KEY_ID")
+    iss = env.get("ASC_ISSUER_ID") or os.environ.get("ASC_ISSUER_ID")
+    p8 = env.get("ASC_API_KEY_PATH") or os.environ.get("ASC_API_KEY_PATH")
+    if not (kid and iss and p8 and os.path.exists(p8)):
+        raise RuntimeError("ASC_* not configured in .env (see DEPLOY.md 2b)")
+    now = int(time.time())
+    tok = jwt.encode({"iss": iss, "iat": now, "exp": now + 600,
+                      "aud": "appstoreconnect-v1"},
+                     open(p8).read(), algorithm="ES256",
+                     headers={"kid": kid, "typ": "JWT"})
+    req = urllib.request.Request(
+        "https://api.appstoreconnect.apple.com/v1/apps?limit=100",
+        headers={"Authorization": "Bearer " + tok})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = json.load(r)
+    return [{"id": a["id"],
+             "bundle": a["attributes"].get("bundleId"),
+             "name": a["attributes"].get("name"),
+             "sku": a["attributes"].get("sku")} for a in d.get("data", [])]
 
 
 def cmd_apps():
-    pw, br, ctx = _attach()
-    p = _asc_page(ctx)
-    print("url=%s" % p.url)
-    rows = _harvest(p)
+    rows = _api_apps()
+    print("source=App Store Connect API")
     if not rows:
-        print("apps=0  (not on the app list, or not logged in - run `where`/`shot`)")
+        print("apps=0  (no app records on this team yet)")
     for r in rows:
-        print("app id=%s  %s" % (r["id"], r["text"].replace("\n", " | ")))
-    pw.stop()
+        print("app id=%s  bundle=%s  name=%s  sku=%s"
+              % (r["id"], r["bundle"], r["name"], r["sku"]))
 
 
 def cmd_appid():
-    """The read-back that makes this worth automating: observe the ID, never retype it."""
-    pw, br, ctx = _attach()
-    p = _asc_page(ctx)
-    # 1) already inside the app? the URL carries the id
-    import re
-    m = re.search(r"/app/(\d{6,})", p.url or "")
-    if m:
-        print("ascAppId=%s" % m.group(1))
-        print("source=url")
-        pw.stop()
-        return
-    # 2) otherwise pick the row that names our app / bundle
-    rows = _harvest(p)
-    hit = [r for r in rows if BUNDLE in r["text"] or "HelmDeck" in r["text"]]
+    """The read-back that makes this worth automating: observe the id, never
+    retype it - and observe it from the API, which the stale Apps page proved
+    necessary (see the module docstring)."""
+    rows = _api_apps()
+    hit = [r for r in rows if r["bundle"] == BUNDLE]
     if len(hit) == 1:
         print("ascAppId=%s" % hit[0]["id"])
-        print("source=list-row")
-    elif not rows:
-        print("ascAppId=  (nothing found - are you on appstoreconnect.apple.com/apps and logged in?)")
+        print("source=api bundle=%s name=%s" % (hit[0]["bundle"], hit[0]["name"]))
+    elif not hit:
+        print("ascAppId=  (no app record for %s - create it: My Apps -> +)" % BUNDLE)
     else:
-        print("ascAppId=  (ambiguous - matched %d rows)" % len(hit))
-        for r in rows:
-            print("  candidate id=%s  %s" % (r["id"], r["text"].replace("\n", " | ")[:120]))
-    pw.stop()
+        print("ascAppId=  (ambiguous - %d records claim %s)" % (len(hit), BUNDLE))
 
 
 CMDS = {"open": cmd_open, "shot": cmd_shot, "where": cmd_where,
