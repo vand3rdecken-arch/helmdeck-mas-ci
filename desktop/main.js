@@ -144,11 +144,27 @@ function startDaemon(pyOverride) {
     const fs = require("fs");
     // detached needs a real sink, not an inherited pipe that dies with Electron -
     // append to a log file so the daemon is fully independent yet still logged.
+    // openSync can hit a transient sharing violation (AV/indexer briefly
+    // holding the file, or the just-evicted prior daemon's handle not yet
+    // released) - silently falling back to "ignore" on the FIRST try meant a
+    // healthy daemon could run its whole life with zero captured output.
+    // Retry a few times before giving up.
     let out = "ignore";
-    try { out = fs.openSync(path.join(daemonDir, "daemon.out.log"), "a"); } catch { /* ignore */ }
+    const logPath = path.join(daemonDir, "daemon.out.log");
+    let openErr = null;
+    for (let i = 0; i < 5; i++) {
+      try { out = fs.openSync(logPath, "a"); openErr = null; break; }
+      catch (e) { openErr = e; }
+      const until = Date.now() + 150;
+      while (Date.now() < until) { /* short synchronous backoff */ }
+    }
+    if (openErr) log("daemon", "could not open daemon.out.log after retries - "
+      + "output NOT captured: " + openErr.message + "\n");
     // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
     daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
-      { cwd: daemonDir, env: { ...process.env }, windowsHide: true,
+      // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F
+      // (SINGLETON eviction, a competing supervisor) - no flush window needed.
+      { cwd: daemonDir, env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true,
         shell: process.platform === "win32", detached: true,
         stdio: ["ignore", out, out] });
     daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));

@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { create } from "zustand";
 import { t } from "@/i18n/core";
 
+import { track } from "./analytics";
 import { useDemo } from "./demo";
 import { generateKeyPair } from "./e2ee";
 
@@ -68,6 +69,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
     if (o.b) {
       get().set({ baseUrl: String(o.b).replace(/\/+$/, ""), token: o.t ?? "", relayUrl: "", room: "", daemonPub: "" });
       useDemo.getState().disable();   // a real daemon wins over the sample board
+      track("login", { mode: "direct" });   // pairing IS the app's login
       return { ok: true, mode: "direct" };
     }
     // Relay invite {u: relayUrl, r: room, k: daemonPub, t: userToken} — remote.
@@ -80,6 +82,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
     if (!mySec || !myPub) { const kp = generateKeyPair(); mySec = kp.sec; myPub = kp.pub; }
     get().set({ relayUrl: String(o.u).replace(/\/+$/, ""), room: o.r, daemonPub: o.k, token: o.t ?? "", mySec, myPub });
     useDemo.getState().disable();     // a real daemon wins over the sample board
+    track("login", { mode: "relay" });   // pairing IS the app's login
     return { ok: true, mode: "relay" };
   },
 
