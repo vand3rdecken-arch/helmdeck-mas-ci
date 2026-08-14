@@ -93,19 +93,59 @@ if (app.isPackaged) {
 
 // find a working Python 3: probe candidates with `--version` and use the first
 // that runs, so we don't depend on `py` alone being on PATH.
-function resolvePython() {
+//
+// shell:true was the old default for every one of these spawns ("so the `py`
+// launcher resolves"). That premise was wrong: py.exe/python.exe are real
+// executables, and CreateProcess resolves a bare name via PATH natively - no
+// shell needed. Worse, shell:true + an ARRAY of args on Windows does not
+// quote for cmd.exe (Node only escapes args itself in the no-shell path);
+// it naively joins them into one raw string. Handed a multi-word `-c` script
+// this silently split it into separate shell tokens - the same BatBadBut
+// class of bug that already bit claude.cmd (drivers._real_claude_exe).
+// Found live 2026-08-14: the daemon ran fine every spawn (port answered,
+// relay connected) but daemon.out.log never captured one line from any of
+// them, direct writes to the same file worked fine, and a reboot (ruling
+// out any lock/orphan-handle theory) changed nothing - the loss was inside
+// the cmd.exe -> py.exe -> python.exe hop this shell:true caused, not the
+// file. probeNoShell() below is now the default; shell:true survives only
+// as a last-resort fallback for a PATH setup where CreateProcess itself
+// can't find a bare name (unverified to ever be needed here, kept safe).
+function probeVersion(cmd, args) {
   const { spawnSync } = require("child_process");
+  try {
+    const r = spawnSync(cmd, [...args, "--version"], { windowsHide: true });
+    if (r.status === 0) return true;
+  } catch { /* fall through to the shell fallback */ }
+  try {
+    const r = spawnSync(cmd, [...args, "--version"], { shell: true, windowsHide: true });
+    return r.status === 0;
+  } catch { return false; }
+}
+
+function resolvePython() {
   const win = process.platform === "win32";
   const cands = win
     ? [["py", ["-3.12"]], ["py", ["-3"]], ["python", []], ["python3", []]]
     : [["python3", []], ["python", []]];
   for (const [cmd, args] of cands) {
-    try {
-      const r = spawnSync(cmd, [...args, "--version"], { shell: win, windowsHide: true });
-      if (r.status === 0) return { cmd, args };
-    } catch { /* try next */ }
+    if (!probeVersion(cmd, args)) continue;
+    const real = win ? realInterpreter(cmd, args) : null;
+    return real ? { cmd: real, args: [] } : { cmd, args };
   }
   return win ? { cmd: "py", args: ["-3.12"] } : { cmd: "python3", args: [] };
+}
+
+// Resolve THROUGH a launcher indirection (py.exe) to the real interpreter
+// behind it, so the daemon spawns the actual python.exe directly - no shell
+// hop, no launcher hop, argv passed exactly as given.
+function realInterpreter(cmd, args) {
+  const { spawnSync } = require("child_process");
+  try {
+    const r = spawnSync(cmd, [...args, "-c", "import sys; print(sys.executable)"],
+      { windowsHide: true, encoding: "utf8" });
+    const p = (r.stdout || "").trim();
+    return p && require("fs").existsSync(p) ? p : null;
+  } catch { return null; }
 }
 
 // Best-effort logging. In a packaged GUI app stdout may be a closed/broken
@@ -200,12 +240,16 @@ function startDaemon(pyOverride) {
       log("daemon", "daemon.out.log unavailable (held by another process) - "
         + "logging to " + fallbackPath + " instead\n");
     }
-    // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
+    // shell:true only when py.cmd is still a bare launcher name (resolvePython
+    // couldn't resolve the real interpreter) - a real absolute exe path spawns
+    // directly, which also removes the cmd.exe hop that was swallowing this
+    // process's stdout/stderr (see resolvePython/realInterpreter above).
+    const daemonNeedsShell = process.platform === "win32" && !path.isAbsolute(py.cmd);
     daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
       // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F
       // (SINGLETON eviction, a competing supervisor) - no flush window needed.
       { cwd: daemonDir, env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true,
-        shell: process.platform === "win32", detached: true,
+        shell: daemonNeedsShell, detached: true,
         stdio: ["ignore", out, out] });
     daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));
     daemon.unref();   // let Electron exit without waiting on / tethering the daemon
@@ -220,9 +264,11 @@ function mintDesktopToken(pyOverride) {
   const { spawnSync } = require("child_process");
   const py = pyOverride || resolvePython();
   try {
-    // a helper script (not `-c`) so Windows shell quoting can't mangle it
+    // a helper script (not `-c`) so Windows shell quoting can't mangle it;
+    // same shell-only-for-a-bare-name rule as the daemon spawn above.
     const r = spawnSync(py.cmd, [...py.args, "mint_token.py", "owner", "desktop"],
-      { cwd: daemonDir, shell: process.platform === "win32", windowsHide: true, encoding: "utf8" });
+      { cwd: daemonDir, shell: process.platform === "win32" && !path.isAbsolute(py.cmd),
+        windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && r.stdout) desktopToken = r.stdout.trim();
   } catch { /* leave empty */ }
 }
