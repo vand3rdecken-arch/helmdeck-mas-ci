@@ -158,6 +158,10 @@ def emit(kind, track, **fields):
         f.write(json.dumps(row) + "\n")
     return row
 
+def log(kind, msg):
+    """Freeform log line, no track association (bridge/pm/merge chatter)."""
+    return emit(kind, "-", msg=msg)
+
 def read_events():
     import db
     return db.events_all()
