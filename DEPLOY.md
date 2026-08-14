@@ -159,48 +159,64 @@ is a secret you may commit; the certificate and profile stay on Expo's servers.
 State as of this section: the project is **linked** —
 `@tienduyvo/helmdeck`, projectId `a0ea8905-52a1-4223-b102-1dfd9e98d561`, recorded
 in `app/app.json` as `extra.eas.projectId` + `owner`. `eas.json` already carries an
-`internal` (ad-hoc/device) and a `production` (App Store) profile.
+`internal` (ad-hoc/device) and a `production` (App Store) profile. A paid **Apple
+Developer Program** membership is the hard floor — without it Apple issues no
+distribution certificate and every route below dies at the identical step
+(confirmed active by the owner on 2026-08-14).
 
-Prereqs an agent cannot supply:
-- **Apple Developer Program** enrollment (paid, per year). Without it Apple issues
-  no distribution certificate at all — every command below fails at the same step.
-- An Apple sign-in. `eas credentials` has **no `--non-interactive` flag** (checked:
-  its only flag is `-p/--platform`), so it cannot be driven from a headless card.
+Decided route (owner, 2026-08-14): **App Store Connect API key**, not an Apple ID
+login. Everything below is driven by `deploy/ios_credentials.sh` — read its header,
+it carries the source citations for the claims here.
 
-Two ways to give EAS the Apple access. Pick one:
+**Owner does once, by hand** (EAS cannot bootstrap this — `createAscApiKeyAsync`
+is one of the few calls that hard-forces a user session):
+1. App Store Connect → *Users and Access* → *Integrations* → *Keys* → **+**,
+   role **Admin**. *App Manager is not enough for certificate creation.*
+2. Download the `.p8`. Apple serves it **exactly once**, no re-download.
+   Store it **outside the repo** (e.g. `C:/hd/secrets/`) — the script refuses to
+   run otherwise, and `*.p8` is git-ignored as a second net.
+3. Put the values in `.env` (git-ignored):
+   ```
+   ASC_API_KEY_PATH=C:/hd/secrets/AuthKey_XXXXXXXXXX.p8
+   ASC_KEY_ID=XXXXXXXXXX
+   ASC_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+   APPLE_TEAM_ID=XXXXXXXXXX        # developer.apple.com → Membership details
+   APPLE_TEAM_TYPE=INDIVIDUAL      # or COMPANY_OR_ORGANIZATION / IN_HOUSE
+   ```
+4. ```bash
+   bash deploy/ios_credentials.sh --check   # validates everything, changes nothing
+   bash deploy/ios_credentials.sh           # creates cert + profile
+   ```
 
-**A — interactive Apple ID + 2FA** (fastest once, re-prompts later):
+**Why step 4 wants a real terminal — and why that is not a 2FA prompt.** Verified
+in eas-cli's source, because the docs do not say it:
+`credentials/ios/appstore/AppStoreApi.js` sets
+`defaultAuthenticationMode = hasAscEnvVars() ? API_KEY : USER`. With the three
+`EXPO_ASC_*` vars exported, certificate creation, profile creation, ad-hoc profiles
+and bundle-ID registration all authenticate by JWT, and `credentials/context.js`
+skips the *"Do you want to log in to your Apple account?"* prompt entirely. What
+still needs a TTY is `SetUpDistributionCertificate.js`:
+`runNonInteractiveAsync` throws `MissingCredentialsNonInteractiveError` when no
+certificate exists yet — non-interactive mode **reuses** a certificate, it never
+mints the first one. Confirmed empirically: with the key set, the run stops at
+*"Select your Apple Team Type"*, not at an Apple login. `APPLE_TEAM_ID` +
+`APPLE_TEAM_TYPE` answer that one ahead of time.
+
+**Afterwards it is unattended** — an agent card can run:
 ```bash
-cd app
-npx eas-cli credentials -p ios      # → Sign in with Apple ID, enter the 2FA code
-# choose: production → "Set up new credentials" → let EAS manage
+bash deploy/ios_credentials.sh --build                    # production .ipa
+bash deploy/ios_credentials.sh --build --profile internal # ad-hoc, needs UDIDs
 ```
-EAS then creates the Distribution Certificate and the Provisioning Profile itself
-and stores both server-side. The 2FA session is short-lived: a later build from a
-new shell asks again, and it can never run unattended.
+`internal` installs only on devices registered with `npx eas-cli device:create`;
+`production` needs no UDIDs. Verify the assets really exist with
+`npx eas-cli credentials -p ios` (lists cert + profile + expiry) — a successful
+`--build` is the stronger proof, since it is exactly the path a card takes.
 
-**B — App Store Connect API key** (recommended for this repo): App Store Connect →
-*Users and Access* → *Integrations* → *Keys* → **+**, role *App Manager*, download
-the `.p8` **once** (Apple never shows it again). Then feed it to EAS:
-```bash
-cd app
-npx eas-cli credentials -p ios      # → App Store Connect API Key → Add a new key
-# supply: Issuer ID, Key ID, path to the .p8
-```
-After that, certificate + profile creation and every future build are
-non-interactive — an agent card can run them, no 2FA in the loop. Keep the `.p8`
-out of the repo (it is a secret; `archive/` and the ignore rules already cover the
-Android keystore — do the same here).
-
-Verify (either path) — this is the check that the signing assets really exist:
-```bash
-cd app
-npx eas-cli credentials -p ios      # the summary lists cert + profile, expiry, UDIDs
-npx eas-cli build -p ios --profile internal    # ad-hoc install for a test device
-```
-`--profile internal` needs the test iPhone's UDID registered
-(`npx eas-cli device:create`); `--profile production` produces an App Store `.ipa`
-and needs no UDIDs.
+**Still requires a human Apple ID + 2FA** (these ignore the API key —
+`AppStoreApi.js` routes them through `ensureUserAuthenticatedAsync`):
+ASC API key management itself, and **push notification keys**. HelmDeck ships
+`expo-notifications`, so iOS push will need one interactive session later. It is
+not needed for signing or building.
 
 ⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
 hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
