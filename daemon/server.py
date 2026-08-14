@@ -1201,12 +1201,19 @@ class H(BaseHTTPRequestHandler):
                 except RuntimeError as e:
                     return self._send(400, json.dumps({"error": str(e)}))
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "update":
-                import sessions
+                import sessions, events
                 if user["role"] == "client":
                     t = sessions.get_track(parts[1])
                     if not t or t.get("client") != user["name"]:
                         return self._send(403, json.dumps({"error": "not your card"}))
                     body.pop("autopilot", None)   # autopilot opt-in is owner/operator only
+                    body.pop("driver", None)      # capability grant (GUI/desktop control) - admin only
+                elif "driver" in body:
+                    admin_roles = (events.settings().get("policy") or {}).get(
+                        "chat_admin_roles", ["owner", "operator"])
+                    if user["role"] not in admin_roles:
+                        return self._send(403, json.dumps(
+                            {"error": "changing a card's driver requires: " + ", ".join(admin_roles)}))
                 try:
                     return self._send(200, json.dumps(
                         sessions.update_track(parts[1], body, actor=user["name"])))
