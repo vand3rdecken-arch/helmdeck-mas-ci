@@ -290,8 +290,31 @@ auth every time an `ascAppId` isn't already pinned in `eas.json`. Fix once a
 human has created the app record in App Store Connect (or logged in
 interactively to let eas-cli create it): copy the app's numeric ASC ID into
 `app/eas.json → submit.production.ios.ascAppId`, and every later
-`eas submit --non-interactive` skips this step entirely. **Not yet done** —
-this card's TestFlight submission is blocked exactly here.
+`eas submit --non-interactive` skips this step entirely.
+
+Both halves of that are verified in eas-cli source, not guessed:
+- `submit/ios/AppProduce.js` `createAppStoreConnectAppAsync` calls
+  `ensureUserAuthenticatedAsync(...)` **unconditionally** — that is why no
+  amount of API-key env gets you past app creation.
+- `submit/ios/IosSubmitCommand.js` `resolveAscAppIdentifierAsync`: if
+  `profile.ascAppId` is set it returns immediately, never reaching AppProduce.
+  The one thing it still runs, `ensureTestFlightSetupForExistingAppAsync`,
+  takes the `AuthenticationMode.API_KEY` branch when `hasAscEnvVars()` and
+  `EXPO_APPLE_TEAM_ID` are present (and is best-effort/try-catch anyway).
+
+**CDP co-pilot for the human half:** `deploy/asc_guide.py` attaches to the
+persistent HelmDeck Chrome (same standard as `daemon/browsercap.py`) so the
+owner does only password + 2FA, and the numeric app ID is **read back out of
+the live DOM** instead of transcribed by hand:
+```bash
+py -3.12 deploy/asc_guide.py open    # launch/attach + open App Store Connect
+py -3.12 deploy/asc_guide.py where   # url + title + headings (login? app list?)
+py -3.12 deploy/asc_guide.py shot    # -> shots/asc.png
+py -3.12 deploy/asc_guide.py appid   # the ascAppId for app.helmdeck
+```
+Creating the record by hand: My Apps → **+** → New App → Platform *iOS*,
+Bundle ID `app.helmdeck` (already registered, so it is in the dropdown), a
+**globally unique** App Store name, any unique SKU, Full Access.
 
 ⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
 hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
