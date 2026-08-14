@@ -152,5 +152,28 @@ if os.path.exists(wf_path):
     check("latest-mac.yml" in wf,
           "the workflow keeps latest-mac.yml - the auto-update feed, not a build leftover")
 
+# -- 6. the source publish the runner depends on -----------------------------
+# The workflow can only run once the source is IN the public repo that already
+# hosts the releases. Two things about that push are silent regressions if
+# someone "tidies" them, so they are pinned here rather than discovered live.
+pub = os.path.join(ROOT, "deploy", "publish_source.sh")
+check(os.path.exists(pub), "deploy/publish_source.sh exists - the audited push "
+                           "that gives the macOS runner something to check out")
+if os.path.exists(pub):
+    src = read(pub)
+    check("--all" not in src.split("git push")[-1],
+          "the push is single-branch - `--all` would hit GitHub's 100 MB hard "
+          "limit on the parked wip-expo-migration release binaries")
+    check("git@github.com:" in src,
+          "the remote is SSH - the owner's gh token has no `workflow` scope, so "
+          "an HTTPS push touching .github/workflows/ is rejected")
+
+readme = read(ROOT, "README.md")
+check("## Downloads" in readme,
+      "the root README is the PUBLIC product page (Play links, SmartScreen "
+      "note) - pushing the internal map here would replace a live page")
+check(os.path.exists(os.path.join(ROOT, "docs", "repo-map.md")),
+      "the internal repo map lives at docs/repo-map.md")
+
 print("FAILURES: %d" % len(_fails))
 raise SystemExit(1 if _fails else 0)
