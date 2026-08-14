@@ -2788,6 +2788,8 @@ def cancel_turn(tid, actor="owner"):
 
 ZOMBIE_NOTE = "daemon restarted mid-turn - resend the last instruction"
 RESUME_NOTE = "Turn unterbrochen - erneut steuern setzt den Kontext fort"
+_BOUNCE_ESCALATE_AT = 3   # consecutive daemon-restart bounces before the note stops
+                          # inviting a doomed retry and says so plainly instead
 
 
 def _interrupt_note_report(t, note):
@@ -2961,11 +2963,24 @@ def sweep_zombies(min_idle_s=0):
         else:
             continue
         box = {}
+        # Repeated-bounce evidence BEFORE this one is recorded, so a card that
+        # keeps taking the daemon down with it (not just failing its own turn)
+        # gets told apart from an ordinary one-off restart. Derived from the
+        # event trail (consecutive_gate_fails' pattern), never a stored flag.
+        prior_bounces = events.consecutive_bounces(t["id"])
 
         def _bounce(tt, st=st):
             if tt.get("status") != st:
                 return False             # settled by another writer meanwhile
-            box["note"] = RESUME_NOTE if _promote_live_session(tt) else ZOMBIE_NOTE
+            note = RESUME_NOTE if _promote_live_session(tt) else ZOMBIE_NOTE
+            if prior_bounces + 1 >= _BOUNCE_ESCALATE_AT:
+                note = ("daemon restarted mid-turn %dx IN A ROW on this card - "
+                         "resending the same instruction has failed repeatedly and "
+                         "is likely to fail again (the session itself may be too "
+                         "large/expensive to resume, or stuck in a loop). Do not "
+                         "just retry - fork this card into a fresh session, or ask "
+                         "the owner what to do." % (prior_bounces + 1))
+            box["note"] = note
             tt["status"] = "bounced"
             tt["gate_report"] = _interrupt_note_report(tt, box["note"])
         t = _mutate(t["id"], _bounce) or t

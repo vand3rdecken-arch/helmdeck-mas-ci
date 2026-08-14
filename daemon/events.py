@@ -156,6 +156,17 @@ def emit(kind, track, **fields):
     row.update(fields)
     with open(EV, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
+    # Write-through to the query path (db.events_all, what consecutive_gate_fails
+    # / consecutive_bounces / read_events actually read). db.event_insert had NO
+    # callers anywhere - events.jsonl only gets into sqlite via the ONE-TIME
+    # startup migration (db.init), so every event emitted after boot was
+    # invisible to every consumer of read_events(). Best-effort: the jsonl
+    # append above is the durable record regardless of db state.
+    try:
+        import db
+        db.event_insert(row)
+    except Exception:
+        pass
     return row
 
 def log(kind, msg):
@@ -179,6 +190,22 @@ def consecutive_gate_fails(track, ev=None):
                     key=lambda x: x["ts"]):
         fails = 0 if e.get("ok") else fails + 1
     return fails
+
+def consecutive_bounces(track, ev=None):
+    """How many times in a row this track has bounced with reason=daemon_restart
+    (the daemon itself died mid-turn), most recent first - resets on any
+    completed turn. Mirrors consecutive_gate_fails: real trajectory evidence
+    instead of a single-shot flag, so a card that keeps taking the daemon down
+    with it (not just failing its own turn) can be told apart from an ordinary
+    one-off restart."""
+    n = 0
+    for e in sorted((e for e in (ev if ev is not None else read_events())
+                     if e.get("track") == track
+                     and (e.get("kind") == "bounce" and e.get("reason") == "daemon_restart"
+                          or e.get("kind") == "turn")),
+                    key=lambda x: x["ts"]):
+        n = n + 1 if e.get("kind") == "bounce" else 0
+    return n
 
 def plan_effective(s=None):
     """Resolve settings.pm.plan to the plan that actually bills this board.
