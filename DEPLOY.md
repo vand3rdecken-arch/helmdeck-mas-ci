@@ -95,6 +95,63 @@ existing `desktop/release/*.exe`). Since 0.2.2 the installed app auto-updates
 its UI, so this manual step is only for shell releases — the once-per-user
 install that grants auto-update, then never again for JS-only changes.
 
+## 1c) macOS desktop build → a macOS runner, never this box
+
+The Mac app is the same Electron shell, same daemon, same `app/dist` — only the
+packaging differs. What does **not** transfer is the toolchain: `codesign`,
+`hdiutil` and `notarytool` exist only on macOS, so there is **no cross-build
+from Windows**. electron-builder says so itself and stops immediately:
+
+```
+⨯ Build for macOS is supported only on macOS
+```
+
+So the Mac artifact is built by GitHub's macOS runner:
+`.github/workflows/desktop-mac.yml` (`runs-on: macos-14`, Apple silicon, which
+cross-compiles the x64 slice too). Trigger it from the Actions tab
+(**workflow_dispatch** — optional `version` to stamp, optional `release_tag` to
+attach the artifacts to a release) or let it run on a push touching
+`desktop/**`, `app/**` or `daemon/**`. On a Mac, the same build is one command:
+
+```bash
+bash desktop/build-mac.sh --version 0.2.3        # dmg + zip, arm64 + x64
+```
+
+Output in `desktop/release/`: `HelmDeck-<v>-{arm64,x64}.dmg` for humans,
+`HelmDeck-<v>-{arm64,x64}.zip` **for the auto-updater** — Squirrel.Mac (what
+`native-updater.js` drives via electron-updater) can only apply a zipped `.app`,
+it cannot read a `.dmg` — plus `latest-mac.yml`, the feed pointing at the zip.
+
+**The build succeeds with no secrets at all** — it just produces an *unsigned*
+app: Gatekeeper quarantines it and the auto-updater cannot apply updates to it
+(Squirrel.Mac requires a valid signature). Add the repo secrets and the same
+workflow starts signing, then notarizing, with no file changing:
+
+| secret | effect |
+| --- | --- |
+| `MAC_CSC_LINK` + `MAC_CSC_KEY_PASSWORD` | Developer ID `.p12` → signed build |
+| `ASC_API_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID` | → notarized (**all four**, on top of signing) |
+
+The ASC key is the *same* App Store Connect key `deploy/ios_credentials.sh`
+already uses (§2b) — one key notarizes macOS and signs iOS.
+
+Traps already paid for here:
+- `notarize` stays `false` in `electron-builder.yml`; `build-mac.sh` turns it on
+  with `-c.mac.notarize.teamId=<team>`. The **object** form is deliberate —
+  `-c.mac.notarize=true` reaches electron-builder as the *string* `"true"`,
+  truthy but carrying no team id.
+- Custom `entitlements` **replace** electron-builder's defaults, so
+  `desktop/build/entitlements.mac.plist` restates the three JIT ones Electron
+  needs *plus* `disable-library-validation` — without it a hardened HelmDeck
+  cannot spawn the Python daemon or the `claude` CLI (code it did not sign).
+- The Mac icon is a **tracked** PNG (`desktop/assets/icon-mac-1024.png`, on
+  Apple's inset 824/1024 grid) that electron-builder converts to `.icns`, so a
+  clean CI checkout needs neither Pillow nor `iconutil` — unlike `icon.ico`,
+  which is git-ignored and must be regenerated before every Windows build.
+- No signing identity ⇒ `build-mac.sh` exports `CSC_IDENTITY_AUTO_DISCOVERY=false`.
+  Without it electron-builder hunts an empty keychain and *fails* the build
+  instead of producing a clean unsigned one.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):
