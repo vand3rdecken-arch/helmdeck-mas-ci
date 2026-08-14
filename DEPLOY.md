@@ -316,6 +316,46 @@ Creating the record by hand: My Apps → **+** → New App → Platform *iOS*,
 Bundle ID `app.helmdeck` (already registered, so it is in the dropdown), a
 **globally unique** App Store name, any unique SKU, Full Access.
 
+⚠ **Do not read the result off the Apps page.** Right after the record was
+created here, that list still rendered **"No Apps"** — a stale SPA view — while
+`GET /v1/apps` already returned the app. Trusting the screen would have meant
+re-creating an app that existed. `asc_guide.py apps|appid` therefore query the
+App Store Connect **API** with the same `.p8`; the browser verbs exist only to
+carry the human through password + 2FA.
+
+### 2c) TestFlight submit — DONE 2026-08-14
+
+```bash
+cd app && npx eas-cli submit --platform ios --latest --non-interactive --wait
+```
+Result: build `e67d1247` → submission `da233c48`, *"Submitted your app to Apple
+App Store Connect!"*. Live state:
+```bash
+py -3.12 deploy/asc_build_state.py --wait   # Apple's own processing verdict
+```
+That verdict matters: `eas submit` returning only proves the .ipa *reached*
+Apple. Processing is a real gate (bad slice / entitlement / Info.plist ⇒
+`INVALID`), and with no macOS on this box it is the strongest automated
+statement available about the artifact — R2 in
+`docs/ios-watch-feasibility.md` still stands, the final "does it launch" is a
+human tap on the phone.
+
+**Live values:** ASC app id `6801637667`, bundle `app.helmdeck`, SKU
+`helmdeck-001`, primary language German, TestFlight group *Team (Expo)*
+(auto-created by eas-cli).
+
+⚠ **The submit key is a THIRD credential slot**, separate from the build
+credentials, and it surprised this card: after the app-exists step passes,
+eas-cli says *"App Store Connect API Keys cannot be set up in --non-interactive
+mode"*. The exported `EXPO_ASC_*` env is **not** consulted here —
+`AscApiKeySource.js` only accepts (a) all three of
+`ascApiKeyPath`/`ascApiKeyId`/`ascApiKeyIssuerId` in the submit profile, or
+(b) a key stored on EAS via `SetUpAscApiKey`, which needs a TTY. Route (a) is
+what `eas.json` currently uses, which makes submit **work on this box only** —
+registered as debt `ios-submit-local-asc-key`. Route (b) is the portable fix:
+one interactive `npx eas-cli credentials -p ios` from cmd.exe, then delete the
+three fields.
+
 ⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
 hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
 an empty `extra.router` here. Diff `app/app.json` after any `eas` command and keep
