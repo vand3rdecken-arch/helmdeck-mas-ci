@@ -524,6 +524,38 @@ DEBT = [
                "pinned, fix at the source and drop the stdout-verdict override.",
         "order": 20,
     },
+    {
+        "id": "ios-submit-local-asc-key",
+        "title": "eas submit reads the ASC key from a path only THIS box has",
+        "status": "open",
+        "what": "app/eas.json submit.production.ios pins ascApiKeyPath + "
+                "ascApiKeyId + ascApiKeyIssuerId, and the path points at "
+                "C:/hd/secrets/AuthKey_*.p8 on the owner's machine. Chosen "
+                "because eas-cli's other route - storing the key on EAS' servers "
+                "via SetUpAscApiKey - has no non-interactive mode "
+                "(AscApiKeySource.js: 'App Store Connect API Keys cannot be set "
+                "up in --non-interactive mode'), and a card cannot drive a TTY "
+                "prompt. The .p8 itself is NOT committed and stays outside the "
+                "repo; only its path and the two non-secret identifiers are, and "
+                "those two are already published in DEPLOY.md 2b.",
+        "why_it_bites": "eas submit works on the owner's box and nowhere else - "
+                        "another machine, a fresh clone or a CI runner dies on a "
+                        "missing .p8. It also quietly breaks the rule the rest of "
+                        "iOS signing follows (DEPLOY.md 2b: the signing assets "
+                        "live in EAS, not in the repo), so the next reader "
+                        "reasonably assumes submit is portable when it is not.",
+        "trigger": "any eas submit from a different machine or a clean clone, or "
+                   "the day the .p8 is moved or rotated",
+        "fix": "One interactive `npx eas-cli credentials -p ios` from cmd.exe / "
+               "Windows Terminal (NOT Git Bash - MinTTY gives node no TTY, the "
+               "trap already written down in DEPLOY.md 2b), uploading the .p8 as "
+               "the SUBMISSION_SERVICE key. Then delete the three ascApiKey* "
+               "fields from eas.json: getAscApiKeyFromCredentialsServiceAsync "
+               "then resolves the key from EAS and every submit is unattended "
+               "from anywhere - the same one-time-then-forever shape the "
+               "distribution certificate already has.",
+        "order": 21,
+    },
 ]
 
 def list_debt():
