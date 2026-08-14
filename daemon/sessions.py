@@ -3093,8 +3093,27 @@ def delete_track(tid, actor="owner"):
 
 def update_track(tid, patch, actor="owner"):
     """Edit a card's request fields after creation. Only benign fields -
-    lane/status/economics move through their own verbs."""
+    lane/status/economics move through their own verbs.
+
+    "driver" is technically in EDITABLE (a card can switch execution engine
+    after filing - e.g. claude -> claude-desktop to grant windows-mcp/GUI
+    control) but it is NOT benign like the others: it's a capability grant,
+    not a request-detail edit. This function is the ONE place that field is
+    ever written (server.py's /tracks/<id>/update and copilot.py's
+    set_driver action both route through here), so its guards apply
+    regardless of caller - role-gating still belongs to the caller (mirrors
+    fast_track/resolve_conflict: policy.chat_admin_roles checked BEFORE
+    calling this), but "is this even a real driver" and "not mid-turn" are
+    invariants no caller should be able to skip."""
     import events
+    if "driver" in patch and patch["driver"] is not None:
+        valid = set((events.settings().get("drivers") or {}).keys())
+        if patch["driver"] not in valid:
+            raise ValueError("unknown driver '%s' - choices: %s"
+                              % (patch["driver"], ", ".join(sorted(valid)) or "(none configured)"))
+        import drivers
+        if drivers.turn_active(tid):
+            raise RuntimeError("cannot change driver while a turn is running - wait for it to finish")
     changed = {}
 
     def _edit(t):
@@ -3118,7 +3137,18 @@ def update_track(tid, patch, actor="owner"):
     if changed:
         events.emit("edit", tid, actor=actor, fields=changed)
         from actionlog import ActionLog
-        ActionLog(t["run_dir"]).log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
+        log = ActionLog(t["run_dir"])
+        log.log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
+        # Visible capability-grant note (never a silent change) whenever the
+        # NEW driver carries windows-mcp - the card's agent gains real
+        # desktop/GUI control from here on, and every future turn on this
+        # driver is screen-recorded (see events.py DEFAULTS["drivers"]).
+        if "driver" in changed:
+            dcfg = (events.settings().get("drivers") or {}).get(changed["driver"]) or {}
+            if "mcp__windows-mcp__*" in (dcfg.get("allowed_tools") or []):
+                log.log("note", "⚠ Desktop-Zugriff aktiviert (%s) von %s - "
+                        "der Agent kann jetzt Maus/Tastatur/Bildschirm steuern, "
+                        "Turns werden aufgezeichnet." % (changed["driver"], actor))
     return t
 
 DIRECTIVES = os.path.join(ROOT, "board_directives.json")
