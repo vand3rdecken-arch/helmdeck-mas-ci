@@ -7,8 +7,18 @@ directories:
 files:
   - main.js
   - setup.js
-  - updater.js   # the relay OTA auto-updater main.js require()s - must be in the asar
+  - updater.js         # the relay OTA auto-updater (UI-bundle-only) main.js require()s
+  - native-updater.js  # electron-updater wrapper - FULL-app updates (main.js included)
   - package.json
+# electron-updater's target feed (Paseo parity): a real full-app auto-update,
+# not just the UI bundle. --publish never (release_desktop.sh's default) still
+# writes latest.yml + the NSIS blockmap locally without uploading anything -
+# the script uploads them itself alongside the .exe, same discipline as the
+# hand-rolled checksum/SHA256SUMS.txt step already there.
+publish:
+  provider: github
+  owner: Tienduyvo
+  repo: helmdeck
 extraResources:
   # the Python daemon source (the brain + runner). Secrets and per-user data are
   # NEVER bundled - they are created fresh on the user's machine at first run.

@@ -11,6 +11,9 @@
     "dist:win": "npm run build:web && electron-builder --win --config electron-builder.yml",
     "release": "bash ../deploy/release_desktop.sh"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"

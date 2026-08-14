@@ -56,7 +56,12 @@ if ($LASTEXITCODE -ne 0) { throw "web export failed" }
 # electron-builder REWRITES package.json in place when extraMetadata is set
 # (drops scripts/devDependencies) - snapshot it and restore it afterward so a
 # release build never corrupts the source tree.
-$ebArgs = @("--win", "--config", "electron-builder.yml")
+# --publish never: electron-builder still WRITES latest.yml + the NSIS
+# blockmap locally (needed by electron-updater, native-updater.js) because
+# electron-builder.yml now carries a publish: block - it just doesn't upload
+# them itself. release_desktop.sh uploads them via gh, same discipline as
+# the hand-rolled SHA256SUMS.txt step already there.
+$ebArgs = @("--win", "--config", "electron-builder.yml", "--publish", "never")
 $pkgBak = $null
 if ($Version) {
   $ebArgs += "-c.extraMetadata.version=$Version"

@@ -4,11 +4,13 @@
 # push_relay.sh / push_update.sh, turning the "build the installer, checksum
 # it, upload it, keep SHA256SUMS.txt correct" chore into one command.
 #
-# This build carries the relay OTA auto-updater (desktop/updater.js +
-# desktop/tray.py), so it is the LAST build a user installs by hand - after it,
-# future JS/UI updates arrive silently. That is exactly why a fresh installer
-# must reach GitHub: the auto-update capability lives in the shell, which OTA
-# cannot replace (the same native-vs-OTA line the phone draws).
+# This build carries BOTH auto-updaters: the relay OTA (desktop/updater.js +
+# desktop/tray.py, UI bundle only) and electron-updater (desktop/native-
+# updater.js, the WHOLE app - main.js included). So it is the LAST build a
+# user installs by hand for real - after it, future changes of any kind
+# arrive silently, UI or shell. Uploads latest.yml + the NSIS blockmap
+# alongside the .exe (electron-updater's own feed format), not just the
+# checksum this script already tracked.
 #
 #   bash deploy/release_desktop.sh --version 0.2.2 --latest
 #       build 0.2.2, upload the .exe + refreshed SHA256SUMS.txt to the newest
@@ -48,6 +50,8 @@ fi
 [ -n "$VERSION" ] || { echo "no version - pass --version X.Y.Z"; exit 2; }
 EXE="HelmDeck-Setup-${VERSION}-x64.exe"
 EXE_PATH="desktop/release/${EXE}"
+YML_PATH="desktop/release/latest.yml"          # electron-updater's feed manifest
+BLOCKMAP_PATH="${EXE_PATH}.blockmap"           # differential-update data
 echo "==> HelmDeck desktop release: version $VERSION -> $REPO"
 
 # ---- build ----------------------------------------------------------------
@@ -80,7 +84,10 @@ if [ "$NO_BUILD" != "1" ]; then
       # electron-builder rewrites package.json in place for extraMetadata (drops
       # scripts/devDeps) - snapshot + restore so the source tree stays intact.
       cp package.json .package.json.bak
-      npx electron-builder --win --config electron-builder.yml \
+      # --publish never: still WRITES latest.yml + the NSIS blockmap locally
+      # (electron-builder.yml carries a publish: block) without uploading -
+      # this script uploads them itself below, same as SHA256SUMS.txt.
+      npx electron-builder --win --config electron-builder.yml --publish never \
         -c.extraMetadata.version="$VERSION"; rc=$?
       mv .package.json.bak package.json
       [ "$rc" = "0" ] || exit 1
@@ -88,6 +95,8 @@ if [ "$NO_BUILD" != "1" ]; then
   fi
 fi
 [ -f "$EXE_PATH" ] || { echo "!!! no $EXE_PATH - build first (drop --no-build)"; exit 1; }
+[ -f "$YML_PATH" ] || echo "!!! no $YML_PATH - electron-updater's feed won't see this release (check electron-builder.yml's publish: block is present)"
+[ -f "$BLOCKMAP_PATH" ] || echo "!!! no $BLOCKMAP_PATH - differential updates degrade to a full download (not fatal)"
 
 # ---- checksum ('<hash> *<file>', the shape the published SHA256SUMS uses) ---
 SUM="$(cd desktop/release && printf '%s *%s' "$(sha256sum "$EXE" | awk '{print $1}')" "$EXE")"
@@ -121,17 +130,27 @@ grep -v 'HelmDeck-Setup-.*-x64\.exe' "$SUMS" > "$SUMS.new" 2>/dev/null || : > "$
 printf '%s\n' "$SUM" >> "$SUMS.new"
 mv "$SUMS.new" "$SUMS"
 
-echo "==> uploading $EXE + SHA256SUMS.txt to $TAG"
-gh release upload "$TAG" -R "$REPO" --clobber "$EXE_PATH" "$SUMS" \
+# latest.yml + blockmap are optional (electron-builder.yml might be building
+# without the publish: block in some older checkout) - upload whatever exists.
+UPLOAD_FILES=("$EXE_PATH" "$SUMS")
+[ -f "$YML_PATH" ] && UPLOAD_FILES+=("$YML_PATH")
+[ -f "$BLOCKMAP_PATH" ] && UPLOAD_FILES+=("$BLOCKMAP_PATH")
+
+echo "==> uploading ${UPLOAD_FILES[*]##*/} to $TAG"
+gh release upload "$TAG" -R "$REPO" --clobber "${UPLOAD_FILES[@]}" \
   || { echo "!!! upload failed"; exit 1; }
 
-# --clobber only replaces a same-named asset; an OLDER desktop installer has a
-# different filename (0.2.1 vs 0.2.2) and would linger. Remove any stale
-# HelmDeck-Setup-*.exe that is not the one we just uploaded.
+# --clobber only replaces a same-named asset; an OLDER desktop installer (or
+# its version-specific blockmap) has a different filename and would linger.
+# latest.yml is version-generic (always the same name) so --clobber alone
+# keeps it current - no cleanup needed for it.
 for a in $(gh release view "$TAG" -R "$REPO" --json assets -q '.assets[].name' 2>/dev/null); do
   case "$a" in
     HelmDeck-Setup-*-x64.exe)
       [ "$a" = "$EXE" ] || { echo "==> removing stale asset $a"; \
+        gh release delete-asset "$TAG" -R "$REPO" "$a" -y 2>/dev/null || true; } ;;
+    HelmDeck-Setup-*-x64.exe.blockmap)
+      [ "$a" = "$(basename "$BLOCKMAP_PATH")" ] || { echo "==> removing stale asset $a"; \
         gh release delete-asset "$TAG" -R "$REPO" "$a" -y 2>/dev/null || true; } ;;
   esac
 done
