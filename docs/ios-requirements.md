@@ -82,10 +82,14 @@ weiteres zu deklarieren.
 
 ## 5. OTA / Deploy — fixierte Entscheidungen
 
-- [ ] **Per-Plattform-`runtimeVersion`** (`ios.runtimeVersion` getrennt) —
-      Studie §2.3, Option (b) **fixiert**. Ohne das koppelt jeder
-      Android-Native-Bump den iOS-OTA-Kanal ab (rtv-Mismatch). **Vorgelagerte
-      Sachentscheidung — vor dem ersten iOS-Build umsetzen.**
+- [x] **Per-Plattform-`runtimeVersion`** (`ios.runtimeVersion` getrennt) —
+      Studie §2.3, Option (b) **fixiert**, umgesetzt vor dem ersten iOS-Build:
+      `app.json → ios.runtimeVersion` ist jetzt ein fester String (`"1.0.5"`),
+      unabhängig vom geteilten `expo.version`, den `ship.sh` bei jedem
+      Android-Native-Bump weiterschiebt. Android bleibt exakt wie zuvor
+      (Top-Level-Policy `appVersion`) — am laufenden Kanal auf dem Phone ändert
+      sich nichts. Ein künftiger iOS-Native-Change muss diesen String von Hand
+      bumpen (kleine `ship.sh`-Logik dafür ist noch offen, siehe unten).
 - [ ] `deploy/push_update.sh`: Export `--platform all` statt `android`;
       Verify-curl zusätzlich mit `expo-platform: ios`. Relay-Server
       (`relay/relay.py`) ist bereits plattformfähig — keine Server-Änderung.

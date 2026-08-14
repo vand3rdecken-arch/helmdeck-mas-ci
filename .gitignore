@@ -71,6 +71,9 @@ tests/_shots/
 # the emulator smoke screenshot - machine-local, regenerated each ship
 deploy/.native_fp
 deploy/last_apk_smoke.png
+# deploy/asc_guide.py's screenshot of App Store Connect: regenerated on every
+# `shot`, and once logged in it shows the owner's Apple ID and app list.
+shots/asc.png
 daemon/daemon.pid
 desktop/_probe_setup.js
 desktop/python/
