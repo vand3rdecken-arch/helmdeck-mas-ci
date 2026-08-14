@@ -1582,12 +1582,33 @@ def reclaim_worktree(t, log=None, force=False):
 def sweep_worktrees():
     """Startup backstop + one-shot cleanup: reclaim EVERY merged, clean card
     worktree across the repos we know. Complements the per-card reclaim by
-    catching trees left by builds from before reclamation existed. Git-driven
-    (merged into the integration branch AND clean), so it is independent of card
-    status. Returns the number reclaimed."""
+    catching trees left by builds from before reclamation existed.
+
+    NOT independent of card status (despite what this docstring used to
+    claim - found live 2026-08-14, a real data-loss bug): a branch can be
+    merged (an earlier commit landed, e.g. via fast-track) while its CARD is
+    still open on the board and actively being steered - this git-only check
+    tore an in-progress COWORK card's live worktree out from under it
+    (deregistered .git, deleted most files, orphaned a live eas-cli/Chrome
+    process's locked files as an empty app/ husk) while the owner was mid-
+    conversation with it. reclaim_worktree (the per-card path, called only on
+    accept/archive) was always correctly scoped; this backstop was not.
+    A worktree currently referenced by a NON-terminal card (not archived, not
+    in the done lane) is now kept regardless of git's merge verdict - "is
+    anyone still using this" is the daemon's own fact, and it must win over
+    what git alone can see. Returns the number reclaimed."""
     tracks = _load()
     repos = {t.get("repo") for t in tracks if t.get("repo")}
     referenced = {os.path.realpath(t["worktree"]) for t in tracks if t.get("worktree")}
+    # path -> is this card still ACTIVE (open, non-terminal)? Only paths NOT
+    # in this set (or mapped to False) are eligible for reclaim below.
+    active_by_path = {}
+    for t in tracks:
+        if not t.get("worktree"):
+            continue
+        p = os.path.realpath(t["worktree"])
+        terminal = bool(t.get("archived")) or t.get("lane") == "done"
+        active_by_path[p] = active_by_path.get(p, False) or not terminal
     n = 0
     for repo in repos:
         if not repo or not os.path.isdir(repo):
@@ -1606,6 +1627,8 @@ def sweep_worktrees():
             if (not path or not br or br in ("main", "master", integ)
                     or os.path.abspath(path) == os.path.abspath(repo)):
                 continue
+            if active_by_path.get(os.path.realpath(path)):
+                continue                    # a non-terminal card still owns this tree - keep
             if _git_try(repo, "merge-base", "--is-ancestor", br, integ)[0] != 0:
                 continue                    # not merged - keep
             rc3, dirty, _ = _git_try(path, "status", "--porcelain", "--untracked-files=no")
