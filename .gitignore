@@ -32,6 +32,7 @@ daemon/tracks.json.imported
 daemon/copilot_log.json
 daemon/copilot_stats.json
 daemon/driver_pids.json
+daemon/recorder_pids.json
 daemon/nightshift/state.json
 daemon/restart_stdout.log
 daemon/restart_stderr.log
