@@ -22,7 +22,13 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "app.helmdeck",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleDevelopmentRegion": "de"
+      }
     },
     "android": {
       "package": "app.helmdeck",
@@ -84,6 +90,7 @@
         "expo-camera",
         {
           "cameraPermission": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
+          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ]

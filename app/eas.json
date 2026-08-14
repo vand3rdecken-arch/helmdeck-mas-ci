@@ -12,6 +12,12 @@
       "channel": "preview",
       "android": { "buildType": "apk" }
     },
+    "internal": {
+      "distribution": "internal",
+      "channel": "production",
+      "ios": { "simulator": false },
+      "android": { "buildType": "apk" }
+    },
     "production": {
       "channel": "production",
       "autoIncrement": true
