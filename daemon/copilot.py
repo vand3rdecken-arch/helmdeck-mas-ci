@@ -542,6 +542,91 @@ def _append_log(user, entries):
         json.dump(d, f)
     os.replace(tmp, CHATLOG)
 
+_autocompact_supported = None    # None=unprobed, True/False learned from first /compact
+
+
+def _maybe_compact(user):
+    """Copilot counterpart of sessions._maybe_compact (card parity, re-enabled
+    2026-08-14): compact the board-chat session in place once it crosses the
+    high-water mark, so a long-running PM conversation never dead-ends or
+    silently overflows into a fresh session. Self-verifying (probes /compact
+    once, learns True/False from whether the context actually shrank) and
+    best-effort - never breaks/blocks the turn that already returned to the
+    user. Returns a note to surface in the chat log, or None."""
+    global _autocompact_supported
+    if _autocompact_supported is False:
+        return None
+    import sessions, drivers
+    st = _stats().get(user) or {}
+    ctx = st.get("ctx_tokens") or 0
+    sess = _sessions()
+    sid = sess.get(user)
+    if ctx < sessions._COMPACT_AT_TOKENS or not sid:
+        return None
+    pct = min(100, round(ctx / sessions._CTX_WINDOW * 100))
+    argv = [CLAUDE, "-p", "--output-format", "stream-json", "--include-partial-messages",
+            "--verbose", "--permission-mode", "plan", "--resume", sid]
+    cmd = drivers._cmd_line(argv)
+    result, new_sid, after_usage = {}, sid, {}
+    try:
+        p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+        p.stdin.write("/compact"); p.stdin.close()
+        for line in p.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            typ = ev.get("type")
+            if typ == "system" and ev.get("session_id"):
+                new_sid = ev["session_id"]
+            elif typ == "assistant":
+                mu = (ev.get("message") or {}).get("usage")
+                if isinstance(mu, dict) and mu:
+                    after_usage = mu
+            elif typ == "result":
+                result = ev
+        try:
+            p.wait(timeout=8)
+        except Exception:
+            pass
+    except Exception:
+        return None   # best-effort - never let compaction break the chat
+    sid_final = result.get("session_id") or new_sid
+    all_st = _stats()
+    m = all_st.setdefault(user, {})
+    if sid_final and sid_final != sid:
+        chain = [s for s in (m.get("session_chain") or []) if s != sid]
+        chain.append(sid)
+        m["session_chain"] = chain[-6:]         # bounded - last 6 prior sessions
+        sess[user] = sid_final
+        _save_sessions(sess)
+    # measured economics: the compact turn is billed too, but NOT counted as a
+    # conversation turn (card parity: sessions._record_econ, not _record_turn).
+    import events
+    u = result.get("usage") or {}
+    models = list((result.get("modelUsage") or {}).keys())
+    m["cost"] = round(float(m.get("cost") or 0.0)
+                      + events.price_turn(models, u, result.get("total_cost_usd")), 6)
+    m["tokens_in"] = int(m.get("tokens_in") or 0) + u.get("input_tokens", 0) \
+        + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+    m["tokens_out"] = int(m.get("tokens_out") or 0) + u.get("output_tokens", 0)
+    after = (after_usage.get("input_tokens", 0) + after_usage.get("cache_creation_input_tokens", 0)
+             + after_usage.get("cache_read_input_tokens", 0)) or ctx
+    m["ctx_tokens"] = after
+    _save_stats(all_st)
+    if after <= ctx * 0.75:                     # a real compaction frees a big chunk
+        _autocompact_supported = True
+        return ("AUTO-COMPACT: Kontext war bei %d%% (~%dk) - Verlauf verdichtet, "
+                "jetzt ~%dk. Es geht ohne Unterbrechung weiter."
+                % (pct, round(ctx / 1000), round(after / 1000)))
+    _autocompact_supported = False
+    return None    # this CLI doesn't honor /compact - stay silent, no per-turn pollution
+
+
 def history(user):
     """The user's persisted copilot transcript (the same Claude session the
     backend resumes - session id in copilot_sessions.json, resumable even from
@@ -766,6 +851,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                          stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
     _running[user] = p
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
+    resume_echo, ctx_first = False, {}
     try:
         p.stdin.write(prompt); p.stdin.close()
         for line in p.stdout:                       # the pump (like drivers._pump)
@@ -780,7 +866,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 continue
             typ = ev.get("type")
             if typ == "system" and ev.get("session_id"):
-                session_id = ev["session_id"]; _cwrite(sid_path, session_id)
+                got = ev["session_id"]
+                # resume-attachment evidence (drivers.py parity): a successful
+                # --resume ECHOES the asked-for id in the init event.
+                if ev.get("subtype") == "init" and sid and got == sid:
+                    resume_echo = True
+                session_id = got; _cwrite(sid_path, session_id)
             elif typ == "assistant":
                 # each full assistant message carries the usage of ITS OWN API
                 # call - keep the last one as the context-meter source, exactly
@@ -789,6 +880,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 mu = (ev.get("message") or {}).get("usage")
                 if isinstance(mu, dict) and mu:
                     ctx_usage = mu
+                    # the FIRST call's usage is the resume-continuity witness
+                    # (sessions.resume_detached): a real continuation carries
+                    # >= the prior context; a silent fresh start carries only
+                    # the brief.
+                    if not ctx_first:
+                        ctx_first = mu
             elif typ == "stream_event":
                 e = ev.get("event") or {}
                 if e.get("type") == "content_block_delta":
@@ -818,7 +915,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     if not (txt or "").strip():
         raise RuntimeError("copilot produced no output (turn ended without a result)")
     sid_final = result.get("session_id") or session_id
+    rotate_note = None
     if sid_final:
+        # session-rotation safety net (Paseo accept-and-rebind, card parity:
+        # sessions._finish_turn). Without this, a resume that silently starts
+        # FRESH (an overflowed/compacted tip --resume can't continue) just
+        # overwrote the pointer with no chain and no notice - the whole board
+        # chat "disappears" exactly like the pre-fix card bug. The pointer
+        # only ever advances to a session that demonstrably holds THIS turn
+        # (proven by the result read off it); the old head is kept, never lost.
+        if sid and sid_final != sid:
+            import sessions
+            st = _stats().get(user) or {}
+            meta = {"resumed_from": sid, "resume_echo": resume_echo, "ctx_first": ctx_first}
+            if sessions.resume_detached(st.get("ctx_tokens"), meta):
+                rotate_note = ("⚠ Kontext verloren: die Session liess sich nicht "
+                                "fortsetzen (%s…), neu begonnen (%s…). Der bisherige "
+                                "Verlauf bleibt oben sichtbar." % (sid[:8], sid_final[:8]))
+            chain = [s for s in (st.get("session_chain") or []) if s != sid]
+            chain.append(sid)
+            st["session_chain"] = chain[-6:]           # bounded - last 6 prior sessions
+            all_st = _stats(); all_st[user] = st; _save_stats(all_st)
         sess[user] = sid_final
         _save_sessions(sess)
     reply_prose, acts_parsed = _parse_reply_actions(txt)
@@ -837,8 +954,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # Actions (moves, MERGES, steers - potentially minutes) run in the BACKGROUND
     # and append their results to the transcript as they land; the chat polls, so
     # you see them live. This is why 'move 4 cards to done' no longer freezes.
-    _append_log(user, [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
-                       {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}])
+    entries = [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
+               {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
+    if rotate_note:
+        entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
+    _append_log(user, entries)
+    compact_note = _maybe_compact(user)
+    if compact_note:
+        _append_log(user, [{"cls": "error", "text": compact_note, "ts": time.strftime("%H:%M")}])
     if acts:
         def _run_bg():
             done = []
