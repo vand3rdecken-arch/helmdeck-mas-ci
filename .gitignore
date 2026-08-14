@@ -49,6 +49,11 @@ backups/
 docs
 
 # local credentials - never commit
+# App Store Connect API key. Apple serves the .p8 exactly ONCE - there is no
+# re-download - and it can mint iOS signing certificates, so treat it like the
+# Android keystore. deploy/ios_credentials.sh additionally REFUSES to run when
+# the key lives anywhere under this repo; this line is only the second net.
+*.p8
 daemon/certs/
 .env
 *.env
