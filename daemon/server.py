@@ -1567,6 +1567,13 @@ def serve(port=8140):
     reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
     if reaped:
         print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
+    # SINGLETON eviction's taskkill /T does not reliably cascade to a
+    # grandchild ffmpeg subprocess, so a screen recorder can outlive the
+    # daemon that started it - reap those too (wincap.py's own reap_orphans).
+    import wincap
+    rreaped = wincap.reap_orphans()
+    if rreaped:
+        print("WINCAP: reaped %d orphan screen recorder(s) from a previous run." % rreaped)
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
     atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
     import sessions
