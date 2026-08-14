@@ -148,7 +148,9 @@ function startDaemon(pyOverride) {
     try { out = fs.openSync(path.join(daemonDir, "daemon.out.log"), "a"); } catch { /* ignore */ }
     // shell:true on Windows so the `py` launcher resolves (bare spawn -> ENOENT)
     daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
-      { cwd: daemonDir, env: { ...process.env }, windowsHide: true,
+      // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F
+      // (SINGLETON eviction, a competing supervisor) - no flush window needed.
+      { cwd: daemonDir, env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true,
         shell: process.platform === "win32", detached: true,
         stdio: ["ignore", out, out] });
     daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));

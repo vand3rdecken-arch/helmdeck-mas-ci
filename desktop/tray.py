@@ -86,10 +86,17 @@ def _python_for_daemon():
 
 
 def _spawn_daemon():
+    # stdout/stderr into the SAME daemon.out.log the Electron shell appends to
+    # (single log regardless of which supervisor started this run) - a crash
+    # under DEVNULL left zero trace anywhere, which is what made "it keeps
+    # crashing" unfalsifiable. PYTHONUNBUFFERED so a line already written
+    # survives even an abrupt taskkill /F (no flush window needed).
+    out = open(os.path.join(DAEMON_DIR, "daemon.out.log"), "a", encoding="utf-8")
+    env = dict(os.environ, PYTHONUNBUFFERED="1")
     return subprocess.Popen(
         [_python_for_daemon(), "swarm.py", "serve"],
-        cwd=DAEMON_DIR, creationflags=CREATE_NO_WINDOW,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        cwd=DAEMON_DIR, creationflags=CREATE_NO_WINDOW, env=env,
+        stdout=out, stderr=out,
     )
 
 
