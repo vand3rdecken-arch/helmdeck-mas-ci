@@ -34,6 +34,17 @@
 # first one. Hence: one terminal run to create the assets, and every later build
 # (--build below) is unattended and can run from an agent card.
 #
+# TERMINAL means cmd.exe / Windows Terminal, NOT Git Bash. MinTTY carries stdin
+# over named pipes, so node sees no TTY and eas-cli dies with "Input is required,
+# but stdin is not readable" at its first Y/n prompt - identical to the error you
+# get from </dev/null, and piping `y` in does not fix it. Launch it as:
+#   "C:\Program Files\Git\bin\bash.exe" -lc "cd /c/... && bash deploy/ios_credentials.sh"
+#
+# FIRST RUN ONLY - the capability sync will fail on PUSH_NOTIFICATIONS (Apple
+# rejects eas-cli's patch payload). Do NOT reach for EXPO_NO_CAPABILITY_SYNC=1:
+# that hides the mismatch instead of fixing it. Tick "Push Notifications" on the
+# App ID at developer.apple.com -> Identifiers -> app.helmdeck, save, re-run.
+#
 # ---------------------------------------------------------------------------
 # The two things that still demand a human Apple ID + 2FA
 # ---------------------------------------------------------------------------
@@ -49,12 +60,18 @@
 # ---------------------------------------------------------------------------
 # One-time setup by the owner
 # ---------------------------------------------------------------------------
+# (Already done on this box on 2026-08-14 - see DEPLOY.md 2b for the live values.
+#  Repeat this only when the key is rotated or the certificate expires.)
 # 1. App Store Connect -> Users and Access -> Integrations -> Keys -> "+",
-#    role *Admin* (App Manager is not enough for certificate creation).
+#    role *Admin* (App Manager is not enough for certificate creation, and a
+#    Developer-role key cannot create certificates or profiles at all). The role
+#    is FIXED at creation - a wrong role means a new key, never an edit.
 # 2. Download the .p8. Apple serves it EXACTLY ONCE - there is no re-download.
 #    Store it OUTSIDE this repo; this script refuses to run if it sits inside.
 # 3. Note the Key ID and the Issuer ID from that same page.
-# 4. Put all three in .env (git-ignored, never committed):
+# 4. Put all three in .env (git-ignored, never committed). Write it with a plain
+#    editor: PowerShell's `Set-Content -Encoding UTF8` prepends a BOM and bash
+#    then chokes on line 1 (`Add-Content` onto an existing file does not).
 #      ASC_API_KEY_PATH=C:/hd/secrets/AuthKey_XXXXXXXXXX.p8
 #      ASC_KEY_ID=XXXXXXXXXX
 #      ASC_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

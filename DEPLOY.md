@@ -168,25 +168,73 @@ Decided route (owner, 2026-08-14): **App Store Connect API key**, not an Apple I
 login. Everything below is driven by `deploy/ios_credentials.sh` — read its header,
 it carries the source citations for the claims here.
 
-**Owner does once, by hand** (EAS cannot bootstrap this — `createAscApiKeyAsync`
-is one of the few calls that hard-forces a user session):
+**DONE on 2026-08-14 — this is the record, not a to-do.** Signing is wired and the
+assets exist; the steps are kept because they are what you repeat when the key is
+rotated or the certificate expires.
+
 1. App Store Connect → *Users and Access* → *Integrations* → *Keys* → **+**,
-   role **Admin**. *App Manager is not enough for certificate creation.*
+   role **Admin**. *App Manager is not enough for certificate creation, and a
+   Developer-role key cannot create certificates or profiles at all.* The role is
+   fixed at creation — Apple's own page says keys "can not be changed after they
+   are created", so a wrong role means a **new key**, not an edit. (The first key
+   here was minted as Developer and had to be replaced; the superseded one is
+   parked as `C:/hd/secrets/AuthKey_3PF7T489J8.p8.superseded` and can be revoked
+   in App Store Connect whenever you like.)
+   EAS cannot bootstrap this itself — `createAscApiKeyAsync` is one of the few
+   calls that hard-forces a user session.
 2. Download the `.p8`. Apple serves it **exactly once**, no re-download.
-   Store it **outside the repo** (e.g. `C:/hd/secrets/`) — the script refuses to
-   run otherwise, and `*.p8` is git-ignored as a second net.
-3. Put the values in `.env` (git-ignored):
+   Store it **outside the repo** (`C:/hd/secrets/` is what this box uses) — the
+   script refuses to run otherwise, and `*.p8` is git-ignored as a second net.
+3. Put the values in `.env` (git-ignored). Live values on this box:
    ```
-   ASC_API_KEY_PATH=C:/hd/secrets/AuthKey_XXXXXXXXXX.p8
-   ASC_KEY_ID=XXXXXXXXXX
-   ASC_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-   APPLE_TEAM_ID=XXXXXXXXXX        # developer.apple.com → Membership details
-   APPLE_TEAM_TYPE=INDIVIDUAL      # or COMPANY_OR_ORGANIZATION / IN_HOUSE
+   ASC_API_KEY_PATH=C:/hd/secrets/AuthKey_AZQRY4K34W.p8
+   ASC_KEY_ID=AZQRY4K34W
+   ASC_ISSUER_ID=1b630099-8d46-41b6-b69f-9e41c4662b41   # per team, stays the same
+   APPLE_TEAM_ID=92WJZQ2WWH        # developer.apple.com → Membership details
+   APPLE_TEAM_TYPE=INDIVIDUAL      # "Registriert als: Einzelperson"
    ```
+   Write that block with a plain editor. PowerShell's `Set-Content -Encoding UTF8`
+   prepends a **BOM**, and bash then reports `.env: line 1: <U+FEFF>: command not
+   found` — harmless on a blank first line, but it eats the variable name if the
+   BOM lands on one. `Add-Content` onto an existing file does not add one.
 4. ```bash
    bash deploy/ios_credentials.sh --check   # validates everything, changes nothing
    bash deploy/ios_credentials.sh           # creates cert + profile
    ```
+   **Run step 4 from `cmd.exe`/Windows Terminal, not from Git Bash.** MinTTY pipes
+   stdin through named pipes, so `node` sees no TTY there and eas-cli aborts with
+   *"Input is required, but stdin is not readable"* at its first Y/n prompt — the
+   same error you get with `</dev/null`, which is why it looks like a script bug
+   and is not. Piping `y` in does not help either; eas-cli wants a real terminal.
+   ```cmd
+   "C:\Program Files\Git\bin\bash.exe" -lc "cd /c/.../helmdeck && bash deploy/ios_credentials.sh"
+   ```
+
+⚠ **The capability-sync trap.** On the very first run, `configure-build` registers
+the bundle ID and then tries to switch on the capabilities implied by `app.json`.
+For HelmDeck that is `PUSH_NOTIFICATIONS` (from `expo-notifications`), and Apple's
+API rejects eas-cli's patch payload outright:
+*"Unexpected or invalid value at `data.relationships.bundleIdCapabilities.data.[0].attributes`"*.
+eas-cli offers `EXPO_NO_CAPABILITY_SYNC=1` — **don't**: that silences the check
+instead of fixing the state, and the capability stays off. Tick *Push Notifications*
+by hand on the App ID (developer.apple.com → Identifiers → `app.helmdeck` →
+Capabilities → Save → Confirm) and re-run; the sync then reports *"No updates"* and
+walks straight through. Note Apple's confirm dialog warns that changing capabilities
+invalidates existing provisioning profiles — irrelevant the first time, but if you
+add a capability later you must regenerate the profile.
+
+**What exists now** (created by the run above, both read back from EAS, not assumed):
+
+| asset | value |
+|---|---|
+| Apple team | `92WJZQ2WWH` (Individual) |
+| Bundle ID | `app.helmdeck` (explicit), registered via the API key |
+| Distribution Certificate | serial `6871F101B7F3B831D88FBF82A0A977DF`, expires 2027-08-14 |
+| Provisioning Profile | portal ID `6A8R2K67SV`, active, expires 2027-08-14 |
+
+eas-cli's closing line was *"All credentials are ready to build @tienduyvo/helmdeck
+(app.helmdeck)"*. **No Apple ID and no 2FA were used at any point** — the API key
+carried the whole flow, which is the claim this section was written to prove.
 
 **Why step 4 wants a real terminal — and why that is not a 2FA prompt.** Verified
 in eas-cli's source, because the docs do not say it:
@@ -198,9 +246,10 @@ skips the *"Do you want to log in to your Apple account?"* prompt entirely. What
 still needs a TTY is `SetUpDistributionCertificate.js`:
 `runNonInteractiveAsync` throws `MissingCredentialsNonInteractiveError` when no
 certificate exists yet — non-interactive mode **reuses** a certificate, it never
-mints the first one. Confirmed empirically: with the key set, the run stops at
-*"Select your Apple Team Type"*, not at an Apple login. `APPLE_TEAM_ID` +
-`APPLE_TEAM_TYPE` answer that one ahead of time.
+mints the first one. Confirmed on the real run: the only question asked was
+*"Generate a new Apple Distribution Certificate? (Y/n)"*. Apple never appeared.
+`APPLE_TEAM_ID` + `APPLE_TEAM_TYPE` pre-answer the two team prompts that would
+otherwise come first.
 
 **Afterwards it is unattended** — an agent card can run:
 ```bash
@@ -208,9 +257,13 @@ bash deploy/ios_credentials.sh --build                    # production .ipa
 bash deploy/ios_credentials.sh --build --profile internal # ad-hoc, needs UDIDs
 ```
 `internal` installs only on devices registered with `npx eas-cli device:create`;
-`production` needs no UDIDs. Verify the assets really exist with
-`npx eas-cli credentials -p ios` (lists cert + profile + expiry) — a successful
-`--build` is the stronger proof, since it is exactly the path a card takes.
+`production` needs no UDIDs. **Not yet exercised** — a first `--build` queues a real
+cloud build, so it is left as its own step rather than smuggled into the credential
+work. It is also the only true proof of the unattended path: there is no
+`credentials:list`, and `credentials:configure-build` has no `--non-interactive`
+flag (it rejects one), so the cheap check does not exist. If `--build` ever reports
+`MissingCredentialsNonInteractiveError`, the certificate did not persist and step 4
+must be repeated.
 
 **Still requires a human Apple ID + 2FA** (these ignore the API key —
 `AppStoreApi.js` routes them through `ensureUserAuthenticatedAsync`):
