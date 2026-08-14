@@ -257,19 +257,41 @@ bash deploy/ios_credentials.sh --build                    # production .ipa
 bash deploy/ios_credentials.sh --build --profile internal # ad-hoc, needs UDIDs
 ```
 `internal` installs only on devices registered with `npx eas-cli device:create`;
-`production` needs no UDIDs. **Not yet exercised** — a first `--build` queues a real
-cloud build, so it is left as its own step rather than smuggled into the credential
-work. It is also the only true proof of the unattended path: there is no
-`credentials:list`, and `credentials:configure-build` has no `--non-interactive`
-flag (it rejects one), so the cheap check does not exist. If `--build` ever reports
+`production` needs no UDIDs. If `--build` ever reports
 `MissingCredentialsNonInteractiveError`, the certificate did not persist and step 4
 must be repeated.
+
+**Exercised 2026-08-14 (card `proc-20260814-s5`, from a different worktree than
+setup ran in — proof the credentials really live on EAS, not locally):**
+`bash deploy/ios_credentials.sh --build` succeeded unattended, build `e67d1247`,
+clean log. Artifact:
+`https://expo.dev/artifacts/eas/HuTPOLX77F1-MJkIbcK7HKKceWfy8wUwIR7jAl-3jBw.ipa`.
+Prerequisite done first: `app.json → ios.runtimeVersion` set to a fixed literal,
+decoupled from the shared `expo.version` `ship.sh` bumps for Android (§5 R5 in
+`docs/ios-requirements.md`, "vor dem ersten iOS-Build umsetzen").
 
 **Still requires a human Apple ID + 2FA** (these ignore the API key —
 `AppStoreApi.js` routes them through `ensureUserAuthenticatedAsync`):
 ASC API key management itself, and **push notification keys**. HelmDeck ships
 `expo-notifications`, so iOS push will need one interactive session later. It is
 not needed for signing or building.
+
+**[NEU] A THIRD thing needs it too, discovered running `eas submit` for the
+first time: "ensuring your app exists on App Store Connect".** Even with the
+ASC API key exported, `eas submit --platform ios --latest --non-interactive`
+dies with *"Set ascAppId in the submit profile (eas.json) or re-run this
+command in interactive mode"*; dropping `--non-interactive` doesn't help from
+a card either — it prints *"Log in to your Apple Developer account to
+continue"* and then the same TTY-less `Input is required, but stdin is not
+readable. Failed to display prompt: Apple ID:` as the credential setup's first
+run. Unlike certificate/profile creation, this step is **not** unattended-safe
+even after a one-time bootstrap — `ensureAscAppAsync` hard-routes through user
+auth every time an `ascAppId` isn't already pinned in `eas.json`. Fix once a
+human has created the app record in App Store Connect (or logged in
+interactively to let eas-cli create it): copy the app's numeric ASC ID into
+`app/eas.json → submit.production.ios.ascAppId`, and every later
+`eas submit --non-interactive` skips this step entirely. **Not yet done** —
+this card's TestFlight submission is blocked exactly here.
 
 ⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
 hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
