@@ -726,6 +726,49 @@ DEBT = [
                "from the loop.",
         "order": 24,
     },
+    {
+        "id": "build-stale-tracked-sources-only",
+        "title": "build_stale() only ever sees the native inputs git status can see",
+        # OPEN, not paid: the false-POSITIVE half (every quiet card nagged to run
+        # a 30-minute Android build) is fixed and shipped, but this item's own
+        # title describes the false-NEGATIVE half, and that is still standing.
+        # Marking the whole entry paid would retire a blind spot that is still
+        # there - the register exists precisely to stop that.
+        "status": "open",
+        "what": "tools/loop_state.py's build_stale() gates on touches_native(touched), "
+                "and `touched` comes from `git status --porcelain` (dirty_files()). "
+                "app/android/ is entirely git-ignored (app/.gitignore: `/android`), so "
+                "a native source edit under app/android/app/src/main can NEVER appear "
+                "in `touched` - the reachable trigger set is really just app/app.json "
+                "and app/package.json (ARTIFACT_TRIGGERS), a narrower net than the "
+                "ARTIFACT_SRC inputs ship.sh's own fingerprint hashes.",
+        "why_it_bites": "A change made ONLY inside app/android/ (a manual native tweak, "
+                        "a Gradle edit) would not flag BUILD stale even though it really "
+                        "did move the native fingerprint - the same class of blind spot "
+                        "the fix here just closed for the false-positive direction "
+                        "(every card was nagged to rebuild for an artifact it could never "
+                        "possess). This is the false-negative shadow of that same gap: "
+                        "git-visibility, not the fingerprint itself, decides whether the "
+                        "nudge can fire at all.",
+        "trigger": "a native-only edit made directly under the ignored app/android/ tree "
+                   "(outside app.json/package.json) on the box that actually builds the "
+                   "APK, with nothing else touched",
+        "fix": "PAID for the reachable case: build_stale() now takes `touched` and only "
+               "runs when touches_native() sees app.json/package.json/app/android/ in "
+               "it (tools/loop_state.py, 2026-08-15) - the false-positive nag on every "
+               "quiet card is gone, verified by running loop_state.py inside a real "
+               "card worktree (WIP, not ALIGN-for-a-30-min-Android-build). The residual "
+               "gap above (an android/-only edit on the release box) is unfixed: the "
+               "release box IS the one place app/android/ is NOT git-ignored-away from "
+               "(it is the working tree that produces the APK), so `git status` there "
+               "would actually show it - meaning this residual only bites if someone "
+               "edits inside app/android/ AND stages/commits nothing else AND the loop "
+               "runs before the artifact is rebuilt. Close it, if it ever matters, by "
+               "adding an explicit `git -C app/android status` probe alongside "
+               "dirty_files() rather than widening ARTIFACT_TRIGGERS with a path that "
+               "is normally invisible.",
+        "order": 25,
+    },
 ]
 
 def list_debt():

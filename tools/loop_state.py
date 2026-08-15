@@ -81,6 +81,29 @@ just rendered)>
 """
 
 
+def card_mode():
+    """True when this checkout IS a HelmDeck card's worktree.
+
+    DERIVED from the runtime's own signal at its ONE owner: drivers._card_env
+    exports HELMDECK_WORKTREE into the agent's environment at spawn, and the
+    hooks run inside that process tree, so they inherit it. Nothing is
+    reconstructed and nothing is re-scanned.
+
+    And VERIFIED, not adopted: the value must actually resolve to THIS checkout.
+    An inherited-but-stale variable (a shell that once ran a card, a nested
+    invocation) would otherwise silently put the main repo into card mode and
+    switch off the workorder discipline exactly where it is wanted most. If the
+    path does not match, we are not that card, whatever the variable says."""
+    wt = os.environ.get("HELMDECK_WORKTREE")
+    if not wt:
+        return False
+    try:
+        return os.path.normcase(os.path.realpath(wt)) == \
+               os.path.normcase(os.path.realpath(ROOT))
+    except OSError:
+        return False
+
+
 def _git(*args):
     r = subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else ""
@@ -202,8 +225,15 @@ def archive_workorder():
 # don't nag the loop before rest.
 ARTIFACT_SRC = {
     "app/android/app/build/outputs/apk/release/app-release.apk":
-        ("app/android/app/src/main", "app/app.json"),
+        ("app/android/app/src/main", "app/app.json", "app/package.json"),
 }
+# The subset of the above that `git status` can actually SEE. The whole of
+# app/android/ is git-ignored (app/.gitignore: `/android`), so a change under
+# app/android/app/src/main never appears in dirty_files() and can never be the
+# thing that triggers a rebuild nag. app/package.json is listed because ship.sh's
+# native fingerprint hashes its expo/react-native lines - it is a real native
+# input, and it was missing from ARTIFACT_SRC above.
+ARTIFACT_TRIGGERS = ("app/app.json", "app/package.json", "app/android/")
 _SKIP = ("node_modules", ".next", "__pycache__", os.sep + "build", os.sep + "dist")
 # only SOURCE files count - not the running daemon's data (events.jsonl,
 # helmdeck.db, settings.json, ...), which would otherwise flag every artifact
@@ -256,10 +286,31 @@ def _native_fp():
     return ""
 
 
-def build_stale():
+def touches_native(touched):
+    """Did this change touch anything that can move the native fingerprint?"""
+    return any(p.startswith(ARTIFACT_TRIGGERS) for p in (touched or ()))
+
+
+def build_stale(touched=()):
     """True if a shippable artifact is missing or its NATIVE inputs changed since
     the last ship - so the loop nudges a rebuild before it rests. Only checked
-    once work has gone quiet, so it never runs on every keystroke."""
+    once work has gone quiet, so it never runs on every keystroke.
+
+    GATED ON `touched` (fixed 2026-08-15). It used to answer for the whole repo
+    regardless of what the change was, and its FIRST test is "artifact missing ->
+    stale". The signed APK is git-ignored and is only ever produced on the box
+    that runs tools/release.sh, so in a card worktree it is ALWAYS missing:
+    every card that finished its work and went quiet was told to go run a 30-minute
+    Android release build it had no reason to run, could not usefully run, and
+    whose output would be thrown away with the worktree. (Confirmed with
+    `git check-ignore`: app/.gitignore ignores all of /android, and .gitignore
+    ignores deploy/.native_fp - so neither the artifact nor the ship marker can
+    exist in a fresh checkout.)
+
+    A rebuild is only ever the next action if THIS change could have invalidated
+    the artifact, so ask that first. Nothing native touched -> nothing to say."""
+    if not touches_native(touched):
+        return False
     for art, srcs in ARTIFACT_SRC.items():
         ap = os.path.join(ROOT, art)
         if not os.path.exists(ap):
@@ -285,8 +336,31 @@ def build_stale():
     return False
 
 
+def _design_hint(touched):
+    """The design-skill nudge, when this change touches app UI. Shared by both
+    modes - a card doing UI work is held to the same bar as the main checkout."""
+    ui_work = any(p.startswith("app/src/") and p.endswith((".ts", ".tsx"))
+                  for p in touched)
+    if not (ui_work and os.path.isdir(os.path.join(ROOT, ".claude", "skills", "impeccable"))):
+        return ""
+    return (" DESIGN MODE: apply .claude/skills/impeccable (read its SKILL.md "
+            "before writing UI; tokens in app/src/theme/tokens.ts - generated "
+            "by tools/gen_tokens.py - win on conflict).")
+
+
 def transitions():
-    """Ordered (STATE, action); first is THE next action."""
+    """Ordered (STATE, action); first is THE next action.
+
+    TWO MODES, one machine. In the main checkout a request arrives as prose and
+    the workorder ceremony is what turns it into aligned, analysed, verified work.
+    A CARD is not that: it arrives with its task already written on it and its
+    acceptance already defined by the gate, in a worktree that is thrown away when
+    the card is accepted. Asking it to open a workorder makes it re-derive, in a
+    file nobody will read, an alignment the board already performed - and then
+    blocks it from resting until it does. So a card runs the half of the loop that
+    is about the CODE (checks red, hygiene, commit) and skips the half that is
+    about the REQUEST (ALIGN/ANALYZE/TEST's Verified section, BUILD)."""
+    card = card_mode()
     touched = dirty_files()
     wo = workorder()
 
@@ -296,6 +370,23 @@ def transitions():
         return []
 
     t = []
+    if card:
+        # EXECUTE keeps its full force here: compile, types, daemon wiring and
+        # design-lint are exactly what the gate will re-run at Review, so a card
+        # that ignores them just bounces.
+        red = checks_red(touched)
+        if red:
+            return [("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2])
+                     + _design_hint(touched))]
+        hyg = hygiene_problems()
+        if hyg:
+            return [("CLEAN", " | ".join(hyg[:2]))]
+        if (time.time() - newest_mtime(touched)) > WIP_MIN * 60:
+            return [("COMMIT", "card work quiet (%d file(s)) - commit on THIS branch, "
+                     "then hand off: 'Ready for Review'. %s"
+                     % (len(touched), ", ".join(touched[:4])))]
+        return [("WIP", "card work in flight (%d files) - carry on" % len(touched))]
+
     if wo is None:
         os.makedirs(LOOPDIR, exist_ok=True)
         t.append(("ALIGN", "work in flight without a workorder - create .loop/workorder.md "
@@ -320,12 +411,7 @@ def transitions():
                   "heuristic = a debt entry in the same commit."))
         return t
 
-    ui_work = any(p.startswith("app/src/") and p.endswith((".ts", ".tsx"))
-                  for p in touched)
-    design = (" DESIGN MODE: apply .claude/skills/impeccable (read its SKILL.md "
-              "before writing UI; tokens in app/src/theme/tokens.ts - generated "
-              "by tools/gen_tokens.py - win on conflict)." if ui_work and os.path.isdir(
-                  os.path.join(ROOT, ".claude", "skills", "impeccable")) else "")
+    design = _design_hint(touched)
     red = checks_red(touched)
     if red:
         t.append(("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2]) + design))
@@ -345,7 +431,7 @@ def transitions():
         return t
 
     quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60
-    if quiet and build_stale():
+    if quiet and build_stale(touched):
         t.append(("BUILD", "verified & quiet, but a NATIVE artifact is stale - only native "
                   "app changes need this (JS ships via OTA: `bash deploy/push_update.sh`). "
                   "For a native change run `bash tools/release.sh android` (signed APK), "
@@ -359,6 +445,105 @@ def transitions():
         t.append(("WIP", "loop complete, edits still fresh (%d files) - serve the user; "
                   "propose the commit when work goes quiet" % len(touched)))
     return t
+
+
+# -- the build loop, AS DATA ------------------------------------------------
+# THE POINT: transitions() above is the real machine, but it is control flow -
+# a UI cannot render control flow. So server.py used to carry a hand-typed copy
+# of the loop in /loop/map and ANOTHER one in /automation. They drifted, from
+# each other and from this file: /loop/map lost BUILD entirely, and /automation
+# still tells the owner that BUILD rebuilds "Installer / APK / glasses" when
+# ARTIFACT_SRC has held nothing but the APK since the Expo cutover.
+#
+# Two copies of a state machine is one copy too many. This is the single
+# definition; both endpoints render it.
+#
+#   modes    - which mode the state exists in. A card has a task and a gate, so
+#              the workorder ceremony (ALIGN/ANALYZE/TEST) and BUILD are not part
+#              of its loop at all - see transitions().
+#   kind     - fixed (harness law) vs policy (data). `settings` names the knob.
+LOOP_STATES = [
+    {"key": "ALIGN", "kind": "fixed", "modes": ["repo"], "settings": [],
+     "instruction": "Arbeit begonnen, aber kein Workorder - Request + passt es zu den "
+                    "Gesetzen/Charter?"},
+    {"key": "ANALYZE", "kind": "fixed", "modes": ["repo"], "settings": [],
+     "instruction": "Architektur-Impact + Debt-Delta (Abkuerzungen in debt.py registrieren). "
+                    "Enthaelt den NO-MONKEY-PATCH-Check."},
+    {"key": "EXECUTE", "kind": "fixed", "modes": ["repo", "card"], "settings": [],
+     "instruction": "Checks rot -> bauen/fixen bis gruen (py_compile, tsc, daemon-Import, "
+                    "design-lint)."},
+    {"key": "TEST", "kind": "fixed", "modes": ["repo"], "settings": [],
+     "instruction": "Gruen heisst nicht fertig: das echte Ding pruefen (UI = beurteilt, "
+                    "nicht nur gerendert) + adversarial testen."},
+    {"key": "CLEAN", "kind": "fixed", "modes": ["repo", "card"], "settings": [],
+     "instruction": "Hygiene: Debt-Register wohlgeformt, keine Secrets getrackt."},
+    {"key": "BUILD", "kind": "fixed", "modes": ["repo"], "settings": [],
+     "instruction": "Nur wenn die Aenderung NATIVE Quellen beruehrt hat: signiertes APK neu "
+                    "bauen. JS geht per OTA (deploy/push_update.sh), nicht ueber das APK."},
+    {"key": "COMMIT", "kind": "policy", "modes": ["repo", "card"],
+     "settings": ["env.SWARM_WIP_MINUTES"],
+     "instruction": "Loop komplett und die Arbeit ist ruhig -> Commit vorschlagen; "
+                    "der Workorder wird beim sauberen Baum archiviert."},
+    {"key": "WIP", "kind": "policy", "modes": ["repo", "card"],
+     "settings": ["env.SWARM_WIP_MINUTES"],
+     "instruction": "Overlay, blockiert nie: die Edits sind noch frisch - den Nutzer bedienen."},
+    {"key": "DONE", "kind": "fixed", "modes": ["repo", "card"], "settings": [],
+     "instruction": "Sauberer Baum, kein offener Workorder."},
+]
+
+# from -> to with the CONDITION transitions() actually tests, so the graph and
+# the code say the same thing.
+LOOP_EDGES = [
+    {"from": "ALIGN", "to": "ANALYZE", "when": "'## Request' + '## Alignment' gefuellt"},
+    {"from": "ANALYZE", "to": "EXECUTE", "when": "'## Analysis' gefuellt"},
+    {"from": "EXECUTE", "to": "TEST", "when": "keine roten Checks mehr"},
+    {"from": "TEST", "to": "CLEAN", "when": "'## Verified' gefuellt"},
+    {"from": "CLEAN", "to": "BUILD", "when": "Hygiene sauber"},
+    {"from": "BUILD", "to": "COMMIT", "when": "kein natives Artefakt stale"},
+    {"from": "COMMIT", "to": "DONE", "when": "committed - Baum sauber"},
+    {"from": "WIP", "to": "COMMIT", "when": "Edits laenger als SWARM_WIP_MINUTES ruhig"},
+    # a card enters the loop at EXECUTE: its request was aligned on the board and
+    # its verification is the gate, so those states never apply to it.
+    {"from": "EXECUTE", "to": "CLEAN", "when": "card-mode: keine roten Checks",
+     "modes": ["card"]},
+]
+
+
+def machine():
+    """The build loop as DATA: the states, the edges, which mode we are in, and
+    where this checkout currently sits. One definition, rendered by /loop/map and
+    /automation instead of two hand-written copies."""
+    card = card_mode()
+    mode = "card" if card else "repo"
+    cur = transitions() or []
+    active = cur[0][0] if cur else "DONE"
+    states = []
+    for s in LOOP_STATES:
+        if mode not in s["modes"]:
+            continue
+        s = dict(s)
+        s["active"] = (s["key"] == active)
+        states.append(s)
+    # An edge only exists if BOTH its ends do in this mode - otherwise card mode
+    # would render ALIGN -> ANALYZE arrows between states it does not have.
+    keys = {s["key"] for s in states}
+    edges = [e for e in LOOP_EDGES
+             if mode in e.get("modes", ["repo", "card"])
+             and e["from"] in keys and e["to"] in keys]
+    return {
+        "id": "build-loop",
+        "title": "Wie Aenderungen gebaut werden",
+        "mode": mode,
+        "mode_note": ("Karten-Modus: diese Arbeitskopie IST der Worktree einer Karte "
+                      "(HELMDECK_WORKTREE). Die Workorder-Zeremonie entfaellt - die Karte "
+                      "hat ihre Aufgabe und ihren Gate bereits."
+                      if card else
+                      "Repo-Modus: der volle Loop inklusive Workorder."),
+        "states": states,
+        "edges": edges,
+        "active": active,
+        "current": [{"state": st, "action": ac} for st, ac in cur],
+    }
 
 
 def print_table():
