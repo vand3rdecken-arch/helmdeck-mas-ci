@@ -40,7 +40,27 @@ LIMIT_HARD=104857600      # GitHub rejects any file above this
 LIMIT_WARN=52428800       # GitHub warns above this
 
 DRY=0
-[ "${1:-}" = "--dry-run" ] && DRY=1
+FILTER=0
+for a in "$@"; do
+  case "$a" in
+    --dry-run)        DRY=1 ;;
+    --filter-private) FILTER=1 ;;
+    *) echo "unknown arg: $a"; exit 2 ;;
+  esac
+done
+# --filter-private is how the repo was ACTUALLY published on 2026-08-15, so it
+# lives here rather than in somebody's shell history. It publishes a FILTERED
+# MIRROR: clone the trunk to a temp dir, drop .attachments/ from that copy's
+# history with git_filter_repo, push the result. The owner's real repo is never
+# rewritten - which matters, because ~20 live card branches and worktrees hang
+# off the trunk and a filter-repo run on it would strand every one of them.
+#
+# Verified before relying on it: the rewrite is DETERMINISTIC. Filtering the
+# same input commit twice produced the identical sha (a10d9454), so the public
+# lineage stays stable and later publishes FAST-FORWARD instead of needing a
+# force every time. (Measured by filtering 2349475 in two separate clones - an
+# earlier attempt seemed nondeterministic purely because another card had
+# landed 2 commits on the trunk between the two runs.)
 
 fail() { echo "!!! $*"; exit 1; }
 say()  { echo "==> $*"; }
@@ -109,14 +129,17 @@ PRIVPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
   || true)"
 if [ -n "$PRIVPATHS" ]; then
   printf '    %s\n' $PRIVPATHS
-  if [ "${HELMDECK_PUBLISH_ALLOW_PRIVATE:-0}" = "1" ]; then
+  if [ "$FILTER" = "1" ]; then
+    say "--filter-private: the above will be REMOVED from the published mirror"
+  elif [ "${HELMDECK_PUBLISH_ALLOW_PRIVATE:-0}" = "1" ]; then
     say "HELMDECK_PUBLISH_ALLOW_PRIVATE=1 - publishing the above ANYWAY"
   else
     fail "private user content in history - these are chat uploads, not source.
     Like any blob, deleting them in a NEW commit does NOT unpublish them; the
     push publishes history. Your options:
-      - purge them from the branch (git filter-repo --path .attachments/ --invert-paths)
-        and push the rewritten branch, or
+      - --filter-private   publish a filtered MIRROR (clone + git_filter_repo in
+                           a temp dir; your real repo is never rewritten). This
+                           is how the repo was published on 2026-08-15.
       - HELMDECK_PUBLISH_ALLOW_PRIVATE=1 if you have LOOKED at them and are
         content for them to be public forever.
     Look first: git show $BRANCH:<path> > /tmp/x.jpg"
@@ -177,8 +200,41 @@ case "$(git remote get-url "$REMOTE")" in
 esac
 
 # ---- 6. push ONE branch ----------------------------------------------------
-say "pushing $BRANCH -> $REMOTE/$TARGET (single branch, never --all)"
-git push "$REMOTE" "$BRANCH:$TARGET" || fail "push failed"
+if [ "$FILTER" = "1" ]; then
+  # Never filter in place: the trunk is the base of ~20 live card branches and
+  # worktrees, and git_filter_repo rewrites every sha it touches.
+  command -v py >/dev/null 2>&1 && PY=py || PY=python3
+  "$PY" -3.12 -c "import git_filter_repo" 2>/dev/null \
+    || $PY -c "import git_filter_repo" 2>/dev/null \
+    || fail "git_filter_repo not importable - pip install git-filter-repo"
+  TMP="${HELMDECK_PUBLISH_TMP:-/c/hd/publish-mirror}"
+  say "building a filtered mirror in $TMP (your repo is NOT touched)"
+  rm -rf "$TMP" || fail "could not clear $TMP"
+  git clone -q --single-branch --branch "$BRANCH" --no-local "file://$ROOT" "$TMP" \
+    || fail "clone failed"
+  ( cd "$TMP" && "$PY" -3.12 -m git_filter_repo \
+      --path .attachments --path .copilot_attachments --invert-paths --force ) \
+    || fail "filter-repo failed"
+  # prove it, do not trust it: the mirror must contain ZERO private paths and
+  # must still carry the workflow the whole exercise exists to run.
+  LEFT="$( cd "$TMP" && git log --all --pretty=format: --name-only | sort -u \
+           | grep -cE '^\.attachments/|^\.copilot_attachments/' )"
+  [ "$LEFT" = "0" ] || fail "mirror STILL contains $LEFT private path(s) - not pushing"
+  ( cd "$TMP" && git ls-tree -r --name-only HEAD -- .github/workflows | grep -q . ) \
+    || fail "mirror has no .github/workflows - the runner would have nothing to do"
+  say "mirror clean (0 private paths, workflows present) - pushing to $REMOTE/$TARGET"
+  ( cd "$TMP" && git remote add origin "git@github.com:$REPO.git" \
+      && git push origin "HEAD:$TARGET" ) || fail "push failed
+    A non-fast-forward here is expected ONLY the first time (the remote's main
+    was a single unrelated 'HelmDeck public releases' commit). Re-run with an
+    explicit lease once you have checked what is on the remote:
+      cd $TMP && git push --force-with-lease=$TARGET:<sha> origin HEAD:$TARGET
+    Force is safe for the download shelf - all release tags pin their own
+    commit and assets live in the releases API, not in git - but verify first."
+else
+  say "pushing $BRANCH -> $REMOTE/$TARGET (single branch, never --all)"
+  git push "$REMOTE" "$BRANCH:$TARGET" || fail "push failed"
+fi
 
 say "done: https://github.com/$REPO"
 echo "    Next: Actions tab -> 'desktop-mac' -> Run workflow. With no secrets"
