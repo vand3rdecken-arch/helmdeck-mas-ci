@@ -1,15 +1,26 @@
-# HelmDeck waitlist (M4 public-launch prep)
+# HelmDeck landing site (M4 public-launch)
 
-A single Cloudflare Worker that serves the waitlist landing page and stores
-signup emails in Workers KV. No framework, no build step, no tracking.
+A single Cloudflare Worker that serves the whole public site — hero, live
+download buttons for Windows/macOS/Android, and the waitlist (now scoped to
+the not-yet-shipped **Watch & Glasses** line, since the app itself is
+downloadable directly). Storage in Workers KV. No framework, no build step,
+no tracking.
 
 - **Live URL**: `https://helmdeck-waitlist.<account-subdomain>.workers.dev`
   (a custom domain can be attached later in the Cloudflare dashboard:
-  Worker → Settings → Domains & Routes)
+  Worker → Settings → Domains & Routes) — this is meant to become `helmdeck.de`.
+- **Downloads**: the `/` route reads the latest GitHub release
+  (`api.github.com/repos/Tienduyvo/helmdeck/releases/latest`) at request time
+  and picks the Windows `.exe`, both macOS `.dmg`s and the Android `.apk` by
+  content-type + filename, so the buttons never go stale when a new version
+  ships. Result is cached in the `WAITLIST` KV for 1h (key `_cache:latest-release`)
+  to stay well under GitHub's unauthenticated rate limit. If the fetch fails,
+  every button falls back to the releases page itself instead of a dead link.
 - **Storage**: KV namespace `WAITLIST` (id in `wrangler.jsonc`), key
-  `email:<lowercased>`, value + metadata `{email, ts, lang}`. First signup
-  wins; duplicates are acknowledged but never overwrite the original timestamp.
-  No IP or user agent is stored.
+  `email:<lowercased>`, value + metadata `{email, ts, lang, product}`.
+  `product` is always `"wearables"` — the sole thing this waitlist now
+  collects for. First signup wins; duplicates are acknowledged but never
+  overwrite the original timestamp. No IP or user agent is stored.
 
 ## Owner: viewing the addresses
 
