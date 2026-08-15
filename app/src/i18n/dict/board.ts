@@ -96,6 +96,7 @@ export const board: Dict = {
   "gantt.emptyHideDone": { de: "Nichts Offenes - alles fertig.", en: "Nothing open - all done." },
   "gantt.vertical": { de: "Vertikal", en: "Vertical" },
   "gantt.hideDone": { de: "Fertige ausblenden", en: "Hide finished" },
+  "gantt.rotate": { de: "Drehen", en: "Rotate" },
   "gantt.card": { de: "KARTE", en: "CARD" },
   "gantt.overdue": { de: "überfällig", en: "overdue" },
   "gantt.process": { de: "Prozess", en: "Process" },

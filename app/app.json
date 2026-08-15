@@ -3,7 +3,7 @@
     "name": "HelmDeck",
     "slug": "helmdeck",
     "version": "1.0.7",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "helmdeck",
     "userInterfaceStyle": "dark",
