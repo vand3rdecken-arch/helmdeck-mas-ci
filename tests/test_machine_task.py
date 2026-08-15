@@ -92,11 +92,17 @@ def test_machine_accept_path(t):
 
 # -- 3. the dispatched agent gets a brief that doesn't make IT refuse ---------
 def test_machine_brief():
-    b = drivers._MACHINE_BRIEF
+    # the briefs are data now (harness/agents/*.md via daemon/harness.py), so ask
+    # for them the way drivers.py does - by the surface a track resolves to.
+    import harness
+    b = harness.brief(drivers._agent_for({"machine": True}))
     check("run commands" in b and "owner's own" in b, "machine brief grants the machine")
     check("NEVER end with just 'I cannot do X'" in b, "machine brief forbids dead-ending")
     check("settings.json" in b and "users.json" in b, "machine brief still fences the secrets")
-    check("worktree" in drivers._CARD_BRIEF, "repo cards keep the worktree brief")
+    check("worktree" in harness.brief(drivers._agent_for({})),
+          "repo cards keep the worktree brief")
+    check(drivers._agent_for({"machine": True}) != drivers._agent_for({}),
+          "a machine card and a repo card resolve to different briefs")
 
 
 # -- 4. owner-gated + policy can RESTRICT (never the other way round) ---------

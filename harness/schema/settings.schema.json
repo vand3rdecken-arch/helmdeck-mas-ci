@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://helmdeck.de/schema/harness-settings.json",
+  "title": "HelmDeck harness settings layer (harness/settings/*.json)",
+  "description": "A standard Claude Code settings file, passed to `claude --settings <file>`. Deliberately the SAME shape the CLI already understands (hooks / env / permissions) so it needs no translation layer and can be validated by the CLI's own rules. Keys the CLI does not know are ignored by it, so this schema stays permissive - but the four below are the ones HelmDeck means to use.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema": { "type": "string" },
+    "env": {
+      "type": "object",
+      "description": "Environment variables for the session. NEVER put a secret here - this file is tracked in git.",
+      "additionalProperties": { "type": "string" }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "deny": { "type": "array", "items": { "type": "string" } },
+        "ask": { "type": "array", "items": { "type": "string" } },
+        "defaultMode": { "type": "string" },
+        "additionalDirectories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Standard Claude Code hook map: event -> [{matcher, hooks:[{type,command,timeout}]}].",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "matcher": { "type": "string" },
+            "hooks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["type", "command"],
+                "properties": {
+                  "type": { "type": "string", "enum": ["command"] },
+                  "command": { "type": "string" },
+                  "timeout": { "type": "number" },
+                  "statusMessage": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "disableAllHooks": { "type": "boolean" }
+  }
+}

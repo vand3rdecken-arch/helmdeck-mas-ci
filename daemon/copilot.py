@@ -13,6 +13,12 @@ STATS = os.path.join(ROOT, "copilot_stats.json")
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
+# THE COPILOT'S ROLE IS DATA: harness/agents/board-copilot.md (loaded by
+# daemon/harness.py, passed as --append-system-prompt). This constant is the
+# BUILT-IN FALLBACK - kept verbatim and in full, not trimmed to a stub, so that a
+# missing or mangled harness file degrades to today's exact behaviour instead of
+# to a lobotomised copilot. Edit the .md; keep this in sync only when the board's
+# action vocabulary itself changes.
 SYSTEM = """You are the HelmDeck board copilot. The user steers an agent-execution
 kanban (cards = agent/human work in lanes backlog/working/review/done; processes =
 step chains that auto-advance). You get a live board snapshot each message.
@@ -295,7 +301,7 @@ ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
 
 # -- never dead-end: every refusal carries the route that IS open -------------
 # Same rule the PM coordinator follows (pm._unblock_proposal) and the card
-# agents follow (drivers._CARD_BRIEF): a boundary must produce a pointer to the
+# agents follow (harness/agents/card-worker.md): a boundary must produce a pointer to the
 # workflow, not a full stop. These helpers make the ACTION layer obey it too -
 # the model can be prompted to be helpful, but the code must not answer a
 # missed card reference with "failed." and nothing else.
@@ -847,12 +853,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                      "to it; a plain work instruction means steer it): %s | %s | %s"
                      % (ct["id"], ct.get("branch"), (ct.get("task") or "")[:80]))
     _plan = _pm_plan_digest()
-    prompt = SYSTEM + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
+    # The ROLE is data now: harness/agents/board-copilot.md. SYSTEM above stays as
+    # the built-in fallback, so a mangled/absent file costs the customisation and
+    # never the chat turn.
+    import harness
+    system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
+    turn = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
         + _snapshot() + (("\n\n" + _plan) if _plan else "") \
         + focus + "\n\nUSER (%s): %s" % (user, body)
     # STREAM (shared with the card surface): stream-json so the prose reply types
     # into the per-user live feed the board chat polls, instead of a blocking
-    # black box. The prompt goes in on stdin (it is huge - never a cmd arg).
+    # black box. The turn goes in on stdin (it is huge - never a cmd arg).
     run_dir = _copilot_run_dir(user)
     live_path = os.path.join(run_dir, "live_partial.txt")
     think_path = os.path.join(run_dir, "live_thinking.txt")
@@ -860,8 +871,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     _crm(live_path); _crm(think_path); _crm(sid_path)
     # drivers._cmd_line, NOT ["cmd","/c",...]: routing claude.cmd through cmd.exe
     # silently mangles quoted arguments (it ate the card workers' --resume - see
-    # drivers._real_claude_exe). These args are quote-free today; the spawn form
-    # must not be a trap waiting for the first one that isn't.
+    # drivers._real_claude_exe).
     import drivers
     argv = [CLAUDE, "-p", "--output-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
@@ -869,6 +879,24 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         argv += ["--model", cli_model]
     if sid:
         argv += ["--resume", sid]
+    # ROLE SEPARATION: the copilot's standing role belongs in the SYSTEM prompt,
+    # not stapled to the front of every user turn. As a user-turn prefix it was
+    # re-sent verbatim on each message, it sat inside the resumed conversation
+    # where the model could treat it as something the *user* said (and later turns
+    # could argue with it), and it blurred the line between the fixed role and the
+    # live board snapshot. --append-system-prompt puts it where the card workers'
+    # brief already lives.
+    #
+    # ...but ONLY when arguments really travel as an argv list. On the last-resort
+    # cmd.exe spawn form a 10 KB argument full of quotes and ``` fences is exactly
+    # the payload that broke --resume, so there we keep the old prefix-the-turn
+    # shape: degraded role separation beats a mangled command line.
+    if drivers.argv_form_safe(CLAUDE):
+        argv += ["--append-system-prompt", system]
+        prompt = turn
+    else:
+        prompt = system + "\n\n" + turn
+    argv += harness.cli_args("board-copilot")
     cmd = drivers._cmd_line(argv)
     # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
     # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
