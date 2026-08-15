@@ -268,13 +268,47 @@ git never got the memo. There is now a privacy check that **fails closed**:
 git show expo-migration:.attachments/0_1000029273.jpg > /tmp/x.jpg   # LOOK first
 HELMDECK_PUBLISH_ALLOW_PRIVATE=1 bash deploy/publish_source.sh       # publish anyway
 ```
-The alternative is to purge them from the pushed lineage — `git_filter_repo`
-**is** installed on this box, and all five were added in recent tip commits
-(the `20260815-001825-chat-ui-fix-prozess-ansicht` finalizes), so the rewrite is
-shallow. Doing that on `expo-migration` itself rewrites the trunk that ~20 live
-card branches and worktrees descend from; doing it on a throwaway publish branch
-leaves the local trunk untouched at the cost of the public repo's SHAs
-permanently differing from local.
+The alternative — and **what was actually done** — is `--filter-private`.
+
+### PUBLISHED 2026-08-15 — how, and the two things that surprised it
+
+```bash
+bash deploy/publish_source.sh --filter-private     # this is the command
+```
+It publishes a **filtered mirror**: clone the trunk to a temp dir, drop
+`.attachments/` from *that copy's* history, push the result. Filtering the trunk
+in place was rejected deliberately — ~20 live card branches and worktrees hang
+off it and `git_filter_repo` rewrites every sha it touches, stranding all of
+them. The owner's repo is never rewritten. Result: 572 commits, 585 files,
+tree byte-identical to the trunk minus the 5 jpgs (`git archive | tar -t` diff:
+only those 5 + the dir entry missing, **nothing added**). The 5 commits that
+vanished were attachment-only "finalize" commits, correctly pruned as empty.
+
+The mirror lineage is **deterministic**, which is what makes it sustainable:
+filtering the same input commit twice gave the identical sha (`a10d9454`), so
+later publishes **fast-forward** and never need a force again. (It briefly
+looked nondeterministic — that was another card landing 2 commits on the trunk
+between the two test clones, not the filter.)
+
+⚠ **The first push is a non-fast-forward, and forcing it is safe.** The remote
+`main` was a single *unrelated* commit (`1dc31bb6` "HelmDeck public releases"),
+so a plain push is rejected exactly once. Verified **before** forcing, not
+after: all four release tags (`v1.0.4`–`v1.0.7`) pin `1dc31bb6` themselves, and
+release **assets live in the releases API, not in git** — so a force-push of
+`main` cannot break the download shelf or the desktop auto-updater. Confirmed
+after the push: all 4 releases still listed, `1dc31bb6` still resolvable. The
+push used `--force-with-lease=main:1dc31bb6…` so it would have aborted if the
+remote had moved.
+
+⚠ **The push did NOT auto-trigger the workflow.** `desktop-mac.yml` has
+`push: branches: [main]`, Actions was enabled and the workflow registered
+`state=active` — and `gh run list` was still empty. A first-ever workflow file
+arriving by force-push of an unrelated history does not fire its own push
+trigger. Dispatch it explicitly and don't wait on a run that will never start:
+```bash
+gh workflow run desktop-mac.yml --repo Tienduyvo/helmdeck --ref main
+gh run list --repo Tienduyvo/helmdeck --limit 3
+```
 
 It is an audit that ends in a push, re-run in full every time — `.gitignore`
 only ever protected the *present*, and a push publishes *history*. Audit as of
