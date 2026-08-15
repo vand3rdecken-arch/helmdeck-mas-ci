@@ -101,6 +101,19 @@ Same bundle ID across channels lets preferences and license state carry over if 
 
 MAS forces StoreKit and takes 30% (15% under the Small Business Program, for revenue under $1M/year). Direct sales keep your own payment and license-key flow. The licensing layer must therefore be pluggable, with receipt validation on MAS and key validation on direct.
 
+## What comparable apps actually do
+
+Asked directly: how do Paseo and similar tools get into the App Store? Checked rather than assumed — **they don't.** Every comparable ships exactly the shape this ADR arrives at.
+
+- **Paseo** — the closest analogue, and its source is on this machine. `packages/desktop/electron-builder.yml` declares `mac.target: [dmg, zip]`, `hardenedRuntime: true`, `notarize: true`, and a GitHub `publish` feed for electron-updater. There is **no `mas` target**, and `build/entitlements.mac.plist` declares no `com.apple.security.app-sandbox` at all — so it is not sandboxed and is not eligible for the Store. It also ships its own `bin/paseo` CLI as an extra resource. Structurally identical to HelmDeck.
+- **Warp** — warp.dev offers DMG and Homebrew. The App Store is not among the channels.
+- **VS Code** — direct DMG download. The request to publish it on the Mac App Store (`microsoft/vscode#43947`) has sat open for years without shipping.
+- **Cursor** — the desktop editor is a direct download. What *is* on the App Store is Cursor's **iOS companion**.
+
+That last one is the pattern, and it is worth stating plainly: for developer and agent tooling, the desktop ships direct — notarized, self-updating — and the App Store presence, where there is one, is a **phone companion**, not the desktop agent. Nobody is sandboxing the toolchain driver, because it cannot be done.
+
+**HelmDeck already follows this pattern.** The Expo app in `app/` is the phone client, iOS signing is in place, and it is the App-Store-facing surface. So the "both channels" intent is already satisfied — just not along the axis the original memo framed: **Direct-DMG for the desktop, Apple's store via the phone app.** A Mac App Store build would add no channel that HelmDeck does not already have.
+
 ## Open Items
 
 1. ~~Sandbox feasibility audit~~ — **done**, see Consequence 2. Result: MAS is blocked by the daemon spawn, not by the updater.
