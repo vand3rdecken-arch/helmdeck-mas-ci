@@ -60,6 +60,7 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
   const t = useTheme();
   const tr = useT();
   const [zoom, setZoom] = React.useState<Zoom>("weeks");
+  const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({});
   const now = Date.now();
 
   const rows = tracks
@@ -86,6 +87,23 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
     const pp = p.k.process ?? "~", pq = q.k.process ?? "~";
     return pp < pq ? -1 : pp > pq ? 1 : p.a - q.a;
   });
+
+  // Cluster consecutive same-process rows into a group. A card with no
+  // process (or the only step of one) gets a group of its own and renders
+  // exactly as before - no header. A process with several steps/cards gets a
+  // collapsible header row instead of dumping every step in the list: a
+  // roadmap process can have a dozen+ planned ghost rows, which read as "a
+  // pile of empty cards" when flattened. Collapsed by default so the board
+  // opens on a scannable per-process summary, not the full step dump.
+  type Row = (typeof sorted)[number];
+  type Group = { key: string; title: string; rows: Row[] };
+  const groups: Group[] = [];
+  for (const r of sorted) {
+    const key = r.k.process ?? `~${r.k.id}`;
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.rows.push(r);
+    else groups.push({ key, title: r.k.process_title || r.k.process || "", rows: [r] });
+  }
 
   return (
     <View style={{ gap: 8 }}>
@@ -121,49 +139,85 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
             </View>
           </View>
 
-          {/* one row per card */}
-          {sorted.map((r) => {
-            const planned = (r.k as { _planned?: boolean })._planned;
-            const l = planned ? xOf(now) : xOf(r.a);
-            const w = planned ? Math.max(8, xOf(r.due ?? now) - l) : Math.max(8, xOf(r.b) - l);
-            const late = r.due != null && r.k.lane !== "done" && !planned && now > r.due;
+          {/* one row per card, clustered into collapsible process groups */}
+          {groups.map((g) => {
+            const multi = g.rows.length > 1;
+            const isCollapsed = multi && (collapsed[g.key] ?? true);
+            const acceptedCt = g.rows.filter((r) => !(r.k as { _planned?: boolean })._planned).length;
+            const doneCt = g.rows.filter((r) => !(r.k as { _planned?: boolean })._planned && r.k.lane === "done").length;
+            const groupMin = Math.min(...g.rows.map((r) => ((r.k as { _planned?: boolean })._planned ? now : r.a)));
+            const groupMax = Math.max(...g.rows.map((r) => r.due ?? r.b));
+            const gl = xOf(groupMin);
+            const gw = Math.max(8, xOf(groupMax) - gl);
             return (
-              <Pressable key={r.k.id} onPress={() => { if (!planned) onOpen(r.k.id); }}
-                style={{ flexDirection: "row", alignItems: "center", height: rowH, borderBottomWidth: 1,
-                  borderBottomColor: t.borderSubtle, opacity: planned ? 0.75 : 1 }}>
-                <View style={{ width: side, paddingHorizontal: 10 }}>
-                  <Text numberOfLines={1} style={{ color: planned ? t.txtTertiary : t.txtPrimary, fontSize: 12 }}>
-                    {planned ? "◇ " : ""}{r.k.task}
-                  </Text>
-                </View>
-                <View style={{ width: W, height: rowH, justifyContent: "center" }}>
-                  {/* today marker */}
-                  <View style={{ position: "absolute", left: xOf(now), top: 0, bottom: 0, width: 1.5, backgroundColor: t.accent }} />
-                  {/* due-date diamond (outline when planned) */}
-                  {r.due != null ? (
-                    <View style={{
-                      position: "absolute", left: xOf(r.due) - 5, top: rowH / 2 - 5, width: 10, height: 10,
-                      transform: [{ rotate: "45deg" }],
-                      backgroundColor: planned ? "transparent" : (late ? t.danger : t.txtTertiary),
-                      borderWidth: planned ? 1.5 : 0, borderColor: t.accent,
-                    }} />
-                  ) : null}
-                  {/* the bar (dashed ghost when planned) */}
-                  <View style={{
-                    position: "absolute", left: l, width: w, height: 16, borderRadius: 5,
-                    backgroundColor: planned ? "transparent" : laneColor(t, r.k.lane),
-                    borderWidth: planned ? 1 : 0, borderColor: t.accent + "88", borderStyle: planned ? "dashed" : "solid",
-                    justifyContent: "center", paddingHorizontal: 6, overflow: "hidden",
-                  }}>
-                    {w > 44 ? (
-                      <Text numberOfLines={1} style={{ color: planned ? t.accent : "#fff", fontSize: 9.5, fontWeight: "600" }}>
-                        {planned ? tr("gantt.planned")
-                          : ((r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane)) + (late ? " · " + tr("gantt.overdue") : ""))}
+              <React.Fragment key={g.key}>
+                {multi ? (
+                  <Pressable onPress={() => setCollapsed((c) => ({ ...c, [g.key]: !isCollapsed }))}
+                    style={{ flexDirection: "row", alignItems: "center", height: rowH, borderBottomWidth: 1,
+                      borderBottomColor: t.borderSubtle, backgroundColor: t.surface2 }}>
+                    <View style={{ width: side, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ color: t.txtSecondary, fontSize: 10 }}>{isCollapsed ? "▸" : "▾"}</Text>
+                      <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 12, fontWeight: "600", flexShrink: 1 }}>
+                        {g.title || tr("gantt.process")}
                       </Text>
-                    ) : null}
-                  </View>
-                </View>
-              </Pressable>
+                    </View>
+                    <View style={{ width: W, height: rowH, justifyContent: "center" }}>
+                      <View style={{ position: "absolute", left: xOf(now), top: 0, bottom: 0, width: 1.5, backgroundColor: t.accent }} />
+                      <View style={{
+                        position: "absolute", left: gl, width: gw, height: 10, borderRadius: 5,
+                        backgroundColor: t.txtTertiary + "40",
+                      }} />
+                      <Text numberOfLines={1} style={{ position: "absolute", left: gl + 6, right: 6, color: t.txtSecondary, fontSize: 9.5, fontWeight: "600" }}>
+                        {doneCt}/{acceptedCt} · {g.rows.length} {tr("gantt.steps")}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+                {(!multi || !isCollapsed) ? g.rows.map((r) => {
+                  const planned = (r.k as { _planned?: boolean })._planned;
+                  const l = planned ? xOf(now) : xOf(r.a);
+                  const w = planned ? Math.max(8, xOf(r.due ?? now) - l) : Math.max(8, xOf(r.b) - l);
+                  const late = r.due != null && r.k.lane !== "done" && !planned && now > r.due;
+                  return (
+                    <Pressable key={r.k.id} onPress={() => { if (!planned) onOpen(r.k.id); }}
+                      style={{ flexDirection: "row", alignItems: "center", height: rowH, borderBottomWidth: 1,
+                        borderBottomColor: t.borderSubtle, opacity: planned ? 0.75 : 1 }}>
+                      <View style={{ width: side, paddingHorizontal: 10, paddingLeft: multi ? 22 : 10 }}>
+                        <Text numberOfLines={1} style={{ color: planned ? t.txtTertiary : t.txtPrimary, fontSize: 12 }}>
+                          {planned ? "◇ " : ""}{r.k.task}
+                        </Text>
+                      </View>
+                      <View style={{ width: W, height: rowH, justifyContent: "center" }}>
+                        {/* today marker */}
+                        <View style={{ position: "absolute", left: xOf(now), top: 0, bottom: 0, width: 1.5, backgroundColor: t.accent }} />
+                        {/* due-date diamond (outline when planned) */}
+                        {r.due != null ? (
+                          <View style={{
+                            position: "absolute", left: xOf(r.due) - 5, top: rowH / 2 - 5, width: 10, height: 10,
+                            transform: [{ rotate: "45deg" }],
+                            backgroundColor: planned ? "transparent" : (late ? t.danger : t.txtTertiary),
+                            borderWidth: planned ? 1.5 : 0, borderColor: t.accent,
+                          }} />
+                        ) : null}
+                        {/* the bar (dashed ghost when planned) */}
+                        <View style={{
+                          position: "absolute", left: l, width: w, height: 16, borderRadius: 5,
+                          backgroundColor: planned ? "transparent" : laneColor(t, r.k.lane),
+                          borderWidth: planned ? 1 : 0, borderColor: t.accent + "88", borderStyle: planned ? "dashed" : "solid",
+                          justifyContent: "center", paddingHorizontal: 6, overflow: "hidden",
+                        }}>
+                          {w > 44 ? (
+                            <Text numberOfLines={1} style={{ color: planned ? t.accent : "#fff", fontSize: 9.5, fontWeight: "600" }}>
+                              {planned ? tr("gantt.planned")
+                                : ((r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane)) + (late ? " · " + tr("gantt.overdue") : ""))}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                }) : null}
+              </React.Fragment>
             );
           })}
         </View>
