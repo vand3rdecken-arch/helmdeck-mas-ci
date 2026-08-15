@@ -520,7 +520,11 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 import harness
-                from urllib.parse import parse_qs, urlparse
+                # NO local `from urllib.parse import ...` here: parse_qs is
+                # already module-level (line 14), and a function-scoped import
+                # would make the name LOCAL to all of do_GET - which broke the
+                # /stream/wait long-poll 170 lines above with UnboundLocalError
+                # on every request that did not hit this branch first.
                 vid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
                 txt = harness.version_text(parts[2], parts[3], vid)
                 if txt is None:
@@ -1154,8 +1158,13 @@ class H(BaseHTTPRequestHandler):
                         res = harness.write_settings(name, body.get("text") or "", actor=user["name"])
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False))
+                # `target`, NOT `kind`: emit()'s own first positional parameter is
+                # named kind, so passing kind= here raised TypeError AFTER the file
+                # had already been written - a changed brief with no audit row and
+                # a 500 at the client. Caught by exercising the endpoint, not by
+                # reading it.
                 events.emit("harness", "-", action=("restore" if body.get("restore") else "write"),
-                            kind=kind, name=name, actor=user["name"],
+                            target=kind, name=name, actor=user["name"],
                             path=res.get("path"), sha256=(res.get("sha256") or "")[:16],
                             kept_version=res.get("kept_version"), validator=res.get("validator"),
                             restored=body.get("restore") or "")

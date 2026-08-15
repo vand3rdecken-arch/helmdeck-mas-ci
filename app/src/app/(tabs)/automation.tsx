@@ -177,7 +177,11 @@ export default function Automation() {
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
         <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("automation.title")}</Text>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 40, width: "100%", maxWidth: wide ? 860 : undefined, alignSelf: "center" }}>
+      {/* paddingBottom clears the floating tab bar. 40 was too short — the last
+          panel scrolled UNDER the bar and its text showed through, which the
+          Harness section made obvious by making the page much longer. 120 is
+          what the other tab screens (more, dashboard) already use. */}
+      <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: wide ? 60 : 120, width: "100%", maxWidth: wide ? 860 : undefined, alignSelf: "center" }}>
         {isLoading ? <ActivityIndicator color={t.accent} /> : null}
         {error ? <Text style={{ color: t.danger }}>{tr("automation.errorOwner")}</Text> : null}
         {data ? (
