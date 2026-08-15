@@ -98,7 +98,6 @@ export const board: Dict = {
   "gantt.hideDone": { de: "Fertige ausblenden", en: "Hide finished" },
   "gantt.card": { de: "KARTE", en: "CARD" },
   "gantt.overdue": { de: "überfällig", en: "overdue" },
-  "gantt.planned": { de: "geplant", en: "planned" },
   "gantt.process": { de: "Prozess", en: "Process" },
   "gantt.steps": { de: "Schritte", en: "steps" },
   "gantt.legend": {
