@@ -184,10 +184,35 @@ export interface ConsolidationStream { name: string; title: string; members: str
 export interface ConsolidationRepo { repo: string; streams: ConsolidationStream[] }
 export interface ConsolidationProposal { repos: ConsolidationRepo[]; generated_at?: string }
 
-export interface LoopNode { key: string; label?: string; kind?: "fixed" | "policy"; instruction: string }
+// The harness exports its REAL state machine (daemon: sessions.flow() +
+// loop_state.machine()), so these graphs are derived from the code that runs
+// them rather than re-described here. `settings` names the exact settings key
+// that governs a policy node, so a node can link straight to its knob.
+export interface LoopNode {
+  key: string; label?: string; kind?: "fixed" | "policy"; instruction: string;
+  settings?: string[];
+}
+export interface LoopEdge {
+  from: string; to: string; verb?: string; when?: string;
+  kind?: "fixed" | "policy"; instruction?: string; settings?: string[];
+}
+/** A build-loop state. `active` marks where the checkout currently sits. */
+export interface LoopState extends LoopNode { modes?: string[]; active?: boolean }
+/** Which brief + settings layer each agent surface resolved to (harness/). */
+export interface HarnessAgent {
+  name: string; source: string; settings: string;
+  setting_sources?: string; ask_protocol: boolean; chars: number;
+}
 export interface LoopMap {
-  runtime: { title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] } };
-  build: { title: string; states: { key: string; instruction: string }[] };
+  runtime: { title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] }; edges?: LoopEdge[] };
+  build: {
+    title: string; states: LoopState[]; edges?: LoopEdge[];
+    /** "card" = a card's worktree (no workorder ceremony) vs "repo". */
+    mode?: "card" | "repo"; mode_note?: string; active?: string;
+    current?: { state: string; action: string }[];
+  };
+  /** Present only when the daemon could read harness/ - errors is empty when healthy. */
+  harness?: { agents: HarnessAgent[]; errors: Record<string, string> };
   laws: { key: string; text: string }[];
   charter: string;
 }

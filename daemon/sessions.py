@@ -904,6 +904,79 @@ def _log_turn_end(log, meta, cost=None):
 # done    = accepted        (deliverable taken; branch ready to merge)
 LANES = ("backlog", "working", "review", "done")
 
+# -- the lane/gate flow, AS DATA -----------------------------------------
+# This lives here, next to move_lane(), because move_lane IS this machine: every
+# node and edge below is a branch of it. It used to be re-typed by hand in
+# server.py's /loop/map handler, which is how that copy came to describe a board
+# nobody had shipped for months.
+#
+# `kind` is the load-bearing column:
+#   fixed  - harness law (CLAUDE.md). Not configurable, shown read-only.
+#   policy - data. `settings` names the exact key that governs the node, so the
+#            UI can link a node straight to the knob instead of describing it.
+LANE_FLOW = {
+    "nodes": [
+        {"key": "backlog", "default_label": "Backlog", "kind": "policy",
+         "settings": ["policy.auto_dispatch_priority", "capacity.wip_limit"],
+         "instruction": "Karten warten. Ab der Prioritaet in policy.auto_dispatch_priority "
+                        "starten sie sich selbst - aber nur im WIP-Rahmen (capacity.wip_limit)."},
+        {"key": "working", "default_label": "In Arbeit", "kind": "fixed",
+         "settings": [],
+         "instruction": "Ein Agent arbeitet in einem ISOLIERTEN git-worktree (Harness-Gesetz: "
+                        "worktree-Isolation). Jeder Turn ist gemessen (Kosten/Token -> Audit)."},
+        {"key": "review", "default_label": "Review", "kind": "fixed",
+         "settings": [],
+         "instruction": "Beim Eintritt laeuft der Quality-Gate (gate-before-review, FIX). "
+                        "Rot -> die Karte wird zurueckgebounced mit sichtbarem Grund."},
+        {"key": "done", "default_label": "Fertig", "kind": "policy",
+         "settings": ["policy.auto_accept_green"],
+         "instruction": "Merge + Deploy. Nichts merged sich selbst - ausser "
+                        "policy.auto_accept_green ist an. Der Prozess-Chain rueckt "
+                        "einen Schritt vor."},
+    ],
+    "edges": [
+        {"from": "backlog", "to": "working", "verb": "dispatch", "kind": "policy",
+         "settings": ["policy.auto_dispatch_priority", "policy.auto_dispatch_modes"],
+         "instruction": "Der Agent wird gestartet (idempotent - eine laufende Karte "
+                        "nimmt ihre Position wieder auf)."},
+        {"from": "working", "to": "review", "verb": "submit", "kind": "fixed",
+         "settings": [],
+         "instruction": "Aufraeumen + Commit, dann der Gate. Danach wird der Merge nur "
+                        "KLASSIFIZIERT (dry-run) - die Karte bleibt mit dem Befund auf Review."},
+        {"from": "review", "to": "working", "verb": "bounce", "kind": "fixed",
+         "settings": [],
+         "instruction": "Der Mensch schickt die Karte zurueck - als 'bounce' in der "
+                        "Oekonomie verbucht."},
+        {"from": "review", "to": "done", "verb": "accept", "kind": "policy",
+         "settings": ["policy.auto_accept_green"],
+         "instruction": "Der bewusste Zug nach Done merged wirklich und faehrt den "
+                        "Deploy-Hook. Idempotent: eine gelandete Karte wird nie erneut "
+                        "gegatet oder gemerged."},
+    ],
+    "gate": {"key": "gate", "default_label": "Quality Gate", "kind": "fixed",
+             "between": ["working", "review"], "settings": [],
+             "instruction": "Gate-before-review ist ein fixes Harness-Gesetz: kein Review "
+                            "ohne bestandenen Gate. Das Ergebnis geht append-only ins "
+                            "Audit-Log."},
+}
+
+
+def flow(lane_labels=None):
+    """The lane/gate machine as data, with the owner's lane renames applied.
+
+    `label` resolves policy.lane_labels over the built-in default, so the UI never
+    has to know that renaming is a thing - it just renders `label`."""
+    ll = lane_labels or {}
+    out = {"nodes": [], "edges": [dict(e) for e in LANE_FLOW["edges"]],
+           "gate": dict(LANE_FLOW["gate"])}
+    for n in LANE_FLOW["nodes"]:
+        n = dict(n)
+        n["label"] = ll.get(n["key"], n["default_label"])
+        out["nodes"].append(n)
+    out["gate"]["label"] = out["gate"]["default_label"]
+    return out
+
+
 # -- public API ----------------------------------------------------------
 
 def list_tracks():
@@ -1200,7 +1273,7 @@ _READY_TAIL_RE = re.compile(r"ready for review\b.*", re.I | re.S)
 
 def extract_outcome(reply):
     """A 1-2 line result sentence from a card's final reply: the agent's
-    DELIVERED summary (drivers._CARD_BRIEF convention, same anchor ask.py keys
+    DELIVERED summary (harness/agents/card-worker.md convention, same anchor ask.py keys
     off) when present, else the reply's first lines. '' when nothing usable."""
     text = (reply or "").strip()
     if not text:

@@ -31,6 +31,63 @@ def _bg(name, fn):
         _ctl["busy"].append(name)
     threading.Thread(target=wrap, daemon=True).start()
 
+# -- the machine, rendered from ONE definition ------------------------------
+# /loop/map and /automation both show the build loop. They used to carry a
+# hand-typed copy each; the copies drifted from one another and from the code
+# (/loop/map had silently lost BUILD; /automation still described BUILD as
+# rebuilding "Installer / APK / glasses", which stopped being true at the Expo
+# cutover). These three helpers derive everything from the modules that OWN the
+# state - sessions.flow(), loop_state.machine(), harness.describe() - so the next
+# state change propagates by itself instead of needing to be remembered twice.
+#
+# Each is defensive: an endpoint that explains the harness must not be the thing
+# that 500s when the harness is mid-edit.
+
+def _loop_state_mod():
+    """tools/loop_state.py, imported from the daemon."""
+    import sys as _sys
+    tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+    if tools not in _sys.path:
+        _sys.path.insert(0, tools)
+    import loop_state
+    return loop_state
+
+
+def _lane_flow(lane_labels):
+    """The lane/gate graph. `lanes` (not `nodes`) is the wire name the app
+    already reads, so the richer graph arrives as an ADDITION - `edges` is new,
+    every existing field keeps its meaning."""
+    try:
+        import sessions
+        f = sessions.flow(lane_labels)
+        return {"lanes": f["nodes"], "gate": f["gate"], "edges": f["edges"]}
+    except Exception as e:                                   # noqa: BLE001
+        return {"lanes": [], "gate": {}, "edges": [], "error": str(e)[:200]}
+
+
+def _loop_machine():
+    """The build loop: states + edges + where this checkout currently sits."""
+    try:
+        return _loop_state_mod().machine()
+    except Exception as e:                                   # noqa: BLE001
+        return {"title": "Wie Aenderungen gebaut werden", "states": [], "edges": [],
+                "current": [{"state": "?", "action": "loop_state: %s" % str(e)[:120]}],
+                "error": str(e)[:200]}
+
+
+def _harness_state():
+    """Which brief/settings layer each agent surface actually resolved to, and
+    any harness file that failed to load. Without this a broken harness/agents
+    file is invisible: harness.py deliberately falls back to its built-in default
+    rather than breaking a spawn, so nothing would otherwise SAY that an edit is
+    being ignored."""
+    try:
+        import harness
+        return harness.describe()
+    except Exception as e:                                   # noqa: BLE001
+        return {"agents": [], "errors": {"harness": str(e)[:200]}}
+
+
 def _active_live():
     for m in list_runs():
         if m.get("status") == "running":
@@ -376,41 +433,19 @@ class H(BaseHTTPRequestHandler):
             if p == "/loop/map":
                 # the machine, made legible: the lane/gate flow + the build loop +
                 # the fixed harness laws behind them (charter is code, shown read-only).
+                #
+                # BOTH graphs are now DERIVED, not described. This handler used to
+                # carry a hand-typed copy of each, and /automation carried a second
+                # copy of the build loop; they drifted apart and away from the code
+                # (this one had silently lost the BUILD state altogether). The
+                # renderer gets sessions.flow() and loop_state.machine() verbatim,
+                # so a new state or a changed condition shows up here by itself.
                 import charter, events
                 ll = (events.settings().get("policy") or {}).get("lane_labels") or {}
-                lab = lambda k, d: ll.get(k, d)
                 return self._send(200, json.dumps({
-                    "runtime": {
-                        "title": "Wie Arbeit fließt",
-                        "lanes": [
-                            {"key": "backlog", "label": lab("backlog", "Backlog"), "kind": "policy",
-                             "instruction": "Karten warten. Ab der Priorität in policy.auto_dispatch_priority "
-                                            "starten sie sich selbst — aber nur im WIP-Rahmen (capacity.wip_limit)."},
-                            {"key": "working", "label": lab("working", "In Arbeit"), "kind": "fixed",
-                             "instruction": "Ein Agent arbeitet in einem ISOLIERTEN git-worktree (Harness-Gesetz: "
-                                            "worktree-Isolation). Jeder Turn ist gemessen (Kosten/Token → Audit)."},
-                            {"key": "review", "label": lab("review", "Review"), "kind": "fixed",
-                             "instruction": "Beim Eintritt läuft der Quality-Gate (gate-before-review, FIX). "
-                                            "Rot → die Karte wird zurückgebounced mit sichtbarem Grund."},
-                            {"key": "done", "label": lab("done", "Fertig"), "kind": "policy",
-                             "instruction": "Merge + Deploy. Nichts merged sich selbst — außer policy.auto_accept_green "
-                                            "ist an. Der Prozess-Chain rückt einen Schritt vor."},
-                        ],
-                        "gate": {"label": "Quality Gate", "kind": "fixed", "between": ["working", "review"],
-                                 "instruction": "Gate-before-review ist ein fixes Harness-Gesetz: kein Review ohne "
-                                                "bestandenen Gate. Das Ergebnis geht append-only ins Audit-Log."},
-                    },
-                    "build": {
-                        "title": "Wie Änderungen gebaut werden",
-                        "states": [
-                            {"key": "ALIGN", "instruction": "Arbeit begonnen, aber kein Workorder — Request + passt es zu den Gesetzen/Charter?"},
-                            {"key": "ANALYZE", "instruction": "Architektur-Impact + Debt-Delta (Abkürzungen in debt.py registrieren)."},
-                            {"key": "EXECUTE", "instruction": "Checks rot → bauen/fixen bis grün (compile, types, design-lint)."},
-                            {"key": "TEST", "instruction": "Grün heißt nicht fertig: das echte Ding prüfen (UI = beurteilt, nicht nur gerendert) + adversarial testen."},
-                            {"key": "CLEAN", "instruction": "Hygiene: Debt-Register wohlgeformt, keine Secrets getrackt."},
-                            {"key": "COMMIT", "instruction": "Loop komplett & ruhig → Commit vorschlagen; Workorder archiviert."},
-                        ],
-                    },
+                    "runtime": dict(_lane_flow(ll), title="Wie Arbeit fliesst"),
+                    "build": _loop_machine(),
+                    "harness": _harness_state(),
                     "laws": [
                         {"key": "auth", "text": "Auth ist fix — nie geschwächt."},
                         {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben."},
@@ -550,28 +585,17 @@ class H(BaseHTTPRequestHandler):
                 # night shift (is it on, repos, limits, tonight's plan), the policy
                 # (auto-dispatch/accept), and the build-loop state machine + where
                 # it currently sits - so the UI can expose "what is the harness doing".
-                import events, pm, os as _os, sys as _sys
+                import events, pm
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 s = events.settings(); pol = s.get("policy") or {}
-                loop_states = [
-                    ["ALIGN", "Arbeit begonnen - Workorder schreiben (passt es zu Gesetzen + Charter?)"],
-                    ["ANALYZE", "Architektur-Impact + Debt-Delta klaeren, bevor gebaut wird"],
-                    ["EXECUTE", "Checks rot - bauen/fixen bis gruen (py_compile, tsc, design-lint)"],
-                    ["TEST", "verifizieren statt nur rendern - adversarial testen"],
-                    ["CLEAN", "aufraeumen, Debt-Register gepflegt halten"],
-                    ["BUILD", "stale Artefakte neu bauen (Installer / APK / glasses)"],
-                    ["COMMIT", "Loop fertig + ruhig - Commit vorschlagen"],
-                    ["DONE", "sauberer Baum, kein offener Workorder"],
-                ]
-                current = []
-                try:
-                    _sys.path.insert(0, _os.path.join(
-                        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools"))
-                    import loop_state
-                    current = [{"state": st, "action": ac} for st, ac in (loop_state.transitions() or [])]
-                except Exception as e:
-                    current = [{"state": "?", "action": "loop_state: %s" % str(e)[:120]}]
+                # ONE definition, shared with /loop/map (see _loop_machine). The
+                # hand-written list that used to sit here had drifted: it still
+                # promised BUILD would rebuild "Installer / APK / glasses" long
+                # after ARTIFACT_SRC was cut down to the signed APK alone.
+                _machine = _loop_machine()
+                loop_states = [[st["key"], st["instruction"]] for st in _machine["states"]]
+                current = _machine["current"]
                 # Declarative config schema: the SINGLE source of truth for every
                 # editable knob ("policy is data"). The app renders each control
                 # generically and writes it back with saveSettings(nest(path,value)),
@@ -611,6 +635,9 @@ class H(BaseHTTPRequestHandler):
                     "default_repo": s.get("default_repo"),
                     "loop_states": [{"state": st, "desc": d} for st, d in loop_states],
                     "loop_current": current,
+                    # which half of the loop this checkout is actually running
+                    "loop_mode": _machine.get("mode"),
+                    "loop_mode_note": _machine.get("mode_note"),
                 }))
             if p == "/dashboard/data":
                 import events, sessions
