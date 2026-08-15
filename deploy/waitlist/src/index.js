@@ -23,16 +23,46 @@
  * KV namespace for an hour) instead of hardcoding filenames, so this page never
  * goes stale when a new version ships. If the GitHub fetch fails, every button
  * falls back to the releases page itself rather than a dead link.
+ *
+ * iOS is the one platform with no downloadable artifact: it ships as an internal
+ * TestFlight group, which Apple distributes by invitation only (no public join
+ * URL exists to link). Its card therefore offers a mailto that asks for the
+ * tester's Apple ID - see TESTFLIGHT_REQUEST_URL.
  */
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 
 // Owner-picked Userjot board (matches app/src/data/feedback.ts) - update both
 // in lockstep if the board URL ever changes.
+//
+// Was "" (footer link hidden) from 2026-08-15 20:00-20:47: every path on
+// helmdeck.userjot.com answered HTTP 500, verified in real Chromium, not just
+// curl. Root cause found by grepping every card's session log for "userjot":
+// the board was never actually created. A prior card GUESSED this subdomain,
+// couldn't verify it (mis-read UserJot's 500-for-non-browser-clients as normal
+// behavior, when it was 500-for-everyone), and the owner's "yes, correct" only
+// confirmed the guessed spelling, not that the board existed. Restored 20:47
+// after the owner created the workspace at this exact subdomain - confirmed
+// both by UserJot's own "Your HelmDeck board is live" and by loading the page
+// itself (real content, not the JSON error).
 const FEEDBACK_URL = "https://helmdeck.userjot.com";
 const REPO = "Tienduyvo/helmdeck";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 const PLAY_URL = "https://play.google.com/apps/testing/app.helmdeck";
+// iOS ships as an INTERNAL TestFlight group ("Team (Expo)", ASC app 6801637667,
+// docs/ios-requirements.md fixes the scope at internal testing / max 100 testers).
+// Internal testing has NO public join URL by design - Apple invites by Apple-ID
+// email only, and a self-service link would require external testing + Beta App
+// Review, which the owner ruled out of scope. So the honest CTA is a mailto that
+// asks for the Apple ID, not a fake `testflight.apple.com/join/...` link.
+const TESTFLIGHT_REQUEST_URL =
+  "mailto:tienduyvo@googlemail.com" +
+  "?subject=" + encodeURIComponent("HelmDeck iOS – TestFlight-Zugang") +
+  "&body=" + encodeURIComponent(
+    "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
+    "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
+  );
+const TESTFLIGHT_APP_URL = "https://apps.apple.com/app/testflight/id899247664";
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 
@@ -143,10 +173,10 @@ function page({ rel, joined, already, err, email }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HelmDeck – Downloads & Watch/Glasses Warteliste</title>
-<meta name="description" content="HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner. Downloads für Windows, macOS und Android – und die Warteliste für HelmDeck Watch & Glasses.">
-<meta property="og:title" content="HelmDeck">
-<meta property="og:description" content="Übernimm das Steuer deiner Agenten. Downloads für Windows, macOS und Android.">
+<title>HelmDeck – Downloads für Windows, macOS, iOS & Android</title>
+<meta name="description" content="HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner. Jetzt verfügbar für Windows, macOS (signiert &amp; notarisiert), iPhone (TestFlight) und Android – plus die Warteliste für HelmDeck Watch &amp; Glasses.">
+<meta property="og:title" content="HelmDeck – jetzt verfügbar">
+<meta property="og:description" content="Übernimm das Steuer deiner Agenten. Downloads für Windows, macOS, iPhone (TestFlight) und Android.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -224,7 +254,10 @@ section{padding:2.6rem 0; border-top:1px solid var(--border)}
 .section-sub{margin:.4rem 0 1.8rem; color:var(--ink-3); max-width:44rem}
 .features{display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:1.1rem}
 .features p{margin:0; color:var(--ink-2); font-size:.95rem; line-height:1.55}
-.dl-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:1rem}
+/* four platforms: an auto-fit track would fit 3 across in the 64rem shell and
+   leave the fourth card orphaned on its own row, so pin it to an even 2x2. */
+.dl-grid{display:grid; grid-template-columns:1fr; gap:1rem}
+@media (min-width:46rem){.dl-grid{grid-template-columns:repeat(2,1fr)}}
 .dl-card{
   background:var(--surface); border:1px solid var(--border); border-radius:14px;
   padding:1.4rem; display:flex; flex-direction:column; gap:.7rem;
@@ -312,8 +345,8 @@ footer a:hover{color:var(--ink-2)}
   </section>
 
   <section id="downloads">
-    <h2 data-i="dlTitle">Downloads</h2>
-    <p class="section-sub" data-i="dlSub">Läuft komplett auf deinem eigenen Rechner – keine Cloud, kein Account, keine Wartezeit.</p>
+    <h2 data-i="dlTitle">Jetzt verfügbar</h2>
+    <p class="section-sub" data-i="dlSub">Desktop für Windows und macOS, dazu die App fürs iPhone und für Android. Läuft komplett auf deinem eigenen Rechner – keine Cloud, kein Account, keine Wartezeit.</p>
     <div class="dl-grid">
       <div class="dl-card">
         <h3>Windows</h3>
@@ -330,6 +363,15 @@ footer a:hover{color:var(--ink-2)}
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn">Apple Silicon herunterladen</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn">Intel herunterladen</a>
+        </div>
+      </div>
+      <div class="dl-card">
+        <h3>iPhone &amp; iPad</h3>
+        <p class="dl-meta" data-i="dlIosMeta">TestFlight-Beta · geschlossene Gruppe</p>
+        <p class="dl-note" data-i="dlIosNote">Die iOS-App läuft über TestFlight (interner Test, begrenzte Plätze). Schick uns die Apple-ID deines Geräts – du bekommst die Einladung per Mail.</p>
+        <div class="dl-actions">
+          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_REQUEST_URL}" data-i="dlIosRequestBtn">TestFlight-Zugang anfragen</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn">TestFlight-App laden</a>
         </div>
       </div>
       <div class="dl-card">
@@ -386,12 +428,12 @@ footer a:hover{color:var(--ink-2)}
     </div>
   </section>
 </main>
-<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a></footer>
+<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""}</footer>
 <script>
 (function(){
   var I18N = {
     de:{
-      title:"HelmDeck – Downloads & Watch/Glasses Warteliste",
+      title:"HelmDeck – Downloads für Windows, macOS, iOS & Android",
       navDownloads:"Downloads", navWaitlist:"Watch & Glasses",
       h1:"Übernimm das Steuer deiner Agenten.",
       sub:"HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner – Karten aufs Board, Arbeit in isolierten Worktrees, Freigabe vom Handy.",
@@ -399,11 +441,14 @@ footer a:hover{color:var(--ink-2)}
       feat1:"Karten aufs Board, Agenten übernehmen sie – ohne dass du daneben sitzt.",
       feat2:"Jede Karte läuft isoliert: eigener Worktree, eigener Branch, nichts kollidiert.",
       feat3:"Freigabe vom Handy: live zusehen, im Chat antworten, Ergebnisse annehmen oder ablehnen.",
-      dlTitle:"Downloads", dlSub:"Läuft komplett auf deinem eigenen Rechner – keine Cloud, kein Account, keine Wartezeit.",
+      dlTitle:"Jetzt verfügbar", dlSub:"Desktop für Windows und macOS, dazu die App fürs iPhone und für Android. Läuft komplett auf deinem eigenen Rechner – keine Cloud, kein Account, keine Wartezeit.",
       dlBtn:"Herunterladen",
       dlWinNote:"Nicht code-signiert – Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert – öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
+      dlIosMeta:"TestFlight-Beta · geschlossene Gruppe",
+      dlIosNote:"Die iOS-App läuft über TestFlight (interner Test, begrenzte Plätze). Schick uns die Apple-ID deines Geräts – du bekommst die Einladung per Mail.",
+      dlIosRequestBtn:"TestFlight-Zugang anfragen", dlIosAppBtn:"TestFlight-App laden",
       dlAndroidNote:"Bevorzugt: geschlossener Play-Test. Die APK hier ist zum Sideload, falls du lieber direkt installierst.",
       dlAndroidPlayBtn:"Play-Test beitreten", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
@@ -420,7 +465,7 @@ footer a:hover{color:var(--ink-2)}
       privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Watch/Glasses zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
       contact:"Kontakt", sending:"…", toggle:"EN" },
     en:{
-      title:"HelmDeck – Downloads & Watch/Glasses Waitlist",
+      title:"HelmDeck – Downloads for Windows, macOS, iOS & Android",
       navDownloads:"Downloads", navWaitlist:"Watch & Glasses",
       h1:"Take the helm of your agents.",
       sub:"HelmDeck orchestrates coding agents on your own machine – cards onto the board, work in isolated worktrees, approve from your phone.",
@@ -428,11 +473,14 @@ footer a:hover{color:var(--ink-2)}
       feat1:"Cards go on the board, agents pick them up – no need to sit and watch.",
       feat2:"Every card runs isolated: its own worktree, its own branch, nothing collides.",
       feat3:"Approve from your phone: watch live, answer in chat, accept or reject results.",
-      dlTitle:"Downloads", dlSub:"Runs entirely on your own machine – no cloud, no account, no waiting.",
+      dlTitle:"Available now", dlSub:"Desktop for Windows and macOS, plus the app for iPhone and Android. Runs entirely on your own machine – no cloud, no account, no waiting.",
       dlBtn:"Download",
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlMacNote:"Signed & notarized by Apple – opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
+      dlIosMeta:"TestFlight beta · closed group",
+      dlIosNote:"The iOS app ships through TestFlight (internal test, limited seats). Send us your device's Apple ID and you'll get the invite by mail.",
+      dlIosRequestBtn:"Request TestFlight access", dlIosAppBtn:"Get the TestFlight app",
       dlAndroidNote:"Preferred: the closed Play test. The APK here is for sideloading if you'd rather install directly.",
       dlAndroidPlayBtn:"Join the Play test", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
