@@ -760,6 +760,17 @@ export default function CardScreen() {
         { label: tr("card.move.to"), onPress: moveSheet },
         { label: tr(k.fast_track ? "card.fastTrack.disable" : "card.fastTrack.enable")
                   + tr("card.fastTrack.hint"), onPress: () => edit({ fast_track: !k.fast_track }) },
+        // capability grant (mouse/keyboard/screen), same admin-only rule the
+        // daemon enforces server-side (policy.chat_admin_roles) - the button
+        // is just a discoverable path to the driver swap that already existed
+        // via raw API/board-Agent chat only. The daemon itself refuses a
+        // second desktop-capable turn while one is already running, so no
+        // client-side "is it busy" check is needed here.
+        ...(me?.role === "owner" || me?.role === "operator"
+          ? [{ label: tr(k.driver === "claude-desktop" ? "card.desktop.disable" : "card.desktop.enable")
+                        + tr("card.desktop.hint"),
+               onPress: () => edit({ driver: k.driver === "claude-desktop" ? "claude" : "claude-desktop" }) }]
+          : []),
         ...(k.session_id ? [{ label: tr("card.menu.forkChat"), onPress: forkChat }] : []),
         { label: tr("card.menu.fork"), onPress: forkCode },
         { label: tr("card.menu.archive"), onPress: () => api.archive(k.id).then(() => router.back()) },

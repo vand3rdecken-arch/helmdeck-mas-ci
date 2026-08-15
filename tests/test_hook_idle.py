@@ -5,10 +5,17 @@ nothing shipped: the deploy hook had a fixed 1800s cap, and the NATIVE ship
 path (npm ci -> gradle -> emulator smoke -> scp the APK -> two expo exports ->
 two uploads) legitimately runs past 30 minutes, so the ceiling fired on a
 HEALTHY build. A hook that is still printing is working; only total silence
-means wedged."""
+means wedged.
+
+Also pins the live-narration merge (2026-08-15, superseding the abandoned
+daemon/test_repo_hook_streaming.py mechanism): any output line prefixed
+`HOOK-NOTE:` is logged to the actionlog THE MOMENT it's read, not just
+folded into the final tail - so ship.sh/build_apk.sh can narrate their own
+long phases instead of the owner watching dead silence for 15-20 min."""
 import json, os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
 DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
 sys.path.insert(0, DAEMON)
 
@@ -49,6 +56,19 @@ def _py(body):
     with open(script, "w", encoding="utf-8") as f:
         f.write(body)
     return '"%s" "%s"' % (sys.executable, script)
+
+
+def _notes(run_dir):
+    path = os.path.join(run_dir, "actions.jsonl")
+    if not os.path.exists(path):
+        return []
+    out = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            d = json.loads(line)
+            if d.get("kind") == "note":
+                out.append(d.get("detail") or "")
+    return out
 
 
 # 1) PRODUCTIVE hook: prints every 0.4s for ~3.2s with idle=2s. Every line
@@ -106,6 +126,30 @@ check(dur3 < 20.0, "hard cap fired promptly (%.1fs)" % dur3)
 # 4) No hook configured for this repo -> None (unchanged contract).
 _settings("")
 check(sessions._repo_hook(_track("nohook"), "deploy") is None, "no hook configured -> None")
+
+# 5) HOOK-NOTE: lines are logged to the actionlog LIVE (as their own "note"
+#    entries the moment they're read), not just folded into the final tail -
+#    this is what lets ship.sh/build_apk.sh narrate long phases instead of
+#    the owner watching dead silence.
+_settings(_py(
+    "import time\n"
+    "print('HOOK-NOTE: native change -> APK build laeuft (~10-15 Min)', flush=True)\n"
+    "time.sleep(0.05)\n"
+    "print('some other build chatter line', flush=True)\n"
+    "print('HOOK-NOTE: done, uploading', flush=True)\n"
+), hook_idle_s=30)
+t5 = _track("hooknote")
+ok5 = sessions._repo_hook(t5, "deploy")
+notes = _notes(t5["run_dir"])
+# the live-streamed notes are everything except the opening "DEPLOY HOOK:"
+# announcement and the closing "DEPLOY HOOK OK/FAILED:" summary (which
+# legitimately repeats the whole tail, chatter line included).
+live = [n for n in notes if not n.startswith(("DEPLOY HOOK:", "DEPLOY HOOK OK:", "DEPLOY HOOK FAILED:"))]
+check(ok5 is True, "the HOOK-NOTE hook still completes normally")
+check(live == ["native change -> APK build laeuft (~10-15 Min)", "done, uploading"],
+      "HOOK-NOTE lines are logged live as their own notes, in order, prefix stripped (%r)" % live)
+check("some other build chatter line" not in live,
+      "non-prefixed chatter does NOT get its own live note (only the final tail summary)")
 
 print()
 if _fails:

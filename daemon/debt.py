@@ -556,6 +556,137 @@ DEBT = [
                "distribution certificate already has.",
         "order": 21,
     },
+    {
+        "id": "mac-build-never-executed",
+        "title": "The macOS build target is configured but has never actually run",
+        "status": "paid",
+        "what": "desktop/electron-builder.yml now carries a full mac target "
+                "(dmg + zip, arm64 + x64, hardened runtime, entitlements, gated "
+                "notarization), desktop/build-mac.sh drives it and "
+                ".github/workflows/desktop-mac.yml runs it on macos-14. NONE of "
+                "it has been executed on macOS. The evidence behind it is: the "
+                "config validates against electron-builder's own scheme.json "
+                "(both the committed shape and the notarize-object override), "
+                "and electron-builder 25.1.8 loads the file and then stops at "
+                "exactly one line - 'Build for macOS is supported only on "
+                "macOS'. That is the strongest signal a Windows box can "
+                "produce, and it is still not a build. Two reasons it could go "
+                "no further: there is no macOS here, and at the time "
+                "github.com/Tienduyvo/helmdeck held ONLY README.md + release "
+                "assets - the source had never been pushed, so no runner had "
+                "anything to check out. That half is now DECIDED (owner, "
+                "2026-08-14: one repo - the source goes into the same public "
+                "repo as the builds) and tooled: deploy/publish_source.sh "
+                "audits history for secrets and oversized blobs and pushes "
+                "main. Still nobody has run it, and no runner has run.",
+        "why_it_bites": "A green-looking config is not a green build. What a "
+                        "schema cannot catch: whether `expo export` survives a "
+                        "cold macOS runner, whether hdiutil produces both dmgs, "
+                        "whether the PNG->icns conversion accepts our icon, "
+                        "whether the entitlement set is the RIGHT one for "
+                        "spawning python3/claude under the hardened runtime "
+                        "(only a notarized run on real hardware proves that), "
+                        "and whether Squirrel.Mac accepts the zip feed. Each is "
+                        "a separate way the first real run can red, and none is "
+                        "visible until someone runs it.",
+        "trigger": "the first `bash deploy/publish_source.sh`, or the first "
+                   "`bash desktop/build-mac.sh` on any Mac",
+        "fix": "PAID 2026-08-15 - run 31877006863 on macos-14, 32m10s, ALL "
+               "STEPS GREEN. Every question this item said only a real run "
+               "could answer is now answered by that run's log: expo export "
+               "survived a cold runner; hdiutil produced BOTH dmgs (imageinfo "
+               "passed on each); the tracked PNG converted to .icns with no "
+               "Pillow/iconutil; and the entitlement set IS the right one - "
+               "build-mac.sh reported 'signing: Developer ID identity "
+               "supplied' then 'notarization: ON', electron-builder logged "
+               "'notarization successful' TWICE (once per arch), and the "
+               "verify step closed it out: `codesign --verify --deep --strict` "
+               "-> 'valid on disk' + 'satisfies its Designated Requirement', "
+               "`spctl --assess --type execute` -> 'accepted' with "
+               "'source=Notarized Developer ID'. Gatekeeper accepts the "
+               "artifact. Full set produced: HelmDeck-0.2.0-{arm64,x64}.{dmg,"
+               "zip} + blockmaps + latest-mac.yml (the Squirrel.Mac feed). "
+               "Benign log noise NOT to 'fix': electron-builder prints "
+               "'Please specify notarization Team ID in the APPLE_TEAM_ID env "
+               "var instead of notarize.teamId'. The -c.mac.notarize.teamId "
+               "override is still what TURNS NOTARIZATION ON (the committed "
+               "config keeps notarize:false so an unsigned build can succeed); "
+               "the warning is only about where the team id is read from, and "
+               "notarization demonstrably worked. Getting there first needed: "
+               "1) bash deploy/publish_source.sh (audit + push over SSH - the "
+               "gh token has no `workflow` scope, so HTTPS is rejected). "
+               "2) The push to the remote DEFAULT branch auto-triggers the "
+               "workflow (push: branches: [main]); otherwise Actions -> "
+               "desktop-mac -> Run workflow. Flip to 'paid' only when a run "
+               "produced all four artifacts + latest-mac.yml and the workflow's "
+               "verify step (hdiutil imageinfo per dmg) passed, then confirm "
+               "`spctl --assess` accepts the signed app. "
+               "SIGNING AND NOTARIZATION ARE NO LONGER BLOCKERS (2026-08-15): "
+               "all SIX secrets are live and VALIDATED on the repo - "
+               "MAC_CSC_LINK + MAC_CSC_KEY_PASSWORD (cert read back with "
+               "openssl: Developer ID Application, issuer G2, EKU Code Signing, "
+               "to 2031-08-16, team 92WJZQ2WWH matching APPLE_TEAM_ID) plus "
+               "ASC_API_KEY_P8 + ASC_KEY_ID + ASC_ISSUER_ID + APPLE_TEAM_ID, "
+               "the ASC key proven to authenticate against Apple live via "
+               "mac_credentials.py --check. See DEPLOY.md 1c. A run with NO "
+               "secrets is still designed to pass unsigned, so that remains "
+               "the fallback smoke test if the signed path reds. What is left "
+               "is purely step 1, and it is now blocked on an OWNER DECISION "
+               "rather than on tooling: publish_source.sh's new privacy check "
+               "fails closed on five .attachments/ chat uploads (the owner's "
+               "phone screenshots of his own board - unreleased card titles, "
+               "due dates, distribution decisions) that a push would make "
+               "public forever, since a push publishes history. Resolve with "
+               "either HELMDECK_PUBLISH_ALLOW_PRIVATE=1 (publish them "
+               "knowingly) or a git_filter_repo purge of the pushed lineage. "
+               "Note also that the trunk is `expo-migration`, NOT `main` - "
+               "`main` is a stale 2026-08-12 branch with no .github/ at all.",
+        "order": 22,
+    },
+    {
+        "id": "desktop-lock-heuristic",
+        "title": "Desktop-control mutual exclusion is a substring match + in-process lock",
+        "status": "open",
+        "what": "Only one card may hold real Windows desktop control (mouse/"
+                "keyboard/screen via windows-mcp) at a time - two such turns "
+                "racing would fight over the same cursor. sessions._turn() "
+                "guards this with a plain in-process threading.Lock "
+                "(_desktop_lock), acquired non-blocking for the synchronous "
+                "duration of any turn whose driver's allowed_tools contains a "
+                "pattern matching the substring 'windows-mcp' "
+                "(_uses_desktop_control). A second dispatch/steer that needs "
+                "desktop control while the lock is held is refused outright "
+                "(RuntimeError), which the existing dispatch/steer paths "
+                "already surface as a bounced card / needs_you note - it does "
+                "NOT queue or auto-retry.",
+        "why_it_bites": "(1) The lock is process-local: it is correct only "
+                        "because the daemon runs as a single evicting-"
+                        "singleton process (server.serve's "
+                        "_take_singleton_lock) - if that ever changes "
+                        "(multi-worker, multiprocess), two desktop turns could "
+                        "run concurrently again with nothing catching it. (2) "
+                        "Detection is a string match on 'windows-mcp' in "
+                        "allowed_tools, not a derived capability from an "
+                        "authoritative registry - a future driver granting "
+                        "equivalent desktop control under a differently-named "
+                        "MCP server would silently bypass the guard. (3) "
+                        "Fail-fast means a legitimate second desktop card just "
+                        "bounces/parks; nothing tells the owner to retry once "
+                        "the first one frees the lock.",
+        "trigger": "the daemon is ever run with more than one process/worker; "
+                   "a new desktop-capable driver is added whose tool patterns "
+                   "don't contain the string 'windows-mcp'; two desktop cards "
+                   "dispatched back-to-back (second one bounces silently "
+                   "unless the owner reads the note)",
+        "fix": "If multi-process ever happens: move the lock to a file lock "
+               "or DB row (same durable-state pattern as turn_active) instead "
+               "of in-memory. Replace the substring match with an explicit "
+               "per-driver 'desktop: true' flag in settings.json's drivers "
+               "config, checked instead of grepping allowed_tools. Consider "
+               "an automatic re-dispatch/notification when the lock frees, "
+               "instead of leaving the bounced card for the owner to notice.",
+        "order": 23,
+    },
 ]
 
 def list_debt():

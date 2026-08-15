@@ -11,6 +11,7 @@ import { useConfig } from "@/data/config";
 import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { ApkUpdateBanner } from "@/ui/apk_update";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
@@ -143,6 +144,7 @@ export default function MoreTab() {
             </Pressable>
           ) : null}
         </Panel>
+        <ApkUpdateBanner />
         <VersionFooter />
       </ScrollView>
     </View>

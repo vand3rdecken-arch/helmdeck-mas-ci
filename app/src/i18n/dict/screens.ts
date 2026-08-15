@@ -304,6 +304,11 @@ export const screens: Dict = {
     de: "OTA ist nur im Release-Build aktiv (Dev/Expo Go: aus).",
     en: "OTA is only active in the release build (dev/Expo Go: off).",
   },
+  "updates.apkAvailable": {
+    de: "Neue App-Version verfügbar (Build {build}). Diese Installation ist zu alt, um sie per OTA zu erreichen - nur eine neue APK bringt dich wieder auf den aktuellen Stand.",
+    en: "A new app version is available (build {build}). This install is too old for OTA to reach - only a fresh APK gets you current again.",
+  },
+  "updates.apkInstall": { de: "Jetzt installieren", en: "Install now" },
 
   // ---- connection health --------------------------------------------------
   "health.reconnecting": {

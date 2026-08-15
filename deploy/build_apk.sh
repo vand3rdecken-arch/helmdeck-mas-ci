@@ -18,6 +18,7 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 # the new package ("Unable to resolve module ..."). `npm ci` is only in the
 # NATIVE path (~10 min build anyway) so the plain JS-only OTA fast path stays
 # seconds, unaffected.
+echo "HOOK-NOTE: npm ci (node_modules sync with the just-merged lockfile, can take a few min)"
 echo "[build_apk] npm ci (sync node_modules with the just-merged lockfile)"
 ( cd app && npm ci ) || { echo "[build_apk] npm ci FAILED"; exit 1; }
 
@@ -54,12 +55,14 @@ node -e '
   console.log("[build_apk] native version synced from app.json -> " + ver + " / " + vc);
 ' || { echo "[build_apk] native version sync FAILED"; exit 1; }
 
+echo "HOOK-NOTE: npm ci done - gradle assembleRelease (native APK build, ~10-15 min)"
 echo "[build_apk] gradle assembleRelease (native, ~10 min first time)"
 ( cd app/android && ./gradlew assembleRelease -x lint --console=plain ) \
   || { echo "[build_apk] APK BUILD FAILED"; exit 1; }
 APK="app/android/app/build/outputs/apk/release/app-release.apk"
 [ -f "$APK" ] || { echo "[build_apk] no APK produced"; exit 1; }
 echo "[build_apk] APK: $(du -h "$APK" | cut -f1)"
+echo "HOOK-NOTE: APK built ($(du -h "$APK" | cut -f1)) - smoke test + distributing to relay"
 
 # best-effort emulator smoke: install + launch + screenshot + crash check
 if command -v adb >/dev/null 2>&1 && adb get-state 1>/dev/null 2>&1; then
