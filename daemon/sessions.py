@@ -1805,28 +1805,106 @@ def _classify_merge(t):
                         "Markierungen (editieren)." % (conflicts or _e[:150]))
 
 
+def _hook_kill_tree(proc):
+    """Force the hook's whole process tree down. The hook is a SHELL, so
+    terminating it alone orphans the real workers (gradle/java/node keep the
+    build running and holding file locks). taskkill /T walks the tree at kill
+    time, so kill the parent forcefully in ONE call rather than politely first
+    (which would blind /T to the children)."""
+    import subprocess
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=15)
+        else:
+            proc.kill()
+        proc.wait(timeout=10)
+    except Exception:
+        pass
+
+
 def _repo_hook(t, kind):
     """Owner-defined per-repo hook, policy in settings:
       "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
     preview runs in the WORKTREE when a card reaches Review (try it before
     merging); deploy runs in the MAIN REPO after accept - by the daemon, which
     is the only party holding secrets. Output lands on the card (last_reply
-    stays the agent's - hooks log to the actionlog + a hook field)."""
-    import events, subprocess
-    hooks = (events.settings().get("repo_hooks") or {}).get(t.get("repo") or "", {})
+    stays the agent's - hooks log to the actionlog + a hook field).
+
+    Bounded by SILENCE, not by wall-clock. A fixed 1800s cap killed the deploy
+    hook mid-build: the NATIVE ship path (npm ci -> gradle assembleRelease ->
+    emulator smoke -> scp the APK -> two expo exports -> two more uploads)
+    legitimately runs past 30 minutes, so the ceiling fired on a HEALTHY build
+    and left main merged with nothing shipped. Same defect the turn watchdog
+    already fixed (drivers.run_turn): a build that is still printing is
+    working. The window has to be generous because scp of a ~100MB APK over a
+    pipe prints NOTHING while it uploads - silence, not duration, is what
+    separates wedged from busy. `hook_max_s` is an optional absolute ceiling
+    (0/unset = none) for a hook that dribbles output forever."""
+    import collections, events, subprocess, threading
+    import time as _t
+    st = events.settings()
+    hooks = (st.get("repo_hooks") or {}).get(t.get("repo") or "", {})
     cmd = (hooks or {}).get(kind, "").strip()
     if not cmd:
         return None
+    def _num(key, default):
+        try:
+            return float(st.get(key) or 0) or default
+        except Exception:
+            return default
+    idle = _num("hook_idle_s", 900.0)       # 15 min of TOTAL silence = wedged
+    hard = _num("hook_max_s", 0.0)          # optional absolute cap; default none
     cwd = t.get("worktree") if kind == "preview" else t.get("repo")
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "%s HOOK: %s" % (kind.upper(), cmd))
+    proc, why = None, ""
+    # bounded tail: a chatty gradle build must not accumulate in memory (the old
+    # capture_output buffered the ENTIRE build log just to slice 1500 chars off it)
+    lines = collections.deque(maxlen=400)
+    last = [_t.time()]
     try:
-        r = subprocess.run(cmd, cwd=cwd or ".", shell=True, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=1800)
-        out = ((r.stdout or "") + ("\n" + r.stderr if r.stderr else "")).strip()
-        ok = r.returncode == 0
+        proc = subprocess.Popen(cmd, cwd=cwd or ".", shell=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace", bufsize=1)
+
+        def _pump():
+            try:
+                for line in proc.stdout:
+                    lines.append(line.rstrip("\n"))
+                    last[0] = _t.time()      # ANY output = still alive
+            except Exception:
+                pass
+        pump = threading.Thread(target=_pump, daemon=True)
+        pump.start()
+        start = _t.time()
+        poll = min(5.0, max(0.5, idle / 4.0))
+        while True:
+            try:
+                proc.wait(timeout=poll)
+                break                        # exited on its own
+            except subprocess.TimeoutExpired:
+                pass
+            now = _t.time()
+            if now - last[0] > idle:
+                why = "no output for %ds" % int(idle)
+                break
+            if hard and now - start > hard:
+                why = "exceeded hard cap %ss" % int(hard)
+                break
+        if why:
+            _hook_kill_tree(proc)
+            lines.append("[hook killed: %s]" % why)
+            ok = False
+        else:
+            pump.join(timeout=5)
+            ok = proc.returncode == 0
+        out = "\n".join(lines).strip()
     except Exception as e:
+        _hook_kill_tree(proc)               # never leak the tree on an error path
         out, ok = str(e), False
     log.log("note", "%s HOOK %s: %s" % (kind.upper(), "OK" if ok else "FAILED", out[-800:]))
     t[kind + "_hook"] = {"ok": ok, "tail": out[-1500:]}
