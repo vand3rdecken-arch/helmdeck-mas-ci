@@ -498,10 +498,26 @@ def version_text(kind, name, vid):
     return _read_text(os.path.join(_vdir(kind, name), vid))
 
 
+def _nl_style(path):
+    r"""The newline convention the file on disk already uses.
+
+    core.autocrlf=true checks these files out with CRLF on Windows. Writing
+    plain "\n" therefore rewrote every line ending on every save: `git diff`
+    showed nothing (it normalises) but `git status` reported the file modified
+    forever after, so a one-word brief edit looked like a whole-file rewrite.
+    Match what is there; only a brand-new file picks LF."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return "\n"
+    return "\r\n" if raw.count(b"\r\n") > raw.count(b"\n") - raw.count(b"\r\n") else "\n"
+
+
 def _atomic_write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+    with open(tmp, "w", encoding="utf-8", newline=_nl_style(path)) as f:
         f.write(text)
     os.replace(tmp, path)
 

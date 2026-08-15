@@ -103,8 +103,13 @@ export default function LoopMapScreen() {
   // between two states can state its own guard instead of being decorative.
   const build = data?.build;
   const states = build?.states ?? [];
-  const edgeFor = (from: string, to: string) =>
-    (build?.edges ?? []).find((e) => e.from === from && e.to === to);
+  // OUTGOING edges per state — NOT states[i] -> states[i+1].
+  // The list order is declaration order, which is not the transition order: in
+  // card mode the real edges are EXECUTE->CLEAN, WIP->COMMIT, COMMIT->DONE,
+  // so pairing neighbours drew three arrows the machine does not have (and, with
+  // no matching edge, drew them with an empty condition). Rendering the edge
+  // list itself is both honest and self-maintaining.
+  const outFrom = (key: string) => (build?.edges ?? []).filter((e) => e.from === key);
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
@@ -212,8 +217,7 @@ export default function LoopMapScreen() {
             borderRadius: 14, overflow: "hidden" }}>
             {states.map((s, i) => {
               const active = !!s.active;
-              const nxt = states[i + 1];
-              const edge = nxt ? edgeFor(s.key, nxt.key) : undefined;
+              const outs = outFrom(s.key);
               return (
                 <View key={s.key}>
                   <Pressable onPress={() => pick(s.key, s)}
@@ -236,16 +240,22 @@ export default function LoopMapScreen() {
                     <Ionicons name={s.kind === "policy" ? "options-outline" : "lock-closed"} size={12}
                       color={s.kind === "policy" ? t.ok : t.txtTertiary} />
                   </Pressable>
-                  {/* the guard the code actually tests, on the arrow itself */}
-                  {nxt ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingLeft: 22,
-                      paddingRight: 12, paddingBottom: 5 }}>
-                      <Ionicons name="arrow-down" size={11} color={t.txtTertiary} />
-                      <Text style={{ color: t.txtTertiary, fontSize: 10.5, lineHeight: 15, flex: 1 }}>
-                        {edge?.when ?? ""}
+                  {/* every real transition OUT of this state, each naming its
+                      target and the guard the code actually tests */}
+                  {outs.map((e) => (
+                    <View key={e.to} style={{ flexDirection: "row", alignItems: "flex-start", gap: 6,
+                      paddingLeft: 22, paddingRight: 12, paddingBottom: 6 }}>
+                      <Ionicons name="arrow-forward" size={11} color={t.txtTertiary} style={{ marginTop: 2 }} />
+                      <Text style={{ color: t.txtSecondary, fontSize: 10.5, fontWeight: "700", lineHeight: 15 }}>
+                        {e.to}
                       </Text>
+                      {e.when ? (
+                        <Text style={{ color: t.txtTertiary, fontSize: 10.5, lineHeight: 15, flex: 1 }}>
+                          {e.when}
+                        </Text>
+                      ) : null}
                     </View>
-                  ) : null}
+                  ))}
                 </View>
               );
             })}
