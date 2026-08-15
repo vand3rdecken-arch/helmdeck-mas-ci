@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import * as Notifications from "expo-notifications";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
@@ -77,6 +78,17 @@ function usePaletteHotkeys() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+// app.json's "orientation" is "default" (unlocked) so the Timeline's rotate
+// button can switch to landscape - every OTHER screen still assumes portrait,
+// so lock it here as the app-wide resting state. The Timeline briefly
+// overrides this lock itself and restores it on unmount.
+function usePortraitDefault() {
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
 }
 
@@ -185,6 +197,7 @@ export default function RootLayout() {
   useAnalyticsBoot();
   usePushWiring();
   usePaletteHotkeys();
+  usePortraitDefault();
   useGlobalStream();
   useResumeRefetch();
   useSilentOta();
