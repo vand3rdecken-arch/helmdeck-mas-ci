@@ -180,6 +180,14 @@ function SpawnPreview({ p, t, tr }: {
       </Pressable>
       {openHooks ? (
         <View style={{ borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 10, padding: 10 }}>
+          {(p.hooks_disabled_by?.length ?? 0) > 0 ? (
+            <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
+              <Ionicons name="warning-outline" size={14} color={t.warn} style={{ marginTop: 1 }} />
+              <Text style={{ color: t.warn, fontSize: 11.5, lineHeight: 16, flex: 1 }}>
+                {tr("harness.hooksDisabled", { files: p.hooks_disabled_by!.join(", ") })}
+              </Text>
+            </View>
+          ) : null}
           {p.hooks.length === 0 ? (
             <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("harness.noHooks")}</Text>
           ) : p.hooks.map((h, i) => <HookRow key={i} h={h} t={t} />)}
