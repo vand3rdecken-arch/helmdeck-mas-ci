@@ -83,10 +83,17 @@ echo "==> verify live manifest"
 # runtimeVersion policy is "appVersion", so the live rtv == expo.version. Derive
 # it (don't hardcode) or the verify HEAD mismatches after a native version bump.
 RTV="$(py -3.12 -c 'import json;print(json.load(open("app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)"
+# `|| true`: this is a COSMETIC preview for the human/log, not a functional
+# check - under `set -o pipefail`, curl legitimately gets SIGPIPE'd ("(23)
+# Failed writing body") the instant `head -c` closes the pipe after its byte
+# count, since curl is usually still mid-write on the rest of the (longer)
+# manifest response. That's expected, not a real failure, but pipefail was
+# letting it read as one - scaring an owner into "deploy hook failed" on a
+# publish that fully succeeded (verified: files uploaded, manifest live).
 curl -s -m20 -H "expo-platform: android" -H "expo-runtime-version: $RTV" \
      -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
      "https://$RELAY_DOMAIN/updates/manifest" \
-  | head -c 240
+  | head -c 240 || true
 echo
 
 # ---- desktop channel (phone OTA above already shipped; failures here WARN) ----
@@ -121,7 +128,8 @@ echo "published to $DEST: $(sudo test -f "$DEST/desktop.json" && echo ok)"
 REMOTE
 
   echo "==> verify live desktop manifest"
-  curl -s -m20 "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN" | head -c 200
+  # same SIGPIPE-vs-head note as the phone verify above - cosmetic, not a check.
+  curl -s -m20 "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN" | head -c 200 || true
   echo
 }
 if ! desktop_publish; then
