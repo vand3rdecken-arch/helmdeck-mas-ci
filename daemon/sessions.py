@@ -3194,6 +3194,14 @@ def update_track(tid, patch, actor="owner"):
                 log.log("note", "⚠ Desktop-Zugriff aktiviert (%s) von %s - "
                         "der Agent kann jetzt Maus/Tastatur/Bildschirm steuern, "
                         "Turns werden aufgezeichnet." % (changed["driver"], actor))
+        # Flipping fast_track ON is itself a ship trigger, not just future turns:
+        # a card can already be sitting on a finished-but-undeployed turn (owner
+        # enables fast-track AFTER the turn ended), and the hook in _run_turn
+        # only fires at turn-end - without this the flag does nothing until the
+        # NEXT turn completes, and the owner asks "why didn't it deploy" while
+        # the worker (unaware fast-track exists) wrongly says to use Review.
+        if changed.get("fast_track") is True:
+            _maybe_fast_track_ship(t, log)
     return t
 
 DIRECTIVES = os.path.join(ROOT, "board_directives.json")
