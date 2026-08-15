@@ -81,12 +81,14 @@ CUR="$(native_fp)"
 LAST="$(cat deploy/.native_fp 2>/dev/null || true)"
 
 if [ -n "$LAST" ] && [ "$CUR" = "$LAST" ]; then
+  echo "HOOK-NOTE: JS-only change - OTA export + publish (seconds)"
   echo "[ship] JS-only change -> OTA"
   # PROPAGATE a failed OTA: swallowing it printed '[ship] done' over a dead
   # push (expo export died on empty node_modules) - the phone silently never
   # got the update while every caller believed it shipped.
   bash deploy/push_update.sh || { echo "[ship] OTA FAILED"; exit 1; }
 else
+  echo "HOOK-NOTE: native change detected - APK build starting (npm ci + gradle + emulator smoke, ~15-20 min)"
   echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute"
   BUMP="$(bump_version)" || { echo "[ship] version bump failed"; exit 1; }
   echo "[ship] version -> $BUMP (new runtimeVersion; old APKs will reject this JS instead of crashing)"
@@ -95,6 +97,7 @@ else
     git checkout -- app/app.json 2>/dev/null || true
     exit 1
   fi
+  echo "HOOK-NOTE: APK distributed - pushing the matching OTA bundle"
   # keep the OTA bundle matched to the new APK (else the old relay bundle reverts
   # the APK's JS on next launch - the source-of-truth trap in DEPLOY.md). The OTA
   # manifest inherits the new runtimeVersion from the bumped app.json.
@@ -103,4 +106,5 @@ else
   # record the POST-bump fingerprint so the next unchanged ship is seen as JS-only
   native_fp > deploy/.native_fp
 fi
+echo "HOOK-NOTE: ship done - $([ -n "$LAST" ] && [ "$CUR" = "$LAST" ] && echo "OTA live" || echo "APK + matching OTA live")"
 echo "[ship] done"

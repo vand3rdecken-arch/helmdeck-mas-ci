@@ -1827,14 +1827,44 @@ def _classify_merge(t):
                         "Markierungen (editieren)." % (conflicts or _e[:150]))
 
 
+# Raised 1800 -> 2700 (2026-08-15): a real native ship hit the old 30-min cap
+# with the outcome genuinely unknown - the OLD buffered _repo_hook discards
+# all output on a TimeoutExpired, so there was no way to tell "still making
+# progress" from "truly wedged". build_apk.sh now runs `npm ci` (a full clean
+# reinstall, not incremental) before every native build on top of the
+# ~10-15 min gradle assembleRelease PLUS the desktop web export in the same
+# hook invocation - 45 min is real headroom for that chain, not a guess to
+# paper over an actual hang. The NEW streaming _repo_hook (below) means a
+# genuine hang is now visible immediately via HOOK-NOTE lines, so this cap
+# only needs to catch true wedges, not out-build slow-but-healthy runs.
+_HOOK_TIMEOUT = 2700
+
+
 def _repo_hook(t, kind):
     """Owner-defined per-repo hook, policy in settings:
       "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
     preview runs in the WORKTREE when a card reaches Review (try it before
     merging); deploy runs in the MAIN REPO after accept - by the daemon, which
     is the only party holding secrets. Output lands on the card (last_reply
-    stays the agent's - hooks log to the actionlog + a hook field)."""
-    import events, subprocess
+    stays the agent's - hooks log to the actionlog + a hook field).
+
+    STREAMS live: a native APK build takes ~10-15 minutes with the daemon
+    silent the whole time (the old version buffered ALL output and logged
+    only the final tail) - from the chat this looked identical to "stuck",
+    the exact confusion behind a live incident (2026-08-15). Any hook output
+    line starting with `HOOK-NOTE:` is now logged to the actionlog THE
+    MOMENT it's read, so a hook script (ship.sh) can narrate its own
+    progress ("native change -> APK build laeuft (~10-15 Min)") instead of
+    the owner watching a silent chat and assuming it's frozen. The final
+    "HOOK OK/FAILED" summary (last 800 chars) is unchanged.
+
+    A blocking `for line in proc.stdout` can't enforce a wall-clock cap on
+    its own (it just waits for the next line, however long that takes), so
+    reading happens on a pump thread into a queue.Queue and the main loop
+    polls that queue with a deadline - the same shape as the /compact
+    idle-watchdog fix earlier this session, applied here to command output
+    instead of CLI silence."""
+    import events, subprocess, queue
     hooks = (events.settings().get("repo_hooks") or {}).get(t.get("repo") or "", {})
     cmd = (hooks or {}).get(kind, "").strip()
     if not cmd:
@@ -1843,11 +1873,44 @@ def _repo_hook(t, kind):
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "%s HOOK: %s" % (kind.upper(), cmd))
+    lines, ok = [], False
     try:
-        r = subprocess.run(cmd, cwd=cwd or ".", shell=True, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=1800)
-        out = ((r.stdout or "") + ("\n" + r.stderr if r.stderr else "")).strip()
-        ok = r.returncode == 0
+        proc = subprocess.Popen(cmd, cwd=cwd or ".", shell=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, encoding="utf-8", errors="replace", bufsize=1)
+        q = queue.Queue()
+
+        def _pump():
+            try:
+                for pline in proc.stdout:
+                    q.put(pline)
+            finally:
+                q.put(None)          # EOF sentinel - lets the poll loop below exit promptly
+        _threading.Thread(target=_pump, daemon=True).start()
+        deadline = time.time() + _HOOK_TIMEOUT
+        timed_out = False
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                timed_out = True
+                break
+            try:
+                pline = q.get(timeout=min(remaining, 5))
+            except queue.Empty:
+                continue                # nothing new yet, still under the deadline
+            if pline is None:
+                break                   # process closed stdout - it's finishing up
+            lines.append(pline)
+            stripped = pline.strip()
+            if stripped.startswith("HOOK-NOTE:"):
+                log.log("note", stripped[len("HOOK-NOTE:"):].strip())
+        if timed_out:
+            proc.kill()
+            lines.append("\n[hook timed out after %ss]" % _HOOK_TIMEOUT)
+        else:
+            proc.wait(timeout=30)      # stdout closed already; this just reaps the exit code
+        ok = (not timed_out) and proc.returncode == 0
+        out = "".join(lines).strip()
     except Exception as e:
         out, ok = str(e), False
     log.log("note", "%s HOOK %s: %s" % (kind.upper(), "OK" if ok else "FAILED", out[-800:]))
