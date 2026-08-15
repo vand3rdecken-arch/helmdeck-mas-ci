@@ -602,6 +602,50 @@ DEBT = [
                "ASC secrets, confirm `spctl --assess` accepts the app.",
         "order": 22,
     },
+    {
+        "id": "desktop-lock-heuristic",
+        "title": "Desktop-control mutual exclusion is a substring match + in-process lock",
+        "status": "open",
+        "what": "Only one card may hold real Windows desktop control (mouse/"
+                "keyboard/screen via windows-mcp) at a time - two such turns "
+                "racing would fight over the same cursor. sessions._turn() "
+                "guards this with a plain in-process threading.Lock "
+                "(_desktop_lock), acquired non-blocking for the synchronous "
+                "duration of any turn whose driver's allowed_tools contains a "
+                "pattern matching the substring 'windows-mcp' "
+                "(_uses_desktop_control). A second dispatch/steer that needs "
+                "desktop control while the lock is held is refused outright "
+                "(RuntimeError), which the existing dispatch/steer paths "
+                "already surface as a bounced card / needs_you note - it does "
+                "NOT queue or auto-retry.",
+        "why_it_bites": "(1) The lock is process-local: it is correct only "
+                        "because the daemon runs as a single evicting-"
+                        "singleton process (server.serve's "
+                        "_take_singleton_lock) - if that ever changes "
+                        "(multi-worker, multiprocess), two desktop turns could "
+                        "run concurrently again with nothing catching it. (2) "
+                        "Detection is a string match on 'windows-mcp' in "
+                        "allowed_tools, not a derived capability from an "
+                        "authoritative registry - a future driver granting "
+                        "equivalent desktop control under a differently-named "
+                        "MCP server would silently bypass the guard. (3) "
+                        "Fail-fast means a legitimate second desktop card just "
+                        "bounces/parks; nothing tells the owner to retry once "
+                        "the first one frees the lock.",
+        "trigger": "the daemon is ever run with more than one process/worker; "
+                   "a new desktop-capable driver is added whose tool patterns "
+                   "don't contain the string 'windows-mcp'; two desktop cards "
+                   "dispatched back-to-back (second one bounces silently "
+                   "unless the owner reads the note)",
+        "fix": "If multi-process ever happens: move the lock to a file lock "
+               "or DB row (same durable-state pattern as turn_active) instead "
+               "of in-memory. Replace the substring match with an explicit "
+               "per-driver 'desktop: true' flag in settings.json's drivers "
+               "config, checked instead of grepping allowed_tools. Consider "
+               "an automatic re-dispatch/notification when the lock frees, "
+               "instead of leaving the bounced card for the owner to notice.",
+        "order": 23,
+    },
 ]
 
 def list_debt():

@@ -311,6 +311,16 @@ def _lock_for(tid):
             _turn_locks[tid] = _threading.Lock()
         return _turn_locks[tid]
 
+# Only one card may hold real Windows desktop control (mouse/keyboard/screen)
+# at a time - two windows-mcp turns racing would fight over the same cursor.
+# A plain in-process lock is the right primitive: _turn() blocks synchronously
+# for a whole turn, so the lock's held state IS the running desktop turn -
+# never a stored flag that could drift from reality.
+_desktop_lock = _threading.Lock()
+
+def _uses_desktop_control(cfg):
+    return any("windows-mcp" in str(pat) for pat in (cfg.get("allowed_tools") or []))
+
 # INTERRUPT-AND-REPLACE (Paseo parity). A steer that arrives mid-turn must take
 # effect NOW - Paseo's replaceAgentRun soft-interrupts the live turn and starts
 # the new prompt on the same session. HelmDeck used to QUEUE it behind the whole
@@ -484,13 +494,15 @@ def flag_burn(tid, evidence):
         pass
 
 
-def _turn(t, prompt, model=None, perm=None):
+def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
     hook: a driver with record:true gets its whole turn screen-captured into the
     track's run_dir (screen.mp4 + live.jpg glance feed). Per-turn `model` and
     `perm` overrides (from the chat composer's model + mode controls) win over
-    the driver's configured values."""
+    the driver's configured values. `idle_timeout` overrides the driver's
+    900s-of-silence watchdog for callers who know their own turn is bounded
+    (e.g. _maybe_compact - see there for why)."""
     import drivers, events
     # Pre-P4 cards were dispatched without a reserved dev port - claim one on
     # their next turn so HELMDECK_DEV_PORT is always there (sticky afterwards).
@@ -523,6 +535,8 @@ def _turn(t, prompt, model=None, perm=None):
         cfg = {**cfg, "model": model}
     if perm:
         cfg = {**cfg, "perm": perm}
+    if idle_timeout:
+        cfg = {**cfg, "idle_timeout": idle_timeout}
     rec = None
     if cfg.get("record"):
         try:
@@ -530,10 +544,18 @@ def _turn(t, prompt, model=None, perm=None):
             rec = wincap.start(t["run_dir"])
         except Exception as e:
             print("recorder failed to start:", e)
+    desktop = _uses_desktop_control(cfg)
+    if desktop and not _desktop_lock.acquire(blocking=False):
+        raise RuntimeError(
+            "Desktop control (windows-mcp) is already in use by another card - "
+            "only one card may drive the mouse/keyboard/screen at a time. "
+            "Wait for that turn to finish, then retry.")
     try:
         with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
             return drivers.run(cfg, t, prompt)
     finally:
+        if desktop:
+            _desktop_lock.release()
         if rec:
             import wincap
             wincap.stop(rec)
@@ -2289,7 +2311,17 @@ def _maybe_compact(t, log):
     pct = min(100, round(ctx / window * 100))
     log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
             "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
-    sid, _out, meta = _turn(t, "/compact")
+    # SHORT watchdog, not the driver's default 900s: incident (2026-08-15) - a
+    # /compact turn finished writing its own transcript (the session showed
+    # "Compacted") but the underlying CLI process never exited, so this call
+    # sat blocked for the full 15 minutes before the default idle-timeout
+    # finally killed it - and every OTHER post-turn step (fast-track ship
+    # included) waits on this call returning. Compact is a small, bounded
+    # operation; 3 minutes of total silence is already generous slack above
+    # every observed real compaction, and failing fast here just falls
+    # through to the existing self-verifying "CLI doesn't honor /compact"
+    # path below - never a hard failure, just a faster one.
+    sid, _out, meta = _turn(t, "/compact", idle_timeout=180)
 
     def _apply(tt):
         if sid and tt.get("session_id") and sid != tt["session_id"]:
