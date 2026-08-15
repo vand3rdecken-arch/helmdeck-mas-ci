@@ -12,6 +12,15 @@ export JAVA_HOME
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/AppData/Local/Android/Sdk}"
 export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
+# Nothing else in the ship pipeline runs `npm install` for app/ - a merge that
+# adds/bumps a dependency (exactly what routes here via native_fp) leaves the
+# main repo's node_modules stale, so Metro/gradle autolinking can't resolve
+# the new package ("Unable to resolve module ..."). `npm ci` is only in the
+# NATIVE path (~10 min build anyway) so the plain JS-only OTA fast path stays
+# seconds, unaffected.
+echo "[build_apk] npm ci (sync node_modules with the just-merged lockfile)"
+( cd app && npm ci ) || { echo "[build_apk] npm ci FAILED"; exit 1; }
+
 # local.properties MUST use forward slashes - the Java properties parser eats
 # backslashes ("filename syntax incorrect" in the NDK locator).
 printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROID_HOME")" \
