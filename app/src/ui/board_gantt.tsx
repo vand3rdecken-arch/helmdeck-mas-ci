@@ -115,7 +115,10 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
   const tr = useT();
   const [zoom, setZoom] = React.useState<Zoom>("weeks");
   const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({});
-  const [hideDone, setHideDone] = React.useState(false);
+  // Defaults ON: a Timeline full of finished (green) bars is exactly the
+  // clutter the owner asked to not see by default - still a toggle, not a
+  // removed feature, so a "what happened to my done cards" run is one tap.
+  const [hideDone, setHideDone] = React.useState(true);
   const [vertical, setVertical] = React.useState(false);
   const now = Date.now();
 
@@ -191,10 +194,12 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
           </View>
 
           {/* one row per card, clustered into collapsible process groups. Rows
-              have no fixed height: the task title wraps in full (no "..." -
-              a truncated card name is exactly what reads as unreadable), so
-              the row grows to fit it and the bar/diamond re-center via the
-              timeline box's own justifyContent instead of a pixel offset. */}
+              have no fixed height: the task title wraps up to 3 lines (a
+              single truncated line reads as unreadable, but so does an
+              unbounded wrap ballooning the row for one long title), so the
+              row grows to fit within that cap and the bar/diamond re-center
+              via the timeline box's own justifyContent instead of a pixel
+              offset. */}
           {groups.map((g) => {
             const multi = g.rows.length > 1;
             const isCollapsed = multi && (collapsed[g.key] ?? true);
@@ -234,7 +239,7 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
                       style={{ flexDirection: "row", alignItems: "stretch", minHeight: rowH, borderBottomWidth: 1,
                         borderBottomColor: t.borderSubtle }}>
                       <View style={{ width: side, paddingHorizontal: 10, paddingLeft: multi ? 22 : 10, paddingVertical: 6, justifyContent: "center" }}>
-                        <Text style={{ color: t.txtPrimary, fontSize: 12 }}>{r.k.task}</Text>
+                        <Text style={{ color: t.txtPrimary, fontSize: 12 }} numberOfLines={3}>{r.k.task}</Text>
                       </View>
                       <View style={{ width: W, minHeight: rowH, justifyContent: "center" }}>
                         {/* today marker */}
@@ -318,7 +323,7 @@ function VerticalTimeline({ groups, collapsed, setCollapsed, onOpen, now, t, tr 
                       backgroundColor: late ? t.danger : laneColor(t, r.k.lane) }} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: t.txtPrimary, fontSize: 12.5 }}>{r.k.task}</Text>
+                    <Text style={{ color: t.txtPrimary, fontSize: 12.5 }} numberOfLines={3}>{r.k.task}</Text>
                     <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 1 }}>
                       {(r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane)) + (late ? " · " + tr("gantt.overdue") : "")}
                     </Text>
