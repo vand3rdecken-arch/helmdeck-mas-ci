@@ -46,6 +46,7 @@ def _text_of(content):
 
 
 import ask   # the typed question channel taught to every worker (Phase 2.4)
+import harness  # briefs + settings layers as data (harness/), never raises
 
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
@@ -560,44 +561,26 @@ def run(cfg, t, prompt):
         return _cmd(cfg, t, prompt)
     raise RuntimeError("unknown driver type: " + kind)
 
-# Every card agent gets the same standing orientation: what it CAN do, what
-# the BOARD does, and how to hand off - so hitting a boundary produces a
-# pointer to the workflow instead of a dead-end "I cannot do that".
-_CARD_BRIEF = (
-    "You are working ONE HelmDeck card in an isolated git worktree. "
-    "You CAN: edit files, run commands/tests/builds, and commit on THIS branch. "
-    "If you start a dev server, bind the port reserved for THIS card in "
-    "$HELMDECK_DEV_PORT (when set) - not the project default - so parallel "
-    "cards never fight over a port. "
-    "You CANNOT (by design): merge to main, access secrets (.env/keys), or deploy - "
-    "the owner accepts the card on the board, and accepting runs the repo deploy hook. "
-    "Therefore NEVER end with just 'I cannot do X'. When your work is done and "
-    "verified, end with a short DELIVERED summary and the sentence: "
-    "'Ready for Review - move the card to Review; accepting it deploys.' "
-    "If something truly blocks you, name the exact blocker and what the owner "
-    "must change (a setting, a secret, a decision).\n\n" + ask.BRIEF
-)
+# THE BRIEFS ARE DATA NOW - harness/agents/*.md, loaded by daemon/harness.py.
+#
+# Every card agent gets the same standing orientation: what it CAN do, what the
+# BOARD does, and how to hand off - so hitting a boundary produces a pointer to
+# the workflow instead of a dead-end "I cannot do that". A MACHINE card gets its
+# counterpart: it has no worktree and no branch (its workplace is a real folder
+# on the owner's PC), and the card brief would make such an agent refuse.
+#
+# Both texts used to be string constants here. They are policy, not harness -
+# the owner may reword them - so they moved to harness/agents/{card,machine}-worker.md.
+# harness.py keeps the identical text as its built-in fallback and never raises,
+# so a mangled file costs the wording, never the spawn. The <helmdeck-ask>
+# protocol is still owned by ask.py and spliced in by harness.py: it is coupled
+# to ask.parse()'s regex, so prompt and parser must ship together.
+CARD_AGENT = "card-worker"
+MACHINE_AGENT = "machine-worker"
 
-# A MACHINE card has no worktree and no branch - its workplace is a real folder
-# on the owner's own PC. The card brief above would make such an agent refuse
-# ("I'm sandboxed in a worktree, I can't touch your machine"), which is the same
-# dead-end the board chat used to hit. This is its counterpart.
-_MACHINE_BRIEF = (
-    "You are running ONE HelmDeck MACHINE task for the OWNER, on the owner's own "
-    "Windows PC, in the working directory you were started in. This is not a git "
-    "worktree and there is no branch. "
-    "You CAN: run commands and PowerShell, start and control applications, read "
-    "and write files, inspect and fix the system - this is the owner's machine and "
-    "he asked for this task through his authenticated board. "
-    "You SHOULD: prefer the reversible form of an action, say plainly what you "
-    "changed, and never touch HelmDeck's own secrets (settings.json, users.json, "
-    "helmdeck.db, tokens) or its git history. "
-    "Ask for nothing you can find out yourself - look it up on the machine. "
-    "NEVER end with just 'I cannot do X': if one route is blocked, try another, "
-    "and if you are truly stuck, name the exact blocker and the one thing the "
-    "owner must decide or provide. When it is done, end with a short DELIVERED "
-    "summary of what actually changed on the machine.\n\n" + ask.BRIEF
-)
+
+def _agent_for(t):
+    return MACHINE_AGENT if (t or {}).get("machine") else CARD_AGENT
 
 
 def _real_claude_exe(cmd_path):
@@ -648,6 +631,24 @@ def _cmd_line(argv):
     return list(argv)
 
 
+def argv_form_safe(exe=None):
+    """True when a spawn will pass arguments as a REAL argv list, so an argument
+    may safely contain quotes, newlines and JSON.
+
+    The fallback branch of _cmd_line builds a `cmd /s /c "<string>"` command line,
+    and that form is not quote-safe (the BatBadBut class - see _real_claude_exe;
+    it is what silently ate `--resume`). Anything long and quote-heavy must ASK
+    before it rides on an argv: copilot.py uses this to decide whether its 10 KB
+    system prompt can go in --append-system-prompt (real role separation) or has
+    to stay in the stdin prompt (the old way, safe everywhere)."""
+    exe = exe or CLAUDE
+    if os.name != "nt":
+        return True
+    if not str(exe).lower().endswith((".cmd", ".bat")):
+        return True
+    return _real_claude_exe(exe) is not None
+
+
 def _write(path, text):
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -685,7 +686,8 @@ class _ClaudeSession:
         self.cfg = cfg
         self.worktree = t.get("worktree") or "."
         self.card_env = _card_env(t)     # HELMDECK_DEV_PORT etc., fixed at spawn
-        self.brief = _MACHINE_BRIEF if t.get("machine") else _CARD_BRIEF
+        self.agent = _agent_for(t)       # which harness/agents/*.md speaks to it
+        self.brief = harness.brief(self.agent)
         self.sig = _opts_sig(cfg, t)
         self.session_id = t.get("session_id")
         self.adopted_source = t.get("adopted_source")
@@ -748,11 +750,27 @@ class _ClaudeSession:
                         ActionLog(self.run_dir).log("note", note)
                     except Exception:
                         pass
+        # Re-read the brief HERE, not once in __init__: a respawn (restart after a
+        # timeout, an options change) is the natural moment to pick up an edited
+        # harness/agents/*.md, and it costs one stat() when nothing changed.
+        self.brief = harness.brief(self.agent)
         argv = [CLAUDE, "-p",
                 "--output-format", "stream-json", "--input-format", "stream-json",
                 "--include-partial-messages", "--verbose",
                 "--permission-mode", self.cfg.get("perm", "acceptEdits"),
                 "--append-system-prompt", self.brief]
+        # THE SETTINGS LAYER (harness/agents/<agent>.md -> setting_sources + settings).
+        # Without it a card loads the OPERATOR'S PERSONAL ~/.claude/settings.json,
+        # because cwd is his machine: an `rtk hook claude` PreToolUse hook on every
+        # Bash call (296 observed failures inside card transcripts), a pinned
+        # `model: claude-fable-5[1m]` silently overriding the card's own model, and
+        # ~150 personal skillOverrides. A sandboxed worker can neither use nor fix
+        # any of it. `--setting-sources project` drops that layer while KEEPING the
+        # repo's own .claude/settings.json build-loop hooks, which the card does want.
+        # Measured, not assumed - daemon/probe_harness_settings.py against the
+        # real CLI 2.1.207 (--help text is not proof). Empty list when harness/
+        # is absent, which is exactly the old inherit-everything behaviour.
+        argv += harness.cli_args(self.agent)
         if self.cfg.get("model"):
             argv += ["--model", self.cfg["model"]]
         for pat in self.cfg.get("allowed_tools") or []:

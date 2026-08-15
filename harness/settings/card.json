@@ -1,0 +1,52 @@
+{
+  "$schema": "../schema/settings.schema.json",
+
+  "//": [
+    "HelmDeck's OWN settings layer for a card worker. Passed to the CLI as",
+    "`--settings harness/settings/card.json`, on top of `--setting-sources project`.",
+    "",
+    "WHAT THAT COMBINATION BUYS (probed against CLI 2.1.207, not assumed):",
+    "  user layer    OFF - the operator's personal ~/.claude never reaches a card.",
+    "                That layer carries an `rtk hook claude` PreToolUse hook on EVERY",
+    "                Bash call (296 observed failures leaking into card transcripts),",
+    "                a pinned `model: claude-fable-5[1m]` that silently overrode the",
+    "                card's own model pick, ~150 skillOverrides and personal plugins.",
+    "                None of it is the card's business, and the card cannot fix it.",
+    "  project layer ON  - the repo's .claude/settings.json still applies, so a card",
+    "                keeps the build-loop hooks it is SUPPOSED to have: the Stop hook",
+    "                (tools/loop_state.py --stop-hook), SessionStart re-orientation,",
+    "                and the design PostToolUse hook.",
+    "  this file     ON  - anything HelmDeck wants true for every card and nothing else.",
+    "",
+    "NEVER put a secret in here: this file is tracked in git, which is exactly why it",
+    "is safe to hand to a sandboxed worker."
+  ],
+
+  "env": {
+    "HELMDECK_SURFACE": "card"
+  },
+
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git branch*)",
+      "Bash(python tools/loop_state.py*)",
+      "Bash(py -3.12 tools/loop_state.py*)",
+      "Bash(npx tsc --noEmit*)"
+    ],
+    "deny": [
+      "Read(./daemon/settings.json)",
+      "Read(./daemon/users.json)",
+      "Read(./daemon/helmdeck.db)",
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.keystore)"
+    ]
+  }
+}

@@ -149,7 +149,8 @@ _ASK_HINT = re.compile(
     r"which (?:one|option|of)|should i|shall i|let me know|your call|"
     r"waiting on you|need(?:s)? (?:your|a) decision)\b", re.I)
 
-# The worker is told to end finished work exactly this way (drivers._CARD_BRIEF),
+# The worker is told to end finished work exactly this way (the card-worker brief,
+# harness/agents/card-worker.md),
 # so a delivered turn is recognisable without a model call.
 _DONE_HINT = re.compile(r"\bDELIVERED\b|Ready for Review", re.I)
 
