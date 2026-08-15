@@ -24,7 +24,17 @@
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck}"
-BRANCH="${HELMDECK_PUBLISH_BRANCH:-main}"
+# The local trunk is NOT called main. main is a stale 2026-08-12 branch with no
+# .github/ at all; the branch that actually carries the source (and the mac
+# workflow) is expo-migration - `git log main` vs the checked-out branch is the
+# one-line proof. Publishing "main" therefore published a tree the macOS runner
+# could not build, which is the whole point of this script.
+BRANCH="${HELMDECK_PUBLISH_BRANCH:-expo-migration}"
+# ...but it must LAND on the remote's default branch. GitHub only offers
+# workflow_dispatch for workflows present on the default branch, and
+# desktop-mac.yml's own `push: branches: [main]` trigger never fires from a
+# branch by another name. So source and target are separate knobs.
+TARGET="${HELMDECK_PUBLISH_TARGET:-main}"
 REMOTE="${HELMDECK_PUBLISH_REMOTE:-origin}"
 LIMIT_HARD=104857600      # GitHub rejects any file above this
 LIMIT_WARN=52428800       # GitHub warns above this
@@ -74,6 +84,44 @@ BADPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
     NOT help - the blob stays reachable. They must be purged (git filter-repo)
     and the credential rotated."
 }
+
+# ---- 2b. PRIVATE-BUT-NOT-SECRET paths (the gap check 2 does not close) -----
+# A credential scanner asks "can this be used to log in", and answers "no" for
+# a photo. But `.attachments/` is where the daemon parks what the OWNER uploads
+# into chat - phone screenshots of his own board: unreleased card titles, due
+# dates, distribution decisions. Nothing there is a credential, so checks 2 and
+# 3 wave it through, and the push publishes it forever.
+#
+# That these are user data and not source is not a judgement call made here -
+# the repo already says so twice: their siblings daemon/recordings/ and
+# daemon/checkpoints/ are git-ignored, and electron-builder.yml refuses to ship
+# .attachments/** into the desktop bundle. Only git itself never got the memo,
+# so five of them were committed before .gitignore covered the path.
+#
+# Fails CLOSED, because the cost is asymmetric: a needless stop costs one env
+# var, publishing the owner's private board costs a history rewrite of a public
+# repo. HELMDECK_PUBLISH_ALLOW_PRIVATE=1 is the deliberate "yes, I looked at
+# them, publish anyway" - it must be a decision, never a default.
+say "checking for private user-content paths in $BRANCH history"
+PRIVPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
+  | sort -u \
+  | grep -iE '(^|/)\.attachments/|(^|/)\.copilot_attachments/|(^|/)daemon/recordings/|(^|/)daemon/checkpoints/' \
+  || true)"
+if [ -n "$PRIVPATHS" ]; then
+  printf '    %s\n' $PRIVPATHS
+  if [ "${HELMDECK_PUBLISH_ALLOW_PRIVATE:-0}" = "1" ]; then
+    say "HELMDECK_PUBLISH_ALLOW_PRIVATE=1 - publishing the above ANYWAY"
+  else
+    fail "private user content in history - these are chat uploads, not source.
+    Like any blob, deleting them in a NEW commit does NOT unpublish them; the
+    push publishes history. Your options:
+      - purge them from the branch (git filter-repo --path .attachments/ --invert-paths)
+        and push the rewritten branch, or
+      - HELMDECK_PUBLISH_ALLOW_PRIVATE=1 if you have LOOKED at them and are
+        content for them to be public forever.
+    Look first: git show $BRANCH:<path> > /tmp/x.jpg"
+  fi
+fi
 
 # ---- 3. credential-shaped CONTENT in every blob on this branch -------------
 say "scanning blob contents for credentials"
@@ -129,8 +177,8 @@ case "$(git remote get-url "$REMOTE")" in
 esac
 
 # ---- 6. push ONE branch ----------------------------------------------------
-say "pushing $BRANCH -> $REMOTE (single branch, never --all)"
-git push "$REMOTE" "$BRANCH:$BRANCH" || fail "push failed"
+say "pushing $BRANCH -> $REMOTE/$TARGET (single branch, never --all)"
+git push "$REMOTE" "$BRANCH:$TARGET" || fail "push failed"
 
 say "done: https://github.com/$REPO"
 echo "    Next: Actions tab -> 'desktop-mac' -> Run workflow. With no secrets"
