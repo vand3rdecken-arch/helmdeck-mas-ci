@@ -10,16 +10,48 @@ set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 
 native_fp() {
-  # Fingerprint the NATIVE config only. EXCLUDE the version fields that bump_version
-  # + build_apk.sh change (app.json version/versionCode, the manifest's
-  # EXPO_RUNTIME_VERSION): including them made every post-bump accept look like a
-  # fresh native change and bump again, so the version crept 1.0.2->1.0.3->1.0.4 with
-  # no real native change. Now a version bump never moves the fingerprint, so it
-  # stabilises after one cycle and JS-only accepts stop bumping.
-  { sed -n 's/.*\("expo[^"]*"\|"react-native[^"]*"\).*/\1/p' app/package.json
-    grep -vE '"version"[[:space:]]*:|"versionCode"[[:space:]]*:' app/app.json 2>/dev/null
-    grep -v "EXPO_RUNTIME_VERSION" app/android/app/src/main/AndroidManifest.xml 2>/dev/null
-  } | sha256sum | cut -d' ' -f1
+  # Fingerprint the ANDROID-relevant native config only. EXCLUDE the version
+  # fields that bump_version + build_apk.sh change (app.json version/
+  # versionCode, the manifest's EXPO_RUNTIME_VERSION): including them made
+  # every post-bump accept look like a fresh native change and bump again, so
+  # the version crept 1.0.2->1.0.3->1.0.4 with no real native change. Now a
+  # version bump never moves the fingerprint, so it stabilises after one cycle
+  # and JS-only accepts stop bumping.
+  #
+  # ALSO excludes app.json's "ios" and "extra" objects (fixed 2026-08-15 -
+  # incident: three straight accepts that only touched ios.infoPlist,
+  # ios.runtimeVersion and extra.eas.projectId/owner - all iOS/EAS metadata
+  # with zero effect on the generated Android app - still fingerprinted as a
+  # "native change" because the old version grepped the whole file. Android's
+  # runtimeVersion policy is the shared top-level "appVersion", so each bump
+  # forced a fresh Android runtimeVersion for a change Android never made -
+  # orphaning every already-installed APK from OTA the moment app.json's
+  # version outran the phone's baked-in one). Known residual gap: an
+  # iOS-only field nested INSIDE a shared `plugins` entry (e.g. expo-camera's
+  # `microphonePermission`, which only affects iOS's Info.plist) still moves
+  # this fingerprint - accepted as a false positive (one extra APK build)
+  # since the other direction (a false negative shipping an incompatible
+  # native change as a bare OTA) is the one this must never get wrong.
+  py -3.12 - <<'PY'
+import hashlib, json
+d = json.load(open("app/app.json", encoding="utf-8"))
+e = {k: v for k, v in d.get("expo", {}).items() if k not in ("ios", "extra")}
+e.pop("version", None)
+android = dict(e.get("android") or {})
+android.pop("versionCode", None)
+e["android"] = android
+blob = json.dumps(e, sort_keys=True)
+try:
+    blob += open("app/package.json", encoding="utf-8").read()
+except FileNotFoundError:
+    pass
+try:
+    manifest = open("app/android/app/src/main/AndroidManifest.xml", encoding="utf-8").read()
+    blob += "\n".join(l for l in manifest.splitlines() if "EXPO_RUNTIME_VERSION" not in l)
+except FileNotFoundError:
+    pass
+print(hashlib.sha256(blob.encode("utf-8")).hexdigest())
+PY
 }
 
 # Bump expo.version (patch) + android.versionCode in app/app.json. runtimeVersion
