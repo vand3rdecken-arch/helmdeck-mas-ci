@@ -593,13 +593,19 @@ DEBT = [
                    "`bash desktop/build-mac.sh` on any Mac",
         "fix": "1) bash deploy/publish_source.sh (audit + push main over SSH - "
                "the gh token has no `workflow` scope, so HTTPS is rejected). "
-               "2) Actions -> desktop-mac -> Run workflow, with NO secrets: "
-               "the unsigned build is the honest smoke test and is designed to "
-               "pass on its own. Flip to 'paid' only when a run "
-               "produced all four artifacts + latest-mac.yml and the workflow's "
-               "verify step (hdiutil imageinfo per dmg) passed. "
-               "Signing/notarization is the SECOND milestone: add the cert + "
-               "ASC secrets, confirm `spctl --assess` accepts the app.",
+               "2) Actions -> desktop-mac -> Run workflow. Flip to 'paid' only "
+               "when a run produced all four artifacts + latest-mac.yml and the "
+               "workflow's verify step (hdiutil imageinfo per dmg) passed, then "
+               "confirm `spctl --assess` accepts the signed app. "
+               "SIGNING IS NO LONGER A BLOCKER (2026-08-15): the Developer ID "
+               "Application cert is minted (valid to 2031-08-16) and "
+               "MAC_CSC_LINK + MAC_CSC_KEY_PASSWORD are live on the repo - see "
+               "DEPLOY.md 1c and deploy/mac_credentials.py. A run with NO "
+               "secrets is still designed to pass unsigned, so that remains "
+               "the fallback smoke test if the signed path reds. What is left "
+               "is purely step 1: github.com/Tienduyvo/helmdeck still has no "
+               ".github/workflows (verified via the API), so no runner has "
+               "anything to check out.",
         "order": 22,
     },
 ]
