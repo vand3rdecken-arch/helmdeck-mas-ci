@@ -96,6 +96,8 @@ export const board: Dict = {
   "gantt.card": { de: "KARTE", en: "CARD" },
   "gantt.overdue": { de: "überfällig", en: "overdue" },
   "gantt.planned": { de: "geplant", en: "planned" },
+  "gantt.process": { de: "Prozess", en: "Process" },
+  "gantt.steps": { de: "Schritte", en: "steps" },
   "gantt.legend": {
     de: "Balken = angelegt → letzte Aktivität (Done friert bei Abnahme ein) · blaue Linie = jetzt · ◆ = fällig",
     en: "Bar = created → last activity (Done freezes at acceptance) · blue line = now · ◆ = due",
