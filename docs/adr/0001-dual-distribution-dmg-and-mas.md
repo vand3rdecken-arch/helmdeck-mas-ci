@@ -59,6 +59,24 @@ The repository already recorded this conclusion before the decision was taken. F
 
 So the blocker is not the OTA updater, which was the trade-off the decision was weighed on. The updater is a build-config problem and genuinely solvable. The daemon spawn is an architecture problem: sandboxing removes the app's reason to exist.
 
+#### "Can't we just bundle it all together?"
+
+Asked directly, and it is the right instinct — but it rescues only the half that was never the hard part.
+
+**Bundling the Python daemon genuinely works.** A sandboxed app may spawn a helper that lives inside its own bundle and is signed with the same Team ID (the child gets `com.apple.security.inherit`); this is how Electron's own helper processes ship on the Store today. Embedding an interpreter is likewise fine — bundled `.py` files ship with the app and are reviewed with it, so Guideline 2.5.2 (no downloading or executing code that changes the app's functionality) is not triggered. Bundle CPython plus its native extension modules, sign them all with our Team ID, and library validation passes on its own — meaning `disable-library-validation` would no longer be needed either.
+
+**What cannot be bundled is the toolchain HelmDeck exists to drive.** `daemon/drivers.py:50` resolves the agent CLI off the user's `PATH`:
+
+```python
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude") ...
+```
+
+alongside `git` (11 call sites in `daemon/`), `node`, and OS utilities. `claude` is a third-party CLI carrying the user's own authentication and its own update cadence; it cannot be redistributed inside our bundle, and it in turn spawns further arbitrary tools and reads and writes the user's filesystem at will. A sandboxed process may not execute binaries outside its bundle, full stop.
+
+Two smaller consequences point the same way. HelmDeck runs `git worktree add` into sibling directories outside any folder the user could plausibly have granted, whereas a sandboxed app reaches non-container paths only through user-selected paths plus security-scoped bookmarks. And `taskkill`/`netstat`-style process inspection is not available to a sandboxed process either.
+
+So the sequence is: bundling removes the interpreter objection, and the `claude` spawn remains — which is not an incidental feature but the product. **An App Store build that spawns nothing is not HelmDeck**; it is at most a companion to a HelmDeck running elsewhere. That is route 3 below, and it is a product decision rather than a packaging one.
+
 **Reaching MAS therefore requires one of:**
 
 1. **Reimplement the daemon in-process** — port `swarm.py` into the Electron main process (JS/TS), so nothing is spawned. Largest change; also strands the Python codebase that the CLI and other surfaces share.
