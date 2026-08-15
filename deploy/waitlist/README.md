@@ -25,6 +25,28 @@ framework, no build step, no tracking.
   **external** TestFlight (needs Beta App Review), replace
   `TESTFLIGHT_REQUEST_URL` in `src/index.js` with the real
   `https://testflight.apple.com/join/<code>` link.
+- **Domains — all 4 TLDs, with and without `www`** (Cloudflare account
+  `0f5984a3acf38570ca44e7a62dc79434`). `helmdeck.de` is the canonical one and is
+  a Workers Custom Domain on this worker; `.global` / `.info` / `.store` are
+  brand-protection TLDs that 301 to it.
+
+  | hostname | how it resolves |
+  |---|---|
+  | `helmdeck.de` | Custom Domain → this Worker |
+  | `www.helmdeck.de` | A `192.0.2.1` proxied + redirect rule *"Umleitung von WWW zum Stammverzeichnis"* (`https://www.*` → `https://${1}`, 301) |
+  | `helmdeck.global` / `.info` / `.store` | A `192.0.2.1` proxied + per-zone catch-all 301 → `https://helmdeck.de` |
+  | `www.` of those three | A `192.0.2.1` proxied; the zone's existing catch-all rule already matches `www`, so **no second rule is needed** |
+
+  ⚠ The `192.0.2.1` is TEST-NET-1 (never routable) and only exists so Cloudflare's
+  edge has a proxied record to intercept — without *some* proxied record the
+  hostname does not resolve at all and no redirect rule can ever fire. Keep the
+  orange cloud ON; a grey-clouded (DNS-only) record would hand visitors a dead IP.
+
+  ⚠ `wrangler` **cannot** manage any of this — its OAuth token is `zone (read)`
+  only (`npx wrangler whoami`), so zone/DNS/redirect changes are dashboard-only
+  (or need a separate API token with `Zone:DNS:Edit`). Do not waste time looking
+  for a CLI path; there isn't one with the current credential.
+
 - **Storage**: KV namespace `WAITLIST` (id in `wrangler.jsonc`), key
   `email:<lowercased>`, value + metadata `{email, ts, lang, product}`.
   `product` is always `"wearables"` — the sole thing this waitlist now
