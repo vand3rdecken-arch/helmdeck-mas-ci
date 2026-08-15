@@ -122,6 +122,32 @@ Output in `desktop/release/`: `HelmDeck-<v>-{arm64,x64}.dmg` for humans,
 `native-updater.js` drives via electron-updater) can only apply a zipped `.app`,
 it cannot read a `.dmg` — plus `latest-mac.yml`, the feed pointing at the zip.
 
+### ✅ EXECUTED 2026-08-15 — signed, notarized, Gatekeeper-accepted
+
+Run [`31877006863`](https://github.com/Tienduyvo/helmdeck/actions/runs/31877006863)
+on `macos-14`, **32m10s, every step green**. This is the first Mac build that
+has ever run, and it closed debt `mac-build-never-executed`. What the log
+proves, quoted rather than paraphrased:
+
+| stage | evidence |
+| --- | --- |
+| decision | `==> signing: Developer ID identity supplied` → `==> notarization: ON` |
+| Apple | `• notarization successful` — **twice**, once per arch |
+| signature | `codesign --verify --deep --strict` → *valid on disk* + *satisfies its Designated Requirement* |
+| **Gatekeeper** | `spctl --assess --type execute` → **`accepted`**, `source=Notarized Developer ID` |
+| artifacts | `HelmDeck-0.2.0-{arm64,x64}.{dmg,zip}` + blockmaps + `latest-mac.yml`; `hdiutil imageinfo` passed on both dmgs |
+
+So the entitlement set really is the right one — that was the one thing only a
+notarized run on real hardware could establish. Budget note: ~32 min of macOS
+runner time per build, free because the repo is public.
+
+⚠ **Benign warning, do NOT "fix" it.** electron-builder prints *"Please specify
+notarization Team ID in the `APPLE_TEAM_ID` env var instead of
+`notarize.teamId`"*. Ignore it. The `-c.mac.notarize.teamId` override is what
+**turns notarization on at all** (the committed config deliberately keeps
+`notarize: false` so a secret-less build still succeeds); the warning is only
+about where the team id is read from, and notarization demonstrably worked.
+
 **The build succeeds with no secrets at all** — it just produces an *unsigned*
 app: Gatekeeper quarantines it and the auto-updater cannot apply updates to it
 (Squirrel.Mac requires a valid signature). Add the repo secrets and the same
@@ -171,6 +197,31 @@ private key, and its modulus matches the signed cert's. Signing is no longer
 the blocker — §1d (source push) is: the release repo still has no
 `.github/workflows`, so no runner can check the build out.
 
+**NOTARIZATION SECRETS LIVE 2026-08-15** — all six repo secrets are now set on
+`Tienduyvo/helmdeck`, so the workflow's signed **and notarized** path is armed:
+`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (from the cert above) plus
+`ASC_API_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID`. The `.p8` was
+piped straight into `gh secret set` from `C:/hd/secrets/` — never read, never
+echoed, never copied into the repo. Verified rather than assumed, twice:
+- the key **authenticates against Apple right now**:
+  `ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_API_KEY_PATH=… py -3.12
+  deploy/mac_credentials.py --check` mints a JWT and gets a 200. A wrong key id
+  or issuer 401s *here*, which is 20 minutes and a whole Mac build cheaper than
+  finding out during notarization. It reports *"no existing Developer ID
+  Application certificate"* — that is the **same API-key wall** that 403s cert
+  creation, **not** a missing cert; Apple does not list Developer ID certs to
+  API keys at all. Do not "fix" that by minting a second cert.
+- the certificate itself is real, read locally with openssl:
+  `CN = Developer ID Application: Tien Duy Vo (92WJZQ2WWH)`, issuer *Developer
+  ID Certification Authority G2*, EKU **Code Signing**, valid to 2031-08-16 —
+  and its team `92WJZQ2WWH` matches the `APPLE_TEAM_ID` secret, which is the
+  pairing `-c.mac.notarize.teamId` actually depends on.
+
+So nothing in the signing/notarization *wiring* is outstanding: hardened
+runtime, both entitlements files, the notarize-object override and the
+workflow's `codesign --verify` + `spctl --assess` gate were all already in
+place and re-read line by line on 2026-08-15. §1d is the only thing left.
+
 `--check` lists any Developer ID Application certs the account already holds
 — re-submitting a CSR against an account that already has one just burns
 another slot of Apple's quota, so check before minting. `--create`/`--finish`
@@ -207,7 +258,82 @@ next to the builds. Not a second source repo.
 
 ```bash
 bash deploy/publish_source.sh --dry-run     # audit only, pushes nothing
-bash deploy/publish_source.sh               # audit, then push main
+bash deploy/publish_source.sh               # audit, then push the trunk -> remote main
+```
+
+⚠ **Two traps found on 2026-08-15, both now handled by the script — read this
+before running it, because one of them is irreversible.**
+
+**a) The local trunk is not called `main`.** `main` is a stale 2026-08-12
+branch (`2aaa4d4`, "mobile: glass on BOTH bars") that contains **no `.github/`
+at all**. The branch actually carrying the source *and* `desktop-mac.yml` is
+**`expo-migration`** — that is what the main working copy has checked out and
+what accept-commits land on. The script's old default would therefore have
+published a tree the macOS runner cannot build, which is the one job it has.
+Source and target are now separate knobs, defaulting to the right pair:
+```bash
+HELMDECK_PUBLISH_BRANCH=expo-migration   # what gets audited + pushed
+HELMDECK_PUBLISH_TARGET=main             # where it LANDS on the remote
+```
+The target must stay the remote's **default branch**: GitHub only offers
+*Run workflow* (`workflow_dispatch`) for workflows present on the default
+branch, and `desktop-mac.yml`'s own `push: branches: [main]` trigger never
+fires from a branch by another name.
+
+**b) A green audit is not a safe audit — `.attachments/`.** The old checks ask
+"is this a credential", so a **photo** answers *no* and sails through. Five
+files in `.attachments/` are chat uploads: the owner's **phone screenshots of
+his own board**, showing unreleased card titles, due dates and distribution
+decisions. A push publishes *history*, so those would have been public forever
+— and, as the script says about every blob, deleting them in a later commit
+does **not** unpublish them. That they are user data and not source was already
+settled twice in this repo (`daemon/recordings/` + `daemon/checkpoints/` are
+git-ignored; `electron-builder.yml` refuses to ship `.attachments/**`); only
+git never got the memo. There is now a privacy check that **fails closed**:
+```bash
+git show expo-migration:.attachments/0_1000029273.jpg > /tmp/x.jpg   # LOOK first
+HELMDECK_PUBLISH_ALLOW_PRIVATE=1 bash deploy/publish_source.sh       # publish anyway
+```
+The alternative — and **what was actually done** — is `--filter-private`.
+
+### PUBLISHED 2026-08-15 — how, and the two things that surprised it
+
+```bash
+bash deploy/publish_source.sh --filter-private     # this is the command
+```
+It publishes a **filtered mirror**: clone the trunk to a temp dir, drop
+`.attachments/` from *that copy's* history, push the result. Filtering the trunk
+in place was rejected deliberately — ~20 live card branches and worktrees hang
+off it and `git_filter_repo` rewrites every sha it touches, stranding all of
+them. The owner's repo is never rewritten. Result: 572 commits, 585 files,
+tree byte-identical to the trunk minus the 5 jpgs (`git archive | tar -t` diff:
+only those 5 + the dir entry missing, **nothing added**). The 5 commits that
+vanished were attachment-only "finalize" commits, correctly pruned as empty.
+
+The mirror lineage is **deterministic**, which is what makes it sustainable:
+filtering the same input commit twice gave the identical sha (`a10d9454`), so
+later publishes **fast-forward** and never need a force again. (It briefly
+looked nondeterministic — that was another card landing 2 commits on the trunk
+between the two test clones, not the filter.)
+
+⚠ **The first push is a non-fast-forward, and forcing it is safe.** The remote
+`main` was a single *unrelated* commit (`1dc31bb6` "HelmDeck public releases"),
+so a plain push is rejected exactly once. Verified **before** forcing, not
+after: all four release tags (`v1.0.4`–`v1.0.7`) pin `1dc31bb6` themselves, and
+release **assets live in the releases API, not in git** — so a force-push of
+`main` cannot break the download shelf or the desktop auto-updater. Confirmed
+after the push: all 4 releases still listed, `1dc31bb6` still resolvable. The
+push used `--force-with-lease=main:1dc31bb6…` so it would have aborted if the
+remote had moved.
+
+⚠ **The push did NOT auto-trigger the workflow.** `desktop-mac.yml` has
+`push: branches: [main]`, Actions was enabled and the workflow registered
+`state=active` — and `gh run list` was still empty. A first-ever workflow file
+arriving by force-push of an unrelated history does not fire its own push
+trigger. Dispatch it explicitly and don't wait on a run that will never start:
+```bash
+gh workflow run desktop-mac.yml --repo Tienduyvo/helmdeck --ref main
+gh run list --repo Tienduyvo/helmdeck --limit 3
 ```
 
 It is an audit that ends in a push, re-run in full every time — `.gitignore`
