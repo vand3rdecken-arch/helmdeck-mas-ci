@@ -2504,17 +2504,24 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if t.get("deploy_hook") or t.get("preview_hook"):
         _mutate(tid, lambda tt: (tt.pop("deploy_hook", None), tt.pop("preview_hook", None)))
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
-    # SELF-HEAL a missing worktree before spawning into it. The tree is
-    # regenerable from the branch; without this, a reclaimed/hand-deleted/never-
-    # created tree made EVERY steer die with WinError 267 (spawn cwd invalid) -
-    # a dead-end the owner cannot steer out of, on a card that is otherwise fine.
+    # SELF-HEAL a missing OR broken worktree before spawning into it. The tree
+    # is regenerable from the branch; without the isdir half, a reclaimed/
+    # hand-deleted/never-created tree made EVERY steer die with WinError 267
+    # (spawn cwd invalid) - a dead-end the owner cannot steer out of, on a
+    # card that is otherwise fine. isdir alone is not enough, though: an
+    # existing-but-never-`git worktree add`'d directory (interrupted add,
+    # stray mkdir) also passes isdir, so a steer reused it as-is and dispatched
+    # into a folder with no .git - the same class _ensure_worktree now guards
+    # against internally, checked again here so the CALLER's decision whether
+    # to even invoke it doesn't reintroduce the bug one level up.
     if (not t.get("machine") and t.get("branch")
-            and not os.path.isdir(t.get("worktree") or "")):
+            and (not os.path.isdir(t.get("worktree") or "")
+                 or _git_state_broken(t["worktree"]))):
         try:
             wt_new = _ensure_worktree(t)
             t["worktree"] = wt_new
             _mutate(tid, lambda tt: tt.__setitem__("worktree", wt_new))
-            log.log("note", "WORKTREE neu erzeugt (%s) - war verschwunden, Branch haelt den Stand." % wt_new)
+            log.log("note", "WORKTREE neu erzeugt (%s) - fehlte oder war nie initialisiert, Branch haelt den Stand." % wt_new)
         except Exception as _we:
             log.log("note", "WORKTREE fehlt und Neuaufbau schlug fehl: %s" % str(_we)[:200])
     try:
