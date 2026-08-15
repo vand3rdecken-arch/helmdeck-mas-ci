@@ -379,6 +379,7 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }} />
               <Text style={{ color: c, fontSize: 11.5, flex: 1 }}>{s.text}</Text>
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+              <CopyBtn text={s.text || ""} color={t.txtTertiary} />
             </View>);
         }
         if (kind === "tool") return <ToolCard key={key} s={s} t={t} defaultOpen={i === lastToolIdx} />;

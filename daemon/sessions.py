@@ -2187,6 +2187,22 @@ def _pending_context(t):
     to fix one ("resolve the conflict"), prepend the actual report so the worker
     isn't blind. Empty string when nothing is pending."""
     parts = []
+    # Repo hooks (preview/deploy) ALSO run daemon-side, outside the session -
+    # same blind spot as gate/merge below. Incident (2026-08-15): a fast-track
+    # deploy hook actually SUCCEEDED ("DEPLOY HOOK OK"), but its output tail
+    # happened to contain a harmless "(23) Failed writing body" curl artifact;
+    # the owner read that as a failure and told the worker "Deploy hook
+    # failed", and the worker - with no way to check `t["deploy_hook"]` itself
+    # (that field existed on the track the whole time, just never surfaced
+    # here) - had to trust the owner's framing and chased a phantom infra bug.
+    # steer() clears these after this call, so each hook result is told to the
+    # worker exactly once (on the next steer), never repeated on later ones.
+    for hook_kind in ("deploy_hook", "preview_hook"):
+        dh = t.get(hook_kind)
+        if dh:
+            parts.append("%s HOOK %s (ran outside this session, daemon-side):\n%s" % (
+                hook_kind.split("_")[0].upper(), "OK" if dh.get("ok") else "FAILED",
+                str(dh.get("tail") or "")[:800]))
     gr = t.get("gate_report")
     if t.get("gate_failed") and gr:
         parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
@@ -2374,6 +2390,10 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
     prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
+    # Consumed: pop the hook results now so they're told to the worker exactly
+    # ONCE (this steer), not repeated on every later unrelated one.
+    if t.get("deploy_hook") or t.get("preview_hook"):
+        _mutate(tid, lambda tt: (tt.pop("deploy_hook", None), tt.pop("preview_hook", None)))
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
     # SELF-HEAL a missing worktree before spawning into it. The tree is
     # regenerable from the branch; without this, a reclaimed/hand-deleted/never-
