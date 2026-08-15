@@ -687,6 +687,45 @@ DEBT = [
                "instead of leaving the bounced card for the owner to notice.",
         "order": 23,
     },
+    {
+        "id": "site-deploy-outside-hook",
+        "title": "helmdeck.de ships by hand - accepting a card never deploys it",
+        "status": "open",
+        "what": "The public site is a Cloudflare Worker (deploy/waitlist/, "
+                "worker 'helmdeck-waitlist', custom domain helmdeck.de). Every "
+                "other shipping surface rides the repo deploy hook that "
+                "sessions._repo_hook fires post-merge on accept; this one does "
+                "not. Nothing in the accept path runs `wrangler deploy`, so a "
+                "site commit is merged, gated, accepted and still not live. "
+                "deploy/push_site.sh now makes the step one canonical command "
+                "that self-verifies against the origin, but RUNNING it is still "
+                "a human remembering to.",
+        "why_it_bites": "It already bit, silently, for two days. Card "
+                        "proc-20260814-s7 merged the full landing page "
+                        "(39bf69a, 2026-08-15) and helmdeck.de kept serving the "
+                        "2026-08-13 waitlist-only build - the owner saw 'nur die "
+                        "Waitlist' while the commit log and the card's own "
+                        "outcome said shipped. The failure is invisible from "
+                        "inside the repo: git log, gate and accept all read "
+                        "green, and the card had verified against `wrangler "
+                        "dev` instead of the origin. Worse, it is the marketing "
+                        "surface - the one place where being stale costs "
+                        "signups rather than developer time.",
+        "trigger": "any future card that edits deploy/waitlist/src/index.js and "
+                   "is accepted without someone separately running "
+                   "deploy/push_site.sh",
+        "fix": "Add `bash deploy/push_site.sh` to repo_hooks.<repo>.deploy in "
+               "settings.json so accept ships the site like it ships everything "
+               "else (owner-side edit - settings.json is git-ignored, an agent "
+               "cannot make it). Better still, derive it instead of hardcoding: "
+               "have the deploy hook ship the site only when the merged diff "
+               "touched deploy/waitlist/, which is the Paseo-style 'observe the "
+               "runtime signal' version of the same thing. Until then the "
+               "origin check `bash deploy/push_site.sh --check` is the backstop "
+               "- it exits 1 when live != source and is cheap enough to run "
+               "from the loop.",
+        "order": 24,
+    },
 ]
 
 def list_debt():
