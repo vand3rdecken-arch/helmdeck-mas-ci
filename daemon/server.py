@@ -446,14 +446,25 @@ class H(BaseHTTPRequestHandler):
                     "runtime": dict(_lane_flow(ll), title="Wie Arbeit fliesst"),
                     "build": _loop_machine(),
                     "harness": _harness_state(),
+                    # Each law cites the module that ENFORCES it. A law the owner
+                    # cannot trace to code is just a promise on a screen; with the
+                    # pointer he can go read the thing that actually holds the
+                    # line. Same reason the graph nodes carry file:line.
                     "laws": [
-                        {"key": "auth", "text": "Auth ist fix — nie geschwächt."},
-                        {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben."},
-                        {"key": "gate", "text": "Gate-before-review — Qualität vor jeder Abnahme."},
-                        {"key": "economics", "text": "Gemessene Ökonomie — jeder Turn hat Kosten/Value."},
-                        {"key": "worktree", "text": "Worktree-Isolation — jeder Agent in eigenem Checkout."},
-                        {"key": "drivers", "text": "Driver-Kommandos sind fix — was Agents ausführen ist nicht frei konfigurierbar."},
-                        {"key": "charter", "text": "Charter-Kern ist Code — nicht per Chat editierbar."},
+                        {"key": "auth", "text": "Auth ist fix — nie geschwächt.",
+                         "source": "daemon/auth.py"},
+                        {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben.",
+                         "source": "daemon/events.py"},
+                        {"key": "gate", "text": "Gate-before-review — Qualität vor jeder Abnahme.",
+                         "source": "daemon/sessions.py"},
+                        {"key": "economics", "text": "Gemessene Ökonomie — jeder Turn hat Kosten/Value.",
+                         "source": "daemon/usage.py"},
+                        {"key": "worktree", "text": "Worktree-Isolation — jeder Agent in eigenem Checkout.",
+                         "source": "daemon/sessions.py"},
+                        {"key": "drivers", "text": "Driver-Kommandos sind fix — was Agents ausführen ist nicht frei konfigurierbar.",
+                         "source": "daemon/drivers.py"},
+                        {"key": "charter", "text": "Charter-Kern ist Code — nicht per Chat editierbar.",
+                         "source": "daemon/charter.py"},
                     ],
                     "charter": charter.CHARTER,
                 }))
