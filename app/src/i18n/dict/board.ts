@@ -65,10 +65,9 @@ export const board: Dict = {
   "board.process": { de: "Prozess", en: "process" },
   "board.due": { de: "fällig {d}", en: "due {d}" },
   // flat plan (Max-Abo): a card's AI figure is its SHARE OF THE SUBSCRIPTION.
-  // aiTok/tokShort stay as the fallback for when the quota can't be calibrated.
+  // aiTok stays as the fallback for when the quota can't be calibrated.
   "board.aiPlan": { de: "KI {pct} vom Abo", en: "AI {pct} of plan" },
   "board.aiTok": { de: "KI {tok} Tok", en: "AI {tok} tok" },
-  "board.tokShort": { de: "{tok} Tok", en: "{tok} tok" },
   "board.mode.auto": { de: "auto · KI", en: "auto · AI" },
   "board.mode.assisted": { de: "begleitet · Mensch", en: "assisted · human" },
 
@@ -82,9 +81,8 @@ export const board: Dict = {
   "board.markDone": { de: "erledigt", en: "done" },
   "board.more": { de: "+{n} weitere", en: "+{n} more" },
 
-  // ---- layout toggle / list -----------------------------------------------
+  // ---- layout toggle --------------------------------------------------------
   "board.layout.board": { de: "Board", en: "Board" },
-  "board.layout.list": { de: "Liste", en: "List" },
   "board.layout.timeline": { de: "Timeline", en: "Timeline" },
   "board.moveTo": { de: "Verschieben nach…", en: "Move to…" },
   "board.stepDone": { de: "Step erledigt – die Kette rückt vor", en: "Step done – the chain moves on" },
