@@ -509,6 +509,28 @@ LOOP_EDGES = [
 ]
 
 
+def _decl_lines(keys, path=None, rel="tools/loop_state.py"):
+    """{key: "tools/loop_state.py:466"} - where each state is DECLARED.
+
+    Read out of the source file at call time, never written down. The map shows
+    a fixed node's file:line so "structure is code" is checkable rather than
+    merely asserted, and a hand-maintained line number would be wrong the first
+    time anyone inserted a line above it - a citation that rots is worse than no
+    citation, because it sends the reader to the wrong place with confidence."""
+    out = {}
+    try:
+        with open(path or os.path.abspath(__file__), encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return out
+    want = {'"key": "%s"' % k: k for k in keys}
+    for i, line in enumerate(lines, 1):
+        for needle, k in want.items():
+            if needle in line and k not in out:
+                out[k] = "%s:%d" % (rel, i)
+    return out
+
+
 def machine():
     """The build loop as DATA: the states, the edges, which mode we are in, and
     where this checkout currently sits. One definition, rendered by /loop/map and
@@ -517,12 +539,14 @@ def machine():
     mode = "card" if card else "repo"
     cur = transitions() or []
     active = cur[0][0] if cur else "DONE"
+    src = _decl_lines([s["key"] for s in LOOP_STATES])
     states = []
     for s in LOOP_STATES:
         if mode not in s["modes"]:
             continue
         s = dict(s)
         s["active"] = (s["key"] == active)
+        s["source"] = src.get(s["key"], "tools/loop_state.py")
         states.append(s)
     # An edge only exists if BOTH its ends do in this mode - otherwise card mode
     # would render ALIGN -> ANALYZE arrows between states it does not have.

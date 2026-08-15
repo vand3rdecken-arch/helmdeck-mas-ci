@@ -674,6 +674,49 @@ def _opts_sig(cfg, t):
             tuple(cfg.get("allowed_tools") or []))
 
 
+def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None):
+    """THE assembly point for a card/machine `claude` argv. ONE owner.
+
+    This is a function rather than inline code in _spawn() because /harness's
+    spawn-preview must show what ACTUALLY runs. A preview that re-listed these
+    flags would be a heuristic reconstruction of the spawn - it would drift the
+    first time a flag moved, and would then confidently lie about a command it
+    no longer describes. CLAUDE.md forbids exactly that (NO MONKEY PATCHES:
+    load-bearing state is derived, mutated at exactly ONE owner). So the preview
+    calls this, and the preview is correct by construction.
+
+    THE SETTINGS LAYER (harness/agents/<agent>.md -> setting_sources + settings).
+    Without it a card loads the OPERATOR'S PERSONAL ~/.claude/settings.json,
+    because cwd is his machine: an `rtk hook claude` PreToolUse hook on every
+    Bash call (296 observed failures inside card transcripts), a pinned
+    `model: claude-fable-5[1m]` silently overriding the card's own model, and
+    ~150 personal skillOverrides. A sandboxed worker can neither use nor fix any
+    of it. `--setting-sources project` drops that layer while KEEPING the repo's
+    own .claude/settings.json build-loop hooks, which the card does want.
+    Measured, not assumed - daemon/probe_harness_settings.py against the real
+    CLI 2.1.207 (--help text is not proof). Empty list when harness/ is absent,
+    which is exactly the old inherit-everything behaviour.
+    """
+    argv = [exe or CLAUDE, "-p",
+            "--output-format", "stream-json", "--input-format", "stream-json",
+            "--include-partial-messages", "--verbose",
+            "--permission-mode", cfg.get("perm", "acceptEdits"),
+            "--append-system-prompt", brief]
+    argv += harness.cli_args(agent)
+    if cfg.get("model"):
+        argv += ["--model", cfg["model"]]
+    for pat in cfg.get("allowed_tools") or []:
+        argv += ["--allowedTools", pat]
+    if session_id:
+        argv += ["--resume", session_id]
+        # An adopted card still pointing at its SOURCE session must not write
+        # into the desktop's live conversation: fork into a fresh session id
+        # on the first turn. Afterwards the ids differ and this never fires.
+        if adopted_source and adopted_source == session_id:
+            argv += ["--fork-session"]
+    return argv
+
+
 class _ClaudeSession:
     """One long-lived `claude` stream-json process for a card, reused across
     turns. Faithful port of Paseo's persistent SDK query: turns are messages
@@ -754,34 +797,9 @@ class _ClaudeSession:
         # timeout, an options change) is the natural moment to pick up an edited
         # harness/agents/*.md, and it costs one stat() when nothing changed.
         self.brief = harness.brief(self.agent)
-        argv = [CLAUDE, "-p",
-                "--output-format", "stream-json", "--input-format", "stream-json",
-                "--include-partial-messages", "--verbose",
-                "--permission-mode", self.cfg.get("perm", "acceptEdits"),
-                "--append-system-prompt", self.brief]
-        # THE SETTINGS LAYER (harness/agents/<agent>.md -> setting_sources + settings).
-        # Without it a card loads the OPERATOR'S PERSONAL ~/.claude/settings.json,
-        # because cwd is his machine: an `rtk hook claude` PreToolUse hook on every
-        # Bash call (296 observed failures inside card transcripts), a pinned
-        # `model: claude-fable-5[1m]` silently overriding the card's own model, and
-        # ~150 personal skillOverrides. A sandboxed worker can neither use nor fix
-        # any of it. `--setting-sources project` drops that layer while KEEPING the
-        # repo's own .claude/settings.json build-loop hooks, which the card does want.
-        # Measured, not assumed - daemon/probe_harness_settings.py against the
-        # real CLI 2.1.207 (--help text is not proof). Empty list when harness/
-        # is absent, which is exactly the old inherit-everything behaviour.
-        argv += harness.cli_args(self.agent)
-        if self.cfg.get("model"):
-            argv += ["--model", self.cfg["model"]]
-        for pat in self.cfg.get("allowed_tools") or []:
-            argv += ["--allowedTools", pat]
-        if self.session_id:
-            argv += ["--resume", self.session_id]
-            # An adopted card still pointing at its SOURCE session must not write
-            # into the desktop's live conversation: fork into a fresh session id
-            # on the first turn. Afterwards the ids differ and this never fires.
-            if self.adopted_source and self.adopted_source == self.session_id:
-                argv += ["--fork-session"]
+        # ONE builder, shared with /harness's spawn preview - see build_argv.
+        argv = build_argv(self.agent, self.cfg, self.brief,
+                          self.session_id, self.adopted_source)
         # SPAWN FORENSICS: audit whether this worker resumes or starts fresh.
         # A card once answered with a fresh mind despite a valid session_id and
         # a CLI-verified resumable transcript ("Voellig falscher Kontext") - and
