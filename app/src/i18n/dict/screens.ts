@@ -71,6 +71,10 @@ export const screens: Dict = {
     en: "From the same builder the real spawn uses — so it cannot drift.",
   },
   "harness.builtBy": { de: "gebaut von {fn}", en: "built by {fn}" },
+  "harness.execRewritten": {
+    de: "Das ist die ECHTE Exec-Form: {from} wird vor dem Start auf die reale claude.exe aufgelöst — der .cmd-Umweg über cmd.exe zerlegt zitierte Argumente (er hat einmal --resume verschluckt).",
+    en: "This is the REAL exec form: {from} is resolved to the actual claude.exe before spawn — routing a .cmd through cmd.exe mangles quoted args (it once ate --resume).",
+  },
   "harness.briefSource": { de: "Brief-Quelle", en: "Brief source" },
   "harness.resolvedHash": {
     de: "aufgelöst: {n} Zeichen · sha256 {h}",
