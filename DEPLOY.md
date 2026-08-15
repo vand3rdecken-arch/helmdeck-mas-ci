@@ -401,6 +401,46 @@ bill 10×, ~200 free minutes/month ≈ 10 Mac builds). After the push: Actions �
 `.dmg`/`.zip` — and that unsigned run is the honest smoke test that closes debt
 item `mac-build-never-executed`.
 
+## 1e) Shipping the website (helmdeck.de) — merging is NOT shipping
+
+`helmdeck.de` is a single Cloudflare Worker (`deploy/waitlist/`, worker name
+`helmdeck-waitlist`). It is the **one shipping surface the card deploy hook does
+not cover** — accepting a card runs the repo's `deploy` hook (OTA / installer),
+and nothing in that path runs `wrangler deploy`. A merged commit changes
+nothing on the live domain until someone runs the deploy by hand.
+
+That gap has already cost a release: card `proc-20260814-s7` merged the full
+landing page on 2026-08-15 (commit `39bf69a`) and the live site kept serving the
+**2026-08-13 waitlist-only build** — the owner saw "nur die Waitlist" while the
+commit log said the page had shipped days ago. The card had verified against
+`wrangler dev`, not against the origin.
+
+```bash
+bash deploy/push_site.sh            # deploy, then re-read the live origin
+bash deploy/push_site.sh --check    # verify only; safe any time, exits 1 if stale
+```
+
+⚠ **Never verify a site deploy from `git log`.** The commit history is not the
+deploy state. Two origin-truth probes, both cheap:
+
+```bash
+curl -s https://helmdeck.de/health                       # {"ok":true,"service":"helmdeck-waitlist"}
+curl -s https://helmdeck.de/ | grep -o '<title>[^<]*</title>'
+cd deploy/waitlist && npx wrangler deployments list | tail -8   # newest deploy timestamp
+```
+
+`push_site.sh` does exactly this after uploading and **exits non-zero if the
+origin still serves the old build**, so a silent no-op deploy can't pass again.
+
+- **Auth**: `wrangler` uses the owner's OAuth token on this box
+  (`npx wrangler whoami`). There is no Cloudflare secret in the repo.
+- **Download links are live-fetched**, so shipping a *new app release* needs no
+  site deploy — the Worker re-reads `releases/latest` (1h KV cache). Only
+  *page* changes need `push_site.sh`.
+- **Recommended**: add `bash deploy/push_site.sh` to the repo `deploy` hook in
+  `settings.json` (`repo_hooks.<repo>.deploy`) so the site can never again be
+  left behind by an accept. Registered as debt `site-deploy-outside-hook`.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):
