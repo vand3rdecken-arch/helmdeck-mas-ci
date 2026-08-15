@@ -1,6 +1,6 @@
 # ADR 0001 — Distribution: Direct-Download DMG **and** Mac App Store
 
-- **Status:** Direct-DMG **shipped**; Mac App Store **blocked on architecture** — see Consequence 2. The owner's "both channels" decision stands as intent, but MAS is not reachable without re-architecting the daemon.
+- **Status:** **Settled 2026-08-15.** Two channels, as the owner wanted — but along the axis the evidence supports, not the one the original memo drew: **Direct-Download DMG for the desktop, Apple's App Store via the iOS app.** The Mac App Store track is **closed**: sandboxing forbids driving the user's toolchain, no comparable tool ships there, and the phone app already covers that channel.
 - **Date:** 2026-08-15
 - **Deciders:** Product owner (HelmDeck card `proc-20260814-s4`)
 - **Supersedes:** the single-channel recommendation (Direct-DMG only) presented in the original trade-off memo
@@ -116,11 +116,15 @@ That last one is the pattern, and it is worth stating plainly: for developer and
 
 ## Open Items
 
-1. ~~Sandbox feasibility audit~~ — **done**, see Consequence 2. Result: MAS is blocked by the daemon spawn, not by the updater.
-2. ~~Tech stack confirmation~~ — **done**: Electron + electron-builder; Direct-DMG already shipping.
-3. **Owner decision required** — given the audit, pick one of the three MAS routes in Consequence 2, or accept Direct-DMG as the only channel. This is the live question; everything below is downstream of it.
-4. **Apple Developer Program account** — only if a MAS route is chosen: confirm App Store distribution capability and an App Store Connect record. (Developer ID is already in use for the DMG.)
-5. **Paid vs. free** — only if a MAS route is chosen; determines whether the licensing abstraction in Consequence 5 is needed at all.
+All closed — this ADR requires no follow-up work.
+
+1. ~~Sandbox feasibility audit~~ — **done**, see Consequence 2. MAS is blocked by the daemon and CLI spawn, not by the updater.
+2. ~~Tech stack confirmation~~ — **done**: Electron + electron-builder; Direct-DMG already shipping signed and notarized.
+3. ~~Owner decision on the MAS route~~ — **decided 2026-08-15**: none of them. Direct-DMG for the desktop, App Store via the iOS app; the Mac App Store track is closed.
+4. ~~Apple Developer Program account~~ — not applicable. Developer ID already serves the DMG; the iOS app already holds the App Store relationship.
+5. ~~Paid vs. free / licensing abstraction~~ — not applicable. Consequence 5 was contingent on a MAS build; with no StoreKit surface on macOS there is nothing to abstract.
+
+**If this is ever reopened**, the thing to re-check first is Consequence 2 — not the updater. The question is only ever whether HelmDeck still needs to spawn binaries the user installed. While it does, the Mac App Store is unreachable, and no amount of bundling changes that.
 
 ## Provenance
 
