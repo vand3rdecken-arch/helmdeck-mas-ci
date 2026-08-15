@@ -2544,15 +2544,61 @@ def _maybe_fast_track_ship(t, log):
                        % (kind, (msg or "")[:300]))
                 return
             hk = _repo_hook(t, "deploy")   # None = no hook configured
+            # PERSIST the hook outcome - _repo_hook ran on THIS thread's local
+            # `t` copy (a subprocess call, kept outside the mutation lock), the
+            # same reason move_lane's _land() persists it post-hook. Without
+            # this the field only ever lived in this thread's dict and never
+            # reached the DB, so _pending_context's next-steer surfacing of
+            # deploy_hook (added for exactly this failure mode) was silently a
+            # no-op for every fast-track ship - the worker still never saw it.
+            _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
+            if _hooks:
+                _mutate(tid, lambda tt: tt.update(_hooks))
             lg.log("note", "FAST-TRACK deployed (%s)%s - teste auf dem Handy; die Karte "
                    "bleibt in Arbeit, steuern geht einfach weiter."
                    % (kind, " · ACHTUNG: Deploy-Hook rot" if hk is False else ""))
+            if hk is False:
+                _try_auto_fix_deploy(t, lg)
+            elif hk is True:
+                _mutate(tid, lambda tt: tt.pop("deploy_fail_streak", None))
         except Exception as e:
             try:
                 lg.log("note", "FAST-TRACK fehlgeschlagen: %s" % str(e)[:250])
             except Exception:
                 pass
     _threading.Thread(target=_ship, daemon=True).start()
+
+
+_DEPLOY_FIX_CAP = 3   # matches turnopts.ESCALATE_TURNS - the gate thrash-guard's cap
+
+
+def _try_auto_fix_deploy(t, lg):
+    """A fast-track deploy hook failure (in practice: a native build broke,
+    like a Gradle task blowing up) already landed on main by the time we see
+    it - the merge already happened, only the build/distribute step failed.
+    Left alone, that just sits as a red note until the owner happens to
+    notice - unattended is the whole point of fast-track, so make the repair
+    unattended too: feed the worker the actual error and let it try to fix it,
+    same as it already would for a red gate. Bounded (never more than
+    _DEPLOY_FIX_CAP attempts in a row) so a genuinely, persistently broken
+    build doesn't burn turns forever without the owner ever finding out -
+    mirrors the existing gate thrash-guard in _pending_context."""
+    tid = t["id"]
+    streak = (t.get("deploy_fail_streak") or 0) + 1
+    _mutate(tid, lambda tt: tt.__setitem__("deploy_fail_streak", streak))
+    if streak > _DEPLOY_FIX_CAP:
+        lg.log("note", "FAST-TRACK: Deploy-Hook %dx in Folge rot - kein automatischer "
+               "Reparaturversuch mehr, wartet auf dich." % (streak - 1))
+        return
+    tail = ((t.get("deploy_hook") or {}).get("tail") or "")[:1200]
+    instr = ("FAST-TRACK deploy hook FAILED after your last change was already merged "
+             "to main (repair attempt %d/%d - stops auto-retrying past this). This "
+             "usually means a native build broke. Actual error:\n\n%s\n\nInvestigate and "
+             "fix it. Your next turn's fast-track ship retries the deploy automatically "
+             "once you've committed a fix." % (streak, _DEPLOY_FIX_CAP, tail))
+    lg.log("note", "FAST-TRACK: Deploy-Hook rot - Worker bekommt den Fehler automatisch "
+           "zur Reparatur (Versuch %d/%d)." % (streak, _DEPLOY_FIX_CAP))
+    steer(tid, instr, actor="fast-track", source="fast-track-deploy-fix")
 
 
 def answer_question(tid, answers, request_id="", actor="owner"):
