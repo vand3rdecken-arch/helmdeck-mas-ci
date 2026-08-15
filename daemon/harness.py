@@ -768,6 +768,20 @@ def preview(surface_key, cfg=None):
             out["note"] = ("--model erscheint nur, wenn die Karte ein Modell gewaehlt hat; "
                            "--resume nur ab dem zweiten Turn.")
         out["argv"] = [str(a) for a in argv]
+        # THE EXEC FORM, not just the logical argv. drivers._cmd_line rewrites
+        # argv[0] before spawning: a `claude.cmd` shim is replaced by the real
+        # bin\claude.exe (or node + cli.js), because routing a .cmd through
+        # cmd.exe mangles quoted arguments - that is what once ATE --resume and
+        # made every worker start with a fresh mind. A preview that showed only
+        # the pre-rewrite form would hide the single most consequential thing
+        # about how this process actually starts.
+        import drivers as _d
+        exec_argv = _d._cmd_line(list(argv))
+        out["exec_form"] = ("argv-list" if _d.argv_form_safe(argv[0])
+                            else "cmd.exe-string (Argumente koennen verstuemmelt werden)")
+        out["exec"] = ([str(a) for a in exec_argv] if isinstance(exec_argv, list)
+                       else [str(exec_argv)])
+        out["exec_rewritten"] = bool(out["exec"] and out["exec"][0] != out["argv"][0])
     except Exception as e:                                   # noqa: BLE001
         out["argv"] = []
         out["argv_error"] = "%s: %s" % (type(e).__name__, str(e)[:200])

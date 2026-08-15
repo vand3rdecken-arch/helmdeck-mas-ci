@@ -119,7 +119,17 @@ function SpawnPreview({ p, t, tr }: {
 
       {p.argv_error ? (
         <Text style={{ color: t.danger, fontSize: 12 }}>{p.argv_error}</Text>
-      ) : <Argv argv={p.argv} t={t} />}
+      ) : <Argv argv={p.exec ?? p.argv} t={t} />}
+      {/* the .cmd -> .exe rewrite is the single most consequential detail of how
+          this process starts (the cmd.exe form once ate --resume), so say it */}
+      {p.exec_rewritten ? (
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
+          <Ionicons name="git-compare-outline" size={12} color={t.txtTertiary} style={{ marginTop: 2 }} />
+          <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 16, flex: 1 }}>
+            {tr("harness.execRewritten", { from: p.argv[0] })}
+          </Text>
+        </View>
+      ) : null}
       {p.note ? (
         <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 16 }}>{p.note}</Text>
       ) : null}

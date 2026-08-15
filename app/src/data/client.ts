@@ -254,7 +254,13 @@ export interface HarnessHook {
 }
 export interface HarnessPreview {
   key: string; agent: string; label: string; builder: string; cwd: string;
-  argv: string[]; argv_error?: string; note?: string;
+  /** the logical argv the builder produced */
+  argv: string[];
+  /** what is REALLY exec'd: drivers._cmd_line rewrites a claude.cmd shim to the
+   *  real bin/claude.exe, because routing a .cmd through cmd.exe mangles quoted
+   *  args — the bug that once ate --resume. */
+  exec?: string[]; exec_rewritten?: boolean; exec_form?: string;
+  argv_error?: string; note?: string;
   brief: {
     source: string; exists: boolean; file_sha256: string;
     resolved_sha256: string; resolved_chars: number; ask_protocol: boolean;
