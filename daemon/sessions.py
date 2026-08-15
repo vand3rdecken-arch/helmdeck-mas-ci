@@ -1003,11 +1003,25 @@ def _ensure_worktree(t):
     holds the commits) - so a missing directory must never be a hard error:
     dispatch uses this, and steer SELF-HEALS through it instead of dying with
     WinError 267 (spawn cwd invalid) when the tree is gone (reclaimed, cleaned
-    by hand, or never created because a bad branch name broke dispatch)."""
+    by hand, or never created because a bad branch name broke dispatch).
+
+    A path existing is NOT proof it is a working worktree: `git worktree add`
+    can be interrupted after it creates the directory but before it finishes
+    (or something else mkdir'd the slot first), leaving a plain folder that was
+    never `git init`'d into a worktree. Dispatching an agent into that folder
+    lets every git command inside the turn fail with 'not a git repository' -
+    the failure surfaces deep in the turn, not here, so it looked unrelated
+    until traced back. _git_state_broken is the same check reclaim already
+    trusts to judge a worktree's git link; reuse it here so a broken/never-init
+    slot gets rebuilt before dispatch instead of handed out as-is."""
     wt = _worktree_for(t["repo"], t["branch"])
     existing = _worktree_of_branch(t["repo"], t["branch"])
     if existing and os.path.isdir(existing):
         return existing                     # reuse a prior checkout (e.g. legacy dir)
+    if os.path.exists(wt) and _owned_worktree(wt) and _git_state_broken(wt):
+        _git_try(t["repo"], "worktree", "remove", "--force", wt)
+        if os.path.isdir(wt):
+            shutil.rmtree(wt, ignore_errors=True)
     if not os.path.exists(wt):
         _git_try(t["repo"], "worktree", "prune")   # drop a stale registration of this path
         if _branch_exists(t["repo"], t["branch"]):
