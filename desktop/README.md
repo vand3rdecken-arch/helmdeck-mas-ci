@@ -83,6 +83,17 @@ sign, and additionally `ASC_API_KEY_PATH`/`ASC_KEY_ID`/`ASC_ISSUER_ID`/
 `APPLE_TEAM_ID` (the same App Store Connect key the iOS pipeline uses) to
 notarize. Full table + the traps: `DEPLOY.md` §1c.
 
+A build sitting in `desktop/release/` or a CI artifact zip isn't reachable by
+any installed app yet - `native-updater.js` only reads GitHub **release**
+assets. Publish it with the macOS twin of `release_desktop.sh`:
+
+```
+bash deploy/release_desktop_mac.sh --dir desktop/release --latest
+```
+
+Uploads the dmgs, zips, `latest-mac.yml` and blockmaps to the release and
+refreshes `SHA256SUMS.txt`. Details + the first real publish: `DEPLOY.md` §1c.
+
 ## Auto-update (Paseo mechanism)
 
 The packaged app follows the relay's `desktop` OTA channel silently - Paseo's

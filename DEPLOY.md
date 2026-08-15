@@ -248,6 +248,37 @@ Traps already paid for here:
   Without it electron-builder hunts an empty keychain and *fails* the build
   instead of producing a clean unsigned one.
 
+### ✅ PUBLISHED 2026-08-15 — the OTA channel is connected
+
+A signed, notarized build sitting in `desktop-mac.yml`'s workflow-artifact
+storage is not reachable by any installed app — `native-updater.js`
+(electron-updater's `GithubProvider`) only ever reads **release assets**, and
+CI's own artifact zip expires in 14 days. `deploy/release_desktop_mac.sh` is
+the macOS twin of `release_desktop.sh`: it never builds (there is no macOS on
+this box), it publishes a set that either `desktop/build-mac.sh` on real
+macOS or `gh run download <run> -n helmdeck-macos -D DIR` already produced —
+uploading the dmgs, the zips (**Squirrel.Mac's actual update payload**),
+`latest-mac.yml` (the feed `native-updater.js` polls), and the blockmaps to
+the release, refreshing `SHA256SUMS.txt` in place with the same discipline
+the Windows script uses.
+
+```bash
+gh run download 31877006863 --repo Tienduyvo/helmdeck -n helmdeck-macos -D /tmp/mac-artifacts
+bash deploy/release_desktop_mac.sh --dir /tmp/mac-artifacts --latest
+```
+
+Run against the notarized `31877006863` build: `v1.0.7` on
+`github.com/Tienduyvo/helmdeck` now carries
+`HelmDeck-0.2.0-{arm64,x64}.{dmg,zip}` + blockmaps + `latest-mac.yml`,
+verified byte-identical to CI's copy after upload (not just a successful exit
+code) and cross-checked against the refreshed `SHA256SUMS.txt`. That is the
+whole channel: a new Mac user downloads the `.dmg`; an installed 0.2.0+ Mac
+app finds `latest-mac.yml` on the same release electron-updater already
+checks for Windows and applies the matching zip silently on quit — no code
+change was needed in `native-updater.js`, since electron-updater's
+`GithubProvider` was always platform-generic, only the mac artifacts were
+missing from the release.
+
 ## 1d) Publishing the source — what the macOS runner needs
 
 CI can only build what it can check out, and until 2026-08-14 the local clone
