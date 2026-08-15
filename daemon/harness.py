@@ -710,6 +710,15 @@ def _hook_rows(path, layer, included):
     return rows
 
 
+def _disables_hooks(path):
+    """True when a settings file sets disableAllHooks. Never raises."""
+    try:
+        raw = _read_text(path)
+        return bool(raw) and json.loads(raw).get("disableAllHooks") is True
+    except Exception:                                        # noqa: BLE001
+        return False
+
+
 BRIEF_ARG_MARKER = "<brief>"
 
 
@@ -787,12 +796,24 @@ def preview(surface_key, cfg=None):
         out["argv_error"] = "%s: %s" % (type(e).__name__, str(e)[:200])
     # -- the hook matrix ---------------------------------------------------
     rows = []
+    disabled_by = []
     for lay in out["layers"]:
         rows += _hook_rows(lay["abs"], lay["layer"], lay["included"])
+        if lay["included"] and _disables_hooks(lay["abs"]):
+            disabled_by.append(lay["path"])
     if sf:
         rows += _hook_rows(sf, "explicit", True)
+        if _disables_hooks(sf):
+            disabled_by.append(_rel(sf))
     out["hooks"] = rows
     out["hooks_active"] = sum(1 for r in rows if r.get("included"))
+    # `disableAllHooks` is in the settings schema, so the owner can set it in the
+    # editor - and then this matrix would list hooks that never fire. We do NOT
+    # model its precedence: nothing here has been probed against the real CLI,
+    # and this file's whole job is to stop being confidently wrong. So say the
+    # flag is set and that the list below is therefore unreliable, rather than
+    # guessing which rows it kills.
+    out["hooks_disabled_by"] = disabled_by
     return out
 
 

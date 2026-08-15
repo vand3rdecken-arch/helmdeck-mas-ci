@@ -268,6 +268,9 @@ export interface HarnessPreview {
   settings_layer: { path: string; active: boolean; declared: string; note: string };
   layers: HarnessLayer[];
   hooks: HarnessHook[]; hooks_active: number;
+  /** settings files setting disableAllHooks — the matrix cannot be trusted
+   *  while non-empty, and we deliberately do not guess which rows it kills. */
+  hooks_disabled_by?: string[];
   errors: Record<string, string>;
 }
 export interface HarnessDocument {

@@ -87,6 +87,10 @@ export const screens: Dict = {
   "harness.layers": { de: "Settings-Ebenen", en: "Settings layers" },
   "harness.hookMatrix": { de: "Hooks: {on} aktiv, {off} ausgeschlossen", en: "Hooks: {on} active, {off} excluded" },
   "harness.noHooks": { de: "keine Hooks", en: "no hooks" },
+  "harness.hooksDisabled": {
+    de: "disableAllHooks ist gesetzt ({files}) — welche der folgenden Hooks dadurch wirklich ausfallen, ist hier NICHT modelliert (nicht gegen die echte CLI geprüft). Diese Liste ist dann unzuverlässig.",
+    en: "disableAllHooks is set ({files}) — which of the hooks below that actually kills is NOT modelled here (never probed against the real CLI). Treat this list as unreliable.",
+  },
   "harness.save": { de: "Speichern", en: "Save" },
   "harness.saved": { de: "Gespeichert: {p}", en: "Saved: {p}" },
   "harness.unsaved": { de: "ungespeichert", en: "unsaved" },
