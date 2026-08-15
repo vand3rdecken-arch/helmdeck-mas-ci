@@ -171,6 +171,31 @@ private key, and its modulus matches the signed cert's. Signing is no longer
 the blocker — §1d (source push) is: the release repo still has no
 `.github/workflows`, so no runner can check the build out.
 
+**NOTARIZATION SECRETS LIVE 2026-08-15** — all six repo secrets are now set on
+`Tienduyvo/helmdeck`, so the workflow's signed **and notarized** path is armed:
+`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (from the cert above) plus
+`ASC_API_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID`. The `.p8` was
+piped straight into `gh secret set` from `C:/hd/secrets/` — never read, never
+echoed, never copied into the repo. Verified rather than assumed, twice:
+- the key **authenticates against Apple right now**:
+  `ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_API_KEY_PATH=… py -3.12
+  deploy/mac_credentials.py --check` mints a JWT and gets a 200. A wrong key id
+  or issuer 401s *here*, which is 20 minutes and a whole Mac build cheaper than
+  finding out during notarization. It reports *"no existing Developer ID
+  Application certificate"* — that is the **same API-key wall** that 403s cert
+  creation, **not** a missing cert; Apple does not list Developer ID certs to
+  API keys at all. Do not "fix" that by minting a second cert.
+- the certificate itself is real, read locally with openssl:
+  `CN = Developer ID Application: Tien Duy Vo (92WJZQ2WWH)`, issuer *Developer
+  ID Certification Authority G2*, EKU **Code Signing**, valid to 2031-08-16 —
+  and its team `92WJZQ2WWH` matches the `APPLE_TEAM_ID` secret, which is the
+  pairing `-c.mac.notarize.teamId` actually depends on.
+
+So nothing in the signing/notarization *wiring* is outstanding: hardened
+runtime, both entitlements files, the notarize-object override and the
+workflow's `codesign --verify` + `spctl --assess` gate were all already in
+place and re-read line by line on 2026-08-15. §1d is the only thing left.
+
 `--check` lists any Developer ID Application certs the account already holds
 — re-submitting a CSR against an account that already has one just burns
 another slot of Apple's quota, so check before minting. `--create`/`--finish`
@@ -207,8 +232,49 @@ next to the builds. Not a second source repo.
 
 ```bash
 bash deploy/publish_source.sh --dry-run     # audit only, pushes nothing
-bash deploy/publish_source.sh               # audit, then push main
+bash deploy/publish_source.sh               # audit, then push the trunk -> remote main
 ```
+
+⚠ **Two traps found on 2026-08-15, both now handled by the script — read this
+before running it, because one of them is irreversible.**
+
+**a) The local trunk is not called `main`.** `main` is a stale 2026-08-12
+branch (`2aaa4d4`, "mobile: glass on BOTH bars") that contains **no `.github/`
+at all**. The branch actually carrying the source *and* `desktop-mac.yml` is
+**`expo-migration`** — that is what the main working copy has checked out and
+what accept-commits land on. The script's old default would therefore have
+published a tree the macOS runner cannot build, which is the one job it has.
+Source and target are now separate knobs, defaulting to the right pair:
+```bash
+HELMDECK_PUBLISH_BRANCH=expo-migration   # what gets audited + pushed
+HELMDECK_PUBLISH_TARGET=main             # where it LANDS on the remote
+```
+The target must stay the remote's **default branch**: GitHub only offers
+*Run workflow* (`workflow_dispatch`) for workflows present on the default
+branch, and `desktop-mac.yml`'s own `push: branches: [main]` trigger never
+fires from a branch by another name.
+
+**b) A green audit is not a safe audit — `.attachments/`.** The old checks ask
+"is this a credential", so a **photo** answers *no* and sails through. Five
+files in `.attachments/` are chat uploads: the owner's **phone screenshots of
+his own board**, showing unreleased card titles, due dates and distribution
+decisions. A push publishes *history*, so those would have been public forever
+— and, as the script says about every blob, deleting them in a later commit
+does **not** unpublish them. That they are user data and not source was already
+settled twice in this repo (`daemon/recordings/` + `daemon/checkpoints/` are
+git-ignored; `electron-builder.yml` refuses to ship `.attachments/**`); only
+git never got the memo. There is now a privacy check that **fails closed**:
+```bash
+git show expo-migration:.attachments/0_1000029273.jpg > /tmp/x.jpg   # LOOK first
+HELMDECK_PUBLISH_ALLOW_PRIVATE=1 bash deploy/publish_source.sh       # publish anyway
+```
+The alternative is to purge them from the pushed lineage — `git_filter_repo`
+**is** installed on this box, and all five were added in recent tip commits
+(the `20260815-001825-chat-ui-fix-prozess-ansicht` finalizes), so the rewrite is
+shallow. Doing that on `expo-migration` itself rewrites the trunk that ~20 live
+card branches and worktrees descend from; doing it on a throwaway publish branch
+leaves the local trunk untouched at the cost of the public repo's SHAs
+permanently differing from local.
 
 It is an audit that ends in a push, re-run in full every time — `.gitignore`
 only ever protected the *present*, and a push publishes *history*. Audit as of
