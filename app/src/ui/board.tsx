@@ -514,11 +514,6 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
   const sheet = useActionSheet();
-  // Timeline: also show the PLANNED roadmap - a process's steps that aren't cards
-  // yet (proposed, not accepted). They render as dated ghost rows so the epic's
-  // schedule is visible before you accept each step.
-  const { data: procs } = useQuery({ queryKey: ["processes"], queryFn: api.processes,
-    staleTime: 30000, enabled: layout === "timeline" });
 
   // Needs tab passes filter="needs_you" (flat list). The Board tab (no prop)
   // takes its filter from the sidebar store: all / archived / client:<name>.
@@ -546,20 +541,6 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
     return !k.archived; // "all"
   });
-  // Ghost roadmap rows for the Timeline: each process step not yet accepted into a
-  // card, dated from its step.due. Marked _planned so the Gantt renders them faint.
-  const plannedRows: Track[] = layout === "timeline" && Array.isArray(procs)
-    ? procs.flatMap((p: { id: string; request?: string; steps?: { title?: string; due?: string; track?: string | null }[] }) =>
-        (p.steps ?? [])
-          .filter((s) => !s.track && s.due)
-          .map((s, i) => ({
-            id: `plan-${p.id}-${i}`, task: s.title ?? "", branch: tr("gantt.planned"),
-            process: p.id, process_title: (p.request ?? "").slice(0, 60),
-            due: s.due, created: new Date().toISOString(), updated: new Date().toISOString(),
-            lane: "backlog", status: "planned", _planned: true,
-          } as unknown as Track)))
-    : [];
-
   function onMove(k: Track) {
     sheet.show({
       title: k.task,
@@ -602,7 +583,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       ) : layout === "timeline" ? (
         // Timeline = the old web's day-scaled bar view (created→last activity,
         // today line, due diamonds). No separate "Gantt" tab anymore.
-        <GanttView tracks={[...shown, ...plannedRows]} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
+        <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: four column plates side by side, drag to move/reorder
         <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert(tr("ui.error"), m)} onInfo={showToast} onMove={onMove} />
