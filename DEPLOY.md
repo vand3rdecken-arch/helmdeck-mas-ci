@@ -122,6 +122,32 @@ Output in `desktop/release/`: `HelmDeck-<v>-{arm64,x64}.dmg` for humans,
 `native-updater.js` drives via electron-updater) can only apply a zipped `.app`,
 it cannot read a `.dmg` — plus `latest-mac.yml`, the feed pointing at the zip.
 
+### ✅ EXECUTED 2026-08-15 — signed, notarized, Gatekeeper-accepted
+
+Run [`31877006863`](https://github.com/Tienduyvo/helmdeck/actions/runs/31877006863)
+on `macos-14`, **32m10s, every step green**. This is the first Mac build that
+has ever run, and it closed debt `mac-build-never-executed`. What the log
+proves, quoted rather than paraphrased:
+
+| stage | evidence |
+| --- | --- |
+| decision | `==> signing: Developer ID identity supplied` → `==> notarization: ON` |
+| Apple | `• notarization successful` — **twice**, once per arch |
+| signature | `codesign --verify --deep --strict` → *valid on disk* + *satisfies its Designated Requirement* |
+| **Gatekeeper** | `spctl --assess --type execute` → **`accepted`**, `source=Notarized Developer ID` |
+| artifacts | `HelmDeck-0.2.0-{arm64,x64}.{dmg,zip}` + blockmaps + `latest-mac.yml`; `hdiutil imageinfo` passed on both dmgs |
+
+So the entitlement set really is the right one — that was the one thing only a
+notarized run on real hardware could establish. Budget note: ~32 min of macOS
+runner time per build, free because the repo is public.
+
+⚠ **Benign warning, do NOT "fix" it.** electron-builder prints *"Please specify
+notarization Team ID in the `APPLE_TEAM_ID` env var instead of
+`notarize.teamId`"*. Ignore it. The `-c.mac.notarize.teamId` override is what
+**turns notarization on at all** (the committed config deliberately keeps
+`notarize: false` so a secret-less build still succeeds); the warning is only
+about where the team id is read from, and notarization demonstrably worked.
+
 **The build succeeds with no secrets at all** — it just produces an *unsigned*
 app: Gatekeeper quarantines it and the auto-updater cannot apply updates to it
 (Squirrel.Mac requires a valid signature). Add the repo secrets and the same

@@ -559,7 +559,7 @@ DEBT = [
     {
         "id": "mac-build-never-executed",
         "title": "The macOS build target is configured but has never actually run",
-        "status": "open",
+        "status": "paid",
         "what": "desktop/electron-builder.yml now carries a full mac target "
                 "(dmg + zip, arm64 + x64, hardened runtime, entitlements, gated "
                 "notarization), desktop/build-mac.sh drives it and "
@@ -591,7 +591,29 @@ DEBT = [
                         "visible until someone runs it.",
         "trigger": "the first `bash deploy/publish_source.sh`, or the first "
                    "`bash desktop/build-mac.sh` on any Mac",
-        "fix": "1) bash deploy/publish_source.sh (audit + push over SSH - the "
+        "fix": "PAID 2026-08-15 - run 31877006863 on macos-14, 32m10s, ALL "
+               "STEPS GREEN. Every question this item said only a real run "
+               "could answer is now answered by that run's log: expo export "
+               "survived a cold runner; hdiutil produced BOTH dmgs (imageinfo "
+               "passed on each); the tracked PNG converted to .icns with no "
+               "Pillow/iconutil; and the entitlement set IS the right one - "
+               "build-mac.sh reported 'signing: Developer ID identity "
+               "supplied' then 'notarization: ON', electron-builder logged "
+               "'notarization successful' TWICE (once per arch), and the "
+               "verify step closed it out: `codesign --verify --deep --strict` "
+               "-> 'valid on disk' + 'satisfies its Designated Requirement', "
+               "`spctl --assess --type execute` -> 'accepted' with "
+               "'source=Notarized Developer ID'. Gatekeeper accepts the "
+               "artifact. Full set produced: HelmDeck-0.2.0-{arm64,x64}.{dmg,"
+               "zip} + blockmaps + latest-mac.yml (the Squirrel.Mac feed). "
+               "Benign log noise NOT to 'fix': electron-builder prints "
+               "'Please specify notarization Team ID in the APPLE_TEAM_ID env "
+               "var instead of notarize.teamId'. The -c.mac.notarize.teamId "
+               "override is still what TURNS NOTARIZATION ON (the committed "
+               "config keeps notarize:false so an unsigned build can succeed); "
+               "the warning is only about where the team id is read from, and "
+               "notarization demonstrably worked. Getting there first needed: "
+               "1) bash deploy/publish_source.sh (audit + push over SSH - the "
                "gh token has no `workflow` scope, so HTTPS is rejected). "
                "2) The push to the remote DEFAULT branch auto-triggers the "
                "workflow (push: branches: [main]); otherwise Actions -> "
