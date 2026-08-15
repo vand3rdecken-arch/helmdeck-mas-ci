@@ -274,41 +274,12 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
   );
 }
 
-function LRow({ k, onOpen, onMove }: { k: Track; onOpen: () => void; onMove: () => void }) {
-  const t = useTheme();
-  const tr = useT();
-  const flat = useAiFlat();
-  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
-  const planPct = metrics?.cards?.find((c) => c.id === k.id)?.plan_pct;
-  return (
-    <Pressable onPress={onOpen} onLongPress={onMove} style={[s.row, { paddingVertical: 7, gap: 8 }]}>
-      <Dot color={statusColor(t, k.status)} />
-      <Text style={{ color: t.txtTertiary, fontSize: 10.5, width: 96 }} numberOfLines={1}>{k.branch || tr("board.noGit")}</Text>
-      <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{k.task}</Text>
-      {k.status ? <Text style={{ color: statusColor(t, k.status), fontSize: 10.5 }}>{statusLabel(tr, k.status)}</Text> : null}
-      {k.priority && k.priority !== "medium" ? <Text style={{ color: k.priority === "urgent" ? t.danger : t.warn, fontSize: 10.5 }}>{prioLabel(tr, k.priority)}</Text> : null}
-      {k.due ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.due}</Text> : null}
-      {k.value > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>€{k.value}</Text> : null}
-      {k.ai_cost > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{flat
-        ? (planPct != null && planPct > 0 ? fmtPlanPct(planPct)
-           : tr("board.tokShort", { tok: fmtTok((k.tokens_in ?? 0) + (k.tokens_out ?? 0)) }))
-        : `$${k.ai_cost.toFixed(2)}`}</Text> : null}
-      {k.updated ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{k.updated}</Text> : null}
-      {/* tap-reachable menu (long-press is unreachable with a mouse) */}
-      <Pressable onPress={onMove} hitSlop={8} accessibilityRole="button"
-        accessibilityLabel={tr("board.card.menu")} style={{ padding: 4 }}>
-        <Ionicons name="ellipsis-horizontal" size={15} color={t.txtTertiary} />
-      </Pressable>
-    </Pressable>
-  );
-}
-
 function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) => void }) {
   const t = useTheme();
   const tr = useT();
   return (
     <View style={{ flexDirection: "row", gap: 6 }}>
-      {["board", "list", "timeline"].map((key) => {
+      {["board", "timeline"].map((key) => {
         const on = layout === key;
         return (
           <Pressable key={key} onPress={() => onSet(key)}
@@ -638,7 +609,6 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
-          if (layout === "list" && inLane.length === 0) return null;   // list hides empty lanes
           return (
             <View key={lane} style={{ gap: 8 }}>
               <View style={[s.row, { marginTop: 8 }]}>
@@ -647,9 +617,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
                 <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{inLane.length}</Text>
               </View>
               {inLane.length === 0 ? <Empty text={tr("ui.empty")} /> :
-                inLane.map((k) => layout === "list"
-                  ? <LRow key={k.id} k={k} onOpen={() => router.push(`/card/${k.id}`)} onMove={() => onMove(k)} />
-                  : <Card key={k.id} k={k} onMove={onMove} />)}
+                inLane.map((k) => <Card key={k.id} k={k} onMove={onMove} />)}
             </View>
           );
         })
