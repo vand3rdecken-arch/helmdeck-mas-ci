@@ -1,10 +1,17 @@
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as ScreenOrientation from "expo-screen-orientation";
 
 import type { Track } from "@/data/types";
 import { t as tt, useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import { Empty } from "./kit";
+
+// Rotating the DEVICE (not a list-layout toggle) is native-only: the web
+// Screen Orientation API only affects the browser viewport, not a desktop
+// monitor, so the control is meaningless there and hidden.
+const canRotate = Platform.OS !== "web";
 
 type Theme = ReturnType<typeof useTheme>;
 type Tr = ReturnType<typeof useT>;
@@ -120,7 +127,22 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
   // removed feature, so a "what happened to my done cards" run is one tap.
   const [hideDone, setHideDone] = React.useState(true);
   const [vertical, setVertical] = React.useState(false);
+  const [landscape, setLandscape] = React.useState(false);
   const now = Date.now();
+
+  const toggleRotate = React.useCallback(() => {
+    const next = !landscape;
+    setLandscape(next);
+    ScreenOrientation.lockAsync(next
+      ? ScreenOrientation.OrientationLock.LANDSCAPE
+      : ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, [landscape]);
+  // Leaving the Timeline hands the device back to portrait unconditionally -
+  // the rest of the app isn't laid out for landscape.
+  React.useEffect(() => {
+    if (!canRotate) return;
+    return () => { ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); };
+  }, []);
 
   const rows: Row[] = (hideDone ? tracks.filter((k) => k.lane !== "done") : tracks)
     .map((k) => ({
@@ -129,7 +151,6 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
       b: (k.lane === "done" ? parseTs(k.updated) : now) ?? now,
       due: k.due ? parseTs(k.due + " 23:59:59") : null,
     }));
-  if (rows.length === 0) return <Empty text={tr(hideDone ? "gantt.emptyHideDone" : "gantt.empty")} />;
 
   // group by process (like the web Gantt) so chained cards read together
   const sorted = [...rows].sort((p, q) => {
@@ -145,8 +166,28 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
       )) : null}
       <Pill on={vertical} label={tr("gantt.vertical")} onPress={() => setVertical((v) => !v)} t={t} />
       <Pill on={hideDone} label={tr("gantt.hideDone")} onPress={() => setHideDone((v) => !v)} t={t} />
+      {canRotate ? (
+        <Pressable onPress={toggleRotate}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4,
+            backgroundColor: landscape ? t.accent + "29" : t.surface2, borderColor: landscape ? t.accent + "80" : t.borderSubtle,
+            borderWidth: 1, borderRadius: 6, paddingHorizontal: 11, paddingVertical: 4 }}>
+          <Ionicons name={landscape ? "phone-portrait-outline" : "phone-landscape-outline"} size={13} color={landscape ? t.accent : t.txtSecondary} />
+          <Text style={{ color: landscape ? t.accent : t.txtSecondary, fontSize: 11.5, fontWeight: "500" }}>{tr("gantt.rotate")}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
+
+  // Empty state still needs the controls row - otherwise hideDone defaulting
+  // to true and a board with only finished cards leaves no way back to see them.
+  if (rows.length === 0) {
+    return (
+      <View style={{ gap: 8 }}>
+        {controls}
+        <Empty text={tr(hideDone ? "gantt.emptyHideDone" : "gantt.empty")} />
+      </View>
+    );
+  }
 
   if (vertical) {
     return (
