@@ -1,6 +1,6 @@
 # ADR 0001 — Distribution: Direct-Download DMG **and** Mac App Store
 
-- **Status:** Accepted
+- **Status:** Direct-DMG **shipped**; Mac App Store **blocked on architecture** — see Consequence 2. The owner's "both channels" decision stands as intent, but MAS is not reachable without re-architecting the daemon.
 - **Date:** 2026-08-15
 - **Deciders:** Product owner (HelmDeck card `proc-20260814-s4`)
 - **Supersedes:** the single-channel recommendation (Direct-DMG only) presented in the original trade-off memo
@@ -37,23 +37,37 @@ This is a well-trodden pattern for macOS apps, not an exotic one. The cost is a 
 
 ### 1. Build separation must be compile-time, not runtime
 
-The updater must be **absent from the MAS binary**, not feature-flagged off at runtime. A runtime toggle still leaves the self-update code in the bundle and is a review-rejection risk.
+The stack is **Electron + electron-builder** (confirmed: `desktop/electron-builder.yml`, `desktop/native-updater.js` wrapping `electron-updater`, `@electron/notarize` and `dmg-builder` in the lockfile).
 
-- Native (Swift/Obj-C): separate target/scheme + `SWIFT_ACTIVE_COMPILATION_CONDITIONS = MAS_BUILD`, updater sources excluded from the MAS target's *Compile Sources*.
-- Electron: `electron-builder` already models this — a `mac` target (`dmg`/`zip`) and a `mas` target. Strip `electron-updater` from the MAS build via build-time define + per-target `files`/`asar` config.
+The **Direct-DMG channel already exists and ships** — `electron-builder.yml` on the integration branch carries a `mac:` section with `dmg` + `zip` targets, `hardenedRuntime: true`, a custom entitlements pair, and notarization wired up. Nothing in this ADR asks for that to change; the DMG side is done.
 
-Everything channel-specific should funnel through one thin abstraction (e.g. `UpdateChannel`, `LicensingProvider`) so the rest of the app stays channel-agnostic.
+For a MAS target, the updater must be **absent from the built bundle**, not feature-flagged off at runtime — a runtime toggle still leaves the self-update code in the bundle and is a review-rejection risk. `electron-builder` models this natively with a `mas` target alongside `mac`, and `electron-updater` would be dropped from it via per-target `files`/`asar` config plus a build-time define.
 
-### 2. A sandbox audit is the real cost driver — and is not yet done
+That part is straightforward. It is also, per Consequence 2, not the binding constraint — so it should not be built until the daemon question is settled.
 
-Whether "both" is cheap or expensive depends entirely on which features the sandbox blocks. **This audit has not been performed** (see Open Items). Known hazards, in rough order of how often they sink a MAS build:
+### 2. The sandbox audit is DONE, and it blocks MAS
 
-- **Accessibility API** (`AXIsProcessTrusted`, sending synthetic events, reading other apps' UI) — effectively incompatible with MAS. This is the single most common reason an app stays direct-only. If the app relies on it, MAS may be off the table for the full feature set and a reduced-feature MAS build becomes the question.
-- **Arbitrary filesystem access** — must move to user-selected paths plus **security-scoped bookmarks** to persist access across launches.
-- **Launching helper processes / daemons** — must become `XPC` services or `SMAppService` login items bundled inside the app; arbitrary `exec` of external binaries is out.
-- **Apple Events / AppleScript to other apps** — needs a `scripting-targets` or `temporary-exception.apple-events` entitlement; temporary exceptions require written justification at review and are frequently refused.
-- **Enumerating running processes / other installed apps** — restricted.
-- **Network** — needs `com.apple.security.network.client` and/or `.server`. Cheap, but must be declared.
+The audit has now been performed against the real `desktop/` Electron app. It does not report a list of costs to weigh — it reports a hard stop.
+
+**HelmDeck's core function is spawning executables the user installed.** `desktop/main.js` resolves a Python interpreter off the user's machine (`py -3.12` on Windows, `python3` on macOS) and `spawn()`s it detached to run `swarm.py serve <port>` — the Python daemon shipped as `extraResources`. It also spawns the `claude` CLI, and will *adopt* a daemon it finds already listening on the port rather than start its own.
+
+**App Sandbox forbids exactly this.** A sandboxed app may not execute arbitrary non-bundled binaries; a bundled interpreter executing arbitrary `.py` source is dynamic code execution, which is what MAS review exists to reject. Worse, the mitigation the app already relies on — `com.apple.security.cs.disable-library-validation`, present in `desktop/build/entitlements.mac.plist` precisely so a hardened process can load code signed by somebody else or not signed at all — **is a Developer ID / hardened-runtime entitlement and is not available to MAS builds.**
+
+The repository already recorded this conclusion before the decision was taken. From the header comment of `desktop/build/entitlements.mac.plist`:
+
+> Kept deliberately narrow: **NO App Sandbox (this is direct distribution, not the Mac App Store)**
+
+So the blocker is not the OTA updater, which was the trade-off the decision was weighed on. The updater is a build-config problem and genuinely solvable. The daemon spawn is an architecture problem: sandboxing removes the app's reason to exist.
+
+**Reaching MAS therefore requires one of:**
+
+1. **Reimplement the daemon in-process** — port `swarm.py` into the Electron main process (JS/TS), so nothing is spawned. Largest change; also strands the Python codebase that the CLI and other surfaces share.
+2. **Ship a bundled, same-team-signed helper** — a compiled binary inside the bundle, no user-installed interpreter, no `claude` CLI spawn. Still forfeits the "drive the tools you already installed" premise.
+3. **A reduced-feature MAS build** — a viewer/companion that talks to a daemon running elsewhere (another machine, or the phone app), spawning nothing locally.
+
+Options 1 and 2 are projects, not build targets. Option 3 is the only one that is a *product* decision rather than a rewrite.
+
+Cheap items, listed only for completeness once the blocker above is resolved: the local HTTP server needs `com.apple.security.network.server`, outbound needs `.client`, and any access outside the container needs user-selected paths plus security-scoped bookmarks.
 
 ### 3. Release process becomes two-track
 
@@ -69,13 +83,16 @@ Same bundle ID across channels lets preferences and license state carry over if 
 
 MAS forces StoreKit and takes 30% (15% under the Small Business Program, for revenue under $1M/year). Direct sales keep your own payment and license-key flow. The licensing layer must therefore be pluggable, with receipt validation on MAS and key validation on direct.
 
-## Open Items (blocking implementation, not this decision)
+## Open Items
 
-1. **Sandbox feasibility audit** — enumerate every capability the app uses against the entitlement list above. This determines whether MAS ships at full parity, reduced parity, or not at all. Must happen before any build-config work.
-2. **Tech stack confirmation** — this worktree contains no source (see Note), so the concrete build-config recipe (Xcode targets vs. `electron-builder` config) cannot be written yet.
-3. **Apple Developer Program account** — confirm the team has both Developer ID and App Store distribution capability, and that App Store Connect has an app record.
-4. **Paid vs. free** — determines whether the licensing abstraction in Consequence 5 is needed at all.
+1. ~~Sandbox feasibility audit~~ — **done**, see Consequence 2. Result: MAS is blocked by the daemon spawn, not by the updater.
+2. ~~Tech stack confirmation~~ — **done**: Electron + electron-builder; Direct-DMG already shipping.
+3. **Owner decision required** — given the audit, pick one of the three MAS routes in Consequence 2, or accept Direct-DMG as the only channel. This is the live question; everything below is downstream of it.
+4. **Apple Developer Program account** — only if a MAS route is chosen: confirm App Store distribution capability and an App Store Connect record. (Developer ID is already in use for the DMG.)
+5. **Paid vs. free** — only if a MAS route is chosen; determines whether the licensing abstraction in Consequence 5 is needed at all.
 
-## Note on this document's location
+## Provenance
 
-This ADR was authored in the HelmDeck worktree for card `proc-20260814-s4`, which contains **no repository and no source code** (`app/` is empty and there is no git repo, so nothing could be committed here). The file needs to be transplanted into the real application repository — conventionally at `docs/adr/` — as part of the follow-up implementation card.
+Authored for HelmDeck card `proc-20260814-s4` and committed on that card's branch. The audit in Consequence 2 was performed against the working tree at `fff99a1`, cross-checked against the `mac:` build config and `entitlements.mac.plist` on the integration branch (`expo-migration`), which are ahead of this branch.
+
+Note for future edits: `.gitignore:48` ignores `docs` wholesale, so a new file here needs `git add -f` or it is silently never committed.
