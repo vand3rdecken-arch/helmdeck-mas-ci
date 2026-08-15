@@ -1841,17 +1841,24 @@ def _classify_merge(t):
                         "Markierungen (editieren)." % (conflicts or _e[:150]))
 
 
-# Raised 1800 -> 2700 (2026-08-15): a real native ship hit the old 30-min cap
-# with the outcome genuinely unknown - the OLD buffered _repo_hook discards
-# all output on a TimeoutExpired, so there was no way to tell "still making
-# progress" from "truly wedged". build_apk.sh now runs `npm ci` (a full clean
-# reinstall, not incremental) before every native build on top of the
-# ~10-15 min gradle assembleRelease PLUS the desktop web export in the same
-# hook invocation - 45 min is real headroom for that chain, not a guess to
-# paper over an actual hang. The NEW streaming _repo_hook (below) means a
-# genuine hang is now visible immediately via HOOK-NOTE lines, so this cap
-# only needs to catch true wedges, not out-build slow-but-healthy runs.
-_HOOK_TIMEOUT = 2700
+def _hook_kill_tree(proc):
+    """Force the hook's whole process tree down. The hook is a SHELL, so
+    terminating it alone orphans the real workers (gradle/java/node keep the
+    build running and holding file locks). taskkill /T walks the tree at kill
+    time, so kill the parent forcefully in ONE call rather than politely first
+    (which would blind /T to the children)."""
+    import subprocess
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=15)
+        else:
+            proc.kill()
+        proc.wait(timeout=10)
+    except Exception:
+        pass
 
 
 def _repo_hook(t, kind):
@@ -1862,70 +1869,89 @@ def _repo_hook(t, kind):
     is the only party holding secrets. Output lands on the card (last_reply
     stays the agent's - hooks log to the actionlog + a hook field).
 
-    STREAMS live: a native APK build takes ~10-15 minutes with the daemon
-    silent the whole time (the old version buffered ALL output and logged
-    only the final tail) - from the chat this looked identical to "stuck",
-    the exact confusion behind a live incident (2026-08-15). Any hook output
-    line starting with `HOOK-NOTE:` is now logged to the actionlog THE
-    MOMENT it's read, so a hook script (ship.sh) can narrate its own
-    progress ("native change -> APK build laeuft (~10-15 Min)") instead of
-    the owner watching a silent chat and assuming it's frozen. The final
-    "HOOK OK/FAILED" summary (last 800 chars) is unchanged.
+    Bounded by SILENCE, not by wall-clock. A fixed 1800s cap killed the deploy
+    hook mid-build: the NATIVE ship path (npm ci -> gradle assembleRelease ->
+    emulator smoke -> scp the APK -> two expo exports -> two more uploads)
+    legitimately runs past 30 minutes, so the ceiling fired on a HEALTHY build
+    and left main merged with nothing shipped. Same defect the turn watchdog
+    already fixed (drivers.run_turn): a build that is still printing is
+    working. The window has to be generous because scp of a ~100MB APK over a
+    pipe prints NOTHING while it uploads - silence, not duration, is what
+    separates wedged from busy. `hook_max_s` is an optional absolute ceiling
+    (0/unset = none) for a hook that dribbles output forever.
 
-    A blocking `for line in proc.stdout` can't enforce a wall-clock cap on
-    its own (it just waits for the next line, however long that takes), so
-    reading happens on a pump thread into a queue.Queue and the main loop
-    polls that queue with a deadline - the same shape as the /compact
-    idle-watchdog fix earlier this session, applied here to command output
-    instead of CLI silence."""
-    import events, subprocess, queue
-    hooks = (events.settings().get("repo_hooks") or {}).get(t.get("repo") or "", {})
+    STREAMS live: any output line prefixed `HOOK-NOTE:` is logged to the
+    actionlog THE MOMENT it's read (ship.sh/build_apk.sh narrate their own
+    long phases through it - "npm ci starting", "gradle running, ~10-15
+    min", "APK built") - without this a healthy 15-20 min build looked from
+    the owner's phone identical to a genuinely stuck card."""
+    import collections, events, subprocess, threading
+    import time as _t
+    st = events.settings()
+    hooks = (st.get("repo_hooks") or {}).get(t.get("repo") or "", {})
     cmd = (hooks or {}).get(kind, "").strip()
     if not cmd:
         return None
+    def _num(key, default):
+        try:
+            return float(st.get(key) or 0) or default
+        except Exception:
+            return default
+    idle = _num("hook_idle_s", 900.0)       # 15 min of TOTAL silence = wedged
+    hard = _num("hook_max_s", 0.0)          # optional absolute cap; default none
     cwd = t.get("worktree") if kind == "preview" else t.get("repo")
     from actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "%s HOOK: %s" % (kind.upper(), cmd))
-    lines, ok = [], False
+    proc, why = None, ""
+    # bounded tail: a chatty gradle build must not accumulate in memory (the old
+    # capture_output buffered the ENTIRE build log just to slice 1500 chars off it)
+    lines = collections.deque(maxlen=400)
+    last = [_t.time()]
     try:
         proc = subprocess.Popen(cmd, cwd=cwd or ".", shell=True,
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 text=True, encoding="utf-8", errors="replace", bufsize=1)
-        q = queue.Queue()
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace", bufsize=1)
 
         def _pump():
             try:
-                for pline in proc.stdout:
-                    q.put(pline)
-            finally:
-                q.put(None)          # EOF sentinel - lets the poll loop below exit promptly
-        _threading.Thread(target=_pump, daemon=True).start()
-        deadline = time.time() + _HOOK_TIMEOUT
-        timed_out = False
+                for line in proc.stdout:
+                    stripped = line.rstrip("\n")
+                    lines.append(stripped)
+                    last[0] = _t.time()      # ANY output = still alive
+                    # live progress narration: a hook script can announce its own
+                    # long phases instead of the owner watching dead silence
+                    if stripped.strip().startswith("HOOK-NOTE:"):
+                        log.log("note", stripped.strip()[len("HOOK-NOTE:"):].strip())
+            except Exception:
+                pass
+        pump = threading.Thread(target=_pump, daemon=True)
+        pump.start()
+        start = _t.time()
+        poll = min(5.0, max(0.5, idle / 4.0))
         while True:
-            remaining = deadline - time.time()
-            if remaining <= 0:
-                timed_out = True
-                break
             try:
-                pline = q.get(timeout=min(remaining, 5))
-            except queue.Empty:
-                continue                # nothing new yet, still under the deadline
-            if pline is None:
-                break                   # process closed stdout - it's finishing up
-            lines.append(pline)
-            stripped = pline.strip()
-            if stripped.startswith("HOOK-NOTE:"):
-                log.log("note", stripped[len("HOOK-NOTE:"):].strip())
-        if timed_out:
-            proc.kill()
-            lines.append("\n[hook timed out after %ss]" % _HOOK_TIMEOUT)
+                proc.wait(timeout=poll)
+                break                        # exited on its own
+            except subprocess.TimeoutExpired:
+                pass
+            now = _t.time()
+            if now - last[0] > idle:
+                why = "no output for %ds" % int(idle)
+                break
+            if hard and now - start > hard:
+                why = "exceeded hard cap %ss" % int(hard)
+                break
+        if why:
+            _hook_kill_tree(proc)
+            lines.append("[hook killed: %s]" % why)
+            ok = False
         else:
-            proc.wait(timeout=30)      # stdout closed already; this just reaps the exit code
-        ok = (not timed_out) and proc.returncode == 0
-        out = "".join(lines).strip()
+            pump.join(timeout=5)
+            ok = proc.returncode == 0
+        out = "\n".join(lines).strip()
     except Exception as e:
+        _hook_kill_tree(proc)               # never leak the tree on an error path
         out, ok = str(e), False
     log.log("note", "%s HOOK %s: %s" % (kind.upper(), "OK" if ok else "FAILED", out[-800:]))
     t[kind + "_hook"] = {"ok": ok, "tail": out[-1500:]}
