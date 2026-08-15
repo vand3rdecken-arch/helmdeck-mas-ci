@@ -72,11 +72,15 @@ function ModeSelect({ value, onChange }: { value?: string; onChange: (m: string)
   );
 }
 
-// One editable step row: title, mode, due, and accept/remove (or a "card" chip
-// once accepted). Every mutation hits POST /processes/{id}/step.
-function StepRow({ pid, idx, step, act }: {
-  pid: string; idx: number; step: Step;
+// Expanded editor for exactly one step at a time (the one tapped open in the
+// Pipeline above): title, mode, due, and accept/remove (or a "card" chip once
+// accepted). Every mutation hits POST /processes/{id}/step. Rendered inline
+// below the timeline instead of as a permanent per-step row, so only the step
+// the user opened shows editable controls.
+function StepEditor({ idx, step, act, onClose }: {
+  idx: number; step: Step;
   act: (idx: number, action: string, patch?: Record<string, unknown>, title?: string) => void;
+  onClose: () => void;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -85,7 +89,7 @@ function StepRow({ pid, idx, step, act }: {
   const [colour, label] = stateStyle(t, step.state);
 
   return (
-    <View style={[s.step, { borderColor: t.borderSubtle }]}>
+    <View style={[s.step, { borderColor: t.accent + "80", backgroundColor: t.accent + "0F" }]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Text style={{ color: t.txtTertiary, width: 18, textAlign: "right", fontSize: 12 }}>{idx + 1}.</Text>
         <TextInput
@@ -101,6 +105,9 @@ function StepRow({ pid, idx, step, act }: {
           <Dot color={colour} />
           <Text style={{ color: colour, fontSize: 10, fontWeight: "600" }}>{label}</Text>
         </View>
+        <Pressable onPress={onClose} hitSlop={8}>
+          <Text style={{ color: t.txtTertiary, fontSize: 16, paddingHorizontal: 2 }}>✕</Text>
+        </Pressable>
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 26, flexWrap: "wrap" }}>
         <ModeSelect value={step.mode} onChange={(m) => act(idx, "update", { mode: m })} />
@@ -135,7 +142,13 @@ function StepRow({ pid, idx, step, act }: {
 
 // One pipeline node: a coloured circle (checkmark when done, else a mode icon),
 // the step title, and its state label. "ready" pulses amber; "proposed" is dashed.
-function PipeNode({ step }: { step: Step }) {
+// Only steps not yet turned into a board card (!step.track) are actually
+// actionable, so only those render as a Pressable with a tap affordance
+// (raised ring + pencil badge); the rest render as flat, muted, non-pressable
+// nodes so their appearance stops implying they can be tapped.
+function PipeNode({ step, interactive, selected, onPress }: {
+  step: Step; interactive: boolean; selected: boolean; onPress?: () => void;
+}) {
   const t = useTheme();
   const tr = useT();
   const state = step.state ?? "proposed";
@@ -160,29 +173,59 @@ function PipeNode({ step }: { step: Step }) {
   }, [state, pulse]);
   const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.45] });
 
-  return (
+  const node = (
     <View style={{ width: 96, alignItems: "center" }}>
-      <Animated.View style={{
-        width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
-        borderWidth: 2.5, borderStyle: proposed ? "dashed" : "solid",
-        borderColor: proposed ? t.borderStrong : colour,
-        backgroundColor: colour + "2E",
-        opacity: state === "ready" ? opacity : 1,
+      <View style={{
+        width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
+        borderWidth: selected ? 2.5 : 0,
+        borderColor: t.accent,
+        backgroundColor: selected ? t.accent + "22" : "transparent",
       }}>
-        <Ionicons name={done ? "checkmark" : (MODE_ICON[step.mode ?? "do"] ?? "ellipse")}
-          size={18} color={proposed ? t.borderStrong : colour} />
-      </Animated.View>
-      <Text numberOfLines={2} style={{ fontSize: 10.5, lineHeight: 13, marginTop: 4, textAlign: "center", color: t.txtSecondary }}>
+        <Animated.View style={{
+          width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
+          borderWidth: interactive ? 2.5 : 1.5, borderStyle: proposed && interactive ? "dashed" : "solid",
+          borderColor: interactive ? (proposed ? t.borderStrong : colour) : t.borderSubtle,
+          backgroundColor: interactive ? colour + "2E" : colour + "14",
+          opacity: state === "ready" ? opacity : (interactive ? 1 : 0.62),
+          ...(isWeb && interactive ? ({ boxShadow: `0 1px 4px ${colour}55` } as any) : null),
+        }}>
+          <Ionicons name={done ? "checkmark" : (MODE_ICON[step.mode ?? "do"] ?? "ellipse")}
+            size={18} color={interactive ? (proposed ? t.borderStrong : colour) : t.txtTertiary} />
+        </Animated.View>
+        {interactive ? (
+          <View style={{
+            position: "absolute", right: -2, bottom: -2, width: 16, height: 16, borderRadius: 8,
+            alignItems: "center", justifyContent: "center", backgroundColor: t.accent, borderWidth: 1.5, borderColor: t.canvas,
+          }}>
+            <Ionicons name="create" size={9} color="#fff" />
+          </View>
+        ) : null}
+      </View>
+      <Text numberOfLines={2} style={{
+        fontSize: 10.5, lineHeight: 13, marginTop: 4, textAlign: "center",
+        color: interactive ? t.txtSecondary : t.txtTertiary,
+      }}>
         {step.title}
       </Text>
-      <Text style={{ fontSize: 9.5, fontWeight: "600", color: proposed ? t.txtTertiary : colour }}>{label}</Text>
+      <Text style={{ fontSize: 9.5, fontWeight: "600", color: interactive ? (proposed ? t.txtTertiary : colour) : t.txtTertiary }}>
+        {label}
+      </Text>
     </View>
+  );
+
+  if (!interactive) return node;
+  return (
+    <Pressable onPress={onPress} hitSlop={4}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+      {node}
+    </Pressable>
   );
 }
 
 // Horizontal n8n-style read of the chain: one node per step joined by connector
-// arrows. Scrolls sideways when it overflows.
-function Pipeline({ p }: { p: Process }) {
+// arrows. Scrolls sideways when it overflows. Tapping an actionable node
+// (not yet turned into a card) expands its editor below; other nodes are inert.
+function Pipeline({ p, expanded, onToggle }: { p: Process; expanded: number | null; onToggle: (i: number) => void }) {
   const t = useTheme();
   const steps = p.steps ?? [];
   if (steps.length === 0) return null;
@@ -191,9 +234,9 @@ function Pipeline({ p }: { p: Process }) {
       contentContainerStyle={{ alignItems: "flex-start", paddingVertical: 8, paddingHorizontal: 2 }}>
       {steps.map((st, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "flex-start" }}>
-          <PipeNode step={st} />
+          <PipeNode step={st} interactive={!st.track} selected={expanded === i} onPress={() => onToggle(i)} />
           {i < steps.length - 1 ? (
-            <View style={{ width: 22, height: 42, alignItems: "center", justifyContent: "center" }}>
+            <View style={{ width: 22, height: 48, alignItems: "center", justifyContent: "center" }}>
               <Ionicons name="chevron-forward" size={14}
                 color={(st.done || st.state === "done") ? t.ok : t.borderStrong} />
             </View>
@@ -218,12 +261,14 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
       if (v.action === "accept" || v.action === "accept_all")
         Alert.alert(tr("processes.done"),
           v.action === "accept_all" ? tr("processes.cardsCreated") : tr("processes.cardCreated"));
+      if (v.action === "accept" || v.action === "accept_all" || v.action === "remove") setExpanded(null);
       invalidate();
     },
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
   const act = (idx: number, action: string, patch?: Record<string, unknown>, title?: string) =>
     stepMut.mutate({ idx, action, patch, title });
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   function addStep() {
     if (isWeb) {
@@ -255,11 +300,13 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
       {p.status === "proposing" ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("processes.proposing")}</Text> : null}
       {p.status === "failed" ? <Text style={{ color: t.danger, fontSize: 12 }}>{p.error ?? tr("processes.proposeFailed")}</Text> : null}
 
-      <Pipeline p={p} />
+      <Pipeline p={p} expanded={expanded} onToggle={(i) => setExpanded(expanded === i ? null : i)} />
 
-      <View style={{ gap: 6, marginTop: 6 }}>
-        {steps.map((st, i) => <StepRow key={i} pid={p.id} idx={i} step={st} act={act} />)}
-      </View>
+      {expanded !== null && steps[expanded] ? (
+        <View style={{ marginTop: 6 }}>
+          <StepEditor idx={expanded} step={steps[expanded]} act={act} onClose={() => setExpanded(null)} />
+        </View>
+      ) : null}
 
       {steps.length > 0 ? (
         <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
