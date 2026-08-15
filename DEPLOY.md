@@ -152,11 +152,24 @@ py -3.12 deploy/mac_credentials.py --create [--out DIR]     # writes key+CSR; PO
                                                               # prints the manual step below
 # --- one human, in a browser, as the Account Holder, with 2FA ---
 #   https://developer.apple.com/account/resources/certificates/add
-#   -> "Developer ID" -> "Developer ID Application" -> upload the CSR --create wrote
-#   -> download the resulting .cer
+#   -> "Developer ID" -> "Developer ID Application" -> Continue
+#   -> intermediary: pick "G2 Sub-CA (Xcode 11.4.1 or later)", NOT the
+#      pre-selected "Previous Sub-CA" - that one hard-expires 2027-02-01
+#      regardless of when it was issued; G2 gives the full 5 years
+#   -> upload the CSR --create wrote -> download the resulting .cer
 py -3.12 deploy/mac_credentials.py --finish DOWNLOADED.cer   # bundles key+cert -> .p12
 py -3.12 deploy/mac_credentials.py --secrets FILE.p12 --password PW
 ```
+
+**DONE 2026-08-15** — walked end to end. The cert exists
+(`Developer ID Application: Tien Duy Vo (92WJZQ2WWH)`, issuer *Developer ID
+Certification Authority G2*, valid to **2031-08-16**), the `.p12` is at
+`C:/hd/secrets/mac_developer_id.p12`, and `MAC_CSC_LINK` +
+`MAC_CSC_KEY_PASSWORD` are live on `Tienduyvo/helmdeck` (`gh secret list`
+confirms both). Verified before upload, not assumed: the `.p12` carries a
+private key, and its modulus matches the signed cert's. Signing is no longer
+the blocker — §1d (source push) is: the release repo still has no
+`.github/workflows`, so no runner can check the build out.
 
 `--check` lists any Developer ID Application certs the account already holds
 — re-submitting a CSR against an account that already has one just burns
