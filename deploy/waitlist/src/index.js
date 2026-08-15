@@ -34,7 +34,19 @@ const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 
 // Owner-picked Userjot board (matches app/src/data/feedback.ts) - update both
 // in lockstep if the board URL ever changes.
-const FEEDBACK_URL = "https://helmdeck.userjot.com";
+//
+// EMPTY STRING = the footer "Feedback" link is not rendered at all. Same
+// convention app/src/data/feedback.ts already uses ("no dead link for testers"),
+// applied here for the same reason: as of 2026-08-15 the board is DOWN. Every
+// path on helmdeck.userjot.com answers HTTP 500 with a raw
+// {"status":500,"unhandled":true,"message":"HTTPError"} body - verified in
+// Chromium, not just curl, and userjot.com itself is fine, so the fault is this
+// board / its custom-domain binding, not the service. A visitor clicking
+// "Feedback" landed on Chrome's JSON error viewer.
+//
+// TO RESTORE: put the URL back here once the board loads. Nothing else changes -
+// the footer renders the link again automatically.
+const FEEDBACK_URL = "";
 const REPO = "Tienduyvo/helmdeck";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 const PLAY_URL = "https://play.google.com/apps/testing/app.helmdeck";
@@ -417,7 +429,7 @@ footer a:hover{color:var(--ink-2)}
     </div>
   </section>
 </main>
-<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a></footer>
+<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""}</footer>
 <script>
 (function(){
   var I18N = {

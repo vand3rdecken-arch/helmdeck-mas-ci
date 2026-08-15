@@ -73,6 +73,19 @@ with sync_playwright() as p:
     print("download hrefs:")
     for h in hrefs:
         print("  " + (h or "")[:110])
+
+    # Site-wide: an anchor with href="" silently links to the current page, so
+    # it looks alive in a screenshot while going nowhere. That is exactly how a
+    # disabled link (e.g. FEEDBACK_URL emptied while the board is down) rots into
+    # a dead one, so assert it structurally rather than trusting the eye.
+    dead = page.eval_on_selector_all(
+        "a", """els => els
+            .filter(e => { const h = (e.getAttribute('href') || '').trim();
+                           return h === '' || h === '#'; })
+            .map(e => e.textContent.trim().slice(0, 40))""")
+    for d in dead:
+        errors.append("anchor with empty href, text=%r" % d)
+    print("anchors with empty href: %s" % (dead or "none"))
     page.close()
 
     shoot("phone", 420, 900, full=True).close()
