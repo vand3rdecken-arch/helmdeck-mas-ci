@@ -95,6 +95,312 @@ existing `desktop/release/*.exe`). Since 0.2.2 the installed app auto-updates
 its UI, so this manual step is only for shell releases — the once-per-user
 install that grants auto-update, then never again for JS-only changes.
 
+## 1c) macOS desktop build → a macOS runner, never this box
+
+The Mac app is the same Electron shell, same daemon, same `app/dist` — only the
+packaging differs. What does **not** transfer is the toolchain: `codesign`,
+`hdiutil` and `notarytool` exist only on macOS, so there is **no cross-build
+from Windows**. electron-builder says so itself and stops immediately:
+
+```
+⨯ Build for macOS is supported only on macOS
+```
+
+So the Mac artifact is built by GitHub's macOS runner:
+`.github/workflows/desktop-mac.yml` (`runs-on: macos-14`, Apple silicon, which
+cross-compiles the x64 slice too). Trigger it from the Actions tab
+(**workflow_dispatch** — optional `version` to stamp, optional `release_tag` to
+attach the artifacts to a release) or let it run on a push touching
+`desktop/**`, `app/**` or `daemon/**`. On a Mac, the same build is one command:
+
+```bash
+bash desktop/build-mac.sh --version 0.2.3        # dmg + zip, arm64 + x64
+```
+
+Output in `desktop/release/`: `HelmDeck-<v>-{arm64,x64}.dmg` for humans,
+`HelmDeck-<v>-{arm64,x64}.zip` **for the auto-updater** — Squirrel.Mac (what
+`native-updater.js` drives via electron-updater) can only apply a zipped `.app`,
+it cannot read a `.dmg` — plus `latest-mac.yml`, the feed pointing at the zip.
+
+### ✅ EXECUTED 2026-08-15 — signed, notarized, Gatekeeper-accepted
+
+Run [`31877006863`](https://github.com/Tienduyvo/helmdeck/actions/runs/31877006863)
+on `macos-14`, **32m10s, every step green**. This is the first Mac build that
+has ever run, and it closed debt `mac-build-never-executed`. What the log
+proves, quoted rather than paraphrased:
+
+| stage | evidence |
+| --- | --- |
+| decision | `==> signing: Developer ID identity supplied` → `==> notarization: ON` |
+| Apple | `• notarization successful` — **twice**, once per arch |
+| signature | `codesign --verify --deep --strict` → *valid on disk* + *satisfies its Designated Requirement* |
+| **Gatekeeper** | `spctl --assess --type execute` → **`accepted`**, `source=Notarized Developer ID` |
+| artifacts | `HelmDeck-0.2.0-{arm64,x64}.{dmg,zip}` + blockmaps + `latest-mac.yml`; `hdiutil imageinfo` passed on both dmgs |
+
+So the entitlement set really is the right one — that was the one thing only a
+notarized run on real hardware could establish. Budget note: ~32 min of macOS
+runner time per build, free because the repo is public.
+
+⚠ **Benign warning, do NOT "fix" it.** electron-builder prints *"Please specify
+notarization Team ID in the `APPLE_TEAM_ID` env var instead of
+`notarize.teamId`"*. Ignore it. The `-c.mac.notarize.teamId` override is what
+**turns notarization on at all** (the committed config deliberately keeps
+`notarize: false` so a secret-less build still succeeds); the warning is only
+about where the team id is read from, and notarization demonstrably worked.
+
+**The build succeeds with no secrets at all** — it just produces an *unsigned*
+app: Gatekeeper quarantines it and the auto-updater cannot apply updates to it
+(Squirrel.Mac requires a valid signature). Add the repo secrets and the same
+workflow starts signing, then notarizing, with no file changing:
+
+| secret | effect |
+| --- | --- |
+| `MAC_CSC_LINK` + `MAC_CSC_KEY_PASSWORD` | Developer ID `.p12` → signed build |
+| `ASC_API_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID` | → notarized (**all four**, on top of signing) |
+
+The ASC key is the *same* App Store Connect key `deploy/ios_credentials.sh`
+already uses (§2b) — one key notarizes macOS and signs iOS.
+
+`MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD` come from `deploy/mac_credentials.py`.
+No Xcode/Keychain needed for the CSR — it's plain PKCS#10, openssl builds one
+on Windows — but **creating the certificate itself is not reachable by any
+API key**: VERIFIED 2026-08-15, the ASC API returns 403 "This operation can
+only be performed by the Account Holder" for `DEVELOPER_ID_APPLICATION`, for
+the same Admin-role key that mints iOS distribution certs fine. This is not
+a key-role problem (retrying with a different role key changes nothing) —
+Apple walls this operation off from all API-key auth, the same bucket
+`deploy/ios_credentials.sh` already documents for ASC-key management and
+push keys. So the flow is CSR-by-script, cert-by-human, bundle-by-script:
+
+```
+py -3.12 deploy/mac_credentials.py --check                  # read-only, run first
+py -3.12 deploy/mac_credentials.py --create [--out DIR]     # writes key+CSR; POST 403s -
+                                                              # prints the manual step below
+# --- one human, in a browser, as the Account Holder, with 2FA ---
+#   https://developer.apple.com/account/resources/certificates/add
+#   -> "Developer ID" -> "Developer ID Application" -> Continue
+#   -> intermediary: pick "G2 Sub-CA (Xcode 11.4.1 or later)", NOT the
+#      pre-selected "Previous Sub-CA" - that one hard-expires 2027-02-01
+#      regardless of when it was issued; G2 gives the full 5 years
+#   -> upload the CSR --create wrote -> download the resulting .cer
+py -3.12 deploy/mac_credentials.py --finish DOWNLOADED.cer   # bundles key+cert -> .p12
+py -3.12 deploy/mac_credentials.py --secrets FILE.p12 --password PW
+```
+
+**DONE 2026-08-15** — walked end to end. The cert exists
+(`Developer ID Application: Tien Duy Vo (92WJZQ2WWH)`, issuer *Developer ID
+Certification Authority G2*, valid to **2031-08-16**), the `.p12` is at
+`C:/hd/secrets/mac_developer_id.p12`, and `MAC_CSC_LINK` +
+`MAC_CSC_KEY_PASSWORD` are live on `Tienduyvo/helmdeck` (`gh secret list`
+confirms both). Verified before upload, not assumed: the `.p12` carries a
+private key, and its modulus matches the signed cert's. Signing is no longer
+the blocker — §1d (source push) is: the release repo still has no
+`.github/workflows`, so no runner can check the build out.
+
+**NOTARIZATION SECRETS LIVE 2026-08-15** — all six repo secrets are now set on
+`Tienduyvo/helmdeck`, so the workflow's signed **and notarized** path is armed:
+`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (from the cert above) plus
+`ASC_API_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID`. The `.p8` was
+piped straight into `gh secret set` from `C:/hd/secrets/` — never read, never
+echoed, never copied into the repo. Verified rather than assumed, twice:
+- the key **authenticates against Apple right now**:
+  `ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_API_KEY_PATH=… py -3.12
+  deploy/mac_credentials.py --check` mints a JWT and gets a 200. A wrong key id
+  or issuer 401s *here*, which is 20 minutes and a whole Mac build cheaper than
+  finding out during notarization. It reports *"no existing Developer ID
+  Application certificate"* — that is the **same API-key wall** that 403s cert
+  creation, **not** a missing cert; Apple does not list Developer ID certs to
+  API keys at all. Do not "fix" that by minting a second cert.
+- the certificate itself is real, read locally with openssl:
+  `CN = Developer ID Application: Tien Duy Vo (92WJZQ2WWH)`, issuer *Developer
+  ID Certification Authority G2*, EKU **Code Signing**, valid to 2031-08-16 —
+  and its team `92WJZQ2WWH` matches the `APPLE_TEAM_ID` secret, which is the
+  pairing `-c.mac.notarize.teamId` actually depends on.
+
+So nothing in the signing/notarization *wiring* is outstanding: hardened
+runtime, both entitlements files, the notarize-object override and the
+workflow's `codesign --verify` + `spctl --assess` gate were all already in
+place and re-read line by line on 2026-08-15. §1d is the only thing left.
+
+`--check` lists any Developer ID Application certs the account already holds
+— re-submitting a CSR against an account that already has one just burns
+another slot of Apple's quota, so check before minting. `--create`/`--finish`
+write the private key + `.p12` **outside** the repo (refuses an `--out`
+under it, same guard `ios_credentials.sh` puts on the `.p8`) and print the
+`.p12` password once — Apple-style secrets are not re-servable, save it
+before running `--secrets`. `--secrets` is a deliberate separate step: it is
+the one that actually writes to the real repo via `gh secret set`.
+
+Traps already paid for here:
+- `notarize` stays `false` in `electron-builder.yml`; `build-mac.sh` turns it on
+  with `-c.mac.notarize.teamId=<team>`. The **object** form is deliberate —
+  `-c.mac.notarize=true` reaches electron-builder as the *string* `"true"`,
+  truthy but carrying no team id.
+- Custom `entitlements` **replace** electron-builder's defaults, so
+  `desktop/build/entitlements.mac.plist` restates the three JIT ones Electron
+  needs *plus* `disable-library-validation` — without it a hardened HelmDeck
+  cannot spawn the Python daemon or the `claude` CLI (code it did not sign).
+- The Mac icon is a **tracked** PNG (`desktop/assets/icon-mac-1024.png`, on
+  Apple's inset 824/1024 grid) that electron-builder converts to `.icns`, so a
+  clean CI checkout needs neither Pillow nor `iconutil` — unlike `icon.ico`,
+  which is git-ignored and must be regenerated before every Windows build.
+- No signing identity ⇒ `build-mac.sh` exports `CSC_IDENTITY_AUTO_DISCOVERY=false`.
+  Without it electron-builder hunts an empty keychain and *fails* the build
+  instead of producing a clean unsigned one.
+
+### ✅ PUBLISHED 2026-08-15 — the OTA channel is connected
+
+A signed, notarized build sitting in `desktop-mac.yml`'s workflow-artifact
+storage is not reachable by any installed app — `native-updater.js`
+(electron-updater's `GithubProvider`) only ever reads **release assets**, and
+CI's own artifact zip expires in 14 days. `deploy/release_desktop_mac.sh` is
+the macOS twin of `release_desktop.sh`: it never builds (there is no macOS on
+this box), it publishes a set that either `desktop/build-mac.sh` on real
+macOS or `gh run download <run> -n helmdeck-macos -D DIR` already produced —
+uploading the dmgs, the zips (**Squirrel.Mac's actual update payload**),
+`latest-mac.yml` (the feed `native-updater.js` polls), and the blockmaps to
+the release, refreshing `SHA256SUMS.txt` in place with the same discipline
+the Windows script uses.
+
+```bash
+gh run download 31877006863 --repo Tienduyvo/helmdeck -n helmdeck-macos -D /tmp/mac-artifacts
+bash deploy/release_desktop_mac.sh --dir /tmp/mac-artifacts --latest
+```
+
+Run against the notarized `31877006863` build: `v1.0.7` on
+`github.com/Tienduyvo/helmdeck` now carries
+`HelmDeck-0.2.0-{arm64,x64}.{dmg,zip}` + blockmaps + `latest-mac.yml`,
+verified byte-identical to CI's copy after upload (not just a successful exit
+code) and cross-checked against the refreshed `SHA256SUMS.txt`. That is the
+whole channel: a new Mac user downloads the `.dmg`; an installed 0.2.0+ Mac
+app finds `latest-mac.yml` on the same release electron-updater already
+checks for Windows and applies the matching zip silently on quit — no code
+change was needed in `native-updater.js`, since electron-updater's
+`GithubProvider` was always platform-generic, only the mac artifacts were
+missing from the release.
+
+## 1d) Publishing the source — what the macOS runner needs
+
+CI can only build what it can check out, and until 2026-08-14 the local clone
+had **no git remote at all**: `github.com/Tienduyvo/helmdeck` was a download
+shelf holding `README.md` plus release assets, everything uploaded by `gh`.
+Owner's decision: **one repo** — the source goes into that same public repo,
+next to the builds. Not a second source repo.
+
+```bash
+bash deploy/publish_source.sh --dry-run     # audit only, pushes nothing
+bash deploy/publish_source.sh               # audit, then push the trunk -> remote main
+```
+
+⚠ **Two traps found on 2026-08-15, both now handled by the script — read this
+before running it, because one of them is irreversible.**
+
+**a) The local trunk is not called `main`.** `main` is a stale 2026-08-12
+branch (`2aaa4d4`, "mobile: glass on BOTH bars") that contains **no `.github/`
+at all**. The branch actually carrying the source *and* `desktop-mac.yml` is
+**`expo-migration`** — that is what the main working copy has checked out and
+what accept-commits land on. The script's old default would therefore have
+published a tree the macOS runner cannot build, which is the one job it has.
+Source and target are now separate knobs, defaulting to the right pair:
+```bash
+HELMDECK_PUBLISH_BRANCH=expo-migration   # what gets audited + pushed
+HELMDECK_PUBLISH_TARGET=main             # where it LANDS on the remote
+```
+The target must stay the remote's **default branch**: GitHub only offers
+*Run workflow* (`workflow_dispatch`) for workflows present on the default
+branch, and `desktop-mac.yml`'s own `push: branches: [main]` trigger never
+fires from a branch by another name.
+
+**b) A green audit is not a safe audit — `.attachments/`.** The old checks ask
+"is this a credential", so a **photo** answers *no* and sails through. Five
+files in `.attachments/` are chat uploads: the owner's **phone screenshots of
+his own board**, showing unreleased card titles, due dates and distribution
+decisions. A push publishes *history*, so those would have been public forever
+— and, as the script says about every blob, deleting them in a later commit
+does **not** unpublish them. That they are user data and not source was already
+settled twice in this repo (`daemon/recordings/` + `daemon/checkpoints/` are
+git-ignored; `electron-builder.yml` refuses to ship `.attachments/**`); only
+git never got the memo. There is now a privacy check that **fails closed**:
+```bash
+git show expo-migration:.attachments/0_1000029273.jpg > /tmp/x.jpg   # LOOK first
+HELMDECK_PUBLISH_ALLOW_PRIVATE=1 bash deploy/publish_source.sh       # publish anyway
+```
+The alternative — and **what was actually done** — is `--filter-private`.
+
+### PUBLISHED 2026-08-15 — how, and the two things that surprised it
+
+```bash
+bash deploy/publish_source.sh --filter-private     # this is the command
+```
+It publishes a **filtered mirror**: clone the trunk to a temp dir, drop
+`.attachments/` from *that copy's* history, push the result. Filtering the trunk
+in place was rejected deliberately — ~20 live card branches and worktrees hang
+off it and `git_filter_repo` rewrites every sha it touches, stranding all of
+them. The owner's repo is never rewritten. Result: 572 commits, 585 files,
+tree byte-identical to the trunk minus the 5 jpgs (`git archive | tar -t` diff:
+only those 5 + the dir entry missing, **nothing added**). The 5 commits that
+vanished were attachment-only "finalize" commits, correctly pruned as empty.
+
+The mirror lineage is **deterministic**, which is what makes it sustainable:
+filtering the same input commit twice gave the identical sha (`a10d9454`), so
+later publishes **fast-forward** and never need a force again. (It briefly
+looked nondeterministic — that was another card landing 2 commits on the trunk
+between the two test clones, not the filter.)
+
+⚠ **The first push is a non-fast-forward, and forcing it is safe.** The remote
+`main` was a single *unrelated* commit (`1dc31bb6` "HelmDeck public releases"),
+so a plain push is rejected exactly once. Verified **before** forcing, not
+after: all four release tags (`v1.0.4`–`v1.0.7`) pin `1dc31bb6` themselves, and
+release **assets live in the releases API, not in git** — so a force-push of
+`main` cannot break the download shelf or the desktop auto-updater. Confirmed
+after the push: all 4 releases still listed, `1dc31bb6` still resolvable. The
+push used `--force-with-lease=main:1dc31bb6…` so it would have aborted if the
+remote had moved.
+
+⚠ **The push did NOT auto-trigger the workflow.** `desktop-mac.yml` has
+`push: branches: [main]`, Actions was enabled and the workflow registered
+`state=active` — and `gh run list` was still empty. A first-ever workflow file
+arriving by force-push of an unrelated history does not fire its own push
+trigger. Dispatch it explicitly and don't wait on a run that will never start:
+```bash
+gh workflow run desktop-mac.yml --repo Tienduyvo/helmdeck --ref main
+gh run list --repo Tienduyvo/helmdeck --limit 3
+```
+
+It is an audit that ends in a push, re-run in full every time — `.gitignore`
+only ever protected the *present*, and a push publishes *history*. Audit as of
+this commit: 2244 blobs, **zero** credential matches; no `settings.json` /
+`users.json` / `*.db` / `*.jks` / `*.p8` ever committed; the one interesting
+literal is a `*.trycloudflare.com` quick-tunnel URL from 26 old blobs, verified
+**dead** (no DNS).
+
+Three traps it guards, each one load-bearing:
+
+- **Never `--all` / `--mirror`.** Branch `wip-expo-migration-20260812-223553`
+  parks a 136 MB APK, an 81 MB `.exe` and a 78 MB `.aab` under
+  `deploy/release_v1.0.7/`. GitHub **hard-rejects any file over 100 MB**, so
+  that push fails outright — and it would publish ~20 stale card branches too.
+  `main` is clean (largest blob 14.8 MB), which is the whole point of pushing a
+  single branch.
+- **The root `README.md` is the public product page**, not the dev map: Play
+  links, the SmartScreen note, the privacy policy. Pushing the old internal
+  README would have silently replaced a live page. So the landing text now *is*
+  `README.md` (byte-identical to what was published — verified by blob hash,
+  plus an appended `## Development` pointer) and the internal map moved to
+  [`docs/repo-map.md`](docs/repo-map.md). The script refuses to push a
+  `README.md` with no `## Downloads` section.
+- **Use SSH, not HTTPS.** The owner's `gh` token scopes are
+  `admin:public_key, gist, read:org, read:packages, repo` — **no `workflow`**,
+  so an HTTPS push touching `.github/workflows/` is rejected with *"refusing to
+  allow an OAuth App to create or update workflow"*. The script wires
+  `git@github.com:…` for exactly this reason.
+
+Public repo ⇒ **macOS runner minutes are free and unmetered** (private would
+bill 10×, ~200 free minutes/month ≈ 10 Mac builds). After the push: Actions →
+`desktop-mac` → *Run workflow*. With no secrets set that produces an unsigned
+`.dmg`/`.zip` — and that unsigned run is the honest smoke test that closes debt
+item `mac-build-never-executed`.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):

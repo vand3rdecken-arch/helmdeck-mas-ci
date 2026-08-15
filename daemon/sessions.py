@@ -311,6 +311,16 @@ def _lock_for(tid):
             _turn_locks[tid] = _threading.Lock()
         return _turn_locks[tid]
 
+# Only one card may hold real Windows desktop control (mouse/keyboard/screen)
+# at a time - two windows-mcp turns racing would fight over the same cursor.
+# A plain in-process lock is the right primitive: _turn() blocks synchronously
+# for a whole turn, so the lock's held state IS the running desktop turn -
+# never a stored flag that could drift from reality.
+_desktop_lock = _threading.Lock()
+
+def _uses_desktop_control(cfg):
+    return any("windows-mcp" in str(pat) for pat in (cfg.get("allowed_tools") or []))
+
 # INTERRUPT-AND-REPLACE (Paseo parity). A steer that arrives mid-turn must take
 # effect NOW - Paseo's replaceAgentRun soft-interrupts the live turn and starts
 # the new prompt on the same session. HelmDeck used to QUEUE it behind the whole
@@ -484,13 +494,15 @@ def flag_burn(tid, evidence):
         pass
 
 
-def _turn(t, prompt, model=None, perm=None):
+def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
     hook: a driver with record:true gets its whole turn screen-captured into the
     track's run_dir (screen.mp4 + live.jpg glance feed). Per-turn `model` and
     `perm` overrides (from the chat composer's model + mode controls) win over
-    the driver's configured values."""
+    the driver's configured values. `idle_timeout` overrides the driver's
+    900s-of-silence watchdog for callers who know their own turn is bounded
+    (e.g. _maybe_compact - see there for why)."""
     import drivers, events
     # Pre-P4 cards were dispatched without a reserved dev port - claim one on
     # their next turn so HELMDECK_DEV_PORT is always there (sticky afterwards).
@@ -523,6 +535,8 @@ def _turn(t, prompt, model=None, perm=None):
         cfg = {**cfg, "model": model}
     if perm:
         cfg = {**cfg, "perm": perm}
+    if idle_timeout:
+        cfg = {**cfg, "idle_timeout": idle_timeout}
     rec = None
     if cfg.get("record"):
         try:
@@ -530,10 +544,18 @@ def _turn(t, prompt, model=None, perm=None):
             rec = wincap.start(t["run_dir"])
         except Exception as e:
             print("recorder failed to start:", e)
+    desktop = _uses_desktop_control(cfg)
+    if desktop and not _desktop_lock.acquire(blocking=False):
+        raise RuntimeError(
+            "Desktop control (windows-mcp) is already in use by another card - "
+            "only one card may drive the mouse/keyboard/screen at a time. "
+            "Wait for that turn to finish, then retry.")
     try:
         with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
             return drivers.run(cfg, t, prompt)
     finally:
+        if desktop:
+            _desktop_lock.release()
         if rec:
             import wincap
             wincap.stop(rec)
@@ -981,11 +1003,25 @@ def _ensure_worktree(t):
     holds the commits) - so a missing directory must never be a hard error:
     dispatch uses this, and steer SELF-HEALS through it instead of dying with
     WinError 267 (spawn cwd invalid) when the tree is gone (reclaimed, cleaned
-    by hand, or never created because a bad branch name broke dispatch)."""
+    by hand, or never created because a bad branch name broke dispatch).
+
+    A path existing is NOT proof it is a working worktree: `git worktree add`
+    can be interrupted after it creates the directory but before it finishes
+    (or something else mkdir'd the slot first), leaving a plain folder that was
+    never `git init`'d into a worktree. Dispatching an agent into that folder
+    lets every git command inside the turn fail with 'not a git repository' -
+    the failure surfaces deep in the turn, not here, so it looked unrelated
+    until traced back. _git_state_broken is the same check reclaim already
+    trusts to judge a worktree's git link; reuse it here so a broken/never-init
+    slot gets rebuilt before dispatch instead of handed out as-is."""
     wt = _worktree_for(t["repo"], t["branch"])
     existing = _worktree_of_branch(t["repo"], t["branch"])
     if existing and os.path.isdir(existing):
         return existing                     # reuse a prior checkout (e.g. legacy dir)
+    if os.path.exists(wt) and _owned_worktree(wt) and _git_state_broken(wt):
+        _git_try(t["repo"], "worktree", "remove", "--force", wt)
+        if os.path.isdir(wt):
+            shutil.rmtree(wt, ignore_errors=True)
     if not os.path.exists(wt):
         _git_try(t["repo"], "worktree", "prune")   # drop a stale registration of this path
         if _branch_exists(t["repo"], t["branch"]):
@@ -1842,7 +1878,13 @@ def _repo_hook(t, kind):
     working. The window has to be generous because scp of a ~100MB APK over a
     pipe prints NOTHING while it uploads - silence, not duration, is what
     separates wedged from busy. `hook_max_s` is an optional absolute ceiling
-    (0/unset = none) for a hook that dribbles output forever."""
+    (0/unset = none) for a hook that dribbles output forever.
+
+    STREAMS live: any output line prefixed `HOOK-NOTE:` is logged to the
+    actionlog THE MOMENT it's read (ship.sh/build_apk.sh narrate their own
+    long phases through it - "npm ci starting", "gradle running, ~10-15
+    min", "APK built") - without this a healthy 15-20 min build looked from
+    the owner's phone identical to a genuinely stuck card."""
     import collections, events, subprocess, threading
     import time as _t
     st = events.settings()
@@ -1874,8 +1916,13 @@ def _repo_hook(t, kind):
         def _pump():
             try:
                 for line in proc.stdout:
-                    lines.append(line.rstrip("\n"))
+                    stripped = line.rstrip("\n")
+                    lines.append(stripped)
                     last[0] = _t.time()      # ANY output = still alive
+                    # live progress narration: a hook script can announce its own
+                    # long phases instead of the owner watching dead silence
+                    if stripped.strip().startswith("HOOK-NOTE:"):
+                        log.log("note", stripped.strip()[len("HOOK-NOTE:"):].strip())
             except Exception:
                 pass
         pump = threading.Thread(target=_pump, daemon=True)
@@ -2265,6 +2312,22 @@ def _pending_context(t):
     to fix one ("resolve the conflict"), prepend the actual report so the worker
     isn't blind. Empty string when nothing is pending."""
     parts = []
+    # Repo hooks (preview/deploy) ALSO run daemon-side, outside the session -
+    # same blind spot as gate/merge below. Incident (2026-08-15): a fast-track
+    # deploy hook actually SUCCEEDED ("DEPLOY HOOK OK"), but its output tail
+    # happened to contain a harmless "(23) Failed writing body" curl artifact;
+    # the owner read that as a failure and told the worker "Deploy hook
+    # failed", and the worker - with no way to check `t["deploy_hook"]` itself
+    # (that field existed on the track the whole time, just never surfaced
+    # here) - had to trust the owner's framing and chased a phantom infra bug.
+    # steer() clears these after this call, so each hook result is told to the
+    # worker exactly once (on the next steer), never repeated on later ones.
+    for hook_kind in ("deploy_hook", "preview_hook"):
+        dh = t.get(hook_kind)
+        if dh:
+            parts.append("%s HOOK %s (ran outside this session, daemon-side):\n%s" % (
+                hook_kind.split("_")[0].upper(), "OK" if dh.get("ok") else "FAILED",
+                str(dh.get("tail") or "")[:800]))
     gr = t.get("gate_report")
     if t.get("gate_failed") and gr:
         parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
@@ -2351,7 +2414,17 @@ def _maybe_compact(t, log):
     pct = min(100, round(ctx / window * 100))
     log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
             "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
-    sid, _out, meta = _turn(t, "/compact")
+    # SHORT watchdog, not the driver's default 900s: incident (2026-08-15) - a
+    # /compact turn finished writing its own transcript (the session showed
+    # "Compacted") but the underlying CLI process never exited, so this call
+    # sat blocked for the full 15 minutes before the default idle-timeout
+    # finally killed it - and every OTHER post-turn step (fast-track ship
+    # included) waits on this call returning. Compact is a small, bounded
+    # operation; 3 minutes of total silence is already generous slack above
+    # every observed real compaction, and failing fast here just falls
+    # through to the existing self-verifying "CLI doesn't honor /compact"
+    # path below - never a hard failure, just a faster one.
+    sid, _out, meta = _turn(t, "/compact", idle_timeout=180)
 
     def _apply(tt):
         if sid and tt.get("session_id") and sid != tt["session_id"]:
@@ -2452,18 +2525,29 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
     prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
+    # Consumed: pop the hook results now so they're told to the worker exactly
+    # ONCE (this steer), not repeated on every later unrelated one.
+    if t.get("deploy_hook") or t.get("preview_hook"):
+        _mutate(tid, lambda tt: (tt.pop("deploy_hook", None), tt.pop("preview_hook", None)))
     perm_override = mode if mode in MODES else None   # whitelist - no arbitrary mode
-    # SELF-HEAL a missing worktree before spawning into it. The tree is
-    # regenerable from the branch; without this, a reclaimed/hand-deleted/never-
-    # created tree made EVERY steer die with WinError 267 (spawn cwd invalid) -
-    # a dead-end the owner cannot steer out of, on a card that is otherwise fine.
+    # SELF-HEAL a missing OR broken worktree before spawning into it. The tree
+    # is regenerable from the branch; without the isdir half, a reclaimed/
+    # hand-deleted/never-created tree made EVERY steer die with WinError 267
+    # (spawn cwd invalid) - a dead-end the owner cannot steer out of, on a
+    # card that is otherwise fine. isdir alone is not enough, though: an
+    # existing-but-never-`git worktree add`'d directory (interrupted add,
+    # stray mkdir) also passes isdir, so a steer reused it as-is and dispatched
+    # into a folder with no .git - the same class _ensure_worktree now guards
+    # against internally, checked again here so the CALLER's decision whether
+    # to even invoke it doesn't reintroduce the bug one level up.
     if (not t.get("machine") and t.get("branch")
-            and not os.path.isdir(t.get("worktree") or "")):
+            and (not os.path.isdir(t.get("worktree") or "")
+                 or _git_state_broken(t["worktree"]))):
         try:
             wt_new = _ensure_worktree(t)
             t["worktree"] = wt_new
             _mutate(tid, lambda tt: tt.__setitem__("worktree", wt_new))
-            log.log("note", "WORKTREE neu erzeugt (%s) - war verschwunden, Branch haelt den Stand." % wt_new)
+            log.log("note", "WORKTREE neu erzeugt (%s) - fehlte oder war nie initialisiert, Branch haelt den Stand." % wt_new)
         except Exception as _we:
             log.log("note", "WORKTREE fehlt und Neuaufbau schlug fehl: %s" % str(_we)[:200])
     try:
@@ -2570,15 +2654,61 @@ def _maybe_fast_track_ship(t, log):
                        % (kind, (msg or "")[:300]))
                 return
             hk = _repo_hook(t, "deploy")   # None = no hook configured
+            # PERSIST the hook outcome - _repo_hook ran on THIS thread's local
+            # `t` copy (a subprocess call, kept outside the mutation lock), the
+            # same reason move_lane's _land() persists it post-hook. Without
+            # this the field only ever lived in this thread's dict and never
+            # reached the DB, so _pending_context's next-steer surfacing of
+            # deploy_hook (added for exactly this failure mode) was silently a
+            # no-op for every fast-track ship - the worker still never saw it.
+            _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
+            if _hooks:
+                _mutate(tid, lambda tt: tt.update(_hooks))
             lg.log("note", "FAST-TRACK deployed (%s)%s - teste auf dem Handy; die Karte "
                    "bleibt in Arbeit, steuern geht einfach weiter."
                    % (kind, " · ACHTUNG: Deploy-Hook rot" if hk is False else ""))
+            if hk is False:
+                _try_auto_fix_deploy(t, lg)
+            elif hk is True:
+                _mutate(tid, lambda tt: tt.pop("deploy_fail_streak", None))
         except Exception as e:
             try:
                 lg.log("note", "FAST-TRACK fehlgeschlagen: %s" % str(e)[:250])
             except Exception:
                 pass
     _threading.Thread(target=_ship, daemon=True).start()
+
+
+_DEPLOY_FIX_CAP = 3   # matches turnopts.ESCALATE_TURNS - the gate thrash-guard's cap
+
+
+def _try_auto_fix_deploy(t, lg):
+    """A fast-track deploy hook failure (in practice: a native build broke,
+    like a Gradle task blowing up) already landed on main by the time we see
+    it - the merge already happened, only the build/distribute step failed.
+    Left alone, that just sits as a red note until the owner happens to
+    notice - unattended is the whole point of fast-track, so make the repair
+    unattended too: feed the worker the actual error and let it try to fix it,
+    same as it already would for a red gate. Bounded (never more than
+    _DEPLOY_FIX_CAP attempts in a row) so a genuinely, persistently broken
+    build doesn't burn turns forever without the owner ever finding out -
+    mirrors the existing gate thrash-guard in _pending_context."""
+    tid = t["id"]
+    streak = (t.get("deploy_fail_streak") or 0) + 1
+    _mutate(tid, lambda tt: tt.__setitem__("deploy_fail_streak", streak))
+    if streak > _DEPLOY_FIX_CAP:
+        lg.log("note", "FAST-TRACK: Deploy-Hook %dx in Folge rot - kein automatischer "
+               "Reparaturversuch mehr, wartet auf dich." % (streak - 1))
+        return
+    tail = ((t.get("deploy_hook") or {}).get("tail") or "")[:1200]
+    instr = ("FAST-TRACK deploy hook FAILED after your last change was already merged "
+             "to main (repair attempt %d/%d - stops auto-retrying past this). This "
+             "usually means a native build broke. Actual error:\n\n%s\n\nInvestigate and "
+             "fix it. Your next turn's fast-track ship retries the deploy automatically "
+             "once you've committed a fix." % (streak, _DEPLOY_FIX_CAP, tail))
+    lg.log("note", "FAST-TRACK: Deploy-Hook rot - Worker bekommt den Fehler automatisch "
+           "zur Reparatur (Versuch %d/%d)." % (streak, _DEPLOY_FIX_CAP))
+    steer(tid, instr, actor="fast-track", source="fast-track-deploy-fix")
 
 
 def answer_question(tid, answers, request_id="", actor="owner"):
@@ -3272,6 +3402,14 @@ def update_track(tid, patch, actor="owner"):
                 log.log("note", "⚠ Desktop-Zugriff aktiviert (%s) von %s - "
                         "der Agent kann jetzt Maus/Tastatur/Bildschirm steuern, "
                         "Turns werden aufgezeichnet." % (changed["driver"], actor))
+        # Flipping fast_track ON is itself a ship trigger, not just future turns:
+        # a card can already be sitting on a finished-but-undeployed turn (owner
+        # enables fast-track AFTER the turn ended), and the hook in _run_turn
+        # only fires at turn-end - without this the flag does nothing until the
+        # NEXT turn completes, and the owner asks "why didn't it deploy" while
+        # the worker (unaware fast-track exists) wrongly says to use Review.
+        if changed.get("fast_track") is True:
+            _maybe_fast_track_ship(t, log)
     return t
 
 DIRECTIVES = os.path.join(ROOT, "board_directives.json")
