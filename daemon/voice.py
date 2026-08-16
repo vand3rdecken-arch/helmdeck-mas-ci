@@ -1,0 +1,133 @@
+# -*- coding: utf-8 -*-
+"""Server-rendered speech, so the agent can ANSWER OUT LOUD on the glasses.
+
+This exists because of one measured fact, not a preference: **the Meta Ray-Ban
+Display webview has no `speechSynthesis`** - confirmed on-device 2026-07-16
+(`glass-crud-harness/app/index.html:804`) - **but it DOES play audio** ("podcasts
+work"). So the lens cannot synthesise a sentence, and it can play a file you
+hand it. Speech is therefore rendered HERE and played there as an ordinary audio
+clip. That is the same conclusion docs/glasses-reference.md §4 reached for the
+WhatsApp channel; this is the in-app half of it.
+
+Two deliberate differences from the reference recipe
+(`glass-crud-harness/tools/voice_note.py`), both because the destination differs:
+- **mp3, not ogg/opus.** That recipe targets a WhatsApp voice note, which must
+  be ogg/opus mono. The lens just plays a URL, and the reference's own
+  announcement path already proves mp3 plays there ("announcements play as an
+  AUDIO CLIP (Google TTS mp3)"). Dropping the opus step also drops the whole
+  ffmpeg dependency - `transcode.available()` is False on this box, so an
+  ffmpeg-shaped design would have been dead on arrival here.
+- **Cached by content hash.** A glance surface re-reads the same few sentences
+  ("nothing needs you") far more often than a chat does, and each render is a
+  network round trip to Microsoft's voice service.
+
+FAILS SOFT, ALWAYS. edge-tts needs the network; the box may be offline, the
+package may be missing, the service may rate-limit. Every failure returns None
+and the caller shows text instead. Speech is an enhancement to a surface that
+already works silently - it must never be able to take the answer away.
+"""
+import hashlib
+import os
+import threading
+import time
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+CACHE = os.path.join(ROOT, "voice_cache")
+
+# The multilingual voice is deliberate: HelmDeck card titles are mixed
+# German/English ("Dashboard zu überfüllt"), and voice_note.py:11 picked this one
+# for exactly that reason - "handles mixed German/English naturally".
+DEFAULT_VOICE = "en-US-AndrewMultilingualNeural"
+RATE = "+8%"                 # voice_note.py:31
+
+MAX_TEXT = 1200              # ~90s of speech; a lens reply is 2 sentences
+MAX_FILES = 200              # cache bound, oldest pruned
+
+_LOCK = threading.RLock()
+
+
+def available():
+    """True when a render could plausibly work. Cheap - does not touch the
+    network, so it is safe on a request path."""
+    try:
+        import edge_tts                                     # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _key(text, voice):
+    return hashlib.sha256(("%s|%s|%s" % (voice, RATE, text)).encode("utf-8")).hexdigest()[:20]
+
+
+def path_for(vid):
+    """Resolve a cache id to a file, or None. Guards traversal: the id is used
+    in a URL, so it is checked to be exactly what we mint, never joined raw."""
+    if not vid or not vid.isalnum() or len(vid) > 32:
+        return None
+    p = os.path.join(CACHE, vid + ".mp3")
+    return p if os.path.exists(p) else None
+
+
+def _prune():
+    try:
+        files = [os.path.join(CACHE, f) for f in os.listdir(CACHE) if f.endswith(".mp3")]
+    except OSError:
+        return
+    if len(files) <= MAX_FILES:
+        return
+    files.sort(key=lambda f: os.path.getmtime(f))
+    for f in files[:len(files) - MAX_FILES]:
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
+def render(text, voice=DEFAULT_VOICE):
+    """Text -> cache id of a playable mp3, or None if speech is unavailable.
+
+    Never raises: a missing package, no network, or a service error all mean
+    "no audio this time", which the caller degrades to text.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    if len(text) > MAX_TEXT:
+        text = text[:MAX_TEXT]
+    vid = _key(text, voice)
+    with _LOCK:
+        if path_for(vid):
+            return vid                       # already spoken once - free
+        try:
+            import asyncio
+            import edge_tts
+        except Exception:
+            return None
+        os.makedirs(CACHE, exist_ok=True)
+        tmp = os.path.join(CACHE, ".%s.%d.part" % (vid, os.getpid()))
+        out = os.path.join(CACHE, vid + ".mp3")
+        try:
+            async def _gen():
+                await edge_tts.Communicate(text, voice, rate=RATE).save(tmp)
+            asyncio.run(_gen())
+            if not os.path.exists(tmp) or os.path.getsize(tmp) < 512:
+                raise RuntimeError("empty render")
+            os.replace(tmp, out)             # atomic: a reader never sees a part file
+        except Exception:
+            for p in (tmp,):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+            return None
+        _prune()
+        return vid
+
+
+def stats():
+    try:
+        files = [f for f in os.listdir(CACHE) if f.endswith(".mp3")]
+    except OSError:
+        files = []
+    return {"available": available(), "cached": len(files)}

@@ -11,7 +11,7 @@ decision: mobile = same capabilities), so besides pulling it can drive:
   GET  /control/state                               {"teach": <run-id>|null, "busy": [...]}
 """
 import json, os, threading
-from urllib.parse import unquote, parse_qs, urlparse
+from urllib.parse import unquote, quote, parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from actionlog import read_timeline
 from runs import REC, list_runs
@@ -378,6 +378,33 @@ class H(BaseHTTPRequestHandler):
                     {"setup_needed": not auth.list_users(), "user": user,
                      "registration": bool(reg.get("open") or reg.get("invite_code")),
                      "registration_open": bool(reg.get("open"))}))
+            if p.startswith("/glance/voice/"):
+                # The agent's answer as SPEECH. Same token as /glance; serving a
+                # rendered mp3 is strictly less than what /glance already hands
+                # out (it IS the same sentence, spoken), so it needs no extra
+                # switch. The id is a content hash minted by voice.render, and
+                # voice.path_for refuses anything that is not exactly that shape
+                # - the URL must never become a file-read primitive.
+                import events, voice
+                tok = events.settings().get("glance_token") or ""
+                given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+                vid = p.rsplit("/", 1)[-1][:-4] if p.endswith(".mp3") else ""
+                fp = voice.path_for(vid)
+                if not fp:
+                    return self._send(404, json.dumps({"error": "no such clip"}))
+                data = open(fp, "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/mpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                # content-addressed: the id changes when the words change, so it
+                # can be cached hard and never go stale
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if p == "/glance":
                 # glance surface for the Meta Ray-Ban Display webapp (glasses/).
                 # Token-gated, cross-origin (CORS on via _send), no session-
@@ -1055,13 +1082,25 @@ class H(BaseHTTPRequestHandler):
                     return self._send(502, json.dumps({"error": str(e)[:200]}))
                 reply = out.get("reply") or ""
                 q, prose = ask.parse(reply)
+                spoken = (prose or reply)[:600]
+                # SPEAK it. The lens has no speechSynthesis but plays audio, so
+                # the answer is rendered here and played there (voice.py). Only
+                # the prose is spoken - reading six option labels aloud is
+                # slower than glancing at them, and the options are the one part
+                # the display is genuinely good at.
+                import voice
+                vid = voice.render(spoken)
                 return self._send(200, json.dumps({
                     # the prose WITHOUT the block - ask.parse already strips it
-                    "reply": (prose or reply)[:600],
+                    "reply": spoken,
                     # the tappable half; None when the agent ignored the brief,
                     # which the lens must show as a dead end rather than hide
                     "question": _glance_question({"question": q}) if q else None,
-                    "refused": out.get("refused") or []}))
+                    "refused": out.get("refused") or [],
+                    # None when speech is unavailable (offline, no edge-tts) -
+                    # the lens then simply shows the text, never an error
+                    "voice": ("/glance/voice/%s.mp3?token=%s" % (vid, quote(given)))
+                             if vid else None}))
             if p == "/glance/answer":
                 # GLASS MODE's ONLY write. The lens taps one of the options the
                 # worker itself offered and the card's session continues - the
