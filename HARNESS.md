@@ -339,12 +339,11 @@ this surface's actual deny list cover it, right now.
 
 Debt entry `card-shares-the-operators-auto-memory` in `daemon/debt.py`: **paid**.
 
-**Not part of this repo, worth knowing anyway:** the deny stops a card's write
-from being silently adopted as context before anyone notices, but it does not
-give recoverability - and never covered the operator's own interactive sessions,
-which still write there freely. `git init` was run directly in the memory
-directory on the operator's machine (local only, no remote) as a complementary
-safety net; see the addendum on the debt entry.
+**The other half is versioning, not blocking.** The deny stops a card's write
+from being adopted as context before anyone notices; it gives no recoverability,
+and never covered the operator's own interactive sessions - now the only writers.
+That half is a `Stop` hook that keeps every project's memory directory in local
+git: see §6.
 
 ---
 
@@ -437,7 +436,61 @@ adding a field forces a conscious choice rather than a silent one.
 
 ---
 
-## 6. Run / verify
+## 6. Memory is versioned by a Stop hook
+
+The permission deny above stops a *card* writing to the shared memory directory.
+It does nothing for the operator's own interactive sessions, which write there
+constantly and are the only writers left - and the directory still had no
+history of its own. `tools/memory_autocommit.py` closes that:
+
+| | |
+|---|---|
+| canonical | `tools/memory_autocommit.py` (versioned, gated by `tests/test_memory_autocommit.py`) |
+| deployed | `~/.claude/hooks/memory_autocommit.py` |
+| wired as | a **`Stop`** hook in `~/.claude/settings.json` |
+| installer | `py -3.12 tools/install_memory_hook.py` (`--check` for drift, `--uninstall`) |
+
+It sweeps **every** `~/.claude/projects/*/memory/`, `git init`s any that holds
+notes but has no repo, and commits whatever changed - so a project created next
+month is covered with no action taken. Commits record the `session_id` from the
+hook's stdin payload, which is what makes a later revert decidable ("was this me,
+or a turn I never read?").
+
+Two files because a script living only in `~/.claude/hooks/` would itself be
+untracked and unreviewable - fixing untracked state with an untracked script.
+`--check` keeps the two byte-identical.
+
+**Its one law is `daemon/harness.py`'s law:** it can never break a turn. A `Stop`
+hook that exits 2 **blocks** the turn, so that exit code is unreachable from
+`main()` - every git call is timeout-bounded, every failure becomes a log line,
+and the worst outcome is "this turn was not snapshotted", which the next turn
+fixes. It never configures a remote and never pushes; these are private notes.
+It also leaves alone any memory directory that is already inside somebody else's
+repo, rather than nesting a second one inside it.
+
+`Stop` rather than `SessionEnd` because `SessionEnd` is missed exactly when it
+matters most - a crashed process. The cost is that it runs constantly, so the
+no-op path is one `git status --porcelain` per directory.
+
+This hook lives in the **personal** layer, so cards and the copilot never load
+it (§4). That is correct: they cannot write memory at all, so they have nothing
+to commit.
+
+### The trap: settings apply at SESSION START
+
+Measured the hard way while verifying the deny. A running session holds the
+settings file contents it was spawned with - editing
+`harness/settings/card.json` does **not** change the permissions of a card
+that is already mid-flight, only of the next spawn. Symptom: a Bash write that
+*should* be denied succeeds, and you conclude the deny is broken when it is
+merely younger than the process. Confirmed against a fresh spawn across five
+write vectors (`Write`, `Edit`, `>`, `>>`, `tee`, `python -c`) - all blocked;
+the same commands from the older session went through. The `install_memory_hook`
+output says "Active from the NEXT session" for the same reason.
+
+---
+
+## 7. Run / verify
 
 ```bash
 python daemon/harness.py                        # what each surface resolved to
@@ -448,7 +501,11 @@ python daemon/probe_harness_settings.py --skills     # per-surface skills + memo
 
 py -3.12 daemon/test_harness.py                 # loader, write path, isolation
 py -3.12 tests/test_harness_layer.py            # no-drift, the loop, the app contract
+py -3.12 tests/test_memory_autocommit.py        # the Stop hook, incl. its never-wedge law
 py -3.12 tools/run_gate.py                      # everything the gate runs
+
+py -3.12 tools/install_memory_hook.py --check   # is the deployed hook current?
+py -3.12 tools/memory_autocommit.py --dry-run -v  # what would it commit right now?
 ```
 
 The `test_*` files are unit tests and never spawn an agent - the settings layer is
