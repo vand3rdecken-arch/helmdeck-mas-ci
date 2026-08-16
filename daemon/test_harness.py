@@ -542,6 +542,52 @@ def test_preview_provenance():
           "the preview shows the REAL exec form, after the .cmd-shim rewrite")
 
 
+def test_memory_isolation():
+    print("12. the shared auto-memory dir is denied WRITE, in the SHIPPED files")
+    # debt: card-shares-the-operators-auto-memory. Every surface's
+    # memory_paths.auto resolves to the operator's personal
+    # ~/.claude/projects/<slug>/memory/, which is NOT git-backed (measured: no
+    # .git anywhere under ~/.claude) - so unlike every other tracked file this
+    # harness protects, a bad write there has no revert path. The fix denies
+    # Write/Edit and leaves Read open, using the exact mechanism that already
+    # protects daemon/settings.json two lines above it in the same file - no
+    # new permission mechanism, no new code path.
+    for key in ("card", "pm"):
+        p = harness.preview(key)
+        mem = p.get("memory") or {}
+        check(mem.get("denied") is True,
+              "%s: the SHIPPED settings layer denies the shared memory dir" % key)
+        check(any("Write(" in pat for pat in mem.get("patterns") or []),
+              "%s: a Write() pattern is present" % key)
+        check(any("Edit(" in pat for pat in mem.get("patterns") or []),
+              "%s: an Edit() pattern is present too - Edit is a separate tool "
+              "from Write and needs its own deny" % key)
+
+    with Sandbox() as sb:
+        # a settings file that forgot the memory deny - preview() must SAY so,
+        # not silently assume the fix is universal
+        sb.settings("card", '{"permissions": {"deny": ["Read(./x)"]}}')
+        sb.agent("card-worker", GOOD_AGENT)
+        p = harness.preview("card")
+        mem = p.get("memory") or {}
+        check(mem.get("denied") is False,
+              "a settings file WITHOUT the memory deny is reported writable, "
+              "not silently assumed safe")
+        check(mem.get("note"),
+              "and the note names the gap - this is the same 'a broken/missing "
+              "protection must be visible, not swallowed' law as errors()")
+
+        # no settings file at all (declared but unreadable) must not raise
+        sb2 = harness
+        sb2._cache.clear()
+        import os as _os
+        _os.remove(os.path.join(harness.SETTINGS, "card.json"))
+        harness._cache.clear()
+        p = harness.preview("card")
+        check(isinstance(p.get("memory"), dict) and p["memory"]["denied"] is False,
+              "no settings file at all -> memory isolation reported off, not a crash")
+
+
 def test_preview_never_raises():
     print("11. preview() is a diagnostic - it must survive what it diagnoses")
     with Sandbox() as sb:
@@ -565,7 +611,7 @@ for fn in (test_fallback_on_malformed, test_broken_is_reported_not_swallowed,
            test_both_validator_paths_agree, test_versions_round_trip,
            test_card_argv_excludes_the_operator_layer,
            test_pm_argv_is_its_own_isolated_layer, test_resolved_env,
-           test_preview_provenance, test_preview_never_raises):
+           test_preview_provenance, test_memory_isolation, test_preview_never_raises):
     fn()
 
 print(("FAILED: %d" % len(_fails)) if _fails else "\nall harness loader/write/isolation checks passed")

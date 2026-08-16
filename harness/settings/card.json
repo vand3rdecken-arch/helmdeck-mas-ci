@@ -19,7 +19,19 @@
     "  this file     ON  - anything HelmDeck wants true for every card and nothing else.",
     "",
     "NEVER put a secret in here: this file is tracked in git, which is exactly why it",
-    "is safe to hand to a sandboxed worker."
+    "is safe to hand to a sandboxed worker.",
+    "",
+    "MEMORY IS READ-ONLY (2026-08-16, debt: card-shares-the-operators-auto-memory).",
+    "Every surface's memory_paths.auto resolves to ONE directory - the operator's",
+    "personal ~/.claude/projects/<slug>/memory/ - and --setting-sources does not move",
+    "it. Unlike everything else this file isolates, that directory carries NO git",
+    "history: `git -C ~/.claude status` is 'not a git repository', so a card write",
+    "there is not reversible the way a tracked-file edit is. Measured against the real",
+    "CLI (drivers.build_argv + the real card settings, not a synthetic stand-in): a",
+    "card COULD write and edit files there before this entry existed, and the",
+    "Write()/Edit() deny below - the SAME mechanism that already protects",
+    "daemon/settings.json above - blocks it cleanly while leaving Read open, so a",
+    "card still benefits from accumulated notes without being able to corrupt them."
   ],
 
   "env": {
@@ -46,7 +58,9 @@
       "Read(./.env)",
       "Read(./**/.env)",
       "Read(./**/*.pem)",
-      "Read(./**/*.keystore)"
+      "Read(./**/*.keystore)",
+      "Write(~/.claude/projects/**)",
+      "Edit(~/.claude/projects/**)"
     ]
   }
 }
