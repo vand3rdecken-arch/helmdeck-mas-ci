@@ -729,12 +729,11 @@ DEBT = [
     {
         "id": "build-stale-tracked-sources-only",
         "title": "build_stale() only ever sees the native inputs git status can see",
-        # OPEN, not paid: the false-POSITIVE half (every quiet card nagged to run
-        # a 30-minute Android build) is fixed and shipped, but this item's own
-        # title describes the false-NEGATIVE half, and that is still standing.
-        # Marking the whole entry paid would retire a blind spot that is still
-        # there - the register exists precisely to stop that.
-        "status": "open",
+        # PAID 2026-08-16. It was left OPEN by the step that fixed only the
+        # false-POSITIVE half; the title describes the false-NEGATIVE half, and
+        # closing the entry then would have retired a blind spot that was still
+        # there. Both halves are closed now - see "fix" below.
+        "status": "paid",
         "what": "tools/loop_state.py's build_stale() gates on touches_native(touched), "
                 "and `touched` comes from `git status --porcelain` (dirty_files()). "
                 "app/android/ is entirely git-ignored (app/.gitignore: `/android`), so "
@@ -753,21 +752,76 @@ DEBT = [
         "trigger": "a native-only edit made directly under the ignored app/android/ tree "
                    "(outside app.json/package.json) on the box that actually builds the "
                    "APK, with nothing else touched",
-        "fix": "PAID for the reachable case: build_stale() now takes `touched` and only "
-               "runs when touches_native() sees app.json/package.json/app/android/ in "
-               "it (tools/loop_state.py, 2026-08-15) - the false-positive nag on every "
-               "quiet card is gone, verified by running loop_state.py inside a real "
-               "card worktree (WIP, not ALIGN-for-a-30-min-Android-build). The residual "
-               "gap above (an android/-only edit on the release box) is unfixed: the "
-               "release box IS the one place app/android/ is NOT git-ignored-away from "
-               "(it is the working tree that produces the APK), so `git status` there "
-               "would actually show it - meaning this residual only bites if someone "
-               "edits inside app/android/ AND stages/commits nothing else AND the loop "
-               "runs before the artifact is rebuilt. Close it, if it ever matters, by "
-               "adding an explicit `git -C app/android status` probe alongside "
-               "dirty_files() rather than widening ARTIFACT_TRIGGERS with a path that "
-               "is normally invisible.",
+        "fix": "PAID (tools/loop_state.py, 2026-08-16) by REORDERING the two signals "
+               "rather than by widening the heuristic. The 2026-08-15 step made "
+               "build_stale() take `touched` and return early unless "
+               "touches_native(touched) - which killed the false-positive nag on every "
+               "quiet card, but left the git-visibility heuristic as a VETO in front of "
+               "the authoritative check, which is what this entry's title names. "
+               "build_stale() now asks the fingerprint FIRST: when deploy/.native_fp "
+               "exists and _native_fp() computes, it compares them and returns, full "
+               "stop. That answer is derived from the real native inputs (it hashes the "
+               "AndroidManifest under the git-ignored tree too), so git-visibility no "
+               "longer decides whether the nudge can fire - the false negative is gone "
+               "at its root, without the `git -C app/android status` probe this entry "
+               "once proposed (a second reconstructed signal was the wrong shape; the "
+               "fingerprint was already the derived one). `touched` still gates the "
+               "DEGRADED branches - no marker (never shipped from this checkout) or no "
+               "git-bash to compute a fingerprint - which is the only place a guess "
+               "belongs, and is exactly the branch a card worktree lands in, so the "
+               "false-positive fix holds for a better reason than before: not 'cards "
+               "are excluded' but 'we have no authoritative answer here, so do not "
+               "invent one'. Covered by tests/test_harness_layer.py (both directions).",
         "order": 25,
+    },
+    {
+        "id": "card-shares-the-operators-auto-memory",
+        "title": "a card worker reads and writes the OPERATOR'S personal auto-memory",
+        # OPEN and genuinely unfixed. Registering it rather than fixing it,
+        # because the fix is a DECISION the owner owns (see "fix"), not a bug.
+        "status": "open",
+        "what": "MEASURED 2026-08-16 against CLI 2.1.207, with the environment scrubbed "
+                "of every CLAUDE* variable so the reading is not an artefact of the "
+                "probe's own parent session: a card spawn's init event reports "
+                "memory_paths.auto = ~/.claude/projects/C--Users-Tien-Duy-Vo-Downloads-"
+                "swarmdeck/memory/. That is the operator's personal cross-session memory "
+                "directory, and the slug is the MAIN repo's path, not the worktree's - "
+                "so every card, every machine task, the board copilot and the operator's "
+                "own desktop sessions all resolve to ONE shared directory outside the "
+                "worktree. --setting-sources does not move it: the value is identical "
+                "under `project` (card) and `\"\"` (copilot).",
+        "why_it_bites": "harness/ exists to stop the operator's personal ~/.claude layer "
+                        "reaching a sandboxed worker. It closed the SETTINGS half of that "
+                        "leak (hooks, the model pin, skillOverrides) and this half was "
+                        "never noticed, because nothing rendered it: /harness's provenance "
+                        "view shows settings layers and the hook matrix, not memory_paths. "
+                        "Two consequences. (1) Personal context leaks INTO a card - the "
+                        "memory dir holds the owner's notes, not the card's. (2) Worse, it "
+                        "leaks OUT: memory is writable, so a card can silently edit notes "
+                        "every future session of every card and the operator's own desktop "
+                        "will read as background context. That is shared mutable state "
+                        "outside the worktree, which is the one thing worktree isolation "
+                        "is for.",
+        "trigger": "any card spawn - it is the steady state, not an edge case. Bites "
+                   "visibly the first time a card writes a memory file (they are invited "
+                   "to: the memory instructions ship in the system prompt).",
+        "fix": "NOT a code fix yet, because the right answer is the owner's call and "
+               "guessing it would be worse than the leak. Three real options, in the "
+               "order I would argue for them: (a) ISOLATE - give each surface its own "
+               "memory dir, so a card's notes stay with the card. Costs the useful case "
+               "where a card should remember what an earlier card learned about this "
+               "repo. (b) SHARE BUT READ-ONLY - keep the common dir, deny writes to it "
+               "in harness/settings/card.json's permissions.deny, so cards benefit from "
+               "accumulated knowledge without being able to corrupt it. My "
+               "recommendation. (c) LEAVE IT and make it VISIBLE - surface memory_paths "
+               "in harness.preview()'s provenance block, so at least the sharing is "
+               "stated rather than discovered. (c) is worth doing regardless of which of "
+               "(a)/(b) wins, and is the cheap first step. What is NOT acceptable is the "
+               "status quo, where the isolation is documented as complete and is not. "
+               "The measurement is reproducible: "
+               "`python daemon/probe_harness_settings.py --skills` prints memory_paths "
+               "per surface alongside the skill sets.",
+        "order": 26,
     },
 ]
 

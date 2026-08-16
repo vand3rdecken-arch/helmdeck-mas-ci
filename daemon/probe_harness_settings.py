@@ -274,7 +274,87 @@ def main():
     validate()
 
 
+def skills():
+    """WHICH SKILLS (and which memory dir) each shipped surface actually gets.
+
+    A third observation channel, and the cheapest honest one: the init event
+    carries `skills`, `agents`, `plugins` and `memory_paths` BEFORE any model
+    inference, so one throwaway turn measures the real per-surface discovery set
+    deterministically. That matters because "the operator's ~150 skillOverrides
+    never reach a card" was a claim reasoned from --setting-sources semantics,
+    and skillOverrides is a settings KEY while ~/.claude/skills/ is a DIRECTORY.
+    Those are two different mechanisms and only one of them is obviously
+    governed by the flag. Reason about it and you get a plausible answer; run
+    this and you get the real one.
+
+    THE ENV IS SCRUBBED OF CLAUDE*. This probe is usually launched from inside a
+    Claude Code session, which exports CLAUDECODE / CLAUDE_CODE_SESSION_ID /
+    CLAUDE_CODE_CHILD_SESSION into every child. Measuring a spawn's inherited
+    config while inheriting the measurer's own config is how you get a reading
+    that is really about the probe. In production the daemon is not a Claude
+    Code process and those variables are absent, so scrubbing them is the
+    faithful reproduction, not a convenience.
+    """
+    import harness
+    rows = []
+    for key, agent in (("card", "card-worker"), ("machine", "machine-worker"),
+                       ("pm", "board-copilot")):
+        extra = harness.cli_args(agent)
+        argv = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
+                "--permission-mode", "plan", "--model", "haiku"] + extra + ["hi"]
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "CLAUDECODE"}
+        try:
+            p = subprocess.run(drivers._cmd_line(argv), cwd=harness.ROOT, env=env,
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=180)
+        except subprocess.SubprocessError as e:
+            print("%-8s SPAWN FAILED: %s" % (key, str(e)[:160]))
+            continue
+        init = None
+        for line in (p.stdout or "").splitlines():
+            try:
+                ev = json.loads(line.strip())
+            except ValueError:
+                continue
+            if ev.get("type") == "system" and ev.get("subtype") == "init":
+                init = ev
+                break
+        if not init:
+            print("%-8s NO INIT EVENT (rc=%s) %s" % (key, p.returncode,
+                                                     (p.stderr or "")[-200:]))
+            continue
+        rows.append((key, extra, init))
+        print("\n==== %s  (%s) ====" % (key, " ".join(str(x) for x in extra)))
+        print("  skills (%d): %s" % (len(init.get("skills") or []),
+                                     ", ".join(sorted(init.get("skills") or []))))
+        print("  plugins    : %s" % (init.get("plugins") or []))
+        print("  memory_paths: %s" % (init.get("memory_paths") or {}))
+
+    if len(rows) < 2:
+        return False
+    got = {k: set(ev.get("skills") or []) for k, _, ev in rows}
+    print("\n---- VERDICT ----")
+    if "card" in got and "pm" in got:
+        proj_only = got["card"] - got["pm"]
+        # .claude/skills/ in this repo ships adversarial-test + impeccable. The
+        # card keeps --setting-sources project, the copilot passes "", so the
+        # difference between the two sets IS the project skill directory.
+        print("project .claude/skills reach the card but not the copilot: %s  %s"
+              % (bool(proj_only), sorted(proj_only)))
+    mems = {k: (ev.get("memory_paths") or {}).get("auto") for k, _, ev in rows}
+    shared = len(set(v for v in mems.values() if v)) == 1 and len(mems) > 1
+    print("every surface shares ONE auto-memory dir: %s" % shared)
+    if shared:
+        print("  -> %s" % list(mems.values())[0])
+        print("  This is the operator's personal directory and --setting-sources")
+        print("  does not move it. Registered as debt: card-shares-the-operators-auto-memory")
+    return True
+
+
 if __name__ == "__main__":
     if "--validate" in sys.argv:
         sys.exit(0 if validate() else 1)
+    if "--skills" in sys.argv:
+        sys.exit(0 if skills() else 1)
     main()
