@@ -405,6 +405,22 @@ def test_export_matches_the_app_contract():
                   for s in m["states"]),
               "every build-loop state cites file:line, read from source at call "
               "time - a fixed node must be checkable, not merely asserted")
+
+        # WHY, not just WHETHER. The map draws a padlock off `kind`; before
+        # `why` existed it could say nothing about the reason, and the owner
+        # read the whole screen as arbitrarily locked. The app falls back to a
+        # generic sentence when `why` is absent - which is the honest thing for
+        # an older daemon and exactly the wrong thing for a state added here
+        # today, because it degrades silently and looks fine in a screenshot.
+        # So the reason is required at the declaration, next to `kind`.
+        nowhy = [n["key"] for n in every if not (n.get("why") or "").strip()]
+        check(not nowhy,
+              "every state/lane/gate declares WHY it is fixed (or what is "
+              "adjustable) next to its `kind` - the app must never have to "
+              "invent the reason behind a padlock (missing: %s)" % sorted(nowhy))
+        # And the reason must be a sentence, not a restatement of the key.
+        check(all(len((n.get("why") or "")) > 40 for n in every),
+              "each `why` is a real sentence, not a stub")
         keys = {s["key"] for s in harness.SURFACES}
         check(keys == {"card", "machine", "pm"},
               "the surface keys the app's HarnessSurface union names: %s" % sorted(keys))

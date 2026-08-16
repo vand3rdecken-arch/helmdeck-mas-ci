@@ -914,25 +914,40 @@ LANES = ("backlog", "working", "review", "done")
 #   fixed  - harness law (CLAUDE.md). Not configurable, shown read-only.
 #   policy - data. `settings` names the exact key that governs the node, so the
 #            UI can link a node straight to the knob instead of describing it.
+#   why    - why it is fixed / what exactly is adjustable. Same argument as
+#            loop_state.LOOP_STATES: the module that decides a node is fixed owns
+#            the reason. Without it the map could only draw a padlock, which
+#            reads as "arbitrarily locked" rather than "deliberately fixed".
+#
+# Every lane's NAME is renameable (policy.lane_labels) regardless of `kind` -
+# that is a label, not a rule, which is why flow() resolves it for the UI.
 LANE_FLOW = {
     "nodes": [
         {"key": "backlog", "default_label": "Backlog", "kind": "policy",
          "settings": ["policy.auto_dispatch_priority", "capacity.wip_limit"],
-         "instruction": "Karten warten. Ab der Prioritaet in policy.auto_dispatch_priority "
-                        "starten sie sich selbst - aber nur im WIP-Rahmen (capacity.wip_limit)."},
+         "instruction": "Karten warten. Ab der Priorität in policy.auto_dispatch_priority "
+                        "starten sie sich selbst - aber nur im WIP-Rahmen (capacity.wip_limit).",
+         "why": "Du entscheidest, was sich von selbst startet: ab welcher Priorität und "
+                "wie viele Karten gleichzeitig laufen dürfen."},
         {"key": "working", "default_label": "In Arbeit", "kind": "fixed",
          "settings": [],
          "instruction": "Ein Agent arbeitet in einem ISOLIERTEN git-worktree (Harness-Gesetz: "
-                        "worktree-Isolation). Jeder Turn ist gemessen (Kosten/Token -> Audit)."},
+                        "worktree-Isolation). Jeder Turn ist gemessen (Kosten/Token -> Audit).",
+         "why": "Fix, weil ohne Worktree-Isolation zwei Karten sich gegenseitig "
+                "überschreiben und ohne Messung kein Ergebnis zurechenbar wäre."},
         {"key": "review", "default_label": "Review", "kind": "fixed",
          "settings": [],
-         "instruction": "Beim Eintritt laeuft der Quality-Gate (gate-before-review, FIX). "
-                        "Rot -> die Karte wird zurueckgebounced mit sichtbarem Grund."},
+         "instruction": "Beim Eintritt läuft der Quality-Gate (gate-before-review, FIX). "
+                        "Rot -> die Karte wird zurückgebounced mit sichtbarem Grund.",
+         "why": "Fix, weil sonst ungeprüfte Arbeit zur Abnahme käme - der Gate ist "
+                "die einzige Stelle, die 'grün' beweist statt behauptet."},
         {"key": "done", "default_label": "Fertig", "kind": "policy",
          "settings": ["policy.auto_accept_green"],
-         "instruction": "Merge + Deploy. Nichts merged sich selbst - ausser "
-                        "policy.auto_accept_green ist an. Der Prozess-Chain rueckt "
-                        "einen Schritt vor."},
+         "instruction": "Merge + Deploy. Nichts merged sich selbst - außer "
+                        "policy.auto_accept_green ist an. Der Prozess-Chain rückt "
+                        "einen Schritt vor.",
+         "why": "Standard ist: nichts merged sich selbst. Ob grüne Karten automatisch "
+                "durchgehen, entscheidest du mit policy.auto_accept_green."},
     ],
     "edges": [
         {"from": "backlog", "to": "working", "verb": "dispatch", "kind": "policy",
@@ -941,15 +956,15 @@ LANE_FLOW = {
                         "nimmt ihre Position wieder auf)."},
         {"from": "working", "to": "review", "verb": "submit", "kind": "fixed",
          "settings": [],
-         "instruction": "Aufraeumen + Commit, dann der Gate. Danach wird der Merge nur "
+         "instruction": "Aufräumen + Commit, dann der Gate. Danach wird der Merge nur "
                         "KLASSIFIZIERT (dry-run) - die Karte bleibt mit dem Befund auf Review."},
         {"from": "review", "to": "working", "verb": "bounce", "kind": "fixed",
          "settings": [],
-         "instruction": "Der Mensch schickt die Karte zurueck - als 'bounce' in der "
-                        "Oekonomie verbucht."},
+         "instruction": "Der Mensch schickt die Karte zurück - als 'bounce' in der "
+                        "Ökonomie verbucht."},
         {"from": "review", "to": "done", "verb": "accept", "kind": "policy",
          "settings": ["policy.auto_accept_green"],
-         "instruction": "Der bewusste Zug nach Done merged wirklich und faehrt den "
+         "instruction": "Der bewusste Zug nach Done merged wirklich und fährt den "
                         "Deploy-Hook. Idempotent: eine gelandete Karte wird nie erneut "
                         "gegatet oder gemerged."},
     ],
@@ -957,7 +972,10 @@ LANE_FLOW = {
              "between": ["working", "review"], "settings": [],
              "instruction": "Gate-before-review ist ein fixes Harness-Gesetz: kein Review "
                             "ohne bestandenen Gate. Das Ergebnis geht append-only ins "
-                            "Audit-Log."},
+                            "Audit-Log.",
+             "why": "Fix, weil eine Abnahme sonst nur eine Meinung wäre. Das Ergebnis "
+                    "wird append-only protokolliert und kann nicht nachträglich "
+                    "geschönt werden."},
 }
 
 

@@ -278,30 +278,91 @@ export const screens: Dict = {
   "sessions.empty": { de: "Keine Sessions gefunden.", en: "No sessions found." },
 
   // ---- loop map -----------------------------------------------------------
+  // Vocabulary, fixed once here and used nowhere else in three different ways:
+  //   Lane       = a column on the board (where a CARD sits)
+  //   Loop-Stufe = a step inside one repo checkout (how a CHANGE gets built)
+  //   Brief      = the instructions an AGENT is spawned with
+  // The screen mixed all three under one heading style, which is half the
+  // reason it read as one undifferentiated wall of locks.
   "loopmap.title": { de: "Loop & Harness", en: "Loop & harness" },
-  "loopmap.hint": {
-    de: "Tippe einen Schritt oder das Schild, um die Regel dahinter zu sehen.",
-    en: "Tap a step or the shield to see the rule behind it.",
+  "loopmap.intro": {
+    de: "Diese Seite zeigt drei verschiedene Dinge. Manches ist bewusst fest verdrahtet, anderes kannst du ändern — jeder Block sagt oben, was davon gilt.",
+    en: "This page shows three different things. Some of it is deliberately hard-wired, some of it you can change — every block states which up front.",
   },
-  "loopmap.laws": { de: "Harness-Gesetze (fix)", en: "Harness laws (fixed)" },
+  "loopmap.legend": { de: "Legende", en: "Legend" },
+  "loopmap.legendFixedHint": {
+    de: "Im Code verankert und absichtlich nicht änderbar. Tippen zeigt den Grund und die Codestelle.",
+    en: "Anchored in code and deliberately not changeable. Tap to see the reason and the source line.",
+  },
+  "loopmap.legendPolicyHint": {
+    de: "Das darfst du einstellen. Tippen zeigt, welcher Schalter es steuert und wo er liegt.",
+    en: "This one is yours to set. Tap to see which knob governs it and where that knob lives.",
+  },
+  "loopmap.hint": {
+    de: "Tippe eine Lane oder das Schild für Regel, Grund und Codestelle.",
+    en: "Tap a lane or the shield for the rule, the reason and the source line.",
+  },
+  "loopmap.laws": { de: "Harness-Gesetze", en: "Harness laws" },
+  "loopmap.lawsHint": {
+    de: "Die sieben Sätze, die über allem stehen. Kein Schalter, kein Chat und keine Karte kann sie aufweichen — jeder nennt das Modul, das ihn durchsetzt.",
+    en: "The seven sentences that outrank everything else. No switch, no chat and no card can soften them — each names the module that enforces it.",
+  },
   "loopmap.charter": {
     de: "Capability-Charter (Code, read-only)",
     en: "Capability charter (code, read-only)",
   },
-  "loopmap.kindFixed": { de: "FIX (Harness)", en: "FIXED (harness)" },
-  "loopmap.kindPolicy": { de: "POLICY (justierbar)", en: "POLICY (adjustable)" },
+  "loopmap.kindFixed": { de: "Fix per Design", en: "Fixed by design" },
+  "loopmap.kindPolicy": { de: "Einstellbar", en: "Adjustable" },
   "loopmap.here": { de: "HIER", en: "HERE" },
   "loopmap.modeCard": { de: "KARTEN-MODUS", en: "CARD MODE" },
   "loopmap.modeRepo": { de: "REPO-MODUS", en: "REPO MODE" },
   "loopmap.governedBy": {
-    de: "Gesteuert von diesen Einstellungen — tippen zum Ändern:",
-    en: "Governed by these settings — tap to change:",
+    de: "Diese Schalter steuern es:",
+    en: "The knobs that govern it:",
   },
-  "loopmap.harness": { de: "Agenten-Oberflächen", en: "Agent surfaces" },
+  // A `settings` path the app has no field for. It is still a real knob — it
+  // just does not live on a screen, so the map names the place instead of
+  // sending the owner to one that has no such field.
+  "loopmap.knobEnv": {
+    de: "Umgebungsvariable — beim Start des Daemons gesetzt, nicht in der App",
+    en: "Environment variable — set when the daemon starts, not in the app",
+  },
+  "loopmap.knobFile": {
+    de: "Nur in settings.json — in der App (noch) kein Feld dafür",
+    en: "settings.json only — no field for it in the app (yet)",
+  },
+  "loopmap.whyFixedFallback": {
+    de: "Teil des fixen Harness: Reihenfolge und Bedingung sind Code, damit jede Karte denselben Weg nimmt und das Ergebnis prüfbar bleibt.",
+    en: "Part of the fixed harness: order and condition are code, so every card takes the same path and the result stays checkable.",
+  },
+  "loopmap.whyPolicyFallback": {
+    de: "Verhalten ist Daten, nicht Code — du kannst es über die genannten Schalter ändern.",
+    en: "Behaviour is data, not code — change it through the knobs named below.",
+  },
+  "loopmap.secLanes": { de: "Lanes — wie eine Karte über das Board läuft", en: "Lanes — how a card crosses the board" },
+  "loopmap.secLanesHint": {
+    de: "Die vier Spalten deines Boards. Die Namen darfst du frei vergeben; was beim Übergang passiert, ist teils fix.",
+    en: "The four columns of your board. The names are yours to choose; what happens on a transition is partly fixed.",
+  },
+  "loopmap.secBuild": { de: "Loop-Stufen — wie eine Änderung gebaut wird", en: "Loop stages — how a change gets built" },
+  "loopmap.secBuildHint": {
+    de: "Nicht das Board: das ist die Disziplin INNERHALB eines Checkouts. Tippe eine Stufe, um Regel und Grund zu sehen.",
+    en: "Not the board: this is the discipline INSIDE one checkout. Tap a stage for its rule and the reason behind it.",
+  },
+  "loopmap.secHarnessHint": {
+    de: "Der Text, mit dem ein Agent gestartet wird — pro Oberfläche einer. Voll editierbar.",
+    en: "The text an agent is started with — one per surface. Fully editable.",
+  },
+  "loopmap.renameLanes": { de: "Lane-Namen ändern", en: "Rename the lanes" },
+  "loopmap.harness": { de: "Agenten-Briefs", en: "Agent briefs" },
   "loopmap.chars": { de: "{n} Zeichen", en: "{n} chars" },
   "loopmap.editHarness": {
     de: "Briefs & Settings bearbeiten",
     en: "Edit briefs & settings",
+  },
+  "loopmap.openAutomation": {
+    de: "Im Automatik-Hub ändern",
+    en: "Change it in the automation hub",
   },
 
   // ---- pairing ------------------------------------------------------------
