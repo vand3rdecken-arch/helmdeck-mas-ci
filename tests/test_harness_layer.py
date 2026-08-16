@@ -397,9 +397,62 @@ def test_export_matches_the_app_contract():
             os.environ["HELMDECK_WORKTREE"] = old
 
 
+def test_policy_knob_contract():
+    """The OTHER declarative table: /automation's config_schema.
+
+    Same failure mode as the state machine, different table. The app renders
+    each knob generically by switching on `control`, so a knob whose control has
+    no branch in that switch renders as NOTHING - silently, on an owner-only
+    screen nobody looks at twice. And a labelKey with no dict entry renders the
+    raw key. Neither is a type error on either side."""
+    import re
+    import server
+    schema = server._config_schema({})
+    check(bool(schema), "server._config_schema() is importable and non-empty")
+
+    auto_tsx = os.path.join(ROOT, "app", "src", "app", "(tabs)", "automation.tsx")
+    src = open(auto_tsx, encoding="utf-8").read()
+    m = re.search(r'type\s+Ctl\s*=\s*([^;]+);', src)
+    check(bool(m), "the app declares its Ctl union in automation.tsx")
+    rendered = set(re.findall(r'"(\w+)"', m.group(1))) if m else set()
+    # the union is the DECLARATION; the switch is what actually runs, so read
+    # both and require the daemon's controls to be in the intersection
+    branches = set(re.findall(r'it\.control === "(\w+)"', src))
+    emitted = {e["control"] for e in schema}
+    check(emitted <= rendered,
+          "every control the daemon emits is in the app's Ctl union "
+          "(unhandled: %s)" % sorted(emitted - rendered))
+    check(emitted <= branches,
+          "every control the daemon emits has a real branch in the app's Control "
+          "component - a knob with no branch renders NOTHING (unhandled: %s)"
+          % sorted(emitted - branches))
+    check(set(server.CONTROLS) == rendered,
+          "server.CONTROLS and the app's Ctl union are the same set "
+          "(daemon-only: %s, app-only: %s)"
+          % (sorted(set(server.CONTROLS) - rendered), sorted(rendered - set(server.CONTROLS))))
+
+    dict_src = open(os.path.join(ROOT, "app", "src", "i18n", "dict", "screens.ts"),
+                    encoding="utf-8").read()
+    for e in schema:
+        hit = re.search(r'"%s"\s*:\s*\{([^}]*)\}' % re.escape(e["labelKey"]), dict_src)
+        check(bool(hit), "%s has an i18n entry" % e["labelKey"])
+        if hit:
+            check("de:" in hit.group(1) and "en:" in hit.group(1),
+                  "%s carries BOTH languages" % e["labelKey"])
+    check(all(len(e["path"].split(".")) == 2 for e in schema),
+          "every knob path is exactly two levels - the app's nest() splits on one dot")
+    check(all(e["group"] in ("policy", "night") for e in schema),
+          "every knob is in a group the app has a panel for")
+    check(all(e.get("options") for e in schema if e["control"] in ("multi", "single")),
+          "every multi/single knob ships its options - the app renders an empty "
+          "chip row otherwise")
+    check(all(e.get("keys") for e in schema if e["control"] == "labels"),
+          "every labels knob ships its keys")
+
+
 for fn in (test_no_drift, test_ask_protocol, test_cli_args,
            test_never_breaks_a_spawn, test_loop_state, test_one_definition,
-           test_export_matches_the_app_contract):
+           test_export_matches_the_app_contract, test_policy_knob_contract):
     print(fn.__name__)
     fn()
 

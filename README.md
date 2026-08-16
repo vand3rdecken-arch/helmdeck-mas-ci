@@ -57,6 +57,7 @@ Feedback is very welcome, here in the issues or on the Play test channel.
 
 The source lives in this repo. Start with [`ARCHITECTURE.md`](ARCHITECTURE.md)
 (the harness is code, policy is data), [`docs/repo-map.md`](docs/repo-map.md)
-(what each folder is) and [`DEPLOY.md`](DEPLOY.md) (how a change reaches a
-phone, a desktop or a Mac). CI builds the macOS app on a macOS runner —
-`.github/workflows/desktop-mac.yml`.
+(what each folder is), [`HARNESS.md`](HARNESS.md) (where that code/data line
+actually falls: how a spawn resolves, how to add a policy knob) and
+[`DEPLOY.md`](DEPLOY.md) (how a change reaches a phone, a desktop or a Mac).
+CI builds the macOS app on a macOS runner — `.github/workflows/desktop-mac.yml`.

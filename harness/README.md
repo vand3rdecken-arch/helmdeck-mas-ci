@@ -1,5 +1,9 @@
 # `harness/` - what the agents are told, as data
 
+> This is the operator's tour of the directory. The developer's map - how a
+> spawn resolves, the resolved argv and env, adding a policy knob, the measured
+> per-surface skill sets, and the fixed/policy boundary - is [`HARNESS.md`](../HARNESS.md).
+
 `ARCHITECTURE.md` says **the harness is code, policy is data**. The agent briefs
 were the exception: what a card worker is told about itself lived as a 900-character
 string constant in `daemon/drivers.py`, and the board copilot's 10 KB system prompt
