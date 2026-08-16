@@ -170,6 +170,17 @@ export interface PmBrief {
   triage_reasons?: { budget?: string; timeline?: string; scope?: string };
   feasibility?: { budget?: string; earliest_done?: string; note?: string };
   open_questions?: string[];
+  // owner-run per-corner evidence checks (pm.reconcile_corner) - carried
+  // forward across re-plans so a corner's last check stays visible.
+  reconcile?: Record<"budget" | "timeline" | "scope", PmReconcile>;
+}
+export interface PmReconcile {
+  at?: string; actor?: string;
+  evidence?: string[]; already_done?: string[]; still_open?: string[];
+}
+export interface PmReconcileResult {
+  corner: string; evidence: PmReconcile;
+  triage?: PmBrief["triage"]; triage_reasons?: PmBrief["triage_reasons"];
 }
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }
@@ -391,6 +402,11 @@ export const api = {
   // PM/CTO: cached briefing (no LLM) vs a fresh report (one model turn).
   pmPlan: () => req<PmData>("GET", "/pm/plan"),
   pmReport: (goal?: string, model?: string) => req<PmBrief>("POST", "/pm/report", { goal, model }),
+  /** Owner pushes on a RED corner: an agent gathers real-world evidence for it
+   *  (is that milestone actually already done?) and the PM re-plans from the
+   *  facts. One planning turn - only call it on an explicit tap. */
+  pmReconcile: (corner: "budget" | "timeline" | "scope") =>
+    req<PmReconcileResult>("POST", "/pm/reconcile", { corner }),
   pmConfig: (patch: Record<string, unknown>) => req<PmConfig>("POST", "/pm/config", patch),
   pmConsolidatePropose: () => req<ConsolidationProposal>("POST", "/pm/consolidate", { mode: "propose" }),
   pmConsolidateApply: (repos: ConsolidationRepo[]) =>

@@ -207,6 +207,9 @@ export const board: Dict = {
   "dash.corner.aiPlan": { de: "KI {v} vom Abo", en: "AI {v} of plan" },
   "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
   "dash.corner.wip": { de: "WIP {wip}/{limit} · {n} frei", en: "WIP {wip}/{limit} · {n} free" },
+  "dash.corner.check": { de: "prüfen", en: "check" },
+  "dash.corner.checking": { de: "prüfe…", en: "checking…" },
+  "dash.corner.lastCheck": { de: "geprüft {when}", en: "checked {when}" },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
   "dash.usage.unavailable": {
     de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",
