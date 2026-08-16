@@ -21,6 +21,9 @@ daemon/users.json
 daemon/sessions.json
 daemon/processes.json
 daemon/copilot_sessions.json
+# companion device registry: holds per-device ticket HASHES (never the tokens,
+# which are unrecoverable by design) - same class as users.json, never in git.
+daemon/companion.json
 web/node_modules/
 web/.next/
 daemon/checkpoints/
