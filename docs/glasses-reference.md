@@ -654,3 +654,76 @@ Two honesty markers worth keeping in mind when reading:
 - **Meta's platform side moves fast** — two SDK releases in two months, and the
   toolkit repo contradicts its own guidelines in three places. Re-verify §5 and
   §6 against the source before betting a card on them.
+
+---
+
+## 10. SDK access check — re-verified 2026-08-16, Go/No-Go for the companion-app step
+
+§5 warned to recheck before building. This re-checks it against the live
+`developer.meta.com/wearables` docs and the `facebook/meta-wearables-dat-android`
+README (not the secondary sources §5 was built from), one month later.
+
+### 10.1 Confirmed unchanged
+- **The PAT is still the real gate on the artifact.** Straight from the SDK
+  repo's own README: a GitHub PAT (classic) with `read:packages` is required to
+  resolve `com.meta.wearable:mwdat-core` from GitHub Packages, supplied via
+  `GITHUB_TOKEN` or `local.properties`. Anyone with a GitHub account can mint
+  one — there is no separate approval step gating the token itself.
+- **Developer Mode activation is unchanged**: Meta AI app → Settings → App Info
+  → tap the App version number 5×.
+- **Publishing is still fully closed in preview.** Meta's own wording:
+  *"only select partners will be able to publish their integrations to the
+  general public"* and *"Publishing will be available to limited audiences in
+  the preview phase."* Their target is *"opening up publishing to general
+  availability in 2026"* — no month or quarter given, so this is not close to
+  lifting on any known date.
+- Sharing during preview stays at web-app-via-URL or DAT-app-via-release-channel
+  to testers inside your own org. No numeric tester cap could be re-confirmed
+  from a live source this pass — treat the earlier "≤100 testers" figure as
+  unverified, not re-stated as fact.
+
+### 10.2 Changed since the 2026-07-13 research
+- **DAT version moved 0.8.0 → 0.9.0.** Confirms the "moves fast" warning —
+  anything actually built against it needs a fresh version pin.
+- **No extra approval gate found beyond the PAT.** The old Android README's
+  *"accepted into Meta's developer preview (a form)"* language does not
+  reappear on the current live docs; account creation on the Developer Center
+  now reads as being for updates/bug-reports/org-registration, not as an
+  admission gate. This slightly de-risks access versus §5's two-question
+  framing — though the account still has to exist first.
+- Supported-country list wasn't itemized on the pages checked this pass;
+  Germany's support still rests on the 2026-07-13 finding, not freshly
+  re-confirmed today.
+
+### 10.3 Go/No-Go — companion-app step (§7 row 4)
+**No-Go, for now.**
+1. Neither HelmDeck use case that would actually need the SDK — a native push
+   to the lens, or the glasses' mic — has a live requirement today. Voice
+   output is SETTLED without it (§4); `/glance` already covers the eyes-up case
+   as a plain webapp (§1, §6.5), no SDK needed.
+2. Publishing stays partner-only with no firm 2026 date. Even a built companion
+   app could only ever run on the owner's own paired glasses (Developer Mode) —
+   fine for personal use, but there's no path to anything beyond that this
+   year.
+3. Access itself is cheap exactly when it's needed (a Meta developer account +
+   a GitHub PAT + one Developer Mode toggle, all self-serve) — no reason to
+   front-load account setup for a feature with no driving use case yet.
+
+**Decision:** leave SDK access unset up until a concrete feature demands the
+mic or a native lens push. This card's output is the checklist below, ready to
+execute in under an hour whenever that trigger appears — not a completed
+account.
+
+### 10.4 Account-setup checklist — owner-gated, not yet executed
+1. Create/sign in to a Meta developer account at `developer.meta.com/wearables`
+   — the owner's Meta identity; cannot be done on the owner's behalf.
+2. Register the org on the Wearables Developer Center (same account).
+3. Generate a GitHub PAT (classic) with `read:packages`; store via
+   `GITHUB_TOKEN` or `local.properties` — never commit it.
+4. On the owner's phone: Meta AI app → Settings → App Info → tap App version
+   ×5 → confirm Developer Mode.
+5. Re-check the DAT version pin (0.9.0 as of 2026-08-16) before any build —
+   don't trust this number either, it will have moved again.
+
+Nothing here is technically blocked — it is blocked on the owner's Meta
+account, and this card makes no code change.
