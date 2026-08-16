@@ -769,3 +769,94 @@ account + org no longer need to be created.
 Nothing here required a code change. The only files this card touched are
 this doc and the co-pilot script (`deploy/meta_wearables_guide.py`) used to
 drive the walkthrough.
+
+---
+
+## 11. The companion app — owner decision, and where the build actually stands
+
+**Owner overrode §10.3's No-Go on 2026-08-16: "extend to be companion app. I
+want full control."** The chosen scope is the FULL phased build in
+`native-companion-plan.md`'s order. §10.3 is therefore superseded as a
+*decision* — but every technical finding it rests on still holds, and one of
+them is now the schedule.
+
+### 11.1 The fact that shapes the whole thing (read before proposing UI)
+A native companion **cannot draw a pixel on the glasses lens**. Custom lens UI
+comes only from the registered webapp — `native-companion-plan.md:57` ("the
+native app never draws a pixel on the glasses") and `AGENTS.md:263-270`. So
+"full control" through the companion means **senses and background power the
+webview structurally cannot have**, feeding the same backend the lens webapp
+already reads. Anyone who proposes a native lens screen has misread this.
+
+The phase order is the reference project's own, minus its step 1: its GPS relay
+existed to unblock a nav arrow, and HelmDeck has no navigation feature to feed.
+
+| Phase | What | Needs the DAT SDK? | Status |
+|---|---|---|---|
+| 1 | Foreground-service foundation + backend-driven config + command channel | **No** | **Daemon half SHIPPED** (`9888a6f`) |
+| 2 | Mic capture (phone mic first, glasses mic second — the plan's own order) | glasses mic: **yes** | blocked, see 11.3 |
+| 3 | DAT camera → Claude vision → result card on the lens | **yes** | blocked, see 11.3 |
+| 4 | Trigger / notification listening | no | last, and **best-effort by the source's own admission** (§3.5: unofficial, breaks on Meta updates) |
+
+### 11.2 Phase 1, daemon half — shipped and verified (`daemon/companion.py`)
+Three decisions adopted from glass-crud-harness rather than reinvented; the
+module docstring carries the full reasoning. In short:
+
+- **Valet tickets, not a second shared secret.** §2.1 named this exact moment
+  ("when a second glasses/companion surface appears, go to tickets"). Only
+  `sha256(token)` is stored, the token is shown once, every device is revocable
+  alone and scoped. Deliberately NOT `auth.issue_token()`, which would give a
+  pocketed phone its user's entire role.
+- **Backend-driven config**, so retuning never needs an APK rebuild. Default
+  poll 60s, guarded by a test — the reference project shipped 10s, called it
+  near-polling, and wrote *"never ship a fast poll"* down (§2.5).
+- **Commands consumed on PROOF, not on read.** §2.4's "consumed after
+  execution", which is also the repo's NO-MONKEY-PATCHES law: `pending()` is a
+  pure read, `ack()` is the single mutation point and only on the device's
+  report. Consuming on read would silently drop a command whenever a phone died
+  mid-fetch and would look exactly like a sensor bug.
+
+Verified against a live daemon, not only in unit tests: pair → config → queue →
+fetch **twice** (present both times) → ack → gone, plus scope enforcement,
+revocation taking effect immediately, and a companion ticket getting 401 on
+`/tracks`, `/settings`, `/users`. 28 unit tests.
+
+⚠ **Concurrency was a real bug here, not a debt entry.** The store is
+read-modify-written from a `ThreadingHTTPServer`, and "a device polls while the
+owner queues a command" is the ordinary case. Measured before the fix: 8 threads
+queueing 40 commands landed **5**, and on Windows **7 of 8 threads died** with
+`PermissionError` because every writer used the same `.tmp` path and collided in
+`os.replace`. Fixed with an RLock + per-writer temp names and locked in as a
+regression test. If you add a mutating function to that module, it goes inside
+`_LOCK` — the tests will not catch you forgetting on a single-threaded run.
+
+### 11.3 The blocker phases 2-3 hit, and it is owner-gated
+`com.meta.wearable:mwdat-*` resolves from **GitHub Packages**, which requires a
+GitHub **PAT (classic) with `read:packages`** — §10.1, re-confirmed against the
+live SDK README on 2026-08-16. Without it the Gradle build fails at dependency
+resolution, so *no* DAT code compiles: not the glasses mic, not the camera.
+This is step 3 of the §10.4 checklist and the only one still open. It needs the
+owner's GitHub account; an agent cannot mint it.
+
+Two further walls behind it, both already documented and neither solvable by
+more code:
+- **Display glasses are not covered by the Mock Device Kit** (§3.1) — DAT
+  display work cannot be tested without the real device.
+- **Building an APK from a card worktree does not work** (`DEPLOY.md` §2): NDK
+  object paths blow past the Windows limit (`ninja: manifest 'build.ninja'
+  still dirty after 100 tries`), and `subst` does not help. Native phases must
+  build from a short real path — mirror `app/` to `C:\hd\app`.
+
+### 11.4 For the next card — do these in this order
+1. Owner mints the `read:packages` PAT (§10.4 step 3). Until then phases 2-3
+   cannot start, and no amount of scaffolding changes that.
+2. Phase 1's phone half. **Note the trap that stopped this card:**
+   `C:\hd\app\node_modules` is currently **EMPTY**, so the worktree-junction
+   typecheck recipe in the auto-memory silently yields nothing to check —
+   verify it is populated *before* trusting a green tsc, and do not write app
+   UI you cannot typecheck and screenshot (owner reviews UI hard).
+3. Phase 2 mic: **phone mic first**, per the plan's own order — it needs no SDK
+   and proves the whole capture→backend→lens loop end to end before the
+   fragile part is added.
+4. Only then the DAT phases, defensively: sessions are fragile by design and
+   the API never says *why* a transition happened (§3.1).
