@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { api, type PmData } from "@/data/client";
+import { api, type PmBrief, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
 import { t as tt, useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -262,20 +262,44 @@ function Meter({ pct, color }: { pct: number; color: string }) {
 }
 
 // ---- goal ↔ iron triangle (the PM's golden triage - the dashboard's FOCUS) ----
-function TriCorner({ label, state }: { label: string; state?: "ok" | "blocked" }) {
+/** A blocked corner is a BUTTON: tap to reveal its own issue list inline (the
+ *  verifier's issues + open questions filtered to this corner - see
+ *  _cornerIssues) - no network call, just the plan already fetched. */
+function TriCorner({ label, state, issues, open, onToggle }: {
+  label: string; state?: "ok" | "blocked"; issues?: string[]; open?: boolean; onToggle?: () => void;
+}) {
   const t = useTheme();
   const tr = useT();
   const col = state === "blocked" ? t.danger : state === "ok" ? t.ok : t.txtTertiary;
   const word = state === "blocked" ? tr("dash.triangle.red") : state === "ok" ? tr("dash.triangle.ok") : tr("dash.triangle.unknown");
   const ic = state === "blocked" ? "alert-circle" : state === "ok" ? "checkmark-circle" : "ellipse-outline";
+  const tappable = state === "blocked" && !!issues?.length;
   return (
-    <View style={{ flex: 1, alignItems: "center", gap: 4, backgroundColor: t.surface2,
+    <Pressable onPress={tappable ? onToggle : undefined} disabled={!tappable}
+      style={{ flex: 1, alignItems: "center", gap: 4, backgroundColor: t.surface2,
       borderColor: col + "66", borderWidth: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 6 }}>
       <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={20} color={col} />
       <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "700" }}>{label}</Text>
       <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
-    </View>
+      {tappable ? <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={t.txtTertiary} /> : null}
+    </Pressable>
   );
+}
+
+/** Split the plan's diagnostic text (verifier issues + open questions) by which
+ *  corner it's actually about, so each button only shows ITS OWN issues -
+ *  budget/kontingent/quota/€ words -> budget, tag/woche/kalender/termin -> timeline,
+ *  else -> scope (most open_questions are scope decisions). Heuristic on real
+ *  text the PM already wrote; nothing invented. */
+function cornerIssues(plan: PmBrief | null | undefined, corner: "budget" | "timeline" | "scope"): string[] {
+  const all = [...(plan?.verify?.issues ?? []), ...(plan?.open_questions ?? [])];
+  const BUDGET_RE = /budget|kontingent|quota|€|kosten|spend|kapazit/i;
+  const TIMELINE_RE = /tag|woche|kalender|termin|frist|deadline|datum|zeit/i;
+  return all.filter((x) => {
+    if (BUDGET_RE.test(x)) return corner === "budget";
+    if (TIMELINE_RE.test(x)) return corner === "timeline";
+    return corner === "scope";
+  });
 }
 
 /** THE dashboard focus: the goal gated by the golden triage. Big, first, loud - the
@@ -287,6 +311,7 @@ export function TrianglePanel() {
   const t = useTheme();
   const tr = useT();
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
+  const [openCorner, setOpenCorner] = React.useState<"budget" | "timeline" | "scope" | null>(null);
   const goal = data?.goal || data?.plan?.goal;
   if (!goal) return null;
   const plan = data?.plan;
@@ -294,15 +319,27 @@ export function TrianglePanel() {
   const status = plan?.plan_status;
   const blocked = !!status && status !== "ready";
   const bannerCol = blocked ? t.danger : status === "ready" ? t.ok : t.txtTertiary;
+  const shownIssues = openCorner ? cornerIssues(plan, openCorner) : [];
   return (
     <GlassPanel title={tr("dash.triangle.title")}>
       <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, marginBottom: 12 }}>{goal}</Text>
-      {/* the three corners as prominent status cards */}
+      {/* the three corners as prominent status cards - tap a blocked one for its issues */}
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-        <TriCorner label={tr("dash.triangle.budget")} state={tri?.budget} />
-        <TriCorner label={tr("dash.triangle.timeline")} state={tri?.timeline} />
-        <TriCorner label={tr("dash.triangle.scope")} state={tri?.scope} />
+        <TriCorner label={tr("dash.triangle.budget")} state={tri?.budget} issues={cornerIssues(plan, "budget")}
+          open={openCorner === "budget"} onToggle={() => setOpenCorner((c) => c === "budget" ? null : "budget")} />
+        <TriCorner label={tr("dash.triangle.timeline")} state={tri?.timeline} issues={cornerIssues(plan, "timeline")}
+          open={openCorner === "timeline"} onToggle={() => setOpenCorner((c) => c === "timeline" ? null : "timeline")} />
+        <TriCorner label={tr("dash.triangle.scope")} state={tri?.scope} issues={cornerIssues(plan, "scope")}
+          open={openCorner === "scope"} onToggle={() => setOpenCorner((c) => c === "scope" ? null : "scope")} />
       </View>
+      {openCorner && shownIssues.length ? (
+        <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+          borderRadius: 12, padding: 12, marginBottom: 12, gap: 4 }}>
+          {shownIssues.map((x, i) => (
+            <Text key={i} style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>• {x}</Text>
+          ))}
+        </View>
+      ) : null}
       {/* plan-gate banner - the loud focus */}
       {status ? (
         <View style={{ backgroundColor: bannerCol + "1A", borderColor: bannerCol + "55", borderWidth: 1,
@@ -348,38 +385,23 @@ function MiniChip({ label, color }: { label: string; color?: string }) {
 }
 
 /** One corner's follow-up card: header repeats the corner's name + green/red
- *  state so each detail is visibly anchored to its triangle corner. A BLOCKED
- *  corner is tappable: shows/hides the full issue list already sitting in the
- *  plan (the verifier's `issues` + the open questions) - no network call, just
- *  reveals detail the card doesn't have room to show by default. */
-function CornerPanel({ label, state, children, style, issues }: {
+ *  state so each detail is visibly anchored to its triangle corner. */
+function CornerPanel({ label, state, children, style }: {
   label: string; state?: "ok" | "blocked"; children: React.ReactNode; style?: ViewStyle;
-  issues?: string[];
 }) {
   const t = useTheme();
   const tr = useT();
-  const [open, setOpen] = React.useState(false);
   const col = state === "blocked" ? t.danger : state === "ok" ? t.ok : t.txtTertiary;
   const word = state === "blocked" ? tr("dash.triangle.red") : state === "ok" ? tr("dash.triangle.ok") : tr("dash.triangle.unknown");
-  const hasIssues = state === "blocked" && !!issues?.length;
   return (
-    <Pressable onPress={() => hasIssues && setOpen((v) => !v)} disabled={!hasIssues}
-      style={[s.panel, glassStyle(t), { borderColor: t.glassBorder }, style]}>
+    <View style={[s.panel, glassStyle(t), { borderColor: t.glassBorder }, style]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: col }} />
         <Text style={[s.h3, { color: t.txtPrimary, flex: 1 }]}>{label}</Text>
         <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
-        {hasIssues ? <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} /> : null}
       </View>
       {children}
-      {hasIssues && open ? (
-        <View style={{ marginTop: 6, gap: 3 }}>
-          {issues!.map((x, i) => (
-            <Text key={i} style={{ color: t.txtSecondary, fontSize: 11.5, lineHeight: 16 }}>• {x}</Text>
-          ))}
-        </View>
-      ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -412,16 +434,8 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   // (Max plan - the real rate-limit windows the PM checked, same UsageRow the
   // Settings panel uses) or "cash" (API plan - euro spend vs cap). The PM owns
   // the verdict; the board only draws. Adding a plan = a new kind branch.
-  // the diagnostic detail behind a RED plan gate - the verifier's issues +
-  // the owner questions - not corner-specific in the plan, so any blocked
-  // corner reveals the same full list on tap.
-  const gateIssues = [
-    ...(plan.verify?.issues ?? []),
-    ...(plan.open_questions ?? []),
-  ];
   const budget = (
-    <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}
-      issues={gateIssues}>
+    <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
       {b?.kind === "usage" ? (
         <View>
           {b.windows?.length ? b.windows.map((w) => <UsageRow key={w.id} w={w} />)
@@ -453,8 +467,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   const GateReason = ({ text }: { text?: string }) =>
     text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
   const timeline = (
-    <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}
-      issues={gateIssues}>
+    <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}>
       <GateReason text={reasons?.timeline} />
       {launch && (launchDate || days != null) ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
@@ -493,8 +506,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   );
 
   const scope = (
-    <CornerPanel key="scope" label={tr("dash.triangle.scope")} state={tri?.scope} style={wide ? { flex: 1 } : undefined}
-      issues={gateIssues}>
+    <CornerPanel key="scope" label={tr("dash.triangle.scope")} state={tri?.scope} style={wide ? { flex: 1 } : undefined}>
       <GateReason text={reasons?.scope} />
       <View style={{ gap: 4 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
