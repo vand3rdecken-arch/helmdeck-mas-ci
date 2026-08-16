@@ -89,3 +89,7 @@ daemon/daemon.pid
 desktop/_probe_setup.js
 desktop/python/
 copilot_runs/
+# harness/.versions: every /harness write archives the file it replaced so a bad
+# edit is revertable. Machine-local undo history, not shipped policy - the
+# CURRENT harness/agents/*.md and harness/settings/*.json are what's tracked.
+harness/.versions/

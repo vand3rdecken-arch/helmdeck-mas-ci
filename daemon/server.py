@@ -446,14 +446,25 @@ class H(BaseHTTPRequestHandler):
                     "runtime": dict(_lane_flow(ll), title="Wie Arbeit fliesst"),
                     "build": _loop_machine(),
                     "harness": _harness_state(),
+                    # Each law cites the module that ENFORCES it. A law the owner
+                    # cannot trace to code is just a promise on a screen; with the
+                    # pointer he can go read the thing that actually holds the
+                    # line. Same reason the graph nodes carry file:line.
                     "laws": [
-                        {"key": "auth", "text": "Auth ist fix — nie geschwächt."},
-                        {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben."},
-                        {"key": "gate", "text": "Gate-before-review — Qualität vor jeder Abnahme."},
-                        {"key": "economics", "text": "Gemessene Ökonomie — jeder Turn hat Kosten/Value."},
-                        {"key": "worktree", "text": "Worktree-Isolation — jeder Agent in eigenem Checkout."},
-                        {"key": "drivers", "text": "Driver-Kommandos sind fix — was Agents ausführen ist nicht frei konfigurierbar."},
-                        {"key": "charter", "text": "Charter-Kern ist Code — nicht per Chat editierbar."},
+                        {"key": "auth", "text": "Auth ist fix — nie geschwächt.",
+                         "source": "daemon/auth.py"},
+                        {"key": "audit", "text": "Append-only Audit/Events — Geschichte wird nie überschrieben.",
+                         "source": "daemon/events.py"},
+                        {"key": "gate", "text": "Gate-before-review — Qualität vor jeder Abnahme.",
+                         "source": "daemon/sessions.py"},
+                        {"key": "economics", "text": "Gemessene Ökonomie — jeder Turn hat Kosten/Value.",
+                         "source": "daemon/usage.py"},
+                        {"key": "worktree", "text": "Worktree-Isolation — jeder Agent in eigenem Checkout.",
+                         "source": "daemon/sessions.py"},
+                        {"key": "drivers", "text": "Driver-Kommandos sind fix — was Agents ausführen ist nicht frei konfigurierbar.",
+                         "source": "daemon/drivers.py"},
+                        {"key": "charter", "text": "Charter-Kern ist Code — nicht per Chat editierbar.",
+                         "source": "daemon/charter.py"},
                     ],
                     "charter": charter.CHARTER,
                 }))
@@ -480,6 +491,45 @@ class H(BaseHTTPRequestHandler):
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
                 import claude_sessions
                 return self._send(200, json.dumps(claude_sessions.list_sessions()))
+            if p == "/harness":
+                # The editable policy behind every agent surface, PLUS the
+                # spawn preview: the resolved argv, which settings layers are
+                # included/excluded and why, the brief's source file + content
+                # hash, and the full hook matrix. Owner-only - the briefs are
+                # the instructions his workers run under, and the layer list
+                # names paths on his machine.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import harness
+                return self._send(200, json.dumps(harness.document(), ensure_ascii=False))
+            if p == "/harness/schema":
+                # The two JSON Schemas the write path validates against, served
+                # so the editor can show the rules instead of the owner
+                # discovering them one rejected save at a time.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import harness
+                return self._send(200, json.dumps({
+                    "agent": harness.load_schema("agent"),
+                    "settings": harness.load_schema("settings"),
+                }, ensure_ascii=False))
+            if len(parts) == 4 and parts[0] == "harness" and parts[1] == "version":
+                # /harness/version/<kind>/<name>?id=<vid> - the bytes of one
+                # archived version, so the owner can read a prior brief before
+                # deciding to roll back to it.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import harness
+                # NO local `from urllib.parse import ...` here: parse_qs is
+                # already module-level (line 14), and a function-scoped import
+                # would make the name LOCAL to all of do_GET - which broke the
+                # /stream/wait long-poll 170 lines above with UnboundLocalError
+                # on every request that did not hit this branch first.
+                vid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+                txt = harness.version_text(parts[2], parts[3], vid)
+                if txt is None:
+                    return self._send(404, json.dumps({"error": "Version nicht gefunden"}))
+                return self._send(200, json.dumps({"id": vid, "text": txt}, ensure_ascii=False))
             if p == "/checkpoints":
                 import checkpoints
                 return self._send(200, json.dumps(checkpoints.list_checkpoints()))
@@ -1079,6 +1129,49 @@ class H(BaseHTTPRequestHandler):
                             "local testing) - pairing links carry a device token "
                             "and must not cross the network unencrypted"}))
                 return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
+            if p == "/harness":
+                # Owner edits an agent brief or a settings layer. Validated
+                # against harness/schema/*.schema.json BEFORE the write, the
+                # replaced file archived so the edit is revertable, and the
+                # change appended to the audit log.
+                #
+                # The rejection is deliberately LOUD (400 with the reason). The
+                # read path in harness.py is total and falls back silently by
+                # design - a typo may never strand a card - but that same
+                # silence at write time would let the owner save a broken brief,
+                # see no error, and have every worker quietly keep running the
+                # old text. So: forgiving at spawn, strict at save.
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import harness, events
+                kind = body.get("kind")
+                name = body.get("name") or ""
+                if kind not in ("agents", "settings"):
+                    return self._send(400, json.dumps({"error": "kind muss 'agents' oder 'settings' sein"}))
+                try:
+                    vid = body.get("restore")
+                    if vid:
+                        res = harness.restore(kind, name, vid, actor=user["name"])
+                    elif kind == "agents":
+                        res = harness.write_agent(name, body.get("text") or "", actor=user["name"])
+                    else:
+                        res = harness.write_settings(name, body.get("text") or "", actor=user["name"])
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False))
+                # `target`, NOT `kind`: emit()'s own first positional parameter is
+                # named kind, so passing kind= here raised TypeError AFTER the file
+                # had already been written - a changed brief with no audit row and
+                # a 500 at the client. Caught by exercising the endpoint, not by
+                # reading it.
+                events.emit("harness", "-", action=("restore" if body.get("restore") else "write"),
+                            target=kind, name=name, actor=user["name"],
+                            path=res.get("path"), sha256=(res.get("sha256") or "")[:16],
+                            kept_version=res.get("kept_version"), validator=res.get("validator"),
+                            restored=body.get("restore") or "")
+                # the fresh document back, so the editor re-renders the preview
+                # (argv, hashes, hook matrix) from the file that is now on disk
+                return self._send(200, json.dumps(dict(res, document=harness.document()),
+                                                  ensure_ascii=False))
             if p == "/presence":
                 # Client heartbeat (Phase 2.1): who is here, is the app in the
                 # foreground, and which card is on screen. Drives the 3-tier

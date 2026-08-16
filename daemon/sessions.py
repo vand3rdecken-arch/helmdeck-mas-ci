@@ -969,11 +969,25 @@ def flow(lane_labels=None):
     ll = lane_labels or {}
     out = {"nodes": [], "edges": [dict(e) for e in LANE_FLOW["edges"]],
            "gate": dict(LANE_FLOW["gate"])}
+    # file:line for every node, read out of THIS file - see loop_state._decl_lines
+    # for why it is derived rather than written down.
+    try:
+        import sys as _sys
+        _tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+        if _tools not in _sys.path:
+            _sys.path.insert(0, _tools)
+        from loop_state import _decl_lines
+        src = _decl_lines([n["key"] for n in LANE_FLOW["nodes"]] + [LANE_FLOW["gate"]["key"]],
+                          path=os.path.abspath(__file__), rel="daemon/sessions.py")
+    except Exception:                                        # noqa: BLE001
+        src = {}
     for n in LANE_FLOW["nodes"]:
         n = dict(n)
         n["label"] = ll.get(n["key"], n["default_label"])
+        n["source"] = src.get(n["key"], "daemon/sessions.py")
         out["nodes"].append(n)
     out["gate"]["label"] = out["gate"]["default_label"]
+    out["gate"]["source"] = src.get(LANE_FLOW["gate"]["key"], "daemon/sessions.py")
     return out
 
 
