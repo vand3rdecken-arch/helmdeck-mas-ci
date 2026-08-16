@@ -122,7 +122,19 @@ BOARD = [
     ({"id": "m-archived", "task": "archived bounce", "status": "bounced", "lane": "review",
       "archived": True, "gate_report": ["red"]},
      None),
+    # un-started work: NOT a blocker (see `yours` below) - the PM will get to a
+    # `do` card, and a manual-mode card is its own bucket, not this one
+    ({"id": "m-manual", "task": "Kunden-Workshop halten", "status": "queued",
+      "lane": "backlog", "mode": "human"}, None),
+    ({"id": "m-teach", "task": "Ablauf einmal vormachen", "status": "queued",
+      "lane": "backlog", "mode": "teach"}, None),
+    ({"id": "m-cowork", "task": "Zusammen durchgehen", "status": "queued",
+      "lane": "backlog", "mode": "cowork"}, None),
 ]
+
+# cards the machine STRUCTURALLY never starts - every auto-dispatch path skips
+# these modes (pm._backlog, pm.activity's todo, processes._advance)
+MANUAL_IDS = {"m-manual", "m-teach", "m-cowork"}
 
 TRACKS = [dict(c) for c, _ in BOARD]
 BLOCKED_IDS = {c["id"] for c, r in BOARD if r}
@@ -228,6 +240,63 @@ def test_glance_payload():
     empty = server.glance_payload([], METRICS)
     check(empty["needs_you"] == [] and empty["econ"]["needs_you"] == 0,
           "an idle board really is 'all clear'")
+    check(empty["yours"] == [] and empty["econ"]["yours"] == 0,
+          "...and nothing is waiting on the owner to start it either")
+
+
+def test_manual_backlog_is_its_own_bucket():
+    """Cards the machine will NEVER start (mode human/teach/cowork). They are
+    unstarted work, not stuck work: folding them into needs_you would bury a red
+    gate under a backlog, but dropping them is how they became invisible in
+    EVERY surface at once - pm.activity's todo list excludes them too."""
+    import server
+    print("`yours` - work only the owner can begin:")
+    pay = server.glance_payload([dict(t) for t in TRACKS], METRICS)
+    yours = {c["id"] for c in pay["yours"]}
+    check(yours == MANUAL_IDS, "exactly the manual-mode backlog: %s" % sorted(yours))
+    check(pay["econ"]["yours"] == len(pay["yours"]), "its count matches its list")
+    check(not (yours & {c["id"] for c in pay["needs_you"]}),
+          "never double-counted into needs_you")
+    check(all(c.get("mode") in sessions.MANUAL_MODES for c in pay["yours"]),
+          "each entry says WHICH manual mode it is")
+
+    print("an ordinary backlog card is NOT the owner's move - the PM will get to it:")
+    do_card = {"id": "m-do", "task": "normale Karte", "status": "queued",
+               "lane": "backlog", "mode": "do"}
+    check(server.glance_payload([do_card], METRICS)["yours"] == [],
+          "a `do` card in the backlog stays off both buckets")
+    check(sessions.manual_backlog([dict(t) for t in TRACKS if t["id"] == "m-manual"]
+                                  + [dict(do_card)]) and True, "manual_backlog is callable directly")
+
+    print("a manual card that has STARTED is a normal card again:")
+    started = {"id": "m-manual", "task": "läuft schon", "status": "needs_you",
+               "lane": "working", "mode": "cowork", "waiting_on": "you"}
+    p2 = server.glance_payload([started], METRICS)
+    check(p2["yours"] == [] and len(p2["needs_you"]) == 1,
+          "once started it is a blocker like any other, not 'yours'")
+    check(sessions.manual_backlog(None) == [], "None is handled")
+
+
+def test_freshness_is_on_the_wire():
+    """The glasses cache the last response and a battery display does not poll,
+    so the payload must say WHEN it was true. A stale 'all clear' is the exact
+    failure this endpoint exists to prevent."""
+    import time
+    import server
+    print("the payload stamps itself:")
+    before = int(time.time())
+    pay = server.glance_payload([dict(t) for t in TRACKS], METRICS)
+    check(isinstance(pay.get("ts"), int), "`ts` is an integer epoch")
+    check(before <= pay["ts"] <= int(time.time()) + 1, "`ts` is NOW, not a cached value")
+
+    print("the board is read fresh on every call, never memoised:")
+    board = [{"id": "c-x", "task": "erst blockiert", "status": "bounced",
+              "lane": "review", "gate_report": ["rot"]}]
+    check(len(server.glance_payload(board, METRICS)["needs_you"]) == 1, "blocked -> listed")
+    board[0]["status"] = "accepted"
+    board[0].pop("gate_report")
+    check(server.glance_payload(board, METRICS)["needs_you"] == [],
+          "accepted -> gone on the very next read")
 
 
 def test_phantom_running_is_surfaced():
@@ -287,6 +356,8 @@ def test_surfaces_agree():
 
 test_blocker_truth_table()
 test_glance_payload()
+test_manual_backlog_is_its_own_bucket()
+test_freshness_is_on_the_wire()
 test_phantom_running_is_surfaced()
 test_surfaces_agree()
 

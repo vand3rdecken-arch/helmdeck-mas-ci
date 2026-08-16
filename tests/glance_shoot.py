@@ -54,6 +54,12 @@ BOARD = [
      "lane": "working"},
     {"id": "m-background", "task": "Wartet auf eigenen Task", "client": "",
      "status": "needs_you", "lane": "working", "waiting_on": "background"},
+    {"id": "y-workshop", "task": "Onboarding-Workshop bei Acme halten", "client": "Acme",
+     "status": "queued", "lane": "backlog", "mode": "human"},
+    {"id": "y-teach", "task": "Angebots-Ablauf einmal vormachen", "client": "",
+     "status": "queued", "lane": "backlog", "mode": "teach"},
+    {"id": "m-do", "task": "Normale Backlog-Karte", "client": "", "status": "queued",
+     "lane": "backlog", "mode": "do"},
 ]
 METRICS = {"capacity": {"wip": 3, "wip_limit": 4, "headroom": 1},
            "totals": {"margin": 8420.0}, "settings": {"currency": "EUR"},
@@ -85,7 +91,10 @@ def main():
     print("payload the UI will render:")
     for c in payload["needs_you"]:
         print("  %-9s %-12s %s" % (c["reason"], c["id"], c["detail"][:60]))
-    print("  econ.needs_you = %d" % payload["econ"]["needs_you"])
+    for c in payload["yours"]:
+        print("  %-9s %-12s %s" % ("yours/" + c["mode"], c["id"], c["task"][:50]))
+    print("  econ.needs_you = %d  econ.yours = %d"
+          % (payload["econ"]["needs_you"], payload["econ"]["yours"]))
 
     httpd = ThreadingHTTPServer(
         ("127.0.0.1", PORT), partial(H, directory=os.path.join(ROOT, "glasses")))
@@ -107,6 +116,16 @@ def main():
         pg.click("[data-action=open-needs]")
         pg.wait_for_timeout(300)
         pg.screenshot(path=os.path.join(SHOTS, "glance_2_needs.png"))
+
+        # the manual-mode group sits below the blockers - scroll to judge it
+        scroller = "#needs .content"           # .content is the scroll box, not the list
+        pg.eval_on_selector(scroller, "e => e.scrollTop = e.scrollHeight")
+        pg.wait_for_timeout(250)
+        pg.screenshot(path=os.path.join(SHOTS, "glance_4_yours.png"))
+        moved = pg.eval_on_selector(scroller, "e => e.scrollTop")
+        print("scrolled to bottom of needs list: %s px" % moved)
+        pg.eval_on_selector(scroller, "e => e.scrollTop = 0")
+        pg.wait_for_timeout(200)
 
         pg.click("[data-id=c-gate]")
         pg.wait_for_timeout(300)

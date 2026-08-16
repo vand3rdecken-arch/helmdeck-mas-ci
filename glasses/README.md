@@ -59,12 +59,27 @@ a one-line `detail`, and the list arrives sorted worst-news-first:
 | `delivered` | finished, handed back for your accept |
 
 A card waiting on its own **background task** is deliberately absent — that one
-is the machine's move, not yours. So is an un-started backlog card: that is
-work, not a blocker.
+is the machine's move, not yours.
 
 Cards whose turn **died** are included. Lifecycle is derived from the runtime's
 own signals, so a card stuck behind a dead process appears the moment it is
 read, rather than whenever the reconciler next sweeps.
+
+`yours` is a **second, separate** list: un-started cards in a mode the machine
+never dispatches (`human`, `teach`, `cowork`) — work only you can begin. It has
+its own count (`econ.yours`) and never merges into `needs_you`, so a backlog
+cannot bury a red gate. An ordinary `do` card in the backlog is on neither list:
+the PM will get to it, so it is queued, not blocked.
+
+## Staleness
+
+The payload carries `ts` (epoch seconds) — when it was true. The webapp runs **no
+idle timers** (battery, per the platform guidance), so it refreshes on the events
+that mean you are actually looking: coming back to the foreground, and opening
+the needs list. The home screen prints the age next to the count, and a failed
+fetch keeps the last data but drops the connection dot to red rather than
+implying it is current. A stale "all clear" is the one thing this display must
+never show.
 
 ## Desktop smoke test
 
