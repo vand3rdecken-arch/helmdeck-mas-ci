@@ -76,6 +76,7 @@
           "hosts": []
         }
       ],
+      "./plugins/withGlassVoice",
       [
         "expo-splash-screen",
         {
