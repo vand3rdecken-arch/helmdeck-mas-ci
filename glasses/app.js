@@ -48,6 +48,21 @@
     setText('stat-margin', e.margin != null ? cur() + Math.round(e.margin) : '–');
   }
 
+  // WHY the card is blocked on you (daemon: sessions.BLOCKER_REASONS). Older
+  // daemons send no `reason`, so fall back to the boolean they do send.
+  var REASON = {
+    question: 'asks you', delivered: 'ready for you', review: 'accept it',
+    gate: 'gate red', conflict: 'cannot land', failed: 'failed'
+  };
+  function reasonOf(c) {
+    return c.reason || (c.asking ? 'question' : 'delivered');
+  }
+  function reasonLabel(c) { return REASON[reasonOf(c)] || 'needs you'; }
+  function isBad(c) {
+    var r = reasonOf(c);
+    return r === 'gate' || r === 'conflict' || r === 'failed';
+  }
+
   function renderNeeds() {
     var list = document.getElementById('needs-list');
     var items = data.needs_you || [];
@@ -62,9 +77,9 @@
       el.className = 'list-item focusable';
       el.setAttribute('data-action', 'open-detail');
       el.setAttribute('data-id', c.id);
-      var sub = c.client ? esc(c.client) : 'internal';
+      var sub = reasonLabel(c) + ' · ' + (c.client ? c.client : 'internal');
       el.innerHTML = '<div class="li-task">' + esc(c.task || '(untitled)') + '</div>'
-        + '<div class="li-sub">' + sub + '</div>';
+        + '<div class="li-sub' + (isBad(c) ? ' neg' : '') + '">' + esc(sub) + '</div>';
       list.appendChild(el);
     });
   }
@@ -89,8 +104,9 @@
     if (!c) { setText('detail-task', 'Card not found'); setHTML('detail-meta', ''); return; }
     setText('detail-task', c.task || '(untitled)');
     setHTML('detail-meta',
-      'Status &nbsp;<b>needs you</b><br>'
-      + 'Client &nbsp;<b>' + (c.client ? esc(c.client) : 'internal') + '</b>');
+      'Blocked &nbsp;<b' + (isBad(c) ? ' class="neg"' : '') + '>' + esc(reasonLabel(c)) + '</b><br>'
+      + 'Client &nbsp;<b>' + (c.client ? esc(c.client) : 'internal') + '</b>'
+      + (c.detail ? '<span class="detail-why">' + esc(c.detail) + '</span>' : ''));
   }
 
   // ---- screen management ----------------------------------------------------
