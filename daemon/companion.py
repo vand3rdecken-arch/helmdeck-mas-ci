@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """The companion registry - the daemon half of the glasses SENSING layer.
 
-Phase 1 of the native companion (docs/glasses-reference.md §10.6). It exists
+Phase 1 of the native companion (docs/glasses-reference.md §11). It exists
 because of one platform fact that is measured, not assumed: **a native app can
 never draw a pixel on the glasses lens** - only the registered webapp renders
 there (`native-companion-plan.md:57`, `AGENTS.md:263-270`). So the companion is
