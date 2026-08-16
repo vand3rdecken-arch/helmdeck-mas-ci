@@ -297,9 +297,17 @@ def skills():
     """
     import harness
     rows = []
-    for key, agent in (("card", "card-worker"), ("machine", "machine-worker"),
-                       ("pm", "board-copilot")):
-        extra = harness.cli_args(agent)
+    # The BASELINE matters as much as the surfaces: "the card set differs from
+    # the inherit-everything set" is only meaningful against the full other set.
+    # Printing a truncated list here once produced a confident, wrong reading
+    # (six skills looked "restored by dropping the user layer" that had never
+    # been missing) - so every list below is printed WHOLE, and the verdict is
+    # computed as a set difference rather than eyeballed.
+    surfaces = [("baseline (no flags = the pre-harness card)", None),
+                ("card", "card-worker"), ("machine", "machine-worker"),
+                ("pm", "board-copilot")]
+    for key, agent in surfaces:
+        extra = harness.cli_args(agent) if agent else []
         argv = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
                 "--permission-mode", "plan", "--model", "haiku"] + extra + ["hi"]
         env = {k: v for k, v in os.environ.items()
@@ -334,6 +342,7 @@ def skills():
     if len(rows) < 2:
         return False
     got = {k: set(ev.get("skills") or []) for k, _, ev in rows}
+    base = next((v for k, v in got.items() if k.startswith("baseline")), None)
     print("\n---- VERDICT ----")
     if "card" in got and "pm" in got:
         proj_only = got["card"] - got["pm"]
@@ -342,6 +351,17 @@ def skills():
         # difference between the two sets IS the project skill directory.
         print("project .claude/skills reach the card but not the copilot: %s  %s"
               % (bool(proj_only), sorted(proj_only)))
+    if base is not None and "card" in got:
+        # Same test one layer up: what the operator's ~/.claude contributes that
+        # a card does not get. These are DIRECTORIES, not the skillOverrides key -
+        # which is the question this whole mode exists to settle.
+        print("user ~/.claude/skills reach the baseline but not the card: %s"
+              % sorted(base - got["card"]))
+        gained = got["card"] - base
+        print("skills a card GAINS by dropping the user layer: %s"
+              % (sorted(gained) or "none"))
+        if gained:
+            print("  (a skillOverrides entry in the user layer was suppressing these)")
     mems = {k: (ev.get("memory_paths") or {}).get("auto") for k, _, ev in rows}
     shared = len(set(v for v in mems.values() if v)) == 1 and len(mems) > 1
     print("every surface shares ONE auto-memory dir: %s" % shared)

@@ -75,6 +75,54 @@ def _loop_machine():
                 "error": str(e)[:200]}
 
 
+CONTROLS = ("toggle", "multi", "single", "text", "number", "labels")
+
+
+def _config_schema(s):
+    """The declarative config schema: the SINGLE source of truth for every
+    editable knob ("policy is data"). The app renders each control generically
+    and writes it back with saveSettings(nest(path, value)), so a new knob is one
+    entry HERE, not hand-wiring in two screens. The fixed harness/laws are NOT in
+    this table - they live read-only in /loop/map.
+
+    Module level, not inline in the /automation handler, for the same reason
+    _lane_flow and _loop_machine are: the shape it produces is a contract with
+    app/src/app/(tabs)/automation.tsx, and a contract nothing can import is a
+    contract nothing can check. tests/test_harness_layer.py reads it from here
+    and holds every `control` to the union the app actually renders and every
+    `labelKey` to a two-language entry - a knob with a control the app has no
+    branch for renders as NOTHING, silently, on an owner-only screen.
+
+    CONTROLS above is that union. Adding a seventh means adding a branch to the
+    app's Control component in the same commit; the gate will say so if not."""
+    pol = s.get("policy") or {}
+    ns = s.get("nightshift") or {}
+    return [
+        {"group": "policy", "path": "policy.auto_accept_green", "control": "toggle",
+         "labelKey": "cfg.autoAccept", "value": bool(pol.get("auto_accept_green"))},
+        {"group": "policy", "path": "policy.auto_dispatch_modes", "control": "multi",
+         "labelKey": "cfg.autoModes", "options": ["do", "prepare", "cowork"],
+         "value": pol.get("auto_dispatch_modes") or []},
+        {"group": "policy", "path": "policy.auto_dispatch_priority", "control": "single",
+         "labelKey": "cfg.autoPrio", "options": ["never", "urgent", "high"],
+         "value": pol.get("auto_dispatch_priority") or "never"},
+        {"group": "policy", "path": "policy.chat_configure_roles", "control": "multi",
+         "labelKey": "cfg.chatRoles", "options": ["owner", "operator"],
+         "value": pol.get("chat_configure_roles") or ["owner"]},
+        {"group": "policy", "path": "policy.lane_labels", "control": "labels",
+         "labelKey": "cfg.laneLabels", "keys": ["backlog", "working", "review", "done"],
+         "value": pol.get("lane_labels") or {}},
+        {"group": "night", "path": "nightshift.enabled", "control": "toggle",
+         "labelKey": "cfg.nightEnabled", "value": bool(ns.get("enabled"))},
+        {"group": "night", "path": "nightshift.window", "control": "text",
+         "labelKey": "cfg.nightWindow", "placeholder": "always", "value": ns.get("window") or ""},
+        {"group": "night", "path": "nightshift.max_cards", "control": "number",
+         "labelKey": "cfg.nightMax", "value": ns.get("max_cards", 3)},
+        {"group": "night", "path": "nightshift.idle_minutes", "control": "number",
+         "labelKey": "cfg.nightIdle", "value": ns.get("idle_minutes", 20)},
+    ]
+
+
 def _harness_state():
     """Which brief/settings layer each agent surface actually resolved to, and
     any harness file that failed to load. Without this a broken harness/agents
@@ -646,36 +694,7 @@ class H(BaseHTTPRequestHandler):
                 _machine = _loop_machine()
                 loop_states = [[st["key"], st["instruction"]] for st in _machine["states"]]
                 current = _machine["current"]
-                # Declarative config schema: the SINGLE source of truth for every
-                # editable knob ("policy is data"). The app renders each control
-                # generically and writes it back with saveSettings(nest(path,value)),
-                # so a new knob = one entry here, not hand-wiring in two screens. The
-                # fixed harness/laws are NOT here - they live read-only in /loop/map.
-                ns = s.get("nightshift") or {}
-                config_schema = [
-                    {"group": "policy", "path": "policy.auto_accept_green", "control": "toggle",
-                     "labelKey": "cfg.autoAccept", "value": bool(pol.get("auto_accept_green"))},
-                    {"group": "policy", "path": "policy.auto_dispatch_modes", "control": "multi",
-                     "labelKey": "cfg.autoModes", "options": ["do", "prepare", "cowork"],
-                     "value": pol.get("auto_dispatch_modes") or []},
-                    {"group": "policy", "path": "policy.auto_dispatch_priority", "control": "single",
-                     "labelKey": "cfg.autoPrio", "options": ["never", "urgent", "high"],
-                     "value": pol.get("auto_dispatch_priority") or "never"},
-                    {"group": "policy", "path": "policy.chat_configure_roles", "control": "multi",
-                     "labelKey": "cfg.chatRoles", "options": ["owner", "operator"],
-                     "value": pol.get("chat_configure_roles") or ["owner"]},
-                    {"group": "policy", "path": "policy.lane_labels", "control": "labels",
-                     "labelKey": "cfg.laneLabels", "keys": ["backlog", "working", "review", "done"],
-                     "value": pol.get("lane_labels") or {}},
-                    {"group": "night", "path": "nightshift.enabled", "control": "toggle",
-                     "labelKey": "cfg.nightEnabled", "value": bool(ns.get("enabled"))},
-                    {"group": "night", "path": "nightshift.window", "control": "text",
-                     "labelKey": "cfg.nightWindow", "placeholder": "always", "value": ns.get("window") or ""},
-                    {"group": "night", "path": "nightshift.max_cards", "control": "number",
-                     "labelKey": "cfg.nightMax", "value": ns.get("max_cards", 3)},
-                    {"group": "night", "path": "nightshift.idle_minutes", "control": "number",
-                     "labelKey": "cfg.nightIdle", "value": ns.get("idle_minutes", 20)},
-                ]
+                config_schema = _config_schema(s)
                 return self._send(200, json.dumps({
                     "nightshift": pm.status(),   # alias key: the PM loop's status
                     "policy": {k: pol.get(k) for k in ("auto_dispatch_modes", "auto_dispatch_priority",
