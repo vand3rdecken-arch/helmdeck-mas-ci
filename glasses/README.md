@@ -1,5 +1,10 @@
 # HelmDeck Glance — Meta Ray-Ban Display webapp
 
+> **Before changing anything here, read [`../docs/glasses-reference.md`](../docs/glasses-reference.md).**
+> It is the mandatory reference distilled from the owner's earlier glasses
+> project and Meta's official toolkit: the real display guidelines, the traps
+> already paid for on-device, and the settled voice-output architecture.
+
 A glanceable ops view for the Meta Ray-Ban Display glasses (600×600 additive
 waveguide, D-pad / EMG input). Shows what needs you, capacity, and SoW margin —
 read straight from the HelmDeck daemon.
