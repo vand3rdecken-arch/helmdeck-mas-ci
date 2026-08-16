@@ -122,19 +122,25 @@ BADPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
 # var, publishing the owner's private board costs a history rewrite of a public
 # repo. HELMDECK_PUBLISH_ALLOW_PRIVATE=1 is the deliberate "yes, I looked at
 # them, publish anyway" - it must be a decision, never a default.
-# docs/glasses-reference.md is the same class from a different direction. It is
-# TRACKED on purpose (force-added past the `docs` ignore): a card's worktree
-# holds only TRACKED files, so a "mandatory reference for every further card"
-# that isn't in git is invisible exactly where it is needed. But it is distilled
-# from the owner's PRIVATE projects - absolute home paths, his WhatsApp-bridge
-# setup, the LID identity mechanics, which hardware he owns. No credential, so
-# checks 2 and 3 wave it through: the same gap .attachments/ falls through.
-# Named explicitly rather than ignoring all of docs/, because docs/ also holds
-# genuinely public files (repo-map, POSITIONING) that are already published.
+# docs/ is the same class from a different direction, and the whole tree is out
+# by OWNER DECISION (2026-08-16): "you work local so just don't publish docs".
+#
+# It is TRACKED on purpose - a card's worktree holds only TRACKED files, so an
+# internal reference that isn't in git is invisible exactly where it is needed
+# (docs/glasses-reference.md is mandatory reading for every glasses card). The
+# `docs` line in .gitignore keeps NEW docs out by default; this keeps the ones
+# that must be tracked out of the PUBLIC mirror. Two different jobs.
+#
+# The tree is private-but-not-secret in exactly the way check 2 cannot see:
+# glasses-reference.md carries the owner's absolute home paths, his WhatsApp-
+# bridge setup and the LID identity mechanics; docs/store/screenshots/ are
+# pictures of his real board (card titles, dates). No credential in any of it,
+# so the scanner waves it all through - the same gap .attachments/ falls
+# through, and the reason that gap is worth a second net at all.
 say "checking for private user-content paths in $BRANCH history"
 PRIVPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
   | sort -u \
-  | grep -iE '(^|/)\.attachments/|(^|/)\.copilot_attachments/|(^|/)daemon/recordings/|(^|/)daemon/checkpoints/|(^|/)docs/glasses-reference\.md' \
+  | grep -iE '(^|/)\.attachments/|(^|/)\.copilot_attachments/|(^|/)daemon/recordings/|(^|/)daemon/checkpoints/|(^|/)docs/' \
   || true)"
 if [ -n "$PRIVPATHS" ]; then
   printf '    %s\n' $PRIVPATHS
