@@ -125,6 +125,37 @@ def render(text, voice=DEFAULT_VOICE):
         return vid
 
 
+def render_b64(text, voice=DEFAULT_VOICE):
+    """Speech as an INLINE base64 data payload, or None.
+
+    The glasses take a URL (`/glance/voice/<id>.mp3`) because they talk to the
+    daemon directly. The PHONE usually does not: it goes through the E2EE relay,
+    which seals and forwards ONE JSON request/response - there is no second
+    channel for a browser to fetch a binary from, and a URL pointing at
+    localhost means nothing on a phone across the internet. So the phone's audio
+    has to ride inside the JSON it already gets.
+
+    Cost of that choice, stated plainly: base64 is ~33% larger than the file, so
+    a 30 KB clip becomes ~40 KB inside the sealed frame. That is acceptable for
+    two sentences and is the reason MAX_TEXT is small; it would NOT be
+    acceptable for reading a long document aloud, which is why the caller speaks
+    only Henry's prose and never a transcript.
+    """
+    vid = render(text, voice)
+    if not vid:
+        return None
+    p = path_for(vid)
+    if not p:
+        return None
+    try:
+        import base64
+        with open(p, "rb") as f:
+            return {"id": vid, "mime": "audio/mpeg",
+                    "b64": base64.b64encode(f.read()).decode("ascii")}
+    except OSError:
+        return None
+
+
 def stats():
     try:
         files = [f for f in os.listdir(CACHE) if f.endswith(".mp3")]
