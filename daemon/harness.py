@@ -722,6 +722,37 @@ def _disables_hooks(path):
 BRIEF_ARG_MARKER = "<brief>"
 
 
+def _memory_isolation(sf):
+    """Whether THIS settings file's own permissions.deny blocks a write into the
+    shared auto-memory directory (debt: card-shares-the-operators-auto-memory).
+
+    Read out of the REAL settings file at preview time, not asserted - so an
+    edit that removes the deny line shows up here immediately, the same way a
+    hook that disappears from a file shows up in the hook matrix. Deliberately
+    NOT computing the actual memory_paths.auto value: the CLI derives it from a
+    project identity that measurably does not just mean "this cwd" (every card
+    worktree we measured shared one directory keyed off something else), and
+    guessing that derivation here would be exactly the unverified
+    reconstruction CLAUDE.md's NO MONKEY PATCHES rule forbids. What CAN be
+    stated from the file alone, honestly: does this surface's own deny list
+    cover it."""
+    raw = _read_text(sf) if sf else None
+    if raw is None:
+        return {"denied": False, "note": "kein settings-layer - Memory-Schreibzugriff ungeprueft"}
+    try:
+        deny = ((json.loads(raw).get("permissions") or {}).get("deny")) or []
+    except ValueError:
+        return {"denied": False, "note": "settings-Datei ist kein gueltiges JSON"}
+    hit = [d for d in deny if "projects" in d and ("Write(" in d or "Edit(" in d)]
+    return {"denied": bool(hit), "patterns": hit,
+            "note": ("Schreiben/Editieren unter ~/.claude/projects/** (das geteilte "
+                     "Auto-Memory-Verzeichnis - kein Git, keine Historie) ist verboten."
+                     if hit else
+                     "Kein Deny fuer ~/.claude/projects/** gefunden - diese Surface "
+                     "kann das geteilte Auto-Memory-Verzeichnis des Operators "
+                     "beschreiben (debt: card-shares-the-operators-auto-memory).")}
+
+
 def preview(surface_key, cfg=None):
     """What a spawn on this surface ACTUALLY runs, with provenance.
 
@@ -757,6 +788,7 @@ def preview(surface_key, cfg=None):
                            "note": ("" if sf or not m.get("settings") else
                                     "Die Datei ist deklariert, laedt aber nicht (kein gueltiges JSON) - "
                                     "die CLI wuerde sie STILL ignorieren.")},
+        "memory": _memory_isolation(sf),
         "layers": _claude_layers(m.get("setting_sources")),
         "errors": errors(),
     }

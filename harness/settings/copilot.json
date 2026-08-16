@@ -16,7 +16,13 @@
     "  So: no ambient layer at all, and everything it needs stated here.",
     "",
     "The copilot runs --permission-mode plan and executes nothing itself (it emits",
-    "an ```actions block the daemon executes), so it is granted no tools here."
+    "an ```actions block the daemon executes), so it is granted no tools here.",
+    "",
+    "The memory Write()/Edit() deny below is belt-and-suspenders for the same reason:",
+    "plan mode already withholds the Write/Edit tools, so this only matters if that",
+    "mode ever changes - but memory_paths.auto resolves to the SAME shared, non-git",
+    "directory for this surface too (measured), so it costs nothing to say twice.",
+    "See harness/settings/card.json for the full story."
   ],
 
   "env": {
@@ -30,7 +36,9 @@
       "Read(./daemon/helmdeck.db)",
       "Read(./daemon/copilot_log.json)",
       "Read(./.env)",
-      "Read(./**/.env)"
+      "Read(./**/.env)",
+      "Write(~/.claude/projects/**)",
+      "Edit(~/.claude/projects/**)"
     ]
   }
 }

@@ -153,6 +153,33 @@ def test_loop_state():
     check(loop_state.build_stale(["daemon/server.py", "app/src/app/board.tsx"]) is False,
           "a pure JS/daemon change never nags for a native rebuild")
     check(loop_state.build_stale([]) is False, "no touched files -> nothing to rebuild")
+
+    # (a2) WHICH SIGNAL ANSWERS. There are two, and they are not equal: the
+    #      fingerprint is derived from the real native inputs, `touched` is
+    #      reconstructed from `git status` and cannot see app/android/ at all.
+    #      Ordering the heuristic first let that blind spot VETO the
+    #      authoritative check (debt: build-stale-tracked-sources-only). Both
+    #      directions are pinned here, with both signals stubbed so the check is
+    #      deterministic on a box with no git-bash and no APK.
+    _fp, _mk = loop_state._native_fp, loop_state._ship_marker
+    try:
+        loop_state._native_fp = lambda: "AAA"
+        loop_state._ship_marker = lambda: "BBB"
+        check(loop_state.build_stale([]) is True,
+              "FALSE NEGATIVE CLOSED: fingerprint moved -> stale even though the "
+              "change is invisible to git (an edit under the ignored app/android/)")
+        loop_state._ship_marker = lambda: "AAA"
+        check(loop_state.build_stale(["app/app.json"]) is False,
+              "fingerprint matches the ship marker -> NOT stale, even though a "
+              "native trigger path was touched (the OTA version-bump case)")
+        loop_state._ship_marker = lambda: ""          # never shipped from here
+        check(loop_state.build_stale(["daemon/server.py"]) is False,
+              "FALSE POSITIVE STILL FIXED: no marker (a card worktree) -> degrade "
+              "to the guess, and a non-native change stays silent")
+        check(loop_state.build_stale([]) is False,
+              "no marker and nothing touched -> nothing to say")
+    finally:
+        loop_state._native_fp, loop_state._ship_marker = _fp, _mk
     check(loop_state.touches_native(["app/app.json"]) is True,
           "app.json IS a native trigger (ship.sh fingerprints it)")
     check(loop_state.touches_native(["app/package.json"]) is True,
@@ -214,8 +241,218 @@ def test_one_definition():
     check(not h["errors"], "the shipped harness/ files all load clean: %s" % h["errors"])
 
 
+# -- 7. the export vs the APP'S DECLARED VIEW OF IT --------------------------
+# The state machine is single-sourced inside the daemon (test 6), but the app is
+# the OTHER copy of it: app/src/data/client.ts declares the wire shape the UI
+# reads, and nothing connected the two. Adding a column to LOOP_STATES, renaming
+# `setting_sources`, or dropping a field from preview() would leave the daemon
+# self-consistent and the UI reading `undefined` - typecheck-clean on both sides,
+# because tsc never sees the Python and the gate never saw the TypeScript.
+#
+# So: parse the declared interfaces and diff them against real exported objects.
+# Both directions matter and they catch different mistakes.
+#   required TS field missing from the export -> the UI silently renders nothing
+#   exported field the TS does not declare    -> the machine grew and the view
+#                                                was not told; the field is dead
+#                                                weight until someone notices
+# The second direction needs an escape hatch or it fails on payload that is
+# deliberately internal, so DELIBERATE_EXTRAS lists those WITH a reason. Adding
+# a field now forces a conscious choice - declare it, or say why it stays
+# internal - which is the whole point.
+CLIENT_TS = os.path.join(ROOT, "app", "src", "data", "client.ts")
+
+DELIBERATE_EXTRAS = {
+    # (interface, field): why the app does not declare it
+    ("LoopNode", "default_label"):
+        "the pre-rename label; the UI reads `label`, which flow() has already "
+        "resolved through policy.lane_labels",
+    ("HarnessLayer", "abs"):
+        "the absolute path, used by preview()'s own hook scan; the UI shows "
+        "`path`, the shortened honest form (~/... inside the home dir)",
+}
+
+
+def _ts_interfaces():
+    """{name: {field: required_bool}} from client.ts.
+
+    A deliberately small parser: strip comments, find `export interface X`, walk
+    to the matching brace tracking depth, and take `name:` / `name?:` at depth 1
+    only - so a nested object type (preview's `brief: {...}`) contributes its own
+    key and not its children's. It follows `extends`. Anything it cannot parse
+    shows up as an empty field set, which the caller reports rather than skips."""
+    import re
+    src = open(CLIENT_TS, encoding="utf-8").read()
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"//[^\n]*", "", src)
+
+    def body_and_bases(name):
+        m = re.search(r"export interface %s\b([^{]*)\{" % re.escape(name), src)
+        if not m:
+            return None, []
+        ext = re.findall(r"extends\s+([\w,\s]+)", m.group(1))
+        bases = [b.strip() for b in (ext[0].split(",") if ext else []) if b.strip()]
+        i, depth, out = m.end(), 1, []
+        while i < len(src) and depth:
+            c = src[i]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if not depth:
+                    break
+            if depth == 1:
+                out.append(c)
+            i += 1
+        return "".join(out), bases
+
+    cache = {}
+
+    def fields(name, seen=None):
+        if name in cache:
+            return cache[name]
+        seen = seen or set()
+        if name in seen:
+            return {}
+        seen.add(name)
+        body, bases = body_and_bases(name)
+        if body is None:
+            return {}
+        out = {}
+        for b in bases:
+            out.update(fields(b, seen))
+        for fm in re.finditer(r"(?:^|[;\n])\s*(\w+)(\??)\s*:", body):
+            out[fm.group(1)] = (fm.group(2) != "?")
+        cache[name] = out
+        return out
+
+    return fields
+
+
+def test_export_matches_the_app_contract():
+    import harness, sessions, loop_state
+    fields = _ts_interfaces()
+    check(os.path.exists(CLIENT_TS), "app/src/data/client.ts is where we think it is")
+
+    old = os.environ.pop("HELMDECK_WORKTREE", None)
+    try:
+        m = loop_state.machine()          # repo mode: the widest state set
+        f = sessions.flow({})
+        prev = [harness.preview(s["key"]) for s in harness.SURFACES]
+        desc = harness.describe()
+        # (interface, [objects it describes]) - every ELEMENT is checked, not a
+        # sample: only one loop edge carries `modes`, and checking edges[0] would
+        # have missed it.
+        contract = [
+            ("LoopState", m["states"]),
+            ("LoopEdge", list(m["edges"]) + list(f["edges"])),
+            ("LoopNode", f["nodes"]),
+            ("HarnessAgent", desc["agents"]),
+            ("HarnessSurface", harness.SURFACES),
+            ("HarnessPreview", prev),
+            ("HarnessLayer", [l for p in prev for l in p["layers"]]),
+            ("HarnessHook", [h for p in prev for h in p["hooks"]]),
+            ("HarnessAgentDoc", [harness.agent_doc(s["agent"]) for s in harness.SURFACES]),
+            ("HarnessSettingsDoc", [harness.settings_doc(k) for k in harness.settings_keys()]),
+        ]
+        for name, objs in contract:
+            ts = fields(name)
+            check(bool(ts), "interface %s is declared in client.ts and parsed" % name)
+            if not ts or not objs:
+                continue
+            need = {k for k, req in ts.items() if req}
+            missing, extra = set(), set()
+            for o in objs:
+                missing |= {k for k in need if k not in o}
+                extra |= {k for k in o if k not in ts
+                          and (name, k) not in DELIBERATE_EXTRAS}
+            check(not missing,
+                  "%s: every REQUIRED field the app declares is exported "
+                  "(missing: %s)" % (name, sorted(missing)))
+            check(not extra,
+                  "%s: the daemon exports nothing the app has not declared - "
+                  "add it to client.ts or to DELIBERATE_EXTRAS with a reason "
+                  "(undeclared: %s)" % (name, sorted(extra)))
+
+        # the gate is an intersection type (LoopNode & {between}), which the
+        # parser above deliberately does not model - so state its extra field here
+        need = {k for k, req in fields("LoopNode").items() if req} | {"between"}
+        check(not (need - set(f["gate"])),
+              "the gate node carries LoopNode's required fields plus `between` "
+              "(missing: %s)" % sorted(need - set(f["gate"])))
+
+        # and the two enums the UI switches on must hold, or a node renders untagged
+        every = list(m["states"]) + list(f["nodes"]) + [f["gate"]]
+        check(all(n.get("kind") in ("fixed", "policy") for n in every),
+              "every state/lane/gate is tagged exactly fixed|policy - the app "
+              "picks its lock-vs-options badge off this")
+        check(all(isinstance(s.get("source"), str) and ":" in s["source"]
+                  for s in m["states"]),
+              "every build-loop state cites file:line, read from source at call "
+              "time - a fixed node must be checkable, not merely asserted")
+        keys = {s["key"] for s in harness.SURFACES}
+        check(keys == {"card", "machine", "pm"},
+              "the surface keys the app's HarnessSurface union names: %s" % sorted(keys))
+    finally:
+        if old is not None:
+            os.environ["HELMDECK_WORKTREE"] = old
+
+
+def test_policy_knob_contract():
+    """The OTHER declarative table: /automation's config_schema.
+
+    Same failure mode as the state machine, different table. The app renders
+    each knob generically by switching on `control`, so a knob whose control has
+    no branch in that switch renders as NOTHING - silently, on an owner-only
+    screen nobody looks at twice. And a labelKey with no dict entry renders the
+    raw key. Neither is a type error on either side."""
+    import re
+    import server
+    schema = server._config_schema({})
+    check(bool(schema), "server._config_schema() is importable and non-empty")
+
+    auto_tsx = os.path.join(ROOT, "app", "src", "app", "(tabs)", "automation.tsx")
+    src = open(auto_tsx, encoding="utf-8").read()
+    m = re.search(r'type\s+Ctl\s*=\s*([^;]+);', src)
+    check(bool(m), "the app declares its Ctl union in automation.tsx")
+    rendered = set(re.findall(r'"(\w+)"', m.group(1))) if m else set()
+    # the union is the DECLARATION; the switch is what actually runs, so read
+    # both and require the daemon's controls to be in the intersection
+    branches = set(re.findall(r'it\.control === "(\w+)"', src))
+    emitted = {e["control"] for e in schema}
+    check(emitted <= rendered,
+          "every control the daemon emits is in the app's Ctl union "
+          "(unhandled: %s)" % sorted(emitted - rendered))
+    check(emitted <= branches,
+          "every control the daemon emits has a real branch in the app's Control "
+          "component - a knob with no branch renders NOTHING (unhandled: %s)"
+          % sorted(emitted - branches))
+    check(set(server.CONTROLS) == rendered,
+          "server.CONTROLS and the app's Ctl union are the same set "
+          "(daemon-only: %s, app-only: %s)"
+          % (sorted(set(server.CONTROLS) - rendered), sorted(rendered - set(server.CONTROLS))))
+
+    dict_src = open(os.path.join(ROOT, "app", "src", "i18n", "dict", "screens.ts"),
+                    encoding="utf-8").read()
+    for e in schema:
+        hit = re.search(r'"%s"\s*:\s*\{([^}]*)\}' % re.escape(e["labelKey"]), dict_src)
+        check(bool(hit), "%s has an i18n entry" % e["labelKey"])
+        if hit:
+            check("de:" in hit.group(1) and "en:" in hit.group(1),
+                  "%s carries BOTH languages" % e["labelKey"])
+    check(all(len(e["path"].split(".")) == 2 for e in schema),
+          "every knob path is exactly two levels - the app's nest() splits on one dot")
+    check(all(e["group"] in ("policy", "night") for e in schema),
+          "every knob is in a group the app has a panel for")
+    check(all(e.get("options") for e in schema if e["control"] in ("multi", "single")),
+          "every multi/single knob ships its options - the app renders an empty "
+          "chip row otherwise")
+    check(all(e.get("keys") for e in schema if e["control"] == "labels"),
+          "every labels knob ships its keys")
+
+
 for fn in (test_no_drift, test_ask_protocol, test_cli_args,
-           test_never_breaks_a_spawn, test_loop_state, test_one_definition):
+           test_never_breaks_a_spawn, test_loop_state, test_one_definition,
+           test_export_matches_the_app_contract, test_policy_knob_contract):
     print(fn.__name__)
     fn()
 
