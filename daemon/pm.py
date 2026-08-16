@@ -73,6 +73,45 @@ def set_goal(goal):
     return pm["goal"]
 
 
+# -- CLARIFICATIONS: the owner answers a PM question straight in chat ---------
+# brief() only ever read the goal text + the live board - an owner reply to an
+# open_question in chat was heard (the copilot replied) but never reached the
+# planner, so the NEXT plan repeated the same question. This is the fix: the
+# chat action "clarify_goal" (copilot._run_action) calls add_clarification(),
+# which is folded into every brief() prompt as ground truth until the goal
+# text itself changes (a new goal invalidates old answers - set_goal clears
+# them). Small, capped, persisted in the same loop.json the PM already owns.
+_CLARIFY_MAX = 12
+
+
+def add_clarification(text, actor="owner"):
+    text = (text or "").strip()
+    if not text:
+        return []
+    with _resolving_lock:
+        st = _loopstate()
+        cl = st.setdefault("clarifications", [])
+        cl.append({"text": text[:500], "at": time.strftime("%Y-%m-%d %H:%M"), "actor": actor,
+                   "goal": get_goal()})
+        st["clarifications"] = cl[-_CLARIFY_MAX:]
+        _save_loopstate(st)
+        return st["clarifications"]
+
+
+def _clarifications_block():
+    """Only clarifications recorded against the CURRENT goal text - a goal edit
+    (set_goal) makes prior answers stale, so they drop out here rather than
+    misleading a re-scoped plan."""
+    goal = get_goal()
+    cl = [c for c in (_loopstate().get("clarifications") or []) if c.get("goal") == goal]
+    if not cl:
+        return ""
+    lines = ["\n\nOWNER CLARIFICATIONS (answered live in chat - trust these as GROUND TRUTH, "
+             "they supersede any guess/assumption in a prior plan or the snapshot):"]
+    lines += ["  - %s (%s)" % (c["text"], c.get("at", "")) for c in cl]
+    return "\n".join(lines)
+
+
 def _role():
     try:
         with open(ROLE_FILE, encoding="utf-8") as f:
@@ -574,6 +613,7 @@ def brief(goal=None, model=""):
               + "\n\nSYSTEM STATE (provisioned OUTSIDE the card lanes - derive scope from THIS too, "
                 "not just the cards):\n" + _system_state()
               + _reconcile_block(prev)
+              + _clarifications_block()
               + _memory(prev, econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)

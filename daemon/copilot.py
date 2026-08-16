@@ -45,6 +45,7 @@ The action objects (inside the ```actions array) are zero or more of:
    {"type": "machine_task", "task": "what should happen on the PC", "cwd": "C:/optional/folder", "priority": "high", "dispatch": true}  - THE way to get anything done on this Windows machine that is not repo work: opening/controlling apps, files and folders, system settings, printers, installs, diagnostics, scripts. It files a card whose workplace is a real folder on the PC (no git worktree, no branch) and starts an agent there that CAN run commands. YOU never execute anything yourself - you dispatch the agent that does, exactly like resolve_conflict. cwd defaults to the owner's home folder; give one when the task is about a specific place. The card is audited and the owner accepts it like any other (roles: policy.machine.roles, default owner).
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
+   {"type": "clarify_goal", "text": "the fact, stated plainly"}  - the owner just answered one of the PM PLAN's open_questions, or corrected/refined a fact about the CURRENT GOAL, right here in chat (e.g. "es ist der geschlossene Track, nicht intern" / "Firmenkonto"). Record it as GROUND TRUTH for the planner and RE-PLAN immediately, so the very next plan stops re-asking/re-guessing that fact - the owner should never have to go edit the Ziel field by hand for something they just told you. Use whenever the reply answers a PM_PLAN open_questions/gate item or corrects a stated assumption; do NOT use for casual chat that isn't actually a plan-relevant fact.
    {"type": "configure", "patch": {..}}  (roles per policy.chat_configure_roles)
    {"type": "import_url", "url": "https://...", "client": "", "due": ""}  - fetch a page, agent derives a process from it
    {"type": "import_jira", "jql": "project = X AND status = 'To Do'"}  - pull Jira issues into backlog cards (needs settings.jira)
@@ -519,6 +520,26 @@ def _run_action(a, actor, role="operator"):
         import importers
         made = importers.jira_import(a.get("jql", ""), actor=actor)
         return "imported %d Jira issues into the backlog" % len(made)
+    if kind == "clarify_goal":
+        # The owner answered a PM open_question / corrected a plan fact IN CHAT.
+        # brief() previously never read chat, only the goal text + board - so the
+        # answer was heard but the next plan repeated the same question. This
+        # folds it into the planner's ground truth (pm.add_clarification) and
+        # re-plans NOW, one turn, so the chat is a real answer channel, not a
+        # dead end that still requires editing the Ziel field by hand.
+        import pm
+        text = (a.get("text") or "").strip()
+        if not text:
+            return "clarify_goal: kein Text übergeben"
+        if not pm.get_goal():
+            return "clarify_goal: kein Ziel gesetzt - nichts zum Klarstellen"
+        pm.add_clarification(text, actor=actor)
+        try:
+            pm.brief()
+        except Exception as e:
+            return "Notiert: „%s“ - Re-Plan ist fehlgeschlagen (%s), läuft beim nächsten Mal mit." % (
+                text[:120], str(e)[:150])
+        return "Notiert: „%s“ - Plan neu gerechnet." % text[:150]
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),
                              due=a.get("due", ""), actor=actor)
