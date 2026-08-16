@@ -7,8 +7,12 @@ by "the call returned without raising":
 1. IS THE TICKET ACTUALLY A SECRET? Storing a credential is easy to get subtly
    wrong - the token ends up in the file next to its hash, or revocation checks
    the wrong field. So the store is read back as TEXT and the raw token must not
-   appear anywhere in it, and every rejection path (revoked, wrong scope,
-   garbage, empty) is asserted separately rather than as one truthy check.
+   appear anywhere in it, and every rejection path (revoked, garbage, empty) is
+   asserted separately rather than as one truthy check. Note there is no scope
+   check here - the real precedent (`worker.js:108`) is a binary valid/invalid
+   ticket, and this module matches that; the isolation from user data comes
+   from `_ticket()`/`_user()` being separate functions in server.py, not from
+   anything in this module.
 
 2. IS A COMMAND CONSUMED ON PROOF, OR ON READ? This is the load-bearing one and
    the repo's NO-MONKEY-PATCHES law in miniature. Consuming on read looks
@@ -81,16 +85,6 @@ class TestTickets(Base):
 
         # revoking twice is a no-op, not a crash
         self.assertIsNone(companion.revoke(a["device"]["id"]))
-
-    def test_scopes_are_enforced_not_decorative(self):
-        token = companion.mint_ticket("mic-only", scopes=("observe",))["token"]
-        self.assertIsNotNone(companion.authorize(token, scope="observe"))
-        self.assertIsNone(companion.authorize(token, scope="command"))
-        self.assertIsNone(companion.authorize(token, scope="config"))
-
-    def test_unknown_scope_is_refused_at_mint(self):
-        with self.assertRaises(ValueError):
-            companion.mint_ticket("bad", scopes=("observe", "root"))
 
     def test_last_seen_is_an_observation(self):
         token = companion.mint_ticket("phone")["token"]

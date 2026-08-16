@@ -9,16 +9,27 @@ not a second UI. It is a sensing layer: it captures what the webview
 structurally cannot (mic, camera, background execution, phone notifications)
 and hands it to THIS backend, which the webapp on the lens then displays.
 
-Three things live here, each one lifted from a decision the reference project
-already paid for:
+Three things live here. Two are a direct port of `worker.js`/`schema.sql`; the
+third is disclosed as an addition, not dressed up as one:
 
-1. VALET TICKETS, not a second shared secret (§2.1). Every enrolled device holds
-   its OWN revocable credential. Only `sha256hex(token)` is ever stored; the
-   token itself is returned exactly once, at mint time, and is unrecoverable
-   afterwards. This is deliberately NOT `auth.issue_token()`: an auth token
-   authenticates AS a user and carries that user's whole role, so a phone in a
-   pocket would hold owner powers. A ticket carries SCOPES instead - a mic
-   device cannot read the board, and revoking it touches nothing else.
+1. VALET TICKETS, not a second shared secret (§2.1) - a straight port of
+   `worker.js:108 authorize()`, which resolves a bearer to `"master"`,
+   `"ticket"` or `null` and nothing finer. There is no scope concept in the
+   source (`schema.sql`'s `tickets` table: `id, hash, name, created, last_seen,
+   revoked` - that's the whole row), so this module doesn't have one either -
+   an earlier version of this file invented a config/observe/command scope
+   enum that the source never had, and it bought nothing: `_ticket()` and
+   `_user()` are already separate functions in server.py, so a companion
+   ticket structurally cannot reach `/tracks` or `/settings` regardless of any
+   scope check inside this module - verified live: a companion ticket 401s on
+   `/tracks`, `/settings` and `/users`, and gets 401 (not 200) attempting
+   `/companion/pair` itself. Every enrolled device holds its OWN revocable
+   credential; only `sha256hex(token)` is ever stored; the token itself is
+   returned exactly once, at mint time, and is unrecoverable afterwards. Still
+   deliberately NOT `auth.issue_token()`: an auth token authenticates AS a user
+   and carries that user's whole role, so a phone in a pocket would hold owner
+   powers - that risk is real and is what tickets exist to avoid, independent
+   of any scoping.
 
 2. BACKEND-DRIVEN CONFIG (§2.4). Every toggle and interval the companion obeys
    comes from here, because "a native app you must rebuild to retune is a native
@@ -27,16 +38,22 @@ already paid for:
    it "near-planning", and wrote the rule down - *"never ship a fast poll"*
    (§2.5). Push is the live path; this is the safety net.
 
-3. A COMMAND QUEUE CONSUMED ON PROOF. §2.4's `_cmd` row is "consumed after
-   execution so it can't re-fire". The word after matters, and it is also the
-   repo's own NO-MONKEY-PATCHES law: load-bearing state is folded in at EVENT
-   TIME from the runtime's own signal, at exactly ONE owner, never assumed from
-   a stored flag. So `pending()` is a pure read that consumes nothing - a device
-   that fetches and then dies gets the command again - and `ack()` is the single
-   mutation point, moving a command out of pending only on the device's report
-   that it actually ran. Consuming on read would silently drop a command every
-   time a phone lost signal mid-fetch, and would look exactly like a bug in the
-   sensor.
+3. COMMANDS CONSUMED ON PROOF - the one deliberate ADDITION over the source,
+   disclosed rather than implied. `CompanionService.kt:81-90` has exactly ONE
+   mutable `_cmd` row, and the DEVICE clears it itself with a second POST right
+   after running it inline - no TTL, no attempts cap, no queue, no per-device
+   targeting. That is simpler and this module keeps its spirit (the client
+   still reports "I ran it", the server still doesn't guess), but a single
+   global slot can't hold two commands at once, and if the device crashes AFTER
+   the effect but BEFORE it clears the row, the harness's own design re-fires
+   it on the next unrelated "changed" push. This module trades that simplicity
+   for a small per-device queue, a `COMMAND_TTL` (borrowed from a DIFFERENT
+   part of the same harness - §2.2's own 10-minute pairing-code expiry, not
+   invented here) and a `MAX_ATTEMPTS` redelivery cap. `pending()` stays a pure
+   read that consumes nothing; `ack()` stays the one mutation point. That
+   consume-on-proof shape is also the repo's own NO-MONKEY-PATCHES law: state
+   folded in at EVENT TIME from the runtime's own signal, at exactly ONE owner,
+   never assumed from a stored flag.
 
 FAIL-SAFE (§2.1, copied deliberately): a missing or corrupt store degrades to
 "no devices enrolled" - the companion surface answers 403 and the owner can
@@ -71,10 +88,6 @@ STORE = os.path.join(ROOT, "companion.json")
 # UNBOUNDED read of a child process's stdout. These sections are pure in-memory
 # work plus one small bounded file write - nothing inside can block forever.
 _LOCK = threading.RLock()
-
-# What a ticket may do. A device is enrolled for exactly what it needs; phases
-# 2-4 hand out the narrower ones rather than widening an existing ticket.
-SCOPES = ("config", "observe", "command")
 
 # Commands are one-shot and time-bounded. A phone that is off for a day must not
 # come back and fire yesterday's capture at a moment nobody asked for it.
@@ -146,21 +159,17 @@ def _now():
 
 # -- devices / tickets ---------------------------------------------------
 
-def mint_ticket(label, scopes=("config", "observe", "command"), actor="owner"):
+def mint_ticket(label, actor="owner"):
     """Enroll a device. Returns {device, token} - the ONLY time the token is
     ever available. Only its hash is persisted, so a lost token is re-minted,
     never recovered."""
     with _LOCK:
         label = (label or "").strip() or "companion"
-        bad = [s for s in scopes if s not in SCOPES]
-        if bad:
-            raise ValueError("unknown scope(s): %s" % ", ".join(sorted(bad)))
         token = "hdc_" + secrets.token_urlsafe(24)     # 24 random bytes, per §2.1
         dev = {
             "id": "dev_" + secrets.token_hex(6),
             "label": label,
             "hash": _hash(token),
-            "scopes": sorted(set(scopes)),
             "revoked": False,
             "created": _now(),
             "created_by": actor,
@@ -196,8 +205,9 @@ def revoke(device_id, actor="owner"):
         return None
 
 
-def authorize(bearer, scope=None):
-    """Resolve a presented ticket to its device, or None.
+def authorize(bearer):
+    """Resolve a presented ticket to its device, or None - the binary
+    valid/invalid check `worker.js:108` makes, nothing finer.
 
     Hash-compare in constant time: a plain `==` on secrets leaks length and
     prefix through timing. Updates last_seen as an OBSERVATION (the device
@@ -213,8 +223,6 @@ def authorize(bearer, scope=None):
                 continue
             if not hmac.compare_digest(str(dev.get("hash") or ""), h):
                 continue
-            if scope and scope not in (dev.get("scopes") or []):
-                return None
             dev["last_seen"] = _now()
             try:
                 _save(d)
@@ -224,7 +232,7 @@ def authorize(bearer, scope=None):
         return None
 
 
-    # -- backend-driven config ----------------------------------------------
+# -- backend-driven config ----------------------------------------------
 
 def config():
     """Effective config = defaults + owner overrides. The device gets the
@@ -250,7 +258,7 @@ def save_config(patch, actor="owner"):
         return config()
 
 
-    # -- commands: queued here, consumed ON PROOF ----------------------------
+# -- commands: queued here, consumed ON PROOF ----------------------------
 
 def queue_command(kind, device_id=None, actor="owner", **args):
     """Queue a one-shot command. `device_id=None` means "any enrolled device"."""
@@ -357,7 +365,7 @@ def sweep(max_settled=200):
         return {"live": len(live), "kept": len(settled[-max_settled:])}
 
 
-    # -- observation intake --------------------------------------------------
+# -- observation intake --------------------------------------------------
 
 def record(device_id, key, value):
     """Newest-value-per-key from the sensing layer (§2.5). Bounded on purpose:

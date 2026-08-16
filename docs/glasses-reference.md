@@ -799,27 +799,48 @@ existed to unblock a nav arrow, and HelmDeck has no navigation feature to feed.
 | 4 | Trigger / notification listening | no | last, and **best-effort by the source's own admission** (§3.5: unofficial, breaks on Meta updates) |
 
 ### 11.2 Phase 1, daemon half — shipped and verified (`daemon/companion.py`)
-Three decisions adopted from glass-crud-harness rather than reinvented; the
-module docstring carries the full reasoning. In short:
+⚠ **Correction, same day.** The first version of this section said the design
+was "adopted... rather than reinvented." That overstated it — the owner caught
+it ("was not like this") and a re-read of the actual source
+(`worker.js`/`schema.sql`/`CompanionService.kt`) confirmed he was right on two
+points. Left here rather than silently rewritten:
+- The real ticket is **binary** (`worker.js:108`: `"master"` / `"ticket"` /
+  `null`). There is no scope column in `schema.sql`'s `tickets` table. An
+  earlier build here had a config/observe/command scope enum the source never
+  had — removed. It bought nothing anyway: `_ticket()` and `_user()` are
+  already separate functions in `server.py`, so a companion ticket structurally
+  cannot reach `/tracks` or `/settings` with or without a scope check.
+- The real `_cmd` is **ONE mutable row**, self-cleared by the device inline
+  (`CompanionService.kt:81-90`) — no TTL, no attempts cap, no queue. This
+  module keeps a small per-device queue + `COMMAND_TTL` + `MAX_ATTEMPTS`
+  instead. That part is a disclosed ADDITION, not a port — the TTL is borrowed
+  from a *different* part of the same harness (§2.2's pairing-code expiry), and
+  it earns its keep because a single JSON-file store hits the same
+  read-modify-write race a single `_cmd` row would too, so the harness's
+  "re-fires on the next unrelated push" fallback doesn't apply here the same
+  way. Still worth knowing it is not literally what glass-crud-harness does.
+
+What's left, still a real port and still true:
 
 - **Valet tickets, not a second shared secret.** §2.1 named this exact moment
   ("when a second glasses/companion surface appears, go to tickets"). Only
   `sha256(token)` is stored, the token is shown once, every device is revocable
-  alone and scoped. Deliberately NOT `auth.issue_token()`, which would give a
-  pocketed phone its user's entire role.
+  alone. Deliberately NOT `auth.issue_token()`, which would give a pocketed
+  phone its user's entire role.
 - **Backend-driven config**, so retuning never needs an APK rebuild. Default
   poll 60s, guarded by a test — the reference project shipped 10s, called it
   near-polling, and wrote *"never ship a fast poll"* down (§2.5).
-- **Commands consumed on PROOF, not on read.** §2.4's "consumed after
-  execution", which is also the repo's NO-MONKEY-PATCHES law: `pending()` is a
-  pure read, `ack()` is the single mutation point and only on the device's
-  report. Consuming on read would silently drop a command whenever a phone died
-  mid-fetch and would look exactly like a sensor bug.
+- **Commands consumed on PROOF, not on read** (in spirit matching
+  `CompanionService.kt`'s self-clear, mechanically richer — see correction
+  above). `pending()` is a pure read, `ack()` is the single mutation point and
+  only on the device's report. Consuming on read would silently drop a command
+  whenever a phone died mid-fetch and would look exactly like a sensor bug.
 
 Verified against a live daemon, not only in unit tests: pair → config → queue →
-fetch **twice** (present both times) → ack → gone, plus scope enforcement,
-revocation taking effect immediately, and a companion ticket getting 401 on
-`/tracks`, `/settings`, `/users`. 28 unit tests.
+fetch **twice** (present both times) → ack → gone, plus revocation taking
+effect immediately, and a companion ticket getting 401 on `/tracks`,
+`/settings`, `/users`, and on `/companion/pair` itself. 26 unit tests (two
+scope tests removed with the scope code).
 
 ⚠ **Concurrency was a real bug here, not a debt entry.** The store is
 read-modify-written from a `ThreadingHTTPServer`, and "a device polls while the
