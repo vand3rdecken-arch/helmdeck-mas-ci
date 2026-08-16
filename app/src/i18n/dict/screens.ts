@@ -349,6 +349,27 @@ export const screens: Dict = {
     de: "Nicht das Board: das ist die Disziplin INNERHALB eines Checkouts. Tippe eine Stufe, um Regel und Grund zu sehen.",
     en: "Not the board: this is the discipline INSIDE one checkout. Tap a stage for its rule and the reason behind it.",
   },
+  // The section-level answer to "why is everything here locked?". {fixed}/{total}
+  // and {policy} are filled from the payload, so the sentence cannot drift from
+  // the machine it describes. Both variants exist because a mode CAN be
+  // all-fixed (and claiming an exception that isn't there is the same defect in
+  // the other direction).
+  "loopmap.buildFixedNote": {
+    de: "{fixed} der {total} Stufen sind Harness-Gesetz: Reihenfolge und Bedingung sind Code, damit jede Karte denselben Weg nimmt und der Gate exakt dasselbe nachprüfen kann. Das Schloss ist hier also richtig, nicht kaputt. Einstellbar ist nur das Timing bei: {policy}.",
+    en: "{fixed} of the {total} stages are harness law: order and condition are code, so every card takes the same path and the gate can re-check exactly that. The padlock here is correct, not broken. Only the timing is adjustable, on: {policy}.",
+  },
+  "loopmap.buildAllFixedNote": {
+    de: "Alle {total} Stufen sind Harness-Gesetz: Reihenfolge und Bedingung sind Code, damit jede Karte denselben Weg nimmt und der Gate exakt dasselbe nachprüfen kann. Das Schloss ist hier also richtig, nicht kaputt — an diesem Abschnitt gibt es bewusst nichts einzustellen.",
+    en: "All {total} stages are harness law: order and condition are code, so every card takes the same path and the gate can re-check exactly that. The padlock here is correct, not broken — there is deliberately nothing to set in this section.",
+  },
+  "loopmap.editElsewhere": {
+    de: "Was du wirklich einstellen kannst, liegt im Automatik-Hub",
+    en: "The settings you can actually change live in the automation hub",
+  },
+  "loopmap.editElsewhereWhere": {
+    de: "Einstellungen → „Automatik & Loop“: Lane-Namen, Auto-Abnahme, Auto-Dispatch, Nachtschicht",
+    en: "Settings → “Automation & loop”: lane names, auto-accept, auto-dispatch, night shift",
+  },
   "loopmap.secHarnessHint": {
     de: "Der Text, mit dem ein Agent gestartet wird — pro Oberfläche einer. Voll editierbar.",
     en: "The text an agent is started with — one per surface. Fully editable.",

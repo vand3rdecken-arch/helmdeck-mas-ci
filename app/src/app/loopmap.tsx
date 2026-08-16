@@ -229,6 +229,9 @@ export default function LoopMapScreen() {
 
   const build = data?.build;
   const states = build?.states ?? [];
+  // which stages are actually adjustable — read off `kind`, so the section note
+  // above the list states the real split instead of a remembered one
+  const policyStates = states.filter((s) => s.kind === "policy");
   // OUTGOING edges per state — NOT states[i] -> states[i+1].
   // The list order is declaration order, which is not the transition order: in
   // card mode the real edges are EXECUTE->CLEAN, WIP->COMMIT, COMMIT->DONE,
@@ -359,6 +362,54 @@ export default function LoopMapScreen() {
               {build.mode_note}
             </Text>
           ) : null}
+
+          {/* WHY IS NEARLY EVERY ROW BELOW LOCKED?
+              Per-row reasons were not enough: the owner reads the SECTION, sees
+              a column of padlocks, and concludes the screen is read-only before
+              he taps anything. So the section answers it once, up front, and
+              points at the screen that does hold the knobs.
+
+              The counts are DERIVED from the payload, never written down. A
+              hand-typed "all stages are fixed" would already be wrong today
+              (COMMIT and WIP are policy nodes governed by SWARM_WIP_MINUTES)
+              and would go wrong again the next time a state changes kind - and
+              a screen whose job is to say what is fixed cannot afford to state
+              that falsely. */}
+          {states.length ? (
+            <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
+              borderRadius: 14, padding: 12, gap: 9 }}>
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
+                <Ionicons name="information-circle-outline" size={16} color={t.txtTertiary}
+                  style={{ marginTop: 1 }} />
+                <Text style={{ color: t.txtSecondary, fontSize: 12, lineHeight: 17.5, flex: 1 }}>
+                  {policyStates.length
+                    ? tr("loopmap.buildFixedNote", {
+                        fixed: states.length - policyStates.length, total: states.length,
+                        policy: policyStates.map((s) => s.key).join(", "),
+                      })
+                    : tr("loopmap.buildAllFixedNote", { total: states.length })}
+                </Text>
+              </View>
+              {/* the pointer the screen was missing: the knobs are real, they
+                  are just not on this page */}
+              <Pressable onPress={openHub}
+                style={{ flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: t.surface2,
+                  borderColor: t.accent, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10,
+                  paddingVertical: 9 }}>
+                <Ionicons name="options-outline" size={15} color={t.accent} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>
+                    {tr("loopmap.editElsewhere")}
+                  </Text>
+                  <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 1 }}>
+                    {tr("loopmap.editElsewhereWhere")}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={15} color={t.txtTertiary} />
+              </Pressable>
+            </View>
+          ) : null}
+
           <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
             borderRadius: 14, overflow: "hidden" }}>
             {states.map((s, i) => {
