@@ -2,9 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { api, type PmData, type PmReconcile } from "@/data/client";
+import { api, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
 import { t as tt, useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -348,52 +348,38 @@ function MiniChip({ label, color }: { label: string; color?: string }) {
 }
 
 /** One corner's follow-up card: header repeats the corner's name + green/red
- *  state so each detail is visibly anchored to its triangle corner. A RED
- *  corner gets a push button ("prüfen"): dispatches an agent to gather real
- *  evidence for THAT corner (pm.reconcile_corner) instead of just sitting on
- *  the generic gate text - see any prior check's evidence below the reason. */
-function CornerPanel({ label, state, children, style, corner, onCheck, checking, rec }: {
+ *  state so each detail is visibly anchored to its triangle corner. A BLOCKED
+ *  corner is tappable: shows/hides the full issue list already sitting in the
+ *  plan (the verifier's `issues` + the open questions) - no network call, just
+ *  reveals detail the card doesn't have room to show by default. */
+function CornerPanel({ label, state, children, style, issues }: {
   label: string; state?: "ok" | "blocked"; children: React.ReactNode; style?: ViewStyle;
-  corner?: "budget" | "timeline" | "scope"; onCheck?: () => void; checking?: boolean; rec?: PmReconcile;
+  issues?: string[];
 }) {
   const t = useTheme();
   const tr = useT();
+  const [open, setOpen] = React.useState(false);
   const col = state === "blocked" ? t.danger : state === "ok" ? t.ok : t.txtTertiary;
   const word = state === "blocked" ? tr("dash.triangle.red") : state === "ok" ? tr("dash.triangle.ok") : tr("dash.triangle.unknown");
+  const hasIssues = state === "blocked" && !!issues?.length;
   return (
-    <View style={[s.panel, glassStyle(t), { borderColor: t.glassBorder }, style]}>
+    <Pressable onPress={() => hasIssues && setOpen((v) => !v)} disabled={!hasIssues}
+      style={[s.panel, glassStyle(t), { borderColor: t.glassBorder }, style]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: col }} />
         <Text style={[s.h3, { color: t.txtPrimary, flex: 1 }]}>{label}</Text>
         <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
+        {hasIssues ? <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} /> : null}
       </View>
       {children}
-      {state === "blocked" && corner && onCheck ? (
-        <Pressable onPress={onCheck} disabled={checking}
-          style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-            marginTop: 4, paddingVertical: 8, borderRadius: 9, backgroundColor: t.danger + "1A",
-            borderColor: t.danger + "55", borderWidth: 1, opacity: checking ? 0.6 : 1 }}>
-          {checking ? <ActivityIndicator size="small" color={t.danger} />
-            : <Ionicons name="search-circle" size={16} color={t.danger} />}
-          <Text style={{ color: t.danger, fontSize: 12, fontWeight: "700" }}>
-            {checking ? tr("dash.corner.checking") : tr("dash.corner.check")}
-          </Text>
-        </Pressable>
-      ) : null}
-      {rec ? (
+      {hasIssues && open ? (
         <View style={{ marginTop: 6, gap: 3 }}>
-          <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700" }}>
-            {tr("dash.corner.lastCheck", { when: rec.at ?? "" })}
-          </Text>
-          {(rec.already_done ?? []).map((x, i) => (
-            <Text key={"d" + i} style={{ color: t.ok, fontSize: 11.5, lineHeight: 16 }}>✓ {x}</Text>
-          ))}
-          {(rec.still_open ?? []).map((x, i) => (
-            <Text key={"o" + i} style={{ color: t.warn, fontSize: 11.5, lineHeight: 16 }}>• {x}</Text>
+          {issues!.map((x, i) => (
+            <Text key={i} style={{ color: t.txtSecondary, fontSize: 11.5, lineHeight: 16 }}>• {x}</Text>
           ))}
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -407,11 +393,6 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   const makeCard = useMutation({
     mutationFn: (task: string) => api.newTrack({ repo: defaultRepo, task, lane: "backlog", priority: "medium" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["tracks"] }); Alert.alert("PM", tr("pm.cardCreated")); },
-    onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
-  });
-  const reconcile = useMutation({
-    mutationFn: (corner: "budget" | "timeline" | "scope") => api.pmReconcile(corner),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pmPlan"] }),
     onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
   });
   const plan = data?.plan;
@@ -431,11 +412,16 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   // (Max plan - the real rate-limit windows the PM checked, same UsageRow the
   // Settings panel uses) or "cash" (API plan - euro spend vs cap). The PM owns
   // the verdict; the board only draws. Adding a plan = a new kind branch.
-  const rec = plan.reconcile;
+  // the diagnostic detail behind a RED plan gate - the verifier's issues +
+  // the owner questions - not corner-specific in the plan, so any blocked
+  // corner reveals the same full list on tap.
+  const gateIssues = [
+    ...(plan.verify?.issues ?? []),
+    ...(plan.open_questions ?? []),
+  ];
   const budget = (
     <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}
-      corner="budget" onCheck={() => reconcile.mutate("budget")}
-      checking={reconcile.isPending && reconcile.variables === "budget"} rec={rec?.budget}>
+      issues={gateIssues}>
       {b?.kind === "usage" ? (
         <View>
           {b.windows?.length ? b.windows.map((w) => <UsageRow key={w.id} w={w} />)
@@ -468,8 +454,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
     text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
   const timeline = (
     <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}
-      corner="timeline" onCheck={() => reconcile.mutate("timeline")}
-      checking={reconcile.isPending && reconcile.variables === "timeline"} rec={rec?.timeline}>
+      issues={gateIssues}>
       <GateReason text={reasons?.timeline} />
       {launch && (launchDate || days != null) ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
@@ -509,8 +494,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
 
   const scope = (
     <CornerPanel key="scope" label={tr("dash.triangle.scope")} state={tri?.scope} style={wide ? { flex: 1 } : undefined}
-      corner="scope" onCheck={() => reconcile.mutate("scope")}
-      checking={reconcile.isPending && reconcile.variables === "scope"} rec={rec?.scope}>
+      issues={gateIssues}>
       <GateReason text={reasons?.scope} />
       <View style={{ gap: 4 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
