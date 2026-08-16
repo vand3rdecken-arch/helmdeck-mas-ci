@@ -34,10 +34,15 @@
 // use for, because unlike that project we never capture camera or location in
 // this service.
 //
-// Serves BOTH build paths from one file, exactly like withLanCleartext.js:
-//   - `expo prebuild`: normal config plugin (registered in app.json)
-//   - hand-managed app/android (what deploy/build_apk.sh really builds):
-//     `node app/plugins/withGlassVoice.js app/android`. Idempotent.
+// BOTH PLATFORMS, and they are NOT the same shape:
+//   - Android has a hand-managed app/android, so it needs TWO paths kept in
+//     sync: the prebuild plugin, and a bare-node CLI that build_apk.sh runs.
+//   - iOS has no hand-managed app/ios - EAS prebuilds from app.json - so the
+//     plugin path is the only one, and there is nothing to keep in sync.
+// Same file for both, exactly like withLanCleartext.js:
+//   - `expo prebuild` / EAS: normal config plugin (registered in app.json)
+//   - hand-managed app/android: `node app/plugins/withGlassVoice.js app/android`.
+//     Idempotent. That CLI is ANDROID-ONLY by nature - iOS has no such dir.
 
 const PERMISSIONS = [
   // the microphone itself
@@ -57,6 +62,26 @@ const PERMISSIONS = [
 const SERVICE_NAME = "app.helmdeck.voice.GlassVoiceService";
 const FGS_TYPE = "microphone"; // NARROW - see the header
 
+// iOS. HelmDeck really does ship there (ASC app 6801637667, TestFlight), so an
+// Android-only voice plugin is not "unfinished", it is BROKEN on half the
+// product: iOS kills an app on first microphone access when
+// NSMicrophoneUsageDescription is absent, and App Review rejects the build
+// outright. These strings are user-facing at the permission prompt, so they are
+// German like the camera one already in app.json.
+//
+// Deliberately NOT added: UIBackgroundModes:["audio"]. Voice here is a
+// foreground conversation - claiming background audio invites App Review
+// scrutiny for a capability nothing uses, and it is the kind of entitlement
+// that is easy to add and painful to justify later.
+const IOS_INFO = {
+  NSMicrophoneUsageDescription:
+    "HelmDeck nutzt das Mikrofon, damit du mit Henry sprechen kannst - " +
+    "auch über das Mikrofon deiner Brille.",
+  NSSpeechRecognitionUsageDescription:
+    "HelmDeck wandelt deine Sprache in Text um, um deine Frage an Henry zu " +
+    "schicken.",
+};
+
 function serviceXml() {
   return (
     `        <service\n` +
@@ -68,7 +93,18 @@ function serviceXml() {
 
 // --- expo prebuild path -----------------------------------------------------
 function withGlassVoice(config) {
-  const { withAndroidManifest } = require("expo/config-plugins");
+  const { withAndroidManifest, withInfoPlist } = require("expo/config-plugins");
+
+  // iOS first. There is no hand-managed app/ios (EAS prebuilds from app.json),
+  // so unlike Android this is the ONLY path - there is no second CLI half to
+  // keep in sync.
+  config = withInfoPlist(config, (c) => {
+    for (const [k, v] of Object.entries(IOS_INFO)) {
+      if (!c.modResults[k]) c.modResults[k] = v;
+    }
+    return c;
+  });
+
   return withAndroidManifest(config, (c) => {
     const manifest = c.modResults.manifest;
     manifest["uses-permission"] = manifest["uses-permission"] || [];
@@ -128,6 +164,7 @@ function applyToAndroidDir(androidDir) {
 
 module.exports = withGlassVoice;
 module.exports.PERMISSIONS = PERMISSIONS;
+module.exports.IOS_INFO = IOS_INFO;
 module.exports.SERVICE_NAME = SERVICE_NAME;
 module.exports.FGS_TYPE = FGS_TYPE;
 module.exports.patchManifestXml = patchManifestXml;
