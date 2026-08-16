@@ -49,11 +49,11 @@ export const composer: Dict = {
   "attach.tooMany": { de: "{n} weitere: max. {max} Anhänge",
                       en: "{n} more: max. {max} attachments" },
 
-  // -- board copilot chat --------------------------------------------------
-  "chat.title": { de: "Board-Copilot", en: "Board copilot" },
+  // -- Henry (board agent) chat --------------------------------------------------
+  "chat.title": { de: "Henry", en: "Henry" },
   "chat.placeholder": { de: "Frage…", en: "Question…" },
-  "chat.empty": { de: "Frag den Copilot über die Arbeit.", en: "Ask the copilot about the work." },
-  "chat.teamOnly": { de: "Der Copilot ist nur für das Team.", en: "The copilot is for the team only." },
+  "chat.empty": { de: "Frag Henry über die Arbeit.", en: "Ask Henry about the work." },
+  "chat.teamOnly": { de: "Henry ist nur für das Team.", en: "Henry is for the team only." },
   "chat.thinking": { de: "denkt nach", en: "thinking" },
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
   "chat.latest": { de: "Neueste", en: "Latest" },
@@ -115,14 +115,14 @@ export const composer: Dict = {
   },
 
   // -- command palette -----------------------------------------------------
-  "palette.placeholder": { de: "Karte oder Ansicht springen…  ( > für Copilot-Befehl )",
-                           en: "Jump to a card or view…  ( > for a copilot command )" },
-  "palette.copilotThinking": { de: "Copilot denkt…", en: "Copilot is thinking…" },
-  "palette.copilotHint": { de: "Enter sendet an den Board-Copilot",
-                           en: "Enter sends to the board copilot" },
+  "palette.placeholder": { de: "Karte oder Ansicht springen…  ( > für Henry-Befehl )",
+                           en: "Jump to a card or view…  ( > for a Henry command )" },
+  "palette.copilotThinking": { de: "Henry denkt…", en: "Henry is thinking…" },
+  "palette.copilotHint": { de: "Enter sendet an Henry",
+                           en: "Enter sends to Henry" },
   "palette.nothingFound": { de: "Nichts gefunden.", en: "Nothing found." },
-  "palette.footer": { de: "↑↓ wählen · Enter öffnen · > Copilot · Esc schließen",
-                      en: "↑↓ select · Enter open · > copilot · Esc close" },
+  "palette.footer": { de: "↑↓ wählen · Enter öffnen · > Henry · Esc schließen",
+                      en: "↑↓ select · Enter open · > Henry · Esc close" },
   "palette.newRequest": { de: "Neue Anfrage", en: "New request" },
 
   // view hints (the labels reuse nav.*)

@@ -156,9 +156,15 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: t.canvas },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: tr("nav.board"), tabBarIcon: icon("grid-outline") }} />
+      {/* The DASHBOARD is `index`, not merely first in this list. Expo Router's
+          documented rule is "the tab file named index.tsx is the default tab
+          when the app loads", so reordering alone would have put Dashboard
+          first in the bar while the app still OPENED on the board - worse than
+          either arrangement on its own. The two files were therefore swapped
+          (git mv) and the board now has its own named route, /(tabs)/board. */}
+      <Tabs.Screen name="index" options={{ title: tr("nav.dashboard"), tabBarIcon: icon("stats-chart-outline") }} />
+      <Tabs.Screen name="board" options={{ title: tr("nav.board"), tabBarIcon: icon("grid-outline") }} />
       <Tabs.Screen name="needs" options={{ title: tr("nav.needsYou"), tabBarIcon: icon("notifications-outline") }} />
-      <Tabs.Screen name="dashboard" options={{ title: tr("nav.dashboard"), tabBarIcon: icon("stats-chart-outline") }} />
       <Tabs.Screen name="processes" options={{ title: tr("nav.processes"), tabBarIcon: icon("git-network-outline"), ...hideOnPhone("processes") }} />
       <Tabs.Screen name="recordings" options={{ title: tr("nav.recordings"), tabBarIcon: icon("videocam-outline"), ...hideOnPhone("recordings") }} />
       <Tabs.Screen name="sessions" options={{ title: tr("nav.sessions"), tabBarIcon: icon("chatbubbles-outline"), ...hideOnPhone("sessions") }} />
