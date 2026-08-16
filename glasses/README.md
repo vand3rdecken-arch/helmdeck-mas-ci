@@ -1,5 +1,12 @@
 # HelmDeck Glance — Meta Ray-Ban Display webapp
 
+> **Before changing anything here, read `docs/glasses-reference.md`** (in the
+> repo root, plain reference — `docs/` is stripped from the published mirror, so
+> a link would 404 there). It is the mandatory reference distilled from the
+> owner's earlier glasses project and Meta's official toolkit: the real display
+> guidelines, the traps already paid for on-device, and the settled voice-output
+> architecture.
+
 A glanceable ops view for the Meta Ray-Ban Display glasses (600×600 additive
 waveguide, D-pad / EMG input). Shows what needs you, capacity, and SoW margin —
 read straight from the HelmDeck daemon.
@@ -38,9 +45,48 @@ additive surfaces, focus-based navigation, no touch).
    - **Glance token** — the value from step 1.
 3. Save. The home screen loads live data. Config is stored in `localStorage`.
 
-The token grants **read-only** access to a compact glance (needs-you list +
+The token grants **read-only** access to a compact glance (blocked-on-you list +
 capacity + SoW margin). It never carries write access and is independent of the
 session-cookie auth used by the desktop UI.
+
+## What "needs you" means here
+
+`needs_you` is **every card blocked on the human**, not just the parked ones —
+the daemon derives it in exactly one place (`sessions.owner_blockers`), which is
+also what the board and the PM narrative read. Each entry carries a `reason` and
+a one-line `detail`, and the list arrives sorted worst-news-first:
+
+| `reason` | the card is… |
+|---|---|
+| `gate` | held on Review by a **red quality gate** |
+| `conflict` | held on Review by an **open merge conflict** |
+| `failed` | a dead dispatch, a swept turn, or bounced back by you |
+| `question` | **asking you** something and parked on the answer |
+| `review` | gate green, **resting on Review** for your accept |
+| `delivered` | finished, handed back for your accept |
+
+A card waiting on its own **background task** is deliberately absent — that one
+is the machine's move, not yours.
+
+Cards whose turn **died** are included. Lifecycle is derived from the runtime's
+own signals, so a card stuck behind a dead process appears the moment it is
+read, rather than whenever the reconciler next sweeps.
+
+`yours` is a **second, separate** list: un-started cards in a mode the machine
+never dispatches (`human`, `teach`, `cowork`) — work only you can begin. It has
+its own count (`econ.yours`) and never merges into `needs_you`, so a backlog
+cannot bury a red gate. An ordinary `do` card in the backlog is on neither list:
+the PM will get to it, so it is queued, not blocked.
+
+## Staleness
+
+The payload carries `ts` (epoch seconds) — when it was true. The webapp runs **no
+idle timers** (battery, per the platform guidance), so it refreshes on the events
+that mean you are actually looking: coming back to the foreground, and opening
+the needs list. The home screen prints the age next to the count, and a failed
+fetch keeps the last data but drops the connection dot to red rather than
+implying it is current. A stale "all clear" is the one thing this display must
+never show.
 
 ## Desktop smoke test
 

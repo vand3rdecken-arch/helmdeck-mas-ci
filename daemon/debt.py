@@ -874,6 +874,46 @@ DEBT = [
                "(none).",
         "order": 26,
     },
+    {
+        "id": "null-result-test-races-under-load",
+        "title": "tests/test_null_result.py races on subprocess frames and can red "
+                 "an innocent card when the box is busy",
+        "status": "open",
+        "what": "Observed 2026-08-16 during the /glance card: a full gate run "
+                "failed ONE check - 'fresh spawn: guard scoped to resume only "
+                "(out=%r)' - reporting out='real-answer' where the test pins "
+                "out=''. The same test passed standalone twice immediately "
+                "after, and the very next full gate run passed 55/55. The only "
+                "changes in the working tree at that moment were Markdown docs, "
+                "which cannot reach drivers.py. The distinguishing condition was "
+                "LOAD: three subagents and a Playwright browser had just been "
+                "running. The test spawns a real subprocess (fake_claude via a "
+                ".cmd wrapper) and asserts which result FRAME wins; under load "
+                "the null frame it expects to count appears to be overtaken by "
+                "the later real one.",
+        "why_it_bites": "This is the gate-bounces-an-innocent-card class again, "
+                        "but from a different direction than "
+                        "gate-exit-code-vs-stdout-verdict: here the gate is "
+                        "reporting a REAL failing check, so no verdict-level "
+                        "heuristic can catch it. A card that touched nothing "
+                        "near the driver gets held on Review with a report about "
+                        "null-result frames, which reads as an unexplained "
+                        "rejection and burns a review cycle. It is also worse "
+                        "than a plain flake because the gate is the harness's "
+                        "one objective signal - a gate that is sometimes wrong "
+                        "quietly teaches the owner to re-run instead of read.",
+        "trigger": "any card whose gate reds ONLY on tests/test_null_result.py, "
+                   "especially while other work is running on the box; or the "
+                   "same shape appearing in another test that spawns "
+                   "fake_claude and asserts frame ordering",
+        "fix": "Make the assertion deterministic instead of timing-dependent: "
+               "have fake_claude emit the null and real frames with an explicit "
+               "ordering barrier the test can wait on (or drive the frame pump "
+               "directly rather than through a real subprocess), so 'which frame "
+               "wins' is decided by the code under test and not by scheduler "
+               "luck. Until then, do NOT paper over it by retrying the gate.",
+        "order": 27,
+    },
 ]
 
 def list_debt():

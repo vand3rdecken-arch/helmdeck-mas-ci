@@ -387,8 +387,20 @@ Three traps it guards, each one load-bearing:
   README would have silently replaced a live page. So the landing text now *is*
   `README.md` (byte-identical to what was published — verified by blob hash,
   plus an appended `## Development` pointer) and the internal map moved to
-  [`docs/repo-map.md`](docs/repo-map.md). The script refuses to push a
-  `README.md` with no `## Downloads` section.
+  `docs/repo-map.md`. The script refuses to push a `README.md` with no
+  `## Downloads` section. (Plain reference, not a link: `docs/` is stripped from
+  the mirror — next bullet — so a link there would 404 for a public reader.)
+- **`docs/` never reaches the mirror** (owner decision 2026-08-16: *"you work
+  local so just don't publish docs"*). `publish_source.sh`'s private-path check
+  strips the whole tree under `--filter-private`. Two different mechanisms, two
+  different jobs: the `docs` line in `.gitignore` keeps NEW docs untracked by
+  default, this keeps the ones that MUST be tracked out of the public mirror.
+  Some must be tracked — a card's worktree contains only tracked files, so
+  `docs/glasses-reference.md` (mandatory reading for every glasses card) would
+  be invisible to the cards that need it if it were merely ignored. The tree is
+  private-but-not-secret in the way the credential scanner cannot see: home
+  paths and bridge setup in the glasses reference, and real board screenshots
+  (card titles, dates) under `docs/store/screenshots/`.
 - **Use SSH, not HTTPS.** The owner's `gh` token scopes are
   `admin:public_key, gist, read:org, read:packages, repo` — **no `workflow`**,
   so an HTTPS push touching `.github/workflows/` is rejected with *"refusing to
