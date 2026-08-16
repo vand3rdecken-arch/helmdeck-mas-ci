@@ -255,11 +255,11 @@ class H(BaseHTTPRequestHandler):
             pm.touch()
         return u
 
-    def _ticket(self, scope):
+    def _ticket(self):
         """Resolve a COMPANION ticket (not a user). Deliberately separate from
-        _user(): a companion device is least-privilege by scope and must never
-        inherit a user's role - see companion.py's docstring. Returns the device
-        dict or None; the caller answers 403."""
+        _user(): this is what actually keeps a companion device from ever
+        inheriting a user's role - not any scope check inside companion.py, see
+        its docstring. Returns the device dict or None; the caller answers 403."""
         import companion
         tok = ""
         h = self.headers.get("Authorization") or ""
@@ -267,7 +267,7 @@ class H(BaseHTTPRequestHandler):
             tok = h[7:].strip()
         if not tok and "token=" in self.path:
             tok = self.path.split("token=")[1].split("&")[0]
-        return companion.authorize(tok, scope=scope) if tok else None
+        return companion.authorize(tok) if tok else None
 
     def _send_cookie(self, code, body, sid=None, clear=False):
         self.send_response(code)
@@ -340,18 +340,18 @@ class H(BaseHTTPRequestHandler):
                     glance_payload(tracks, events.metrics(tracks))))
             # ---- companion (native sensing layer), ticket-authed ----
             # Before the user gate on purpose: these carry a per-device valet
-            # ticket, never a user session. Scope is checked per route, so a
-            # mic-only device cannot read the command queue.
+            # ticket, never a user session, so a ticket can never reach a
+            # /tracks or /settings route no matter what it presents.
             if p == "/companion/config":
                 import companion
-                dev = self._ticket("config")
+                dev = self._ticket()
                 if not dev:
                     return self._send(403, json.dumps({"error": "bad or missing ticket"}))
                 return self._send(200, json.dumps(
                     {"config": companion.config(), "device": dev}))
             if p == "/companion/commands":
                 import companion
-                dev = self._ticket("command")
+                dev = self._ticket()
                 if not dev:
                     return self._send(403, json.dumps({"error": "bad or missing ticket"}))
                 # a PURE read - nothing is consumed here; POST /companion/ack is
@@ -990,7 +990,7 @@ class H(BaseHTTPRequestHandler):
             # gate, same reason as the GET half above) ----
             if p == "/companion/ack":
                 import companion
-                dev = self._ticket("command")
+                dev = self._ticket()
                 if not dev:
                     return self._send(403, json.dumps({"error": "bad or missing ticket"}))
                 # THE proof-of-execution seam: a command leaves pending here and
@@ -1003,7 +1003,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(out))
             if p == "/companion/observe":
                 import companion
-                dev = self._ticket("observe")
+                dev = self._ticket()
                 if not dev:
                     return self._send(403, json.dumps({"error": "bad or missing ticket"}))
                 try:
@@ -1022,10 +1022,7 @@ class H(BaseHTTPRequestHandler):
                     if p == "/companion/pair":
                         # the token is in this response and NOWHERE else, ever
                         return self._send(200, json.dumps(companion.mint_ticket(
-                            body.get("label") or "",
-                            scopes=tuple(body.get("scopes")
-                                         or ("config", "observe", "command")),
-                            actor=user["name"])))
+                            body.get("label") or "", actor=user["name"])))
                     if p == "/companion/revoke":
                         out = companion.revoke(body.get("id") or "", actor=user["name"])
                         if out is None:
