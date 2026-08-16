@@ -863,3 +863,47 @@ scrolls every option to `fullyVisible`, confirmed for all six. The residual risk
 was only that the owner could not *know* a 6th choice existed, so the header now
 states the option count. Do not "fix" this by clamping to 4 options — that would
 silently drop a choice the worker offered.
+
+### 11.5 The board AGENT on the lens (`/glance/talk`) — added after review
+
+The first cut of glass mode was **not** using the board agent, and the owner
+caught it: *"but is it exclusive using the ai agent on board"*. He was right,
+and the evidence was plain — `/glance` is `sessions.owner_blockers()` +
+`events.metrics()`, a database read with **no AI anywhere on the path**, and the
+only agent involved was a card worker that had *already* asked a question. With
+no card asking, the lens had nothing to converse with. It was a form over
+pre-existing questions, not a conversation.
+
+`POST /glance/talk` is the missing half: a real turn with `copilot.chat` — the
+same board agent the desktop chat uses, with the same live board snapshot.
+
+- **Selection is the only input**, so the agent gets `GLASS_BRIEF` telling it to
+  keep prose to two sentences and to END every turn with a `<helmdeck-ask>`
+  block. That is the protocol card workers already use and `ask.parse` already
+  reads — no second conversation format was invented. A tapped option becomes
+  the next message; that loop IS the conversation.
+- A turn that comes back with no options is shown as "Ask again", never
+  swallowed — on a keyboard-less surface, a reply with nothing to tap is a dead
+  end.
+
+⚠ **ADVISORY, and enforced in code rather than asked for in the prompt.**
+`copilot.chat` EXECUTES the actions it parses (`copilot.py`, the `_run_bg`
+thread) and that reaches `machine_task` — the whole PC — plus `delete`, `steer`
+and `configure`. The lens authenticates with ONE SHARED token, not a user
+session, so it passes `allow_actions=False`: actions are parsed, dropped, logged
+and returned in `refused`, and the lens prints them in amber ("not run: …").
+A prompt is a request; this is a boundary, so it is a parameter.
+
+`glance_talk` is its own third switch (default OFF) because every tap SPENDS
+PLAN QUOTA on a real agent turn — a different thing to consent to than reading
+the board or answering a question a worker already asked.
+
+Verified with the model call stubbed (so the shipped endpoint, parsing and UI
+all run, without burning quota): default-off 403, bad token 403, empty message
+400; a turn returns prose and options separately; the UI loop runs
+Ask → tap → the tap arrives as the next message, `allow_actions=False` on every
+call and the lens brief present on every call; the refusal renders in amber
+rather than the 12px grey this document's own trap register says vanishes on the
+waveguide.
+
+**Still true:** needs no GitHub PAT and no Meta SDK.

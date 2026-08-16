@@ -140,6 +140,33 @@ GLASS_DESC_LEN = 90
 GLASS_MAX_OPTIONS = 6
 
 
+# GLASS MODE conversation. The lens has no keyboard and no dictation (measured,
+# §3.1), so a turn that ends in prose is a DEAD END there - the owner would have
+# to reach for the phone, which is the one thing this surface exists to avoid.
+# The board agent therefore has to end every turn with tappable options, and it
+# already knows how: the same <helmdeck-ask> block every card worker emits, and
+# the same ask.parse that reads them. No second protocol.
+GLASS_BRIEF = (
+    "SURFACE: you are being read on Meta Ray-Ban DISPLAY GLASSES, not the phone.\n"
+    "- The lens is 600x600 and shows ONE thing at a time. Keep the prose to at "
+    "most 2 short sentences - what is true right now, and what you would do. No "
+    "lists, no markdown, no headings.\n"
+    "- The owner CANNOT TYPE and CANNOT DICTATE here. Tapping an option is his "
+    "only input. So you MUST end every reply with a <helmdeck-ask> block "
+    "offering 2-6 next moves, exactly as a card worker would:\n"
+    "<helmdeck-ask>\n"
+    '{"questions": [{"question": "<what to do next>", "header": "<max 24 chars>", '
+    '"options": [{"label": "<short>", "description": "<what it means>"}]}]}\n'
+    "</helmdeck-ask>\n"
+    "Ending without that block strands him - it is a defect, not a hand-off. "
+    "Always include a way to go wider (e.g. 'Something else') so a wrong guess "
+    "is never a trap.\n"
+    "- This surface is ADVISORY: any actions block you emit is DROPPED, not run. "
+    "Never claim you changed the board. To actually move work, offer it as an "
+    "option and say it will run from the phone."
+)
+
+
 def _glance_question(t):
     """The pending decision, trimmed for the lens - or None.
 
@@ -987,6 +1014,54 @@ class H(BaseHTTPRequestHandler):
                 if self._sid():
                     auth.logout(self._sid())
                 return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
+            if p == "/glance/talk":
+                # GLASS MODE conversation with the BOARD AGENT itself - the half
+                # /glance cannot be: /glance is a database read (owner_blockers +
+                # metrics), so it can only ever show WHAT is stuck, never reason
+                # about it. This routes a message to copilot.chat, the same agent
+                # the board chat uses, with the live board snapshot it always
+                # gets.
+                #
+                # ADVISORY, enforced in copilot.chat rather than requested in the
+                # prompt: allow_actions=False drops every board action, because
+                # this surface authenticates with one SHARED token and
+                # _run_action reaches machine_task (the whole PC), delete and
+                # steer. Refused types come back and are surfaced, so the lens
+                # can never report a change that did not happen.
+                #
+                # Its own switch, not glance_decide: this SPENDS PLAN QUOTA on
+                # every tap, which is a different thing to consent to than
+                # answering a question a worker already asked.
+                import ask, events
+                s = events.settings()
+                tok = s.get("glance_token") or ""
+                given = (body.get("token") or "").strip() or \
+                    (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps(
+                        {"error": "glance disabled or bad token"}))
+                if not s.get("glance_talk"):
+                    return self._send(403, json.dumps(
+                        {"error": "talking to the board agent from the glasses is "
+                                  "off (set settings.glance_talk)"}))
+                msg = (body.get("message") or "").strip()[:400]
+                if not msg:
+                    return self._send(400, json.dumps({"error": "message required"}))
+                import copilot
+                try:
+                    out = copilot.chat("owner", msg, role="owner",
+                                       allow_actions=False, extra_system=GLASS_BRIEF)
+                except Exception as e:                       # noqa: BLE001
+                    return self._send(502, json.dumps({"error": str(e)[:200]}))
+                reply = out.get("reply") or ""
+                q, prose = ask.parse(reply)
+                return self._send(200, json.dumps({
+                    # the prose WITHOUT the block - ask.parse already strips it
+                    "reply": (prose or reply)[:600],
+                    # the tappable half; None when the agent ignored the brief,
+                    # which the lens must show as a dead end rather than hide
+                    "question": _glance_question({"question": q}) if q else None,
+                    "refused": out.get("refused") or []}))
             if p == "/glance/answer":
                 # GLASS MODE's ONLY write. The lens taps one of the options the
                 # worker itself offered and the card's session continues - the
