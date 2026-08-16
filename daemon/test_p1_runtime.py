@@ -11,8 +11,8 @@
    result frame is SUPPRESSED so it can't falsely complete the next turn.
 3. _spawn DEGRADES a stale resume: session transcript gone -> fresh session
    (no --resume) + a visible note in the card feed, not a hard spawn failure.
-4. read_transcript renders '[Request interrupted by user...]' as a clean
-   interrupted marker, not as a prose bubble attributed to the owner.
+4. read_transcript renders '[Request interrupted by user...]' as a typed
+   turn-lifecycle item, not as a prose bubble attributed to the owner.
 
 Self-sandboxing: fake procs, patched _tree_kill/_record_pid/_running_cards and a
 temp ~/.claude/projects - nothing spawns, kills or touches the real board.
@@ -66,23 +66,30 @@ drivers._forget_pid = lambda pid: None
 
 
 def make_session(tid="card-1"):
-    s = object.__new__(_ClaudeSession)
-    s.tid = tid
-    s.cfg = {}
-    s.worktree = "."
+    """A live-shaped session with NO process behind it.
+
+    Built by running the REAL __init__ with only _spawn() stubbed out, rather
+    than hand-listing attributes onto object.__new__. The hand-listed version
+    rotted silently: __init__ later gained _bg_candidates, _bg_open,
+    _spawn_resumed, _resume_echo and _first_turn_after_spawn, this fake kept its
+    original attribute set, and the file died on AttributeError partway through
+    - so every check after the cancel tests simply stopped running, and nothing
+    said so because no gate ran this file. Deriving the state from the
+    constructor means the fake cannot drift from the class again.
+
+    _spawn() is the only thing stubbed, because it is the only part that touches
+    the world (Popen, the pid registry, the background-task reconcile)."""
+    real_spawn = _ClaudeSession._spawn
+    _ClaudeSession._spawn = lambda self: None
+    try:
+        s = _ClaudeSession({}, {"id": tid, "worktree": ".", "session_id": "sess-live"})
+    finally:
+        _ClaudeSession._spawn = real_spawn
     s.brief = ""
     s.sig = ("acceptEdits", "", ())
-    s.session_id = "sess-live"
-    s.adopted_source = None
-    s.run_dir = ""
     s.proc = FakeProc()
-    s.err_tail = []
     s._alive = True
-    s._cur = None
-    s._turn_lock = threading.Lock()
     s.last_used = time.time()
-    s._ctrl = {}
-    s._drop_results = 0
     s.spawn_time = time.time()
     return s
 
@@ -230,12 +237,21 @@ try:
         for d in lines:
             f.write(json.dumps(d) + "\n")
     steps = claude_sessions.read_transcript(sid)
-    marks = [st for st in steps if st.get("kind") == "system"
-             and "unterbrochen" in st.get("text", "")]
+    # The RENDERING changed in Phase 3.2 and this expectation had not: an
+    # interrupt used to be a kind="system" step whose German text contained
+    # "unterbrochen", and is now a TYPED turn-lifecycle item
+    # ({"kind":"turn","event":"canceled"}, claude_sessions.py:701-702) so the app
+    # can style it as lifecycle rather than as prose. Nothing caught the drift
+    # because no gate ran this file and it was already dying earlier on an
+    # AttributeError. Both are fixed; this now pins the CURRENT contract.
+    marks = [st for st in steps
+             if st.get("kind") == "turn" and st.get("event") == "canceled"]
     prose = [st for st in steps if st.get("kind") == "text"
              and "[Request interrupted" in st.get("text", "")]
-    check("rendered as one clean interrupted marker", len(marks) == 1)
+    check("rendered as one typed turn-canceled item", len(marks) == 1)
     check("not rendered as an owner prose bubble", not prose)
+    check("and the owner's real message is still there",
+          any(st.get("kind") == "text" and st.get("text") == "mach was" for st in steps))
 finally:
     claude_sessions.PROJECTS = _projects
 
