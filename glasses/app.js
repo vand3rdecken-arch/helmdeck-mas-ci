@@ -268,7 +268,45 @@
   // without them is shown as a dead end rather than silently swallowed.
   var talkBusy = false;
 
-  function talkStart() { talk('Where do things stand, and what should I do next?'); }
+  // VOICE OUT. The lens has no speechSynthesis (measured on-device) but it DOES
+  // play audio, so the daemon renders the answer and we play the clip.
+  //
+  // THE TRAP, already paid for in glass-crud-harness (app/index.html:809-812):
+  // browsers refuse programmatic audio until a user gesture has played
+  // something. The agent's reply arrives ~2s LATER, outside any gesture, so it
+  // would be silently blocked. Fix: a muted play inside the opening tap unlocks
+  // the element for every later programmatic call.
+  var replyAudio = null;
+  function audioUnlock() {
+    try {
+      if (!replyAudio) { replyAudio = new Audio(); replyAudio.preload = 'auto'; }
+      replyAudio.muted = true;
+      var pr = replyAudio.play();
+      if (pr && pr.catch) pr.catch(function () {});
+      replyAudio.pause();
+      replyAudio.muted = false;
+    } catch (e) { /* speech is an enhancement - never break the screen for it */ }
+  }
+  function speak(url) {
+    if (!url) return;                    // offline / no edge-tts: text only
+    try {
+      if (!replyAudio) { replyAudio = new Audio(); replyAudio.preload = 'auto'; }
+      replyAudio.muted = false;
+      replyAudio.src = cfg.base.replace(/\/+$/, '') + url;
+      var pr = replyAudio.play();
+      if (pr && pr.catch) pr.catch(function () { toast('Tap to hear'); });
+    } catch (e) { /* silent */ }
+  }
+  function replay() { if (replyAudio && replyAudio.src) { replyAudio.currentTime = 0; speakAgain(); } }
+  function speakAgain() {
+    try { var pr = replyAudio.play(); if (pr && pr.catch) pr.catch(function () {}); }
+    catch (e) { /* silent */ }
+  }
+
+  function talkStart() {
+    audioUnlock();                       // MUST be inside the gesture
+    talk('Where do things stand, and what should I do next?');
+  }
 
   function talk(message) {
     if (talkBusy) return;
@@ -307,6 +345,7 @@
 
   function renderTalk(j) {
     setText('talk-reply', j.reply || '(no reply)');
+    speak(j.voice);                      // the answer, out loud
     // The agent is told this surface is advisory. If it tried to change the
     // board anyway, SAY so - the owner must never believe a change landed.
     var refused = (j.refused && j.refused.length) ? j.refused : null;
@@ -399,8 +438,9 @@
       case 'pick': pick(btn.getAttribute('data-label')); break;
       case 'talk-start': talkStart(); break;
       case 'talk-retry': talkStart(); break;
+      case 'talk-replay': replay(); break;
       // the tapped option IS the next message - that is the whole conversation
-      case 'talk-pick': talk(btn.getAttribute('data-label')); break;
+      case 'talk-pick': audioUnlock(); talk(btn.getAttribute('data-label')); break;
       case 'save-settings': doSaveSettings(); break;
     }
   }

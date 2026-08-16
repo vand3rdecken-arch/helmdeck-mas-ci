@@ -21,6 +21,8 @@ daemon/users.json
 daemon/sessions.json
 daemon/processes.json
 daemon/copilot_sessions.json
+# rendered speech clips (voice.py): regenerated on demand, content-addressed
+daemon/voice_cache/
 web/node_modules/
 web/.next/
 daemon/checkpoints/

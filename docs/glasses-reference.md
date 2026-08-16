@@ -907,3 +907,53 @@ rather than the 12px grey this document's own trap register says vanishes on the
 waveguide.
 
 **Still true:** needs no GitHub PAT and no Meta SDK.
+
+### 11.6 VOICE — what shipped, and the one wall that is left
+
+Owner, after reading §11.5: *"the idea with glass is genuinely able to talk to
+agent and get answer directly. Yes you can use d pad as support but primary is
+voice."* Correct, and the D-pad work was the SUPPORT input built as if it were
+the primary. Voice splits cleanly in two, and the two halves are not equally
+blocked:
+
+**HEARING the agent — SHIPPED.** `daemon/voice.py` renders the reply
+server-side and `/glance/talk` returns a clip URL the lens plays. This is only
+possible because of a measured pair of facts: the webview has **no
+`speechSynthesis`** (on-device 2026-07-16) but **does play audio** — *"podcasts
+work"*, `app/index.html:804`. Two deliberate departures from
+`tools/voice_note.py`: **mp3, not ogg/opus** (that recipe targets a WhatsApp
+voice note; the lens just plays a URL, and that file's own announcement path
+already proves mp3 plays there) — which also drops the whole ffmpeg dependency,
+and `transcode.available()` is **False on this box**, so an ffmpeg-shaped design
+would have been dead on arrival. And **content-addressed caching**, because a
+glance surface re-reads the same few sentences constantly.
+- The trap that would have made it silently mute, already paid for at
+  `app/index.html:809-812`: browsers refuse programmatic audio until a gesture
+  has played something, and the reply lands ~2s AFTER the tap. A muted play
+  inside the opening tap unlocks the element. Without it the lens is silent and
+  nothing errors.
+- `edge-tts` is OPTIONAL: `render()` returns None when it is missing or the box
+  is offline, and every surface falls back to text. Speech may never take the
+  answer away.
+
+**TALKING to the agent — still walled.** `mic-test/verdict.md`, on-device
+2026-07-13: *"the MRBD webview denies all capture — Mic no, Sprache-to-text no,
+Kamera no."* Meta's web path grants display, Neural Band, IMU, GPS, storage —
+**no mic**. No webapp code changes this. That same file's section *"Context that
+reframes the conclusion (owner was right)"* names the only route: the **mobile
+SDK path gives a PHONE app the glasses mic** (Bluetooth HFP, 8 kHz beamformed),
+so *"in-glasses voice capture is buildable as an Android phone app track"*.
+
+So voice-in **is** the companion app, and it is blocked on exactly one thing the
+owner must do: a **GitHub PAT (classic) with `read:packages`** (§10.4 step 3).
+Without it `com.meta.wearable:mwdat-*` does not resolve and no DAT code compiles.
+
+**The daemon side of voice-in is already done and needs no PAT.** The companion's
+whole contract is: capture → STT → `POST /glance/talk {message: "<transcript>"}`
+→ receive `{reply, voice, question}` → play `voice`. That endpoint exists, is
+verified, and is transport-agnostic — it does not care whether the words came
+from a DAT mic, the phone mic, or Meta's own assistant. When the PAT lands, the
+native app plugs into a loop that is already proven end to end.
+
+⚠ Do NOT re-add the ticket registry when building it (§11.1). One device, one
+existing `glance_token`.
