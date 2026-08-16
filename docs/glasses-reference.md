@@ -1012,3 +1012,45 @@ HFP mic, the phone mic, or Meta's own assistant.
 
 ⚠ Do NOT re-add the ticket registry when building it (§11.1). One device, one
 existing `glance_token`.
+
+### 11.8 Henry on the PHONE — the daemon half, and what the app still needs
+
+Owner 2026-08-17: rename the board agent to **Henry**, make him **voice-first on
+the mobile app**, and put the dashboard first. Henry and the dashboard shipped;
+this records where phone voice actually stands.
+
+**Why the phone cannot reuse the glasses' audio path.** The lens fetches
+`/glance/voice/<id>.mp3` because it talks to the daemon DIRECTLY. The phone
+usually does not - it goes through the E2EE relay, which seals and forwards one
+JSON request/response. There is no second channel to fetch a binary on, and a
+URL pointing at localhost is meaningless on a phone across the internet. So
+`voice.render_b64()` returns the clip INLINE in the JSON the phone already
+gets. Cost, stated plainly: base64 is ~33% larger (measured: 20016 bytes ->
+~26.7 KB of text). Fine for two sentences, which is why only Henry's prose is
+ever spoken and never a transcript.
+
+`POST /chat` takes `voice: true` **per request**, not from a server setting -
+the CLIENT is the only side that knows whether the owner is looking at the
+screen or driving. Default off, so nothing renders and nothing costs unless
+asked. The ```actions``` block is split off before rendering: it is machine
+syntax and unlistenable.
+
+Verified live: without the flag the response has no `voice` key at all; with it,
+20016 bytes of valid MPEG arrive inline while the reply keeps its actions block
+for the UI.
+
+**What the APP still needs, and why it is not in this card.** React Native has
+no built-in audio and the project has NO audio dependency today (checked:
+`expo-av`, `expo-audio`, `expo-speech` are all absent from `app/package.json`).
+So phone voice needs:
+1. a playback module (`expo-audio`) - a NATIVE dependency, therefore an APK
+   rebuild, not an OTA;
+2. speech-to-text for the input half - also native;
+3. the mic permissions, which `app/plugins/withGlassVoice.js` ALREADY declares
+   app-wide (RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / BLUETOOTH_CONNECT), so that
+   groundwork is done for the phone as well as the glasses.
+
+No dependency was pinned blind: `app/node_modules` is EMPTY on this box, so a
+version could be neither installed nor typechecked, and guessing an Expo-57
+version pin is exactly how a build breaks silently. That step belongs in a card
+that can run a real install and an APK build from `C:\hd\app`.

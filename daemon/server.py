@@ -1290,10 +1290,24 @@ class H(BaseHTTPRequestHandler):
                 if not text:
                     return self._send(400, json.dumps({"error": "text required"}))
                 try:
-                    return self._send(200, json.dumps(copilot.chat(
+                    out = copilot.chat(
                         user["name"], text, role=user["role"], model=body.get("model", ""),
                         thinking=body.get("thinking", ""), attachments=body.get("attachments"),
-                        card=body.get("card"))))
+                        card=body.get("card"))
+                    # VOICE MODE (phone). The client asks per-request rather than
+                    # by a server setting, because it is the client that knows
+                    # whether the owner is looking at the screen or driving. Only
+                    # Henry's PROSE is spoken - never the ```actions block, which
+                    # is machine syntax and unlistenable.
+                    if body.get("voice"):
+                        import ask, voice as _voice
+                        _, prose = ask.parse(out.get("reply") or "")
+                        clip = _voice.render_b64(
+                            (prose or out.get("reply") or "").split("```")[0])
+                        if clip:
+                            out = dict(out)
+                            out["voice"] = clip
+                    return self._send(200, json.dumps(out))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
