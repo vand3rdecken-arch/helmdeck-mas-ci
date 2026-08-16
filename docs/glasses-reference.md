@@ -714,16 +714,58 @@ mic or a native lens push. This card's output is the checklist below, ready to
 execute in under an hour whenever that trigger appears — not a completed
 account.
 
-### 10.4 Account-setup checklist — owner-gated, not yet executed
-1. Create/sign in to a Meta developer account at `developer.meta.com/wearables`
-   — the owner's Meta identity; cannot be done on the owner's behalf.
-2. Register the org on the Wearables Developer Center (same account).
+### 10.4 Account-setup checklist — status as of 2026-08-16
+1. ~~Create/sign in to a Meta developer account~~ **Already done.** Turned out
+   to predate this card entirely — see §10.5.
+2. ~~Register the org on the Wearables Developer Center~~ **Already done** —
+   org "Tien Duy Vo Team" exists (`devcenter/1317266500388880/`).
 3. Generate a GitHub PAT (classic) with `read:packages`; store via
-   `GITHUB_TOKEN` or `local.properties` — never commit it.
+   `GITHUB_TOKEN` or `local.properties` — never commit it. **Still open** —
+   not dispensed anywhere in the Dev Center UI; it's a GitHub-side token,
+   unrelated to the Meta login.
 4. On the owner's phone: Meta AI app → Settings → App Info → tap App version
-   ×5 → confirm Developer Mode.
-5. Re-check the DAT version pin (0.9.0 as of 2026-08-16) before any build —
-   don't trust this number either, it will have moved again.
+   ×5 → confirm Developer Mode. **Not checked this pass.**
+5. Re-check the DAT version pin before any build — confirmed **0.9.0**,
+   tagged "2 weeks ago" (relative to 2026-08-16) on
+   `github.com/facebook/meta-wearables-dat-ios`.
 
-Nothing here is technically blocked — it is blocked on the owner's Meta
-account, and this card makes no code change.
+Step 3 is the only one that was never actually blocked on the owner's Meta
+identity — a GitHub PAT needs only a GitHub account. It simply has no reason
+to exist yet per the §10.3 No-Go.
+
+### 10.5 Live walkthrough, 2026-08-16 — the account already existed
+Driven live in the owner's persistent HelmDeck Chrome (CDP :9222,
+`deploy/meta_wearables_guide.py`) with the owner completing the actual
+work.meta.com login himself (email + whatever 2FA it asked — a Meta *Work*
+account, not a plain Facebook login; the sign-in screen's own copy is "Use an
+account given to you by your organization").
+
+Findings, all read-only — nothing was configured or saved:
+- The org and Dev Center account were **already registered**, dated before
+  this card existed. Nobody re-ran the signup flow today; login alone landed
+  straight on `Projects`.
+- One project already exists: **"Claudia" ("AI everything app"), last edited
+  2026-07-15** — a full month before the glasses-reference research started.
+  **Its relationship to HelmDeck's glasses work is unknown — left untouched,
+  not renamed, not repurposed, not deleted.** Don't assume it's HelmDeck's;
+  don't assume it isn't.
+- The project is a bare skeleton: iOS/Android **Team ID, Bundle ID and
+  Universal Link are all empty**; **Camera access** permission is toggled on
+  with rationale text *"generic access to build everything that needs cam
+  access"*; **zero versions**, so `Distribute` refuses to let you create one
+  until app details are filled in; `Required actions` shows none outstanding.
+  Reads as: someone flipped the account on once, got as far as one permission
+  toggle, and stopped — never carried to an actual build.
+- **"Download SDK" in the Dev Center just links out to the public GitHub repo**
+  (`github.com/facebook/meta-wearables-dat-ios`, unauthenticated view) — it is
+  not a source of the PAT and doesn't hand out a token. Confirms §10.1/§10.2:
+  the PAT is a GitHub-side artifact the Dev Center plays no part in issuing.
+
+Net effect on §10.3: the Go/No-Go verdict is **unchanged** — this discovery
+is about *existing, unfinished* access, not a new use case. It does mean step
+3 (the PAT) is the only remaining item if a real trigger ever shows up;
+account + org no longer need to be created.
+
+Nothing here required a code change. The only files this card touched are
+this doc and the co-pilot script (`deploy/meta_wearables_guide.py`) used to
+drive the walkthrough.

@@ -85,6 +85,9 @@ deploy/last_apk_smoke.png
 # deploy/asc_guide.py's screenshot of App Store Connect: regenerated on every
 # `shot`, and once logged in it shows the owner's Apple ID and app list.
 shots/asc.png
+# same reason: deploy/meta_wearables_guide.py's screenshot shows the owner's
+# Meta org/project details once logged in.
+shots/meta_wearables.png
 daemon/daemon.pid
 desktop/_probe_setup.js
 desktop/python/
