@@ -339,6 +339,13 @@ this surface's actual deny list cover it, right now.
 
 Debt entry `card-shares-the-operators-auto-memory` in `daemon/debt.py`: **paid**.
 
+**Not part of this repo, worth knowing anyway:** the deny stops a card's write
+from being silently adopted as context before anyone notices, but it does not
+give recoverability - and never covered the operator's own interactive sessions,
+which still write there freely. `git init` was run directly in the memory
+directory on the operator's machine (local only, no remote) as a complementary
+safety net; see the addendum on the debt entry.
+
 ---
 
 ## 5. The fixed / policy boundary
