@@ -106,9 +106,14 @@
     items.forEach(function (c) {
       var el = document.createElement('button');
       el.className = 'list-item focusable';
-      el.setAttribute('data-action', 'open-detail');
+      // A card that is ASKING opens the decision directly. Routing it through
+      // the detail screen first would cost an extra tap on a surface where
+      // "one card fills the lens" - and the question text IS the context.
+      var canDecide = !!(c.question && (c.question.questions || []).length);
+      el.setAttribute('data-action', canDecide ? 'open-decide' : 'open-detail');
       el.setAttribute('data-id', c.id);
-      var sub = reasonLabel(c) + ' · ' + (c.client ? c.client : 'internal');
+      var sub = (canDecide ? 'tap to decide' : reasonLabel(c))
+        + ' · ' + (c.client ? c.client : 'internal');
       el.innerHTML = '<div class="li-task">' + esc(c.task || '(untitled)') + '</div>'
         + '<div class="li-sub' + (isBad(c) ? ' neg' : '') + '">' + esc(sub) + '</div>';
       list.appendChild(el);
@@ -150,14 +155,110 @@
     });
   }
 
+  function cardById(id) {
+    return (data.needs_you || []).filter(function (x) { return x.id === id; })[0];
+  }
+
   function renderDetail(id) {
-    var c = (data.needs_you || []).filter(function (x) { return x.id === id; })[0];
-    if (!c) { setText('detail-task', 'Card not found'); setHTML('detail-meta', ''); return; }
+    var c = cardById(id);
+    var nav = document.getElementById('detail-nav');
+    if (!c) {
+      setText('detail-task', 'Card not found'); setHTML('detail-meta', '');
+      nav.classList.add('hidden'); return;
+    }
     setText('detail-task', c.task || '(untitled)');
     setHTML('detail-meta',
       'Blocked &nbsp;<b' + (isBad(c) ? ' class="neg"' : '') + '>' + esc(reasonLabel(c)) + '</b><br>'
       + 'Client &nbsp;<b>' + (c.client ? esc(c.client) : 'internal') + '</b>'
       + (c.detail ? '<span class="detail-why">' + esc(c.detail) + '</span>' : ''));
+    // The Decide button exists only when there is something to decide - a
+    // button that opens an empty screen is worse than no button.
+    if (c.question && (c.question.questions || []).length) {
+      nav.classList.remove('hidden');
+      nav.querySelector('[data-action="open-decide"]').setAttribute('data-id', c.id);
+    } else {
+      nav.classList.add('hidden');
+    }
+  }
+
+  // ---- GLASS MODE: decide ---------------------------------------------------
+  // The whole point of the lens: the worker asked, and you answer WITHOUT
+  // reaching for the phone. Options only - the webview has no keyboard and no
+  // dictation (measured on-device), so every turn must be tappable.
+  var decide = null;   // {cardId, qid, questions, idx, answers}
+
+  function openDecide(id) {
+    var c = cardById(id);
+    if (!c || !c.question || !(c.question.questions || []).length) {
+      toast('Nothing to decide'); return;
+    }
+    decide = { cardId: id, qid: c.question.id, questions: c.question.questions,
+               idx: 0, answers: {} };
+    renderDecide();
+    showScreen('decide');
+  }
+
+  function renderDecide() {
+    if (!decide) return;
+    var q = decide.questions[decide.idx];
+    var n = decide.questions.length;
+    var nopt = (q.options || []).length;
+    setText('decide-head', q.header || 'Decide');
+    // Say how many options there ARE. With the protocol's maximum of six the
+    // last one sits below the fold on first paint - the D-pad scrolls to it
+    // (measured: every option reaches fullyVisible), but a glance display must
+    // never leave the owner unaware a choice exists at all.
+    setText('decide-step',
+      (n > 1 ? (decide.idx + 1) + '/' + n + ' · ' : '') + nopt + ' options');
+    setText('decide-q', q.question || '');
+    var list = document.getElementById('decide-options');
+    list.innerHTML = '';
+    (q.options || []).forEach(function (o) {
+      var el = document.createElement('button');
+      el.className = 'list-item focusable';
+      el.setAttribute('data-action', 'pick');
+      el.setAttribute('data-label', o.label);
+      el.innerHTML = '<div class="li-task">' + esc(o.label) + '</div>'
+        + (o.description ? '<div class="li-sub">' + esc(o.description) + '</div>' : '');
+      list.appendChild(el);
+    });
+    focusFirst();
+  }
+
+  function pick(label) {
+    if (!decide) return;
+    var q = decide.questions[decide.idx];
+    decide.answers[q.header] = label;
+    if (decide.idx < decide.questions.length - 1) {
+      decide.idx += 1; renderDecide(); return;   // multi-question: next one
+    }
+    submitDecision();
+  }
+
+  function submitDecision() {
+    if (!cfg.base || !cfg.token) { toast('Not connected'); return; }
+    var d = decide;
+    toast('Sending…');
+    fetch(cfg.base.replace(/\/+$/, '') + '/glance/answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: cfg.token, id: d.cardId,
+                             request_id: d.qid, answers: d.answers })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function () {
+      decide = null;
+      toast('Answered ✓');
+      // the card is now RUNNING again, so the board this lens shows is stale by
+      // definition - re-read it rather than leave the answered card sitting in
+      // the needs-you list
+      screenStack = ['home']; showScreen('home', true); refresh();
+    }).catch(function (e) {
+      toast(String(e.message || e));
+    });
   }
 
   // ---- screen management ----------------------------------------------------
@@ -215,6 +316,8 @@
       case 'open-sow': showScreen('sow'); break;
       case 'open-settings': fillSettings(); showScreen('settings'); break;
       case 'open-detail': renderDetail(btn.getAttribute('data-id')); showScreen('detail'); break;
+      case 'open-decide': openDecide(btn.getAttribute('data-id')); break;
+      case 'pick': pick(btn.getAttribute('data-label')); break;
       case 'save-settings': doSaveSettings(); break;
     }
   }

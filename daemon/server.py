@@ -129,6 +129,44 @@ def _config_schema(s):
 GLANCE_RANK = {"gate": 0, "conflict": 1, "failed": 2,
                "question": 3, "review": 4, "delivered": 5}
 
+# GLASS MODE caps. The lens is 960x540 and shows ONE card at a time (the
+# on-device UX law: "one card fills the lens; you flip between cards, you don't
+# scroll a wall"), so a question that would need scrolling is worse than useless
+# there. These trim for the DISPLAY only - the phone still renders the full text
+# from the untouched question on the track.
+GLASS_Q_LEN = 160
+GLASS_LABEL_LEN = 40
+GLASS_DESC_LEN = 90
+GLASS_MAX_OPTIONS = 6
+
+
+def _glance_question(t):
+    """The pending decision, trimmed for the lens - or None.
+
+    Only the fields a tap needs: the prompt, the header (which is the key the
+    answer is posted under) and the option labels. Descriptions are included but
+    hard-trimmed; the worker's full reasoning prose is deliberately NOT here,
+    because it is paragraphs long and the lens cannot scroll it.
+    """
+    q = (t or {}).get("question") or {}
+    qs = q.get("questions") or []
+    if not qs:
+        return None
+    out = []
+    for one in qs:
+        out.append({
+            "question": (one.get("question") or "")[:GLASS_Q_LEN],
+            "header": one.get("header") or "",
+            "multiSelect": bool(one.get("multiSelect")),
+            "options": [{"label": (o.get("label") or "")[:GLASS_LABEL_LEN],
+                         "description": (o.get("description") or "")[:GLASS_DESC_LEN]}
+                        for o in (one.get("options") or [])[:GLASS_MAX_OPTIONS]],
+        })
+    # request_id is what makes an answer STALE-SAFE: the worker replaces its
+    # question on every turn, and /glance/answer refuses a pick that names a
+    # question the card has already moved past.
+    return {"id": q.get("id") or "", "questions": out}
+
 
 def glance_payload(tracks, m):
     """The /glance body: "what wants ME" - EVERY card blocked on the human, not
@@ -159,7 +197,12 @@ def glance_payload(tracks, m):
            "reason": b["reason"], "detail": b["detail"],
            # kept for glasses builds older than the reason vocabulary:
            # they render `asking` and nothing else
-           "asking": b["reason"] == "question"}
+           "asking": b["reason"] == "question",
+           # GLASS MODE: the decision ITSELF, not just the fact that one is
+           # due. Without the options on the lens the glasses can only say
+           # "this card asks you" and send you to the phone - the opposite of
+           # deciding hands-free. None for every non-asking card.
+           "question": _glance_question(t) if b["reason"] == "question" else None}
           for t, b in sessions.owner_blockers(tracks)]
     ny.sort(key=lambda c: (GLANCE_RANK.get(c["reason"], 9), c["id"]))
     yours = [{"id": t["id"], "task": (t.get("task") or "")[:70],
@@ -255,20 +298,6 @@ class H(BaseHTTPRequestHandler):
             pm.touch()
         return u
 
-    def _ticket(self):
-        """Resolve a COMPANION ticket (not a user). Deliberately separate from
-        _user(): this is what actually keeps a companion device from ever
-        inheriting a user's role - not any scope check inside companion.py, see
-        its docstring. Returns the device dict or None; the caller answers 403."""
-        import companion
-        tok = ""
-        h = self.headers.get("Authorization") or ""
-        if h.startswith("Bearer "):
-            tok = h[7:].strip()
-        if not tok and "token=" in self.path:
-            tok = self.path.split("token=")[1].split("&")[0]
-        return companion.authorize(tok) if tok else None
-
     def _send_cookie(self, code, body, sid=None, clear=False):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -323,10 +352,11 @@ class H(BaseHTTPRequestHandler):
                      "registration": bool(reg.get("open") or reg.get("invite_code")),
                      "registration_open": bool(reg.get("open"))}))
             if p == "/glance":
-                # read-only glance surface for the Meta Ray-Ban Display webapp
-                # (glasses/). Token-gated, cross-origin (CORS on via _send). No
-                # write access, no session-cookie coupling - additive, not a
-                # weakening of auth. Off unless settings.glance_token is set.
+                # glance surface for the Meta Ray-Ban Display webapp (glasses/).
+                # Token-gated, cross-origin (CORS on via _send), no session-
+                # cookie coupling. Off unless settings.glance_token is set.
+                # READS here; the one write is POST /glance/answer, which is
+                # separately gated by settings.glance_decide - see there.
                 import events, sessions
                 tok = events.settings().get("glance_token") or ""
                 given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
@@ -338,26 +368,6 @@ class H(BaseHTTPRequestHandler):
                 tracks = sessions.list_tracks()
                 return self._send(200, json.dumps(
                     glance_payload(tracks, events.metrics(tracks))))
-            # ---- companion (native sensing layer), ticket-authed ----
-            # Before the user gate on purpose: these carry a per-device valet
-            # ticket, never a user session, so a ticket can never reach a
-            # /tracks or /settings route no matter what it presents.
-            if p == "/companion/config":
-                import companion
-                dev = self._ticket()
-                if not dev:
-                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
-                return self._send(200, json.dumps(
-                    {"config": companion.config(), "device": dev}))
-            if p == "/companion/commands":
-                import companion
-                dev = self._ticket()
-                if not dev:
-                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
-                # a PURE read - nothing is consumed here; POST /companion/ack is
-                # the only thing that settles a command (companion.py §3)
-                return self._send(200, json.dumps(
-                    {"commands": companion.pending(dev["id"])}))
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             if p == "/users":
@@ -369,15 +379,6 @@ class H(BaseHTTPRequestHandler):
                      "tokens": [{"label": t["label"], "token": t["token"],
                                  "created": t.get("created")} for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
-            if p == "/companion/devices":
-                import companion
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(
-                    {"devices": companion.list_devices(),
-                     "config": companion.config(),
-                     "commands": companion.list_commands(),
-                     "observations": companion.observations()}))
             if p == "/runs":
                 runs = list_runs()
                 for m in runs:
@@ -986,58 +987,57 @@ class H(BaseHTTPRequestHandler):
                 if self._sid():
                     auth.logout(self._sid())
                 return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
-            # ---- companion device reports, ticket-authed (before the user
-            # gate, same reason as the GET half above) ----
-            if p == "/companion/ack":
-                import companion
-                dev = self._ticket()
-                if not dev:
-                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
-                # THE proof-of-execution seam: a command leaves pending here and
-                # nowhere else, on the device's own report that it ran.
-                out = companion.ack(body.get("id") or "", dev["id"],
-                                    ok=bool(body.get("ok", True)),
-                                    result=body.get("result"))
-                if out is None:
-                    return self._send(404, json.dumps({"error": "unknown command"}))
-                return self._send(200, json.dumps(out))
-            if p == "/companion/observe":
-                import companion
-                dev = self._ticket()
-                if not dev:
-                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
-                try:
-                    return self._send(200, json.dumps(companion.record(
-                        dev["id"], body.get("key") or "", body.get("value"))))
-                except ValueError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+            if p == "/glance/answer":
+                # GLASS MODE's ONLY write. The lens taps one of the options the
+                # worker itself offered and the card's session continues - the
+                # exact path /tracks/<id>/answer takes, so there is no second
+                # answering mechanism to drift out of sync with the first.
+                #
+                # Before the user gate because the lens carries a token, not a
+                # session. Four deliberate bounds, because glance_token is a
+                # single SHARED secret and this endpoint RUNS AN AGENT TURN:
+                #   1. off unless settings.glance_decide is explicitly true, so
+                #      an existing read-only glance token does not silently
+                #      become one that can steer agents;
+                #   2. FREE TEXT REFUSED here (the phone keeps it) - a shared
+                #      token must never inject arbitrary prose into a worker's
+                #      next prompt, and the lens cannot type anyway;
+                #   3. request_id must match the card's CURRENT question, so a
+                #      lens showing a stale screen cannot answer a question the
+                #      card has already moved past;
+                #   4. it can only ever pick among options the WORKER wrote.
+                import ask, events, sessions
+                s = events.settings()
+                tok = s.get("glance_token") or ""
+                given = (body.get("token") or "").strip() or \
+                    (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps(
+                        {"error": "glance disabled or bad token"}))
+                if not s.get("glance_decide"):
+                    return self._send(403, json.dumps(
+                        {"error": "deciding from the glasses is off "
+                                  "(set settings.glance_decide)"}))
+                tid = (body.get("id") or "").strip()
+                t = sessions.get_track(tid) if tid else None
+                if not t or not t.get("question"):
+                    return self._send(409, json.dumps({"error": "no pending question"}))
+                rid = (body.get("request_id") or "").strip()
+                if rid != ((t["question"] or {}).get("id") or ""):
+                    return self._send(409, json.dumps(
+                        {"error": "this question was already answered or replaced"}))
+                picks, err = ask.validate_answers(t["question"], body.get("answers") or {})
+                if err:
+                    return self._send(400, json.dumps({"error": err}))
+                if any(pick.get("custom") for pick in picks):
+                    return self._send(400, json.dumps(
+                        {"error": "the glasses may only pick offered options"}))
+                answers = body.get("answers") or {}
+                _bg("track:answer:" + tid, lambda: sessions.answer_question(
+                    tid, answers, request_id=rid, actor="glasses"))
+                return self._send(200, json.dumps({"started": tid, "answered": True}))
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
-            # ---- companion management (owner only) ----
-            if p.startswith("/companion/"):
-                import companion
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                try:
-                    if p == "/companion/pair":
-                        # the token is in this response and NOWHERE else, ever
-                        return self._send(200, json.dumps(companion.mint_ticket(
-                            body.get("label") or "", actor=user["name"])))
-                    if p == "/companion/revoke":
-                        out = companion.revoke(body.get("id") or "", actor=user["name"])
-                        if out is None:
-                            return self._send(404, json.dumps({"error": "unknown device"}))
-                        return self._send(200, json.dumps(out))
-                    if p == "/companion/config":
-                        return self._send(200, json.dumps(companion.save_config(
-                            body.get("config") or {}, actor=user["name"])))
-                    if p == "/companion/command":
-                        return self._send(200, json.dumps(companion.queue_command(
-                            body.get("kind") or "", device_id=body.get("device"),
-                            actor=user["name"], **(body.get("args") or {}))))
-                except ValueError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
-                return self._send(404, json.dumps({"error": "?"}))
             # ---- user management (owner only) ----
             parts = p.strip("/").split("/")
             if parts[0] == "users":

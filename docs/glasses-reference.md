@@ -32,8 +32,12 @@ building**, don't trust this page as current on the platform side.
   packages, plus Developer mode (and possibly a preview form). → §5.
 - **HelmDeck's `glasses/` app is already ~80% conformant** with Meta's real
   display guidelines; four concrete deltas remain. → §6.
-- The proven pairing/auth model to adopt is **valet tickets + device-code +
-  anchor device**. → §2.
+- The proven pairing/auth model is **valet tickets + device-code + anchor
+  device** → §2 — but **do not reach for it without a second device to enroll**:
+  it was adopted once for a companion app that was then scrapped. → §11.1.
+- **GLASS MODE is the live direction**: the lens shows what is blocked and the
+  owner *decides* on it by tapping options the worker offered. No companion app,
+  no SDK, no PAT. → §11.
 
 ---
 
@@ -60,9 +64,19 @@ future glasses card:
 > **authoring and consuming are different moments**.
 
 For HelmDeck this is a clean fit and also a clean limit: *seeing that a card is
-blocked* is eyes-up. *Answering a question, steering, accepting* is authoring —
-it belongs on the phone. `/glance` being read-only is correct by this rule, not
-by accident.
+blocked* is eyes-up. *Steering and accepting* are authoring — they belong on the
+phone.
+
+⚠ **Refined 2026-08-16 by GLASS MODE (§11), and the distinction is the whole
+point.** This section used to end "…*answering a question* is authoring, so
+`/glance` being read-only is correct by this rule." That drew the line in the
+wrong place. The rule the sources actually state is about *typing*: **"you can't
+type on the glasses"** here, and §3.6's **"the webapp is output + SELECTION"**.
+Picking one of six options a worker already wrote is selection, not authoring —
+it needs no keyboard and no dictation, so it is squarely inside the law. Free
+text would be authoring, which is exactly why `/glance/answer` refuses it and
+leaves it to the phone. So `/glance` is no longer read-only, and that is not a
+violation of this rule — it is the rule applied more precisely.
 
 **And the precedent says HelmDeck is already past the point where that project
 stopped.** glass-crud-harness designed exactly this surface — an "Agent Cockpit"
@@ -772,112 +786,80 @@ drive the walkthrough.
 
 ---
 
-## 11. The companion app — owner decision, and where the build actually stands
 
-**Owner overrode §10.3's No-Go on 2026-08-16: "extend to be companion app. I
-want full control."** The chosen scope is the FULL phased build in
-`native-companion-plan.md`'s order. §10.3 is therefore superseded as a
-*decision* — but every technical finding it rests on still holds, and one of
-them is now the schedule.
+## 11. GLASS MODE — the lens decides, and the companion app is scrapped
 
-### 11.1 The fact that shapes the whole thing (read before proposing UI)
-A native companion **cannot draw a pixel on the glasses lens**. Custom lens UI
-comes only from the registered webapp — `native-companion-plan.md:57` ("the
-native app never draws a pixel on the glasses") and `AGENTS.md:263-270`. So
-"full control" through the companion means **senses and background power the
-webview structurally cannot have**, feeding the same backend the lens webapp
-already reads. Anyone who proposes a native lens screen has misread this.
+**Owner decision, 2026-08-16, superseding everything above about a companion:**
+> *"Where did idea with ticket comes from .. scrap it. I need a glass system that
+> only interact with board agent in glass mode. Should be conversation to
+> understand where things are, plan and make decisions."*
 
-The phase order is the reference project's own, minus its step 1: its GPS relay
-existed to unblock a nav arrow, and HelmDeck has no navigation feature to feed.
+### 11.1 Where the ticket idea came from, and why it is gone
+From §2.1 of THIS document — *"when a second glasses/companion surface appears,
+go to tickets; don't mint a second shared token."* That advice is sound for the
+thing it was written about (a fleet of enrolled devices), and it was applied to
+a native companion sensing app that the owner does not want. No companion app,
+no fleet, no second surface ⇒ **no tickets**. `daemon/companion.py`, its tests
+and its five routes were deleted in the same card that added them.
 
-| Phase | What | Needs the DAT SDK? | Status |
-|---|---|---|---|
-| 1 | Foreground-service foundation + backend-driven config + command channel | **No** | **Daemon half SHIPPED** (`9888a6f`) |
-| 2 | Mic capture (phone mic first, glasses mic second — the plan's own order) | glasses mic: **yes** | blocked, see 11.3 |
-| 3 | DAT camera → Claude vision → result card on the lens | **yes** | blocked, see 11.3 |
-| 4 | Trigger / notification listening | no | last, and **best-effort by the source's own admission** (§3.5: unofficial, breaks on Meta updates) |
+⚠ **§2.1's last paragraph is now stale as guidance.** Read it as history. If a
+future card is tempted by it again, the question to ask first is not "which auth
+model" but "is there actually a second device?" — here there was not.
 
-### 11.2 Phase 1, daemon half — shipped and verified (`daemon/companion.py`)
-⚠ **Correction, same day.** The first version of this section said the design
-was "adopted... rather than reinvented." That overstated it — the owner caught
-it ("was not like this") and a re-read of the actual source
-(`worker.js`/`schema.sql`/`CompanionService.kt`) confirmed he was right on two
-points. Left here rather than silently rewritten:
-- The real ticket is **binary** (`worker.js:108`: `"master"` / `"ticket"` /
-  `null`). There is no scope column in `schema.sql`'s `tickets` table. An
-  earlier build here had a config/observe/command scope enum the source never
-  had — removed. It bought nothing anyway: `_ticket()` and `_user()` are
-  already separate functions in `server.py`, so a companion ticket structurally
-  cannot reach `/tracks` or `/settings` with or without a scope check.
-- The real `_cmd` is **ONE mutable row**, self-cleared by the device inline
-  (`CompanionService.kt:81-90`) — no TTL, no attempts cap, no queue. This
-  module keeps a small per-device queue + `COMMAND_TTL` + `MAX_ATTEMPTS`
-  instead. That part is a disclosed ADDITION, not a port — the TTL is borrowed
-  from a *different* part of the same harness (§2.2's pairing-code expiry), and
-  it earns its keep because a single JSON-file store hits the same
-  read-modify-write race a single `_cmd` row would too, so the harness's
-  "re-fires on the next unrelated push" fallback doesn't apply here the same
-  way. Still worth knowing it is not literally what glass-crud-harness does.
+### 11.2 What glass mode is
+The lens talks to ONE thing: the board agent. Three moves, no more:
 
-What's left, still a real port and still true:
+| | | |
+|---|---|---|
+| **Where things are** | `/glance` — every card blocked on the owner, worst news first | already existed |
+| **Make decisions** | the worker's pending question, rendered as tappable options | **new** |
+| **Plan** | the decision IS the plan step — the worker resumes with it | via the existing session |
 
-- **Valet tickets, not a second shared secret.** §2.1 named this exact moment
-  ("when a second glasses/companion surface appears, go to tickets"). Only
-  `sha256(token)` is stored, the token is shown once, every device is revocable
-  alone. Deliberately NOT `auth.issue_token()`, which would give a pocketed
-  phone its user's entire role.
-- **Backend-driven config**, so retuning never needs an APK rebuild. Default
-  poll 60s, guarded by a test — the reference project shipped 10s, called it
-  near-polling, and wrote *"never ship a fast poll"* down (§2.5).
-- **Commands consumed on PROOF, not on read** (in spirit matching
-  `CompanionService.kt`'s self-clear, mechanically richer — see correction
-  above). `pending()` is a pure read, `ack()` is the single mutation point and
-  only on the device's report. Consuming on read would silently drop a command
-  whenever a phone died mid-fetch and would look exactly like a sensor bug.
+The critical constraint, measured on-device and unchanged (§3.1/§3.2): the lens
+has **no mic, no camera, no dictation, no keyboard**. So a "conversation" here
+can only be *agent proposes → owner selects*. That is exactly the shape of the
+ASK protocol HelmDeck already runs on every card (`daemon/ask.py`), which is why
+glass mode needed no new conversation engine — only a way to see the question
+and send back a pick.
 
-Verified against a live daemon, not only in unit tests: pair → config → queue →
-fetch **twice** (present both times) → ack → gone, plus revocation taking
-effect immediately, and a companion ticket getting 401 on `/tracks`,
-`/settings`, `/users`, and on `/companion/pair` itself. 26 unit tests (two
-scope tests removed with the scope code).
+### 11.3 How it is wired (and what was deliberately NOT built)
+- `GET /glance` now carries `question` on any asking card: the prompt, the
+  header, and the options, trimmed for the lens (`_glance_question`). Non-asking
+  cards carry `question: null`.
+- `POST /glance/answer` is the ONE write. It reuses `sessions.answer_question` —
+  the same function the phone's `/tracks/<id>/answer` calls — so there is no
+  second answering mechanism to drift out of sync. Verified: a lens pick writes
+  the identical audit line, `FRAGE beantwortet: <header> -> <label>`.
+- Four bounds, because `glance_token` is a single SHARED secret and this
+  endpoint runs an agent turn:
+  1. **off unless `settings.glance_decide` is true** — a second switch on
+     purpose, so an existing read-only glance token does not silently become one
+     that can move the board;
+  2. **free text refused** — `ask.validate_answers` permits it (the phone's
+     "Other" escape hatch), and glass mode explicitly rejects it: a shared token
+     must never inject prose into a worker's next prompt. Verified with a
+     literal injection attempt → 400;
+  3. **`request_id` must match the card's current question** — a lens showing a
+     stale screen cannot answer something the card moved past;
+  4. it can only pick options **the worker itself wrote**.
+- NOT built: no ticket registry, no companion APK, no device fleet, no DAT, no
+  mic/camera. Glass mode needs **no GitHub PAT and no SDK** — it is a plain
+  webapp against the daemon, which is why it works today.
 
-⚠ **Concurrency was a real bug here, not a debt entry.** The store is
-read-modify-written from a `ThreadingHTTPServer`, and "a device polls while the
-owner queues a command" is the ordinary case. Measured before the fix: 8 threads
-queueing 40 commands landed **5**, and on Windows **7 of 8 threads died** with
-`PermissionError` because every writer used the same `.tmp` path and collided in
-`os.replace`. Fixed with an RLock + per-writer temp names and locked in as a
-regression test. If you add a mutating function to that module, it goes inside
-`_LOCK` — the tests will not catch you forgetting on a single-threaded run.
+### 11.4 Verified, not assumed
+Against a live daemon on 3468 with a real question produced by the shipped
+`ask.parse`, and the real UI driven by Playwright at the lens's 600×600:
+- board + question render; the gate card correctly shows `question: null`;
+- every bound rejects: bad token 403, `glance_decide` off 403, stale
+  `request_id` 409, injection attempt 400, non-asking card 409;
+- the glance token still 401s on `/tracks` and `/settings`;
+- **the full loop**: D-pad to the 6th option → Enter → `Answered ✓` → question
+  consumed → audit line written.
 
-### 11.3 The blocker phases 2-3 hit, and it is owner-gated
-`com.meta.wearable:mwdat-*` resolves from **GitHub Packages**, which requires a
-GitHub **PAT (classic) with `read:packages`** — §10.1, re-confirmed against the
-live SDK README on 2026-08-16. Without it the Gradle build fails at dependency
-resolution, so *no* DAT code compiles: not the glasses mic, not the camera.
-This is step 3 of the §10.4 checklist and the only one still open. It needs the
-owner's GitHub account; an agent cannot mint it.
-
-Two further walls behind it, both already documented and neither solvable by
-more code:
-- **Display glasses are not covered by the Mock Device Kit** (§3.1) — DAT
-  display work cannot be tested without the real device.
-- **Building an APK from a card worktree does not work** (`DEPLOY.md` §2): NDK
-  object paths blow past the Windows limit (`ninja: manifest 'build.ninja'
-  still dirty after 100 tries`), and `subst` does not help. Native phases must
-  build from a short real path — mirror `app/` to `C:\hd\app`.
-
-### 11.4 For the next card — do these in this order
-1. Owner mints the `read:packages` PAT (§10.4 step 3). Until then phases 2-3
-   cannot start, and no amount of scaffolding changes that.
-2. Phase 1's phone half. **Note the trap that stopped this card:**
-   `C:\hd\app\node_modules` is currently **EMPTY**, so the worktree-junction
-   typecheck recipe in the auto-memory silently yields nothing to check —
-   verify it is populated *before* trusting a green tsc, and do not write app
-   UI you cannot typecheck and screenshot (owner reviews UI hard).
-3. Phase 2 mic: **phone mic first**, per the plan's own order — it needs no SDK
-   and proves the whole capture→backend→lens loop end to end before the
-   fragile part is added.
-4. Only then the DAT phases, defensively: sessions are fragile by design and
-   the API never says *why* a transition happened (§3.1).
+⚠ **The six-option layout, measured rather than guessed.** With the protocol's
+maximum of 6 options the last one starts below the 600px fold. It is NOT
+unreachable — this app is D-pad/EMG driven ("no touch", `app.js:3`) and focus
+scrolls every option to `fullyVisible`, confirmed for all six. The residual risk
+was only that the owner could not *know* a 6th choice existed, so the header now
+states the option count. Do not "fix" this by clamping to 4 options — that would
+silently drop a choice the worker offered.
