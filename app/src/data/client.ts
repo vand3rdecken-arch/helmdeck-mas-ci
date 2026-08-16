@@ -194,6 +194,12 @@ export interface LoopNode {
   /** "tools/loop_state.py:472" - read out of the source at call time, so a
    *  fixed node can cite the code it IS instead of only claiming to be code. */
   source?: string;
+  /** WHY this node is fixed, or what exactly is adjustable when it is policy.
+   *  Declared next to `kind` in the daemon (loop_state.LOOP_STATES /
+   *  sessions.LANE_FLOW), never composed here: a padlock the UI cannot explain
+   *  reads as arbitrary, and a reason the UI invents is a claim about code it
+   *  cannot see. Optional so an older daemon degrades to the generic legend. */
+  why?: string;
 }
 export interface LoopEdge {
   from: string; to: string; verb?: string; when?: string;
@@ -219,6 +225,15 @@ export interface LoopMap {
   /** `source` names the module that ENFORCES the law, so it is traceable to code. */
   laws: { key: string; text: string; source?: string }[];
   charter: string;
+  /** The dotted paths /automation actually renders a control for (derived from
+   *  the daemon's _config_schema). A node's `settings` entry is only offered as
+   *  a tap-through when it is in here - capacity.wip_limit and
+   *  env.SWARM_WIP_MINUTES are real knobs that live in settings.json / the
+   *  environment, and linking them to a screen that has no field for them is a
+   *  promise the app cannot keep. */
+  editable?: string[];
+  /** Where lane RENAMES live - every lane's name is data, whatever its kind. */
+  lane_labels_path?: string;
 }
 
 // ---------------------------------------------------------------------------

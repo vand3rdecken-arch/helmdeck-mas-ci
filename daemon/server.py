@@ -489,11 +489,25 @@ class H(BaseHTTPRequestHandler):
                 # renderer gets sessions.flow() and loop_state.machine() verbatim,
                 # so a new state or a changed condition shows up here by itself.
                 import charter, events
-                ll = (events.settings().get("policy") or {}).get("lane_labels") or {}
+                _s = events.settings()
+                ll = (_s.get("policy") or {}).get("lane_labels") or {}
                 return self._send(200, json.dumps({
                     "runtime": dict(_lane_flow(ll), title="Wie Arbeit fliesst"),
                     "build": _loop_machine(),
                     "harness": _harness_state(),
+                    # WHICH of the dotted paths a node names can really be changed
+                    # in the app - i.e. exactly the ones /automation renders a
+                    # control for. The map used to turn EVERY `settings` entry
+                    # into a tappable chip pointing at /automation, but half of
+                    # them are not in that table at all (capacity.wip_limit lives
+                    # only in settings.json; env.SWARM_WIP_MINUTES is an
+                    # environment variable and never will be), so the owner was
+                    # sent to a screen that does not contain the knob it promised.
+                    # Derived from _config_schema, so a knob added there becomes
+                    # tappable here by itself - and one removed stops lying.
+                    "editable": sorted({e["path"] for e in _config_schema(_s)}),
+                    # the lane NAMES are data on every lane, whatever its kind
+                    "lane_labels_path": "policy.lane_labels",
                     # Each law cites the module that ENFORCES it. A law the owner
                     # cannot trace to code is just a promise on a screen; with the
                     # pointer he can go read the thing that actually holds the

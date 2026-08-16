@@ -2,14 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type LoopMap } from "@/data/client";
+import { api, type LoopMap, type LoopNode } from "@/data/client";
 import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
+import type { ThemeTokens } from "@/theme/tokens";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
+
+type Tr = (k: string, p?: Record<string, string | number>) => string;
 
 // A glowing token that travels the lane pipeline, left to right, forever.
 // RN core Animated (not reanimated worklets) so it stays React-Compiler safe.
@@ -55,26 +58,142 @@ function GatePulse({ color, active, onPress }: { color: string; active: boolean;
   );
 }
 
-function KindBadge({ kind, t }: { kind?: string; t: ReturnType<typeof useTheme> }) {
-  const tr = useT();
-  if (!kind) return null;
+/**
+ * FIXED vs ADJUSTABLE, in words.
+ *
+ * This used to be a bare padlock glyph on every row, and red (t.danger) at that
+ * — so a deliberate design guarantee rendered as an unexplained alarm and the
+ * whole screen read as "everything is locked, nothing here is for you". The
+ * badge now SAYS which of the two it is, and the two states are colour-coded by
+ * what they mean rather than by severity:
+ *   fixed  — neutral/quiet. It is structure, not a problem.
+ *   policy — accent. It is a live affordance; something is tappable behind it.
+ */
+function KindBadge({ kind, t, tr, small }: { kind?: string; t: ThemeTokens; tr: Tr; small?: boolean }) {
+  if (kind !== "fixed" && kind !== "policy") return null;
   const fixed = kind === "fixed";
+  const fg = fixed ? t.txtTertiary : t.accent;
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface2,
-      borderColor: fixed ? t.danger : t.ok, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-      <Ionicons name={fixed ? "lock-closed" : "options-outline"} size={11} color={fixed ? t.danger : t.ok} />
-      <Text style={{ color: fixed ? t.danger : t.ok, fontSize: 10.5, fontWeight: "700" }}>{fixed ? tr("loopmap.kindFixed") : tr("loopmap.kindPolicy")}</Text>
+      borderColor: fixed ? t.borderStrong : t.accent, borderWidth: 1, borderRadius: 999,
+      paddingHorizontal: small ? 7 : 9, paddingVertical: small ? 2 : 3 }}>
+      <Ionicons name={fixed ? "lock-closed" : "options-outline"} size={small ? 10 : 11.5} color={fg} />
+      <Text style={{ color: fg, fontSize: small ? 10 : 10.5, fontWeight: "700" }}>
+        {tr(fixed ? "loopmap.kindFixed" : "loopmap.kindPolicy")}
+      </Text>
     </View>
   );
 }
 
-type Detail = {
-  title: string; kind?: string; body: string;
-  /** "tools/loop_state.py:472" for a fixed node — the code it IS. */
-  source?: string;
-  /** dotted settings paths for a policy node — the knobs that govern it. */
-  settings?: string[];
-};
+/** A section heading + what the section IS + whether it is fixed or yours.
+ *  The old screen gave lanes, loop stages, briefs and laws the same bare bold
+ *  line, so four unrelated concepts read as one list. */
+function SectionHead({ title, hint, kind, right, t, tr }: {
+  title: string; hint?: string; kind?: string; right?: React.ReactNode; t: ThemeTokens; tr: Tr;
+}) {
+  return (
+    <View style={{ gap: 5, marginTop: 6 }}>
+      {/* deliberately NOT flexWrap: the German titles are long, so a wrapping
+          row would drop the badge onto a line of its own and break the
+          "heading, then what kind of thing it is" reading order. The title
+          wraps INSIDE its own Text instead and the badge stays anchored right. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700", flex: 1 }}>{title}</Text>
+        <KindBadge kind={kind} t={t} tr={tr} />
+        {right}
+      </View>
+      {hint ? (
+        <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16.5 }}>{hint}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * One settings path a node names.
+ *
+ * `editable` is the daemon's list of paths /automation really renders a control
+ * for. Before this, EVERY path became a tappable chip pointing at the hub —
+ * including capacity.wip_limit (settings.json only) and env.SWARM_WIP_MINUTES
+ * (an environment variable), so two of the four chips on this screen navigated
+ * to a form that does not contain them. A knob the app cannot edit is still
+ * worth naming; it just gets told where it actually lives instead of a link.
+ */
+function KnobChip({ path, editable, onOpen, t, tr }: {
+  path: string; editable: boolean; onOpen: () => void; t: ThemeTokens; tr: Tr;
+}) {
+  const where = path.startsWith("env.") ? tr("loopmap.knobEnv") : tr("loopmap.knobFile");
+  if (!editable) {
+    return (
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, backgroundColor: t.surface2,
+        borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
+        <Ionicons name="document-text-outline" size={13} color={t.txtTertiary} style={{ marginTop: 1 }} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text selectable style={{ color: t.txtSecondary, fontSize: 11.5, fontFamily: MONO }}>{path}</Text>
+          <Text style={{ color: t.txtTertiary, fontSize: 10.5, lineHeight: 15 }}>{where}</Text>
+        </View>
+      </View>
+    );
+  }
+  return (
+    <Pressable onPress={onOpen}
+      style={{ flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: t.surface2,
+        borderColor: t.accent, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
+      <Ionicons name="options-outline" size={13} color={t.accent} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text selectable style={{ color: t.txtPrimary, fontSize: 11.5, fontFamily: MONO }}>{path}</Text>
+        <Text style={{ color: t.accent, fontSize: 10.5, fontWeight: "600" }}>{tr("loopmap.openAutomation")}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} />
+    </Pressable>
+  );
+}
+
+/**
+ * What is behind one node: the rule, WHY it is the way it is, and the proof —
+ * a source line for a fixed node, the real knobs for a policy one.
+ *
+ * `why` comes from the daemon (loop_state.LOOP_STATES / sessions.LANE_FLOW),
+ * declared next to `kind` by the module that decides a node is fixed. The
+ * fallbacks below are for an older daemon only; they say the generic truth
+ * rather than inventing a specific reason the app cannot verify.
+ */
+function NodeBody({ node, editable, onOpen, t, tr }: {
+  node: LoopNode; editable: string[]; onOpen: () => void; t: ThemeTokens; tr: Tr;
+}) {
+  const fixed = node.kind === "fixed";
+  const why = node.why || tr(fixed ? "loopmap.whyFixedFallback" : "loopmap.whyPolicyFallback");
+  return (
+    <View style={{ gap: 9 }}>
+      <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18.5 }}>{node.instruction}</Text>
+
+      {/* the reason, set apart by a rule so it does not read as more of the
+          same paragraph — this line is the whole answer to "why the padlock?" */}
+      <View style={{ flexDirection: "row", gap: 9, borderLeftWidth: 2,
+        borderLeftColor: fixed ? t.borderStrong : t.accent, paddingLeft: 9 }}>
+        <Text style={{ color: t.txtSecondary, fontSize: 12, lineHeight: 17.5, flex: 1 }}>{why}</Text>
+      </View>
+
+      {fixed && node.source ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Ionicons name="code-slash-outline" size={12} color={t.txtTertiary} />
+          <Text selectable style={{ color: t.txtTertiary, fontSize: 11, fontFamily: MONO, flex: 1 }}>
+            {node.source}
+          </Text>
+        </View>
+      ) : null}
+
+      {!fixed && (node.settings?.length ?? 0) > 0 ? (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("loopmap.governedBy")}</Text>
+          {node.settings!.map((s) => (
+            <KnobChip key={s} path={s} editable={editable.includes(s)} onOpen={onOpen} t={t} tr={tr} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 export default function LoopMapScreen() {
   const t = useTheme();
@@ -82,25 +201,32 @@ export default function LoopMapScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { data, isLoading, error } = useQuery<LoopMap>({ queryKey: ["loopmap"], queryFn: api.loopMap, staleTime: 60000 });
-  const [sel, setSel] = useState<Detail | null>(null);
+  // The lane pipeline's selection. The build loop no longer shares it: tapping a
+  // stage at the BOTTOM of the page used to mutate one detail card wedged under
+  // the pipeline at the TOP, i.e. far off screen — so the explanation existed
+  // and the owner never saw it fire. Loop stages now expand in place.
+  const [lane, setLane] = useState<string>("");
+  const [openState, setOpenState] = useState<string>("");
   const [trackW, setTrackW] = useState(0);
   const [showCharter, setShowCharter] = useState(false);
+  // On a desktop window this page is almost all prose, and prose at 1280px is a
+  // 200-character measure nobody reads. Same cap the automation hub uses.
+  const { width } = useWindowDimensions();
+  const wide = Platform.OS === "web" && width >= 900;
 
-  const pick = (label: string, node: { kind?: string; instruction: string; source?: string; settings?: string[] }) =>
-    setSel({ title: label, kind: node.kind, body: node.instruction, source: node.source, settings: node.settings });
-
+  const openHub = () => router.push("/automation" as never);
+  const editable = data?.editable ?? [];
   const lanes = data?.runtime.lanes ?? [];
   // gate sits after "working"
   const gateAfter = data?.runtime.gate.between?.[0] ?? "working";
-  const detail = useMemo<Detail | null>(() => sel ?? (data ? {
-    title: data.runtime.gate.label ?? "Gate", kind: data.runtime.gate.kind,
-    body: data.runtime.gate.instruction, source: data.runtime.gate.source,
-    settings: data.runtime.gate.settings,
-  } : null), [sel, data]);
+  // default selection = the gate: the one node on the pipeline that is neither
+  // a lane nor optional, so the card below the track is never empty.
+  const selected = useMemo<LoopNode | null>(() => {
+    if (!data) return null;
+    if (lane && lane !== "gate") return lanes.find((l) => l.key === lane) ?? null;
+    return data.runtime.gate;
+  }, [data, lane, lanes]);
 
-  // The build loop, straight off the export. `active` says where THIS checkout
-  // sits; `edges` carry the condition the code actually tests, so the arrow
-  // between two states can state its own guard instead of being decorative.
   const build = data?.build;
   const states = build?.states ?? [];
   // OUTGOING edges per state — NOT states[i] -> states[i+1].
@@ -120,96 +246,116 @@ export default function LoopMapScreen() {
 
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 40 }} /> :
        error || !data ? <Text style={{ color: t.danger, padding: 16 }}>{tr("health.unreachable")}</Text> : (
-        <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 60, gap: 18 }}>
-          {/* ---- runtime lane flow ---- */}
-          <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700" }}>{data.runtime.title}</Text>
+        <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 60, gap: 16,
+          width: "100%", maxWidth: wide ? 860 : undefined, alignSelf: "center" }}>
+          {/* ---- orientation + legend ----
+              The screen shows three unrelated machines and two kinds of row.
+              Saying so once, up front, is cheaper than the owner deducing it
+              from a padlock glyph that never explained itself. */}
+          <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>{tr("loopmap.intro")}</Text>
+          <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
+            borderRadius: 14, padding: 12, gap: 10 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700", letterSpacing: 0.6 }}>
+              {tr("loopmap.legend").toUpperCase()}
+            </Text>
+            {(["fixed", "policy"] as const).map((k) => (
+              <View key={k} style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
+                <View style={{ paddingTop: 1 }}><KindBadge kind={k} t={t} tr={tr} small /></View>
+                <Text style={{ color: t.txtSecondary, fontSize: 11.5, lineHeight: 16.5, flex: 1 }}>
+                  {tr(k === "fixed" ? "loopmap.legendFixedHint" : "loopmap.legendPolicyHint")}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* ---- 1. lanes: where a CARD sits ---- */}
+          <SectionHead title={tr("loopmap.secLanes")} hint={tr("loopmap.secLanesHint")} t={t} tr={tr} />
           <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16, padding: 14, paddingTop: 20 }}>
             <View onLayout={(e) => setTrackW(e.nativeEvent.layout.width)} style={{ position: "relative" }}>
               <FlowToken width={trackW} color={t.accent} />
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                {lanes.map((l, i) => (
-                  <View key={l.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                    <Pressable onPress={() => pick(l.label ?? l.key, l)} style={{ alignItems: "center", gap: 6, flex: 1 }}>
-                      <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
-                        backgroundColor: t.surface2, borderWidth: 2, borderColor: laneColor(t, l.key) }}>
-                        <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: laneColor(t, l.key) }} />
-                      </View>
-                      <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 11, fontWeight: "600" }}>{l.label}</Text>
-                    </Pressable>
-                    {i < lanes.length - 1 ? (
-                      l.key === gateAfter ? (
-                        <GatePulse color={t.accent2} active={detail?.title === data.runtime.gate.label}
-                          onPress={() => pick(data.runtime.gate.label ?? "Gate", data.runtime.gate)} />
-                      ) : (
-                        <View style={{ width: 26, height: 2, backgroundColor: t.borderStrong }} />
-                      )
-                    ) : null}
-                  </View>
-                ))}
+                {lanes.map((l, i) => {
+                  const on = selected?.key === l.key;
+                  return (
+                    <View key={l.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      <Pressable testID={"lane-" + l.key} onPress={() => setLane(l.key)}
+                        style={{ alignItems: "center", gap: 6, flex: 1 }}>
+                        {/* the SELECTED lane is filled, so the card below is
+                            visibly the answer to the last tap rather than a
+                            standalone paragraph that silently swapped content */}
+                        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
+                          backgroundColor: on ? laneColor(t, l.key) : t.surface2, borderWidth: 2, borderColor: laneColor(t, l.key) }}>
+                          <View style={{ width: 11, height: 11, borderRadius: 6,
+                            backgroundColor: on ? t.canvas : laneColor(t, l.key) }} />
+                        </View>
+                        <Text numberOfLines={1} style={{ color: on ? t.txtPrimary : t.txtSecondary,
+                          fontSize: 11, fontWeight: on ? "800" : "600" }}>{l.label}</Text>
+                      </Pressable>
+                      {i < lanes.length - 1 ? (
+                        l.key === gateAfter ? (
+                          <GatePulse color={t.accent2} active={selected?.key === "gate"}
+                            onPress={() => setLane("gate")} />
+                        ) : (
+                          <View style={{ width: 26, height: 2, backgroundColor: t.borderStrong }} />
+                        )
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             </View>
-            <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center" }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center", lineHeight: 16 }}>
               {tr("loopmap.hint")}
             </Text>
           </View>
 
-          {/* ---- detail card (what's behind the selected node) ---- */}
-          {detail ? (
-            <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, padding: 14, gap: 8 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <Text style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: "700", flexShrink: 1 }}>{detail.title}</Text>
-                <KindBadge kind={detail.kind} t={t} />
+          {/* the selected lane/gate, directly under the track it belongs to */}
+          {selected ? (
+            <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, padding: 14, gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <Text style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: "700", flexShrink: 1 }}>
+                  {selected.label ?? selected.key}
+                </Text>
+                <KindBadge kind={selected.kind} t={t} tr={tr} />
               </View>
-              <Text style={{ color: t.txtSecondary, fontSize: 13, lineHeight: 19 }}>{detail.body}</Text>
-
-              {/* STRUCTURE IS CODE, PARAMETERS ARE DATA — shown, not asserted.
-                  A fixed node cites the source line it IS; a policy node offers
-                  the knob that governs it. The boundary itself is enforced by
-                  the daemon (kind comes from the export, and /harness validates
-                  every write) — this is the readable face of it, not the rule. */}
-              {detail.kind === "fixed" && detail.source ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Ionicons name="lock-closed" size={12} color={t.txtTertiary} />
-                  <Text selectable style={{ color: t.txtTertiary, fontSize: 11.5, fontFamily: MONO }}>
-                    {detail.source}
-                  </Text>
-                </View>
-              ) : null}
-              {detail.kind === "policy" && (detail.settings?.length ?? 0) > 0 ? (
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("loopmap.governedBy")}</Text>
-                  {detail.settings!.map((s) => (
-                    <Pressable key={s} onPress={() => router.push("/automation" as never)}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: t.surface2,
-                        borderColor: t.ok, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
-                      <Ionicons name="options-outline" size={13} color={t.ok} />
-                      <Text style={{ color: t.txtPrimary, fontSize: 11.5, fontFamily: MONO, flex: 1 }}>{s}</Text>
-                      <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} />
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
+              <NodeBody node={selected} editable={editable} onOpen={openHub} t={t} tr={tr} />
             </View>
           ) : null}
 
-          {/* ---- build loop states ----
+          {/* Lane RENAMES are data on every lane whatever its kind, and nothing
+              on this screen said so — the owner could stare at four lanes he is
+              free to rename and see only padlocks and dots. */}
+          {data.lane_labels_path && editable.includes(data.lane_labels_path) ? (
+            <Pressable onPress={openHub}
+              style={{ flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: t.surface1,
+                borderColor: t.accent, borderWidth: 1, borderRadius: 14, padding: 12 }}>
+              <Ionicons name="create-outline" size={16} color={t.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600" }}>{tr("loopmap.renameLanes")}</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontFamily: MONO, marginTop: 1 }}>
+                  {data.lane_labels_path}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
+            </Pressable>
+          ) : null}
+
+          {/* ---- 2. build loop: how a CHANGE gets built ----
               Rendered from loop_state.machine(): the state list, which one is
               ACTIVE in this checkout, and the guard on each transition. Nothing
               here is described a second time in the app — a new state or a
               changed condition shows up by itself. */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
-            <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700", flex: 1 }}>{data.build.title}</Text>
-            {build?.mode ? (
+          <SectionHead title={tr("loopmap.secBuild")} hint={tr("loopmap.secBuildHint")} t={t} tr={tr}
+            right={build?.mode ? (
               <View style={{ backgroundColor: t.surface2, borderColor: t.glassBorder, borderWidth: 1,
                 borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
                 <Text style={{ color: t.txtSecondary, fontSize: 10.5, fontWeight: "700" }}>
                   {tr(build.mode === "card" ? "loopmap.modeCard" : "loopmap.modeRepo")}
                 </Text>
               </View>
-            ) : null}
-          </View>
+            ) : undefined} />
           {build?.mode_note ? (
-            <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16, marginTop: -10 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16.5, marginTop: -10 }}>
               {build.mode_note}
             </Text>
           ) : null}
@@ -217,19 +363,25 @@ export default function LoopMapScreen() {
             borderRadius: 14, overflow: "hidden" }}>
             {states.map((s, i) => {
               const active = !!s.active;
+              const open = openState === s.key;
               const outs = outFrom(s.key);
               return (
-                <View key={s.key}>
-                  <Pressable onPress={() => pick(s.key, s)}
+                <View key={s.key} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
+                  {/* testID: the shot driver has to open these rows to judge
+                      them, and matching on the visible text hits the EDGE label
+                      of the state above first (an "-> COMMIT ..." line is text
+                      too) - which clicks a non-pressable Text, expands nothing,
+                      and reports no error. A screenshot of a row that silently
+                      failed to open is worse than no screenshot. */}
+                  <Pressable testID={"loopstate-" + s.key} onPress={() => setOpenState(open ? "" : s.key)}
                     style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12,
                       paddingVertical: 11, backgroundColor: active ? t.surface2 : "transparent" }}>
-                    <View style={{ width: 22, height: 22, borderRadius: 11, alignItems: "center",
-                      justifyContent: "center", backgroundColor: active ? t.accent : "transparent",
-                      borderWidth: active ? 0 : 1.5, borderColor: t.borderStrong }}>
-                      <Text style={{ color: active ? "#fff" : t.txtTertiary, fontSize: 10.5, fontWeight: "800" }}>
-                        {i + 1}
-                      </Text>
-                    </View>
+                    {/* a DOT, not an index. The list order is declaration order
+                        and WIP is an overlay, so numbering it "4 of 5" asserted
+                        a sequence the edge list flatly contradicts. */}
+                    <View style={{ width: 9, height: 9, borderRadius: 5,
+                      backgroundColor: active ? t.accent : "transparent",
+                      borderWidth: active ? 0 : 1.5, borderColor: t.borderStrong }} />
                     <Text style={{ color: active ? t.txtPrimary : t.txtSecondary, fontSize: 12.5,
                       fontWeight: active ? "800" : "600", flex: 1 }}>
                       {s.key}
@@ -237,14 +389,22 @@ export default function LoopMapScreen() {
                     {active ? (
                       <Text style={{ color: t.accent, fontSize: 10.5, fontWeight: "800" }}>{tr("loopmap.here")}</Text>
                     ) : null}
-                    <Ionicons name={s.kind === "policy" ? "options-outline" : "lock-closed"} size={12}
-                      color={s.kind === "policy" ? t.ok : t.txtTertiary} />
+                    <KindBadge kind={s.kind} t={t} tr={tr} small />
+                    <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} />
                   </Pressable>
+
+                  {/* the rule + the reason, IN PLACE under the row that was tapped */}
+                  {open ? (
+                    <View style={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: 2 }}>
+                      <NodeBody node={s} editable={editable} onOpen={openHub} t={t} tr={tr} />
+                    </View>
+                  ) : null}
+
                   {/* every real transition OUT of this state, each naming its
                       target and the guard the code actually tests */}
                   {outs.map((e) => (
                     <View key={e.to} style={{ flexDirection: "row", alignItems: "flex-start", gap: 6,
-                      paddingLeft: 22, paddingRight: 12, paddingBottom: 6 }}>
+                      paddingLeft: 20, paddingRight: 12, paddingBottom: 8 }}>
                       <Ionicons name="arrow-forward" size={11} color={t.txtTertiary} style={{ marginTop: 2 }} />
                       <Text style={{ color: t.txtSecondary, fontSize: 10.5, fontWeight: "700", lineHeight: 15 }}>
                         {e.to}
@@ -261,15 +421,14 @@ export default function LoopMapScreen() {
             })}
           </View>
 
-          {/* ---- the harness surfaces: which brief each agent actually got ----
+          {/* ---- 3. the agent briefs: what an AGENT is started with ----
               Exported by harness.describe(). Without this a broken agent file is
               INVISIBLE: harness.py falls back to its built-in default rather than
               breaking a spawn, so nothing else would say an edit is being ignored. */}
           {data.harness ? (
             <>
-              <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700", marginTop: 4 }}>
-                {tr("loopmap.harness")}
-              </Text>
+              <SectionHead title={tr("loopmap.harness")} hint={tr("loopmap.secHarnessHint")}
+                kind="policy" t={t} tr={tr} />
               <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
                 borderRadius: 14, overflow: "hidden" }}>
                 {data.harness.agents.map((a, i) => (
@@ -296,9 +455,9 @@ export default function LoopMapScreen() {
                   </View>
                 ))}
               </View>
-              <Pressable onPress={() => router.push("/automation" as never)}
+              <Pressable onPress={openHub}
                 style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface1,
-                  borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, padding: 13 }}>
+                  borderColor: t.accent, borderWidth: 1, borderRadius: 14, padding: 13 }}>
                 <Ionicons name="construct-outline" size={16} color={t.accent} />
                 <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600", flex: 1 }}>
                   {tr("loopmap.editHarness")}
@@ -308,13 +467,15 @@ export default function LoopMapScreen() {
             </>
           ) : null}
 
-          {/* ---- harness laws ---- */}
-          <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "700", marginTop: 4 }}>{tr("loopmap.laws")}</Text>
+          {/* ---- 4. harness laws ---- */}
+          <SectionHead title={tr("loopmap.laws")} hint={tr("loopmap.lawsHint")} kind="fixed" t={t} tr={tr} />
           <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, overflow: "hidden" }}>
             {data.laws.map((law, i) => (
               <View key={law.key} style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12,
                 borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
-                <Ionicons name="lock-closed" size={15} color={t.danger} style={{ marginTop: 1 }} />
+                {/* neutral, not danger-red: a law being in force is the healthy
+                    state, not an error condition */}
+                <Ionicons name="lock-closed" size={14} color={t.txtTertiary} style={{ marginTop: 2 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>{law.text}</Text>
                   {/* the module that ENFORCES it — a law you cannot trace to code
@@ -339,7 +500,7 @@ export default function LoopMapScreen() {
           </Pressable>
           {showCharter ? (
             <View style={{ backgroundColor: t.canvas, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 12, padding: 12 }}>
-              <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 17, fontFamily: undefined }}>{data.charter}</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 17 }}>{data.charter}</Text>
             </View>
           ) : null}
         </ScrollView>

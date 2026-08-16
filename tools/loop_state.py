@@ -477,46 +477,70 @@ def transitions():
 #              the workorder ceremony (ALIGN/ANALYZE/TEST) and BUILD are not part
 #              of its loop at all - see transitions().
 #   kind     - fixed (harness law) vs policy (data). `settings` names the knob.
+#   why      - WHY it is fixed, or what exactly is adjustable on a policy state.
+#              Declared here next to `kind` for the same reason `source` is read
+#              from this file: the module that decides a state is fixed is the
+#              only honest place to say why. A reason invented in the renderer
+#              would be a claim about code the renderer cannot see - and a bare
+#              padlock with no reason is what made this screen read as
+#              arbitrarily locked instead of deliberately fixed.
 LOOP_STATES = [
     {"key": "ALIGN", "kind": "fixed", "modes": ["repo"], "settings": [],
      "instruction": "Arbeit begonnen, aber kein Workorder - Request + passt es zu den "
-                    "Gesetzen/Charter?"},
+                    "Gesetzen/Charter?",
+     "why": "Fix, weil ungeprüft begonnene Arbeit nicht abnehmbar ist: erst Auftrag "
+            "und Charter-Abgleich, dann Code."},
     {"key": "ANALYZE", "kind": "fixed", "modes": ["repo"], "settings": [],
-     "instruction": "Architektur-Impact + Debt-Delta (Abkuerzungen in debt.py registrieren). "
-                    "Enthaelt den NO-MONKEY-PATCH-Check."},
+     "instruction": "Architektur-Impact + Debt-Delta (Abkürzungen in debt.py registrieren). "
+                    "Enthält den NO-MONKEY-PATCH-Check.",
+     "why": "Fix, weil Abkürzungen sonst unsichtbar bleiben - das Debt-Register hängt "
+            "an genau dieser Stufe."},
     {"key": "EXECUTE", "kind": "fixed", "modes": ["repo", "card"], "settings": [],
-     "instruction": "Checks rot -> bauen/fixen bis gruen (py_compile, tsc, daemon-Import, "
-                    "design-lint)."},
+     "instruction": "Checks rot -> bauen/fixen bis grün (py_compile, tsc, daemon-Import, "
+                    "design-lint).",
+     "why": "Fix, weil rote Checks objektiv sind: was 'grün' heißt, entscheidet der "
+            "Code und nicht der Agent."},
     {"key": "TEST", "kind": "fixed", "modes": ["repo"], "settings": [],
-     "instruction": "Gruen heisst nicht fertig: das echte Ding pruefen (UI = beurteilt, "
-                    "nicht nur gerendert) + adversarial testen."},
+     "instruction": "Grün heißt nicht fertig: das echte Ding prüfen (UI = beurteilt, "
+                    "nicht nur gerendert) + adversarial testen.",
+     "why": "Fix, weil 'gerendert' nicht 'geprüft' heißt - sonst wäre jede Abnahme "
+            "nur eine Vermutung."},
     {"key": "CLEAN", "kind": "fixed", "modes": ["repo", "card"], "settings": [],
-     "instruction": "Hygiene: Debt-Register wohlgeformt, keine Secrets getrackt."},
+     "instruction": "Hygiene: Debt-Register wohlgeformt, keine Secrets getrackt.",
+     "why": "Fix, weil ein getracktes Secret oder ein kaputtes Debt-Register keine "
+            "Abnahme passieren darf."},
     {"key": "BUILD", "kind": "fixed", "modes": ["repo"], "settings": [],
-     "instruction": "Nur wenn die Aenderung NATIVE Quellen beruehrt hat: signiertes APK neu "
-                    "bauen. JS geht per OTA (deploy/push_update.sh), nicht ueber das APK."},
+     "instruction": "Nur wenn die Änderung NATIVE Quellen berührt hat: signiertes APK neu "
+                    "bauen. JS geht per OTA (deploy/push_update.sh), nicht über das APK.",
+     "why": "Fix, weil über 'stale' der echte Fingerprint der nativen Quellen "
+            "entscheidet - nie ein Datum und nie ein Gefühl."},
     {"key": "COMMIT", "kind": "policy", "modes": ["repo", "card"],
      "settings": ["env.SWARM_WIP_MINUTES"],
      "instruction": "Loop komplett und die Arbeit ist ruhig -> Commit vorschlagen; "
-                    "der Workorder wird beim sauberen Baum archiviert."},
+                    "der Workorder wird beim sauberen Baum archiviert.",
+     "why": "Einstellbar ist nur, wie lange 'ruhig' dauert (SWARM_WIP_MINUTES). "
+            "DASS am Ende committet wird, bleibt fix."},
     {"key": "WIP", "kind": "policy", "modes": ["repo", "card"],
      "settings": ["env.SWARM_WIP_MINUTES"],
-     "instruction": "Overlay, blockiert nie: die Edits sind noch frisch - den Nutzer bedienen."},
+     "instruction": "Overlay, blockiert nie: die Edits sind noch frisch - den Nutzer bedienen.",
+     "why": "Blockiert nie. Einstellbar ist allein das Zeitfenster (SWARM_WIP_MINUTES)."},
     {"key": "DONE", "kind": "fixed", "modes": ["repo", "card"], "settings": [],
-     "instruction": "Sauberer Baum, kein offener Workorder."},
+     "instruction": "Sauberer Baum, kein offener Workorder.",
+     "why": "Fix, weil 'fertig' aus dem Zustand des Baums abgeleitet wird und nicht "
+            "aus einer Meldung."},
 ]
 
 # from -> to with the CONDITION transitions() actually tests, so the graph and
 # the code say the same thing.
 LOOP_EDGES = [
-    {"from": "ALIGN", "to": "ANALYZE", "when": "'## Request' + '## Alignment' gefuellt"},
-    {"from": "ANALYZE", "to": "EXECUTE", "when": "'## Analysis' gefuellt"},
+    {"from": "ALIGN", "to": "ANALYZE", "when": "'## Request' + '## Alignment' gefüllt"},
+    {"from": "ANALYZE", "to": "EXECUTE", "when": "'## Analysis' gefüllt"},
     {"from": "EXECUTE", "to": "TEST", "when": "keine roten Checks mehr"},
-    {"from": "TEST", "to": "CLEAN", "when": "'## Verified' gefuellt"},
+    {"from": "TEST", "to": "CLEAN", "when": "'## Verified' gefüllt"},
     {"from": "CLEAN", "to": "BUILD", "when": "Hygiene sauber"},
     {"from": "BUILD", "to": "COMMIT", "when": "kein natives Artefakt stale"},
     {"from": "COMMIT", "to": "DONE", "when": "committed - Baum sauber"},
-    {"from": "WIP", "to": "COMMIT", "when": "Edits laenger als SWARM_WIP_MINUTES ruhig"},
+    {"from": "WIP", "to": "COMMIT", "when": "Edits länger als SWARM_WIP_MINUTES ruhig"},
     # a card enters the loop at EXECUTE: its request was aligned on the board and
     # its verification is the gate, so those states never apply to it.
     {"from": "EXECUTE", "to": "CLEAN", "when": "card-mode: keine roten Checks",
@@ -571,10 +595,10 @@ def machine():
              and e["from"] in keys and e["to"] in keys]
     return {
         "id": "build-loop",
-        "title": "Wie Aenderungen gebaut werden",
+        "title": "Wie Änderungen gebaut werden",
         "mode": mode,
         "mode_note": ("Karten-Modus: diese Arbeitskopie IST der Worktree einer Karte "
-                      "(HELMDECK_WORKTREE). Die Workorder-Zeremonie entfaellt - die Karte "
+                      "(HELMDECK_WORKTREE). Die Workorder-Zeremonie entfällt - die Karte "
                       "hat ihre Aufgabe und ihren Gate bereits."
                       if card else
                       "Repo-Modus: der volle Loop inklusive Workorder."),
