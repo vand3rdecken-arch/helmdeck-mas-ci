@@ -295,20 +295,49 @@ error, it would quietly hand every card back the operator's config.
    `probe --validate` asserts a hook from each shipped file actually **fires**
    rather than trusting that the file parses.
 
-### Known gap: auto-memory is NOT isolated
+### Fixed gap: auto-memory is shared, and now read-only
 
-Measured at the same time, with the env scrubbed: **every surface resolves
-`memory_paths.auto` to the operator's personal
-`~/.claude/projects/<main-repo-slug>/memory/`** - and the slug is the *main
-repo's* path, not the worktree's. So every card, every machine task, the copilot
-and the owner's own desktop sessions share one writable directory outside the
-worktree, and `--setting-sources` does not move it.
+Measured with the env scrubbed: **every surface resolves `memory_paths.auto` to
+the operator's personal `~/.claude/projects/<main-repo-slug>/memory/`** - and the
+slug is the *main repo's* path, not the worktree's. So every card, every machine
+task, the copilot and the owner's own desktop sessions share one directory
+outside the worktree, and `--setting-sources` does not move it.
 
-`harness/` closed the **settings** half of the personal-layer leak. This half was
-never noticed because nothing rendered it - `/harness`'s provenance view shows
-settings layers and hooks, not memory paths. Registered as
-`card-shares-the-operators-auto-memory` in `daemon/debt.py` (OPEN: the fix is a
-decision the owner owns, with a recommendation attached).
+`harness/` had closed the **settings** half of the personal-layer leak. This half
+was not noticed at first, because nothing rendered it. When it surfaced, the
+first instinct was reasonable and worth checking rather than assuming: *isn't
+that directory tracked by git, so what's the issue with a card writing to it?*
+It is not. `git -C ~/.claude status` and the same command against the memory
+directory both say `not a git repository` - there is no `.git` anywhere under
+`~/.claude`, so a card's write there had no revert path. Measured against the
+real spawn (`drivers.build_argv` + the shipped `card.json`, a stream-json turn on
+stdin exactly like `_ClaudeSession.run_turn` sends): the Write tool created a
+file in that directory with no permission prompt, under `--permission-mode
+acceptEdits`.
+
+**Fixed** by denying the write, not by relocating the directory:
+`harness/settings/card.json` and `copilot.json` now carry
+`Write(~/.claude/projects/**)` and `Edit(~/.claude/projects/**)` in
+`permissions.deny` - the identical Read/Write/Edit tool-pattern mechanism that
+already protects `daemon/settings.json` two lines above it. `Read` stays open, so
+a card still benefits from accumulated notes; only the write is closed. Measured
+both ways before shipping: the real spawn wrote the file with the deny absent,
+and got a permission error with it present, for both the Write tool (new file)
+and the Edit tool (existing one - Edit is a distinct tool and needed its own
+line).
+
+`harness.preview()` now reports this per surface (`out["memory"]`), read out of
+the **real settings file at preview time** rather than asserted - so an edit that
+removes the deny line shows up in `/harness` the same way a disappearing hook
+does. Deliberately *not* shown: the literal value of `memory_paths.auto`. The CLI
+derives that slug from a project identity that measurably is not just "this
+cwd" - every card worktree probed resolved to the *same* directory despite
+different cwds - and reconstructing that derivation here to render it live would
+be exactly the guess `CLAUDE.md`'s NO MONKEY PATCHES rule forbids. What the
+provenance view states is only what is honestly derivable from the file: does
+this surface's actual deny list cover it, right now.
+
+Debt entry `card-shares-the-operators-auto-memory` in `daemon/debt.py`: **paid**.
 
 ---
 

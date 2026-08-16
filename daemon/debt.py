@@ -776,51 +776,75 @@ DEBT = [
     },
     {
         "id": "card-shares-the-operators-auto-memory",
-        "title": "a card worker reads and writes the OPERATOR'S personal auto-memory",
-        # OPEN and genuinely unfixed. Registering it rather than fixing it,
-        # because the fix is a DECISION the owner owns (see "fix"), not a bug.
-        "status": "open",
+        "title": "a card worker reads and (until this entry) wrote the OPERATOR'S "
+                 "personal auto-memory",
+        # PAID 2026-08-16. Owner's first reaction to the read/write finding was
+        # "isn't it tracked by git, what's the issue with writing this" - a
+        # reasonable question, and worth checking rather than either assuming it
+        # away or accepting the premise unchecked. It is FALSE: `git -C ~/.claude
+        # status` is "not a git repository" and there is no .git anywhere under
+        # ~/.claude. So the write really was unrecoverable, and the read-only fix
+        # (option b from the original entry) shipped.
+        "status": "paid",
         "what": "MEASURED 2026-08-16 against CLI 2.1.207, with the environment scrubbed "
                 "of every CLAUDE* variable so the reading is not an artefact of the "
-                "probe's own parent session: a card spawn's init event reports "
+                "probe's own parent session: every surface's init event reports "
                 "memory_paths.auto = ~/.claude/projects/C--Users-Tien-Duy-Vo-Downloads-"
-                "swarmdeck/memory/. That is the operator's personal cross-session memory "
-                "directory, and the slug is the MAIN repo's path, not the worktree's - "
-                "so every card, every machine task, the board copilot and the operator's "
-                "own desktop sessions all resolve to ONE shared directory outside the "
-                "worktree. --setting-sources does not move it: the value is identical "
-                "under `project` (card) and `\"\"` (copilot).",
+                "swarmdeck/memory/ - the operator's personal cross-session memory "
+                "directory, shared by every card, every machine task, the board copilot "
+                "and the operator's own desktop sessions, unmoved by --setting-sources "
+                "(identical under `project` and `\"\"`). Confirmed WRITABLE against the "
+                "real spawn path (drivers.build_argv + the shipped card.json, a stream-"
+                "json turn on stdin exactly like _ClaudeSession.run_turn) before this fix: "
+                "the Write tool created a file in that directory with no permission "
+                "prompt under --permission-mode acceptEdits. And confirmed NOT git-backed: "
+                "`git -C ~/.claude status` and `git -C <the memory dir> status` both say "
+                "'not a git repository (or any of the parent directories)' - there is no "
+                ".git anywhere in the operator's ~/.claude tree, so a card's write there "
+                "had no revert path.",
         "why_it_bites": "harness/ exists to stop the operator's personal ~/.claude layer "
                         "reaching a sandboxed worker. It closed the SETTINGS half of that "
                         "leak (hooks, the model pin, skillOverrides) and this half was "
                         "never noticed, because nothing rendered it: /harness's provenance "
-                        "view shows settings layers and the hook matrix, not memory_paths. "
-                        "Two consequences. (1) Personal context leaks INTO a card - the "
-                        "memory dir holds the owner's notes, not the card's. (2) Worse, it "
-                        "leaks OUT: memory is writable, so a card can silently edit notes "
+                        "view showed settings layers and the hook matrix, not memory_paths. "
+                        "Two consequences, both real. (1) Personal context leaks INTO a "
+                        "card - the memory dir holds the owner's notes, not the card's. "
+                        "(2) Memory being writable meant a card could silently edit notes "
                         "every future session of every card and the operator's own desktop "
-                        "will read as background context. That is shared mutable state "
-                        "outside the worktree, which is the one thing worktree isolation "
-                        "is for.",
-        "trigger": "any card spawn - it is the steady state, not an edge case. Bites "
-                   "visibly the first time a card writes a memory file (they are invited "
-                   "to: the memory instructions ship in the system prompt).",
-        "fix": "NOT a code fix yet, because the right answer is the owner's call and "
-               "guessing it would be worse than the leak. Three real options, in the "
-               "order I would argue for them: (a) ISOLATE - give each surface its own "
-               "memory dir, so a card's notes stay with the card. Costs the useful case "
-               "where a card should remember what an earlier card learned about this "
-               "repo. (b) SHARE BUT READ-ONLY - keep the common dir, deny writes to it "
-               "in harness/settings/card.json's permissions.deny, so cards benefit from "
-               "accumulated knowledge without being able to corrupt it. My "
-               "recommendation. (c) LEAVE IT and make it VISIBLE - surface memory_paths "
-               "in harness.preview()'s provenance block, so at least the sharing is "
-               "stated rather than discovered. (c) is worth doing regardless of which of "
-               "(a)/(b) wins, and is the cheap first step. What is NOT acceptable is the "
-               "status quo, where the isolation is documented as complete and is not. "
-               "The measurement is reproducible: "
-               "`python daemon/probe_harness_settings.py --skills` prints memory_paths "
-               "per surface alongside the skill sets.",
+                        "would read as background context - shared mutable state outside "
+                        "the worktree, the one thing worktree isolation exists to prevent, "
+                        "and with no git history to recover from a bad write.",
+        "trigger": "was: any card spawn - the steady state, not an edge case, and it bit "
+                   "the moment a card wrote a memory file (the memory instructions ship in "
+                   "the system prompt, inviting exactly that). Now: none - the write is "
+                   "denied at the permission layer before it reaches disk.",
+        "fix": "SHARE BUT READ-ONLY (option b of the three originally proposed), verified "
+               "against the real CLI in both directions before shipping - the same "
+               "'measured, not assumed' standard as probe_harness_settings.py. "
+               "harness/settings/card.json and harness/settings/copilot.json now deny "
+               "`Write(~/.claude/projects/**)` and `Edit(~/.claude/projects/**)`, the SAME "
+               "Read/Write/Edit tool-pattern mechanism that already protects "
+               "daemon/settings.json two lines above it - no new mechanism introduced. "
+               "Read is left open, so a card still benefits from accumulated notes; only "
+               "the write is closed. Measured before AND after: the real "
+               "drivers.build_argv() + card.json spawn wrote the file with the deny "
+               "absent, and the identical spawn got `<tool_use_error>File is in a "
+               "directory that is denied by your permission settings.</tool_use_error>` "
+               "with it present - for both the Write tool (new file) and the Edit tool "
+               "(modifying an existing one). `~` in the pattern is honoured by the CLI, "
+               "measured the same way. Also shipped: harness.preview()'s "
+               "`_memory_isolation()` reads each surface's OWN settings file at preview "
+               "time and reports whether its deny list actually covers this - so a future "
+               "edit that removes the line is visible in /harness the same way a "
+               "disappearing hook is, rendered in app/src/ui/harness_section.tsx as a "
+               "write-protected/WRITABLE row. Deliberately NOT computed: the exact value "
+               "of memory_paths.auto (option c's literal ask). The CLI derives that slug "
+               "from a project identity that measurably is not just \"this cwd\" - every "
+               "card worktree probed resolved to the SAME directory despite different "
+               "cwds - and guessing that derivation to render it live would be exactly the "
+               "unverified reconstruction CLAUDE.md's NO MONKEY PATCHES rule forbids. What "
+               "IS shown is honestly derivable from the file alone: does this surface's "
+               "actual deny list cover it, right now.",
         "order": 26,
     },
 ]

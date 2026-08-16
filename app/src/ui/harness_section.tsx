@@ -168,6 +168,25 @@ function SpawnPreview({ p, t, tr }: {
         ) : null}
       </View>
 
+      {/* memory isolation: every surface shares ONE ~/.claude/projects/.../memory
+          directory with no git history behind it - unlike everything else on
+          this screen, a bad write there is not reversible. Read directly out of
+          this surface's own settings file at preview time (harness.py's
+          _memory_isolation), so an edit that removes the deny shows up here. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Ionicons name={p.memory.denied ? "lock-closed-outline" : "warning-outline"}
+          size={14} color={p.memory.denied ? t.txtTertiary : t.danger} />
+        <Text style={{ color: t.txtTertiary, fontSize: 11.5, flex: 1 }}>
+          {tr("harness.memory")}
+        </Text>
+        <Text style={{ color: p.memory.denied ? t.ok : t.danger, fontSize: 11, fontWeight: "700" }}>
+          {tr(p.memory.denied ? "harness.memoryProtected" : "harness.memoryWritable")}
+        </Text>
+      </View>
+      {!p.memory.denied ? (
+        <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16 }}>{p.memory.note}</Text>
+      ) : null}
+
       {/* the hook matrix */}
       <Pressable onPress={() => setOpenHooks((v) => !v)}
         style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface2,
