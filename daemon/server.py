@@ -255,6 +255,20 @@ class H(BaseHTTPRequestHandler):
             pm.touch()
         return u
 
+    def _ticket(self, scope):
+        """Resolve a COMPANION ticket (not a user). Deliberately separate from
+        _user(): a companion device is least-privilege by scope and must never
+        inherit a user's role - see companion.py's docstring. Returns the device
+        dict or None; the caller answers 403."""
+        import companion
+        tok = ""
+        h = self.headers.get("Authorization") or ""
+        if h.startswith("Bearer "):
+            tok = h[7:].strip()
+        if not tok and "token=" in self.path:
+            tok = self.path.split("token=")[1].split("&")[0]
+        return companion.authorize(tok, scope=scope) if tok else None
+
     def _send_cookie(self, code, body, sid=None, clear=False):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -324,6 +338,26 @@ class H(BaseHTTPRequestHandler):
                 tracks = sessions.list_tracks()
                 return self._send(200, json.dumps(
                     glance_payload(tracks, events.metrics(tracks))))
+            # ---- companion (native sensing layer), ticket-authed ----
+            # Before the user gate on purpose: these carry a per-device valet
+            # ticket, never a user session. Scope is checked per route, so a
+            # mic-only device cannot read the command queue.
+            if p == "/companion/config":
+                import companion
+                dev = self._ticket("config")
+                if not dev:
+                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
+                return self._send(200, json.dumps(
+                    {"config": companion.config(), "device": dev}))
+            if p == "/companion/commands":
+                import companion
+                dev = self._ticket("command")
+                if not dev:
+                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
+                # a PURE read - nothing is consumed here; POST /companion/ack is
+                # the only thing that settles a command (companion.py §3)
+                return self._send(200, json.dumps(
+                    {"commands": companion.pending(dev["id"])}))
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             if p == "/users":
@@ -335,6 +369,15 @@ class H(BaseHTTPRequestHandler):
                      "tokens": [{"label": t["label"], "token": t["token"],
                                  "created": t.get("created")} for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
+            if p == "/companion/devices":
+                import companion
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                return self._send(200, json.dumps(
+                    {"devices": companion.list_devices(),
+                     "config": companion.config(),
+                     "commands": companion.list_commands(),
+                     "observations": companion.observations()}))
             if p == "/runs":
                 runs = list_runs()
                 for m in runs:
@@ -943,8 +986,61 @@ class H(BaseHTTPRequestHandler):
                 if self._sid():
                     auth.logout(self._sid())
                 return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
+            # ---- companion device reports, ticket-authed (before the user
+            # gate, same reason as the GET half above) ----
+            if p == "/companion/ack":
+                import companion
+                dev = self._ticket("command")
+                if not dev:
+                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
+                # THE proof-of-execution seam: a command leaves pending here and
+                # nowhere else, on the device's own report that it ran.
+                out = companion.ack(body.get("id") or "", dev["id"],
+                                    ok=bool(body.get("ok", True)),
+                                    result=body.get("result"))
+                if out is None:
+                    return self._send(404, json.dumps({"error": "unknown command"}))
+                return self._send(200, json.dumps(out))
+            if p == "/companion/observe":
+                import companion
+                dev = self._ticket("observe")
+                if not dev:
+                    return self._send(403, json.dumps({"error": "bad or missing ticket"}))
+                try:
+                    return self._send(200, json.dumps(companion.record(
+                        dev["id"], body.get("key") or "", body.get("value"))))
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
+            # ---- companion management (owner only) ----
+            if p.startswith("/companion/"):
+                import companion
+                if user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                try:
+                    if p == "/companion/pair":
+                        # the token is in this response and NOWHERE else, ever
+                        return self._send(200, json.dumps(companion.mint_ticket(
+                            body.get("label") or "",
+                            scopes=tuple(body.get("scopes")
+                                         or ("config", "observe", "command")),
+                            actor=user["name"])))
+                    if p == "/companion/revoke":
+                        out = companion.revoke(body.get("id") or "", actor=user["name"])
+                        if out is None:
+                            return self._send(404, json.dumps({"error": "unknown device"}))
+                        return self._send(200, json.dumps(out))
+                    if p == "/companion/config":
+                        return self._send(200, json.dumps(companion.save_config(
+                            body.get("config") or {}, actor=user["name"])))
+                    if p == "/companion/command":
+                        return self._send(200, json.dumps(companion.queue_command(
+                            body.get("kind") or "", device_id=body.get("device"),
+                            actor=user["name"], **(body.get("args") or {}))))
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}))
+                return self._send(404, json.dumps({"error": "?"}))
             # ---- user management (owner only) ----
             parts = p.strip("/").split("/")
             if parts[0] == "users":
