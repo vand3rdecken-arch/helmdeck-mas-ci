@@ -43,6 +43,9 @@ html, body {
 .hero { text-align: center; padding: 18px 0 10px; }
 .hero-num { font-size: 96px; font-weight: 700; line-height: 1; }
 .hero-label { font-size: 22px; font-weight: 700; color: #E4E6EB; margin-top: 4px; }
+/* how old the number is, plus work only the owner can start - both are
+   context for the hero, never competition with it */
+.hero-sub { font-size: 14px; color: #B0B3B8; margin-top: 8px; min-height: 18px; }
 
 /* stat row */
 .statrow { display: flex; gap: 8px; margin-top: 12px; }
@@ -71,6 +74,14 @@ html, body {
    dispatch. Same red as a negative margin: bad news reads bad at a glance. */
 .li-sub.neg, .detail-meta .neg { color: #FF5A5F; }
 .empty { text-align: center; color: #B0B3B8; font-size: 16px; padding: 40px 12px; }
+/* the "only you can start" group: present, but visibly quieter than a blocker
+   and not focusable - there is nothing to open, it is a reminder */
+.group-label { font-size: 13px; font-weight: 700; color: #B0B3B8;
+  text-transform: uppercase; letter-spacing: .06em; margin: 18px 0 8px 2px; }
+/* quieter than a blocker, but not faint: on an ADDITIVE display dimmer means
+   more transparent, so ambient light eats the difference - 0.65 keeps the
+   hierarchy while staying readable outdoors (base .list-item is 0.8). */
+.list-item.muted { opacity: 0.65; }
 
 /* detail */
 .detail-task { font-size: 22px; font-weight: 700; line-height: 1.35; }

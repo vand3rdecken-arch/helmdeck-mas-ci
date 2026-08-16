@@ -699,6 +699,36 @@ def blocker(t):
     return {"reason": "delivered", "detail": _blocker_text(t.get("last_reply"))}
 
 
+# Modes the machine STRUCTURALLY refuses to start: every auto-dispatch path
+# excludes them (pm._backlog, pm._chain_ready, pm.activity's todo list,
+# processes._advance), and teach/human get no driver at all (MODE_DRIVER). A
+# `do` card in the backlog is waiting its TURN; one of these is waiting for a
+# human, forever, and nothing anywhere used to say so.
+MANUAL_MODES = ("human", "teach", "cowork")
+
+
+def manual_backlog(tracks):
+    """Un-started cards only the OWNER can ever start, as [(card, why)].
+
+    Deliberately NOT part of blocker(): these are not stuck work, they are
+    unstarted work, and merging them into "what is blocked on me" would bury a
+    red gate under a backlog. They are their own bucket with their own count -
+    complete information, in the right order of alarm.
+
+    An ordinary `do` card in the backlog is absent on purpose: the PM will get
+    to it. These it will never get to."""
+    out = []
+    for t in tracks or ():
+        t = t or {}
+        if t.get("archived") or t.get("status") != "queued":
+            continue
+        if t.get("mode") in MANUAL_MODES:
+            out.append((t, {"reason": "yours", "mode": t.get("mode"),
+                            "detail": _blocker_text(t.get("description")
+                                                    or t.get("task"))}))
+    return out
+
+
 def owner_blockers(tracks):
     """THE surface entry point: every card on `tracks` that is blocked on the
     human, as a list of (card, blocker) - the card as PRESENTED, so a phantom

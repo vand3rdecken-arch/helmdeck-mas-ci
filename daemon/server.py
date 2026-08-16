@@ -144,8 +144,15 @@ def glance_payload(tracks, m):
     on its own background task is nobody's move but the machine's and stays off
     the glasses.
 
+    `yours` is a SECOND, separate bucket: cards only the owner can ever start
+    (mode human/teach/cowork), which every auto-dispatch path structurally
+    skips. They are unstarted work rather than stuck work, so merging them into
+    needs_you would bury a red gate under a backlog - but leaving them out
+    entirely is how they became invisible everywhere at once.
+
     Split out of do_GET so the selection is testable without a socket - the gap
     this closes is precisely the kind no test could reach before."""
+    import time
     import sessions
     ny = [{"id": t["id"], "task": (t.get("task") or "")[:70],
            "client": t.get("client", ""), "status": t.get("status"),
@@ -155,11 +162,21 @@ def glance_payload(tracks, m):
            "asking": b["reason"] == "question"}
           for t, b in sessions.owner_blockers(tracks)]
     ny.sort(key=lambda c: (GLANCE_RANK.get(c["reason"], 9), c["id"]))
+    yours = [{"id": t["id"], "task": (t.get("task") or "")[:70],
+              "client": t.get("client", ""), "mode": b["mode"]}
+             for t, b in sessions.manual_backlog(tracks)]
     return {
+        # WHEN this was true. The glasses cache the last response and a webapp
+        # on a battery display does not poll, so without a stamp there is no way
+        # to tell a five-second-old "all clear" from a five-hour-old one - and a
+        # stale all-clear is the exact failure this endpoint exists to prevent.
+        "ts": int(time.time()),
         "needs_you": ny,
+        "yours": yours,
         # the home screen's big number and the list are ONE derivation - they
         # cannot disagree the way a separately-counted total could
-        "econ": {"needs_you": len(ny), "wip": m["capacity"]["wip"],
+        "econ": {"needs_you": len(ny), "yours": len(yours),
+                 "wip": m["capacity"]["wip"],
                  "wip_limit": m["capacity"]["wip_limit"],
                  "headroom": m["capacity"]["headroom"],
                  "margin": m["totals"]["margin"],
