@@ -43,11 +43,22 @@ if os.path.exists(os.path.join("tools", "i18n_lint.py")):
     run("i18n_lint", [PY, "tools/i18n_lint.py"])
 
 # 3. self-sandboxed unit tests (skip the live-server e2e_* ones)
-for path in sorted(glob.glob(os.path.join("tests", "test_*.py"))):
-    name = os.path.basename(path)
-    if name.startswith("e2e"):
-        continue
-    run(name, [PY, path])
+#
+# BOTH directories. daemon/test_*.py used to be run by nobody: six files sat
+# next to the modules they cover and no gate, hook or workflow ever executed
+# them. Two had quietly rotted - test_p1_runtime.py's fake session hand-listed
+# attributes that _ClaudeSession.__init__ had since outgrown, so it died on an
+# AttributeError partway through and every check after that point silently
+# stopped running, one of them pinning a rendering the code had legitimately
+# moved past. A test nothing runs is not coverage, it is a comment that costs
+# maintenance - so they run here, where a red result actually holds a card on
+# Review.
+for d in ("tests", "daemon"):
+    for path in sorted(glob.glob(os.path.join(d, "test_*.py"))):
+        name = os.path.basename(path)
+        if name.startswith("e2e"):
+            continue
+        run("%s/%s" % (d, name), [PY, path])
 
 if not ran:
     print("gate: nothing to run on this branch - PASS")

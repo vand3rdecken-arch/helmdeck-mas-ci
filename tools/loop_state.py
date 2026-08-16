@@ -291,46 +291,61 @@ def touches_native(touched):
     return any(p.startswith(ARTIFACT_TRIGGERS) for p in (touched or ()))
 
 
+def _ship_marker():
+    """The native fingerprint deploy/ship.sh recorded at the last ship, or "".
+
+    "" means this checkout has never shipped a native build (the marker is
+    git-ignored, so a fresh clone and every card worktree start without one)."""
+    mp = os.path.join(ROOT, "deploy", ".native_fp")
+    try:
+        with open(mp, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def build_stale(touched=()):
     """True if a shippable artifact is missing or its NATIVE inputs changed since
     the last ship - so the loop nudges a rebuild before it rests. Only checked
     once work has gone quiet, so it never runs on every keystroke.
 
-    GATED ON `touched` (fixed 2026-08-15). It used to answer for the whole repo
-    regardless of what the change was, and its FIRST test is "artifact missing ->
-    stale". The signed APK is git-ignored and is only ever produced on the box
-    that runs tools/release.sh, so in a card worktree it is ALWAYS missing:
-    every card that finished its work and went quiet was told to go run a 30-minute
-    Android release build it had no reason to run, could not usefully run, and
-    whose output would be thrown away with the worktree. (Confirmed with
-    `git check-ignore`: app/.gitignore ignores all of /android, and .gitignore
-    ignores deploy/.native_fp - so neither the artifact nor the ship marker can
-    exist in a fresh checkout.)
+    ASK THE AUTHORITATIVE SIGNAL FIRST, and only fall back to guessing.
 
-    A rebuild is only ever the next action if THIS change could have invalidated
-    the artifact, so ask that first. Nothing native touched -> nothing to say."""
+    There are two signals here and they are not equal. `_native_fp()` vs the
+    marker ship.sh wrote is a DERIVED, VERIFIED answer: it hashes the actual
+    native inputs and compares them to what was actually shipped, so it is right
+    regardless of how the change arrived. `touches_native(touched)` is a
+    heuristic pre-filter reconstructed from `git status --porcelain`, and it has
+    a blind spot by construction - app/.gitignore ignores all of /android, so an
+    edit under app/android/ can never appear in `touched` at all.
+
+    Ordering the heuristic FIRST (as this did until 2026-08-16) let that blind
+    spot veto the authoritative check: a real native change that git could not
+    see was reported fresh, with confidence. Ordering the fingerprint first
+    removes git-visibility from the decision entirely - `touched` now only gates
+    the DEGRADED paths below, which is the only place a guess belongs.
+
+    The false-positive fix this replaces stays fixed, and for a better reason
+    than before. A card worktree has no marker (git-ignored) and no APK
+    (git-ignored), so it lands in the degraded branch and `touched` still holds
+    it silent - no card is told to run a 30-minute Android build it cannot run
+    and whose output the worktree would discard.
+    """
+    marker = _ship_marker()
+    fp = _native_fp() if marker else ""
+    if fp and marker:
+        # AUTHORITATIVE: the fingerprint answers for every native input,
+        # including the ones under the git-ignored app/android/ tree.
+        return fp != marker
+    # DEGRADED - no marker (never shipped from this checkout) or no git-bash to
+    # compute the fingerprint. Now we are guessing, so only guess when the change
+    # we CAN see could plausibly have moved the native inputs.
     if not touches_native(touched):
         return False
     for art, srcs in ARTIFACT_SRC.items():
         ap = os.path.join(ROOT, art)
         if not os.path.exists(ap):
             return True
-        # Native-vs-JS by ship.sh's own FINGERPRINT (authoritative), not mtime.
-        fp = _native_fp()
-        mp = os.path.join(ROOT, "deploy", ".native_fp")
-        marker = ""
-        if os.path.exists(mp):
-            try:
-                with open(mp, encoding="utf-8") as f:
-                    marker = f.read().strip()
-            except OSError:
-                pass
-        if fp and marker:
-            if fp != marker:
-                return True          # a genuine native change is pending a ship
-            continue                 # fingerprint matches -> the APK is current
-        # fingerprint unavailable (no git-bash, or no marker yet): degrade to the
-        # old mtime signal rather than silently declaring the APK fresh.
         if _src_mtime(srcs) > os.path.getmtime(ap):
             return True
     return False

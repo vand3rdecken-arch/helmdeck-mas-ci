@@ -3,6 +3,12 @@
 Read `ARCHITECTURE.md` first: **the harness is code, policy is data**, and
 everything buildable walks charter → card → gate → accept.
 
+Touching the agent layer - briefs, settings, spawn argv, a policy knob, the
+loop/lane state machines? Read `HARNESS.md`: where that line falls in code, how
+a card/machine/PM spawn resolves, and the traps that were measured rather than
+reasoned (`--settings` excludes nothing; a settings file the CLI dislikes is
+ignored in SILENCE).
+
 ## The build loop (enforced by hooks)
 
 This repo has the same loop control as the glass harness. State is computed

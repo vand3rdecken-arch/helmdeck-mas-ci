@@ -266,6 +266,10 @@ export interface HarnessPreview {
     resolved_sha256: string; resolved_chars: number; ask_protocol: boolean;
   };
   settings_layer: { path: string; active: boolean; declared: string; note: string };
+  /** Is the shared, non-git auto-memory directory writable from THIS surface?
+   *  Read out of the real settings file's permissions.deny at preview time -
+   *  see daemon/harness.py's _memory_isolation. */
+  memory: { denied: boolean; patterns?: string[]; note: string };
   layers: HarnessLayer[];
   hooks: HarnessHook[]; hooks_active: number;
   /** settings files setting disableAllHooks — the matrix cannot be trusted

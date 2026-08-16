@@ -729,12 +729,11 @@ DEBT = [
     {
         "id": "build-stale-tracked-sources-only",
         "title": "build_stale() only ever sees the native inputs git status can see",
-        # OPEN, not paid: the false-POSITIVE half (every quiet card nagged to run
-        # a 30-minute Android build) is fixed and shipped, but this item's own
-        # title describes the false-NEGATIVE half, and that is still standing.
-        # Marking the whole entry paid would retire a blind spot that is still
-        # there - the register exists precisely to stop that.
-        "status": "open",
+        # PAID 2026-08-16. It was left OPEN by the step that fixed only the
+        # false-POSITIVE half; the title describes the false-NEGATIVE half, and
+        # closing the entry then would have retired a blind spot that was still
+        # there. Both halves are closed now - see "fix" below.
+        "status": "paid",
         "what": "tools/loop_state.py's build_stale() gates on touches_native(touched), "
                 "and `touched` comes from `git status --porcelain` (dirty_files()). "
                 "app/android/ is entirely git-ignored (app/.gitignore: `/android`), so "
@@ -753,21 +752,127 @@ DEBT = [
         "trigger": "a native-only edit made directly under the ignored app/android/ tree "
                    "(outside app.json/package.json) on the box that actually builds the "
                    "APK, with nothing else touched",
-        "fix": "PAID for the reachable case: build_stale() now takes `touched` and only "
-               "runs when touches_native() sees app.json/package.json/app/android/ in "
-               "it (tools/loop_state.py, 2026-08-15) - the false-positive nag on every "
-               "quiet card is gone, verified by running loop_state.py inside a real "
-               "card worktree (WIP, not ALIGN-for-a-30-min-Android-build). The residual "
-               "gap above (an android/-only edit on the release box) is unfixed: the "
-               "release box IS the one place app/android/ is NOT git-ignored-away from "
-               "(it is the working tree that produces the APK), so `git status` there "
-               "would actually show it - meaning this residual only bites if someone "
-               "edits inside app/android/ AND stages/commits nothing else AND the loop "
-               "runs before the artifact is rebuilt. Close it, if it ever matters, by "
-               "adding an explicit `git -C app/android status` probe alongside "
-               "dirty_files() rather than widening ARTIFACT_TRIGGERS with a path that "
-               "is normally invisible.",
+        "fix": "PAID (tools/loop_state.py, 2026-08-16) by REORDERING the two signals "
+               "rather than by widening the heuristic. The 2026-08-15 step made "
+               "build_stale() take `touched` and return early unless "
+               "touches_native(touched) - which killed the false-positive nag on every "
+               "quiet card, but left the git-visibility heuristic as a VETO in front of "
+               "the authoritative check, which is what this entry's title names. "
+               "build_stale() now asks the fingerprint FIRST: when deploy/.native_fp "
+               "exists and _native_fp() computes, it compares them and returns, full "
+               "stop. That answer is derived from the real native inputs (it hashes the "
+               "AndroidManifest under the git-ignored tree too), so git-visibility no "
+               "longer decides whether the nudge can fire - the false negative is gone "
+               "at its root, without the `git -C app/android status` probe this entry "
+               "once proposed (a second reconstructed signal was the wrong shape; the "
+               "fingerprint was already the derived one). `touched` still gates the "
+               "DEGRADED branches - no marker (never shipped from this checkout) or no "
+               "git-bash to compute a fingerprint - which is the only place a guess "
+               "belongs, and is exactly the branch a card worktree lands in, so the "
+               "false-positive fix holds for a better reason than before: not 'cards "
+               "are excluded' but 'we have no authoritative answer here, so do not "
+               "invent one'. Covered by tests/test_harness_layer.py (both directions).",
         "order": 25,
+    },
+    {
+        "id": "card-shares-the-operators-auto-memory",
+        "title": "a card worker reads and (until this entry) wrote the OPERATOR'S "
+                 "personal auto-memory",
+        # PAID 2026-08-16. Owner's first reaction to the read/write finding was
+        # "isn't it tracked by git, what's the issue with writing this" - a
+        # reasonable question, and worth checking rather than either assuming it
+        # away or accepting the premise unchecked. It is FALSE: `git -C ~/.claude
+        # status` is "not a git repository" and there is no .git anywhere under
+        # ~/.claude. So the write really was unrecoverable, and the read-only fix
+        # (option b from the original entry) shipped.
+        "status": "paid",
+        "what": "MEASURED 2026-08-16 against CLI 2.1.207, with the environment scrubbed "
+                "of every CLAUDE* variable so the reading is not an artefact of the "
+                "probe's own parent session: every surface's init event reports "
+                "memory_paths.auto = ~/.claude/projects/C--Users-Tien-Duy-Vo-Downloads-"
+                "swarmdeck/memory/ - the operator's personal cross-session memory "
+                "directory, shared by every card, every machine task, the board copilot "
+                "and the operator's own desktop sessions, unmoved by --setting-sources "
+                "(identical under `project` and `\"\"`). Confirmed WRITABLE against the "
+                "real spawn path (drivers.build_argv + the shipped card.json, a stream-"
+                "json turn on stdin exactly like _ClaudeSession.run_turn) before this fix: "
+                "the Write tool created a file in that directory with no permission "
+                "prompt under --permission-mode acceptEdits. And confirmed NOT git-backed: "
+                "`git -C ~/.claude status` and `git -C <the memory dir> status` both say "
+                "'not a git repository (or any of the parent directories)' - there is no "
+                ".git anywhere in the operator's ~/.claude tree, so a card's write there "
+                "had no revert path.",
+        "why_it_bites": "harness/ exists to stop the operator's personal ~/.claude layer "
+                        "reaching a sandboxed worker. It closed the SETTINGS half of that "
+                        "leak (hooks, the model pin, skillOverrides) and this half was "
+                        "never noticed, because nothing rendered it: /harness's provenance "
+                        "view showed settings layers and the hook matrix, not memory_paths. "
+                        "Two consequences, both real. (1) Personal context leaks INTO a "
+                        "card - the memory dir holds the owner's notes, not the card's. "
+                        "(2) Memory being writable meant a card could silently edit notes "
+                        "every future session of every card and the operator's own desktop "
+                        "would read as background context - shared mutable state outside "
+                        "the worktree, the one thing worktree isolation exists to prevent, "
+                        "and with no git history to recover from a bad write.",
+        "trigger": "was: any card spawn - the steady state, not an edge case, and it bit "
+                   "the moment a card wrote a memory file (the memory instructions ship in "
+                   "the system prompt, inviting exactly that). Now: none - the write is "
+                   "denied at the permission layer before it reaches disk.",
+        "fix": "SHARE BUT READ-ONLY (option b of the three originally proposed), verified "
+               "against the real CLI in both directions before shipping - the same "
+               "'measured, not assumed' standard as probe_harness_settings.py. "
+               "harness/settings/card.json and harness/settings/copilot.json now deny "
+               "`Write(~/.claude/projects/**)` and `Edit(~/.claude/projects/**)`, the SAME "
+               "Read/Write/Edit tool-pattern mechanism that already protects "
+               "daemon/settings.json two lines above it - no new mechanism introduced. "
+               "Read is left open, so a card still benefits from accumulated notes; only "
+               "the write is closed. Measured before AND after: the real "
+               "drivers.build_argv() + card.json spawn wrote the file with the deny "
+               "absent, and the identical spawn got `<tool_use_error>File is in a "
+               "directory that is denied by your permission settings.</tool_use_error>` "
+               "with it present - for both the Write tool (new file) and the Edit tool "
+               "(modifying an existing one). `~` in the pattern is honoured by the CLI, "
+               "measured the same way. Also shipped: harness.preview()'s "
+               "`_memory_isolation()` reads each surface's OWN settings file at preview "
+               "time and reports whether its deny list actually covers this - so a future "
+               "edit that removes the line is visible in /harness the same way a "
+               "disappearing hook is, rendered in app/src/ui/harness_section.tsx as a "
+               "write-protected/WRITABLE row. Deliberately NOT computed: the exact value "
+               "of memory_paths.auto (option c's literal ask). The CLI derives that slug "
+               "from a project identity that measurably is not just \"this cwd\" - every "
+               "card worktree probed resolved to the SAME directory despite different "
+               "cwds - and guessing that derivation to render it live would be exactly the "
+               "unverified reconstruction CLAUDE.md's NO MONKEY PATCHES rule forbids. What "
+               "IS shown is honestly derivable from the file alone: does this surface's "
+               "actual deny list cover it, right now.\n\n"
+               "COMPLEMENTARY HALF - VERSIONING, now a system rather than a one-off. The "
+               "owner asked whether the memory directory should simply be made recoverable "
+               "instead of blocked. Both, not either: the deny above stops a card's write "
+               "from being adopted as background context before anyone notices, which git "
+               "history alone would not prevent (a bad write still lands and is read by the "
+               "NEXT session before any revert). What git adds is what the deny "
+               "structurally cannot - recoverability for the OPERATOR's own interactive "
+               "sessions, which the deny never gated and which are now the only writers. "
+               "Shipped as tools/memory_autocommit.py, a Stop hook deployed to "
+               "~/.claude/hooks/ by tools/install_memory_hook.py and wired into "
+               "~/.claude/settings.json. It sweeps EVERY ~/.claude/projects/*/memory/, "
+               "git-inits any that holds notes without a repo, and commits what changed - "
+               "so a project created next month is covered with no action taken (the owner's "
+               "explicit ask: 'establish system so each project in the future gets proper "
+               "tracking'). Commits carry the session_id from the hook payload, which is "
+               "what makes a later revert decidable. Local only: it never adds a remote and "
+               "never pushes, asserted in tests/test_memory_autocommit.py by scanning its "
+               "own source. Its ONE law is daemon/harness.py's law - it can never break a "
+               "turn: a Stop hook exiting 2 BLOCKS the turn, so main() returns 0 "
+               "unconditionally, every git call is timeout-bounded, and the test drives a "
+               "missing root, a file where a directory belongs, a repo mid-merge, a missing "
+               "git binary and a sweep() that raises, asserting exit 0 through all of them. "
+               "Canonical copy stays in the repo with the deployed copy held byte-identical "
+               "by `--check`, because fixing untracked state with an untracked script would "
+               "have been a joke at its own expense. Verified live: 7 memory directories "
+               "bootstrapped, audited for credential-shaped content (none) and for remotes "
+               "(none).",
+        "order": 26,
     },
 ]
 
