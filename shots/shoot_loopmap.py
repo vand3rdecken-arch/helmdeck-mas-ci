@@ -41,8 +41,12 @@ SHOTS = [
     ("loopmap2-lane",    (430, 932),  ["lane-backlog"], "top"),
     ("loopmap2-fixed",   (430, 932),  ["loopstate-EXECUTE"], "loopstate-EXECUTE"),
     ("loopmap2-policy",  (430, 932),  ["loopstate-COMMIT"], "loopstate-COMMIT"),
+    # the section-level "why is this locked / where ARE the knobs" note, which
+    # sits directly above the first stage row
+    ("loopmap2-buildnote", (430, 932), [], "loopstate-ALIGN"),
     ("loopmap2-laws",    (430, 932),  [], "bottom"),
     ("loopmap2-wide",    (1280, 1000), ["lane-backlog"], "top"),
+    ("loopmap2-wide-note", (1280, 1000), [], "loopstate-ALIGN"),
     ("loopmap2-wide-bottom", (1280, 1000), ["loopstate-COMMIT"], "bottom"),
 ]
 
