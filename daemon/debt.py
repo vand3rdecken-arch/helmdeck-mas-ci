@@ -844,7 +844,21 @@ DEBT = [
                "cwds - and guessing that derivation to render it live would be exactly the "
                "unverified reconstruction CLAUDE.md's NO MONKEY PATCHES rule forbids. What "
                "IS shown is honestly derivable from the file alone: does this surface's "
-               "actual deny list cover it, right now.",
+               "actual deny list cover it, right now.\n\n"
+               "COMPLEMENTARY, OUT-OF-BAND (2026-08-16, not part of this repo, not shipped "
+               "by it - noted here only so the reasoning is not lost): the owner asked "
+               "whether the memory directory itself should just be made recoverable "
+               "instead of blocked. Both, not either - the deny above prevents a card's "
+               "write from being silently adopted as background context before anyone "
+               "notices; git history alone would not, since a bad write still lands and is "
+               "read by the NEXT session before anyone reverts it. So the deny stays. What "
+               "git DOES add: recoverability for the operator's own interactive sessions, "
+               "which the deny never covered (it only gates the card/pm surfaces). "
+               "`git init` was run directly in ~/.claude/projects/<slug>/memory/ (33 files, "
+               "no prior .git anywhere under ~/.claude - confirmed) with a baseline commit "
+               "of the current notes. Local only, no remote, nothing pushed. This lives on "
+               "the operator's machine, outside any repo this card can commit to, so it is "
+               "recorded here for the next reader rather than as a diff.",
         "order": 26,
     },
 ]
