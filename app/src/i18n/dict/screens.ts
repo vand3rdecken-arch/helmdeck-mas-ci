@@ -49,6 +49,55 @@ export const screens: Dict = {
     en: "Loop, harness & automation policy now live here.",
   },
 
+  // ---- harness (briefs, settings layers, spawn preview) --------------------
+  "harness.section": { de: "Harness", en: "Harness" },
+  "harness.intro": {
+    de: "Was jede Agenten-Oberfläche über sich selbst erfährt — und was beim Start wirklich ausgeführt wird.",
+    en: "What each agent surface is told about itself — and what actually runs on spawn.",
+  },
+  "harness.brief": { de: "Brief (editierbar)", en: "Brief (editable)" },
+  "harness.briefHint": {
+    de: "Der System-Prompt dieser Oberfläche. Frontmatter wird gegen das Schema geprüft; der Body ist freie Policy.",
+    en: "This surface's system prompt. Frontmatter is schema-checked; the body is free policy.",
+  },
+  "harness.settings": { de: "Settings-Ebene (editierbar)", en: "Settings layer (editable)" },
+  "harness.settingsHint": {
+    de: "Die eigene Claude-Settings-Datei dieser Oberfläche. Nie Secrets — die Datei liegt in git.",
+    en: "This surface's own Claude settings file. Never secrets — it is tracked in git.",
+  },
+  "harness.preview": { de: "Spawn-Vorschau (nur lesbar)", en: "Spawn preview (read-only)" },
+  "harness.previewHint": {
+    de: "Aus demselben Builder wie der echte Start — kann also nicht auseinanderlaufen.",
+    en: "From the same builder the real spawn uses — so it cannot drift.",
+  },
+  "harness.builtBy": { de: "gebaut von {fn}", en: "built by {fn}" },
+  "harness.execRewritten": {
+    de: "Das ist die ECHTE Exec-Form: {from} wird vor dem Start auf die reale claude.exe aufgelöst — der .cmd-Umweg über cmd.exe zerlegt zitierte Argumente (er hat einmal --resume verschluckt).",
+    en: "This is the REAL exec form: {from} is resolved to the actual claude.exe before spawn — routing a .cmd through cmd.exe mangles quoted args (it once ate --resume).",
+  },
+  "harness.briefSource": { de: "Brief-Quelle", en: "Brief source" },
+  "harness.resolvedHash": {
+    de: "aufgelöst: {n} Zeichen · sha256 {h}",
+    en: "resolved: {n} chars · sha256 {h}",
+  },
+  "harness.askSpliced": {
+    de: "+ <helmdeck-ask>-Protokoll (fest, nicht editierbar)",
+    en: "+ <helmdeck-ask> protocol (fixed, not editable)",
+  },
+  "harness.layers": { de: "Settings-Ebenen", en: "Settings layers" },
+  "harness.hookMatrix": { de: "Hooks: {on} aktiv, {off} ausgeschlossen", en: "Hooks: {on} active, {off} excluded" },
+  "harness.noHooks": { de: "keine Hooks", en: "no hooks" },
+  "harness.hooksDisabled": {
+    de: "disableAllHooks ist gesetzt ({files}) — welche der folgenden Hooks dadurch wirklich ausfallen, ist hier NICHT modelliert (nicht gegen die echte CLI geprüft). Diese Liste ist dann unzuverlässig.",
+    en: "disableAllHooks is set ({files}) — which of the hooks below that actually kills is NOT modelled here (never probed against the real CLI). Treat this list as unreliable.",
+  },
+  "harness.save": { de: "Speichern", en: "Save" },
+  "harness.saved": { de: "Gespeichert: {p}", en: "Saved: {p}" },
+  "harness.unsaved": { de: "ungespeichert", en: "unsaved" },
+  "harness.restore": { de: "Zurückrollen", en: "Roll back" },
+  "harness.brokenFiles": { de: "Harness-Dateien mit Fehlern", en: "Harness files failing to load" },
+  "harness.sourcesOff": { de: "(aus)", en: "(off)" },
+
   // ---- connectors ---------------------------------------------------------
   "connectors.everyMins": { de: "alle {n}m", en: "every {n}m" },
   "connectors.lastRun": { de: "Letzter Lauf: {when}", en: "Last run: {when}" },
@@ -238,6 +287,19 @@ export const screens: Dict = {
   },
   "loopmap.kindFixed": { de: "FIX (Harness)", en: "FIXED (harness)" },
   "loopmap.kindPolicy": { de: "POLICY (justierbar)", en: "POLICY (adjustable)" },
+  "loopmap.here": { de: "HIER", en: "HERE" },
+  "loopmap.modeCard": { de: "KARTEN-MODUS", en: "CARD MODE" },
+  "loopmap.modeRepo": { de: "REPO-MODUS", en: "REPO MODE" },
+  "loopmap.governedBy": {
+    de: "Gesteuert von diesen Einstellungen — tippen zum Ändern:",
+    en: "Governed by these settings — tap to change:",
+  },
+  "loopmap.harness": { de: "Agenten-Oberflächen", en: "Agent surfaces" },
+  "loopmap.chars": { de: "{n} Zeichen", en: "{n} chars" },
+  "loopmap.editHarness": {
+    de: "Briefs & Settings bearbeiten",
+    en: "Edit briefs & settings",
+  },
 
   // ---- pairing ------------------------------------------------------------
   "pair.title": { de: "HelmDeck koppeln", en: "Pair HelmDeck" },

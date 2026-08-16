@@ -829,6 +829,47 @@ def cancel(user):
     return bool(p)
 
 
+def build_argv(cli_model, sid, system):
+    """THE assembly point for the board copilot's `claude` argv. ONE owner.
+
+    Returns (argv, role_in_turn). `role_in_turn` is True when the role could NOT
+    be passed as --append-system-prompt and must be prefixed to the user turn
+    instead - see the argv_form_safe note below.
+
+    Extracted so /harness's spawn preview shows this surface's REAL command
+    rather than a second hand-written copy of it (CLAUDE.md: one owner, no
+    reconstructed state). The copilot's flag order genuinely differs from a card's
+    - --model/--resume come before the system prompt here, and the settings layer
+    goes last - which is precisely the kind of detail a re-listed preview gets
+    wrong and then reports with total confidence.
+
+    ROLE SEPARATION: the copilot's standing role belongs in the SYSTEM prompt,
+    not stapled to the front of every user turn. As a user-turn prefix it was
+    re-sent verbatim on each message, it sat inside the resumed conversation
+    where the model could treat it as something the *user* said (and later turns
+    could argue with it), and it blurred the line between the fixed role and the
+    live board snapshot. --append-system-prompt puts it where the card workers'
+    brief already lives.
+
+    ...but ONLY when arguments really travel as an argv list. On the last-resort
+    cmd.exe spawn form a 10 KB argument full of quotes and ``` fences is exactly
+    the payload that broke --resume, so there we keep the old prefix-the-turn
+    shape: degraded role separation beats a mangled command line.
+    """
+    import drivers, harness
+    argv = [CLAUDE, "-p", "--output-format", "stream-json",
+            "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
+    if cli_model:              # whitelist only - no arbitrary model ids from the client
+        argv += ["--model", cli_model]
+    if sid:
+        argv += ["--resume", sid]
+    role_in_turn = not drivers.argv_form_safe(CLAUDE)
+    if not role_in_turn:
+        argv += ["--append-system-prompt", system]
+    argv += harness.cli_args("board-copilot")
+    return argv, role_in_turn
+
+
 def chat(user, message, role="operator", model="", thinking="", attachments=None, card=None):
     """One copilot turn for this user. Returns {reply, actions, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
@@ -873,30 +914,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # silently mangles quoted arguments (it ate the card workers' --resume - see
     # drivers._real_claude_exe).
     import drivers
-    argv = [CLAUDE, "-p", "--output-format", "stream-json",
-            "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
-    if cli_model:              # whitelist only - no arbitrary model ids from the client
-        argv += ["--model", cli_model]
-    if sid:
-        argv += ["--resume", sid]
-    # ROLE SEPARATION: the copilot's standing role belongs in the SYSTEM prompt,
-    # not stapled to the front of every user turn. As a user-turn prefix it was
-    # re-sent verbatim on each message, it sat inside the resumed conversation
-    # where the model could treat it as something the *user* said (and later turns
-    # could argue with it), and it blurred the line between the fixed role and the
-    # live board snapshot. --append-system-prompt puts it where the card workers'
-    # brief already lives.
-    #
-    # ...but ONLY when arguments really travel as an argv list. On the last-resort
-    # cmd.exe spawn form a 10 KB argument full of quotes and ``` fences is exactly
-    # the payload that broke --resume, so there we keep the old prefix-the-turn
-    # shape: degraded role separation beats a mangled command line.
-    if drivers.argv_form_safe(CLAUDE):
-        argv += ["--append-system-prompt", system]
-        prompt = turn
-    else:
-        prompt = system + "\n\n" + turn
-    argv += harness.cli_args("board-copilot")
+    argv, role_in_turn = build_argv(cli_model, sid, system)
+    prompt = (system + "\n\n" + turn) if role_in_turn else turn
     cmd = drivers._cmd_line(argv)
     # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
     # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.

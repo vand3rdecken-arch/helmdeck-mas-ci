@@ -191,6 +191,9 @@ export interface ConsolidationProposal { repos: ConsolidationRepo[]; generated_a
 export interface LoopNode {
   key: string; label?: string; kind?: "fixed" | "policy"; instruction: string;
   settings?: string[];
+  /** "tools/loop_state.py:472" - read out of the source at call time, so a
+   *  fixed node can cite the code it IS instead of only claiming to be code. */
+  source?: string;
 }
 export interface LoopEdge {
   from: string; to: string; verb?: string; when?: string;
@@ -213,8 +216,73 @@ export interface LoopMap {
   };
   /** Present only when the daemon could read harness/ - errors is empty when healthy. */
   harness?: { agents: HarnessAgent[]; errors: Record<string, string> };
-  laws: { key: string; text: string }[];
+  /** `source` names the module that ENFORCES the law, so it is traceable to code. */
+  laws: { key: string; text: string; source?: string }[];
   charter: string;
+}
+
+// ---------------------------------------------------------------------------
+// /harness - the editable policy behind each agent surface, plus the spawn
+// preview. The preview is "effective config with provenance" (git config
+// --show-origin): not what the harness is configured to do, but the resolved
+// command and where every piece of it came from.
+// ---------------------------------------------------------------------------
+export interface HarnessSurface {
+  key: "card" | "machine" | "pm"; agent: string; label: string;
+  /** the ONE daemon function that assembles this surface's argv */
+  builder: string; cwd: string;
+}
+export interface HarnessVersion { id: string; ts: string; actor: string; bytes: number }
+export interface HarnessAgentDoc {
+  name: string; path: string; exists: boolean; text: string; sha256: string;
+  resolved_chars: number; ask_protocol: boolean;
+  frontmatter: Record<string, unknown>; versions: HarnessVersion[];
+}
+export interface HarnessSettingsDoc {
+  key: string; path: string; exists: boolean; text: string; sha256: string;
+  versions: HarnessVersion[];
+}
+/** One settings layer the CLI would load, and whether this surface gets it. */
+export interface HarnessLayer {
+  layer: "user" | "project" | "local"; path: string; exists: boolean;
+  included: boolean; note: string; reason: string;
+}
+/** One hook, flattened. `included: false` = present on the box but excluded. */
+export interface HarnessHook {
+  event: string; matcher: string; command: string; timeout?: number;
+  origin: string; layer: string; included: boolean; broken?: boolean;
+}
+export interface HarnessPreview {
+  key: string; agent: string; label: string; builder: string; cwd: string;
+  /** the logical argv the builder produced */
+  argv: string[];
+  /** what is REALLY exec'd: drivers._cmd_line rewrites a claude.cmd shim to the
+   *  real bin/claude.exe, because routing a .cmd through cmd.exe mangles quoted
+   *  args — the bug that once ate --resume. */
+  exec?: string[]; exec_rewritten?: boolean; exec_form?: string;
+  argv_error?: string; note?: string;
+  brief: {
+    source: string; exists: boolean; file_sha256: string;
+    resolved_sha256: string; resolved_chars: number; ask_protocol: boolean;
+  };
+  settings_layer: { path: string; active: boolean; declared: string; note: string };
+  layers: HarnessLayer[];
+  hooks: HarnessHook[]; hooks_active: number;
+  /** settings files setting disableAllHooks — the matrix cannot be trusted
+   *  while non-empty, and we deliberately do not guess which rows it kills. */
+  hooks_disabled_by?: string[];
+  errors: Record<string, string>;
+}
+export interface HarnessDocument {
+  surfaces: HarnessSurface[];
+  agents: HarnessAgentDoc[];
+  settings: HarnessSettingsDoc[];
+  previews: HarnessPreview[];
+  errors: Record<string, string>;
+}
+export interface HarnessWriteResult {
+  path: string; kept_version: string; validator: string; sha256: string;
+  resolved_chars?: number; document: HarnessDocument;
 }
 
 export const api = {
@@ -295,6 +363,12 @@ export const api = {
 
   models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),
   loopMap: () => req<LoopMap>("GET", "/loop/map"),
+  harness: () => req<HarnessDocument>("GET", "/harness"),
+  /** Write a brief or a settings layer, or roll one back with `restore`.
+   *  The daemon validates BEFORE writing and returns the fresh document, so the
+   *  editor re-renders argv/hashes/hooks from what is now actually on disk. */
+  harnessSave: (b: { kind: "agents" | "settings"; name: string; text?: string; restore?: string }) =>
+    req<HarnessWriteResult>("POST", "/harness", b),
   // PM/CTO: cached briefing (no LLM) vs a fresh report (one model turn).
   pmPlan: () => req<PmData>("GET", "/pm/plan"),
   pmReport: (goal?: string, model?: string) => req<PmBrief>("POST", "/pm/report", { goal, model }),

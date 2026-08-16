@@ -298,5 +298,552 @@ def describe():
     return {"agents": out, "errors": errors()}
 
 
+# ---------------------------------------------------------------------------
+# EDITING - read/write the policy data behind each surface.
+#
+# Everything below is the WRITE path (owner-only, audited by the caller). It is
+# deliberately separated from the read path above: the read path is total and
+# may never raise, because a spawn depends on it. These may and DO raise - a
+# rejected edit must be loud, not silently ignored. That asymmetry is the point.
+# ---------------------------------------------------------------------------
+SCHEMA = os.path.join(HARNESS, "schema")
+VERSIONS = os.path.join(HARNESS, ".versions")
+
+# The three surfaces the board can spawn, and where each one's argv comes from.
+# `builder` names the ONE function that assembles that surface's command line;
+# preview() calls it rather than re-listing flags (CLAUDE.md: one owner).
+SURFACES = [
+    {"key": "card", "agent": "card-worker", "label": "Karte (Worker im Worktree)",
+     "builder": "drivers.build_argv", "cwd": "<worktree der Karte>"},
+    {"key": "machine", "agent": "machine-worker", "label": "Maschine (Task auf dem PC)",
+     "builder": "drivers.build_argv", "cwd": "<Arbeitsordner des Tasks>"},
+    {"key": "pm", "agent": "board-copilot", "label": "PM / Board-Copilot",
+     "builder": "copilot.build_argv", "cwd": "<repo root>"},
+]
+
+_BY_KEY = {s["key"]: s for s in SURFACES}
+_BY_AGENT = {s["agent"]: s for s in SURFACES}
+
+
+def _rel(path):
+    """The shortest HONEST form of a path for display.
+
+    Repo-relative inside the repo, `~/...` under the home dir, absolute
+    otherwise. The operator's settings file lives four levels above a worktree,
+    and "../../../../.claude/settings.json" tells the owner nothing about which
+    file that is - `~/.claude/settings.json` tells him immediately."""
+    p = os.path.abspath(path)
+    try:
+        inside = os.path.relpath(p, ROOT)
+        if not inside.startswith(".."):
+            return inside.replace("\\", "/")
+    except ValueError:                      # different drive on Windows
+        pass
+    home = os.path.expanduser("~")
+    try:
+        under = os.path.relpath(p, home)
+        if not under.startswith(".."):
+            return "~/" + under.replace("\\", "/")
+    except ValueError:
+        pass
+    return p.replace("\\", "/")
+
+
+def _sha(text):
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# schema validation
+# ---------------------------------------------------------------------------
+def load_schema(which):
+    """The JSON Schema for "agent" or "settings", or {} if unreadable."""
+    return _cached(os.path.join(SCHEMA, "%s.schema.json" % which), json.loads) or {}
+
+
+def _validate_min(obj, schema):
+    """The draft-07 subset our two schemas actually use, for boxes where
+    jsonschema was never installed. Checks required / type / enum /
+    additionalProperties - which is the whole vocabulary of agent.schema.json.
+    Returns a list of human-readable errors."""
+    errs = []
+    if not isinstance(schema, dict) or not isinstance(obj, dict):
+        return errs
+    props = schema.get("properties") or {}
+    for k in schema.get("required") or []:
+        if k not in obj:
+            errs.append("Pflichtfeld fehlt: %s" % k)
+    if schema.get("additionalProperties") is False:
+        for k in obj:
+            if k not in props:
+                errs.append("unbekannter Schluessel: %s (erlaubt: %s)"
+                            % (k, ", ".join(sorted(props))))
+    _types = {"string": str, "boolean": bool, "object": dict, "array": list,
+              "number": (int, float), "integer": int}
+    for k, spec in props.items():
+        if k not in obj or not isinstance(spec, dict):
+            continue
+        want = _types.get(spec.get("type"))
+        # bool is an int subclass in Python - keep "number" from accepting True
+        if want and (not isinstance(obj[k], want)
+                     or (spec.get("type") in ("number", "integer") and isinstance(obj[k], bool))):
+            errs.append("%s muss %s sein" % (k, spec.get("type")))
+        elif "enum" in spec and obj[k] not in spec["enum"]:
+            errs.append("%s muss einer von %s sein" % (k, spec["enum"]))
+    return errs
+
+
+def validate(obj, which):
+    """(errors, validator). Uses jsonschema when importable and falls back to
+    the built-in subset otherwise - and SAYS which one ran, because "validated"
+    means two different things here and the owner should see which he got."""
+    schema = load_schema(which)
+    if not schema:
+        return (["Schema harness/schema/%s.schema.json nicht lesbar" % which], "none")
+    try:
+        import jsonschema
+        v = jsonschema.Draft7Validator(schema)
+        errs = ["%s%s" % ("/".join(str(x) for x in e.path) + ": " if e.path else "", e.message)
+                for e in sorted(v.iter_errors(obj), key=lambda e: list(e.path))]
+        return (errs, "jsonschema")
+    except ImportError:
+        return (_validate_min(obj, schema), "builtin-subset")
+    except Exception as e:                                   # noqa: BLE001
+        return (["Validator-Fehler: %s" % str(e)[:200]], "error")
+
+
+# ---------------------------------------------------------------------------
+# versions - every write keeps the file it replaced, so a bad edit is revertable
+# ---------------------------------------------------------------------------
+def _vdir(kind, name):
+    return os.path.join(VERSIONS, kind, name)
+
+
+def versions(kind, name):
+    """Prior contents of a harness file, newest first. Never raises."""
+    d = _vdir(kind, name)
+    out = []
+    try:
+        for fn in os.listdir(d):
+            p = os.path.join(d, fn)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            stamp, _, who = fn.rpartition("__")
+            out.append({"id": fn, "ts": stamp.replace("_", " ", 1) if stamp else fn,
+                        "actor": (who.rsplit(".", 1)[0] if who else "?"),
+                        "bytes": st.st_size, "_m": st.st_mtime})
+    except OSError:
+        pass
+    # By MTIME, not by filename. The same-second collision suffix ("...-34-2__")
+    # sorts BEFORE the unsuffixed "...-34__" lexically ("-" < "_"), so a
+    # name sort silently mislabels the newest version as the oldest - and
+    # "restore the most recent" would then restore the wrong text. Measured.
+    out.sort(key=lambda v: (v["_m"], v["id"]), reverse=True)
+    for v in out:
+        v.pop("_m", None)
+    return out
+
+
+def _keep_version(kind, name, path, actor):
+    """Snapshot the CURRENT bytes of `path` before it is overwritten. Best
+    effort by design: failing to archive must not block the owner's edit, and a
+    write that never happened has nothing to archive."""
+    cur = _read_text(path)
+    if cur is None:
+        return ""
+    import re, time as _t
+    safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", str(actor))[:32] or "unknown"
+    ext = os.path.splitext(path)[1]
+    stamp = _t.strftime("%Y-%m-%d_%H-%M-%S")
+    d = _vdir(kind, name)
+    try:
+        os.makedirs(d, exist_ok=True)
+        # The stamp has 1-second granularity and an edit-then-revert lands well
+        # inside one second, so the id needs a tiebreaker - but the tiebreaker
+        # must also SORT right, which is the part that bit us: an "…-2__" suffix
+        # collates BEFORE the unsuffixed "…__" ("-" < "_"), so history came back
+        # in the wrong order and "restore the newest" restored the oldest.
+        # A zero-padded sequence on EVERY id makes name order == time order.
+        n = 1
+        while True:
+            vid = "%s-%03d__%s%s" % (stamp, n, safe, ext)
+            if not os.path.exists(os.path.join(d, vid)):
+                break
+            n += 1
+        # newline="\n": without it Windows rewrites every \n as \r\n, so a
+        # snapshot was 12 bytes longer than the file it archived and a restore
+        # silently changed the file's line endings.
+        with open(os.path.join(d, vid), "w", encoding="utf-8", newline="\n") as f:
+            f.write(cur)
+        return vid
+    except OSError:
+        return ""
+
+
+def version_text(kind, name, vid):
+    """The bytes of one archived version, or None."""
+    if os.sep in vid or "/" in vid or ".." in vid:      # no traversal out of the box
+        return None
+    return _read_text(os.path.join(_vdir(kind, name), vid))
+
+
+def _nl_style(path):
+    r"""The newline convention the file on disk already uses.
+
+    core.autocrlf=true checks these files out with CRLF on Windows. Writing
+    plain "\n" therefore rewrote every line ending on every save: `git diff`
+    showed nothing (it normalises) but `git status` reported the file modified
+    forever after, so a one-word brief edit looked like a whole-file rewrite.
+    Match what is there; only a brand-new file picks LF."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return "\n"
+    return "\r\n" if raw.count(b"\r\n") > raw.count(b"\n") - raw.count(b"\r\n") else "\n"
+
+
+def _atomic_write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline=_nl_style(path)) as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
+# the editable documents
+# ---------------------------------------------------------------------------
+def settings_keys():
+    """Which settings layers exist as far as the surfaces are concerned. Derived
+    from the agent frontmatter, not a second hand-kept list - add a surface and
+    its layer becomes writable by itself."""
+    return {k for k in ((meta(s["agent"]) or {}).get("settings") for s in SURFACES) if k}
+
+
+def agent_doc(name):
+    """The raw markdown of harness/agents/<name>.md plus what it resolves to.
+    `text` is "" when the file does not exist - the surface is then running on
+    the built-in default, and writing creates the file."""
+    path = os.path.join(AGENTS, "%s.md" % name)
+    raw = _read_text(path)
+    m = meta(name)
+    return {
+        "name": name, "path": _rel(path), "exists": raw is not None,
+        "text": raw or "", "sha256": _sha(raw) if raw is not None else "",
+        "resolved_chars": len(brief(name)),
+        "frontmatter": m,
+        "ask_protocol": bool(m.get("ask_protocol")),
+        "versions": versions("agents", name),
+    }
+
+
+def settings_doc(key):
+    """The raw JSON of harness/settings/<key>.json."""
+    path = os.path.join(SETTINGS, "%s.json" % key)
+    raw = _read_text(path)
+    return {
+        "key": key, "path": _rel(path), "exists": raw is not None,
+        "text": raw or "", "sha256": _sha(raw) if raw is not None else "",
+        "versions": versions("settings", key),
+    }
+
+
+def write_agent(name, text, actor="owner"):
+    """Replace harness/agents/<name>.md. Raises ValueError on a rejected edit.
+
+    Validated BEFORE the write, against harness/schema/agent.schema.json. The
+    body is free prose (it is the policy), but the frontmatter drives real spawn
+    flags - a typo'd `setting_sources` would hand the worker the operator's
+    personal config, which is the entire class of bug this harness exists to
+    close. So the frontmatter is schema-checked and the body is not."""
+    if name not in _BY_AGENT:
+        raise ValueError("unbekannte Surface: %s" % name)
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("leerer Brief - das wuerde die Surface auf den Built-in-Default zuruecksetzen; "
+                         "loesche die Datei bewusst, wenn du das willst")
+    body, fm = _parse_agent(text)
+    if not body.strip():
+        raise ValueError("kein Body: die Frontmatter allein ist kein Brief")
+    fm = dict(fm or {})
+    fm.setdefault("name", name)
+    if fm.get("name") != name:
+        raise ValueError("frontmatter `name: %s` passt nicht zum Dateinamen %s"
+                         % (fm.get("name"), name))
+    errs, validator = validate(fm, "agent")
+    if errs:
+        raise ValueError("Frontmatter verletzt das Schema (%s): %s" % (validator, "; ".join(errs[:5])))
+    st = fm.get("settings")
+    if st and not os.path.exists(os.path.join(SETTINGS, "%s.json" % st)):
+        raise ValueError("settings: %s zeigt auf harness/settings/%s.json - die es nicht gibt" % (st, st))
+    path = os.path.join(AGENTS, "%s.md" % name)
+    vid = _keep_version("agents", name, path, actor)
+    _atomic_write(path, text if text.endswith("\n") else text + "\n")
+    return {"path": _rel(path), "kept_version": vid, "validator": validator,
+            "sha256": _sha(text), "resolved_chars": len(brief(name))}
+
+
+def write_settings(key, text, actor="owner"):
+    """Replace harness/settings/<key>.json. Raises ValueError on a rejected edit.
+
+    Two checks, and the second is the one that matters: `claude -p` SILENTLY
+    IGNORES a settings file that fails ITS validation. A file that is valid JSON
+    but wrong in shape would therefore not error anywhere - the worker would
+    just quietly run with an empty layer, and the isolation this file exists to
+    provide would be gone with no symptom. Catching it at write time is the only
+    moment it is cheap."""
+    if key not in settings_keys():
+        raise ValueError("unbekannte Settings-Ebene: %s" % key)
+    if not isinstance(text, str):
+        raise ValueError("settings muessen Text (JSON) sein")
+    try:
+        obj = json.loads(text)
+    except ValueError as e:
+        raise ValueError("kein gueltiges JSON: %s" % str(e)[:200])
+    if not isinstance(obj, dict):
+        raise ValueError("die oberste Ebene muss ein Objekt sein")
+    errs, validator = validate(obj, "settings")
+    if errs:
+        raise ValueError("verletzt das Schema (%s): %s" % (validator, "; ".join(errs[:5])))
+    path = os.path.join(SETTINGS, "%s.json" % key)
+    vid = _keep_version("settings", key, path, actor)
+    _atomic_write(path, text if text.endswith("\n") else text + "\n")
+    return {"path": _rel(path), "kept_version": vid, "validator": validator, "sha256": _sha(text)}
+
+
+def restore(kind, name, vid, actor="owner"):
+    """Put an archived version back. Goes through the normal write path, so a
+    restore is validated exactly like a fresh edit and is itself versioned -
+    reverting a revert is therefore always possible."""
+    text = version_text(kind, name, vid)
+    if text is None:
+        raise ValueError("Version %s nicht gefunden" % vid)
+    if kind == "agents":
+        return write_agent(name, text, actor)
+    if kind == "settings":
+        return write_settings(name, text, actor)
+    raise ValueError("unbekannte Art: %s" % kind)
+
+
+# ---------------------------------------------------------------------------
+# SPAWN PREVIEW - effective config WITH PROVENANCE
+#
+# The pattern is `git config --show-origin` / `kubectl describe`: do not tell
+# the owner what the harness is configured to do, show him the resolved thing
+# and where every piece of it came from. A card worker once ran for weeks under
+# the operator's personal ~/.claude - a pinned model and an rtk hook on every
+# Bash call - and nothing in the product could have revealed that, because
+# nothing rendered what actually ran. This does.
+# ---------------------------------------------------------------------------
+def _claude_layers(sources):
+    """The ambient settings layers the CLI would load, in precedence order.
+
+    `sources` is the value of --setting-sources: None means the flag is not
+    passed at all (CLI default = every ambient layer), "" means load none."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(
+        os.path.expanduser("~"), ".claude")
+    known = [
+        ("user", os.path.join(home, "settings.json"),
+         "Die persoenliche Konfiguration des Operators auf diesem PC."),
+        ("project", os.path.join(ROOT, ".claude", "settings.json"),
+         "Die eigene .claude/settings.json des Repos - hier leben die Build-Loop-Hooks."),
+        ("local", os.path.join(ROOT, ".claude", "settings.local.json"),
+         "Ungetrackte lokale Overrides des Repos."),
+    ]
+    if sources is None:
+        allowed, why = {"user", "project", "local"}, "kein --setting-sources: der CLI-Default laedt alles"
+    else:
+        allowed = {x.strip() for x in str(sources).split(",") if x.strip()}
+        why = "--setting-sources %s" % (('"%s"' % sources) if sources == "" else sources)
+    out = []
+    for key, path, note in known:
+        out.append({"layer": key, "path": _rel(path), "abs": path,
+                    "exists": os.path.exists(path),
+                    "included": key in allowed, "note": note, "reason": why})
+    return out
+
+
+def _hook_rows(path, layer, included):
+    """Flatten one settings file's hook map into (event, matcher, command) rows.
+
+    A hook is the sharpest end of a settings layer - it runs a command on the
+    worker's machine - so the matrix lists them individually rather than saying
+    "3 hooks". EXCLUDED rows are listed too, and that is the whole point: seeing
+    that the operator's rtk hook is present-but-excluded is the answer to a very
+    different question than not seeing it at all."""
+    raw = _read_text(path)
+    if raw is None:
+        return []
+    try:
+        obj = json.loads(raw)
+    except ValueError:
+        return [{"event": "?", "matcher": "", "command": "(Datei ist kein gueltiges JSON)",
+                 "origin": _rel(path), "layer": layer, "included": included, "broken": True}]
+    rows = []
+    hooks = obj.get("hooks") if isinstance(obj, dict) else None
+    if not isinstance(hooks, dict):
+        return rows
+    for event in sorted(hooks):
+        for grp in hooks[event] if isinstance(hooks[event], list) else []:
+            if not isinstance(grp, dict):
+                continue
+            for h in grp.get("hooks") or []:
+                if not isinstance(h, dict):
+                    continue
+                rows.append({
+                    "event": event, "matcher": grp.get("matcher") or "*",
+                    "command": str(h.get("command") or "")[:300],
+                    "timeout": h.get("timeout"),
+                    "origin": _rel(path), "layer": layer, "included": bool(included),
+                })
+    return rows
+
+
+def _disables_hooks(path):
+    """True when a settings file sets disableAllHooks. Never raises."""
+    try:
+        raw = _read_text(path)
+        return bool(raw) and json.loads(raw).get("disableAllHooks") is True
+    except Exception:                                        # noqa: BLE001
+        return False
+
+
+BRIEF_ARG_MARKER = "<brief>"
+
+
+def preview(surface_key, cfg=None):
+    """What a spawn on this surface ACTUALLY runs, with provenance.
+
+    argv comes from the same builder the real spawn calls, so it cannot drift.
+    The system-prompt VALUE is replaced by a marker - it is several KB and is
+    shown in full in its own editor - and `brief` carries its source file, byte
+    count and content hash so the owner can confirm the running text is the text
+    he edited. Never raises: this is a diagnostic, and a diagnostic that dies
+    when something is wrong is worthless exactly when it is needed."""
+    s = _BY_KEY.get(surface_key)
+    if not s:
+        return {"error": "unbekannte Surface: %s" % surface_key}
+    agent = s["agent"]
+    m = meta(agent)
+    body = brief(agent)
+    apath = os.path.join(AGENTS, "%s.md" % agent)
+    araw = _read_text(apath)
+    sf = settings_file(agent)
+    out = {
+        "key": s["key"], "agent": agent, "label": s["label"],
+        "builder": s["builder"], "cwd": s["cwd"],
+        "brief": {
+            "source": _rel(apath) if araw is not None else "built-in default (daemon/harness.py)",
+            "exists": araw is not None,
+            "file_sha256": _sha(araw) if araw is not None else "",
+            # the RESOLVED text is what the process is handed - hash that too,
+            # because the ask protocol is spliced in after the file is read
+            "resolved_sha256": _sha(body), "resolved_chars": len(body),
+            "ask_protocol": bool(m.get("ask_protocol")),
+        },
+        "settings_layer": {"path": _rel(sf) if sf else "", "active": bool(sf),
+                           "declared": m.get("settings") or "",
+                           "note": ("" if sf or not m.get("settings") else
+                                    "Die Datei ist deklariert, laedt aber nicht (kein gueltiges JSON) - "
+                                    "die CLI wuerde sie STILL ignorieren.")},
+        "layers": _claude_layers(m.get("setting_sources")),
+        "errors": errors(),
+    }
+    # -- the argv, from the one real builder -------------------------------
+    try:
+        if surface_key == "pm":
+            import copilot
+            argv, role_in_turn = copilot.build_argv("<model>", "<session-id>", BRIEF_ARG_MARKER)
+            out["note"] = ("Der Rollen-Prompt reist als --append-system-prompt." if not role_in_turn
+                           else "cmd.exe-Fallback aktiv: die Rolle wird dem Turn vorangestellt "
+                                "statt als --append-system-prompt uebergeben.")
+        else:
+            import drivers
+            cfg = dict(cfg or {"type": "claude"})
+            cfg.setdefault("perm", "acceptEdits")
+            argv = drivers.build_argv(agent, cfg, BRIEF_ARG_MARKER,
+                                      session_id="<session-id>", adopted_source=None)
+            out["note"] = ("--model erscheint nur, wenn die Karte ein Modell gewaehlt hat; "
+                           "--resume nur ab dem zweiten Turn.")
+        out["argv"] = [str(a) for a in argv]
+        # THE EXEC FORM, not just the logical argv. drivers._cmd_line rewrites
+        # argv[0] before spawning: a `claude.cmd` shim is replaced by the real
+        # bin\claude.exe (or node + cli.js), because routing a .cmd through
+        # cmd.exe mangles quoted arguments - that is what once ATE --resume and
+        # made every worker start with a fresh mind. A preview that showed only
+        # the pre-rewrite form would hide the single most consequential thing
+        # about how this process actually starts.
+        import drivers as _d
+        exec_argv = _d._cmd_line(list(argv))
+        out["exec_form"] = ("argv-list" if _d.argv_form_safe(argv[0])
+                            else "cmd.exe-string (Argumente koennen verstuemmelt werden)")
+        out["exec"] = ([str(a) for a in exec_argv] if isinstance(exec_argv, list)
+                       else [str(exec_argv)])
+        out["exec_rewritten"] = bool(out["exec"] and out["exec"][0] != out["argv"][0])
+    except Exception as e:                                   # noqa: BLE001
+        out["argv"] = []
+        out["argv_error"] = "%s: %s" % (type(e).__name__, str(e)[:200])
+    # -- the hook matrix ---------------------------------------------------
+    rows = []
+    disabled_by = []
+    for lay in out["layers"]:
+        rows += _hook_rows(lay["abs"], lay["layer"], lay["included"])
+        if lay["included"] and _disables_hooks(lay["abs"]):
+            disabled_by.append(lay["path"])
+    if sf:
+        rows += _hook_rows(sf, "explicit", True)
+        if _disables_hooks(sf):
+            disabled_by.append(_rel(sf))
+    out["hooks"] = rows
+    out["hooks_active"] = sum(1 for r in rows if r.get("included"))
+    # `disableAllHooks` is in the settings schema, so the owner can set it in the
+    # editor - and then this matrix would list hooks that never fire. We do NOT
+    # model its precedence: nothing here has been probed against the real CLI,
+    # and this file's whole job is to stop being confidently wrong. So say the
+    # flag is set and that the list below is therefore unreliable, rather than
+    # guessing which rows it kills.
+    out["hooks_disabled_by"] = disabled_by
+    return out
+
+
+def preview_all(cfg_for=None):
+    """Every surface, previewed. `cfg_for` may map a surface key to the driver
+    cfg a real spawn would use, so the preview shows that card's actual model
+    instead of a placeholder."""
+    return [preview(s["key"], (cfg_for or {}).get(s["key"])) for s in SURFACES]
+
+
+def document():
+    """Everything /harness serves: the editable documents + the previews."""
+    agents, sets = [], {}
+    for s in SURFACES:
+        agents.append(agent_doc(s["agent"]))
+        key = (meta(s["agent"]) or {}).get("settings")
+        if key and key not in sets:
+            sets[key] = settings_doc(key)
+    return {
+        "surfaces": SURFACES,
+        "agents": agents,
+        "settings": [sets[k] for k in sorted(sets)],
+        "previews": preview_all(),
+        "errors": errors(),
+    }
+
+
 if __name__ == "__main__":
-    print(json.dumps(describe(), indent=2))
+    import sys
+    if "--preview" in sys.argv:
+        print(json.dumps(preview_all(), indent=2, ensure_ascii=False))
+    else:
+        print(json.dumps(describe(), indent=2))
