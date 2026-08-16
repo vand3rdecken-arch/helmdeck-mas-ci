@@ -2112,7 +2112,11 @@ def activity():
     """The DAU narrative: what's running now, what's next, what needs you, and
     the blockers - all from live card state, plus the recent activity feed."""
     import sessions
-    tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
+    # PRESENTED, not stored: "arbeitet gerade an X" was a lie for any card whose
+    # turn had died - it reads `running` in the store until the reconciler heals
+    # it, so the narrative claimed work was in flight AND left the card out of
+    # "needs you". present() derives the truth at read time (invariant I2).
+    tracks = [sessions.present(t) for t in sessions.list_tracks() if not t.get("archived")]
     st = _loopstate()
 
     def lbl(t):
@@ -2142,10 +2146,16 @@ def activity():
     # NOT that - it's stuck/failed, listed only under blockers, never double-counted.
     # A card waiting on its own background task is nobody's move but the machine's,
     # so it must not pad the owner's to-do count either.
-    needs = [lbl(t) for t in tracks
-             if t.get("status") == "submitted"
-             or (t.get("status") == "needs_you" and t.get("waiting_on") != "background")]
-    blockers = [lbl(t) for t in tracks if t.get("status") == "bounced"]
+    #
+    # Both buckets come out of the ONE derivation (sessions.owner_blockers),
+    # split by reason: re-deriving "blocked on you" per surface is exactly what
+    # let this narrative and the glasses feed answer the same question
+    # differently. It also picks up the case neither of them had - a card whose
+    # turn DIED, still stored as `running`, which no status test can see.
+    _STUCK = ("gate", "conflict", "failed")
+    needs, blockers = [], []
+    for t, b in sessions.owner_blockers(tracks):
+        (blockers if b["reason"] in _STUCK else needs).append(lbl(t))
     rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
                    and t.get("mode") not in ("human", "teach", "cowork")),

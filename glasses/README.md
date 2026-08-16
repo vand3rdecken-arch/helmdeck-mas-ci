@@ -38,9 +38,33 @@ additive surfaces, focus-based navigation, no touch).
    - **Glance token** — the value from step 1.
 3. Save. The home screen loads live data. Config is stored in `localStorage`.
 
-The token grants **read-only** access to a compact glance (needs-you list +
+The token grants **read-only** access to a compact glance (blocked-on-you list +
 capacity + SoW margin). It never carries write access and is independent of the
 session-cookie auth used by the desktop UI.
+
+## What "needs you" means here
+
+`needs_you` is **every card blocked on the human**, not just the parked ones —
+the daemon derives it in exactly one place (`sessions.owner_blockers`), which is
+also what the board and the PM narrative read. Each entry carries a `reason` and
+a one-line `detail`, and the list arrives sorted worst-news-first:
+
+| `reason` | the card is… |
+|---|---|
+| `gate` | held on Review by a **red quality gate** |
+| `conflict` | held on Review by an **open merge conflict** |
+| `failed` | a dead dispatch, a swept turn, or bounced back by you |
+| `question` | **asking you** something and parked on the answer |
+| `review` | gate green, **resting on Review** for your accept |
+| `delivered` | finished, handed back for your accept |
+
+A card waiting on its own **background task** is deliberately absent — that one
+is the machine's move, not yours. So is an un-started backlog card: that is
+work, not a blocker.
+
+Cards whose turn **died** are included. Lifecycle is derived from the runtime's
+own signals, so a card stuck behind a dead process appears the moment it is
+read, rather than whenever the reconciler next sweeps.
 
 ## Desktop smoke test
 
