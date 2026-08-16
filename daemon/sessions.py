@@ -1454,6 +1454,10 @@ def _accept_machine(t, lane, actor, log):
     events.emit("lane", t["id"], frm="review", to="done")
     _say_card(t, _i18n.t("say.machineAccepted"))
     import notify; notify.card_event(t, "done")
+    try:
+        import pm; pm.on_card_done(t["id"])   # re-judge the golden triangle at event time
+    except Exception:
+        pass
     return t
 
 
@@ -2285,6 +2289,10 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         _say_card(t, _i18n.t(_LANDED.get(kind, "say.landed.plain")) + (
             "" if not _dh else _i18n.t("say.deployOk" if _dh.get("ok") else "say.deployFailed")))
         import notify; notify.card_event(t, "done")
+        try:
+            import pm; pm.on_card_done(tid)   # re-judge the golden triangle at event time
+        except Exception:
+            pass
         if t.get("connector"):
             import connectors, checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))

@@ -1000,6 +1000,18 @@ class H(BaseHTTPRequestHandler):
                         goal=body.get("goal"), model=body.get("model", ""))))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
+            if p == "/pm/reconcile":
+                # Owner-triggered when a golden-triangle corner is RED: gather real
+                # evidence behind the corner and re-plan (pm.reconcile_corner). The
+                # agent supplies facts; the gate re-derives the corner (no monkey patch).
+                if user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import pm
+                try:
+                    return self._send(200, json.dumps(pm.reconcile_corner(
+                        body.get("corner", ""), actor=user["name"])))
+                except Exception as e:
+                    return self._send(500, json.dumps({"error": str(e)[:300]}))
             if p == "/chat":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
