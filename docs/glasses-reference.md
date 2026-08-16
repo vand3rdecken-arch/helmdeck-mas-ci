@@ -29,7 +29,10 @@ building**, don't trust this page as current on the platform side.
 - **The glasses webapp cannot capture and cannot run in the background.** Both
   verified, not assumed. → §3.
 - **SDK access is much smaller than "partner approval"** — a GitHub PAT for the
-  packages, plus Developer mode (and possibly a preview form). → §5.
+  packages, plus Developer mode (and possibly a preview form). → §5. **And the
+  MIC needs none of it**: the glasses microphone is plain Bluetooth HFP via
+  standard Android APIs, not a DAT module, and the 0.8.0 artifacts are already
+  cached on this machine. → §11.7.
 - **HelmDeck's `glasses/` app is already ~80% conformant** with Meta's real
   display guidelines; four concrete deltas remain. → §6.
 - The proven pairing/auth model is **valet tickets + device-code + anchor
@@ -509,6 +512,11 @@ both before estimating any companion work.
 Developer mode on?"** Recheck the version first — two releases in two months, and
 the research itself says *"recheck before building"*.
 
+⚠ **Both halves of that answered on 2026-08-17 — read §11.7 before treating this
+as work.** The 0.8.0 artifacts are already cached on this machine (offline, no
+token), and the MICROPHONE is not in the SDK at all — it is plain Bluetooth HFP
+through standard Android APIs. A PAT is only the gate on an UNCACHED version.
+
 What the SDK would buy that we cannot otherwise have: pushing text/images/lists/
 buttons/video **to the lens** from a phone app, and the glasses **mic**. What it
 does not need to buy: voice output (§4).
@@ -628,7 +636,7 @@ toolkit contradicts itself in those three places — the guidelines win.
 
 | Step | Verdict from the sources |
 |---|---|
-| **SDK access check** | Two questions, not one: (a) a GitHub PAT with `read:packages` that resolves `com.meta.wearable:mwdat-*` — without it the build fails at dependency resolution even for unrelated changes; (b) admission to Meta's developer preview for *device* access, which one source calls a form. Then Developer mode (tap App version 5×). Confirm the current DAT version first — v0.8.0 on 2026-06-25 and moving fast. Germany is supported. §5 |
+| **SDK access check** | **Largely ANSWERED — see §11.7 before acting on this row.** The 0.8.0 artifacts are already in this machine's Gradle cache (resolve offline, no token), and the MIC is not a DAT module at all. A PAT is only needed to fetch an UNCACHED version. Original framing, still true for that case: (a) a GitHub PAT with `read:packages` resolves `com.meta.wearable:mwdat-*`; (b) Developer mode (tap App version 5×). Germany is supported. §5, §11.7 |
 | **Proactive notification** | Cannot come from the webapp — no background execution, no notification API (§3.2). It must originate in the daemon. The proven channel is `outbox/events/` (2 s poll, atomic write, consume-before-send), and the JID trap is the thing that will silently eat it. §4.3, §3.3 |
 | **Voice reading** | SETTLED: server-side edge-tts → ogg/opus mono 32k → `[[voice:…]]` over WhatsApp. Not device TTS — the toolkit has none, and the SDK path would drag in the HFP audio downgrade. Independent of SDK access. §4 |
 | **Companion app** | Only if something needs the glasses' *mic* or a *native lens push*. It is a sensing layer, never a renderer: *"the native app never draws a pixel on the glasses"* (`native-companion-plan.md:57`). If built: backend-driven config, `safe {}` everywhere, full FGS type set, and the Android-14 typed-FGS decision written down. §2.4, §3.4 |
@@ -733,10 +741,11 @@ account.
    to predate this card entirely — see §10.5.
 2. ~~Register the org on the Wearables Developer Center~~ **Already done** —
    org "Tien Duy Vo Team" exists (`devcenter/1317266500388880/`).
-3. Generate a GitHub PAT (classic) with `read:packages`; store via
-   `GITHUB_TOKEN` or `local.properties` — never commit it. **Still open** —
-   not dispensed anywhere in the Dev Center UI; it's a GitHub-side token,
-   unrelated to the Meta login.
+3. ~~Generate a GitHub PAT (classic) with `read:packages`~~ **NOT NEEDED for the
+   work actually in front of us — see §11.7.** The 0.8.0 AARs are already in
+   this box's Gradle cache and resolve offline, and the microphone is not a DAT
+   module at all. Only mint one to pull an UNCACHED version (0.9.0+); store via
+   `GITHUB_TOKEN` or `local.properties`, never commit it.
 4. On the owner's phone: Meta AI app → Settings → App Info → tap App version
    ×5 → confirm Developer Mode. **Not checked this pass.**
 5. Re-check the DAT version pin before any build — confirmed **0.9.0**,
@@ -936,7 +945,9 @@ glance surface re-reads the same few sentences constantly.
   is offline, and every surface falls back to text. Speech may never take the
   answer away.
 
-**TALKING to the agent — still walled.** `mic-test/verdict.md`, on-device
+**TALKING to the agent — walled in the WEBAPP, open on the phone.** (This
+paragraph originally ended "…blocked on the PAT". It was wrong; §11.7 below is
+the correction and supersedes it.) `mic-test/verdict.md`, on-device
 2026-07-13: *"the MRBD webview denies all capture — Mic no, Sprache-to-text no,
 Kamera no."* Meta's web path grants display, Neural Band, IMU, GPS, storage —
 **no mic**. No webapp code changes this. That same file's section *"Context that
@@ -944,16 +955,60 @@ reframes the conclusion (owner was right)"* names the only route: the **mobile
 SDK path gives a PHONE app the glasses mic** (Bluetooth HFP, 8 kHz beamformed),
 so *"in-glasses voice capture is buildable as an Android phone app track"*.
 
-So voice-in **is** the companion app, and it is blocked on exactly one thing the
-owner must do: a **GitHub PAT (classic) with `read:packages`** (§10.4 step 3).
-Without it `com.meta.wearable:mwdat-*` does not resolve and no DAT code compiles.
+So voice-in **is** the companion app.
 
-**The daemon side of voice-in is already done and needs no PAT.** The companion's
-whole contract is: capture → STT → `POST /glance/talk {message: "<transcript>"}`
-→ receive `{reply, voice, question}` → play `voice`. That endpoint exists, is
-verified, and is transport-agnostic — it does not care whether the words came
-from a DAT mic, the phone mic, or Meta's own assistant. When the PAT lands, the
-native app plugs into a loop that is already proven end to end.
+### 11.7 ⚠ CORRECTION 2026-08-17 — voice-in was NEVER blocked on the PAT
+
+The paragraph that used to stand here said voice-in was *"blocked on exactly one
+thing the owner must do: a GitHub PAT"*. **That was wrong**, and the owner
+caught it with one question: *"but isn't it already installed when I build
+companion app for glasses?"* Two independent errors, both now checked on this
+machine rather than reasoned about:
+
+**1. The SDK is already here.** `glass-crud-harness/android/app/build.gradle.kts`
+declares `mwdat-core:0.8.0` and `mwdat-camera:0.8.0`, and both are sitting in
+this box's Gradle cache from that build:
+`~/.gradle/caches/modules-2/files-2.1/com.meta.wearable/` — 7.5 MB and 6.9 MB
+AARs, verified as valid uncorrupted zips with intact `classes.jar` and
+`AndroidManifest.xml`. Gradle resolves those offline. No token is needed for
+0.8.0; a token is only needed to fetch a version that is NOT cached (0.9.0+).
+The token itself was used once at that build and never persisted — it is in no
+`local.properties`, no `gradle.properties`, no env var.
+
+**2. The microphone is not a DAT API at all.** This is the bigger error.
+`android-dat-research.md` finding 2, adversarially verified 3-0, says it
+outright:
+
+> **Mic**: Bluetooth **HFP, 8 kHz mono only**, routed with standard Android 12+
+> APIs (`setCommunicationDevice(TYPE_BLUETOOTH_SCO)` + `MODE_IN_COMMUNICATION`)
+> — **not a DAT API**. 5-mic beamforming happens on-device.
+
+Confirmed from two other directions: `mwdat-core` contains **zero** audio/mic
+classes across its 892 classes, and Meta's own Android integration page lists
+only `mwdat-core`, `mwdat-camera`, `mwdat-display`, `mwdat-mockdevice` — **there
+is no audio artifact to download**. The glasses mic is an ordinary Bluetooth
+headset mic; the SDK is for camera and lens-display.
+
+The `read:packages` requirement (§5, §10.1) is REAL — it is just about fetching
+SDK *artifacts*, which were already fetched. The mistake was conflating "the SDK
+needs a token" with "voice needs the SDK". **Voice input needs no PAT, no Meta
+approval, and no DAT module.**
+
+**What actually constrains voice-in**, from the same verified list:
+- **HFP and A2DP are mutually exclusive** (finding 3): while the mic is live,
+  ALL glasses audio output drops to telephone quality. So the loop must be
+  listen → *stop listening* → then speak. Never both at once. This is a design
+  constraint on §11.6's playback, not a blocker.
+- 8 kHz mono: fine for speech-to-text, useless for anything else.
+- The real remaining cost is that a native Android app must exist and be built,
+  and **an APK cannot be built from a card worktree** (`DEPLOY.md` §2, NDK path
+  length) — it must build from a short real path such as `C:\hd\app`.
+
+**The daemon side is already done.** The companion's whole contract is:
+capture → STT → `POST /glance/talk {message: "<transcript>"}` → receive
+`{reply, voice, question}` → play `voice`. That endpoint exists, is verified,
+and is transport-agnostic — it does not care whether the words came from the
+HFP mic, the phone mic, or Meta's own assistant.
 
 ⚠ Do NOT re-add the ticket registry when building it (§11.1). One device, one
 existing `glance_token`.
