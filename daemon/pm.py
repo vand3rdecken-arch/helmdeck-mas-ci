@@ -128,6 +128,35 @@ def economics():
     }
 
 
+def _system_state():
+    """Real WORLD state the board otherwise can't see: what's been PROVISIONED
+    OUTSIDE the card lanes (users/accounts, registration). A card agent that set
+    up users changes the world, not a card's lane - and _snapshot() only carries
+    lanes, so without this the planner re-scopes work that is already done (the
+    'board didn't know about the users' gap). FACTS only; the planner and the
+    gate derive scope from them, they are never a stamped verdict."""
+    lines = []
+    try:
+        import auth
+        users = auth.list_users()
+        roles = {}
+        for u in users:
+            r = u.get("role", "?")
+            roles[r] = roles.get(r, 0) + 1
+        lines.append("USERS: %d Konto/Konten (%s)" % (
+            len(users), ", ".join("%d×%s" % (n, r) for r, n in sorted(roles.items())) or "keine"))
+    except Exception:
+        pass
+    try:
+        import events
+        reg = events.settings().get("registration")
+        if reg:
+            lines.append("REGISTRATION: " + json.dumps(reg, ensure_ascii=False)[:200])
+    except Exception:
+        pass
+    return "\n".join(lines) or "(keine gesonderten System-Fakten)"
+
+
 def _pace(econ):
     """Turns/day used for timelines: explicit quota cap, else measured velocity,
     else a conservative default so a fresh board still gets a timeline."""
@@ -306,6 +335,102 @@ def _gate_triangle(out, econ, est_turns, pace):
                   or "Plan ist nicht abnahmereif (offene Entscheidung / unklarer Scope).")
 
 
+def _triage_shape(plan):
+    """The ok/blocked SHAPE of the golden triangle as a stable dict, for detecting
+    a corner that crossed the line. None when there is nothing to compare (no plan,
+    or a legacy plan without a triage block)."""
+    tri = (plan or {}).get("triage") or {}
+    if not tri:
+        return None
+    return {k: ("blocked" if tri.get(k) == "blocked" else "ok")
+            for k in ("budget", "timeline", "scope")}
+
+
+def on_card_done(tid):
+    """EVENT hook (sessions calls it when a card lands in Done): re-judge the golden
+    triangle NOW rather than waiting for the daily plan. A completion moves real
+    signals - economics, and via _system_state the world a card just changed. Cheap
+    by default: live_plan() re-measures with NO model call. Only when a corner
+    CROSSES the ok<->blocked line do we spend one re-scope (make_plan), so a normal
+    completion costs zero planning turns. Threaded so the accept path never blocks
+    on a model call (mirrors review_burn)."""
+    threading.Thread(target=_on_card_done, args=(tid,), daemon=True,
+                     name="pm-card-done").start()
+
+
+def _on_card_done(_tid):
+    import events
+    try:
+        if not get_goal():
+            return
+        shape = _triage_shape(live_plan())   # re-measures budget/timeline/scope, no LLM
+        if shape is None:
+            return
+        with _resolving_lock:
+            st = _loopstate()
+            prev = st.get("plan_triage_shape")
+            st["plan_triage_shape"] = shape
+            _save_loopstate(st)
+        if not prev or prev == shape:
+            return                            # first observation, or no corner flipped
+        flipped = [k for k in ("budget", "timeline", "scope") if prev.get(k) != shape.get(k)]
+        _activity("planned", "Karte fertig - Dreieck bewegt sich (%s), plane neu."
+                  % ", ".join(flipped))
+        make_plan(actor="pm")                 # the flip is the ONLY re-scope spend
+    except Exception as e:
+        try:
+            events.log("pm", "on_card_done error: %s" % e)
+        except Exception:
+            pass
+
+
+RECONCILE_PROMPT = """A corner of the plan's golden triangle (Budget/Timeline/Scope) is RED.
+Your job is NOT to declare it green - it is to gather OBSERVABLE EVIDENCE about the REAL
+state behind that corner, so the plan can be re-derived from FACTS instead of a stale
+snapshot. Look at what has ACTUALLY been provisioned/built (users/accounts, features,
+deploys) - not what a card's lane claims. Report only what you can verify.
+
+Corner: %s
+Goal: %s
+
+Reply with ONLY this JSON:
+{"corner":"%s",
+ "evidence":["observable fact you verified", ...],
+ "already_done":["scope items that are in fact already DONE in the real world"],
+ "still_open":["what genuinely remains"]}"""
+
+
+def reconcile_corner(corner, actor="owner"):
+    """OWNER-triggered when a triangle corner is RED: dispatch an agent to gather
+    EVIDENCE about the real world behind that corner (did the users actually get set
+    up? is the feature live?), fold that evidence into the plan, then RE-PLAN so the
+    planner re-scopes and _gate_triangle re-derives the corner from FACTS.
+
+    Law-abiding (NO MONKEY PATCHES): the agent never stamps a corner's colour - it
+    supplies the facts the planner was missing; the corner stays DERIVED, folded in
+    at this event, mutated at one owner (_gate_triangle)."""
+    import copilot
+    corner = (corner or "").strip().lower()
+    if corner not in ("budget", "timeline", "scope"):
+        return {"error": "corner must be budget|timeline|scope"}
+    goal = get_goal()
+    prompt = (RECONCILE_PROMPT % (corner, goal or "(kein Ziel gesetzt)", corner)
+              + "\n\nSYSTEM STATE:\n" + _system_state()
+              + "\n\nBOARD SNAPSHOT:\n" + copilot._snapshot())
+    ev = _ask(prompt)
+    ev = ev if isinstance(ev, dict) else {}
+    plan = latest_plan() or {}
+    plan.setdefault("reconcile", {})[corner] = {
+        "at": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor,
+        "evidence": ev.get("evidence") or [],
+        "already_done": ev.get("already_done") or [],
+        "still_open": ev.get("still_open") or []}
+    _write_artifact(plan)                 # persist evidence so brief() reads it as prev
+    b = brief()                           # re-scope on the evidence; gate re-derives
+    return {"corner": corner, "evidence": plan["reconcile"][corner],
+            "triage": b.get("triage"), "triage_reasons": b.get("triage_reasons")}
+
+
 def _ask(prompt, model=""):
     import copilot, drivers
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
@@ -416,6 +541,19 @@ def _memory(prev, econ):
     return "\n".join(lines)
 
 
+def _reconcile_block(prev):
+    """When the owner ran a corner reconciliation (reconcile_corner), the vetted
+    EVIDENCE it gathered is fed back to the planner as FACTS to trust over the raw
+    snapshot - so the re-plan actually re-scopes on the real world (e.g. 'users
+    already set up' stops being counted as open scope)."""
+    rec = (prev or {}).get("reconcile") or {}
+    if not rec:
+        return ""
+    return ("\n\nRECONCILED EVIDENCE (the owner ran a check on a RED triangle corner - "
+            "trust these observed FACTS over the snapshot when scoping):\n"
+            + json.dumps(rec, ensure_ascii=False)[:1500])
+
+
 def brief(goal=None, model=""):
     """The PM/CTO report: milestones with timelines, next actions, budget grounded
     in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
@@ -433,6 +571,9 @@ def brief(goal=None, model=""):
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
               + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(quota)
+              + "\n\nSYSTEM STATE (provisioned OUTSIDE the card lanes - derive scope from THIS too, "
+                "not just the cards):\n" + _system_state()
+              + _reconcile_block(prev)
               + _memory(prev, econ)
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
@@ -453,6 +594,10 @@ def brief(goal=None, model=""):
         ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
     est_turns = cum
     out["economics"] = econ
+    # carry forward any owner-run corner reconciliations so the evidence persists
+    # across re-plans (and stays visible to the NEXT brief's _reconcile_block).
+    if (prev or {}).get("reconcile"):
+        out["reconcile"] = prev["reconcile"]
     out["goal"] = goal
     out["model"] = cli_model or "default"
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1253,6 +1398,11 @@ def _plan_gate_notice(st):
     msg = head + ((" Gate: %s" % gate) if gate else "")
     if issues:
         msg += "\n" + "\n".join("• " + i for i in issues[:4])
+    if red:
+        # never dead-end: a red corner is ACTIONABLE - offer the evidence check
+        # that can re-derive it (reconcile_corner), not just a hold.
+        msg += ("\nSag „prüfe %s“, dann hole ich die echte Evidenz zu der roten Ecke "
+                "nach und plane damit neu." % corner[red[0]])
     _say(msg)
 
 
@@ -1820,6 +1970,9 @@ def _tick():
             st = _loopstate(); st["last_plan_ts"] = time.time()
             st["last_plan_day"] = _today()          # daily planning cadence
             st.pop("scope_baseline", None)          # today's plan re-baselines the triangle
+            shape = _triage_shape(live_plan())      # re-baseline the flip detector too
+            if shape:
+                st["plan_triage_shape"] = shape
             _save_loopstate(st)
         elif state == "OVERVIEW":
             _build_overview(latest_plan() or {})         # build Dashboard + Timeline
