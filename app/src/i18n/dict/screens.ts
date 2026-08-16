@@ -96,6 +96,7 @@ export const screens: Dict = {
   "harness.unsaved": { de: "ungespeichert", en: "unsaved" },
   "harness.restore": { de: "Zurückrollen", en: "Roll back" },
   "harness.brokenFiles": { de: "Harness-Dateien mit Fehlern", en: "Harness files failing to load" },
+  "harness.sourcesOff": { de: "(aus)", en: "(off)" },
 
   // ---- connectors ---------------------------------------------------------
   "connectors.everyMins": { de: "alle {n}m", en: "every {n}m" },

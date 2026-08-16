@@ -283,7 +283,7 @@ export default function LoopMapScreen() {
                     </View>
                     <Text selectable style={{ color: t.txtSecondary, fontSize: 11, fontFamily: MONO }}>{a.source}</Text>
                     <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontFamily: MONO }}>
-                      --setting-sources {a.setting_sources === "" ? '""' : (a.setting_sources ?? "(aus)")}
+                      --setting-sources {a.setting_sources === "" ? '""' : (a.setting_sources ?? tr("harness.sourcesOff"))}
                       {a.settings ? "  --settings " + a.settings : ""}
                     </Text>
                   </View>
