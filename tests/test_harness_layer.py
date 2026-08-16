@@ -150,19 +150,35 @@ def test_loop_state():
     # (a) BUILD only when the change could actually move the native fingerprint.
     #     A card worktree can never hold the APK (app/.gitignore ignores all of
     #     /android), so before this every quiet card was told to go build one.
-    check(loop_state.build_stale(["daemon/server.py", "app/src/app/board.tsx"]) is False,
-          "a pure JS/daemon change never nags for a native rebuild")
-    check(loop_state.build_stale([]) is False, "no touched files -> nothing to rebuild")
-
-    # (a2) WHICH SIGNAL ANSWERS. There are two, and they are not equal: the
-    #      fingerprint is derived from the real native inputs, `touched` is
-    #      reconstructed from `git status` and cannot see app/android/ at all.
-    #      Ordering the heuristic first let that blind spot VETO the
-    #      authoritative check (debt: build-stale-tracked-sources-only). Both
-    #      directions are pinned here, with both signals stubbed so the check is
-    #      deterministic on a box with no git-bash and no APK.
+    #
+    #     STUBBED, not ambient: build_stale() consults a REAL marker
+    #     (deploy/.native_fp) and a REAL fingerprint (git-bash hashing the
+    #     actual native sources) when either is available - and this repo's
+    #     own dev checkout (unlike a fresh card worktree, which never ships
+    #     natively) genuinely HAS shipped from here before. Found live: this
+    #     exact pair of checks passed in every card's isolated gate (a fresh
+    #     worktree has no marker, so the degraded/heuristic path always
+    #     answered) and only failed on the owner's real box, where a stale-
+    #     but-real marker made the AUTHORITATIVE path answer instead - correctly,
+    #     but not what these two lines are trying to pin. Stub both signals to
+    #     "" so the assertion is about the DEGRADED-path guess (what a fresh
+    #     card worktree actually sees) on every machine, not about whether
+    #     THIS checkout's native fingerprint happens to be stale right now.
     _fp, _mk = loop_state._native_fp, loop_state._ship_marker
     try:
+        loop_state._native_fp = lambda: ""
+        loop_state._ship_marker = lambda: ""
+        check(loop_state.build_stale(["daemon/server.py", "app/src/app/board.tsx"]) is False,
+              "a pure JS/daemon change never nags for a native rebuild")
+        check(loop_state.build_stale([]) is False, "no touched files -> nothing to rebuild")
+
+        # (a2) WHICH SIGNAL ANSWERS. There are two, and they are not equal: the
+        #      fingerprint is derived from the real native inputs, `touched` is
+        #      reconstructed from `git status` and cannot see app/android/ at all.
+        #      Ordering the heuristic first let that blind spot VETO the
+        #      authoritative check (debt: build-stale-tracked-sources-only). Both
+        #      directions are pinned here, with both signals stubbed so the check is
+        #      deterministic on a box with no git-bash and no APK.
         loop_state._native_fp = lambda: "AAA"
         loop_state._ship_marker = lambda: "BBB"
         check(loop_state.build_stale([]) is True,
