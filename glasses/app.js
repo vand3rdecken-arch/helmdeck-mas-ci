@@ -261,6 +261,85 @@
     });
   }
 
+  // ---- GLASS MODE: talk to the board agent ---------------------------------
+  // The half /glance cannot be. /glance is a database read - it shows WHAT is
+  // stuck. This asks the agent that can reason about it. Selection-only: the
+  // agent is briefed to end every turn with options, and a turn that arrives
+  // without them is shown as a dead end rather than silently swallowed.
+  var talkBusy = false;
+
+  function talkStart() { talk('Where do things stand, and what should I do next?'); }
+
+  function talk(message) {
+    if (talkBusy) return;
+    if (!cfg.base || !cfg.token) { toast('Not connected'); return; }
+    talkBusy = true;
+    setText('talk-reply', 'Thinking…');
+    setHTML('talk-options', '');
+    setText('talk-meta', '');
+    showScreen('talk');
+    fetch(cfg.base.replace(/\/+$/, '') + '/glance/talk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: cfg.token, message: message })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function (j) {
+      talkBusy = false;
+      renderTalk(j);
+    }).catch(function (e) {
+      talkBusy = false;
+      setText('talk-reply', String(e.message || e));
+      setHTML('talk-options', '');
+      // a failed turn must still leave a way forward, or the lens is a wall
+      var list = document.getElementById('talk-options');
+      var b = document.createElement('button');
+      b.className = 'list-item focusable';
+      b.setAttribute('data-action', 'talk-retry');
+      b.innerHTML = '<div class="li-task">Try again</div>';
+      list.appendChild(b);
+      focusFirst();
+    });
+  }
+
+  function renderTalk(j) {
+    setText('talk-reply', j.reply || '(no reply)');
+    // The agent is told this surface is advisory. If it tried to change the
+    // board anyway, SAY so - the owner must never believe a change landed.
+    var refused = (j.refused && j.refused.length) ? j.refused : null;
+    setText('talk-meta', refused ? 'not run: ' + refused.join(', ') : '');
+    document.getElementById('talk-meta').className =
+      'header-meta' + (refused ? ' warn' : '');
+    var list = document.getElementById('talk-options');
+    list.innerHTML = '';
+    var qs = (j.question && j.question.questions) || [];
+    var opts = qs.length ? (qs[0].options || []) : [];
+    if (!opts.length) {
+      // the agent ignored its brief - do not strand the owner
+      var b = document.createElement('button');
+      b.className = 'list-item focusable';
+      b.setAttribute('data-action', 'talk-retry');
+      b.innerHTML = '<div class="li-task">Ask again</div>'
+        + '<div class="li-sub">no options came back</div>';
+      list.appendChild(b);
+      focusFirst();
+      return;
+    }
+    opts.forEach(function (o) {
+      var el = document.createElement('button');
+      el.className = 'list-item focusable';
+      el.setAttribute('data-action', 'talk-pick');
+      el.setAttribute('data-label', o.label);
+      el.innerHTML = '<div class="li-task">' + esc(o.label) + '</div>'
+        + (o.description ? '<div class="li-sub">' + esc(o.description) + '</div>' : '');
+      list.appendChild(el);
+    });
+    focusFirst();
+  }
+
   // ---- screen management ----------------------------------------------------
   function showScreen(id, isBack) {
     var screens = document.querySelectorAll('.screen');
@@ -318,6 +397,10 @@
       case 'open-detail': renderDetail(btn.getAttribute('data-id')); showScreen('detail'); break;
       case 'open-decide': openDecide(btn.getAttribute('data-id')); break;
       case 'pick': pick(btn.getAttribute('data-label')); break;
+      case 'talk-start': talkStart(); break;
+      case 'talk-retry': talkStart(); break;
+      // the tapped option IS the next message - that is the whole conversation
+      case 'talk-pick': talk(btn.getAttribute('data-label')); break;
       case 'save-settings': doSaveSettings(); break;
     }
   }

@@ -39,6 +39,12 @@ DEFAULTS = {
     # Even on, it can only PICK options the worker itself wrote - never free
     # text, never a card that is not currently asking.
     "glance_decide": False,
+    # GLASS MODE: may the glasses TALK to the board agent (POST /glance/talk)?
+    # Default OFF and a THIRD switch on purpose: unlike reading or answering,
+    # every tap here spends plan quota on a real agent turn, so a leaked token
+    # would burn budget. The turn is advisory - board actions are dropped, never
+    # executed (copilot.chat allow_actions=False).
+    "glance_talk": False,
     # Un-versioned files copied into every new worktree. A worktree holds only
     # TRACKED files, so git-ignored local toolchain config (SDK paths, local
     # env) would be missing and builds that work by hand fail inside a card.
