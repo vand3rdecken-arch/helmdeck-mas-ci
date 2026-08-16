@@ -122,10 +122,19 @@ BADPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
 # var, publishing the owner's private board costs a history rewrite of a public
 # repo. HELMDECK_PUBLISH_ALLOW_PRIVATE=1 is the deliberate "yes, I looked at
 # them, publish anyway" - it must be a decision, never a default.
+# docs/glasses-reference.md is the same class from a different direction. It is
+# TRACKED on purpose (force-added past the `docs` ignore): a card's worktree
+# holds only TRACKED files, so a "mandatory reference for every further card"
+# that isn't in git is invisible exactly where it is needed. But it is distilled
+# from the owner's PRIVATE projects - absolute home paths, his WhatsApp-bridge
+# setup, the LID identity mechanics, which hardware he owns. No credential, so
+# checks 2 and 3 wave it through: the same gap .attachments/ falls through.
+# Named explicitly rather than ignoring all of docs/, because docs/ also holds
+# genuinely public files (repo-map, POSITIONING) that are already published.
 say "checking for private user-content paths in $BRANCH history"
 PRIVPATHS="$(git log "$BRANCH" --pretty=format: --name-only --diff-filter=A \
   | sort -u \
-  | grep -iE '(^|/)\.attachments/|(^|/)\.copilot_attachments/|(^|/)daemon/recordings/|(^|/)daemon/checkpoints/' \
+  | grep -iE '(^|/)\.attachments/|(^|/)\.copilot_attachments/|(^|/)daemon/recordings/|(^|/)daemon/checkpoints/|(^|/)docs/glasses-reference\.md' \
   || true)"
 if [ -n "$PRIVPATHS" ]; then
   printf '    %s\n' $PRIVPATHS

@@ -9,6 +9,15 @@ a card/machine/PM spawn resolves, and the traps that were measured rather than
 reasoned (`--settings` excludes nothing; a settings file the CLI dislikes is
 ignored in SILENCE).
 
+Touching the GLASSES layer - `glasses/`, `/glance`, voice output, proactive
+notification, a companion app, the Meta SDK? **`docs/glasses-reference.md` is
+MANDATORY reading first** (owner decree). Two real reference projects on this
+machine already paid for these answers: the glasses webview has NO
+`speechSynthesis` and no background execution (both measured on-device), voice
+output is SETTLED as server-rendered speech over the WhatsApp channel, and the
+trap register there is dated and specific. Read the ACTUAL source it cites -
+same rule as `docs/paseo-adoption-plan.md`.
+
 ## The build loop (enforced by hooks)
 
 This repo has the same loop control as the glass harness. State is computed
