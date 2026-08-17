@@ -227,6 +227,66 @@ def test_cancel_interrupt_keeps_alive():
     drivers.cancel("t-keep")
 
 
+def test_mcp_config_bridges_grant_to_server():
+    """A `mcp__<server>__*` grant pre-authorises tools but does not register the
+    server; --setting-sources project drops the user layer it lives in. build_argv
+    must bridge the two from the user's ~/.claude.json via --mcp-config, or the
+    grant authorises a ghost the card can never reach (the windows-mcp bug)."""
+    import json as _j
+    saved = drivers._user_mcp_servers
+    drivers._user_mcp_servers = lambda: {
+        "windows-mcp": {"type": "stdio", "command": "uvx",
+                        "args": ["windows-mcp", "serve"], "env": {}}}
+    try:
+        arg = drivers._mcp_config_arg({"allowed_tools": ["mcp__windows-mcp__*"]})
+        check(bool(arg) and arg[0] == "--mcp-config",
+              "a windows-mcp grant injects a --mcp-config flag")
+        srv = _j.loads(arg[1]).get("mcpServers", {})
+        check(list(srv) == ["windows-mcp"],
+              "the granted server's definition is carried (got %s)" % list(srv))
+        check(drivers._mcp_config_arg({}) == [], "no grant -> no --mcp-config")
+        check(drivers._mcp_config_arg({"allowed_tools": ["Bash", "Read"]}) == [],
+              "non-mcp grants -> no --mcp-config")
+        check(drivers._mcp_config_arg({"allowed_tools": ["mcp__ghost__*"]}) == [],
+              "a grant naming an undefined server injects nothing (reported, not invented)")
+    finally:
+        drivers._user_mcp_servers = saved
+
+
+def test_mcp_config_never_invents_a_command():
+    """An unresolvable bare command is passed verbatim - the daemon warns, it does
+    not fabricate a path (which would fail confusingly instead of diagnosably)."""
+    import json as _j
+    saved = drivers._user_mcp_servers
+    drivers._user_mcp_servers = lambda: {
+        "srv": {"command": "definitely-not-a-real-binary-xyz", "args": []}}
+    try:
+        arg = drivers._mcp_config_arg({"allowed_tools": ["mcp__srv__*"]})
+        cmd = _j.loads(arg[1])["mcpServers"]["srv"]["command"]
+        check(cmd == "definitely-not-a-real-binary-xyz",
+              "unresolvable command stays verbatim (got %r)" % cmd)
+    finally:
+        drivers._user_mcp_servers = saved
+
+
+def test_build_argv_threads_mcp_config():
+    """The end-to-end wiring: a claude-desktop-shaped cfg produces a spawn argv
+    that carries BOTH the grant and the server registration."""
+    saved = drivers._user_mcp_servers
+    drivers._user_mcp_servers = lambda: {
+        "windows-mcp": {"command": "uvx", "args": ["windows-mcp"]}}
+    try:
+        argv = drivers.build_argv("card-worker",
+                                  {"allowed_tools": ["mcp__windows-mcp__*"]},
+                                  "BRIEF", exe="claude")
+        check("--allowedTools" in argv, "the tool grant is on the argv")
+        check("--mcp-config" in argv, "build_argv threads --mcp-config into the spawn")
+        plain = drivers.build_argv("card-worker", {"type": "claude"}, "BRIEF", exe="claude")
+        check("--mcp-config" not in plain, "a plain-claude card injects no --mcp-config")
+    finally:
+        drivers._user_mcp_servers = saved
+
+
 if __name__ == "__main__":
     test_reuse()
     test_timeout_is_bounded()
@@ -237,5 +297,8 @@ if __name__ == "__main__":
     test_tool_grant_forces_respawn()
     test_structured_error_and_nightshift()
     test_cancel_interrupt_keeps_alive()
+    test_mcp_config_bridges_grant_to_server()
+    test_mcp_config_never_invents_a_command()
+    test_build_argv_threads_mcp_config()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)
