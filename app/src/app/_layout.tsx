@@ -9,8 +9,11 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
+import { boot } from "@/boot";
+import { KernelProvider } from "@/kernel/react";
+import type { Kernel } from "@/kernel";
 import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
@@ -193,6 +196,13 @@ function useCacheGate() {
   return restored;
 }
 
+// Provide the kernel only when boot succeeded; otherwise render children raw so
+// the nav falls back to its hard-coded arrays (useSurfaces returns [] with no
+// provider). The shell must never depend on the kernel to render.
+function WithKernel({ kernel, children }: { kernel: Kernel | null; children: ReactNode }) {
+  return kernel ? <KernelProvider kernel={kernel}>{children}</KernelProvider> : <>{children}</>;
+}
+
 export default function RootLayout() {
   useAnalyticsBoot();
   usePushWiring();
@@ -203,6 +213,12 @@ export default function RootLayout() {
   useSilentOta();
   usePresenceHeartbeat();
   const restored = useCacheGate();
+  // Boot the plugin kernel once (the "app" profile registers the nav surfaces).
+  // Defensive: if boot throws, kernel is null and the nav falls back to its
+  // hard-coded arrays — the app shell must never brick on a kernel error.
+  const kernel = useMemo<Kernel | null>(() => {
+    try { return boot("app"); } catch { return null; }
+  }, []);
   // Desktop first run: the instance isn't serving yet, so onboarding owns the
   // window instead of dropping the user on a board that cannot load.
   const showOnboard = useShowOnboard();
@@ -229,6 +245,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
+        <WithKernel kernel={kernel}>
         <ThemeProvider name="dark">
           <SafeAreaProvider>
             <StatusBar style="light" />
@@ -245,6 +262,7 @@ export default function RootLayout() {
             <PromptHost />
           </SafeAreaProvider>
         </ThemeProvider>
+        </WithKernel>
       </QueryClientProvider>
     </GestureHandlerRootView>
   );

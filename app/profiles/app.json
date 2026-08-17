@@ -1,0 +1,7 @@
+{
+  "name": "app",
+  "plugins": [
+    "engines.claude",
+    "nav.tabs"
+  ]
+}

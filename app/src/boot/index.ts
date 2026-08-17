@@ -13,11 +13,13 @@ import type { Plugin, ProfileDoc } from "@/kernel";
 
 import { CORE_PLUGINS, CORE_IDS } from "./core";
 import { boardSurface } from "@/plugins/surfaces/board";
+import { tabsNav } from "@/plugins/surfaces/tabs";
 import { claudeEngine } from "@/plugins/engines/claude";
 import { copilotEngine } from "@/plugins/engines/copilot";
 import { deepseekEngine } from "@/plugins/engines/deepseek";
 
 import phase2 from "../../profiles/phase2.json";
+import appProfile from "../../profiles/app.json";
 import store from "../../profiles/store.json";
 import owner from "../../profiles/owner.json";
 import demo from "../../profiles/demo.json";
@@ -26,6 +28,7 @@ import headless from "../../profiles/headless-companion.json";
 /** All profile docs shipped in the bundle, by name. */
 export const PROFILE_DOCS: Record<string, ProfileDoc> = {
   phase2: phase2 as ProfileDoc,
+  app: appProfile as ProfileDoc,
   store: store as ProfileDoc,
   owner: owner as ProfileDoc,
   demo: demo as ProfileDoc,
@@ -39,6 +42,7 @@ export const PROFILE_DOCS: Record<string, ProfileDoc> = {
  */
 export const AVAILABLE_PLUGINS: Record<string, Plugin> = {
   "surfaces.board": boardSurface,
+  "nav.tabs": tabsNav,
   "engines.claude": claudeEngine,
   "engines.copilot": copilotEngine,
   "engines.deepseek": deepseekEngine,
