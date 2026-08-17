@@ -1,0 +1,7 @@
+{
+  "name": "phase2",
+  "plugins": [
+    "engines.claude",
+    "surfaces.board"
+  ]
+}
