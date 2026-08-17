@@ -77,6 +77,15 @@ _DEFAULT_MACHINE = (
     "and if you are truly stuck, name the exact blocker and the one thing the "
     "owner must decide or provide. When it is done, end with a short DELIVERED "
     "summary of what actually changed on the machine."
+    "\n\n"
+    "Long-running foreground processes (a dev server like `wrangler dev` / `npm "
+    "run dev`, a `serve`, a watcher, anything that stays in the foreground and "
+    "never exits) MUST be started DETACHED - `Start-Process` in PowerShell, or a "
+    "background shell - NEVER as a synchronous command you wait on. A synchronous "
+    "foreground server never returns, so the call hangs your whole turn (and, on "
+    "a desktop card, holds the single screen/keyboard lock and starves every "
+    "other machine card). Launch it detached, then poll for readiness (a port "
+    "check, `Get-CimInstance`, an HTTP request) to confirm it came up."
 )
 
 # name -> (body, frontmatter). ask_protocol is on for the two worker surfaces,

@@ -578,6 +578,16 @@ def _env(cfg, card=None):
     # first desktop turn (measured: windows-mcp needed the longer window to move
     # off `pending`). setdefault so the daemon's own env / a driver's env wins.
     env.setdefault("MCP_TIMEOUT", "60000")                # 60s for a cold MCP server to connect
+    # Per-CALL MCP tool bound (same "bound the TOOL, not the turn" rule as the
+    # Bash timeouts above). A synchronous windows-mcp call that never returns - a
+    # foreground `wrangler dev` launched through PowerShell, a wedged WMI query -
+    # otherwise hung the whole turn until the 900s silence watchdog, and for a
+    # DESKTOP card that whole time it holds the single _desktop_lock and starves
+    # every other desktop card (measured: a wedged COWORK turn bounced a machine
+    # card). Bounding each call kills the wedge at the TOOL layer, hands the agent
+    # an error to adapt to, and lets the turn end - releasing the lock in minutes,
+    # not the full silence window. setdefault so the daemon/driver env still wins.
+    env.setdefault("MCP_TOOL_TIMEOUT", "300000")          # 5 min ceiling per MCP tool call
     if card:
         env.update(card)                                  # per-card overlay (_card_env)
     extra = cfg.get("env") or {}
