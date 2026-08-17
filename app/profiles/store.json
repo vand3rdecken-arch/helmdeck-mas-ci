@@ -1,0 +1,17 @@
+{
+  "name": "store",
+  "plugins": [
+    "engines.claude",
+    "surfaces.board",
+    "surfaces.chat",
+    "surfaces.sessions",
+    "surfaces.history",
+    "surfaces.settings",
+    "tools.notify",
+    "tools.analytics"
+  ],
+  "patch": {
+    "surfaces.settings": { "showMachineControl": false },
+    "tools.analytics": { "optOutPath": "more.privacy" }
+  }
+}
