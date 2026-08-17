@@ -660,10 +660,11 @@ DEBT = [
                 "old raw 'windows-mcp' substring match that made a passive "
                 "Screenshot card take the exclusive cursor lock). A second "
                 "dispatch/steer that needs "
-                "desktop control while the lock is held is refused outright "
-                "(RuntimeError), which the existing dispatch/steer paths "
-                "already surface as a bounced card / needs_you note - it does "
-                "NOT queue or auto-retry.",
+                "desktop control while the lock is held now QUEUES (bounded "
+                "blocking acquire, desktop_lock_wait_s, default 960s - sized "
+                "to outlive one healthy turn plus the wedge ceilings) and only "
+                "bounces with a visible reason after the wait expires "
+                "(2026-08-17; was refused outright).",
         "why_it_bites": "(1) The lock is process-local: it is correct only "
                         "because the daemon runs as a single evicting-"
                         "singleton process (server.serve's "
@@ -676,22 +677,21 @@ DEBT = [
                         "for windows-mcp (read-only vs control) and fail-safe, "
                         "but a future driver granting equivalent desktop "
                         "control under a differently-named MCP server would "
-                        "still silently bypass the guard. (3) "
+                        "still silently bypass the guard. (3) [PAID in part "
+                        "2026-08-17: contention queues instead of bouncing] "
                         "Fail-fast means a legitimate second desktop card just "
                         "bounces/parks; nothing tells the owner to retry once "
                         "the first one frees the lock.",
         "trigger": "the daemon is ever run with more than one process/worker; "
                    "a new desktop-capable driver is added whose tool patterns "
-                   "don't contain the string 'windows-mcp'; two desktop cards "
-                   "dispatched back-to-back (second one bounces silently "
-                   "unless the owner reads the note)",
+                   "don't contain the string 'windows-mcp'; a desktop turn "
+                   "outlives desktop_lock_wait_s (the queued card then bounces "
+                   "with the waited-and-gave-up note)",
         "fix": "If multi-process ever happens: move the lock to a file lock "
                "or DB row (same durable-state pattern as turn_active) instead "
-               "of in-memory. Replace the substring match with an explicit "
+               "of in-memory. Replace the capability check with an explicit "
                "per-driver 'desktop: true' flag in settings.json's drivers "
-               "config, checked instead of grepping allowed_tools. Consider "
-               "an automatic re-dispatch/notification when the lock frees, "
-               "instead of leaving the bounced card for the owner to notice.",
+               "config, checked instead of parsing allowed_tools patterns.",
         "order": 23,
     },
     {

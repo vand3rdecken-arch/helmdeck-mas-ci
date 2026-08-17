@@ -568,10 +568,33 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
             print("recorder failed to start:", e)
     desktop = _uses_desktop_control(cfg)
     if desktop and not _desktop_lock.acquire(blocking=False):
-        raise RuntimeError(
-            "Desktop control (windows-mcp) is already in use by another card - "
-            "only one card may drive the mouse/keyboard/screen at a time. "
-            "Wait for that turn to finish, then retry.")
+        # Contended: QUEUE instead of failing fast. Dispatch/steer already run
+        # on background threads and threading.Lock has its own wait queue, so a
+        # bounded blocking acquire turns "second desktop card bounces and sits
+        # until the owner notices" into "it waits its turn and runs" - with no
+        # new state that could drift (the lock's queue IS the waiter list).
+        # Bounded because the holder can be wedged: the wait must outlive one
+        # healthy turn AND the wedge ceilings that end a sick one (5-min
+        # MCP_TOOL_TIMEOUT, 900s silence watchdog) - past that, bounce with the
+        # visible reason as before (_dispatch_failed / steer's error path).
+        try:
+            wait_s = float(events.settings().get("desktop_lock_wait_s") or 0) or 960.0
+        except Exception:
+            wait_s = 960.0
+        try:
+            from actionlog import ActionLog
+            ActionLog(t["run_dir"]).log(
+                "note", "Desktop control busy (another card is driving the "
+                        "screen) - queued, waiting up to %ds for it to free." % wait_s)
+        except Exception:
+            pass
+        events.emit("desktop_wait", t["id"], wait_s=wait_s)
+        if not _desktop_lock.acquire(timeout=wait_s):
+            raise RuntimeError(
+                "Desktop control (windows-mcp) is already in use by another card - "
+                "only one card may drive the mouse/keyboard/screen at a time. "
+                "Waited %ds for it to free, then gave up - retry when the other "
+                "card's turn ends." % wait_s)
     try:
         with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
             return drivers.run(cfg, t, prompt)
