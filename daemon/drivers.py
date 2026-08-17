@@ -572,6 +572,12 @@ def _env(cfg, card=None):
     # daemon's own env and a driver's `env` in settings.json still win.
     env.setdefault("BASH_DEFAULT_TIMEOUT_MS", "120000")   # 2 min default / command
     env.setdefault("BASH_MAX_TIMEOUT_MS", "300000")       # 5 min ceiling the agent can't exceed
+    # MCP server STARTUP grace. A stdio server launched via `uvx <pkg>` cold-
+    # starts by resolving+downloading the package the first time, which blows
+    # past the CLI's short default and the server lands `failed` on a card's
+    # first desktop turn (measured: windows-mcp needed the longer window to move
+    # off `pending`). setdefault so the daemon's own env / a driver's env wins.
+    env.setdefault("MCP_TIMEOUT", "60000")                # 60s for a cold MCP server to connect
     if card:
         env.update(card)                                  # per-card overlay (_card_env)
     extra = cfg.get("env") or {}
@@ -707,6 +713,109 @@ def _opts_sig(cfg, t):
             tuple(cfg.get("allowed_tools") or []))
 
 
+def _user_mcp_servers():
+    """The user-scope MCP servers from ~/.claude.json - the SAME file
+    `claude mcp add -s user` writes, and the single source of truth for a
+    globally-configured server like windows-mcp. Returns {} on any error so a
+    spawn is never broken by a missing or malformed config (test_never_breaks
+    _a_spawn is a law here)."""
+    try:
+        path = os.path.join(os.path.expanduser("~"), ".claude.json")
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("mcpServers") or {}
+    except Exception:
+        return {}
+
+
+def _resolve_cmd(cmd):
+    """Absolute path for a bare MCP-server command (e.g. `uvx`), robust to the
+    daemon NOT inheriting the user's Python/uv Scripts dir on PATH - a tray or
+    service launch usually doesn't, and that is exactly what turns an injected
+    server from `pending` (connecting) into `failed` (measured: bare `uvx`
+    failed, the absolute path connected). Tries PATH first, then the standard
+    user-local install locations uv/uvx/pipx use. Returns None if nothing
+    matches - the caller keeps the bare command and warns LOUDLY, so a miss is
+    diagnosable instead of a silent failure to connect."""
+    hit = shutil.which(cmd)
+    if hit:
+        return hit
+    import glob
+    home = os.path.expanduser("~")
+    dirs = [os.path.join(home, ".local", "bin"),
+            os.path.join(home, ".cargo", "bin")]
+    dirs += glob.glob(os.path.join(home, "AppData", "Local", "Programs",
+                                   "Python", "Python*", "Scripts"))
+    dirs += glob.glob(os.path.join(home, "AppData", "Roaming", "Python",
+                                   "Python*", "Scripts"))
+    existing = [d for d in dirs if os.path.isdir(d)]
+    return shutil.which(cmd, path=os.pathsep.join(existing)) if existing else None
+
+
+def _mcp_config_arg(cfg):
+    """`--mcp-config` for the MCP servers a driver's tool grants actually need.
+
+    THE BUG THIS CLOSES: an `allowed_tools` pattern `mcp__<server>__*` only
+    PRE-AUTHORIZES a server's tools - it does not REGISTER the server. Cards
+    spawn with `--setting-sources project` (harness.cli_args), which drops the
+    USER settings layer where a globally-configured server like windows-mcp
+    lives. So the grant named a server the process never loaded, and the tools
+    simply did not exist - measured, not reasoned: with only `--setting-sources
+    project` the CLI's system/init lists no windows-mcp at all, and a card's
+    ToolSearch finds nothing however many times it looks. `--allowedTools
+    mcp__windows-mcp__*` was authorising a ghost.
+
+    THE FIX: bridge the grant to its definition from the ONE source of truth -
+    the user's own ~/.claude.json mcpServers - and hand it to the spawn via
+    `--mcp-config`, which is ADDITIVE and independent of --setting-sources (so
+    the personal rtk-hook/model/skill layer stays dropped; only the named
+    server comes back). Proven at the real CLI 2.1.207: with this flag the
+    server appears in system/init; without it, it is absent. No second copy of
+    the config to drift.
+
+    A bare server command (`uvx`) is resolved to an absolute path via the
+    daemon's own PATH, because the daemon is often launched from the tray or a
+    bare shell and the spawned CLI cannot be assumed to find it otherwise -
+    verbatim if PATH can't resolve it (never invent a path). A server the grant
+    NAMES but the user config does not DEFINE is reported, never dropped in
+    silence (HARNESS.md's measured trap: the CLI ignores a bad config quietly)."""
+    try:
+        wanted = set()
+        for pat in cfg.get("allowed_tools") or []:
+            m = _re.match(r"^mcp__(.+?)__", pat)
+            if m:
+                wanted.add(m.group(1))
+        if not wanted:
+            return []
+        avail = _user_mcp_servers()
+        picked = {}
+        for n in wanted:
+            if n not in avail:
+                continue
+            d = dict(avail[n])
+            cmd = d.get("command")
+            if cmd and os.path.basename(cmd) == cmd:      # bare name, no dir
+                resolved = _resolve_cmd(cmd)
+                if resolved:
+                    d["command"] = resolved
+                else:
+                    print("DRIVERS: MCP server '%s' command %r is not on the "
+                          "daemon PATH nor the usual user-local bins - it will "
+                          "likely fail to start; add its dir to the daemon PATH "
+                          "or the driver's env in settings.json." % (n, cmd))
+            picked[n] = d
+        missing = wanted - set(picked)
+        if missing:
+            print("DRIVERS: driver grants MCP server(s) not defined in "
+                  "~/.claude.json mcpServers - UNAVAILABLE to the card: %s"
+                  % ", ".join(sorted(missing)))
+        if not picked:
+            return []
+        return ["--mcp-config", json.dumps({"mcpServers": picked})]
+    except Exception as e:
+        print("DRIVERS: _mcp_config_arg skipped (%s)" % e)
+        return []
+
+
 def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None):
     """THE assembly point for a card/machine `claude` argv. ONE owner.
 
@@ -740,6 +849,11 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
         argv += ["--model", cfg["model"]]
     for pat in cfg.get("allowed_tools") or []:
         argv += ["--allowedTools", pat]
+    # A grant pre-authorises tools; this REGISTERS the server that owns them,
+    # because --setting-sources project drops the user layer it normally lives
+    # in (see _mcp_config_arg). Without it windows-mcp was a ghost the card
+    # could never reach.
+    argv += _mcp_config_arg(cfg)
     if session_id:
         argv += ["--resume", session_id]
         # An adopted card still pointing at its SOURCE session must not write

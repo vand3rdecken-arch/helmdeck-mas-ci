@@ -113,9 +113,24 @@ claude -p
   <<< harness.cli_args(agent) >>>        # --setting-sources … [--settings …]
   [--model <cfg.model>]                  # only if the card picked one
   [--allowedTools <pat>]…                # one pair per pattern
+  [--mcp-config <json>]                  # servers the grants need, from ~/.claude.json
   [--resume <session-id>]                # only from the second turn
   [--fork-session]                       # only if adopted_source == session_id
 ```
+
+`--mcp-config` is the fix for a grant that authorised a **ghost**: a pattern
+`mcp__windows-mcp__*` pre-authorises a server's tools, but `--setting-sources
+project` (above) drops the USER layer where a globally-configured server like
+windows-mcp actually lives, so the process never loaded it and the tools did not
+exist (measured at the CLI: `system/init` listed no such server; a card's
+ToolSearch found nothing however often it looked). `_mcp_config_arg` bridges the
+grant to its definition from the ONE source of truth — the user's own
+`~/.claude.json` `mcpServers` — and hands it over via the additive `--mcp-config`,
+so only the named server returns, not the personal rtk-hook/model/skill layer. A
+bare server command (`uvx`) is resolved to an absolute path (`_resolve_cmd`,
+robust to the daemon not inheriting the user's Python/uv Scripts dir on PATH — a
+bare `uvx` lands `failed`, the absolute path `pending`→connects) and a cold
+`uvx` start is given room by `MCP_TIMEOUT=60000` in `drivers._env`.
 
 `copilot.build_argv(cli_model, sid, system)` (`daemon/copilot.py:832`) returns
 `(argv, role_in_turn)` and its flag order genuinely differs - `--model` /
