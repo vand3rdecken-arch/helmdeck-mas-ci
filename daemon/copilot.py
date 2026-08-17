@@ -49,6 +49,7 @@ The action objects (inside the ```actions array) are zero or more of:
    {"type": "set_driver", "card": "<id or fragment>", "driver": "claude-desktop"}  - switch a card's execution engine. Use "claude-desktop" to grant it real mouse/keyboard/screen control (windows-mcp) for a task that needs to drive a browser/app on this PC - "claude" (plain) has no GUI tools and any attempt to use one dies with a permission error the card can never resolve itself. This is a CAPABILITY GRANT, not a cosmetic setting: the card's turns are screen-recorded on a desktop-capable driver, and the switch is refused while a turn is running. Use ONLY when the owner explicitly asks to give a card desktop/screen access, or when a card is visibly stuck because it tried a windows-mcp tool and got denied (admin: policy.chat_admin_roles).
    {"type": "resolve_conflict", "card": "<id or fragment>"}  - a card bounced on Review with a REAL <<<<<< merge conflict (message says "Konfliktmarkierungen ... im Worktree"). This sets up/reuses the conflict markers in the card's OWN worktree and STEERS that card's worker to merge them by plain EDITING (edit-only, no git); on the next move to done the harness commits + merges. You DO NOT edit code yourself, but you CAN dispatch the card's agent to - so this is how real code conflicts get resolved. Prefer this (not resolve_blocker) whenever the owner asks to resolve/fix a real <<<<<< conflict (admin: policy.chat_admin_roles).
    {"type": "machine_task", "task": "what should happen on the PC", "cwd": "C:/optional/folder", "priority": "high", "dispatch": true}  - THE way to get anything done on this Windows machine that is not repo work: opening/controlling apps, files and folders, system settings, printers, installs, diagnostics, scripts. It files a card whose workplace is a real folder on the PC (no git worktree, no branch) and starts an agent there that CAN run commands. YOU never execute anything yourself - you dispatch the agent that does, exactly like resolve_conflict. cwd defaults to the owner's home folder; give one when the task is about a specific place. The card is audited and the owner accepts it like any other (roles: policy.machine.roles, default owner).
+   {"type": "direct_task", "task": "what to build", "repo": "C:/optional/repo", "priority": "high", "dispatch": true}  - Paseo-style DIRECT build: files a card whose workplace is the repo's LIVE working tree (repo defaults to default_repo) - no worktree, no branch, no merge, NO GATE. The agent edits the real tree the owner is looking at, with the repo's own CLAUDE.md and hooks. Use ONLY when the owner explicitly asks to build/fix DIRECTLY (in place, ohne Worktree/Review) - for normal delegated work the isolated card path (file_card) stays the default. One direct card per tree runs at a time; a second one queues. (roles: policy.machine.roles, default owner)
    {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "clarify_goal", "text": "the fact, stated plainly"}  - the owner just answered one of the PM PLAN's open_questions, or corrected/refined a fact about the CURRENT GOAL, right here in chat (e.g. "es ist der geschlossene Track, nicht intern" / "Firmenkonto"). Record it as GROUND TRUTH for the planner and RE-PLAN immediately, so the very next plan stops re-asking/re-guessing that fact - the owner should never have to go edit the Ziel field by hand for something they just told you. Use whenever the reply answers a PM_PLAN open_questions/gate item or corrects a stated assumption; do NOT use for casual chat that isn't actually a plan-relevant fact.
@@ -386,6 +387,35 @@ def _run_action(a, actor, role="operator"):
             return "machine_task: %s" % e
         return ("Maschinen-Aufgabe gestartet (%s, Ordner %s) - der Agent arbeitet auf dem "
                 "Rechner, du siehst alles auf der Karte." % (t["id"], t.get("worktree")))
+    if kind == "direct_task":
+        # Paseo-style direct build: the repo's LIVE tree is the workplace (see
+        # sessions.new_direct_task - no worktree/branch/merge/gate, serialized
+        # per tree). Same policy switch/roles as machine work - it IS work on
+        # the owner's machine, just aimed at the repo.
+        pol = sessions.machine_policy()
+        roles = pol.get("roles") or ["owner"]
+        if not pol.get("enabled", True):
+            return ("Direkt-Builds sind aus (policy.machine.enabled=false). Der Owner "
+                    "kann sie mit policy.machine.enabled=true wieder freigeben.")
+        if role not in roles:
+            return _denied("direct_task", role, roles, "policy.machine.roles")
+        task = (a.get("task") or "").strip()
+        if not task:
+            return "direct_task: sag mir in einem Satz, was direkt gebaut werden soll."
+        repo = a.get("repo") or events.settings().get("default_repo")
+        if not repo:
+            return ("direct_task: kein Repo bekannt - settings default_repo setzen "
+                    "(configure) oder das Repo explizit mitgeben.")
+        try:
+            t = sessions.new_direct_task(
+                repo, task, actor=actor,
+                priority=a.get("priority", "medium"),
+                dispatch=a.get("dispatch", True) is not False)
+        except RuntimeError as e:
+            return "direct_task: %s" % e
+        return ("Direkt-Build gestartet (%s) - der Agent arbeitet OHNE Worktree direkt "
+                "im Baum %s. Kein Gate, kein Merge: was er ändert, ist sofort da."
+                % (t["id"], t.get("worktree")))
     if kind == "file_card":
         repo = events.settings().get("default_repo")
         if not repo:
