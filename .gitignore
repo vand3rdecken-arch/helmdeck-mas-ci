@@ -110,3 +110,4 @@ glasses/worker/node_modules/
 # machine. Same rule as push.env: never committed.
 *.dev.vars
 .dev.vars
+daemon/policy_live.json
