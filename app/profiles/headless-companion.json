@@ -1,0 +1,7 @@
+{
+  "name": "headless-companion",
+  "plugins": [
+    "engines.claude",
+    "tools.notify"
+  ]
+}

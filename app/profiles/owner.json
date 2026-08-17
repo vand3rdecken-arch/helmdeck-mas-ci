@@ -1,0 +1,17 @@
+{
+  "name": "owner",
+  "extends": ["store"],
+  "plugins": [
+    "engines.copilot",
+    "engines.deepseek",
+    "surfaces.machine",
+    "surfaces.pm",
+    "surfaces.automation",
+    "surfaces.recordings",
+    "surfaces.connectors",
+    "surfaces.processes"
+  ],
+  "patch": {
+    "surfaces.settings": { "showMachineControl": true }
+  }
+}
