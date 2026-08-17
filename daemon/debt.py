@@ -1005,14 +1005,19 @@ DEBT = [
                 "in boot/policies.ts CHARTER_DEFAULTS under KEYS.POLICIES. This "
                 "CONTRADICTS the CLAUDE.md law 'never weaken the fixed harness' "
                 "and the 'core refuses unload' enforcement (now removed).",
-        "why_it_bites": "The daemon-side enforcement is still hard-wired code that "
-                        "owns its own on/off (charter.py, gate, auth, audit) and "
-                        "does NOT yet read the seeded PolicySet, does NOT emit "
-                        "reconfiguration track entries, and cannot be swapped by "
-                        "user/agent. Until it does, 'full dynamism + universal "
-                        "tracking' is true only in the app kernel, not end-to-end; "
-                        "a super-agent 'swap' of a governance module changes app "
-                        "state but not what the daemon actually enforces.",
+        "why_it_bites": "The daemon-side enforcement is still MOSTLY hard-wired "
+                        "code that owns its own on/off. PROGRESS: policy.py is the "
+                        "control plane (swap() mirrors a 'reconfig' event into the "
+                        "append-only events sink); GET /policy + POST /policy/swap "
+                        "expose it; the app hydrates the seeded modules from it via "
+                        "a tracked swap; ONE real consumer now reads it "
+                        "(events.metrics wip_limit -> policy.get_policies, seeded "
+                        "from settings so non-divergent). REMAINING: gate / "
+                        "auth / economics / worktree enforcement still don't read "
+                        "the PolicySet; the APP kernel journal() is not yet "
+                        "mirrored into events (only daemon-side swaps are); and "
+                        "charter.py (the CONNECTOR SANDBOX, distinct from the "
+                        "instruction charter) stays human-only by design.",
         "trigger": "wiring the super-agent's reconfiguration authority; letting a "
                    "UI toggle a policy; any claim that governance is swappable",
         "fix": "Daemon-side: (1) mirror the app journal into the existing "
