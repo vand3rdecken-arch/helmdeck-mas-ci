@@ -6,11 +6,12 @@
 // Reachable at /kernel-demo. Not in primary nav; safe to keep during the
 // dual-path period (old (tabs) router still owns production navigation).
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Text, View } from "react-native";
 
 import { KernelProvider, useSurfaces } from "@/kernel/react";
 import { boot, dump } from "@/boot";
+import { hydratePolicies } from "@/boot/hydrate";
 
 function RegistryHost() {
   const surfaces = useSurfaces();
@@ -22,6 +23,14 @@ function RegistryHost() {
 
 export default function KernelDemo() {
   const kernel = useMemo(() => boot("phase2"), []);
+  // Hydrate seeded policy/charter from the daemon's canonical source — itself a
+  // tracked swap; falls back to the seeded defaults offline. Then dump the
+  // reconfiguration journal so the glass box is visible in dev.
+  useEffect(() => {
+    hydratePolicies(kernel).then(() => {
+      if (__DEV__) console.log("kernel journal:", kernel.journal());
+    });
+  }, [kernel]);
   // Surfaced once in the console so the resolved composition is inspectable.
   if (__DEV__) console.log(dump("phase2"));
   return (

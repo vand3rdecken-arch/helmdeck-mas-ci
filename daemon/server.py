@@ -378,6 +378,15 @@ class H(BaseHTTPRequestHandler):
                     {"setup_needed": not auth.list_users(), "user": user,
                      "registration": bool(reg.get("open") or reg.get("invite_code")),
                      "registration_open": bool(reg.get("open"))}))
+            if p == "/policy":
+                # Canonical seeded policy/charter (full-dynamism decree). The app
+                # hydrates KEYS.POLICIES/CHARTER from here instead of hardcoding,
+                # so daemon and app share ONE source. Read-only; mutate via
+                # POST /policy/swap so the change is tracked.
+                if not user or user["role"] == "client":
+                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                import policy
+                return self._send(200, json.dumps(policy.load()))
             if p.startswith("/glance/voice/"):
                 # The agent's answer as SPEECH. Same token as /glance; serving a
                 # rendered mp3 is strictly less than what /glance already hands
@@ -1032,6 +1041,24 @@ class H(BaseHTTPRequestHandler):
                                      daemon=True).start()
                 sid = auth.login(body["name"], body["password"])
                 return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+            if p == "/policy/swap":
+                # The ONLY policy/charter mutation over the wire. Routes through
+                # policy.swap so every change is mirrored into the append-only
+                # events sink (no untracked mutation) and is reversible via the
+                # returned `before`. Owner-only; agent-attributed swaps still
+                # obey agentMaySwap / the human-only capability sandbox.
+                if not user or user["role"] != "owner":
+                    return self._send(403, json.dumps({"error": "owner only"}))
+                import policy
+                try:
+                    before = policy.swap(body.get("section") or "policies",
+                                         body.get("patch") or {},
+                                         actor=body.get("actor") or "user",
+                                         note=body.get("note"))
+                except policy.PolicyDenied as e:
+                    return self._send(403, json.dumps({"error": str(e)}))
+                return self._send(200, json.dumps({"ok": True, "before": before,
+                                                   "policy": policy.load()}))
             if p == "/auth/login":
                 sid = auth.login(body.get("name", ""), body.get("password", ""))
                 if not sid:

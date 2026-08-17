@@ -44,6 +44,16 @@ def load():
     with _LOCK:
         if not os.path.exists(LIVE):
             doc = _seed()
+            # wipLimit has an existing owner (settings.capacity.wip_limit). Seed
+            # FROM it so the policy plane never diverges from the live board on
+            # first run; after that a tracked swap() owns the value.
+            try:
+                import events
+                sw = events.settings().get("capacity", {}).get("wip_limit")
+                if isinstance(sw, int):
+                    doc.setdefault("policies", {})["wipLimit"] = sw
+            except Exception:
+                pass
             _atomic_write(LIVE, doc)
             return doc
         return _read(LIVE)
