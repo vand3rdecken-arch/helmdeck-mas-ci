@@ -88,12 +88,46 @@ class GlassVoiceService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * Do we hold the microphone permission RIGHT NOW?
+     *
+     * This is not a nicety, it is the other half of the narrow-FGS decision.
+     * glasses-reference 3.4 states the rule as "either grant everything before
+     * Start, or declare narrowly - pick one and write it down". This service
+     * declares narrowly (foregroundServiceType=microphone), and the price of
+     * that choice is that on Android 14+ `startForeground` with a microphone
+     * type THROWS SecurityException when RECORD_AUDIO is not held. Unguarded,
+     * the very first launch before the owner grants the permission would take
+     * the service down with a crash, which is precisely the class of failure
+     * commit a722c49 chased in the reference project.
+     *
+     * Verified-by-absence caveat, stated honestly: the service is
+     * exported="false" (correct - no other app may start a mic service), so
+     * this path could NOT be exercised from adb. It is defended by construction
+     * rather than by test, and the first real on-device start is what will
+     * confirm it.
+     */
+    private fun hasMicPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
     override fun onCreate() {
         super.onCreate()
+        if (!hasMicPermission()) {
+            // Stop cleanly instead of crashing. The owner grants the permission
+            // in the app, then starts voice mode again.
+            Log.w(TAG, "RECORD_AUDIO not granted - refusing to start the mic service")
+            stopSelf()
+            return
+        }
         safe("foreground") { startForeground(NOTIF_ID, notification("Bereit")) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Re-checked here too, not just in onCreate: START_STICKY means Android
+        // can restart this service later, by which time the owner may have
+        // revoked the permission in Settings.
+        if (!hasMicPermission()) { stopSelf(); return START_NOT_STICKY }
         when (intent?.action) {
             ACTION_STOP -> { safe("stop") { releaseMic(); stopSelf() } }
             else -> safe("listen") { startListening() }
