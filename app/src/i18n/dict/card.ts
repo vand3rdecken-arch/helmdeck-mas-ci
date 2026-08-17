@@ -148,6 +148,13 @@ export const card: Dict = {
   "card.desktop.disable": { de: "🖥️ Desktop-Zugriff deaktivieren", en: "🖥️ Disable desktop control" },
   "card.desktop.hint": { de: "  (Agent steuert Maus/Tastatur/Bildschirm)",
                          en: "  (agent drives mouse/keyboard/screen)" },
+  // Feedback after flipping the driver: the tool grant is bound at process
+  // spawn, so it takes hold on the NEXT turn, not the running one (see
+  // drivers.build_argv / drop_session).
+  "card.desktop.toastOn": { de: "🖥️ Desktop-Zugriff aktiviert — wirkt ab deiner nächsten Nachricht",
+                            en: "🖥️ Desktop control on — takes effect on your next message" },
+  "card.desktop.toastOff": { de: "🖥️ Desktop-Zugriff deaktiviert — wirkt ab deiner nächsten Nachricht",
+                             en: "🖥️ Desktop control off — takes effect on your next message" },
   "card.menu.fork": { de: "Code forken", en: "Fork code" },
   "card.menu.forkChat": { de: "Konversation forken", en: "Fork conversation" },
   "card.menu.archive": { de: "Archivieren", en: "Archive" },

@@ -3647,6 +3647,14 @@ def update_track(tid, patch, actor="owner"):
                 log.log("note", "⚠ Desktop-Zugriff aktiviert (%s) von %s - "
                         "der Agent kann jetzt Maus/Tastatur/Bildschirm steuern, "
                         "Turns werden aufgezeichnet." % (changed["driver"], actor))
+            # A driver's tool grant is baked into the argv at spawn and can't be
+            # hot-swapped on a live process (drivers.apply_opts refuses it). The
+            # guard above already blocked the change if a turn was in flight, so
+            # any surviving session is IDLE - drop it now instead of leaving the
+            # stale old-grant process to linger until the next turn notices. The
+            # flip then takes hold on the very next message with no ghost process.
+            import drivers as _drivers
+            _drivers.drop_session(tid)
         # Flipping fast_track ON is itself a ship trigger, not just future turns:
         # a card can already be sitting on a finished-but-undeployed turn (owner
         # enables fast-track AFTER the turn ended), and the hook in _run_turn
