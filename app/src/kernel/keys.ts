@@ -32,9 +32,27 @@ export interface Surface {
   readonly title: string;
   /** route path used by expo-router / web navigator. */
   readonly path: string;
-  readonly component: ComponentType<Record<string, never>>;
-  /** tab/nav placement hint; absent = not in primary nav. */
-  readonly nav?: { group: "primary" | "more"; order: number; icon?: string };
+  /** the screen component. Optional for nav-only surfaces whose component is
+   *  owned by an expo-router file (the file-based router renders it, not us). */
+  readonly component?: ComponentType<Record<string, never>>;
+  /** the expo-router <Tabs.Screen> name for nav-only surfaces (= the route file). */
+  readonly route?: string;
+  /** tab/nav placement + presentation. absent = not in primary nav. */
+  readonly nav?: {
+    group: "primary" | "more";
+    order: number;
+    icon?: string;
+    /** i18n key for the label (rendered through the translator). */
+    labelKey?: string;
+    /** i18n key for a sidebar section header shown above this item. */
+    sectionKey?: string;
+    /** hidden from clients (owner/operator only). */
+    teamOnly?: boolean;
+    /** shown only in the desktop sidebar, not the phone bottom bar. */
+    desktopOnly?: boolean;
+    /** shown only on the phone bottom bar, not the desktop sidebar (e.g. More). */
+    phoneOnly?: boolean;
+  };
   /** service key ids required for this surface to be shown at all. */
   readonly requires?: readonly string[];
 }

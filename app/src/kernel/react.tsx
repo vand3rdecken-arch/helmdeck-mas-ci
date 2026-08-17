@@ -30,11 +30,12 @@ function useRegistry<T>(reg: Registry<T> | undefined): Registry<T> | undefined {
   return reg;
 }
 
-/** All surfaces contributed by loaded plugins, in nav order. */
+/** All surfaces contributed by loaded plugins, in nav order. Safe with no
+ *  KernelProvider above (returns []), so a consumer can fall back cleanly. */
 export function useSurfaces(): Surface[] {
-  const k = useKernel();
-  const reg = useRegistry(k.get(KEYS.SURFACES));
-  if (!reg) return [];
+  const k = useContext(KernelContext);
+  const reg = useRegistry(k?.get(KEYS.SURFACES));
+  if (!k || !reg) return [];
   return reg
     .list()
     .map((e) => e.value)

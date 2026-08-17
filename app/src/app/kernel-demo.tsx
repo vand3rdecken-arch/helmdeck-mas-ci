@@ -16,8 +16,8 @@ import { attachDaemonTrackSink } from "@/boot/tracksink";
 
 function RegistryHost() {
   const surfaces = useSurfaces();
-  const first = surfaces[0];
-  if (!first) return <Text style={{ color: "#fff", padding: 24 }}>no surfaces registered</Text>;
+  const first = surfaces.find((s) => s.component);
+  if (!first?.component) return <Text style={{ color: "#fff", padding: 24 }}>no renderable surface</Text>;
   const Screen = first.component;
   return <Screen />;
 }

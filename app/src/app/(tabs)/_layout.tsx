@@ -7,6 +7,7 @@ import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
 import { useT } from "@/i18n";
 import { tokens } from "@/theme/tokens";
+import { useSurfaces } from "@/kernel/react";
 
 const t = tokens.dark;
 const isWeb = Platform.OS === "web";
@@ -32,9 +33,6 @@ const NAV: NavItem[] = [
   { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", teamOnly: true },
   { name: "settings", labelKey: "nav.settings", icon: "settings-outline", teamOnly: true },
 ];
-// screens that are NOT phone bottom-bar tabs (hidden there, shown in sidebar)
-const DESKTOP_ONLY = new Set(["processes", "recordings", "sessions", "history", "connectors", "automation", "settings"]);
-
 /** Frosted glass bar for the mobile bottom tabs (real backdrop blur). */
 function GlassTabBar() {
   return (
@@ -129,15 +127,38 @@ function Sidebar({ state, navigation }: any) {
   );
 }
 
+// The bottom-bar / tab set, matching the hard-coded list 1:1. Used as the
+// FALLBACK when the kernel registry is empty (no KernelProvider / boot failed),
+// so the shell renders identically with or without the plugin kernel.
+type TabItem = { name: string; labelKey: string; icon: IconName; desktopOnly?: boolean; phoneOnly?: boolean };
+const TAB_FALLBACK: TabItem[] = [
+  { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
+  { name: "board", labelKey: "nav.board", icon: "grid-outline" },
+  { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
+  { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", desktopOnly: true },
+  { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline", desktopOnly: true },
+  { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", desktopOnly: true },
+  { name: "history", labelKey: "nav.history", icon: "time-outline", desktopOnly: true },
+  { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", desktopOnly: true },
+  { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", desktopOnly: true },
+  { name: "settings", labelKey: "nav.settings", icon: "settings-outline", desktopOnly: true },
+  { name: "more", labelKey: "nav.more", icon: "ellipsis-horizontal", phoneOnly: true },
+];
+
 export default function TabsLayout() {
   const tr = useT();
   const { width } = useWindowDimensions();
   const sidebar = isWeb && width >= 900;   // desktop nav shell vs phone bottom bar
-  // Remove a screen from the phone bottom bar entirely. Must use href:null, not
-  // a null tabBarButton — a null button still reserves a flex slot, so the four
-  // real tabs would be sized to 1/11 of the width and clip to "Bo…", "Da…".
-  const hideOnPhone = (name: string) =>
-    !sidebar && DESKTOP_ONLY.has(name) ? { href: null } : {};
+  // The tab set now comes from the kernel surface registry (nav.tabs plugin),
+  // falling back to TAB_FALLBACK when no kernel is provided — identical output.
+  const surfaces = useSurfaces();
+  const fromRegistry = surfaces
+    .filter((s) => s.route && s.nav)
+    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly }));
+  const tabItems: TabItem[] = fromRegistry.length ? fromRegistry : TAB_FALLBACK;
+  // Hiding a screen from the phone bottom bar uses href:null (see TAB_FALLBACK /
+  // the map below). A null tabBarButton still reserves a flex slot, so the real
+  // tabs would be sized to 1/11 of the width and clip to "Bo…", "Da…".
   const icon = (n: IconName) => ({ color, size }: { color: ColorValue; size: number }) =>
     <Ionicons name={n} color={color as string} size={size} />;
   return (
@@ -161,18 +182,19 @@ export default function TabsLayout() {
           when the app loads", so reordering alone would have put Dashboard
           first in the bar while the app still OPENED on the board - worse than
           either arrangement on its own. The two files were therefore swapped
-          (git mv) and the board now has its own named route, /(tabs)/board. */}
-      <Tabs.Screen name="index" options={{ title: tr("nav.dashboard"), tabBarIcon: icon("stats-chart-outline") }} />
-      <Tabs.Screen name="board" options={{ title: tr("nav.board"), tabBarIcon: icon("grid-outline") }} />
-      <Tabs.Screen name="needs" options={{ title: tr("nav.needsYou"), tabBarIcon: icon("notifications-outline") }} />
-      <Tabs.Screen name="processes" options={{ title: tr("nav.processes"), tabBarIcon: icon("git-network-outline"), ...hideOnPhone("processes") }} />
-      <Tabs.Screen name="recordings" options={{ title: tr("nav.recordings"), tabBarIcon: icon("videocam-outline"), ...hideOnPhone("recordings") }} />
-      <Tabs.Screen name="sessions" options={{ title: tr("nav.sessions"), tabBarIcon: icon("chatbubbles-outline"), ...hideOnPhone("sessions") }} />
-      <Tabs.Screen name="history" options={{ title: tr("nav.history"), tabBarIcon: icon("time-outline"), ...hideOnPhone("history") }} />
-      <Tabs.Screen name="connectors" options={{ title: tr("nav.connectors"), tabBarIcon: icon("sync-outline"), ...hideOnPhone("connectors") }} />
-      <Tabs.Screen name="automation" options={{ title: tr("nav.automation"), tabBarIcon: icon("git-branch-outline"), ...hideOnPhone("automation") }} />
-      <Tabs.Screen name="settings" options={{ title: tr("nav.settings"), tabBarIcon: icon("settings-outline"), ...hideOnPhone("settings") }} />
-      <Tabs.Screen name="more" options={{ title: tr("nav.more"), tabBarIcon: icon("ellipsis-horizontal"), ...(sidebar ? { href: null } : {}) }} />
+          (git mv) and the board now has its own named route, /(tabs)/board.
+          The set below is registry-driven (nav.tabs) with a 1:1 fallback. */}
+      {tabItems.map((item) => {
+        const hide =
+          (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly) ? { href: null } : {};
+        return (
+          <Tabs.Screen
+            key={item.name}
+            name={item.name}
+            options={{ title: tr(item.labelKey), tabBarIcon: icon(item.icon), ...hide }}
+          />
+        );
+      })}
     </Tabs>
   );
 }
