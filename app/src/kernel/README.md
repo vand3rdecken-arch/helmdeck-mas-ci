@@ -5,12 +5,24 @@ ships inside store-built RN). The app becomes a *composition of plugins*; the
 Python daemon stays the fixed harness the app talks to (a store app can't embed
 Python — that boundary is permanent).
 
-## Two tiers (the one non-negotiable line)
+## Full dynamism + universal tracking (owner decree)
 
-- **core** — fixed harness services (auth, transport, audit, policy). Always
-  loaded, `unload()` refuses them. Governance is NEVER a swappable plugin.
-- **plugin** — swappable: engines, surfaces (UI), tools. Loaded from the active
-  profile; disposable with fully reversible effects.
+Everything is a swappable module — engines, surfaces, tools, AND governance.
+The user (UI) and the super-agent can `swap()` modules and exchange state at
+runtime. The ONE invariant is **trackability**: no mutation path exists that
+does not append a `TrackEntry` (op, pluginId, actor, replaced?, note). The
+kernel `journal()` is the append-only glass box; `onTracked()` streams it to an
+audit surface / the daemon.
+
+`tier` is now PROVENANCE, not permission:
+- **seed** — booted from the charter defaults (your old rules, seeded not
+  deleted; see `boot/policies.ts` → `KEYS.POLICIES`). Swappable + tracked.
+- **plugin** — added later by a profile, the user, or the agent.
+
+Reversibility: `swap(oldId, next, actor)` returns a `rollback()` — every swap,
+especially an agent's, can be undone. Effects unwind cleanly on unload (no
+orphans). This generalizes the old NO-MONKEY-PATCH law: nothing silent, nothing
+irreversible, one owner per effect.
 
 ## Files
 

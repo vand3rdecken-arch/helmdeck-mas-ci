@@ -9,10 +9,11 @@
 // Steps 2 and 3 are the whole "harness is code, policy is data" split.
 
 export { Kernel, serviceKey } from "./kernel";
+export type { Clock } from "./kernel";
 export { Registry } from "./registry-collection";
 export { resolveProfile, dumpConfig, selectPlugins } from "./profiles";
 export { KEYS, makeRegistries } from "./keys";
-export type { Engine, Surface, Manifest, ApiClient } from "./keys";
+export type { Engine, Surface, Manifest, ApiClient, PolicySet } from "./keys";
 export type { ResolvedProfile } from "./profiles";
 export type {
   Plugin,
@@ -20,6 +21,8 @@ export type {
   ServiceKey,
   Disposer,
   Tier,
+  Actor,
+  TrackEntry,
   KernelEvents,
   ProfileDoc,
 } from "./types";
