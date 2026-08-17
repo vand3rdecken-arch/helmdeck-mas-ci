@@ -1021,11 +1021,16 @@ DEBT = [
                "seeded PolicySet instead of hard-coding, so a tracked swap "
                "actually changes enforcement; (3) expose an engine/policy control "
                "plane the user (UI) and super-agent call, every call recorded, "
-               "every swap reversible; (4) update CLAUDE.md: replace 'never weaken "
-               "the fixed harness' with 'nothing mutates untracked; rules are "
-               "seeded + swappable + reversible' (the tracker generalizes, not "
-               "abandons, NO-MONKEY-PATCH). NEEDS owner sign-off on the CLAUDE.md "
-               "law change before charter.py is touched.",
+               "every swap reversible; (4) CLAUDE.md/charter is itself a SEED "
+               "MODULE now (app/src/boot/charter.ts, seed.charter, KEYS.CHARTER) "
+               "- changing it is a tracked, reversible swap of seed.charter that "
+               "materializes as an edit to the CLAUDE.md file, NOT an out-of-band "
+               "approval gate (that framing was the retired fixed-harness reflex; "
+               "the sign-off WAS the decree). agentMaySwap defaults false so an "
+               "agent-initiated charter swap still wants a human confirm until "
+               "seeded true. Daemon-side: point loop_state/charter.py at the "
+               "seeded CharterDoc so on-disk CLAUDE.md and the module stay one "
+               "source; mirror charter swaps into events.py.",
         "order": 30,
     },
 ]

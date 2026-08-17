@@ -89,7 +89,20 @@ export const KEYS = {
   SURFACES: serviceKey<Registry<Surface>>("core.surfaces"),
   /** the seeded (swappable, tracked) policy set — your old charter as data. */
   POLICIES: serviceKey<PolicySet>("core.policies"),
+  /** the seeded instruction module — CLAUDE.md/charter is a module too. */
+  CHARTER: serviceKey<CharterDoc>("core.charter"),
 } as const;
+
+// ---- charter / instructions (CLAUDE.md is a module, not an outside law) -----
+// Natural-language rules the LLM/agents read. Seeded from today's content,
+// swappable by user/agent via a tracked swap, reversible. `source` points at
+// the on-disk materialization (CLAUDE.md) that the outer harness also reads.
+export interface CharterDoc {
+  readonly source: string;
+  readonly version: number;
+  /** the load-bearing laws, as data — swap the module to change them. */
+  readonly laws: readonly string[];
+}
 
 /** Factory for the collection services the core tier provides once at boot. */
 export function makeRegistries() {

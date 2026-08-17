@@ -146,6 +146,20 @@ ok(resolved.patch["surfaces.board"].cols === 4, "later patch overrides base patc
 throws(() => resolveProfile("nope", docs, []), "unknown profile throws");
 throws(() => selectPlugins(resolved, { "core.audit": seedPlugin }), "unbundled plugin id throws (no silent skip)");
 
+// 13. the charter/instructions module is itself swappable + tracked (the point
+//     of "CLAUDE.md is a module"): swap a seed.charter, journal records it,
+//     rollback restores the original laws.
+const k5 = new Kernel();
+const CHARTER = serviceKey<{ laws: string[] }>("core.charter");
+const v1charter: Plugin = { id: "seed.charter", tier: "seed", register: (s) => s.provide(CHARTER, { laws: ["a"] }) };
+const v2charter: Plugin = { id: "seed.charter.v2", tier: "plugin", register: (s) => s.provide(CHARTER, { laws: ["a", "b"] }) };
+k5.load(v1charter, "seed");
+const undoCharter = k5.swap("seed.charter", v2charter, "user", "user edited CLAUDE.md");
+ok(k5.get(CHARTER)?.laws.length === 2, "charter module swapped (CLAUDE.md is a module)");
+ok(k5.journal()[k5.journal().length - 1].note === "user edited CLAUDE.md", "charter swap tracked with reason");
+undoCharter();
+ok(k5.get(CHARTER)?.laws.length === 1, "charter swap reversible (rollback restored old laws)");
+
 console.log(dumpConfig(resolved));
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 if (failures > 0) process.exit(1);
