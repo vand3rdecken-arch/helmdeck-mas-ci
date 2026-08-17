@@ -693,12 +693,17 @@ README (not the secondary sources §5 was built from), one month later.
   one — there is no separate approval step gating the token itself.
 - **Developer Mode activation is unchanged**: Meta AI app → Settings → App Info
   → tap the App version number 5×.
-- **Publishing is still fully closed in preview.** Meta's own wording:
-  *"only select partners will be able to publish their integrations to the
-  general public"* and *"Publishing will be available to limited audiences in
+- **Publishing to the STORE is still fully closed in preview.** Meta's own
+  wording: *"only select partners will be able to publish their integrations to
+  the general public"* and *"Publishing will be available to limited audiences in
   the preview phase."* Their target is *"opening up publishing to general
   availability in 2026"* — no month or quarter given, so this is not close to
   lifting on any known date.
+
+  ⚠ **This says NOTHING about getting our own webapp permanently onto our own
+  glasses — that is open today and glass-crud-harness ships that way in
+  production. Read §11.9 before repeating "we cannot publish."** Conflating the
+  two is a mistake this document made and §11.9 corrects.
 - Sharing during preview stays at web-app-via-URL or DAT-app-via-release-channel
   to testers inside your own org. No numeric tester cap could be re-confirmed
   from a live source this pass — treat the earlier "≤100 testers" figure as
@@ -723,10 +728,15 @@ README (not the secondary sources §5 was built from), one month later.
    to the lens, or the glasses' mic — has a live requirement today. Voice
    output is SETTLED without it (§4); `/glance` already covers the eyes-up case
    as a plain webapp (§1, §6.5), no SDK needed.
-2. Publishing stays partner-only with no firm 2026 date. Even a built companion
+2. ~~Publishing stays partner-only with no firm 2026 date. Even a built companion
    app could only ever run on the owner's own paired glasses (Developer Mode) —
    fine for personal use, but there's no path to anything beyond that this
-   year.
+   year.~~ **HALF WRONG — corrected 2026-08-17, see §11.9.** Partner-only is
+   true of the STORE LISTING only. Distribution to the owner's own glasses is a
+   self-serve *Add a Web App* registration, permanent, no review — and since
+   "personal use by the owner" is exactly what HelmDeck Glance is for, this was
+   never a reason for No-Go. The remaining No-Go reasons (1 and 3) stand on
+   their own.
 3. Access itself is cheap exactly when it's needed (a Meta developer account +
    a GitHub PAT + one Developer Mode toggle, all self-serve) — no reason to
    front-load account setup for a feature with no driving use case yet.
@@ -1054,3 +1064,80 @@ No dependency was pinned blind: `app/node_modules` is EMPTY on this box, so a
 version could be neither installed nor typechecked, and guessing an Expo-57
 version pin is exactly how a build breaks silently. That step belongs in a card
 that can run a real install and an APK build from `C:\hd\app`.
+
+---
+
+## 11.9 SHIPPING THE WEBAPP — "we can't publish" was WRONG (2026-08-17)
+
+**The correction.** This document twice concluded there is *"no path to anything
+beyond [the owner's own glasses] this year"* and that publishing is closed. That
+conflated two unrelated things, and the owner caught it: *"But you can publish
+via web app. Look into glass harness repo."* He was right. Evidence below is a
+first-hand read of `glass-crud-harness`, not inference.
+
+**Two different things are called "publishing":**
+
+| | Store listing | **Add a Web App** |
+|---|---|---|
+| Who can install it | strangers, via Meta's catalogue | the owner, on his own paired glasses |
+| Gate | **partner-only, no date** | **none — self-serve, no review** |
+| Status for us | closed | **OPEN, and already in production use** |
+
+Only the first is closed. The second is the actual distribution channel for a
+webapp, and it is a permanent registration — not a dev-preview session that
+evaporates.
+
+**The mechanism** (`glass-crud-harness/AGENTS.md:323-326`, verbatim):
+
+> Glasses: register **one** URL in the Meta AI app (Developer Mode → App
+> Connections → Web Apps → Add a Web App):
+> `https://<worker>.workers.dev/#glass&t=<password>` (password in the URL → no
+> typing). New apps appear inside the launcher later — no new URL.
+
+`tools/qr.py:2-4` is unambiguous that this *adds*, not *previews*: *"Make a QR
+that adds your app to the Meta Ray-Ban Display glasses in one tap. Scanning the
+QR with your phone opens the Meta AI app and **adds the web app to the
+glasses**."* Requirements are only **Developer Mode + a public HTTPS URL**.
+
+**You host it yourself — there is no Meta hosting in the loop.**
+`glass-crud-harness/worker/wrangler.toml:5-9`:
+
+> `# Serve the frontend (launcher + app configs) from this same Worker — no`
+> `# GitHub Pages needed.`
+> `[assets]` / `directory = "./public"` / `binding = "ASSETS"` /
+> `run_worker_first = true`
+
+`worker/src/worker.js:376` falls through to `env.ASSETS.fetch(request)`, so one
+Cloudflare Worker is both the API and the webapp origin. Same-origin is not
+incidental — §4 records that the TTS proxy *had* to be same-origin because the
+MRBD webview can't send a bearer header from an `<audio>` tag.
+
+**THE PATTERN WORTH STEALING — one URL, many apps.** You register the launcher
+URL **once, forever**. New apps ship by redeploying the worker:
+`runners/redeploy.bat` *"syncs `apps/` → `worker/public/`, then `wrangler
+deploy`. No new glasses URL — apps appear inside it."* That is an **OTA channel
+for the glasses**: the owner never re-scans a QR, never re-registers, never
+touches the glasses to get new functionality. HelmDeck already thinks this way
+for the phone (`deploy/push_update.sh`); the glasses deserve the same and
+currently do NOT have it.
+
+**What this means for `glasses/` — the README is wrong and the gap is real.**
+`glasses/README.md` said hosting is *"Meta's HTTPS preview"* via
+`/test-on-device`, with *"for a permanent install you publish through the
+Wearables Developer Center."* Both halves are wrong: `/test-on-device` is the
+throwaway DEV path, and the permanent path is Add-a-Web-App against a host we
+control, with the Developer Center nowhere in it. Corrected in that file.
+
+The genuine blocker is NOT permission, it is **reachability**: HelmDeck's daemon
+is `localhost:8140`, and the glasses need public HTTPS. glass-crud-harness
+solved this by putting the whole app + API on one Cloudflare Worker. HelmDeck
+cannot — its data lives in a local daemon on the owner's box. So HelmDeck needs
+either a TLS tunnel to the daemon (Tailscale/reverse proxy, as the README's
+Connect screen already assumes) or a small hosted origin that serves the static
+webapp and proxies `/glance` to the daemon. **That is a design decision, not a
+research question, and it is the one thing standing between `glasses/` and
+being permanently installed.**
+
+**Do not repeat the mistake.** "Publishing is partner-only" is true and
+irrelevant to a webapp on the owner's own glasses. Check which of the two you
+mean before writing No-Go.
