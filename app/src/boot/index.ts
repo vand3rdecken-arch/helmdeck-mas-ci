@@ -47,7 +47,7 @@ export const AVAILABLE_PLUGINS: Record<string, Plugin> = {
 /** Assemble and return a booted Kernel for `profileName`. */
 export function boot(profileName: string): Kernel {
   const k = new Kernel();
-  for (const p of CORE_PLUGINS) k.load(p);
+  for (const p of CORE_PLUGINS) k.load(p, "seed");
 
   const resolved = resolveProfile(profileName, PROFILE_DOCS, CORE_IDS);
   // core ids are forced into resolved.order; they're already loaded, so skip them.
@@ -56,7 +56,7 @@ export function boot(profileName: string): Kernel {
     { ...resolved, order: resolved.order.filter((id) => !CORE_IDS.includes(id)) },
     swappable,
   );
-  for (const p of plugins) k.load(p);
+  for (const p of plugins) k.load(p, "profile");
   return k;
 }
 

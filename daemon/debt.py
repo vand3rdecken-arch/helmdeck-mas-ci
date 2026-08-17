@@ -987,6 +987,47 @@ DEBT = [
                "pre-config governs production, then retire kernel-demo.tsx.",
         "order": 29,
     },
+    {
+        "id": "full-dynamism-decree",
+        "title": "Charter reframed: fixed harness -> seeded+swappable modules, "
+                 "universal tracking is the only floor",
+        "status": "open",
+        "what": "Owner decree (2026-08-17): move to the DeepSeek 'everything is a "
+                "plugin' model, but (1) everything must be TRACKABLE and (2) the "
+                "old rules are not deleted, they are SEEDED as defaults. The app "
+                "kernel (app/src/kernel) implements this: nothing is unswappable "
+                "(unload/swap allowed on seed governance too), but every "
+                "load/unload/swap appends a TrackEntry {op, pluginId, actor "
+                "(seed|profile|user|agent|system), replaced?, note} to an "
+                "append-only journal; swap() returns a rollback(); the charter "
+                "(gate-before-review, append-only audit, worktree isolation, "
+                "auth-required, measured economics, WIP limit) is seeded as data "
+                "in boot/policies.ts CHARTER_DEFAULTS under KEYS.POLICIES. This "
+                "CONTRADICTS the CLAUDE.md law 'never weaken the fixed harness' "
+                "and the 'core refuses unload' enforcement (now removed).",
+        "why_it_bites": "The daemon-side enforcement is still hard-wired code that "
+                        "owns its own on/off (charter.py, gate, auth, audit) and "
+                        "does NOT yet read the seeded PolicySet, does NOT emit "
+                        "reconfiguration track entries, and cannot be swapped by "
+                        "user/agent. Until it does, 'full dynamism + universal "
+                        "tracking' is true only in the app kernel, not end-to-end; "
+                        "a super-agent 'swap' of a governance module changes app "
+                        "state but not what the daemon actually enforces.",
+        "trigger": "wiring the super-agent's reconfiguration authority; letting a "
+                   "UI toggle a policy; any claim that governance is swappable",
+        "fix": "Daemon-side: (1) mirror the app journal into the existing "
+               "append-only events.py sink so reconfiguration is audited with the "
+               "same guarantees; (2) have charter.py/gate/economics READ the "
+               "seeded PolicySet instead of hard-coding, so a tracked swap "
+               "actually changes enforcement; (3) expose an engine/policy control "
+               "plane the user (UI) and super-agent call, every call recorded, "
+               "every swap reversible; (4) update CLAUDE.md: replace 'never weaken "
+               "the fixed harness' with 'nothing mutates untracked; rules are "
+               "seeded + swappable + reversible' (the tracker generalizes, not "
+               "abandons, NO-MONKEY-PATCH). NEEDS owner sign-off on the CLAUDE.md "
+               "law change before charter.py is touched.",
+        "order": 30,
+    },
 ]
 
 def list_debt():

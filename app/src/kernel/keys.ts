@@ -54,6 +54,28 @@ export interface ApiClient {
   [method: string]: unknown;
 }
 
+// ---- policies (your old rules, SEEDED as swappable data) -------------------
+// The charter used to be hard-wired code. Under the full-dynamism decree it is
+// SEEDED defaults instead: booted as a policy module, readable by any module,
+// swappable by user/agent — every change tracked. Enforcement modules
+// (daemon-side, later) READ these; they no longer own the on/off switch.
+export interface PolicySet {
+  /** gate-before-review: a card is reviewed only after the suite passes. */
+  readonly gateBeforeReview: boolean;
+  /** append-only audit/events — the one your tracker mirrors app-side. */
+  readonly auditAppendOnly: boolean;
+  /** worktree isolation for card work. */
+  readonly worktreeIsolation: boolean;
+  /** auth required for owner/operator surfaces. */
+  readonly authRequired: boolean;
+  /** measured economics: budgets in % of weekly quota, not invented €. */
+  readonly measuredEconomics: boolean;
+  /** WIP limit (running cards). */
+  readonly wipLimit: number;
+  /** whether the super-agent may swap modules without a user confirm. */
+  readonly agentMaySwap: boolean;
+}
+
 export const KEYS = {
   /** daemon transport client (core-owned). */
   API: serviceKey<ApiClient>("core.api"),
@@ -65,6 +87,8 @@ export const KEYS = {
   ENGINES: serviceKey<Registry<Engine>>("core.engines"),
   /** surface registry — surfaces/* plugins contribute; navigator reads it. */
   SURFACES: serviceKey<Registry<Surface>>("core.surfaces"),
+  /** the seeded (swappable, tracked) policy set — your old charter as data. */
+  POLICIES: serviceKey<PolicySet>("core.policies"),
 } as const;
 
 /** Factory for the collection services the core tier provides once at boot. */

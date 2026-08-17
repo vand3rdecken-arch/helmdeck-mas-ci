@@ -1,8 +1,14 @@
-// The kernel: a service registry + event bus + reversible-effect loader.
-// Framework-agnostic on purpose (no React import) so it is unit-testable under
-// plain node and reusable by web, native, and desktop surfaces alike.
+// The kernel: a service registry + event bus + reversible-effect loader, with a
+// universal TRACKER. Framework-agnostic (no React import) so it is unit-testable
+// under plain node and reusable by web, native, and desktop surfaces alike.
+//
+// Decree (owner): full dynamism — every module is swappable, by profile, by the
+// user (UI) or by the super-agent. The ONE invariant is trackability: no mutation
+// path exists that does not append a TrackEntry. Governance rules are not
+// unswappable code any more; they are SEEDED policy modules (defaults = the old
+// charter) that can be swapped like anything else — but never silently.
 
-import type { Disposer, KernelEvents, Plugin, Scope, ServiceKey, Tier } from "./types";
+import type { Actor, Disposer, KernelEvents, Plugin, Scope, ServiceKey, Tier, TrackEntry } from "./types";
 
 /** Mint a typed service key. Ids are strings so profiles/manifests can name them. */
 export function serviceKey<T>(id: string): ServiceKey<T> {
@@ -15,15 +21,43 @@ interface ServiceCell {
 }
 
 interface LoadedPlugin {
-  id: string;
+  plugin: Plugin;
   tier: Tier;
   dispose: Disposer;
 }
+
+/** Optional wall-clock source, injected so the kernel stays deterministic in tests. */
+export type Clock = () => number;
 
 export class Kernel {
   private readonly services = new Map<string, ServiceCell>();
   private readonly listeners = new Map<string, Set<(p: unknown) => void>>();
   private readonly loaded = new Map<string, LoadedPlugin>();
+
+  // ---- the tracker: append-only, monotonic, the system's glass box --------
+  private readonly track: TrackEntry[] = [];
+  private seq = 0;
+  private readonly onTrack = new Set<(e: TrackEntry) => void>();
+
+  constructor(private readonly clock: Clock | null = null) {}
+
+  private record(e: Omit<TrackEntry, "seq" | "at">): TrackEntry {
+    const entry: TrackEntry = { ...e, seq: ++this.seq, at: this.clock ? this.clock() : null };
+    this.track.push(entry);
+    for (const fn of [...this.onTrack]) fn(entry);
+    return entry;
+  }
+
+  /** Immutable view of the reconfiguration journal (append-only; never mutated). */
+  journal(): readonly TrackEntry[] {
+    return this.track.slice();
+  }
+
+  /** Subscribe to every tracked mutation (drives an audit surface / daemon sink). */
+  onTracked(fn: (e: TrackEntry) => void): Disposer {
+    this.onTrack.add(fn);
+    return () => this.onTrack.delete(fn);
+  }
 
   // ---- service registry -------------------------------------------------
 
@@ -56,7 +90,7 @@ export class Kernel {
   // ---- event bus --------------------------------------------------------
 
   private on<E extends keyof KernelEvents>(
-    ownerId: string,
+    _ownerId: string,
     event: E,
     handler: (payload: KernelEvents[E]) => void,
   ): Disposer {
@@ -73,14 +107,15 @@ export class Kernel {
     for (const fn of [...set]) fn(payload);
   }
 
-  // ---- plugin lifecycle -------------------------------------------------
+  // ---- plugin lifecycle (every path records a TrackEntry) ---------------
 
   /**
-   * Load a plugin: verify its declared `inject` deps exist, build a scope that
-   * records every effect, run `register`, and remember the aggregate disposer.
-   * Core plugins are loaded the same way but refused by `unload`.
+   * Load a plugin: verify `inject` deps, build an effect-recording scope, run
+   * `register`, remember the aggregate disposer, and APPEND a track entry.
+   * `actor` says who did it (seed/profile/user/agent/system) — recorded, never
+   * gated. There is no way to load without a track entry.
    */
-  load(plugin: Plugin): void {
+  load(plugin: Plugin, actor: Actor = "system", note?: string): void {
     if (this.loaded.has(plugin.id)) {
       throw new Error(`plugin '${plugin.id}' already loaded`);
     }
@@ -112,32 +147,60 @@ export class Kernel {
     try {
       extra = plugin.register(scope);
     } catch (err) {
-      // partial registration must not leak — unwind whatever landed.
-      this.runDisposers(disposers);
+      this.runDisposers(disposers); // partial registration must not leak.
       throw err;
     }
     if (typeof extra === "function") disposers.push(extra);
 
     this.loaded.set(plugin.id, {
-      id: plugin.id,
+      plugin,
       tier: plugin.tier,
       dispose: () => this.runDisposers(disposers),
     });
+    this.record({ op: "load", pluginId: plugin.id, tier: plugin.tier, actor, note });
   }
 
   /**
-   * Unload a swappable plugin, reversing all its effects. Core plugins are
-   * fixed — attempting to unload one is a programming error, not a runtime
-   * toggle. This is the enforcement point for the two-tier law.
+   * Unload ANY module — including seeded governance (full-dynamism decree).
+   * Reverses all its effects and APPENDS a track entry. Nothing is refused;
+   * the only guarantee is that it is recorded and (via effects) reversible.
    */
-  unload(pluginId: string): void {
+  unload(pluginId: string, actor: Actor = "system", note?: string): void {
     const lp = this.loaded.get(pluginId);
     if (!lp) return;
-    if (lp.tier === "core") {
-      throw new Error(`refusing to unload core plugin '${pluginId}': the fixed harness is not swappable`);
-    }
     lp.dispose();
     this.loaded.delete(pluginId);
+    this.record({ op: "unload", pluginId, tier: lp.tier, actor, note });
+  }
+
+  /**
+   * Atomically exchange one module for another (the core reconfiguration verb
+   * the user/super-agent use). Records a single op:"swap" entry naming the
+   * replaced id. Returns a rollback() that restores the previous module —
+   * because every swap must be reversible, especially an agent's.
+   */
+  swap(oldId: string, next: Plugin, actor: Actor = "system", note?: string): Disposer {
+    const prev = this.loaded.get(oldId)?.plugin;
+    if (prev) {
+      prev; // captured for rollback below
+      this.loaded.get(oldId)!.dispose();
+      this.loaded.delete(oldId);
+    }
+    this.load(next, actor, note); // records its own load entry...
+    // ...then rewrite the just-recorded load into a swap for a clean journal.
+    const last = this.track[this.track.length - 1];
+    if (last && last.op === "load" && last.pluginId === next.id) {
+      (this.track[this.track.length - 1] as { op: TrackEntry["op"]; replaced?: string }).op = "swap";
+      (this.track[this.track.length - 1] as { replaced?: string }).replaced = oldId;
+    }
+    return () => {
+      this.unload(next.id, actor, `rollback of swap ${oldId}->${next.id}`);
+      if (prev) this.load(prev, actor, `rollback restore ${oldId}`);
+    };
+  }
+
+  isLoaded(pluginId: string): boolean {
+    return this.loaded.has(pluginId);
   }
 
   loadedIds(): string[] {

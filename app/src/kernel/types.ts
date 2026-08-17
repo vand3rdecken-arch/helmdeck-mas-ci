@@ -26,7 +26,30 @@ export interface ServiceKey<T> {
 /** Function that reverses a single registered effect. Idempotent. */
 export type Disposer = () => void;
 
-export type Tier = "core" | "plugin";
+// Every module is swappable (full-dynamism decree). `tier` is now just
+// PROVENANCE metadata, not a permission: `seed` = loaded from the charter
+// defaults at boot (your old rules, seeded not deleted); `plugin` = added
+// later by a profile, the user (UI) or the super-agent. Both can be swapped;
+// both are tracked. Nothing is unswappable — the only floor is trackability.
+export type Tier = "seed" | "plugin";
+
+/** Who initiated a reconfiguration. Recorded on every tracked entry. */
+export type Actor = "seed" | "profile" | "user" | "agent" | "system";
+
+/** One append-only reconfiguration record. The system's glass-box spine. */
+export interface TrackEntry {
+  readonly seq: number;
+  readonly op: "load" | "unload" | "swap";
+  readonly pluginId: string;
+  readonly tier: Tier;
+  readonly actor: Actor;
+  /** for op:"swap", the id that was replaced. */
+  readonly replaced?: string;
+  /** optional wall-clock stamp, injected (kept out of the kernel for testability). */
+  readonly at?: number | null;
+  /** free-form reason, e.g. the agent's justification for the swap. */
+  readonly note?: string;
+}
 
 /**
  * The per-plugin view of the kernel handed to `register()`. Every mutating
