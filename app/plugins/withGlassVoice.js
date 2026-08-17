@@ -152,6 +152,29 @@ function patchManifestXml(xml) {
   return out;
 }
 
+// The service SOURCE lives beside this plugin as a real .kt file (readable,
+// reviewable, diffable) and is COPIED into the git-ignored android tree. Same
+// rule as the manifest: app/android is hand-managed and regenerates from
+// nothing, so anything that must survive a rebuild has to be re-applied from a
+// tracked source. Keeping it as .kt rather than a string inside this JS is the
+// difference between code you can review and code you can only hope about.
+const KOTLIN_SRC = "glassvoice/GlassVoiceService.kt";
+const KOTLIN_DST = ["app", "src", "main", "java", "app", "helmdeck", "voice",
+                    "GlassVoiceService.kt"];
+
+function installKotlin(androidDir) {
+  const fs = require("fs");
+  const path = require("path");
+  const src = path.join(__dirname, KOTLIN_SRC);
+  const dst = path.join(androidDir, ...KOTLIN_DST);
+  const code = fs.readFileSync(src, "utf8");
+  const had = fs.existsSync(dst) ? fs.readFileSync(dst, "utf8") : null;
+  if (had === code) return false;
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.writeFileSync(dst, code);
+  return true;
+}
+
 function applyToAndroidDir(androidDir) {
   const fs = require("fs");
   const path = require("path");
@@ -159,7 +182,9 @@ function applyToAndroidDir(androidDir) {
   const before = fs.readFileSync(manifest, "utf8");
   const after = patchManifestXml(before);
   if (after !== before) fs.writeFileSync(manifest, after);
-  return { changed: after !== before, permissions: PERMISSIONS, service: SERVICE_NAME };
+  const wroteKotlin = installKotlin(androidDir);
+  return { changed: after !== before, wroteKotlin,
+           permissions: PERMISSIONS, service: SERVICE_NAME };
 }
 
 module.exports = withGlassVoice;
@@ -179,7 +204,7 @@ if (require.main === module) {
   const r = applyToAndroidDir(target);
   console.log(
     `[withGlassVoice] ${r.permissions.length} permissions + ${r.service} ` +
-      `(FGS type: ${FGS_TYPE})` +
+      `(FGS type: ${FGS_TYPE})` + (r.wroteKotlin ? " + service source installed" : "") +
       (r.changed ? " - manifest patched" : " - manifest already ok")
   );
 }
