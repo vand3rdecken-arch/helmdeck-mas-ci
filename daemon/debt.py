@@ -953,6 +953,40 @@ DEBT = [
                "non-blocking) so red at least becomes visible.",
         "order": 28,
     },
+    {
+        "id": "plugin-kernel-dual-nav",
+        "title": "Plugin kernel boots alongside expo-router (two navigation systems)",
+        "status": "open",
+        "what": "app/src/kernel/ (Phase 1) + app/src/boot/ (Phase 2) introduce a "
+                "plugin-first composition: profiles pick swappable plugins, "
+                "surfaces register into KEYS.SURFACES, a registry-driven host "
+                "renders them. But production navigation still runs through the "
+                "hard-coded expo-router app/src/app/(tabs) list. The only surface "
+                "actually wired through the kernel is a dev route "
+                "(app/src/app/kernel-demo.tsx) rendering the board from the "
+                "registry; the real (tabs) screens are unchanged. Engines are "
+                "half-migrated too: engines.claude wraps the daemon api behind the "
+                "Engine contract, but the ~11 scattered `import copilot` / "
+                "`import claude_sessions` branches in daemon/server.py + "
+                "sessions.py still select backends inline.",
+        "why_it_bites": "Two nav systems mean a screen can drift between the (tabs) "
+                        "route and its surface plugin; a profile (store/owner/demo) "
+                        "does NOT yet govern what production ships, so the "
+                        "pre-config story is only true for the demo route. Adding a "
+                        "new screen needs doing twice until the cutover lands.",
+        "trigger": "adding/removing a screen; shipping a store build expecting the "
+                   "store.json profile to exclude machine-control (it doesn't gate "
+                   "production nav yet); adding the deepseek engine",
+        "fix": "Phase 2 cutover card: make app/src/app/(tabs)/_layout render tabs "
+               "from useSurfaces() (KEYS.SURFACES) instead of the static list, "
+               "migrate each (tabs) screen into a surfaces/* plugin, and delete "
+               "the hard-coded list in the same commit that adds its plugin. "
+               "Phase 2b: replace the inline daemon backend-select branches with "
+               "an engine registry keyed by a stored `engine` field. Boot the "
+               "real profile (owner on desktop, store on stores) at app entry so "
+               "pre-config governs production, then retire kernel-demo.tsx.",
+        "order": 29,
+    },
 ]
 
 def list_debt():
