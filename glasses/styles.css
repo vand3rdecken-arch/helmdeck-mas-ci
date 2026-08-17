@@ -93,6 +93,24 @@ html, body {
 .detail-why { display: block; margin-top: 10px; font-size: 15px;
   color: #CFD2D6; line-height: 1.5; }
 
+/* GLASS MODE: the decision. The question is the most important text on this
+   screen, so it gets detail-task weight; the options below carry the same
+   list-item styling every other tappable row uses, so focus behaves identically
+   under the D-pad. Colours stay in the never-pure-black band the waveguide
+   needs (#0a0a0f-#1C1E21 surfaces, bright text) - a dark fill would simply not
+   reach the eye. */
+.decide-q { font-size: 19px; font-weight: 650; line-height: 1.35;
+  color: #F2F3F5; margin-bottom: 14px; }
+
+/* the board agent's prose. Body size, not caption: it is read at a glance on an
+   additive waveguide, where 12px grey disappears. */
+.talk-reply { font-size: 18px; line-height: 1.4; color: #F2F3F5; margin-bottom: 14px; }
+/* "the agent tried to change the board and I blocked it" is a HONESTY signal,
+   not a caption - the one thing that must not quietly vanish. The default
+   header-meta (12px #B0B3B8) is precisely the weight this document's own trap
+   register says disappears on the waveguide, so it gets warn colour and bold. */
+.header-meta.warn { color: #FFB020; font-weight: 700; }
+
 /* settings fields */
 .field-label { display: block; font-size: 12px; color: #B0B3B8; margin: 10px 2px 4px; }
 .field {

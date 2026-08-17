@@ -21,9 +21,18 @@ MAX_THINK = 60_000
 # tool results are re-sent on every live tick and sit behind an expander, so
 # keep them moderate - the whole transcript is refetched while a turn runs.
 MAX_RESULT = 8_000
-# HelmDeck's own spawned sessions (copilot, process designer) - not the user's
+# HelmDeck's own spawned sessions (Henry, process designer) - not the user's
 # coding sessions, so hide them from the import list.
-_INTERNAL = ("You are the HelmDeck board copilot", "You are a process designer")
+#
+# BOTH the new and the OLD opening line are listed, and the old one must STAY.
+# This matches the system prompt recorded INSIDE each transcript on disk, so it
+# is effectively a historical file format: every session spawned before the
+# 2026-08-17 rename still opens "You are the HelmDeck board copilot". Replacing
+# instead of appending would have made all of those reappear in the owner's
+# import list - a silent regression, no error, on a surface nobody would think
+# to re-check after a rename.
+_INTERNAL = ("You are Henry", "You are the HelmDeck board copilot",
+             "You are a process designer")
 
 
 def _first_text(content):

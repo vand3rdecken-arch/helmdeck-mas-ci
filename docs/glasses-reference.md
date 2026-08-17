@@ -29,11 +29,18 @@ building**, don't trust this page as current on the platform side.
 - **The glasses webapp cannot capture and cannot run in the background.** Both
   verified, not assumed. → §3.
 - **SDK access is much smaller than "partner approval"** — a GitHub PAT for the
-  packages, plus Developer mode (and possibly a preview form). → §5.
+  packages, plus Developer mode (and possibly a preview form). → §5. **And the
+  MIC needs none of it**: the glasses microphone is plain Bluetooth HFP via
+  standard Android APIs, not a DAT module, and the 0.8.0 artifacts are already
+  cached on this machine. → §11.7.
 - **HelmDeck's `glasses/` app is already ~80% conformant** with Meta's real
   display guidelines; four concrete deltas remain. → §6.
-- The proven pairing/auth model to adopt is **valet tickets + device-code +
-  anchor device**. → §2.
+- The proven pairing/auth model is **valet tickets + device-code + anchor
+  device** → §2 — but **do not reach for it without a second device to enroll**:
+  it was adopted once for a companion app that was then scrapped. → §11.1.
+- **GLASS MODE is the live direction**: the lens shows what is blocked and the
+  owner *decides* on it by tapping options the worker offered. No companion app,
+  no SDK, no PAT. → §11.
 
 ---
 
@@ -60,9 +67,19 @@ future glasses card:
 > **authoring and consuming are different moments**.
 
 For HelmDeck this is a clean fit and also a clean limit: *seeing that a card is
-blocked* is eyes-up. *Answering a question, steering, accepting* is authoring —
-it belongs on the phone. `/glance` being read-only is correct by this rule, not
-by accident.
+blocked* is eyes-up. *Steering and accepting* are authoring — they belong on the
+phone.
+
+⚠ **Refined 2026-08-16 by GLASS MODE (§11), and the distinction is the whole
+point.** This section used to end "…*answering a question* is authoring, so
+`/glance` being read-only is correct by this rule." That drew the line in the
+wrong place. The rule the sources actually state is about *typing*: **"you can't
+type on the glasses"** here, and §3.6's **"the webapp is output + SELECTION"**.
+Picking one of six options a worker already wrote is selection, not authoring —
+it needs no keyboard and no dictation, so it is squarely inside the law. Free
+text would be authoring, which is exactly why `/glance/answer` refuses it and
+leaves it to the phone. So `/glance` is no longer read-only, and that is not a
+violation of this rule — it is the rule applied more precisely.
 
 **And the precedent says HelmDeck is already past the point where that project
 stopped.** glass-crud-harness designed exactly this surface — an "Agent Cockpit"
@@ -495,6 +512,11 @@ both before estimating any companion work.
 Developer mode on?"** Recheck the version first — two releases in two months, and
 the research itself says *"recheck before building"*.
 
+⚠ **Both halves of that answered on 2026-08-17 — read §11.7 before treating this
+as work.** The 0.8.0 artifacts are already cached on this machine (offline, no
+token), and the MICROPHONE is not in the SDK at all — it is plain Bluetooth HFP
+through standard Android APIs. A PAT is only the gate on an UNCACHED version.
+
 What the SDK would buy that we cannot otherwise have: pushing text/images/lists/
 buttons/video **to the lens** from a phone app, and the glasses **mic**. What it
 does not need to buy: voice output (§4).
@@ -614,7 +636,7 @@ toolkit contradicts itself in those three places — the guidelines win.
 
 | Step | Verdict from the sources |
 |---|---|
-| **SDK access check** | Two questions, not one: (a) a GitHub PAT with `read:packages` that resolves `com.meta.wearable:mwdat-*` — without it the build fails at dependency resolution even for unrelated changes; (b) admission to Meta's developer preview for *device* access, which one source calls a form. Then Developer mode (tap App version 5×). Confirm the current DAT version first — v0.8.0 on 2026-06-25 and moving fast. Germany is supported. §5 |
+| **SDK access check** | **Largely ANSWERED — see §11.7 before acting on this row.** The 0.8.0 artifacts are already in this machine's Gradle cache (resolve offline, no token), and the MIC is not a DAT module at all. A PAT is only needed to fetch an UNCACHED version. Original framing, still true for that case: (a) a GitHub PAT with `read:packages` resolves `com.meta.wearable:mwdat-*`; (b) Developer mode (tap App version 5×). Germany is supported. §5, §11.7 |
 | **Proactive notification** | Cannot come from the webapp — no background execution, no notification API (§3.2). It must originate in the daemon. The proven channel is `outbox/events/` (2 s poll, atomic write, consume-before-send), and the JID trap is the thing that will silently eat it. §4.3, §3.3 |
 | **Voice reading** | SETTLED: server-side edge-tts → ogg/opus mono 32k → `[[voice:…]]` over WhatsApp. Not device TTS — the toolkit has none, and the SDK path would drag in the HFP audio downgrade. Independent of SDK access. §4 |
 | **Companion app** | Only if something needs the glasses' *mic* or a *native lens push*. It is a sensing layer, never a renderer: *"the native app never draws a pixel on the glasses"* (`native-companion-plan.md:57`). If built: backend-driven config, `safe {}` everywhere, full FGS type set, and the Android-14 typed-FGS decision written down. §2.4, §3.4 |
@@ -654,3 +676,381 @@ Two honesty markers worth keeping in mind when reading:
 - **Meta's platform side moves fast** — two SDK releases in two months, and the
   toolkit repo contradicts its own guidelines in three places. Re-verify §5 and
   §6 against the source before betting a card on them.
+
+---
+
+## 10. SDK access check — re-verified 2026-08-16, Go/No-Go for the companion-app step
+
+§5 warned to recheck before building. This re-checks it against the live
+`developer.meta.com/wearables` docs and the `facebook/meta-wearables-dat-android`
+README (not the secondary sources §5 was built from), one month later.
+
+### 10.1 Confirmed unchanged
+- **The PAT is still the real gate on the artifact.** Straight from the SDK
+  repo's own README: a GitHub PAT (classic) with `read:packages` is required to
+  resolve `com.meta.wearable:mwdat-core` from GitHub Packages, supplied via
+  `GITHUB_TOKEN` or `local.properties`. Anyone with a GitHub account can mint
+  one — there is no separate approval step gating the token itself.
+- **Developer Mode activation is unchanged**: Meta AI app → Settings → App Info
+  → tap the App version number 5×.
+- **Publishing is still fully closed in preview.** Meta's own wording:
+  *"only select partners will be able to publish their integrations to the
+  general public"* and *"Publishing will be available to limited audiences in
+  the preview phase."* Their target is *"opening up publishing to general
+  availability in 2026"* — no month or quarter given, so this is not close to
+  lifting on any known date.
+- Sharing during preview stays at web-app-via-URL or DAT-app-via-release-channel
+  to testers inside your own org. No numeric tester cap could be re-confirmed
+  from a live source this pass — treat the earlier "≤100 testers" figure as
+  unverified, not re-stated as fact.
+
+### 10.2 Changed since the 2026-07-13 research
+- **DAT version moved 0.8.0 → 0.9.0.** Confirms the "moves fast" warning —
+  anything actually built against it needs a fresh version pin.
+- **No extra approval gate found beyond the PAT.** The old Android README's
+  *"accepted into Meta's developer preview (a form)"* language does not
+  reappear on the current live docs; account creation on the Developer Center
+  now reads as being for updates/bug-reports/org-registration, not as an
+  admission gate. This slightly de-risks access versus §5's two-question
+  framing — though the account still has to exist first.
+- Supported-country list wasn't itemized on the pages checked this pass;
+  Germany's support still rests on the 2026-07-13 finding, not freshly
+  re-confirmed today.
+
+### 10.3 Go/No-Go — companion-app step (§7 row 4)
+**No-Go, for now.**
+1. Neither HelmDeck use case that would actually need the SDK — a native push
+   to the lens, or the glasses' mic — has a live requirement today. Voice
+   output is SETTLED without it (§4); `/glance` already covers the eyes-up case
+   as a plain webapp (§1, §6.5), no SDK needed.
+2. Publishing stays partner-only with no firm 2026 date. Even a built companion
+   app could only ever run on the owner's own paired glasses (Developer Mode) —
+   fine for personal use, but there's no path to anything beyond that this
+   year.
+3. Access itself is cheap exactly when it's needed (a Meta developer account +
+   a GitHub PAT + one Developer Mode toggle, all self-serve) — no reason to
+   front-load account setup for a feature with no driving use case yet.
+
+**Decision:** leave SDK access unset up until a concrete feature demands the
+mic or a native lens push. This card's output is the checklist below, ready to
+execute in under an hour whenever that trigger appears — not a completed
+account.
+
+### 10.4 Account-setup checklist — status as of 2026-08-16
+1. ~~Create/sign in to a Meta developer account~~ **Already done.** Turned out
+   to predate this card entirely — see §10.5.
+2. ~~Register the org on the Wearables Developer Center~~ **Already done** —
+   org "Tien Duy Vo Team" exists (`devcenter/1317266500388880/`).
+3. ~~Generate a GitHub PAT (classic) with `read:packages`~~ **NOT NEEDED for the
+   work actually in front of us — see §11.7.** The 0.8.0 AARs are already in
+   this box's Gradle cache and resolve offline, and the microphone is not a DAT
+   module at all. Only mint one to pull an UNCACHED version (0.9.0+); store via
+   `GITHUB_TOKEN` or `local.properties`, never commit it.
+4. On the owner's phone: Meta AI app → Settings → App Info → tap App version
+   ×5 → confirm Developer Mode. **Not checked this pass.**
+5. Re-check the DAT version pin before any build — confirmed **0.9.0**,
+   tagged "2 weeks ago" (relative to 2026-08-16) on
+   `github.com/facebook/meta-wearables-dat-ios`.
+
+Step 3 is the only one that was never actually blocked on the owner's Meta
+identity — a GitHub PAT needs only a GitHub account. It simply has no reason
+to exist yet per the §10.3 No-Go.
+
+### 10.5 Live walkthrough, 2026-08-16 — the account already existed
+Driven live in the owner's persistent HelmDeck Chrome (CDP :9222,
+`deploy/meta_wearables_guide.py`) with the owner completing the actual
+work.meta.com login himself (email + whatever 2FA it asked — a Meta *Work*
+account, not a plain Facebook login; the sign-in screen's own copy is "Use an
+account given to you by your organization").
+
+Findings, all read-only — nothing was configured or saved:
+- The org and Dev Center account were **already registered**, dated before
+  this card existed. Nobody re-ran the signup flow today; login alone landed
+  straight on `Projects`.
+- One project already exists: **"Claudia" ("AI everything app"), last edited
+  2026-07-15** — a full month before the glasses-reference research started.
+  **Its relationship to HelmDeck's glasses work is unknown — left untouched,
+  not renamed, not repurposed, not deleted.** Don't assume it's HelmDeck's;
+  don't assume it isn't.
+- The project is a bare skeleton: iOS/Android **Team ID, Bundle ID and
+  Universal Link are all empty**; **Camera access** permission is toggled on
+  with rationale text *"generic access to build everything that needs cam
+  access"*; **zero versions**, so `Distribute` refuses to let you create one
+  until app details are filled in; `Required actions` shows none outstanding.
+  Reads as: someone flipped the account on once, got as far as one permission
+  toggle, and stopped — never carried to an actual build.
+- **"Download SDK" in the Dev Center just links out to the public GitHub repo**
+  (`github.com/facebook/meta-wearables-dat-ios`, unauthenticated view) — it is
+  not a source of the PAT and doesn't hand out a token. Confirms §10.1/§10.2:
+  the PAT is a GitHub-side artifact the Dev Center plays no part in issuing.
+
+Net effect on §10.3: the Go/No-Go verdict is **unchanged** — this discovery
+is about *existing, unfinished* access, not a new use case. It does mean step
+3 (the PAT) is the only remaining item if a real trigger ever shows up;
+account + org no longer need to be created.
+
+Nothing here required a code change. The only files this card touched are
+this doc and the co-pilot script (`deploy/meta_wearables_guide.py`) used to
+drive the walkthrough.
+
+---
+
+
+## 11. GLASS MODE — the lens decides, and the companion app is scrapped
+
+**Owner decision, 2026-08-16, superseding everything above about a companion:**
+> *"Where did idea with ticket comes from .. scrap it. I need a glass system that
+> only interact with board agent in glass mode. Should be conversation to
+> understand where things are, plan and make decisions."*
+
+### 11.1 Where the ticket idea came from, and why it is gone
+From §2.1 of THIS document — *"when a second glasses/companion surface appears,
+go to tickets; don't mint a second shared token."* That advice is sound for the
+thing it was written about (a fleet of enrolled devices), and it was applied to
+a native companion sensing app that the owner does not want. No companion app,
+no fleet, no second surface ⇒ **no tickets**. `daemon/companion.py`, its tests
+and its five routes were deleted in the same card that added them.
+
+⚠ **§2.1's last paragraph is now stale as guidance.** Read it as history. If a
+future card is tempted by it again, the question to ask first is not "which auth
+model" but "is there actually a second device?" — here there was not.
+
+### 11.2 What glass mode is
+The lens talks to ONE thing: the board agent. Three moves, no more:
+
+| | | |
+|---|---|---|
+| **Where things are** | `/glance` — every card blocked on the owner, worst news first | already existed |
+| **Make decisions** | the worker's pending question, rendered as tappable options | **new** |
+| **Plan** | the decision IS the plan step — the worker resumes with it | via the existing session |
+
+The critical constraint, measured on-device and unchanged (§3.1/§3.2): the lens
+has **no mic, no camera, no dictation, no keyboard**. So a "conversation" here
+can only be *agent proposes → owner selects*. That is exactly the shape of the
+ASK protocol HelmDeck already runs on every card (`daemon/ask.py`), which is why
+glass mode needed no new conversation engine — only a way to see the question
+and send back a pick.
+
+### 11.3 How it is wired (and what was deliberately NOT built)
+- `GET /glance` now carries `question` on any asking card: the prompt, the
+  header, and the options, trimmed for the lens (`_glance_question`). Non-asking
+  cards carry `question: null`.
+- `POST /glance/answer` is the ONE write. It reuses `sessions.answer_question` —
+  the same function the phone's `/tracks/<id>/answer` calls — so there is no
+  second answering mechanism to drift out of sync. Verified: a lens pick writes
+  the identical audit line, `FRAGE beantwortet: <header> -> <label>`.
+- Four bounds, because `glance_token` is a single SHARED secret and this
+  endpoint runs an agent turn:
+  1. **off unless `settings.glance_decide` is true** — a second switch on
+     purpose, so an existing read-only glance token does not silently become one
+     that can move the board;
+  2. **free text refused** — `ask.validate_answers` permits it (the phone's
+     "Other" escape hatch), and glass mode explicitly rejects it: a shared token
+     must never inject prose into a worker's next prompt. Verified with a
+     literal injection attempt → 400;
+  3. **`request_id` must match the card's current question** — a lens showing a
+     stale screen cannot answer something the card moved past;
+  4. it can only pick options **the worker itself wrote**.
+- NOT built: no ticket registry, no companion APK, no device fleet, no DAT, no
+  mic/camera. Glass mode needs **no GitHub PAT and no SDK** — it is a plain
+  webapp against the daemon, which is why it works today.
+
+### 11.4 Verified, not assumed
+Against a live daemon on 3468 with a real question produced by the shipped
+`ask.parse`, and the real UI driven by Playwright at the lens's 600×600:
+- board + question render; the gate card correctly shows `question: null`;
+- every bound rejects: bad token 403, `glance_decide` off 403, stale
+  `request_id` 409, injection attempt 400, non-asking card 409;
+- the glance token still 401s on `/tracks` and `/settings`;
+- **the full loop**: D-pad to the 6th option → Enter → `Answered ✓` → question
+  consumed → audit line written.
+
+⚠ **The six-option layout, measured rather than guessed.** With the protocol's
+maximum of 6 options the last one starts below the 600px fold. It is NOT
+unreachable — this app is D-pad/EMG driven ("no touch", `app.js:3`) and focus
+scrolls every option to `fullyVisible`, confirmed for all six. The residual risk
+was only that the owner could not *know* a 6th choice existed, so the header now
+states the option count. Do not "fix" this by clamping to 4 options — that would
+silently drop a choice the worker offered.
+
+### 11.5 The board AGENT on the lens (`/glance/talk`) — added after review
+
+The first cut of glass mode was **not** using the board agent, and the owner
+caught it: *"but is it exclusive using the ai agent on board"*. He was right,
+and the evidence was plain — `/glance` is `sessions.owner_blockers()` +
+`events.metrics()`, a database read with **no AI anywhere on the path**, and the
+only agent involved was a card worker that had *already* asked a question. With
+no card asking, the lens had nothing to converse with. It was a form over
+pre-existing questions, not a conversation.
+
+`POST /glance/talk` is the missing half: a real turn with `copilot.chat` — the
+same board agent the desktop chat uses, with the same live board snapshot.
+
+- **Selection is the only input**, so the agent gets `GLASS_BRIEF` telling it to
+  keep prose to two sentences and to END every turn with a `<helmdeck-ask>`
+  block. That is the protocol card workers already use and `ask.parse` already
+  reads — no second conversation format was invented. A tapped option becomes
+  the next message; that loop IS the conversation.
+- A turn that comes back with no options is shown as "Ask again", never
+  swallowed — on a keyboard-less surface, a reply with nothing to tap is a dead
+  end.
+
+⚠ **ADVISORY, and enforced in code rather than asked for in the prompt.**
+`copilot.chat` EXECUTES the actions it parses (`copilot.py`, the `_run_bg`
+thread) and that reaches `machine_task` — the whole PC — plus `delete`, `steer`
+and `configure`. The lens authenticates with ONE SHARED token, not a user
+session, so it passes `allow_actions=False`: actions are parsed, dropped, logged
+and returned in `refused`, and the lens prints them in amber ("not run: …").
+A prompt is a request; this is a boundary, so it is a parameter.
+
+`glance_talk` is its own third switch (default OFF) because every tap SPENDS
+PLAN QUOTA on a real agent turn — a different thing to consent to than reading
+the board or answering a question a worker already asked.
+
+Verified with the model call stubbed (so the shipped endpoint, parsing and UI
+all run, without burning quota): default-off 403, bad token 403, empty message
+400; a turn returns prose and options separately; the UI loop runs
+Ask → tap → the tap arrives as the next message, `allow_actions=False` on every
+call and the lens brief present on every call; the refusal renders in amber
+rather than the 12px grey this document's own trap register says vanishes on the
+waveguide.
+
+**Still true:** needs no GitHub PAT and no Meta SDK.
+
+### 11.6 VOICE — what shipped, and the one wall that is left
+
+Owner, after reading §11.5: *"the idea with glass is genuinely able to talk to
+agent and get answer directly. Yes you can use d pad as support but primary is
+voice."* Correct, and the D-pad work was the SUPPORT input built as if it were
+the primary. Voice splits cleanly in two, and the two halves are not equally
+blocked:
+
+**HEARING the agent — SHIPPED.** `daemon/voice.py` renders the reply
+server-side and `/glance/talk` returns a clip URL the lens plays. This is only
+possible because of a measured pair of facts: the webview has **no
+`speechSynthesis`** (on-device 2026-07-16) but **does play audio** — *"podcasts
+work"*, `app/index.html:804`. Two deliberate departures from
+`tools/voice_note.py`: **mp3, not ogg/opus** (that recipe targets a WhatsApp
+voice note; the lens just plays a URL, and that file's own announcement path
+already proves mp3 plays there) — which also drops the whole ffmpeg dependency,
+and `transcode.available()` is **False on this box**, so an ffmpeg-shaped design
+would have been dead on arrival. And **content-addressed caching**, because a
+glance surface re-reads the same few sentences constantly.
+- The trap that would have made it silently mute, already paid for at
+  `app/index.html:809-812`: browsers refuse programmatic audio until a gesture
+  has played something, and the reply lands ~2s AFTER the tap. A muted play
+  inside the opening tap unlocks the element. Without it the lens is silent and
+  nothing errors.
+- `edge-tts` is OPTIONAL: `render()` returns None when it is missing or the box
+  is offline, and every surface falls back to text. Speech may never take the
+  answer away.
+
+**TALKING to the agent — walled in the WEBAPP, open on the phone.** (This
+paragraph originally ended "…blocked on the PAT". It was wrong; §11.7 below is
+the correction and supersedes it.) `mic-test/verdict.md`, on-device
+2026-07-13: *"the MRBD webview denies all capture — Mic no, Sprache-to-text no,
+Kamera no."* Meta's web path grants display, Neural Band, IMU, GPS, storage —
+**no mic**. No webapp code changes this. That same file's section *"Context that
+reframes the conclusion (owner was right)"* names the only route: the **mobile
+SDK path gives a PHONE app the glasses mic** (Bluetooth HFP, 8 kHz beamformed),
+so *"in-glasses voice capture is buildable as an Android phone app track"*.
+
+So voice-in **is** the companion app.
+
+### 11.7 ⚠ CORRECTION 2026-08-17 — voice-in was NEVER blocked on the PAT
+
+The paragraph that used to stand here said voice-in was *"blocked on exactly one
+thing the owner must do: a GitHub PAT"*. **That was wrong**, and the owner
+caught it with one question: *"but isn't it already installed when I build
+companion app for glasses?"* Two independent errors, both now checked on this
+machine rather than reasoned about:
+
+**1. The SDK is already here.** `glass-crud-harness/android/app/build.gradle.kts`
+declares `mwdat-core:0.8.0` and `mwdat-camera:0.8.0`, and both are sitting in
+this box's Gradle cache from that build:
+`~/.gradle/caches/modules-2/files-2.1/com.meta.wearable/` — 7.5 MB and 6.9 MB
+AARs, verified as valid uncorrupted zips with intact `classes.jar` and
+`AndroidManifest.xml`. Gradle resolves those offline. No token is needed for
+0.8.0; a token is only needed to fetch a version that is NOT cached (0.9.0+).
+The token itself was used once at that build and never persisted — it is in no
+`local.properties`, no `gradle.properties`, no env var.
+
+**2. The microphone is not a DAT API at all.** This is the bigger error.
+`android-dat-research.md` finding 2, adversarially verified 3-0, says it
+outright:
+
+> **Mic**: Bluetooth **HFP, 8 kHz mono only**, routed with standard Android 12+
+> APIs (`setCommunicationDevice(TYPE_BLUETOOTH_SCO)` + `MODE_IN_COMMUNICATION`)
+> — **not a DAT API**. 5-mic beamforming happens on-device.
+
+Confirmed from two other directions: `mwdat-core` contains **zero** audio/mic
+classes across its 892 classes, and Meta's own Android integration page lists
+only `mwdat-core`, `mwdat-camera`, `mwdat-display`, `mwdat-mockdevice` — **there
+is no audio artifact to download**. The glasses mic is an ordinary Bluetooth
+headset mic; the SDK is for camera and lens-display.
+
+The `read:packages` requirement (§5, §10.1) is REAL — it is just about fetching
+SDK *artifacts*, which were already fetched. The mistake was conflating "the SDK
+needs a token" with "voice needs the SDK". **Voice input needs no PAT, no Meta
+approval, and no DAT module.**
+
+**What actually constrains voice-in**, from the same verified list:
+- **HFP and A2DP are mutually exclusive** (finding 3): while the mic is live,
+  ALL glasses audio output drops to telephone quality. So the loop must be
+  listen → *stop listening* → then speak. Never both at once. This is a design
+  constraint on §11.6's playback, not a blocker.
+- 8 kHz mono: fine for speech-to-text, useless for anything else.
+- The real remaining cost is that a native Android app must exist and be built,
+  and **an APK cannot be built from a card worktree** (`DEPLOY.md` §2, NDK path
+  length) — it must build from a short real path such as `C:\hd\app`.
+
+**The daemon side is already done.** The companion's whole contract is:
+capture → STT → `POST /glance/talk {message: "<transcript>"}` → receive
+`{reply, voice, question}` → play `voice`. That endpoint exists, is verified,
+and is transport-agnostic — it does not care whether the words came from the
+HFP mic, the phone mic, or Meta's own assistant.
+
+⚠ Do NOT re-add the ticket registry when building it (§11.1). One device, one
+existing `glance_token`.
+
+### 11.8 Henry on the PHONE — the daemon half, and what the app still needs
+
+Owner 2026-08-17: rename the board agent to **Henry**, make him **voice-first on
+the mobile app**, and put the dashboard first. Henry and the dashboard shipped;
+this records where phone voice actually stands.
+
+**Why the phone cannot reuse the glasses' audio path.** The lens fetches
+`/glance/voice/<id>.mp3` because it talks to the daemon DIRECTLY. The phone
+usually does not - it goes through the E2EE relay, which seals and forwards one
+JSON request/response. There is no second channel to fetch a binary on, and a
+URL pointing at localhost is meaningless on a phone across the internet. So
+`voice.render_b64()` returns the clip INLINE in the JSON the phone already
+gets. Cost, stated plainly: base64 is ~33% larger (measured: 20016 bytes ->
+~26.7 KB of text). Fine for two sentences, which is why only Henry's prose is
+ever spoken and never a transcript.
+
+`POST /chat` takes `voice: true` **per request**, not from a server setting -
+the CLIENT is the only side that knows whether the owner is looking at the
+screen or driving. Default off, so nothing renders and nothing costs unless
+asked. The ```actions``` block is split off before rendering: it is machine
+syntax and unlistenable.
+
+Verified live: without the flag the response has no `voice` key at all; with it,
+20016 bytes of valid MPEG arrive inline while the reply keeps its actions block
+for the UI.
+
+**What the APP still needs, and why it is not in this card.** React Native has
+no built-in audio and the project has NO audio dependency today (checked:
+`expo-av`, `expo-audio`, `expo-speech` are all absent from `app/package.json`).
+So phone voice needs:
+1. a playback module (`expo-audio`) - a NATIVE dependency, therefore an APK
+   rebuild, not an OTA;
+2. speech-to-text for the input half - also native;
+3. the mic permissions, which `app/plugins/withGlassVoice.js` ALREADY declares
+   app-wide (RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / BLUETOOTH_CONNECT), so that
+   groundwork is done for the phone as well as the glasses.
+
+No dependency was pinned blind: `app/node_modules` is EMPTY on this box, so a
+version could be neither installed nor typechecked, and guessing an Expo-57
+version pin is exactly how a build breaks silently. That step belongs in a card
+that can run a real install and an APK build from `C:\hd\app`.

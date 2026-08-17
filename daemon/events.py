@@ -27,10 +27,24 @@ DEFAULTS = {
                "default": {"in": 3.0, "out": 15.0}},
     "value_per_card": 50.0,   # default deliverable value; per-card value overrides
     "currency": "EUR",
-    # read-only bearer token for the Meta Ray-Ban Display glance webapp (glasses/).
-    # empty = the /glance endpoint is OFF. Owner sets it; it does NOT grant any
-    # write access or touch the session-cookie auth - a scoped read-only surface.
+    # bearer token for the Meta Ray-Ban Display glance webapp (glasses/).
+    # empty = the /glance endpoint is OFF. Owner sets it; it does not touch the
+    # session-cookie auth - a scoped surface, read-only on its own.
     "glance_token": "",
+    # GLASS MODE: may the glasses ANSWER a worker's pending question (POST
+    # /glance/answer), i.e. tap a decision the agent offered and let the card's
+    # session continue? Default OFF and deliberately a SECOND switch, not a
+    # property of glance_token: answering runs an agent turn, so turning it on
+    # promotes one shared read-only secret into one that can move the board.
+    # Even on, it can only PICK options the worker itself wrote - never free
+    # text, never a card that is not currently asking.
+    "glance_decide": False,
+    # GLASS MODE: may the glasses TALK to the board agent (POST /glance/talk)?
+    # Default OFF and a THIRD switch on purpose: unlike reading or answering,
+    # every tap here spends plan quota on a real agent turn, so a leaked token
+    # would burn budget. The turn is advisory - board actions are dropped, never
+    # executed (copilot.chat allow_actions=False).
+    "glance_talk": False,
     # Un-versioned files copied into every new worktree. A worktree holds only
     # TRACKED files, so git-ignored local toolchain config (SDK paths, local
     # env) would be missing and builds that work by hand fail inside a card.

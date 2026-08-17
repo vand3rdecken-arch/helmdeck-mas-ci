@@ -33,9 +33,9 @@ type Row =
 // nav.* vocabulary the tab bar already speaks, so the palette never invents a
 // second name for the same screen.
 const VIEWS: { label: string; hint: string; go: string }[] = [
-  { label: "nav.board", hint: "palette.hint.board", go: "/(tabs)" },
+  { label: "nav.board", hint: "palette.hint.board", go: "/(tabs)/board" },
   { label: "nav.needsYou", hint: "status.needsYou", go: "/(tabs)/needs" },
-  { label: "nav.dashboard", hint: "palette.hint.dashboard", go: "/(tabs)/dashboard" },
+  { label: "nav.dashboard", hint: "palette.hint.dashboard", go: "/(tabs)" },
   { label: "nav.history", hint: "palette.hint.history", go: "/history" },
   { label: "nav.processes", hint: "palette.hint.processes", go: "/processes" },
   { label: "nav.recordings", hint: "nav.recordings", go: "/recordings" },

@@ -11,7 +11,7 @@ decision: mobile = same capabilities), so besides pulling it can drive:
   GET  /control/state                               {"teach": <run-id>|null, "busy": [...]}
 """
 import json, os, threading
-from urllib.parse import unquote, parse_qs, urlparse
+from urllib.parse import unquote, quote, parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from actionlog import read_timeline
 from runs import REC, list_runs
@@ -129,6 +129,71 @@ def _config_schema(s):
 GLANCE_RANK = {"gate": 0, "conflict": 1, "failed": 2,
                "question": 3, "review": 4, "delivered": 5}
 
+# GLASS MODE caps. The lens is 960x540 and shows ONE card at a time (the
+# on-device UX law: "one card fills the lens; you flip between cards, you don't
+# scroll a wall"), so a question that would need scrolling is worse than useless
+# there. These trim for the DISPLAY only - the phone still renders the full text
+# from the untouched question on the track.
+GLASS_Q_LEN = 160
+GLASS_LABEL_LEN = 40
+GLASS_DESC_LEN = 90
+GLASS_MAX_OPTIONS = 6
+
+
+# GLASS MODE conversation. The lens has no keyboard and no dictation (measured,
+# §3.1), so a turn that ends in prose is a DEAD END there - the owner would have
+# to reach for the phone, which is the one thing this surface exists to avoid.
+# The board agent therefore has to end every turn with tappable options, and it
+# already knows how: the same <helmdeck-ask> block every card worker emits, and
+# the same ask.parse that reads them. No second protocol.
+GLASS_BRIEF = (
+    "SURFACE: you are being read on Meta Ray-Ban DISPLAY GLASSES, not the phone.\n"
+    "- The lens is 600x600 and shows ONE thing at a time. Keep the prose to at "
+    "most 2 short sentences - what is true right now, and what you would do. No "
+    "lists, no markdown, no headings.\n"
+    "- The owner CANNOT TYPE and CANNOT DICTATE here. Tapping an option is his "
+    "only input. So you MUST end every reply with a <helmdeck-ask> block "
+    "offering 2-6 next moves, exactly as a card worker would:\n"
+    "<helmdeck-ask>\n"
+    '{"questions": [{"question": "<what to do next>", "header": "<max 24 chars>", '
+    '"options": [{"label": "<short>", "description": "<what it means>"}]}]}\n'
+    "</helmdeck-ask>\n"
+    "Ending without that block strands him - it is a defect, not a hand-off. "
+    "Always include a way to go wider (e.g. 'Something else') so a wrong guess "
+    "is never a trap.\n"
+    "- This surface is ADVISORY: any actions block you emit is DROPPED, not run. "
+    "Never claim you changed the board. To actually move work, offer it as an "
+    "option and say it will run from the phone."
+)
+
+
+def _glance_question(t):
+    """The pending decision, trimmed for the lens - or None.
+
+    Only the fields a tap needs: the prompt, the header (which is the key the
+    answer is posted under) and the option labels. Descriptions are included but
+    hard-trimmed; the worker's full reasoning prose is deliberately NOT here,
+    because it is paragraphs long and the lens cannot scroll it.
+    """
+    q = (t or {}).get("question") or {}
+    qs = q.get("questions") or []
+    if not qs:
+        return None
+    out = []
+    for one in qs:
+        out.append({
+            "question": (one.get("question") or "")[:GLASS_Q_LEN],
+            "header": one.get("header") or "",
+            "multiSelect": bool(one.get("multiSelect")),
+            "options": [{"label": (o.get("label") or "")[:GLASS_LABEL_LEN],
+                         "description": (o.get("description") or "")[:GLASS_DESC_LEN]}
+                        for o in (one.get("options") or [])[:GLASS_MAX_OPTIONS]],
+        })
+    # request_id is what makes an answer STALE-SAFE: the worker replaces its
+    # question on every turn, and /glance/answer refuses a pick that names a
+    # question the card has already moved past.
+    return {"id": q.get("id") or "", "questions": out}
+
 
 def glance_payload(tracks, m):
     """The /glance body: "what wants ME" - EVERY card blocked on the human, not
@@ -159,7 +224,12 @@ def glance_payload(tracks, m):
            "reason": b["reason"], "detail": b["detail"],
            # kept for glasses builds older than the reason vocabulary:
            # they render `asking` and nothing else
-           "asking": b["reason"] == "question"}
+           "asking": b["reason"] == "question",
+           # GLASS MODE: the decision ITSELF, not just the fact that one is
+           # due. Without the options on the lens the glasses can only say
+           # "this card asks you" and send you to the phone - the opposite of
+           # deciding hands-free. None for every non-asking card.
+           "question": _glance_question(t) if b["reason"] == "question" else None}
           for t, b in sessions.owner_blockers(tracks)]
     ny.sort(key=lambda c: (GLANCE_RANK.get(c["reason"], 9), c["id"]))
     yours = [{"id": t["id"], "task": (t.get("task") or "")[:70],
@@ -308,11 +378,39 @@ class H(BaseHTTPRequestHandler):
                     {"setup_needed": not auth.list_users(), "user": user,
                      "registration": bool(reg.get("open") or reg.get("invite_code")),
                      "registration_open": bool(reg.get("open"))}))
+            if p.startswith("/glance/voice/"):
+                # The agent's answer as SPEECH. Same token as /glance; serving a
+                # rendered mp3 is strictly less than what /glance already hands
+                # out (it IS the same sentence, spoken), so it needs no extra
+                # switch. The id is a content hash minted by voice.render, and
+                # voice.path_for refuses anything that is not exactly that shape
+                # - the URL must never become a file-read primitive.
+                import events, voice
+                tok = events.settings().get("glance_token") or ""
+                given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+                vid = p.rsplit("/", 1)[-1][:-4] if p.endswith(".mp3") else ""
+                fp = voice.path_for(vid)
+                if not fp:
+                    return self._send(404, json.dumps({"error": "no such clip"}))
+                data = open(fp, "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/mpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                # content-addressed: the id changes when the words change, so it
+                # can be cached hard and never go stale
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if p == "/glance":
-                # read-only glance surface for the Meta Ray-Ban Display webapp
-                # (glasses/). Token-gated, cross-origin (CORS on via _send). No
-                # write access, no session-cookie coupling - additive, not a
-                # weakening of auth. Off unless settings.glance_token is set.
+                # glance surface for the Meta Ray-Ban Display webapp (glasses/).
+                # Token-gated, cross-origin (CORS on via _send), no session-
+                # cookie coupling. Off unless settings.glance_token is set.
+                # READS here; the one write is POST /glance/answer, which is
+                # separately gated by settings.glance_decide - see there.
                 import events, sessions
                 tok = events.settings().get("glance_token") or ""
                 given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
@@ -943,6 +1041,115 @@ class H(BaseHTTPRequestHandler):
                 if self._sid():
                     auth.logout(self._sid())
                 return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
+            if p == "/glance/talk":
+                # GLASS MODE conversation with the BOARD AGENT itself - the half
+                # /glance cannot be: /glance is a database read (owner_blockers +
+                # metrics), so it can only ever show WHAT is stuck, never reason
+                # about it. This routes a message to copilot.chat, the same agent
+                # the board chat uses, with the live board snapshot it always
+                # gets.
+                #
+                # ADVISORY, enforced in copilot.chat rather than requested in the
+                # prompt: allow_actions=False drops every board action, because
+                # this surface authenticates with one SHARED token and
+                # _run_action reaches machine_task (the whole PC), delete and
+                # steer. Refused types come back and are surfaced, so the lens
+                # can never report a change that did not happen.
+                #
+                # Its own switch, not glance_decide: this SPENDS PLAN QUOTA on
+                # every tap, which is a different thing to consent to than
+                # answering a question a worker already asked.
+                import ask, events
+                s = events.settings()
+                tok = s.get("glance_token") or ""
+                given = (body.get("token") or "").strip() or \
+                    (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps(
+                        {"error": "glance disabled or bad token"}))
+                if not s.get("glance_talk"):
+                    return self._send(403, json.dumps(
+                        {"error": "talking to the board agent from the glasses is "
+                                  "off (set settings.glance_talk)"}))
+                msg = (body.get("message") or "").strip()[:400]
+                if not msg:
+                    return self._send(400, json.dumps({"error": "message required"}))
+                import copilot
+                try:
+                    out = copilot.chat("owner", msg, role="owner",
+                                       allow_actions=False, extra_system=GLASS_BRIEF)
+                except Exception as e:                       # noqa: BLE001
+                    return self._send(502, json.dumps({"error": str(e)[:200]}))
+                reply = out.get("reply") or ""
+                q, prose = ask.parse(reply)
+                spoken = (prose or reply)[:600]
+                # SPEAK it. The lens has no speechSynthesis but plays audio, so
+                # the answer is rendered here and played there (voice.py). Only
+                # the prose is spoken - reading six option labels aloud is
+                # slower than glancing at them, and the options are the one part
+                # the display is genuinely good at.
+                import voice
+                vid = voice.render(spoken)
+                return self._send(200, json.dumps({
+                    # the prose WITHOUT the block - ask.parse already strips it
+                    "reply": spoken,
+                    # the tappable half; None when the agent ignored the brief,
+                    # which the lens must show as a dead end rather than hide
+                    "question": _glance_question({"question": q}) if q else None,
+                    "refused": out.get("refused") or [],
+                    # None when speech is unavailable (offline, no edge-tts) -
+                    # the lens then simply shows the text, never an error
+                    "voice": ("/glance/voice/%s.mp3?token=%s" % (vid, quote(given)))
+                             if vid else None}))
+            if p == "/glance/answer":
+                # GLASS MODE's ONLY write. The lens taps one of the options the
+                # worker itself offered and the card's session continues - the
+                # exact path /tracks/<id>/answer takes, so there is no second
+                # answering mechanism to drift out of sync with the first.
+                #
+                # Before the user gate because the lens carries a token, not a
+                # session. Four deliberate bounds, because glance_token is a
+                # single SHARED secret and this endpoint RUNS AN AGENT TURN:
+                #   1. off unless settings.glance_decide is explicitly true, so
+                #      an existing read-only glance token does not silently
+                #      become one that can steer agents;
+                #   2. FREE TEXT REFUSED here (the phone keeps it) - a shared
+                #      token must never inject arbitrary prose into a worker's
+                #      next prompt, and the lens cannot type anyway;
+                #   3. request_id must match the card's CURRENT question, so a
+                #      lens showing a stale screen cannot answer a question the
+                #      card has already moved past;
+                #   4. it can only ever pick among options the WORKER wrote.
+                import ask, events, sessions
+                s = events.settings()
+                tok = s.get("glance_token") or ""
+                given = (body.get("token") or "").strip() or \
+                    (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+                if not tok or given != tok:
+                    return self._send(403, json.dumps(
+                        {"error": "glance disabled or bad token"}))
+                if not s.get("glance_decide"):
+                    return self._send(403, json.dumps(
+                        {"error": "deciding from the glasses is off "
+                                  "(set settings.glance_decide)"}))
+                tid = (body.get("id") or "").strip()
+                t = sessions.get_track(tid) if tid else None
+                if not t or not t.get("question"):
+                    return self._send(409, json.dumps({"error": "no pending question"}))
+                rid = (body.get("request_id") or "").strip()
+                if rid != ((t["question"] or {}).get("id") or ""):
+                    return self._send(409, json.dumps(
+                        {"error": "this question was already answered or replaced"}))
+                picks, err = ask.validate_answers(t["question"], body.get("answers") or {})
+                if err:
+                    return self._send(400, json.dumps({"error": err}))
+                if any(pick.get("custom") for pick in picks):
+                    return self._send(400, json.dumps(
+                        {"error": "the glasses may only pick offered options"}))
+                answers = body.get("answers") or {}
+                _bg("track:answer:" + tid, lambda: sessions.answer_question(
+                    tid, answers, request_id=rid, actor="glasses"))
+                return self._send(200, json.dumps({"started": tid, "answered": True}))
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             # ---- user management (owner only) ----
@@ -1083,10 +1290,24 @@ class H(BaseHTTPRequestHandler):
                 if not text:
                     return self._send(400, json.dumps({"error": "text required"}))
                 try:
-                    return self._send(200, json.dumps(copilot.chat(
+                    out = copilot.chat(
                         user["name"], text, role=user["role"], model=body.get("model", ""),
                         thinking=body.get("thinking", ""), attachments=body.get("attachments"),
-                        card=body.get("card"))))
+                        card=body.get("card"))
+                    # VOICE MODE (phone). The client asks per-request rather than
+                    # by a server setting, because it is the client that knows
+                    # whether the owner is looking at the screen or driving. Only
+                    # Henry's PROSE is spoken - never the ```actions block, which
+                    # is machine syntax and unlistenable.
+                    if body.get("voice"):
+                        import ask, voice as _voice
+                        _, prose = ask.parse(out.get("reply") or "")
+                        clip = _voice.render_b64(
+                            (prose or out.get("reply") or "").split("```")[0])
+                        if clip:
+                            out = dict(out)
+                            out["voice"] = clip
+                    return self._send(200, json.dumps(out))
                 except Exception as e:
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
