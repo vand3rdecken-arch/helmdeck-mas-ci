@@ -103,12 +103,59 @@ def test_unchanged_driver_is_a_noop():
     check(t["updated"] == before, "setting the SAME driver is a no-op (no spurious edit/note)")
 
 
+def test_flip_drops_idle_session():
+    """A driver's tool grant is baked in at process spawn, so the flip must
+    tear down the IDLE old-grant worker or it lingers until the next turn
+    notices - and the owner sees no effect. The flip should drop it eagerly
+    so the very next turn respawns fresh under the new driver."""
+    import threading
+    db.track_put(_track("t-idle"))
+
+    class Fake:
+        def __init__(self):
+            self._cur = None                 # idle: no turn in flight
+            self._turn_lock = threading.Lock()
+            self.killed = False
+        def alive(self):
+            return True
+        def kill(self):
+            self.killed = True
+
+    fake = Fake()
+    drivers._sessions["t-idle"] = fake
+    t = sessions.update_track("t-idle", {"driver": "claude-desktop"})
+    check(t["driver"] == "claude-desktop", "flip succeeds on an idle card")
+    check("t-idle" not in drivers._sessions,
+          "idle old-grant session dropped from the registry on the flip")
+    check(fake.killed, "the idle session's process was tree-killed")
+
+
+def test_flip_spares_a_live_turn():
+    """The mid-turn guard already refuses the flip, but prove drop_session
+    itself never yanks a session with a turn in flight - defence in depth."""
+    import threading
+    fake = type("Fake", (), {})()
+    fake._cur = {"turn": 1}                   # a turn is running
+    fake._turn_lock = threading.Lock()
+    fake.killed = False
+    fake.alive = lambda: True
+    fake.kill = lambda: setattr(fake, "killed", True)
+    drivers._sessions["t-live-drop"] = fake
+    dropped = drivers.drop_session("t-live-drop")
+    check(not dropped, "drop_session refuses a session with a live turn")
+    check("t-live-drop" in drivers._sessions and not fake.killed,
+          "the live session is left intact")
+    drivers._sessions.pop("t-live-drop", None)
+
+
 if __name__ == "__main__":
     test_unknown_driver_refused()
     test_valid_driver_switch()
     test_downgrade_no_capability_note()
     test_refused_mid_turn()
     test_unchanged_driver_is_a_noop()
+    test_flip_drops_idle_session()
+    test_flip_spares_a_live_turn()
     print()
     if _fails:
         print("FAILED: %d check(s)" % len(_fails))

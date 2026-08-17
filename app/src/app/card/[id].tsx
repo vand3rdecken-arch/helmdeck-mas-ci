@@ -669,9 +669,13 @@ export default function CardScreen() {
     return tagged.map((x) => x.s);
   }, [transcript, hist]);
 
-  async function edit(patch: Record<string, unknown>) {
+  async function edit(patch: Record<string, unknown>, okToast?: string) {
     if (!id) return;
-    try { await api.update(id, patch); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+    try {
+      await api.update(id, patch);
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      if (okToast) showToast(okToast);
+    }
     catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
   }
 
@@ -769,7 +773,13 @@ export default function CardScreen() {
         ...(me?.role === "owner" || me?.role === "operator"
           ? [{ label: tr(k.driver === "claude-desktop" ? "card.desktop.disable" : "card.desktop.enable")
                         + tr("card.desktop.hint"),
-               onPress: () => edit({ driver: k.driver === "claude-desktop" ? "claude" : "claude-desktop" }) }]
+               // The grant is bound at process spawn, so the flip lands on the
+               // next message, not the running turn - say so instead of silently
+               // toggling and leaving the owner guessing (the daemon drops the
+               // idle old-grant process so the very next turn respawns fresh).
+               onPress: () => edit(
+                 { driver: k.driver === "claude-desktop" ? "claude" : "claude-desktop" },
+                 tr(k.driver === "claude-desktop" ? "card.desktop.toastOff" : "card.desktop.toastOn")) }]
           : []),
         ...(k.session_id ? [{ label: tr("card.menu.forkChat"), onPress: forkChat }] : []),
         { label: tr("card.menu.fork"), onPress: forkCode },

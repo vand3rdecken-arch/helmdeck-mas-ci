@@ -461,6 +461,39 @@ def start_idle_sweeper(interval=None):
     threading.Thread(target=loop, daemon=True).start()
 
 
+def drop_session(tid):
+    """Tear down a card's IDLE worker so its next turn respawns fresh. Used when a
+    launch-time property that can't be hot-swapped changed between turns - most
+    concretely a DRIVER swap (claude <-> claude-desktop), whose tool grant is
+    baked into the argv at spawn (build_argv) and which apply_opts refuses to
+    change on a live process. Without this, the old-grant process lingers idle
+    until the next turn's _get_session notices the signature drift and kills it -
+    correct, but it means a driver flip has no visible effect until you send a
+    message. Dropping it here makes the flip take hold immediately and eagerly.
+
+    Same safety as sweep_idle: only a session with NO turn in flight is reaped
+    (non-blocking lock + _cur check), and the conversation survives on disk keyed
+    by session id, so the next steer resumes it. Returns True if a session was
+    dropped. Idempotent - a no-op when the card has no live session."""
+    with _sessions_guard:
+        s = _sessions.get(tid)
+        if s is None:
+            return False
+        if not s._turn_lock.acquire(blocking=False):
+            return False            # a turn holds it - leave it to _get_session
+        try:
+            if s._cur is not None:
+                return False        # turn in flight - never yank it mid-run
+            del _sessions[tid]
+        finally:
+            s._turn_lock.release()
+    try:
+        s.kill()
+    except Exception:
+        pass
+    return True
+
+
 def shutdown_all():
     """Tree-kill every live session - registered for daemon shutdown so a clean
     stop doesn't orphan worker trees (complements reap_orphans on the next boot).
