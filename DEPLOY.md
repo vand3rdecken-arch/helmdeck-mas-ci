@@ -473,6 +473,23 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$PATH"
 # -> app/build/outputs/apk/release/app-release.apk  (~140MB, signed w/ archive/apk/swarmdeck-release.jks)
 ```
 
+⚠ **Those raw gradle lines are for DEBUGGING a build, not for producing a
+shippable APK — use `deploy/build_apk.sh`.** Calling gradle directly skips
+everything the script does first, and the skips are SILENT: the build goes
+green and the artifact is wrong. Measured on 2026-08-17 by doing exactly this:
+a 52-minute build produced an APK stamped **versionName 1.0.2 / versionCode
+38** while `app.json` already said **1.0.8 / 44**, because the version-sync
+step below never ran — precisely the drift the comment there warns about. The
+config plugins (`withLanCleartext`, `withGlassVoice`) are skipped the same way,
+so a permission can be missing from a perfectly successful build. If you do run
+gradle by hand, run the plugin + version-sync steps from `build_apk.sh` first,
+and verify the result rather than trusting it:
+```bash
+AAPT=$(ls -t "$ANDROID_HOME/build-tools/"*/aapt2.exe | head -1)
+"$AAPT" dump badging app-release.apk | grep versionName   # must match app.json
+"$AAPT" dump permissions app-release.apk                  # must list what you added
+```
+
 ⚠ **Building from a worktree: `ninja: manifest 'build.ninja' still dirty after
 100 tries`.** react-native-screens / -worklets / expo-modules-core die in the
 CMake step, right after CMake warns "object file path cannot be safely placed
