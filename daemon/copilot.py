@@ -19,9 +19,15 @@ CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
 # missing or mangled harness file degrades to today's exact behaviour instead of
 # to a lobotomised copilot. Edit the .md; keep this in sync only when the board's
 # action vocabulary itself changes.
-SYSTEM = """You are the HelmDeck board copilot. The user steers an agent-execution
+SYSTEM = """You are HENRY, HelmDeck's board agent. That is your name - use it when
+you refer to yourself, and answer to it. The user steers an agent-execution
 kanban (cards = agent/human work in lanes backlog/working/review/done; processes =
 step chains that auto-advance). You get a live board snapshot each message.
+
+You are increasingly HEARD rather than read - on the glasses, and on the phone in
+voice mode. So lead with the ANSWER: no "Sure!", no restating the question, no
+wind-up before the point. One or two sentences of substance first, detail only if
+it was asked for. A spoken preamble cannot be skimmed past.
 
 HOW TO REPLY - this format lets the user watch your answer stream in live:
 1. Write a SHORT helpful reply to the user in plain prose (this is what streams).
@@ -891,12 +897,22 @@ def build_argv(cli_model, sid, system):
     return argv, role_in_turn
 
 
-def chat(user, message, role="operator", model="", thinking="", attachments=None, card=None):
-    """One copilot turn for this user. Returns {reply, actions, cost, usage}.
+def chat(user, message, role="operator", model="", thinking="", attachments=None,
+         card=None, allow_actions=True, extra_system=""):
+    """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
     a card the user is currently viewing, so 'this card' / 'it' resolves to it -
-    the same free agent, reachable from within a card."""
+    the same free agent, reachable from within a card.
+
+    allow_actions=False makes the turn ADVISORY: the model may still emit an
+    actions block, but nothing is executed and the dropped types come back in
+    `refused`. That is the seam glass mode uses - see the refusal site below for
+    why this is enforced in code rather than asked for in the prompt.
+
+    extra_system is appended to the resolved system brief, for a surface with a
+    hard shape requirement (the lens: short prose, always end in tappable
+    options) that the shared board brief should not have to carry."""
     import turnopts
     sess = _sessions()
     sid = sess.get(user)
@@ -920,6 +936,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # never the chat turn.
     import harness
     system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
+    if extra_system:
+        system = system + "\n\n" + extra_system
     turn = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
         + _snapshot() + (("\n\n" + _plan) if _plan else "") \
         + focus + "\n\nUSER (%s): %s" % (user, body)
@@ -1058,6 +1076,21 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     compact_note = _maybe_compact(user)
     if compact_note:
         _append_log(user, [{"cls": "error", "text": compact_note, "ts": time.strftime("%H:%M")}])
+    refused = []
+    if acts and not allow_actions:
+        # ADVISORY CALLER (glass mode). The lens authenticates with a single
+        # SHARED token, not a user session, so it must never reach _run_action -
+        # that is the door to machine_task (the whole PC), delete, steer and
+        # configure. Refused HERE rather than by asking the model not to emit
+        # actions, because a prompt is a request and this is a boundary. The
+        # refusal is logged and returned, so no surface can report a change that
+        # did not happen.
+        refused = sorted({str(a.get("type") or "?") for a in acts})
+        _append_log(user, [{"cls": "error",
+                            "text": "advisory surface: %d board action(s) NOT run (%s)"
+                                    % (len(acts), ", ".join(refused)),
+                            "ts": time.strftime("%H:%M")}])
+        acts = []
     if acts:
         def _run_bg():
             done = []
@@ -1069,5 +1102,5 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             if done:
                 _append_log(user, [{"cls": "act", "text": r} for r in done])
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
-    return {"reply": out.get("reply", ""), "actions": [],
+    return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}

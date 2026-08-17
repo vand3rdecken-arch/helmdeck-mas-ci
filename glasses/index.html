@@ -30,6 +30,7 @@
       </div>
       <nav class="nav-bar">
         <button class="nav-item focusable primary" data-action="open-needs">Needs you</button>
+        <button class="nav-item focusable" data-action="talk-start">Ask</button>
         <button class="nav-item focusable" data-action="open-sow">SoW</button>
         <button class="nav-item focusable" data-action="open-settings">⚙</button>
       </nav>
@@ -59,6 +60,23 @@
       <div class="content">
         <div class="detail-task" id="detail-task">–</div>
         <div class="detail-meta" id="detail-meta"></div>
+      </div>
+      <nav class="nav-bar hidden" id="detail-nav">
+        <button class="nav-item focusable primary" data-action="open-decide">Decide</button>
+      </nav>
+    </div>
+
+    <!-- GLASS MODE: the decision itself. One question fills the lens; the
+         options are the only input, because the lens cannot type. -->
+    <div id="decide" class="screen hidden">
+      <header class="header">
+        <button class="back-btn focusable" data-action="back">&#8592;</button>
+        <h1 id="decide-head">Decide</h1>
+        <span class="header-meta" id="decide-step"></span>
+      </header>
+      <div class="content">
+        <div class="decide-q" id="decide-q">–</div>
+        <div class="list-container" id="decide-options"></div>
       </div>
     </div>
 
@@ -91,6 +109,20 @@
       <nav class="nav-bar">
         <button class="nav-item focusable primary" data-action="save-settings">Save &amp; connect</button>
       </nav>
+    </div>
+
+    <!-- GLASS MODE: conversation with the BOARD AGENT. Its reply is prose, its
+         options are the only input - the lens has no keyboard. -->
+    <div id="talk" class="screen hidden">
+      <header class="header">
+        <button class="back-btn focusable" data-action="back">&#8592;</button>
+        <h1 id="talk-head">Board agent</h1>
+        <span class="header-meta" id="talk-meta"></span>
+      </header>
+      <div class="content">
+        <div class="talk-reply" id="talk-reply">Thinking…</div>
+        <div class="list-container" id="talk-options"></div>
+      </div>
     </div>
 
     <!-- transient status line -->

@@ -317,7 +317,10 @@ SURFACES = [
      "builder": "drivers.build_argv", "cwd": "<worktree der Karte>"},
     {"key": "machine", "agent": "machine-worker", "label": "Maschine (Task auf dem PC)",
      "builder": "drivers.build_argv", "cwd": "<Arbeitsordner des Tasks>"},
-    {"key": "pm", "agent": "board-copilot", "label": "PM / Board-Copilot",
+    # `agent` is the FILE key (harness/agents/board-copilot.md) and deliberately
+    # keeps its old name: renaming the file would break every brief lookup and
+    # the settings mapping for a cosmetic win. The LABEL is what the owner reads.
+    {"key": "pm", "agent": "board-copilot", "label": "PM / Henry",
      "builder": "copilot.build_argv", "cwd": "<repo root>"},
 ]
 

@@ -34,6 +34,13 @@ printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROI
 node app/plugins/withLanCleartext.js app/android \
   || { echo "[build_apk] network-security-config apply FAILED"; exit 1; }
 
+# Same rule, same reason: the glasses-voice permissions + the typed foreground
+# service. Without this line the APK builds perfectly clean and the microphone
+# is simply never grantable at runtime - a silent, on-device-only failure, which
+# is the exact class the line above exists to prevent.
+node app/plugins/withGlassVoice.js app/android \
+  || { echo "[build_apk] glass-voice manifest apply FAILED"; exit 1; }
+
 # Sync the hand-managed native version from app.json BEFORE building. The bump
 # automation (ship.sh) only touches app.json version + versionCode, but the
 # git-ignored app/android is hand-managed and does NOT regenerate: build.gradle's
