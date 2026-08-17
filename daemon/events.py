@@ -532,16 +532,26 @@ def metrics(tracks):
     ai_all = sum(c["ai_cost"] for c in cards)
     tok_all = sum(c["tokens_in"] + c["tokens_out"] for c in cards)
     touch_all = sum(c["touches"] for c in cards) or 1
+    # WIP limit now flows through the tracked policy control plane. policy seeds
+    # its wipLimit FROM settings (below), so this is identical to the old value
+    # until someone swaps it; a tracked policy.swap then changes it live. Fully
+    # defensive: any policy hiccup falls back to the settings value.
+    wip_limit = s["capacity"]["wip_limit"]
+    try:
+        import policy
+        wip_limit = int(policy.get_policies().get("wipLimit", wip_limit))
+    except Exception:
+        pass
     return {
         "settings": s,
         "ai_billing": billing_mode,
         "plan_calibration": calib,
         "cards": cards,
         "sows": sows,
-        "capacity": {"wip": wip, "wip_limit": s["capacity"]["wip_limit"],
+        "capacity": {"wip": wip, "wip_limit": wip_limit,
                      "touches_today": touches_today, "actors": actors,
                      "touch_budget_day": s["capacity"]["touch_budget_day"],
-                     "headroom": max(0, s["capacity"]["wip_limit"] - wip)},
+                     "headroom": max(0, wip_limit - wip)},
         "yield_first_pass": (sum(1 for ok in gated.values() if ok), len(gated)),
         "automation": (sum(1 for c in done if c["mode"] == "auto"), len(done)),
         "gate_failures": sorted(fails.items(), key=lambda kv: -kv[1]),
