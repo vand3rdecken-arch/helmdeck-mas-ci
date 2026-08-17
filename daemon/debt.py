@@ -957,6 +957,15 @@ DEBT = [
         "id": "plugin-kernel-dual-nav",
         "title": "Plugin kernel boots alongside expo-router (two navigation systems)",
         "status": "open",
+        "progress": "ec7e307: the PRODUCTION tab set is now registry-driven — root "
+                    "_layout boots the 'app' profile + provides the kernel; "
+                    "(tabs)/_layout renders <Tabs.Screen> from the nav.tabs surface "
+                    "plugin with a 1:1 hard-coded fallback (never bricks). "
+                    "Screenshot-JUDGED at both breakpoints (desktop sidebar + phone "
+                    "bottom bar) identical to before. REMAINING: the Sidebar's own "
+                    "NAV array is still hard-coded; per-screen COMPONENTS are not "
+                    "yet surface plugins (only their nav metadata is); kernel-demo "
+                    "still exists as the dev route.",
         "what": "app/src/kernel/ (Phase 1) + app/src/boot/ (Phase 2) introduce a "
                 "plugin-first composition: profiles pick swappable plugins, "
                 "surfaces register into KEYS.SURFACES, a registry-driven host "
