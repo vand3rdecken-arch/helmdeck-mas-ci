@@ -98,13 +98,14 @@
         <h1>Connect</h1>
       </header>
       <div class="content">
-        <label class="field-label" for="cfg-base">Daemon URL</label>
+        <label class="field-label" for="cfg-base">Daemon URL (optional)</label>
         <input id="cfg-base" class="field focusable" type="url" inputmode="url"
-          placeholder="https://swarm.example.ts.net:8140" autocomplete="off">
+          placeholder="empty = this same server" autocomplete="off">
         <label class="field-label" for="cfg-token">Glance token</label>
         <input id="cfg-token" class="field focusable" type="text"
           placeholder="paste from Settings" autocomplete="off">
-        <div class="field-hint">Owner sets the token in HelmDeck Settings. Read-only.</div>
+        <div class="field-hint">Owner sets the token in HelmDeck Settings. Read-only.
+          Leave the URL empty when the Glance worker serves this app.</div>
       </div>
       <nav class="nav-bar">
         <button class="nav-item focusable primary" data-action="save-settings">Save &amp; connect</button>
