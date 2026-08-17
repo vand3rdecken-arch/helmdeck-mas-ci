@@ -326,6 +326,21 @@ _WINDOWS_MCP_READONLY = frozenset({
     "Screenshot", "Snapshot", "Scrape", "DisplayInventory",
 })
 
+# DIRECT build cards (new_direct_task) edit the repo's LIVE working tree with no
+# worktree isolation - two turns on the same tree at once would edit blind over
+# each other. Same primitive and same queue semantics as the desktop lock: one
+# lock per normalized tree path, held for the synchronous turn, contenders wait
+# bounded then bounce visibly. The registry only ever grows by distinct repo
+# paths the owner direct-builds in - a handful, never reaped.
+_direct_locks = {}
+_direct_locks_guard = _threading.Lock()
+
+def _direct_lock_for(cwd):
+    key = os.path.normcase(os.path.abspath(cwd or ""))
+    with _direct_locks_guard:
+        return _direct_locks.setdefault(key, _threading.Lock())
+
+
 def _uses_desktop_control(cfg):
     """True iff this card can physically drive mouse/keyboard/screen and so must
     hold the single global _desktop_lock. Read-only screen tools (Screenshot,
@@ -595,10 +610,35 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
                 "only one card may drive the mouse/keyboard/screen at a time. "
                 "Waited %ds for it to free, then gave up - retry when the other "
                 "card's turn ends." % wait_s)
+    # DIRECT cards share the repo's LIVE tree - one turn per tree at a time,
+    # same bounded-queue semantics (and the same wait knob) as the desktop lock.
+    dlock = _direct_lock_for(t.get("worktree") or t.get("repo")) if t.get("direct") else None
+    if dlock and not dlock.acquire(blocking=False):
+        try:
+            wait_s = float(events.settings().get("desktop_lock_wait_s") or 0) or 960.0
+        except Exception:
+            wait_s = 960.0
+        try:
+            from actionlog import ActionLog
+            ActionLog(t["run_dir"]).log(
+                "note", "Working tree busy (another direct card is editing it) - "
+                        "queued, waiting up to %ds." % wait_s)
+        except Exception:
+            pass
+        events.emit("direct_wait", t["id"], wait_s=wait_s)
+        if not dlock.acquire(timeout=wait_s):
+            if desktop:
+                _desktop_lock.release()   # never leak the cursor lock on this bounce
+            raise RuntimeError(
+                "Direct build: another card is editing the same working tree. "
+                "Waited %ds for it to finish, then gave up - retry when its "
+                "turn ends." % wait_s)
     try:
         with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
             return drivers.run(cfg, t, prompt)
     finally:
+        if dlock:
+            dlock.release()
         if desktop:
             _desktop_lock.release()
         if rec:
@@ -1434,6 +1474,54 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
     from actionlog import ActionLog
     ActionLog(cur["run_dir"]).log("note", "MACHINE task filed - workplace %s (by %s)" % (cwd, actor))
     events.emit("machine", cur["id"], action="filed", cwd=cwd, actor=actor)
+    if dispatch:
+        return move_lane(cur["id"], "working", actor=actor)
+    return cur
+
+
+DIRECT_BRANCH = "(direct)"
+
+def new_direct_task(repo, task, actor="owner", priority="medium", description="",
+                    dispatch=True, value=None, model="", driver="claude"):
+    """Paseo-style DIRECT build card: the repo working tree ITSELF is the
+    workplace - no worktree, no branch, no merge. Rides the machine path end to
+    end (machine=True: _start_machine dispatches into the folder, _accept_machine
+    accepts without a merge), differing from new_machine_task in exactly two ways:
+
+    - the workplace is the REPO ROOT, so the repo's own CLAUDE.md, hooks and
+      loop-state machinery apply to the agent for free (setting_sources project);
+    - the driver stays the plain coding `claude` (machine tasks force
+      claude-desktop for GUI reach) - a direct build needs the repo tools, not
+      the mouse, and MUST NOT take the single desktop lock while it compiles.
+
+    The cost is REGISTERED, not hidden (daemon/debt.py 'direct-build-no-gate'):
+    a direct card edits the shared tree with no gate-before-review and no
+    isolation - Paseo semantics, chosen by the owner for solo direct building.
+    Two direct cards on the same tree are serialized in _turn (bounded queue,
+    same pattern as the desktop lock) so they cannot edit blind over each other.
+    Gated by the same policy.machine switch/roles as machine work."""
+    import events
+    pol = machine_policy()
+    if not pol.get("enabled", True):
+        raise RuntimeError("direct tasks are switched off (policy.machine.enabled=false)")
+    repo = os.path.abspath(os.path.expandvars(os.path.expanduser(repo)))
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        raise RuntimeError("not a git repo (direct builds edit a repo's working tree): %s" % repo)
+    ok, why = machine_root_ok(repo)
+    if not ok:
+        raise RuntimeError(why)
+    t = new_track(repo, DIRECT_BRANCH, task, lane="backlog", actor=actor,
+                  priority=priority, description=description, driver=driver,
+                  value=value, model=model, perm=pol.get("perm", "bypassPermissions"))
+    def _mark(tt):
+        tt["machine"] = True         # ride the no-worktree dispatch/accept path
+        tt["direct"] = True          # serialized per-tree in _turn; shown as direct
+        tt["worktree"] = repo        # the driver's cwd - the LIVE tree, no copy
+    cur = _mutate(t["id"], _mark) or t
+    from actionlog import ActionLog
+    ActionLog(cur["run_dir"]).log(
+        "note", "DIRECT build filed - workplace is the live tree %s (by %s)" % (repo, actor))
+    events.emit("machine", cur["id"], action="filed_direct", cwd=repo, actor=actor)
     if dispatch:
         return move_lane(cur["id"], "working", actor=actor)
     return cur

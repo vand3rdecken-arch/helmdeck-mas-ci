@@ -921,6 +921,38 @@ DEBT = [
                "luck. Until then, do NOT paper over it by retrying the gate.",
         "order": 27,
     },
+    {
+        "id": "direct-build-no-gate",
+        "title": "DIRECT build cards edit the live tree with no gate and no isolation",
+        "status": "open",
+        "what": "sessions.new_direct_task (owner-requested, Paseo semantics) "
+                "files a card whose workplace is the repo's LIVE working tree: "
+                "machine=True rides the no-worktree dispatch/accept path, so "
+                "there is no branch, no merge, and NO gate-before-review - the "
+                "agent's edits land in the tree the owner is looking at, "
+                "immediately. Two direct cards on the same tree are serialized "
+                "in _turn (bounded queue per normalized tree path, the desktop-"
+                "lock pattern), so they cannot edit blind over each other.",
+        "why_it_bites": "(1) A direct card can break the tree and nothing red "
+                        "stops it - the gate law is deliberately bypassed for "
+                        "this card class; the repo's own hooks/loop-state are "
+                        "the only guard rail. (2) A direct card and the OWNER "
+                        "editing the same files at the same time still race - "
+                        "the per-tree lock serializes cards, not humans. (3) "
+                        "Uncommitted owner work in the tree is exposed to the "
+                        "agent's edits; there is no snapshot to roll back to "
+                        "unless the agent (or owner) commits first.",
+        "trigger": "a direct card is dispatched onto a tree with uncommitted "
+                   "owner changes; a direct turn goes wrong and there is no "
+                   "gate to bounce it; the owner edits while a direct turn runs",
+        "fix": "Make the dispatch snapshot the tree first (a lightweight "
+               "baseline commit or stash-ref, same nothing-lost rule as "
+               "worktree reclaim) so every direct turn has a rollback point; "
+               "surface 'direct card active on this tree' in the app while a "
+               "turn runs; consider an optional post-turn gate run (advisory, "
+               "non-blocking) so red at least becomes visible.",
+        "order": 28,
+    },
 ]
 
 def list_debt():
