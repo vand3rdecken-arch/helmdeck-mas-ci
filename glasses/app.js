@@ -17,18 +17,59 @@
   }
   function saveCfg(c) { localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
 
+  // SAME-ORIGIN is now the normal case. When this app is served BY the Glance
+  // Worker (glasses/worker), the API lives on the very origin the page came
+  // from, so there is nothing to configure but the token. An explicit cfg.base
+  // still means "talk to that daemon directly" - the LAN / desktop smoke test
+  // path - and keeps working exactly as before.
+  function apiBase() { return (cfg.base || '').replace(/\/+$/, ''); }
+  function sameOrigin() {
+    return !cfg.base && /^https?:$/.test(location.protocol);
+  }
+  function connected() {
+    return Boolean(cfg.token) && (Boolean(cfg.base) || sameOrigin());
+  }
+
+  // The token travels in a HEADER when we are same-origin, and in the query
+  // string only when talking to a daemon directly (the daemon reads ?token=
+  // and nothing else - daemon/server.py:415-418). The distinction is not
+  // pedantry: a URL with the token in it is written to Cloudflare's request
+  // logs, a header is not. The Worker converts one to the other upstream.
+  function glanceHeaders(extra) {
+    var h = extra || {};
+    if (sameOrigin() && cfg.token) h['X-Glance-Token'] = cfg.token;
+    return h;
+  }
+
+  // ONE registered URL, carrying its own login - the trick from
+  // glass-crud-harness/tools/qr.py, where the QR encodes
+  // ".../#glass&t=<password>" so nothing is ever typed on the glasses. The
+  // fragment is never sent to a server, so the token does not reach the edge
+  // on the way in; we lift it into localStorage and scrub it from the URL so
+  // it does not linger in the address bar or a history entry.
+  function adoptUrlToken() {
+    var m = /[#&?]t=([^&]+)/.exec(location.hash || '') ||
+            /[?&]t=([^&]+)/.exec(location.search || '');
+    if (!m) return;
+    try {
+      cfg.token = decodeURIComponent(m[1]);
+      saveCfg(cfg);
+      history.replaceState(null, '', location.pathname);
+    } catch (e) { /* a hostile hash is not worth breaking boot over */ }
+  }
+
   // ---- data fetch -----------------------------------------------------------
   function glanceUrl() {
-    if (!cfg.base || !cfg.token) return null;
-    var base = cfg.base.replace(/\/+$/, '');
-    return base + '/glance?token=' + encodeURIComponent(cfg.token);
+    if (!connected()) return null;
+    if (sameOrigin()) return '/glance';        // token rides in the header
+    return apiBase() + '/glance?token=' + encodeURIComponent(cfg.token);
   }
   function refresh() {
     var url = glanceUrl();
     var dot = document.getElementById('conn-dot');
     if (!url) { dot.className = 'header-meta'; showScreen('settings'); return; }
     dot.className = 'header-meta';
-    fetch(url, { cache: 'no-store' })
+    fetch(url, { cache: 'no-store', headers: glanceHeaders() })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) {
         data = d; fetchedAt = Date.now();
@@ -236,12 +277,12 @@
   }
 
   function submitDecision() {
-    if (!cfg.base || !cfg.token) { toast('Not connected'); return; }
+    if (!connected()) { toast('Not connected'); return; }
     var d = decide;
     toast('Sending…');
-    fetch(cfg.base.replace(/\/+$/, '') + '/glance/answer', {
+    fetch(apiBase() + '/glance/answer', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: glanceHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ token: cfg.token, id: d.cardId,
                              request_id: d.qid, answers: d.answers })
     }).then(function (r) {
@@ -292,7 +333,10 @@
     try {
       if (!replyAudio) { replyAudio = new Audio(); replyAudio.preload = 'auto'; }
       replyAudio.muted = false;
-      replyAudio.src = cfg.base.replace(/\/+$/, '') + url;
+      // The one place the token unavoidably rides in a URL: an <audio> element
+      // cannot set a header. Same constraint glass-crud-harness hit with its
+      // TTS proxy - and the reason that proxy had to be same-origin too.
+      replyAudio.src = apiBase() + url;
       var pr = replyAudio.play();
       if (pr && pr.catch) pr.catch(function () { toast('Tap to hear'); });
     } catch (e) { /* silent */ }
@@ -310,15 +354,15 @@
 
   function talk(message) {
     if (talkBusy) return;
-    if (!cfg.base || !cfg.token) { toast('Not connected'); return; }
+    if (!connected()) { toast('Not connected'); return; }
     talkBusy = true;
     setText('talk-reply', 'Thinking…');
     setHTML('talk-options', '');
     setText('talk-meta', '');
     showScreen('talk');
-    fetch(cfg.base.replace(/\/+$/, '') + '/glance/talk', {
+    fetch(apiBase() + '/glance/talk', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: glanceHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ token: cfg.token, message: message })
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
@@ -475,6 +519,9 @@
   }
 
   // ---- boot -----------------------------------------------------------------
-  if (!cfg.base || !cfg.token) { fillSettings(); showScreen('settings', true); }
+  // The registered URL may carry the token, in which case the glasses go
+  // straight to the board and the Connect screen is never seen.
+  adoptUrlToken();
+  if (!connected()) { fillSettings(); showScreen('settings', true); }
   else { showScreen('home', true); refresh(); }
 })();
