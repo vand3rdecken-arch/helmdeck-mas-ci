@@ -318,8 +318,30 @@ def _lock_for(tid):
 # never a stored flag that could drift from reality.
 _desktop_lock = _threading.Lock()
 
+# windows-mcp tools that only OBSERVE the screen (read pixels/inventory) and
+# never move the cursor or type. A card whose ONLY windows-mcp grants are these
+# does not contend for the one physical cursor, so it must NOT take the exclusive
+# desktop lock - otherwise a passive Screenshot card would starve a real driver.
+_WINDOWS_MCP_READONLY = frozenset({
+    "Screenshot", "Snapshot", "Scrape", "DisplayInventory",
+})
+
 def _uses_desktop_control(cfg):
-    return any("windows-mcp" in str(pat) for pat in (cfg.get("allowed_tools") or []))
+    """True iff this card can physically drive mouse/keyboard/screen and so must
+    hold the single global _desktop_lock. Read-only screen tools (Screenshot,
+    Snapshot, ...) are exempted. FAIL-SAFE: a wildcard windows-mcp grant, or any
+    tool not on the read-only allowlist, locks - so a new/unknown control tool
+    can never silently bypass the guard and race the cursor."""
+    for pat in (cfg.get("allowed_tools") or []):
+        s = str(pat)
+        if "windows-mcp" not in s:
+            continue
+        tail = s.rsplit("__", 1)[-1]        # tool name after mcp__windows-mcp__
+        if "*" in tail:                     # wildcard: could be any tool -> lock
+            return True
+        if tail not in _WINDOWS_MCP_READONLY:   # a control tool -> lock
+            return True
+    return False
 
 # INTERRUPT-AND-REPLACE (Paseo parity). A steer that arrives mid-turn must take
 # effect NOW - Paseo's replaceAgentRun soft-interrupts the live turn and starts
