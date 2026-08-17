@@ -13,7 +13,7 @@ export type { Clock } from "./kernel";
 export { Registry } from "./registry-collection";
 export { resolveProfile, dumpConfig, selectPlugins } from "./profiles";
 export { KEYS, makeRegistries } from "./keys";
-export type { Engine, Surface, Manifest, ApiClient, PolicySet } from "./keys";
+export type { Engine, Surface, Manifest, ApiClient, PolicySet, CharterDoc } from "./keys";
 export type { ResolvedProfile } from "./profiles";
 export type {
   Plugin,

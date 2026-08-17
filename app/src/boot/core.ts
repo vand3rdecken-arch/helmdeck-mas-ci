@@ -10,6 +10,7 @@ import { KEYS, makeRegistries, type Manifest } from "@/kernel";
 import type { Plugin } from "@/kernel";
 
 import { seedPolicies } from "./policies";
+import { seedCharter } from "./charter";
 
 /** Provides the daemon transport client under KEYS.API. */
 export const coreApi: Plugin = {
@@ -58,5 +59,5 @@ export const coreManifest: Plugin = {
 };
 
 /** Load order matters: registries + policies before anything injects them. */
-export const CORE_PLUGINS: Plugin[] = [coreApi, coreTheme, coreManifest, coreRegistries, seedPolicies];
+export const CORE_PLUGINS: Plugin[] = [coreApi, coreTheme, coreManifest, coreRegistries, seedPolicies, seedCharter];
 export const CORE_IDS = CORE_PLUGINS.map((p) => p.id);
