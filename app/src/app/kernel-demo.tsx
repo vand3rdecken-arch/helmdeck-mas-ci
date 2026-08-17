@@ -12,6 +12,7 @@ import { Text, View } from "react-native";
 import { KernelProvider, useSurfaces } from "@/kernel/react";
 import { boot, dump } from "@/boot";
 import { hydratePolicies } from "@/boot/hydrate";
+import { attachDaemonTrackSink } from "@/boot/tracksink";
 
 function RegistryHost() {
   const surfaces = useSurfaces();
@@ -27,9 +28,11 @@ export default function KernelDemo() {
   // tracked swap; falls back to the seeded defaults offline. Then dump the
   // reconfiguration journal so the glass box is visible in dev.
   useEffect(() => {
+    const detach = attachDaemonTrackSink(kernel); // mirror swaps into daemon audit
     hydratePolicies(kernel).then(() => {
       if (__DEV__) console.log("kernel journal:", kernel.journal());
     });
+    return detach;
   }, [kernel]);
   // Surfaced once in the console so the resolved composition is inspectable.
   if (__DEV__) console.log(dump("phase2"));
