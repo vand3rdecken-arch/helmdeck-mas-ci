@@ -1,5 +1,12 @@
 # HelmDeck relay (thin - the APK rule)
 
+> **Not to be confused with `glasses/worker/`, which is real and shipped.** That
+> one hosts the Ray-Ban Display webapp and proxies the four `/glance` routes to
+> the daemon over an HTTPS tunnel. THIS file is still a design sketch for a
+> different thing: a no-inbound relay that would mirror `relay/relay.py`'s
+> outbound long-poll in a Durable Object, so no tunnel is needed at all. Nothing
+> below is built.
+
 The cloud's ONLY jobs, all tiny and stateless beyond the newest values:
 
 - `/pair` - rendezvous: daemon and APK exchange a pairing code once (like Herald's cast code).
