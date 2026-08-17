@@ -14,6 +14,8 @@ import type { Plugin, ProfileDoc } from "@/kernel";
 import { CORE_PLUGINS, CORE_IDS } from "./core";
 import { boardSurface } from "@/plugins/surfaces/board";
 import { claudeEngine } from "@/plugins/engines/claude";
+import { copilotEngine } from "@/plugins/engines/copilot";
+import { deepseekEngine } from "@/plugins/engines/deepseek";
 
 import phase2 from "../../profiles/phase2.json";
 import store from "../../profiles/store.json";
@@ -38,6 +40,8 @@ export const PROFILE_DOCS: Record<string, ProfileDoc> = {
 export const AVAILABLE_PLUGINS: Record<string, Plugin> = {
   "surfaces.board": boardSurface,
   "engines.claude": claudeEngine,
+  "engines.copilot": copilotEngine,
+  "engines.deepseek": deepseekEngine,
 };
 
 /** Assemble and return a booted Kernel for `profileName`. */
