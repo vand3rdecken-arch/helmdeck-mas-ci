@@ -25,11 +25,21 @@ additive surfaces, focus-based navigation, no touch).
 
 ## Who hosts what
 
-- **The webapp (these 3 files)** → hosted by **Meta's HTTPS preview** for
-  on-device testing. In Claude Code with the toolkit plugin installed, run the
-  `/test-on-device` skill; it uploads the files and gives an HTTPS URL the
-  glasses open. (For a permanent install you publish through the Wearables
-  Developer Center.) You do **not** run a server on the glasses.
+- **The webapp (these 3 files)** → hosted by **you**, on any public HTTPS
+  origin. You do **not** run a server on the glasses, and Meta does **not** host
+  it for you. Two paths, and they are for different purposes:
+  - *Throwaway testing* → the toolkit's `/test-on-device` skill uploads the
+    files and hands back a temporary HTTPS URL. Fine for a look; it is not an
+    install.
+  - *Permanent* → put the files on an origin you control, then in the **Meta AI
+    app → Developer Mode → App Connections → Web Apps → Add a Web App**,
+    register that one URL. It stays. No review, no Developer Center, no partner
+    programme — those gate the public STORE LISTING, which is a different thing
+    (see `docs/glasses-reference.md` §11.9). `tools/qr.py` in the owner's
+    glass-crud-harness turns the URL into a QR so the phone adds it in one tap.
+
+  Register **one** URL and keep it: new screens ship by redeploying the origin,
+  never by re-registering on the glasses.
 - **The data** → your **HelmDeck daemon** (`daemon/`, port 8140), hosted by you
   — the same box you already run it on, reachable over LAN or Tailscale
   (e.g. `https://<host>.ts.net:8140`). The webapp calls its read-only
