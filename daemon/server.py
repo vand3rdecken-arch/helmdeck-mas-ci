@@ -111,6 +111,7 @@ def _web_url():
 from apimeta import _loop_state_mod, _lane_flow, _loop_machine, _config_schema, CONTROLS
 from glances import glance_payload, _glance_question
 import routes_auth
+import routes_policy
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -202,15 +203,8 @@ class H(BaseHTTPRequestHandler):
             # pure relocation - every other route is byte-identical to before.
             if p in routes_auth.GET_ROUTES:
                 return routes_auth.GET_ROUTES[p](self, user)
-            if p == "/policy":
-                # Canonical seeded policy/charter (full-dynamism decree). The app
-                # hydrates KEYS.POLICIES/CHARTER from here instead of hardcoding,
-                # so daemon and app share ONE source. Read-only; mutate via
-                # POST /policy/swap so the change is tracked.
-                if not user or user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import policy
-                return self._send(200, json.dumps(policy.load()))
+            if p in routes_policy.GET_ROUTES:
+                return routes_policy.GET_ROUTES[p](self, user)
             if p.startswith("/glance/voice/"):
                 # The agent's answer as SPEECH. Same token as /glance; serving a
                 # rendered mp3 is strictly less than what /glance already hands
@@ -836,37 +830,8 @@ class H(BaseHTTPRequestHandler):
             # if-chain, so this is a pure relocation of the 4 auth POST routes.
             if p in routes_auth.POST_ROUTES:
                 return routes_auth.POST_ROUTES[p](self, user, body)
-            if p == "/policy/swap":
-                # The ONLY policy/charter mutation over the wire. Routes through
-                # policy.swap so every change is mirrored into the append-only
-                # events sink (no untracked mutation) and is reversible via the
-                # returned `before`. Owner-only; agent-attributed swaps still
-                # obey agentMaySwap / the human-only capability sandbox.
-                if not user or user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import policy
-                try:
-                    before = policy.swap(body.get("section") or "policies",
-                                         body.get("patch") or {},
-                                         actor=body.get("actor") or "user",
-                                         note=body.get("note"))
-                except policy.PolicyDenied as e:
-                    return self._send(403, json.dumps({"error": str(e)}))
-                return self._send(200, json.dumps({"ok": True, "before": before,
-                                                   "policy": policy.load()}))
-            if p == "/reconfig/track":
-                # Universal tracking: app-kernel swaps (user/agent reconfig in the
-                # UI) mirror into the SAME append-only events sink as daemon swaps,
-                # so the glass box spans both runtimes. Append-only, never a
-                # mutation of enforcement — just the audit record.
-                if not user or user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import events
-                events.emit("reconfig", "-", source="app",
-                            op=body.get("op"), pluginId=body.get("pluginId"),
-                            actor=body.get("actor"), replaced=body.get("replaced"),
-                            note=body.get("note"), by=user["name"])
-                return self._send(200, json.dumps({"ok": True}))
+            if p in routes_policy.POST_ROUTES:
+                return routes_policy.POST_ROUTES[p](self, user, body)
             if p == "/glance/talk":
                 # GLASS MODE conversation with the BOARD AGENT itself - the half
                 # /glance cannot be: /glance is a database read (owner_blockers +
