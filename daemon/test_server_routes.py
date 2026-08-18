@@ -248,6 +248,26 @@ def main():
         if status == 200:
             ok(isinstance(body, dict) and body.get("error"), "/tracks/new non-repo: error surfaced in the 200 body")
 
+        # -- control/teach group (routes_control.py) ----------------------------
+        status, body = req("GET", "/control/state", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("teach") is None and body.get("busy") == [],
+           "/control/state shape: idle (no teach session, nothing busy)")
+
+        status, body = req("POST", "/control/teach/stop", {}, cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"), "/control/teach/stop with nothing recording: 404")
+
+        status, body = req("POST", "/control/distill", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/control/distill with no id: rejected")
+
+        # -- relay group (routes_relay.py) - owner-only guard, no real pairing ---
+        status, body = req("POST", "/relay/pair", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/relay/pair refuses a client (owner only)")
+        status, body = req("POST", "/relay/unpair", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/relay/unpair refuses a client (owner only)")
+        # owner + no relay configured -> relay_client.unpair() is a harmless no-op
+        status, body = req("POST", "/relay/unpair", {}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/relay/unpair (owner, nothing paired) returns a dict")
+
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of
         # server.py: `if p not in self.OPEN and not user: 401`) now refuses /me
         # before its route body (which assumes an authenticated user) ever runs.
