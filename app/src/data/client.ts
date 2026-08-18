@@ -1,4 +1,5 @@
 import { track } from "./analytics";
+import { useAuthGate } from "./authgate";
 import { useConfig } from "./config";
 import { demoRespond, useDemo } from "./demo";
 import { open, seal } from "./e2ee";
@@ -61,7 +62,7 @@ async function relayReq(method: string, path: string, bodyStr: string): Promise<
   return { status: resp.status ?? 200, body: resp.body ?? "" };
 }
 
-async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, skipAuthGate = false): Promise<T> {
   // DEMO seam (the one data/demo.ts documents): with the sample board active,
   // answer from the fixture and never touch the network. Unmodelled endpoints
   // answer {} - empty, not a fake success payload. Pairing a real daemon calls
@@ -99,7 +100,16 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   }
   // The daemon answered: the CONNECTION is healthy even if this call failed.
   useHealth.getState().reportOk();
-  if (status === 401) throw new AuthRequired();
+  // /auth/login's OWN 401 (wrong password) must NOT be treated as "the
+  // session went bad" - skipAuthGate lets it fall through to the generic
+  // ApiError path below instead, which surfaces the daemon's real
+  // {"error": "wrong name or password"} text to the login screen.
+  if (status === 401 && !skipAuthGate) {
+    // Demo mode has no real session and never should be forced into a login
+    // screen - it's local sample data, not a daemon-backed account.
+    if (!useDemo.getState().active) useAuthGate.getState().reportAuthRequired();
+    throw new AuthRequired();
+  }
   if (status >= 400) {
     let msg = "";
     try { msg = String(JSON.parse(txt)?.error ?? ""); } catch { /* not json */ }
@@ -331,6 +341,23 @@ export interface CellInfo {
 export const api = {
   get: <T,>(path: string) => req<T>("GET", path),
   post: <T,>(path: string, body?: unknown, signal?: AbortSignal) => req<T>("POST", path, body, signal),
+  // Restores what the old Next.js web app's AuthGate (web/components/
+  // auth.tsx, archived at the Expo cutover) used to do - a real username/
+  // password login, lost when that component was never ported. skipAuthGate
+  // (the 5th req() arg) so a wrong password surfaces as a normal ApiError
+  // with the daemon's real message, not a message-less AuthRequired.
+  login: (name: string, password: string) =>
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/login", { name, password }, undefined, true),
+  // Drives the login screen's mode (first-run setup vs. sign-in vs. optional
+  // self-registration) - mirrors the shape routes_auth.py's auth_state
+  // actually returns. skipAuthGate: an expired/garbage token must not block
+  // finding out whether setup is needed in the first place.
+  authState: () => req<{ setup_needed: boolean; user: unknown; registration: boolean; registration_open: boolean }>(
+    "GET", "/auth/state", undefined, undefined, true),
+  authSetup: (name: string, password: string) =>
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/setup", { name, password }, undefined, true),
+  authRegister: (name: string, password: string, invite: string) =>
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/register", { name, password, invite }, undefined, true),
   // Board PUSH long-poll: blocks until the data version passes `v` (or ~22s),
   // returns the new version. Works over the sealed relay AND direct; the app
   // loops it and invalidates queries on change (replaces the direct-only SSE).

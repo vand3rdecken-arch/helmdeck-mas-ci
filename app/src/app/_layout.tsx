@@ -17,6 +17,7 @@ import type { Kernel } from "@/kernel";
 import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
+import { useAuthGate } from "@/data/authgate";
 import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
@@ -28,6 +29,7 @@ import { tokens } from "@/theme/tokens";
 import { HealthBanner } from "@/ui/health_banner";
 import { DemoBanner } from "@/ui/demo_banner";
 import { Onboard, useShowOnboard } from "@/ui/onboard";
+import { LoginScreen } from "@/ui/login_screen";
 import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
@@ -222,6 +224,12 @@ export default function RootLayout() {
   // Desktop first run: the instance isn't serving yet, so onboarding owns the
   // window instead of dropping the user on a board that cannot load.
   const showOnboard = useShowOnboard();
+  // A 401 anywhere (client.ts) or an explicit logout (Settings) flips this -
+  // restores the login screen the old Next.js web app had (web/components/
+  // auth.tsx, lost at the Expo cutover) so a bad/missing token has a way
+  // back in besides a fresh pairing link from another device. Demo mode is
+  // exempt at the source (client.ts never reports it while demo is active).
+  const needsLogin = useAuthGate((s) => s.needsLogin);
   // Hold the tree one tick until the persisted board is hydrated, so screens
   // mount onto last-known data (instant paint) instead of an empty spinner.
   if (!restored) {
@@ -235,6 +243,21 @@ export default function RootLayout() {
             <SafeAreaProvider>
               <StatusBar style="light" />
               <Onboard />
+              <WebStyles />
+            </SafeAreaProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    );
+  }
+  if (needsLogin) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider name="dark">
+            <SafeAreaProvider>
+              <StatusBar style="light" />
+              <LoginScreen />
               <WebStyles />
             </SafeAreaProvider>
           </ThemeProvider>
