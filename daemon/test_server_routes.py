@@ -762,6 +762,60 @@ def main():
         pm_back = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
         ok(pm_back.get("enabled") is True, "re-enable via tracked swap: pm cell on again")
 
+        # -- Cell registry gate (Phase 2): process and copilot cells, same
+        # disable/spine-stays-up/re-enable round trip as pm above.
+        policy.swap("policies", {"processEnabled": False}, actor="test")
+        status, body = req("GET", "/processes", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: /processes 404s with 'cell disabled'")
+        status, body = req("GET", "/me", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "spine path /me stays reachable while process cell is off")
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        proc_off = next((c for c in (body.get("cells") or []) if c["id"] == "process"), {})
+        ok(proc_off.get("enabled") is False, "/cells: manifest reflects process disabled")
+
+        # direct-call guard: processes.clear_step_stamps must no-op while the
+        # process cell is off, not just its route. Seed one process with a step
+        # carrying a stamp, call the guarded function directly (bypassing HTTP
+        # entirely), and assert the stamp survives untouched.
+        import processes
+        seed_tid = "test-track-clear-stamps"
+        processes._save([{"id": "proc-1", "request": "r", "status": "active",
+                           "steps": [{"title": "s1", "track": seed_tid, "auto_dispatched": True}]}])
+        processes.clear_step_stamps(seed_tid)
+        after = processes._load()
+        stamp_still_set = after[0]["steps"][0].get("auto_dispatched") is True
+        ok(stamp_still_set, "processes.clear_step_stamps: no-ops while process cell is disabled")
+        processes._save([])   # clean up the seeded row before re-enabling
+
+        policy.swap("policies", {"processEnabled": True}, actor="test")   # restore
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        proc_back = next((c for c in (body.get("cells") or []) if c["id"] == "process"), {})
+        ok(proc_back.get("enabled") is True, "re-enable via tracked swap: process cell on again")
+        # the same stamp, now with the cell back on, DOES clear (proves the
+        # guard above was really gating on cell-enabled, not silently broken).
+        processes._save([{"id": "proc-1", "request": "r", "status": "active",
+                           "steps": [{"title": "s1", "track": seed_tid, "auto_dispatched": True}]}])
+        processes.clear_step_stamps(seed_tid)
+        after2 = processes._load()
+        ok(after2[0]["steps"][0].get("auto_dispatched") is None,
+           "processes.clear_step_stamps: clears for real once the process cell is back on")
+        processes._save([])
+
+        policy.swap("policies", {"copilotEnabled": False}, actor="test")
+        status, body = req("GET", "/chat/history", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: /chat/history 404s with 'cell disabled'")
+        status, body = req("GET", "/me", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "spine path /me stays reachable while copilot cell is off")
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        cop_off = next((c for c in (body.get("cells") or []) if c["id"] == "copilot"), {})
+        ok(cop_off.get("enabled") is False, "/cells: manifest reflects copilot disabled")
+        policy.swap("policies", {"copilotEnabled": True}, actor="test")   # restore
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        cop_back = next((c for c in (body.get("cells") or []) if c["id"] == "copilot"), {})
+        ok(cop_back.get("enabled") is True, "re-enable via tracked swap: copilot cell on again")
+
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of
         # server.py: `if p not in self.OPEN and not user: 401`) now refuses /me
         # before its route body (which assumes an authenticated user) ever runs.
