@@ -18,6 +18,7 @@ CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
 import db as _db
+from outcomes import extract_outcome, _record_outcome
 from blockers import _blocker_text, blocker, manual_backlog, owner_blockers, waits_for_owner, MANUAL_MODES
 from econ import _record_econ, _record_turn, _log_turn_end
 from gitutil import (_git, _git_try, _branch_exists, is_git_repo, _current_branch, _checkpoint, _seed_worktree, _repo_hash, _owned_worktree, _git_state_broken, WORKTREE_DIRNAME)
@@ -1203,33 +1204,6 @@ def _start_machine(t):
 # the card's final reply had long answered resurfaced as "open" in the plan
 # triage. Folded into the track at EVENT TIME (the accept) by the two accept
 # mutators (move_lane / _accept_machine) - the one place a card finishes.
-_DELIVERED_RE = re.compile(r"\bDELIVERED\b[:\s*-]*", re.I)
-# The brief's fixed hand-off sentence ("Ready for Review - ...") is board
-# choreography, not a result - strip it and everything after.
-_READY_TAIL_RE = re.compile(r"ready for review\b.*", re.I | re.S)
-
-def extract_outcome(reply):
-    """A 1-2 line result sentence from a card's final reply: the agent's
-    DELIVERED summary (harness/agents/card-worker.md convention, same anchor ask.py keys
-    off) when present, else the reply's first lines. '' when nothing usable."""
-    text = (reply or "").strip()
-    if not text:
-        return ""
-    m = _DELIVERED_RE.search(text)
-    for cand in ([text[m.end():]] if m else []) + [text]:
-        lines = [l.strip(" \t*-#") for l in _READY_TAIL_RE.sub("", cand).splitlines()]
-        lines = [l for l in lines if l]
-        if lines:
-            return " ".join(lines[:2])[:240]
-    return ""
-
-
-def _record_outcome(tt):
-    """Runs INSIDE the accept mutators. Keeps an existing outcome when the
-    final reply yields nothing (e.g. a re-accept after a silent lane fix)."""
-    out = extract_outcome(tt.get("last_reply"))
-    if out:
-        tt["outcome"] = out
 
 
 # Pays debt [legacy-outcome-on-read]. Cards accepted BEFORE the outcome field
