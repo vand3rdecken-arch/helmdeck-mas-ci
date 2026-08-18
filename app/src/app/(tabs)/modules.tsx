@@ -5,12 +5,13 @@
 // Adjusting a policy posts a TRACKED swap to /policy/swap.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, ScrollView, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Switch, Text, View } from "react-native";
 
 import { api, type CellInfo } from "@/data/client";
 import { useTheme } from "@/theme";
 import { KEYS, type Engine, type PolicySet, type CharterDoc } from "@/kernel";
 import { useKernelOptional, useSurfaces, useJournal } from "@/kernel/react";
+import { CellDiagram } from "@/ui/cell_diagram";
 
 type PolicyDoc = { version?: number; policies?: PolicySet; charter?: CharterDoc };
 
@@ -26,6 +27,11 @@ export default function ModulesTab() {
   // on any error (403 for a client role, daemon unreachable, etc.) so this
   // screen still renders the rest of Modules & Rules without crashing.
   const [cells, setCells] = useState<CellInfo[]>([]);
+  // Which cell's architecture diagram is showing (Section "Cells" below) -
+  // SELECT, not expand-in-place, so at most one diagram renders at a time
+  // (5 stacked diagrams would blow past the reference style's density
+  // target). Tapping the same cell again collapses it.
+  const [selectedCell, setSelectedCell] = useState<string | null>(null);
 
   const load = () =>
     api
@@ -116,15 +122,25 @@ export default function ModulesTab() {
         ) : <ActivityIndicator color={t.accent} />}
       </Section>
 
-      <Section title="Cells" hint="Agentische Systeme (Rolle + Route + UI-Surface + Enable-Flag) - daemon/cells.py. Aus schaltet die Routen UND den Tab ab.">
+      <Section title="Cells" hint="Agentische Systeme (Rolle + Route + UI-Surface + Enable-Flag) - daemon/cells.py. Aus schaltet die Routen UND den Tab ab. Antippen zeigt die Architektur - Logic, Storage, Harness, API-Routes, UI-Surface - mit echtem Code beim Antippen einer Datei.">
         {cells.length ? cells.map((c) => (
-          <Row key={c.id} label={c.id} sub={`${c.role}${c.surface ? ` — ${c.surface}` : ""}${c.modes.length ? ` — modes: ${c.modes.join(", ")}` : ""}`}
-            right={
-              <Switch value={c.enabled} disabled={busy}
-                onValueChange={(v) => setPolicy(c.enabledKey as keyof PolicySet, v).then(loadCells)}
-                trackColor={{ true: t.accent, false: t.glassBorder }} />
-            } />
+          <Pressable key={c.id} onPress={() => setSelectedCell(selectedCell === c.id ? null : c.id)}>
+            <Row label={c.id} sub={`${c.role}${c.surface ? ` — ${c.surface}` : ""}${c.modes.length ? ` — modes: ${c.modes.join(", ")}` : ""}`}
+              right={
+                <Switch value={c.enabled} disabled={busy}
+                  onValueChange={(v) => setPolicy(c.enabledKey as keyof PolicySet, v).then(loadCells)}
+                  trackColor={{ true: t.accent, false: t.glassBorder }} />
+              } />
+          </Pressable>
         )) : <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Keine Cells geladen.</Text>}
+        {selectedCell ? (() => {
+          const c = cells.find((x) => x.id === selectedCell);
+          return c ? (
+            <View style={{ marginTop: 10, borderWidth: 1, borderColor: t.glassBorder, borderRadius: 10, padding: 8 }}>
+              <CellDiagram cell={c} />
+            </View>
+          ) : null;
+        })() : null}
       </Section>
 
       {charter ? (
