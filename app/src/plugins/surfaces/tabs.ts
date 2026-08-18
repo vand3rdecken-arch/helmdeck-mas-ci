@@ -24,7 +24,8 @@ const TABS: NavSurface[] = [
   { id: "tab.connectors", title: "", path: "connectors", route: "connectors", nav: { group: "more", order: 7, icon: "sync-outline", labelKey: "nav.connectors", sectionKey: "nav.sectionSetup", teamOnly: true, desktopOnly: true } },
   { id: "tab.automation", title: "", path: "automation", route: "automation", nav: { group: "more", order: 8, icon: "git-branch-outline", labelKey: "nav.automation", teamOnly: true, desktopOnly: true } },
   { id: "tab.settings", title: "", path: "settings", route: "settings", nav: { group: "more", order: 9, icon: "settings-outline", labelKey: "nav.settings", teamOnly: true, desktopOnly: true } },
-  { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 10, icon: "ellipsis-horizontal", labelKey: "nav.more", phoneOnly: true } },
+  { id: "tab.modules", title: "", path: "modules", route: "modules", nav: { group: "more", order: 10, icon: "cube-outline", labelKey: "nav.modules", sectionKey: "nav.sectionSetup", teamOnly: true, desktopOnly: true } },
+  { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 11, icon: "ellipsis-horizontal", labelKey: "nav.more", phoneOnly: true } },
 ];
 
 export const tabsNav: Plugin = {
