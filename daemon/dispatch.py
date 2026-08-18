@@ -24,6 +24,7 @@ from gitutil import (_git, _git_try, _branch_exists, _git_state_broken,
                      _worktree_for, _worktree_of_branch)
 from turnrunner import _turn, _finish_turn, is_delivered
 from lanemachine import _gate, _say_card, move_lane
+from devport import _alloc_dev_port
 from blockers import blocker
 from outcomes import extract_outcome, _record_outcome
 

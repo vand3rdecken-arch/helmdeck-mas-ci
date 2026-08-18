@@ -8,6 +8,7 @@ extracted services directly (trackstore). The one still-trapped dependency
 (reconcile_bg, the bg-task cluster) is reached via a lazy `import sessions`
 inside sweep_zombies.
 """
+import os
 import time
 
 from trackstore import _load, _mutate
