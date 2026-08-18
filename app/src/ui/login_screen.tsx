@@ -88,7 +88,7 @@ export function LoginScreen() {
         ) : null}
 
         <TextInput placeholder="Benutzername" placeholderTextColor={t.txtTertiary} autoCapitalize="none"
-          autoCorrect={false} value={name} onChangeText={setName} style={field} />
+          autoCorrect={false} autoFocus value={name} onChangeText={setName} style={field} />
         <TextInput placeholder={mode === "in" ? "Passwort" : "Passwort (mind. 8 Zeichen)"} placeholderTextColor={t.txtTertiary}
           secureTextEntry value={password} onChangeText={setPassword} style={field}
           onSubmitEditing={submit} />

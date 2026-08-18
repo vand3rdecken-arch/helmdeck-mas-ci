@@ -1714,6 +1714,78 @@ DEBT = [
                "(machine-worker.md) and the recordings surface.",
         "order": 33,
     },
+    {
+        "id": "expo-cutover-login-regression",
+        "title": "The Expo cutover never ported the old web app's login "
+                 "screen - fixed 2026-08-18",
+        "status": "paid",
+        "what": "The owner got locked out of their own app: browser session "
+                "held a non-owner token, no logout control anywhere, and no "
+                "way to log back in with a username/password. Root cause, "
+                "confirmed by reading git history (NOT assumed) - the OLD "
+                "Next.js web app (archived at the Expo cutover, commit "
+                "6625edc, 'moved not deleted') had a real, working AuthGate "
+                "component (web/components/auth.tsx, retrieved from history: "
+                "sign-in / create-account / first-run-setup tabs, calling "
+                "POST /auth/login, /auth/register, /auth/setup). It worked "
+                "there because that app was same-origin (Next.js proxied "
+                "/backend/* -> :8140), so a plain cookie session was enough. "
+                "This component was simply never ported to Expo during the "
+                "cutover - the expo-cutover-pipeline debt (order unknown, "
+                "already paid) was marked complete without this gap being "
+                "caught, because the Expo app's ENTIRE auth model became "
+                "pairing-only (config.ts's own comment: 'pairing IS the "
+                "app's login' - a QR code or #cfg= link sets baseUrl+token "
+                "directly). Once a token went bad, there was no way back in "
+                "short of a fresh pairing link from another device.",
+        "why_it_bites": "A real, user-facing lockout with no in-app recovery "
+                        "path - exactly what happened today. The daemon's "
+                        "auth.py/routes_auth.py always had full username/"
+                        "password support; the gap was 100% missing frontend "
+                        "UI plus one real mismatch: /auth/login only ever "
+                        "returned a COOKIE session (sd_session), while the "
+                        "Expo app's actual request layer (data/client.ts) "
+                        "authenticates every call with a BEARER TOKEN from "
+                        "useConfig().token - a cookie-only login would not "
+                        "have actually authenticated the app's own fetches "
+                        "even with a login screen bolted on (different "
+                        "mechanism entirely, and cross-origin in dev besides).",
+        "trigger": "a token expires, gets revoked, or belongs to the wrong "
+                   "role/account, and no other already-authenticated device "
+                   "is available to generate a fresh pairing link",
+        "fix": "PAID. (1) daemon/routes_auth.py: auth_login/auth_setup/"
+               "auth_register all now ALSO mint a real device token via the "
+               "EXISTING auth.issue_token() (same primitive the owner-only "
+               "/users/<name>/tokens route and /relay/pair's QR flow already "
+               "use - no new auth mechanism) and return it in the response "
+               "body, alongside the unchanged cookie (backward compatible). "
+               "(2) app/src/data/authgate.ts (new): a small zustand store "
+               "(same shape as data/health.ts's useHealth) - needsLogin, "
+               "flipped by client.ts's existing 401 detection (the ONE place "
+               "that already classifies AuthRequired) and by Settings' new "
+               "logout button. Demo mode is exempt at the source (client.ts "
+               "checks useDemo.getState().active before reporting). (3) app/"
+               "src/ui/login_screen.tsx (new): restores the OLD AuthGate's "
+               "three modes (setup/register/sign-in) against the SAME "
+               "daemon routes, styled like onboard.tsx. client.ts's req() "
+               "gained a skipAuthGate param so /auth/login's OWN 401 (wrong "
+               "password) surfaces as a real ApiError with the daemon's "
+               "actual message, not a message-less AuthRequired. (4) app/"
+               "src/app/_layout.tsx: the needsLogin gate sits next to the "
+               "existing showOnboard gate, same full-screen-blocking shape. "
+               "(5) Settings gained an always-visible 'Abmelden' button (not "
+               "gated behind the owner-only settings block - logout must "
+               "work even when /settings itself can't load).\n"
+               "Verified: py_compile clean; test_server_routes.py gained 6 "
+               "new assertions (a real HTTP /auth/login round trip, "
+               "confirming the token alone - NO cookie - authenticates GET "
+               "/me, plus the wrong-password 401 case); full 16-file daemon "
+               "suite green aside from a pre-existing, already-documented "
+               "system-load timing flake unrelated to this change (a "
+               "different route each time, confirmed by re-running "
+               "standalone). tsc --noEmit clean.",
+        "order": 34,
+    },
 ]
 
 def list_debt():
