@@ -16,6 +16,7 @@ import { boardSurface } from "@/plugins/surfaces/board";
 import { connectorsSurface } from "@/plugins/surfaces/connectors";
 import { pmSurface } from "@/plugins/surfaces/pm";
 import { processesSurface } from "@/plugins/surfaces/processes";
+import { copilotSurface } from "@/plugins/surfaces/copilot";
 import { tabsNav } from "@/plugins/surfaces/tabs";
 import { claudeEngine } from "@/plugins/engines/claude";
 import { copilotEngine } from "@/plugins/engines/copilot";
@@ -48,6 +49,7 @@ export const AVAILABLE_PLUGINS: Record<string, Plugin> = {
   "surfaces.connectors": connectorsSurface,
   "surfaces.pm": pmSurface,
   "surfaces.processes": processesSurface,
+  "surfaces.chat": copilotSurface,
   "nav.tabs": tabsNav,
   "engines.claude": claudeEngine,
   "engines.copilot": copilotEngine,
