@@ -7,7 +7,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, ScrollView, Switch, Text, View } from "react-native";
 
-import { api } from "@/data/client";
+import { api, type CellInfo } from "@/data/client";
 import { useTheme } from "@/theme";
 import { KEYS, type Engine, type PolicySet, type CharterDoc } from "@/kernel";
 import { useKernelOptional, useSurfaces, useJournal } from "@/kernel/react";
@@ -22,13 +22,21 @@ export default function ModulesTab() {
   const [doc, setDoc] = useState<PolicyDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Cell registry (daemon/cells.py GET /cells) - falls back to an empty list
+  // on any error (403 for a client role, daemon unreachable, etc.) so this
+  // screen still renders the rest of Modules & Rules without crashing.
+  const [cells, setCells] = useState<CellInfo[]>([]);
 
   const load = () =>
     api
       .get<PolicyDoc>("/policy")
       .then((d) => { setDoc(d); setErr(null); })
       .catch((e) => setErr(String(e?.message ?? e)));
-  useEffect(() => { void load(); }, []);
+  const loadCells = () =>
+    api.cells()
+      .then((d) => setCells(d.cells ?? []))
+      .catch(() => setCells([]));
+  useEffect(() => { void load(); void loadCells(); }, []);
 
   const engines: Engine[] = kernel?.get(KEYS.ENGINES)?.list().map((e) => e.value) ?? [];
   const policies = doc?.policies;
@@ -106,6 +114,17 @@ export default function ModulesTab() {
             <Row label="WIP-Limit" sub="laufende Karten" right={<Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "600" }}>{policies.wipLimit}</Text>} />
           </>
         ) : <ActivityIndicator color={t.accent} />}
+      </Section>
+
+      <Section title="Cells" hint="Agentische Systeme (Rolle + Route + UI-Surface + Enable-Flag) - daemon/cells.py. Aus schaltet die Routen UND den Tab ab.">
+        {cells.length ? cells.map((c) => (
+          <Row key={c.id} label={c.id} sub={`${c.role}${c.surface ? ` — ${c.surface}` : ""}${c.modes.length ? ` — modes: ${c.modes.join(", ")}` : ""}`}
+            right={
+              <Switch value={c.enabled} disabled={busy}
+                onValueChange={(v) => setPolicy(c.enabledKey as keyof PolicySet, v).then(loadCells)}
+                trackColor={{ true: t.accent, false: t.glassBorder }} />
+            } />
+        )) : <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Keine Cells geladen.</Text>}
       </Section>
 
       {charter ? (
