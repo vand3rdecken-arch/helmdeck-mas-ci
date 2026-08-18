@@ -92,6 +92,19 @@ export interface PolicySet {
   readonly wipLimit: number;
   /** whether the super-agent may swap modules without a user confirm. */
   readonly agentMaySwap: boolean;
+  // Per-CELL enable flags (the agentic-system registry, daemon cells.py). Each
+  // toggles a whole agentic system on/off through the same tracked policy.swap;
+  // the app filters nav surfaces by the matching flag. All default true.
+  /** Engineer cell — the cards/kanban system (machine + direct are its modes). */
+  readonly engineerEnabled: boolean;
+  /** PM cell — the proactive daily-loop / planning role. */
+  readonly pmEnabled: boolean;
+  /** Process cell — the n8n-style step-chain pipelines. */
+  readonly processEnabled: boolean;
+  /** Connectors cell — user-built integration modules. */
+  readonly connectorsEnabled: boolean;
+  /** Copilot cell — the board chat / coordination agent. */
+  readonly copilotEnabled: boolean;
 }
 
 export const KEYS = {
