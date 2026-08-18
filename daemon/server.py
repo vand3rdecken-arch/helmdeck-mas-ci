@@ -110,6 +110,7 @@ def _web_url():
 
 from apimeta import _loop_state_mod, _lane_flow, _loop_machine, _config_schema, CONTROLS
 from glances import glance_payload, _glance_question
+import routes_auth
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -196,13 +197,11 @@ class H(BaseHTTPRequestHandler):
                      % (web, web)).encode("utf-8"))
                 return
             user = self._user()
-            if p == "/auth/state":
-                import auth, events
-                reg = events.settings().get("registration") or {}
-                return self._send(200, json.dumps(
-                    {"setup_needed": not auth.list_users(), "user": user,
-                     "registration": bool(reg.get("open") or reg.get("invite_code")),
-                     "registration_open": bool(reg.get("open"))}))
+            # Dispatch-table routes (the server.py decomposition seam): checked
+            # BEFORE the inline if-chain below, so a route's move here is a
+            # pure relocation - every other route is byte-identical to before.
+            if p in routes_auth.GET_ROUTES:
+                return routes_auth.GET_ROUTES[p](self, user)
             if p == "/policy":
                 # Canonical seeded policy/charter (full-dynamism decree). The app
                 # hydrates KEYS.POLICIES/CHARTER from here instead of hardcoding,
@@ -833,39 +832,10 @@ class H(BaseHTTPRequestHandler):
         try:
             import auth
             user = self._user()
-            # ---- auth endpoints (public) ----
-            if p == "/auth/setup":
-                if auth.list_users():
-                    return self._send(403, json.dumps({"error": "already set up"}))
-                try:
-                    auth.create_user(body.get("name", ""), body.get("password", ""), "owner")
-                except ValueError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
-                sid = auth.login(body["name"], body["password"])
-                return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
-            if p == "/auth/register":
-                import events, secrets as _s
-                reg = events.settings().get("registration") or {}
-                code = (body.get("invite") or "").strip()
-                if not reg.get("open"):
-                    want = reg.get("invite_code") or ""
-                    if not want or not code or not _s.compare_digest(code, want):
-                        return self._send(403, json.dumps({"error": "valid invite code required"}))
-                try:
-                    auth.create_user(body.get("name", ""), body.get("password", ""),
-                                     reg.get("default_role", "client"))
-                except ValueError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
-                # optional enrichment only - never touches the user record
-                # above, never blocks/fails the signup if Loops is down.
-                email = (body.get("email") or "").strip()
-                if email:
-                    import loops_client
-                    threading.Thread(target=loops_client.signup_contact,
-                                     args=(email, body.get("name", "")),
-                                     daemon=True).start()
-                sid = auth.login(body["name"], body["password"])
-                return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+            # Dispatch-table routes (see do_GET) - checked before the inline
+            # if-chain, so this is a pure relocation of the 4 auth POST routes.
+            if p in routes_auth.POST_ROUTES:
+                return routes_auth.POST_ROUTES[p](self, user, body)
             if p == "/policy/swap":
                 # The ONLY policy/charter mutation over the wire. Routes through
                 # policy.swap so every change is mirrored into the append-only
@@ -897,15 +867,6 @@ class H(BaseHTTPRequestHandler):
                             actor=body.get("actor"), replaced=body.get("replaced"),
                             note=body.get("note"), by=user["name"])
                 return self._send(200, json.dumps({"ok": True}))
-            if p == "/auth/login":
-                sid = auth.login(body.get("name", ""), body.get("password", ""))
-                if not sid:
-                    return self._send(401, json.dumps({"error": "wrong name or password"}))
-                return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
-            if p == "/auth/logout":
-                if self._sid():
-                    auth.logout(self._sid())
-                return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
             if p == "/glance/talk":
                 # GLASS MODE conversation with the BOARD AGENT itself - the half
                 # /glance cannot be: /glance is a database read (owner_blockers +
