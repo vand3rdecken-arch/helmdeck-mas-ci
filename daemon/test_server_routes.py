@@ -98,6 +98,30 @@ def main():
         status, body = req("GET", "/dashboard/data", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "capacity" in body, "/dashboard/data shape: capacity present")
 
+        # -- settings/automation group (routes_settings.py) --------------------
+        status, body = req("GET", "/settings", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/settings shape: a dict (the raw settings blob)")
+
+        status, body = req("GET", "/nightshift", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/nightshift shape: a dict (pm.status() alias)")
+
+        status, body = req("GET", "/usage", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/usage shape: a dict (usage.snapshot())")
+
+        status, body = req("GET", "/automation", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "config_schema" in body and "loop_states" in body,
+           "/automation shape: config_schema+loop_states present")
+
+        status, body = req("POST", "/settings", {"value_per_card": 123}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/settings POST accepted a patch, returned the saved settings")
+        status, body = req("GET", "/settings", cookie=sid, expect=200)
+        ok(body.get("value_per_card") == 123, "/settings POST actually persisted the patch")
+
+        # rejected relay url (plain http, not localhost) - real validation path
+        status, body = req("POST", "/settings", {"relay": {"url": "http://evil.example.com"}},
+                           cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/settings POST rejects an insecure relay url")
+
         status, body = req("GET", "/loop/map", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "runtime" in body and "build" in body,
            "/loop/map shape: runtime+build present (apimeta._lane_flow + _loop_machine)")
