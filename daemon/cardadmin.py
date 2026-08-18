@@ -8,10 +8,12 @@ reached via a lazy `import sessions` inside update_track; get_track()'s trivial
 body (_find(_load(), tid)) is inlined rather than back-referenced.
 """
 import os
+import subprocess
 import time
 
 from runs import REC
 
+import db as _db
 from trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
 from gitutil import _git, _branch_exists, _checkpoint, _worktree_for
 from worktrees import reclaim_worktree
