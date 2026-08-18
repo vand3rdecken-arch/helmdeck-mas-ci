@@ -57,6 +57,7 @@ import routes_policy
 import routes_settings
 import routes_glance
 import routes_info
+import routes_pm
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -352,21 +353,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(presence.snapshot()))
             if p in routes_info.GET_ROUTES:
                 return routes_info.GET_ROUTES[p](self, user)
-            if p == "/pm/economics":
-                # cheap, no-LLM economics snapshot + the stored MVP goal
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import pm
-                return self._send(200, json.dumps({"goal": pm.get_goal(), "economics": pm.economics()}))
-            if p == "/pm/plan":
-                # the last PM briefing (cached artifact) + live economics - no LLM,
-                # so the Dashboard shows instantly; /pm/report refreshes it.
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import pm
-                return self._send(200, json.dumps({"goal": pm.get_goal(),
-                    "economics": pm.economics(), "plan": pm.live_plan(),
-                    "config": pm._pm(), "activity": pm.activity()}))
+            if p in routes_pm.GET_ROUTES:
+                return routes_pm.GET_ROUTES[p](self, user)
             if p == "/sessions/claude":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -689,60 +677,8 @@ class H(BaseHTTPRequestHandler):
                         actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
-            if p == "/pm/config":
-                # owner sets the proactive-loop policy (on/off, autonomy ladder,
-                # repos allowlist, timing/caps). Whitelisted keys only.
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import pm, events
-                allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
-                           "replan_minutes", "max_dispatch_per_day", "goal", "plan",
-                           "monthly_eur", "quota_turns_per_day")
-                merged = dict(events.settings().get("pm") or {})
-                for k in allowed:
-                    if k in body:
-                        merged[k] = body[k]
-                if merged.get("autonomy") not in ("notify", "ask", "act"):
-                    merged["autonomy"] = "act"
-                events.save_settings({"pm": merged})
-                return self._send(200, json.dumps(pm._pm()))
-            if p == "/pm/consolidate":
-                # Phase 3: propose (read-only) or apply (non-destructive) the
-                # roll-up of many small cards into 2-5 stream cards per repo.
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import pm
-                try:
-                    if body.get("mode") == "apply":
-                        return self._send(200, json.dumps(pm.apply_consolidation(
-                            body.get("repos") or [], actor=user["name"])))
-                    return self._send(200, json.dumps(pm.consolidation_proposal(
-                        model=body.get("model", ""))))
-                except Exception as e:
-                    return self._send(500, json.dumps({"error": str(e)[:300]}))
-            if p == "/pm/report":
-                # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
-                # token/cost projection grounded in real spend. One model turn.
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import pm
-                try:
-                    return self._send(200, json.dumps(pm.brief(
-                        goal=body.get("goal"), model=body.get("model", ""))))
-                except Exception as e:
-                    return self._send(500, json.dumps({"error": str(e)[:300]}))
-            if p == "/pm/reconcile":
-                # Owner-triggered when a golden-triangle corner is RED: gather real
-                # evidence behind the corner and re-plan (pm.reconcile_corner). The
-                # agent supplies facts; the gate re-derives the corner (no monkey patch).
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import pm
-                try:
-                    return self._send(200, json.dumps(pm.reconcile_corner(
-                        body.get("corner", ""), actor=user["name"])))
-                except Exception as e:
-                    return self._send(500, json.dumps({"error": str(e)[:300]}))
+            if p in routes_pm.POST_ROUTES:
+                return routes_pm.POST_ROUTES[p](self, user, body)
             if p == "/chat":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
