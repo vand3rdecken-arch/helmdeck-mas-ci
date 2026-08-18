@@ -81,8 +81,19 @@ enabled cell's poller, and the app hides a disabled cell's nav surface.
 peer cells - they are **modes of the Engineer cell** (a card variant forking
 only at dispatch/accept/agent-selection), gated by the existing `policy.machine`.
 This is the daemon-side plugin registry the full-dynamism decree first deferred;
-see `daemon/debt.py` `cell-registry-daemon-plugin-kernel` for the phase plan
-(app-side surfaces + per-cell hook guards + Engineer conformance still pending).
+see `daemon/debt.py` `cell-registry-daemon-plugin-kernel` for the full history.
+The sweep is COMPLETE: all five cells conform on both daemon and app sides,
+including Engineer (done last, as the gate/merge crown jewel) - its lifecycle
+(`sessions.start_engineer_lifecycle`, the zombie reconciler + background-task
+watcher) now launches through `cells.start_enabled()` like every other cell's
+poller, its `/tracks` routes are stress-tested under disable, and its board
+Surface (`app/src/plugins/surfaces/board.tsx`) was verified against the
+Connectors template. Deliberately deferred, by design not omission:
+machine/direct stay MODES of Engineer (not peer cells, see above), and
+`sessions.new_track`/`lanemachine.move_lane` carry no cross-cell disable guard
+- the route-level gate already covers every external actor, and other cells
+calling them directly is the daemon acting on itself, not a bypass (the same
+reasoning that left `copilot.py` unguarded in Phase 2).
 
 Every policy change ALSO creates a **checkpoint** (settings + connectors
 snapshot, actor-attributed) with reversible restore - the older, narrower
