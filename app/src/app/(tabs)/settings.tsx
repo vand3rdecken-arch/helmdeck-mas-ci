@@ -10,6 +10,7 @@ import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import { useCellEnabled } from "@/data/cells";
 import type { UserRow } from "@/data/types";
 import { LANGS, useT, type Lang } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -42,6 +43,7 @@ export default function Settings() {
   const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users });
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
   const actors = metrics?.capacity?.actors ?? {};   // touch units per person today
+  const pmEnabled = useCellEnabled("pm");
 
   const field = fieldStyle(t);
 
@@ -311,11 +313,14 @@ export default function Settings() {
             {/* The planning loop's CONTROLS - goal, proactive on/off + the
                 notify/ask/act ladder, replan, consolidate. Moved off the
                 dashboard so the overview stays clean; the board shows what the
-                loop is DOING, the steering of it lives here. */}
-            <Panel>
-              <SectionLabel text={tr("pm.title")} />
-              <PMControls />
-            </Panel>
+                loop is DOING, the steering of it lives here. PM has no
+                nav.tabs entry to hide, so it gates off the cell flag directly. */}
+            {pmEnabled ? (
+              <Panel>
+                <SectionLabel text={tr("pm.title")} />
+                <PMControls />
+              </Panel>
+            ) : null}
 
             <Panel>
               <SectionLabel text={tr("settings.sec.business")} />
