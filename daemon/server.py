@@ -59,6 +59,8 @@ import routes_glance
 import routes_info
 import routes_pm
 import routes_misc
+import routes_control
+import routes_relay
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -235,12 +237,8 @@ class H(BaseHTTPRequestHandler):
                             "eof": off + len(blob) >= size,
                             "data": _b64.b64encode(blob).decode()}))
                     return self._send(404, json.dumps({"error": "no video"}))
-            if p == "/control/state":
-                with _ctl_lock:
-                    s = _ctl["teach"]
-                    return self._send(200, json.dumps(
-                        {"teach": s.rid if s and not s.stopped.is_set() else None,
-                         "busy": list(_ctl["busy"])}))
+            if p in routes_control.GET_ROUTES:
+                return routes_control.GET_ROUTES[p](self, user)
             # --- orchestrator: branches/sessions (the Paseo half) ---
             if p == "/tracks":
                 import sessions
@@ -622,26 +620,8 @@ class H(BaseHTTPRequestHandler):
                 import sessions
                 ids = body.get("ids") or []
                 return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
-            if p == "/relay/pair":
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import relay_client, auth
-                try:
-                    pay = relay_client.pairing_payload()
-                except ValueError as e:   # plain-http relay url: refuse to mint
-                    return self._send(400, json.dumps({"error": str(e)}))
-                # a fresh device token so the phone authenticates through the
-                # encrypted tunnel (carried as Bearer inside the sealed request).
-                # Invites bring the teammate's OWN token - minting an owner
-                # token there would leave a dangling owner credential per invite.
-                if not body.get("invite"):
-                    pay["device_token"] = auth.issue_token(user["name"], "phone (relay)")
-                return self._send(200, json.dumps(pay))
-            if p == "/relay/unpair":
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import relay_client
-                return self._send(200, json.dumps(relay_client.unpair()))
+            if p in routes_relay.POST_ROUTES:
+                return routes_relay.POST_ROUTES[p](self, user, body)
             if p == "/sessions/claude/adopt":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -771,33 +751,8 @@ class H(BaseHTTPRequestHandler):
                     return self._send(404, json.dumps({"error": "?"}))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
-            if p == "/control/teach/start":
-                from teach import TeachSession
-                with _ctl_lock:
-                    if _ctl["teach"] and not _ctl["teach"].stopped.is_set():
-                        return self._send(409, json.dumps({"error": "already recording",
-                                                           "id": _ctl["teach"].rid}))
-                    s = TeachSession(body.get("title") or "unnamed task").start()
-                    _ctl["teach"] = s
-                return self._send(200, json.dumps({"id": s.rid}))
-            if p == "/control/teach/stop":
-                with _ctl_lock:
-                    s = _ctl["teach"]
-                if not s:
-                    return self._send(404, json.dumps({"error": "not recording"}))
-                rid = s.stop()
-                return self._send(200, json.dumps({"id": rid}))
-            if p == "/control/distill":
-                rid = os.path.basename(body.get("id") or "")
-                if not rid:
-                    return self._send(400, json.dumps({"error": "id required"}))
-                from distill import distill
-                _bg("distill:" + rid, lambda: distill(rid))
-                return self._send(200, json.dumps({"started": rid}))
-            if p == "/control/demo":
-                import swarm
-                _bg("demo", swarm.browser_demo)
-                return self._send(200, json.dumps({"started": "browser-demo"}))
+            if p in routes_control.POST_ROUTES:
+                return routes_control.POST_ROUTES[p](self, user, body)
             if p in routes_settings.POST_ROUTES:
                 return routes_settings.POST_ROUTES[p](self, user, body)
             if p == "/harness":
