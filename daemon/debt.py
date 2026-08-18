@@ -1056,8 +1056,11 @@ DEBT = [
                 "the daemon core is still monolithic. STARTED (caf84bd): the git + "
                 "worktree filesystem PRIMITIVES were extracted to gitutil.py "
                 "(strangler: sessions re-imports the names, sessions._git IS "
-                "gitutil._git, tests identical) — sessions.py 3927->3828. Pattern "
-                "proven and safe for PURE, test-un-patched clusters.",
+                "gitutil._git, tests identical) — sessions.py 3927->3828. Second "
+                "seam (c15c4e6): agentcli.py carved from drivers.py (agent-CLI / "
+                "argv / MCP-config plumbing; lazy drivers.CLAUDE avoids a cycle), "
+                "drivers.py 1490->1317. Both verified against the FULL 11-file "
+                "suite. Pattern proven and safe for PURE, test-un-patched clusters.",
         "why_it_bites": "The remaining clusters are NOT cleanly separable: the "
                         "tests monkeypatch sessions._db and sessions._threading "
                         "(test_direct_task/mode_dispatch/fasttrack/dispatch_"
