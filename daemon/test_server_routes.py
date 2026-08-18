@@ -93,6 +93,16 @@ def main():
     checkpoints.CPDIR = os.path.join(tmp, "checkpoints")
     os.makedirs(checkpoints.CPDIR, exist_ok=True)
 
+    # copilot.py is a FOURTH independent __file__-derived-ROOT module (found
+    # via a real test failure, not a grep sweep this time: GET /chat/history
+    # returned real production messages instead of an empty list because
+    # copilot.CHATLOG/SESS were never sandboxed - a READ-only leak, no data
+    # was written/corrupted, but it proves the bug class isn't fully swept).
+    import copilot
+    copilot.ROOT = tmp
+    copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
+    copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
+
     # runs.REC (a card's run_dir root - screenshots/live.jpg/actionlog) is a
     # THIRD independent __file__-derived global, same class of bug as
     # connectors/checkpoints above - and unlike those two, nothing caught it
