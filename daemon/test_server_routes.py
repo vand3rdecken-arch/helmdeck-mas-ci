@@ -264,6 +264,30 @@ def main():
         if status == 200:
             ok(isinstance(body, dict) and body.get("error"), "/tracks/new non-repo: error surfaced in the 200 body")
 
+        # -- copilot/chat group (routes_copilot.py) - never invoke the real -----
+        # model turn (cost, network, non-determinism); verify role gates and
+        # the pure history/live/cancel reads instead.
+        status, body = req("GET", "/chat/history", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/chat/history refuses a client")
+        status, body = req("GET", "/chat/history", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("messages") == [],
+           "/chat/history shape: messages present, empty on a fresh sandboxed DB")
+
+        status, body = req("GET", "/chat/live", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/chat/live refuses a client")
+        status, body = req("GET", "/chat/live", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/chat/live shape: a dict")
+
+        status, body = req("POST", "/chat/cancel", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/chat/cancel refuses a client")
+        status, body = req("POST", "/chat/cancel", {}, cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "cancelled" in body, "/chat/cancel: owner allowed, nothing running")
+
+        status, body = req("POST", "/chat", {"text": "hi"}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/chat refuses a client")
+        status, body = req("POST", "/chat", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/chat POST rejects missing text (never reaches copilot.chat)")
+
         # -- projects group (routes_projects.py) ---------------------------------
         status, body = req("GET", "/projects", cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/projects GET refuses a client")

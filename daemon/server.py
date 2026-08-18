@@ -64,6 +64,7 @@ import routes_relay
 import routes_connectors
 import routes_checkpoints
 import routes_projects
+import routes_copilot
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -254,19 +255,8 @@ class H(BaseHTTPRequestHandler):
             if p in routes_projects.GET_ROUTES:
                 return routes_projects.GET_ROUTES[p](self, user)
             # --- company instrumentation: settings + CEO dashboard ---
-            if p == "/chat/history":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import copilot
-                return self._send(200, json.dumps(copilot.history(user["name"])))
-            if p == "/chat/live":
-                # the board agent's STREAMING prose reply while a turn runs, so
-                # the board chat streams like a card (one shared surface). Polled
-                # by the chat only while busy.
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import copilot
-                return self._send(200, json.dumps(copilot.live(user["name"])))
+            if p in routes_copilot.GET_ROUTES:
+                return routes_copilot.GET_ROUTES[p](self, user)
             if p == "/stream/wait":
                 # Board PUSH over the sealed relay (SSE can't tunnel): long-poll
                 # the data version. Blocks until it passes `v` or ~22s, then
@@ -603,11 +593,8 @@ class H(BaseHTTPRequestHandler):
                and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel")
                                                       or p.endswith("/answer"))):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
-            if p == "/chat/cancel":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import copilot
-                return self._send(200, json.dumps({"cancelled": copilot.cancel(user["name"])}))
+            if p in routes_copilot.POST_ROUTES:
+                return routes_copilot.POST_ROUTES[p](self, user, body)
             if p == "/tracks/reorder":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -629,34 +616,6 @@ class H(BaseHTTPRequestHandler):
                     return self._send(400, json.dumps({"error": str(e)}))
             if p in routes_pm.POST_ROUTES:
                 return routes_pm.POST_ROUTES[p](self, user, body)
-            if p == "/chat":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import copilot
-                text = body.get("text", "").strip()
-                if not text:
-                    return self._send(400, json.dumps({"error": "text required"}))
-                try:
-                    out = copilot.chat(
-                        user["name"], text, role=user["role"], model=body.get("model", ""),
-                        thinking=body.get("thinking", ""), attachments=body.get("attachments"),
-                        card=body.get("card"))
-                    # VOICE MODE (phone). The client asks per-request rather than
-                    # by a server setting, because it is the client that knows
-                    # whether the owner is looking at the screen or driving. Only
-                    # Henry's PROSE is spoken - never the ```actions block, which
-                    # is machine syntax and unlistenable.
-                    if body.get("voice"):
-                        import ask, voice as _voice
-                        _, prose = ask.parse(out.get("reply") or "")
-                        clip = _voice.render_b64(
-                            (prose or out.get("reply") or "").split("```")[0])
-                        if clip:
-                            out = dict(out)
-                            out["voice"] = clip
-                    return self._send(200, json.dumps(out))
-                except Exception as e:
-                    return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "checkpoints" and parts[2] == "restore":
                 return routes_checkpoints.checkpoints_restore_post(self, user, parts[1])
