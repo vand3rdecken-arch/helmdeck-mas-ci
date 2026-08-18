@@ -1059,8 +1059,15 @@ DEBT = [
                 "gitutil._git, tests identical) — sessions.py 3927->3828. Second "
                 "seam (c15c4e6): agentcli.py carved from drivers.py (agent-CLI / "
                 "argv / MCP-config plumbing; lazy drivers.CLAUDE avoids a cycle), "
-                "drivers.py 1490->1317. Both verified against the FULL 11-file "
-                "suite. Pattern proven and safe for PURE, test-un-patched clusters.",
+                "drivers.py 1490->1317. Third seam (62cfc01): copilot_stats.py "
+                "carved from copilot.py (board PM-session economics: _stats/"
+                "_save_stats/_fold_stats/_plan_share + _calib + STATS), copilot.py "
+                "1136->1051. All THREE verified against the FULL 11-file suite. "
+                "Pattern proven and safe for PURE, test-un-patched clusters. NOTE: "
+                "pm.py clusters are more entangled — the scheduling cluster's "
+                "_board_idle reads the mutable _last_touch global and the "
+                "loopstate helpers share the PLANS const, so a clean re-export "
+                "seam there needs state threading, not just a move.",
         "why_it_bites": "The remaining clusters are NOT cleanly separable: the "
                         "tests monkeypatch sessions._db and sessions._threading "
                         "(test_direct_task/mode_dispatch/fasttrack/dispatch_"
