@@ -13,7 +13,8 @@
     "pmEnabled": true,
     "processEnabled": true,
     "connectorsEnabled": true,
-    "copilotEnabled": true
+    "copilotEnabled": true,
+    "buildLoopEnabled": true
   },
   "charter": {
     "source": "CLAUDE.md",

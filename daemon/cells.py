@@ -48,7 +48,7 @@ class Cell:
     def __init__(self, id, enabled_key, paths=(), prefixes=(), start=None,
                  role="", surface="", modes=(),
                  logic_files=(), storage="", harness_file="",
-                 route_modules=(), ui_files=(), tools=()):
+                 route_modules=(), ui_files=(), tools=(), repo_files=()):
         self.id = id
         self.enabled_key = enabled_key      # policy flag, e.g. "pmEnabled"
         self.paths = tuple(paths)           # exact owned paths, e.g. ("/processes",)
@@ -64,6 +64,9 @@ class Cell:
         self.ui_files = tuple(ui_files)          # app/-relative paths: surface plugin + real screens
         self.tools = tuple(tools)                # external tools/refs this cell's own tooling uses -
                                                   # documentation only, never readable via read_source
+        self.repo_files = tuple(repo_files)      # REPO-ROOT-relative logic (not under daemon/ or
+                                                  # app/) - e.g. tools/loop_state.py for the buildloop
+                                                  # cell, which isn't daemon-hosted like the other 5
 
     def owns(self, path):
         """Does this cell own the given request path?"""
@@ -81,10 +84,14 @@ class Cell:
             out.add(mod + ".py")
         for f in self.ui_files:
             out.add(f)
+        for f in self.repo_files:
+            out.add(f)
         return out
 
     def where(self, fname):
         """Which root `fname` resolves under: 'app', 'repo', or 'daemon'."""
+        if fname in self.repo_files:
+            return "repo"
         if fname in self.ui_files:
             return "app"
         if fname == self.harness_file:
@@ -168,6 +175,36 @@ CELLS = [
         harness_file="harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
         route_modules=("routes_copilot",),
         ui_files=("src/plugins/surfaces/copilot.tsx", "src/app/chat.tsx"),
+    ),
+    Cell(
+        # Cell #6 - added 2026-08-18 after owner pushback: structurally this
+        # has the same shape as every other cell (its own harness/laws,
+        # states/gates, UI presence), so it belongs in the registry. It is
+        # NOT daemon-hosted like the other 5 though - it governs the CURRENT
+        # interactive agent's own workflow via Claude Code's hooks
+        # (.claude/settings.json -> tools/loop_state.py), not a spawned
+        # daemon worker. No HTTP dispatch gate applies (paths=(),
+        # prefixes=()) - tools/loop_state.py reads policy_live.json/
+        # policy_seed.json DIRECTLY (see its _build_loop_enabled()), so the
+        # flag is real - it actually silences the Stop hook - even when the
+        # daemon isn't running. See daemon/debt.py for the full incident/
+        # design record and the explicit "never toggle the real policy file
+        # to test this" safety note.
+        id="buildloop", enabled_key="buildLoopEnabled",
+        role="governs the current agent's own build workflow "
+             "(ALIGN>ANALYZE>EXECUTE>TEST>CLEAN>BUILD>COMMIT), not a spawned "
+             "worker - self-governance, not delegation",
+        repo_files=("tools/loop_state.py",),
+        storage="derived live from git status + compile/test/tsc results "
+                "(no persisted table - this cell IS its own NO-MONKEY-PATCH example)",
+        harness_file="CLAUDE.md",
+        # route_modules deliberately empty: /loop/map (routes_info.py) is a
+        # SHARED read-only mirror (engineer's lane/gate flow + this cell's
+        # build state merged in one response) - attributing routes_info's
+        # other, unrelated routes (debt/charter/harness-version/models) to
+        # this cell would repeat the exact inaccuracy already flagged for
+        # loopmap.tsx's UI sharing. Informational only, not an owned surface.
+        ui_files=("src/app/loopmap.tsx",),  # shared with engineer, noted above
     ),
 ]
 
@@ -255,7 +292,7 @@ def manifest():
         "role": c.role,
         "surface": c.surface,
         "modes": list(c.modes),
-        "logicFiles": list(c.logic_files),
+        "logicFiles": list(c.logic_files) + list(c.repo_files),
         "storage": c.storage,
         "harnessFile": c.harness_file,
         "routes": _cell_routes(c),
