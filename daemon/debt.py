@@ -1047,6 +1047,42 @@ DEBT = [
                "source; mirror charter swaps into events.py.",
         "order": 30,
     },
+    {
+        "id": "daemon-god-files",
+        "title": "sessions.py (3.8k) + server.py (2k) are god-files — daemon not "
+                 "modular even though the app is",
+        "status": "open",
+        "what": "The full-dynamism decree made the APP a plugin composition, but "
+                "the daemon core is still monolithic. STARTED (caf84bd): the git + "
+                "worktree filesystem PRIMITIVES were extracted to gitutil.py "
+                "(strangler: sessions re-imports the names, sessions._git IS "
+                "gitutil._git, tests identical) — sessions.py 3927->3828. Pattern "
+                "proven and safe for PURE, test-un-patched clusters.",
+        "why_it_bites": "The remaining clusters are NOT cleanly separable: the "
+                        "tests monkeypatch sessions._db and sessions._threading "
+                        "(test_direct_task/mode_dispatch/fasttrack/dispatch_"
+                        "visibility), so moving the DATA LAYER (_load/_save/_mutate/"
+                        "_find) into a trackstore.py would make those functions "
+                        "read trackstore._db and silently defeat the `sessions._db "
+                        "= fake` patches — green tests that no longer test the real "
+                        "path. Most of sessions.py couples to _mutate + the track "
+                        "store + orchestration (drivers/events/pm), so each seam "
+                        "needs its monkeypatch points moved WITH it.",
+        "trigger": "the next extraction (trackstore, gate/merge, economics, "
+                   "worktree-lifecycle); any claim the daemon is 'modular'",
+        "fix": "Per cluster, one reviewed commit each: (a) move the cluster + its "
+               "module state to a new module, (b) UPDATE the tests' patch target "
+               "to the new module (or thread _db/_settings in as params so there "
+               "is one patch point), (c) re-import into sessions for callers, (d) "
+               "run the full suite green. Candidates in coupling order: trackstore "
+               "(_load/_save/_mutate — needs test patch move), worktree-lifecycle "
+               "(_worktree_for/_alloc_dev_port/reclaim/sweep), gate-merge (_gate/"
+               "_merge_to_main/_classify_merge), economics (_record_econ/_record_"
+               "turn/_log_turn_end). server.py: split the do_GET/do_POST dispatch "
+               "into route modules registered into a table (mirror the app's "
+               "registry) — bigger, do after sessions.py.",
+        "order": 31,
+    },
 ]
 
 def list_debt():
