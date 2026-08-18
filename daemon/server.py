@@ -58,6 +58,7 @@ import routes_settings
 import routes_glance
 import routes_info
 import routes_pm
+import routes_misc
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -432,33 +433,8 @@ class H(BaseHTTPRequestHandler):
             if p == "/connectors":
                 import connectors
                 return self._send(200, json.dumps(connectors.list_connectors()))
-            if p == "/processes":
-                import processes
-                try:
-                    processes.sync()
-                except Exception:
-                    pass
-                return self._send(200, json.dumps(processes.list_processes(
-                    client=user["name"] if user["role"] == "client" else None)))
-            if p == "/me":
-                # Carries the PUBLIC UI policy, not just the identity: the
-                # workspace language (and the lane labels the board renders) has
-                # to reach EVERY role, or the app is German for an operator and
-                # English for the owner - exactly the split this replaced.
-                # /dashboard/data can't serve it: it strips settings for
-                # non-owners and 403s clients. Whitelisted, never the whole
-                # settings blob - that stays owner-only.
-                import events
-                pol = events.settings().get("policy") or {}
-                return self._send(200, json.dumps({
-                    "name": user["name"], "role": user["role"],
-                    "ui": {"lang": pol.get("lang", "de"),
-                           "lane_labels": pol.get("lane_labels") or {},
-                           # flat (Max subscription) vs metered (API): every
-                           # role renders AI-cost chips, and a flat plan must
-                           # never read as $-spend - so the mode rides here.
-                           "ai_billing": events.ai_billing()},
-                }))
+            if p in routes_misc.GET_ROUTES:
+                return routes_misc.GET_ROUTES[p](self, user)
             if p in routes_settings.GET_ROUTES:
                 return routes_settings.GET_ROUTES[p](self, user)
             if p == "/dashboard/data":
@@ -761,14 +737,8 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(400, json.dumps({"error": str(e)[:300]}))
             # ---- processes: propose -> adjust -> accept into cards ----
-            if p == "/processes/new":
-                import processes
-                req = body.get("request")
-                if not req:
-                    return self._send(400, json.dumps({"error": "request required"}))
-                client = user["name"] if user["role"] == "client" else body.get("client", "")
-                return self._send(200, json.dumps(processes.create(
-                    req, client=client, due=body.get("due", ""), actor=user["name"])))
+            if p in routes_misc.POST_ROUTES:
+                return routes_misc.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
             if parts[0] == "processes" and len(parts) >= 3:
                 import processes, events

@@ -61,6 +61,8 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS projects(
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS processes(
+        id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, kind TEXT, track TEXT, data TEXT)""")
@@ -122,6 +124,19 @@ def _migrate():
             print("db: imported %d events from events.jsonl" % n)
         except Exception as e:
             print("db: events import failed:", e)
+    pj = os.path.join(ROOT, "processes.json")
+    if os.path.exists(pj):
+        try:
+            with open(pj, encoding="utf-8") as f:
+                procs = json.load(f)
+            with c:
+                for p in procs:
+                    c.execute("INSERT OR REPLACE INTO processes(id,data) VALUES(?,?)",
+                              (p["id"], json.dumps(p)))
+            os.replace(pj, pj + ".imported")
+            print("db: imported %d processes from processes.json" % len(procs))
+        except Exception as e:
+            print("db: processes import failed:", e)
 
 # -- tracks --------------------------------------------------------------
 
@@ -171,6 +186,23 @@ def project_put(p):
 def project_delete(pid):
     with conn() as c:
         c.execute("DELETE FROM projects WHERE id=?", (pid,))
+    bump()
+
+# -- processes --------------------------------------------------------------
+# processes.py's every call site is read-all -> mutate one item by id ->
+# write-all, so processes_replace (not per-item put/delete) matches its
+# existing _load()/_save() contract exactly - zero call-site changes needed.
+
+def processes_all():
+    rows = conn().execute("SELECT data FROM processes ORDER BY id DESC").fetchall()
+    return [json.loads(r[0]) for r in rows]
+
+def processes_replace(procs):
+    with conn() as c:
+        c.execute("DELETE FROM processes")
+        for p in procs:
+            c.execute("INSERT INTO processes(id,data) VALUES(?,?)",
+                      (p["id"], json.dumps(p)))
     bump()
 
 # -- events --------------------------------------------------------------
