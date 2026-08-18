@@ -282,6 +282,9 @@ def on_card_done(tid):
     CROSSES the ok<->blocked line do we spend one re-scope (make_plan), so a normal
     completion costs zero planning turns. Threaded so the accept path never blocks
     on a model call (mirrors review_burn)."""
+    import cells
+    if not cells.enabled_id("pm"):
+        return
     threading.Thread(target=_on_card_done, args=(tid,), daemon=True,
                      name="pm-card-done").start()
 
@@ -1717,6 +1720,12 @@ def _tick():
     then the acting states run - but only while you are away. Proactive on/off +
     the notify/ask/act ladder is a Settings control now, not a dashboard one."""
     # 1 - GATHER
+    import cells
+    if not cells.enabled_id("pm"):
+        # ADDITIONAL early-return, not a replacement: loop_enabled (below) is
+        # the owner's proactive on/off Settings control; cellEnabled is the
+        # separate whole-cell kill switch (Phase 2 of the cell-registry decree).
+        return
     pm = _pm()
     if not pm.get("loop_enabled"):
         return

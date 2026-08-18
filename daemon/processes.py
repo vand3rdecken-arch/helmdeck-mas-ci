@@ -261,6 +261,9 @@ def clear_step_stamps(tid):
     (_dispatch_failed marks it bounced without moving the lane), so clearing on
     "is in backlog" would re-dispatch a broken step on every 20s poll - the
     same trap _priority_dispatch just had. move_lane fires once, per move."""
+    import cells
+    if not cells.enabled_id("process"):
+        return
     with _lock:
         ps = _load()
         hit = False
