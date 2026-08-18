@@ -4,6 +4,11 @@
     "engines.claude",
     "engines.copilot",
     "engines.deepseek",
-    "nav.tabs"
+    "nav.tabs",
+    "surfaces.board",
+    "surfaces.pm",
+    "surfaces.processes",
+    "surfaces.connectors",
+    "surfaces.chat"
   ]
 }
