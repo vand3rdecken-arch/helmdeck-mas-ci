@@ -176,6 +176,38 @@ def main():
         ok(isinstance(body, dict) and "runtime" in body and "build" in body,
            "/loop/map shape: runtime+build present (apimeta._lane_flow + _loop_machine)")
 
+        # -- pm group (routes_pm.py) ---------------------------------------------
+        status, body = req("GET", "/pm/economics", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "goal" in body and "economics" in body,
+           "/pm/economics shape: goal+economics present")
+
+        status, body = req("GET", "/pm/plan", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "plan" in body and "activity" in body,
+           "/pm/plan shape: plan+activity present")
+
+        # /pm/config is pure (settings write, no LLM) - exercise the real
+        # round-trip, same as /settings above.
+        status, body = req("POST", "/pm/config", {"loop_enabled": False, "idle_minutes": 42},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/pm/config POST accepted, returned pm._pm()")
+        status, body = req("GET", "/pm/plan", cookie=sid, expect=200)
+        ok((body.get("config") or {}).get("idle_minutes") == 42,
+           "/pm/config POST actually persisted (idle_minutes round-trips via /pm/plan)")
+
+        # /pm/consolidate, /pm/report, /pm/reconcile all run a MODEL TURN in
+        # their happy path - never invoke that in a sandboxed test (cost,
+        # network, non-determinism). Verify the OWNER-ONLY / role gate instead,
+        # via a second client-role user, proving the guard survived the move
+        # without ever reaching pm.brief()/pm.consolidation_proposal().
+        auth.create_user("routetest-client", "s4ndb0x-pw2", "client")
+        csid = auth.login("routetest-client", "s4ndb0x-pw2")
+        status, body = req("POST", "/pm/consolidate", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/pm/consolidate refuses a client (owner only)")
+        status, body = req("POST", "/pm/report", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/pm/report refuses a client (owner/operator only)")
+        status, body = req("POST", "/pm/reconcile", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/pm/reconcile refuses a client (owner/operator only)")
+
         status, body = req("GET", "/policy", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "policies" in body, "/policy shape: policies present (owner authorized)")
 
