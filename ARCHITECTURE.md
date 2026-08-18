@@ -158,13 +158,25 @@ pm.py (~1940 lines, was 2192): pm_budget.py (budget/quota math + text),
   pm_state.py (presence + daily-loop-gate: touch()/loopstate/_board_idle)
 
 Storage: db.py (SQLite, WAL) is the canonical store for tracks/projects/
-processes/events - each migrated ONCE from its old flat-JSON-file form via an
-import-and-rename-to-*.imported step (originals preserved, never deleted).
-settings.json and users.json remain flat JSON (small, rarely-written config).
-The extraction work surfaced a real trap worth remembering: a module with its
-OWN hardcoded `ROOT`-based path (events.py's `EV`, processes.py's old `STORE`)
-silently bypasses db.py's sandboxing in tests - grep for `os.path.join(ROOT,`
-before trusting a new test's isolation.
+processes/events/connector_state - each migrated ONCE from its old
+flat-JSON-file form via an import-and-rename-to-*.imported step (originals
+preserved, never deleted). settings.json and users.json remain flat JSON
+(small, rarely-written config). checkpoints.py (directory-tree snapshots) and
+voice.py (binary mp3 cache) were investigated for the same migration and
+DECLINED on purpose (daemon/debt.py order 32): neither's storage is a JSON
+blob keyed by id - a checkpoint IS a copied directory, a voice render IS an
+audio file served by URL/bytes - so forcing them into db.py's `data TEXT` row
+shape would trade a working mechanism for a worse one. connectors.py is a
+mixed case: its `connectors/_state.json` (last-run timestamps) migrated into
+db.py's `connector_state` table, but the connector CODE files themselves
+(`connectors/<name>.py`, real importable modules run in a sandboxed
+subprocess) correctly stay on disk. The extraction work surfaced a real trap
+worth remembering: a module with its OWN hardcoded `ROOT`-based path
+(events.py's `EV`, processes.py's old `STORE`, and - even where no db.py
+migration applies - connectors.py's `CDIR`/`VDIR`, checkpoints.py's `CPDIR`,
+voice.py's `CACHE`) silently bypasses db.py's sandboxing in tests unless the
+test patches that global directly - grep for `os.path.join(ROOT,` before
+trusting a new test's isolation.
 ```
 
 Method for the ongoing daemon breakup (repeat, don't skip): before cutting
