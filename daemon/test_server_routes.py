@@ -845,6 +845,29 @@ def main():
         cop_back = next((c for c in (body.get("cells") or []) if c["id"] == "copilot"), {})
         ok(cop_back.get("enabled") is True, "re-enable via tracked swap: copilot cell on again")
 
+        # -- Cell code-map: manifest carries the richer per-cell metadata, and
+        # GET /cells/<id>/source is a strict allowlisted reader (daemon/
+        # cells.py's read_source/allowed_files - the real security boundary;
+        # this pins the HTTP-level contract on top of it: real file back,
+        # traversal/wrong-cell/unknown-cell all 404, never leak a path).
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        pm_manifest = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
+        ok("GET /pm/plan" in (pm_manifest.get("routes") or []),
+           "/cells manifest: pm's routes are DERIVED from the real routes_pm dispatch table")
+        ok("pm.py" in (pm_manifest.get("logicFiles") or []),
+           "/cells manifest: pm's logicFiles present")
+        status, body = req("GET", "/cells/pm/source?file=pm.py", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "def " in (body.get("text") or ""),
+           "/cells/<id>/source: real pm.py text comes back (contains a def)")
+        status, body = req("GET", "/cells/pm/source?file=../../settings.json", cookie=sid, expect=404)
+        ok(isinstance(body, dict), "/cells/<id>/source: path traversal 404s, never leaks settings.json")
+        status, body = req("GET", "/cells/pm/source?file=connectors.py", cookie=sid, expect=404)
+        ok(isinstance(body, dict), "/cells/<id>/source: another cell's file (not pm's) 404s")
+        status, body = req("GET", "/cells/nope/source?file=pm.py", cookie=sid, expect=404)
+        ok(isinstance(body, dict), "/cells/<id>/source: unknown cell id 404s")
+        status, body = req("GET", "/cells/pm/source?file=pm.py", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/cells/<id>/source: client role refused")
+
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of
         # server.py: `if p not in self.OPEN and not user: 401`) now refuses /me
         # before its route body (which assumes an authenticated user) ever runs.
