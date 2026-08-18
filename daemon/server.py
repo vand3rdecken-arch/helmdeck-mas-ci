@@ -444,13 +444,16 @@ def serve(port=8140):
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
         print("SESSIONS: reclaimed %d merged worktree(s)" % reclaimed)  # stays clean by having none at all.
-    sessions.start_zombie_reconciler()   # + CONTINUOUS reconcile (Paseo 15s-sweep parity): catch a card
-                                         # stuck at status=running with no session BETWEEN restarts, live
+    # start_zombie_reconciler()/start_background_watcher() moved OFF this flat
+    # boot path (daemon/debt.py order 33, Phase 3): both are CONTINUOUS pollers
+    # over Engineer-cell state (card `status`, session liveness, background-
+    # task completion), so they now launch through cells.start_enabled() below
+    # via sessions.start_engineer_lifecycle() - gated by engineerEnabled like
+    # every other cell's poller. The one-shot boot passes below stay flat.
     sessions.apply_board_directives()    # one-shot board-data patches shipped as repo data
     stamped = sessions.backfill_outcomes()  # one-shot: stamp reviewed outcomes onto pre-outcome
     if stamped:                             # done cards (pays debt legacy-outcome-on-read)
         print("SESSIONS: backfilled outcome on %d legacy done card(s)" % stamped)
-    sessions.start_background_watcher()  # auto-continue cards whose background task finished
     import auth, events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
