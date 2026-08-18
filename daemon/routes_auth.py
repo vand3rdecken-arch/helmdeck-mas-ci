@@ -61,10 +61,20 @@ def auth_register(self, user, body):
 
 def auth_login(self, user, body):
     import auth
-    sid = auth.login(body.get("name", ""), body.get("password", ""))
+    name = body.get("name", "")
+    sid = auth.login(name, body.get("password", ""))
     if not sid:
         return self._send(401, json.dumps({"error": "wrong name or password"}))
-    return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+    # The app's own request layer (client.ts) authenticates every call with a
+    # Bearer token from useConfig().token, not the sd_session cookie below -
+    # that cookie alone would never actually authenticate the app's fetches
+    # (different mechanism, cross-origin in dev besides). Mint a real device
+    # token for the just-authenticated user too, via the SAME auth.issue_token
+    # the owner-only /users/<name>/tokens route and /relay/pair's QR flow
+    # already use - no new auth primitive. Backward compatible: the cookie is
+    # still set for anything that reads it, `token` is just an added field.
+    tok = auth.issue_token(name, "web-login")
+    return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
 
 
 def auth_logout(self, user, body):
