@@ -105,6 +105,11 @@ export interface PolicySet {
   readonly connectorsEnabled: boolean;
   /** Copilot cell — the board chat / coordination agent. */
   readonly copilotEnabled: boolean;
+  /** Cell #6 — the build loop (daemon/cells.py "buildloop"). NOT daemon-hosted
+   * like the other 5: governs the CURRENT agent's own workflow via Claude
+   * Code's hooks (tools/loop_state.py reads this flag directly, no daemon
+   * round-trip needed). Self-governance, not delegation. */
+  readonly buildLoopEnabled: boolean;
 }
 
 export const KEYS = {

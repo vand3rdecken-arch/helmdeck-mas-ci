@@ -24,6 +24,7 @@ export const CHARTER_DEFAULTS: PolicySet = {
   processEnabled: true,
   connectorsEnabled: true,
   copilotEnabled: true,
+  buildLoopEnabled: true,
 };
 
 /** Seed plugin: provides KEYS.POLICIES. tier:"seed" = came from the charter. */
