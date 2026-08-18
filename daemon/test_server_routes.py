@@ -264,6 +264,40 @@ def main():
         if status == 200:
             ok(isinstance(body, dict) and body.get("error"), "/tracks/new non-repo: error surfaced in the 200 body")
 
+        # -- projects group (routes_projects.py) ---------------------------------
+        status, body = req("GET", "/projects", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/projects GET refuses a client")
+        status, body = req("GET", "/projects", cookie=sid, expect=200)
+        ok(body == [], "/projects: empty list, sandboxed DB has no projects yet")
+
+        status, body = req("POST", "/projects", {"name": "Acme", "billing": "fixed", "fixed_price": 5000},
+                           cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/projects POST refuses a non-owner")
+        status, body = req("POST", "/projects", {"name": "Acme", "billing": "fixed", "fixed_price": 5000},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("id"), "/projects POST creates a real project")
+        pid = body["id"]
+        status, body = req("GET", "/projects", cookie=sid, expect=200)
+        ok(len(body) == 1 and body[0]["id"] == pid, "/projects POST actually persisted")
+
+        status, body = req("POST", "/projects/%s/update" % pid, {"name": "Acme Corp"},
+                           cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/projects/.../update refuses a non-owner")
+        status, body = req("POST", "/projects/%s/update" % pid, {"name": "Acme Corp"},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("name") == "Acme Corp", "/projects/.../update persisted")
+
+        status, body = req("POST", "/projects/doesnotexist/update", {"name": "x"},
+                           cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/projects/.../update: unknown id -> 400")
+
+        status, body = req("POST", "/projects/%s/delete" % pid, {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/projects/.../delete refuses a non-owner")
+        status, body = req("POST", "/projects/%s/delete" % pid, {}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/projects/.../delete: owner allowed")
+        status, body = req("GET", "/projects", cookie=sid, expect=200)
+        ok(body == [], "/projects/.../delete actually removed it")
+
         # -- connectors group (routes_connectors.py) -----------------------------
         status, body = req("GET", "/connectors", cookie=sid, expect=200)
         ok(body == [], "/connectors: empty list, sandboxed CDIR has no connector files")

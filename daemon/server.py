@@ -63,6 +63,7 @@ import routes_control
 import routes_relay
 import routes_connectors
 import routes_checkpoints
+import routes_projects
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -250,11 +251,8 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] == "client":   # clients see only their own cards
                     ts = [t for t in ts if t.get("client") == user["name"]]
                 return self._send(200, json.dumps(ts))
-            if p == "/projects":
-                import projects
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                return self._send(200, json.dumps(projects.list_projects()))
+            if p in routes_projects.GET_ROUTES:
+                return routes_projects.GET_ROUTES[p](self, user)
             # --- company instrumentation: settings + CEO dashboard ---
             if p == "/chat/history":
                 if user["role"] == "client":
@@ -851,36 +849,13 @@ class H(BaseHTTPRequestHandler):
                                        billing=body.get("billing", "fixed"), rate=body.get("rate"))
                 _bg("track:new:" + branch, go)
                 return self._send(200, json.dumps({"started": branch}))
-            if p == "/projects":
-                import projects
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                try:
-                    return self._send(200, json.dumps(projects.new_project(
-                        body.get("name"), body.get("billing"), client=body.get("client", ""),
-                        fixed_price=body.get("fixed_price"), rate=body.get("rate"),
-                        actor=user["name"])))
-                except (ValueError, TypeError) as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+            if p in routes_projects.POST_ROUTES:
+                return routes_projects.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "projects" and parts[2] == "update":
-                import projects
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                try:
-                    return self._send(200, json.dumps(
-                        projects.update_project(parts[1], body, actor=user["name"])))
-                except (RuntimeError, ValueError) as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_projects.projects_update_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "projects" and parts[2] == "delete":
-                import projects
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                try:
-                    return self._send(200, json.dumps(
-                        projects.delete_project(parts[1], actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_projects.projects_delete_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "archive":
                 import sessions
                 if user["role"] == "client":
