@@ -112,7 +112,7 @@ reaching into a monolith), then the HTTP surface itself was split into a
 dispatch table. As of this writing:
 
 ```
-server.py (H handler, ~1200 lines, was 2109)
+server.py (H handler, ~1165 lines, was 2109)
   do_GET/do_POST check a per-concern ROUTE-DISPATCH TABLE first, then fall
   through to whatever hasn't been converted yet - each conversion is
   behavior-preserving (route body moves verbatim; server.H is never touched
@@ -124,9 +124,12 @@ server.py (H handler, ~1200 lines, was 2109)
   ├─ routes_info.py      debt/charter/loop-map/models/harness (read-only)
   ├─ routes_pm.py        the proactive daily-loop's API surface
   ├─ routes_misc.py      /processes, /me
+  ├─ routes_control.py   /control/state, teach/start, teach/stop, distill, demo
+  ├─ routes_relay.py     /relay/pair, /relay/unpair
   ├─ glances.py / apimeta.py / startup.py   module-level helpers (pre-dispatch-table)
   └─ (the rest: tracks/dispatch [highest value, does LAST - touches the
-     sessions.py crown jewel], machine, chat/copilot, connectors, relay/push -
+     sessions.py crown jewel], chat/copilot, connectors, checkpoints, processes'
+     /step sub-router, projects, presence/push/harness/runs -
      still inline, tracked in daemon/debt.py order 31)
 
 sessions.py (the orchestrator, ~1050 lines, was 3927) sits on top of SERVICES:
