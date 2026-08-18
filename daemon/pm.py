@@ -196,7 +196,8 @@ def _system_state():
     return "\n".join(lines) or "(keine gesonderten System-Fakten)"
 
 
-from pm_budget import _pace, _days, _quota_signal, _budget_assess
+from pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
+                       _usage_flag_text, _quota_floor, _goal_budget_text, _triage_green)
 
 
 def live_plan():
@@ -1192,33 +1193,6 @@ def _launch_checkin(pm, st):
     _say(_i18n.t("pm.launchCheck"))
 
 
-_DE_DOW = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-
-
-def _fmt_when(iso):
-    """ISO -> 'Mi 05.08. 03:47' (local time) for a human-readable quota date."""
-    from datetime import datetime
-    try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
-        return "%s %02d.%02d. %02d:%02d" % (_DE_DOW[dt.weekday()], dt.day, dt.month, dt.hour, dt.minute)
-    except Exception:
-        return iso or "?"
-
-
-def _usage_flag_text(f):
-    used = f.get("usedPct"); elapsed = f.get("elapsed_pct"); proj = f.get("projected_pct")
-    parts = ["⚠ Quota-Warnung: Wochenlimit zu %s%% verbraucht, aber erst %s%% der "
-             "Woche vorbei." % (round(used), round(elapsed))]
-    if proj is not None:
-        parts.append("Bei diesem Tempo landest du bei ~%s%% zum Reset." % round(proj))
-    if f.get("exhaust_before_reset") and f.get("exhaust_at"):
-        parts.append("Das Wochenlimit ist dann ~%s erschöpft — also VOR dem Reset am %s."
-                     % (_fmt_when(f["exhaust_at"]), _fmt_when(f.get("resetsAt"))))
-    parts.append("Vorschlag: Auto-Dispatch drosseln oder Routine-Karten auf ein günstigeres "
-                 "Modell setzen, damit das Kontingent bis zum Reset reicht. Sag Bescheid, "
-                 "dann passe ich die Policy an.")
-    return " ".join(parts)
-
 
 def _usage_checkin(st):
     """Proactive quota pacing: flag when the weekly Claude window burns ahead of pace
@@ -1237,67 +1211,6 @@ def _usage_checkin(st):
     st["usage_flagged_reset"] = flag.get("resetsAt") or ""
     _save_loopstate(st)
     _escalate(_usage_flag_text(flag), title=_i18n.t("push.pmQuota"))
-
-
-def _quota_floor():
-    """The weekly quota IS the budget the PM manages (on a Max plan the bottleneck
-    is quota, not euros). When the current pace runs the window OVER its limit before
-    it resets, the PM spends the remaining budget only on the work that's worth it:
-    this returns the lowest-priority rank still allowed to dispatch (0=urgent .. 3=low),
-    or None when there's headroom to dispatch everything. Cheap (cached snapshot)."""
-    try:
-        import usage
-        f = usage.weekly_pacing_flag()
-    except Exception:
-        return None
-    if not f:
-        return None
-    proj = f.get("projected_pct") or 0
-    return 0 if proj >= 130 else 1     # badly over -> urgent only; ahead -> urgent + high
-
-
-def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
-    g = goal if len(goal) <= 90 else goal[:88] + "…"
-    parts = ["📊 Ziel vs. Budget — Ziel: %s." % g]
-    if weekly is not None:
-        used = weekly.get("usedPct")
-        pac = weekly.get("pacing") or {}
-        proj = pac.get("projected_pct")
-        line = "Budget (Woche): %s%% verbraucht" % round(used) if isinstance(used, (int, float)) else "Budget (Woche): —"
-        if proj is not None:
-            line += ", projiziert %s%% zum Reset (%s)" % (round(proj), _fmt_when(weekly.get("resetsAt")))
-        parts.append(line + ".")
-    if est:
-        parts.append("Zielpfad: ~%s Turns offen, ETA ~%s Tage (Tempo %s/Tag)." % (est, eta, pace))
-    else:
-        parts.append("Noch kein bepreister Plan — sag 'plane', dann rechne ich Zielpfad + ETA.")
-    if verdict == "at_risk":
-        pac = (weekly or {}).get("pacing") or {}
-        parts.append("⚠ Risiko: bei diesem Tempo ist das Wochenkontingent ~%s erschöpft — VOR dem "
-                     "Reset. Dann stockt die Arbeit bis zum Reset und die Ziel-ETA rutscht. "
-                     "Ich fokussiere das Kontingent in DISPATCH schon auf dringende/hohe Karten; "
-                     "sag Bescheid, ob ich Nicht-Ziel-Arbeit härter zurückstelle oder den Slip "
-                     "akzeptieren soll." % _fmt_when(pac.get("exhaust_at")))
-    elif verdict == "tight":
-        parts.append("Budget wird knapp — noch tragbar, aber ich behalte das Tempo im Auge.")
-    else:
-        parts.append("Auf Kurs — das Budget trägt das Tempo bis zum Reset.")
-    return " ".join(parts)
-
-
-def _triage_green(plan):
-    """The HARD gate: goal work may proceed only when the golden triage is green -
-    plan_status 'ready' AND all three iron-triangle corners (budget/timeline/scope) 'ok'.
-    No plan yet -> not green (a goal can't be dispatched without a vetted plan). A legacy
-    plan without a triage block falls back to plan_status alone."""
-    if not plan:
-        return False
-    if (plan.get("plan_status") or "ready") != "ready":
-        return False
-    tri = plan.get("triage") or {}
-    if tri:
-        return all(tri.get(k) == "ok" for k in ("budget", "timeline", "scope"))
-    return True
 
 
 def _plan_gate_notice(st):
