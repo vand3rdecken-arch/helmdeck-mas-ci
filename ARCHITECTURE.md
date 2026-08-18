@@ -86,7 +86,15 @@ Surface plugins - screens still render from plain `expo-router` files, not
 `Surface.component`. That's the pre-existing, still-open
 `plugin-kernel-dual-nav` debt (order 29); per-cell enable/disable doesn't
 depend on it, since the gate operates on what's actually rendered.
-`GET /cells` exposes the live manifest. Machine-control and direct-task are NOT
+`GET /cells` exposes the live manifest, which now also carries each cell's
+real `logicFiles`/`storage`/`harnessFile`/`uiFiles` and a `routes` list
+DERIVED live from that cell's own route modules' dispatch dicts (never
+hand-duplicated). `/modules` renders this as a small architecture diagram per
+cell (`app/src/ui/cell_diagram.tsx`, react-native-svg) - tap a cell to see its
+Logic/Storage/Harness/API-Routes/UI-Surface, tap any file to read its real
+source via `GET /cells/<id>/source` (owner-only, allowlisted to EXACTLY that
+cell's own declared files - the manifest IS the allowlist, so nothing is
+servable that isn't already named as belonging to that cell). Machine-control and direct-task are NOT
 peer cells - they are **modes of the Engineer cell** (a card variant forking
 only at dispatch/accept/agent-selection), gated by the existing `policy.machine`.
 This is the daemon-side plugin registry the full-dynamism decree first deferred;
