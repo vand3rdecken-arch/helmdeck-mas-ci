@@ -307,6 +307,17 @@ export interface HarnessWriteResult {
   resolved_chars?: number; document: HarnessDocument;
 }
 
+// GET /cells manifest shape (daemon/cells.py manifest()) - one entry per
+// registered agentic-system cell, live enable-state derived from policy.
+export interface CellInfo {
+  id: string;
+  enabled: boolean;
+  enabledKey: string;
+  role: string;
+  surface: string;
+  modes: string[];
+}
+
 export const api = {
   get: <T,>(path: string) => req<T>("GET", path),
   post: <T,>(path: string, body?: unknown, signal?: AbortSignal) => req<T>("POST", path, body, signal),
@@ -320,6 +331,10 @@ export const api = {
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   usage: () => req<Usage>("GET", "/usage"),
   me: () => req<Me>("GET", "/me"),
+  // The cell registry manifest (daemon/cells.py) - which agentic systems exist
+  // and whether each is enabled. Used to gate nav (see (tabs)/_layout.tsx) and
+  // the Modules screen's CELLS section.
+  cells: () => req<{ cells: CellInfo[] }>("GET", "/cells"),
   // ->working/review/done are run in the BACKGROUND by the daemon (the gate is a
   // subprocess, the merge + deploy hook follow it), so those reply {started,
   // gating} instead of the finished Track. The verdict arrives on the card

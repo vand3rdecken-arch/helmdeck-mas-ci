@@ -3,11 +3,12 @@ import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import { type ColorValue, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/data/client";
+import { api, type CellInfo } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
 import { useT } from "@/i18n";
 import { tokens } from "@/theme/tokens";
 import { useSurfaces } from "@/kernel/react";
+import type { Surface } from "@/kernel";
 
 const t = tokens.dark;
 const isWeb = Platform.OS === "web";
@@ -33,6 +34,30 @@ const NAV: NavItem[] = [
   { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", teamOnly: true },
   { name: "settings", labelKey: "nav.settings", icon: "settings-outline", teamOnly: true },
 ];
+// Cell-enable nav gating (Phase 1 of the cell-registry decree, daemon/debt.py
+// order 33): a disabled cell's tab must not appear, even though server.py
+// already 404s its routes. Keyed off the /cells manifest generically (by
+// surface id, not "connectors") so cells 2-5 pick this up automatically once
+// they register a Surface+nav entry - today only Connectors does, so this is
+// currently a no-op unless connectorsEnabled is flipped off.
+function useDisabledCellSurfaces(): Set<string> {
+  const { data } = useQuery({ queryKey: ["cells"], queryFn: api.cells, staleTime: 30000, retry: false });
+  const disabled = new Set<string>();
+  for (const c of (data?.cells ?? []) as CellInfo[]) {
+    if (c.enabled || !c.surface) continue;
+    disabled.add(c.surface);
+    // Nav-only tab entries (nav.tabs, e.g. id "tab.connectors" route "connectors")
+    // don't share the cell's "surfaces.<id>" id, so also index the bare suffix.
+    disabled.add(c.surface.replace(/^surfaces\./, ""));
+  }
+  return disabled;
+}
+
+function isSurfaceCellDisabled(s: Surface, disabled: Set<string>): boolean {
+  if (disabled.size === 0) return false;
+  return disabled.has(s.id) || Boolean(s.route && disabled.has(s.route));
+}
+
 /** Frosted glass bar for the mobile bottom tabs (real backdrop blur). */
 function GlassTabBar() {
   return (
@@ -53,8 +78,9 @@ function Sidebar({ state, navigation }: any) {
   // (nav.tabs), excluding phone-only entries (More). Falls back to the
   // hard-coded NAV when no kernel is provided.
   const surfaces = useSurfaces();
+  const disabledCells = useDisabledCellSurfaces();
   const registryNav = surfaces
-    .filter((s) => s.route && s.nav && !s.nav.phoneOnly)
+    .filter((s) => s.route && s.nav && !s.nav.phoneOnly && !isSurfaceCellDisabled(s, disabledCells))
     .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, teamOnly: s.nav!.teamOnly }));
   const navItems: NavItem[] = registryNav.length ? registryNav : NAV;
   const filter = useBoardFilter((s) => s.filter);
@@ -160,8 +186,9 @@ export default function TabsLayout() {
   // The tab set now comes from the kernel surface registry (nav.tabs plugin),
   // falling back to TAB_FALLBACK when no kernel is provided — identical output.
   const surfaces = useSurfaces();
+  const disabledCells = useDisabledCellSurfaces();
   const fromRegistry = surfaces
-    .filter((s) => s.route && s.nav)
+    .filter((s) => s.route && s.nav && !isSurfaceCellDisabled(s, disabledCells))
     .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly }));
   const tabItems: TabItem[] = fromRegistry.length ? fromRegistry : TAB_FALLBACK;
   // Hiding a screen from the phone bottom bar uses href:null (see TAB_FALLBACK /
