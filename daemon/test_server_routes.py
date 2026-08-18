@@ -6,10 +6,23 @@ against real HTTP responses, not just import-time compile checks).
 
 Self-sandboxing: db/auth/events are ALL redirected to a temp dir BEFORE any of
 them touch disk, so this never reads or writes the real helmdeck.db/users.json/
-settings.json. The server binds to 127.0.0.1:0 (OS-assigned ephemeral port) in
-a background thread — it never touches :8140, so it cannot collide with (or
-evict) a live daemon. `serve()` itself is NEVER called (it takes the singleton
-port lock and would evict a running daemon).
+settings.json/events.jsonl/processes.json. The server binds to 127.0.0.1:0
+(OS-assigned ephemeral port) in a background thread — it never touches :8140,
+so it cannot collide with (or evict) a live daemon. `serve()` itself is NEVER
+called (it takes the singleton port lock and would evict a running daemon).
+
+TRAPS MEASURED THE HARD WAY (both real, both recovered, both now guarded
+here): (1) db.ROOT - db.init() reads/migrates ROOT/tracks.json and ROOT/
+events.jsonl (renaming them to *.imported); patching only db.DBPATH still let
+init() touch the REAL daemon/events.jsonl. (2) events.EV - events.emit() (the
+append-only audit sink) writes through events.py's OWN independent ROOT/EV
+globals, never covered by db.ROOT or events.SET; any route that calls
+events.emit() (most of them do, for the audit trail) appended real lines to
+the production events.jsonl even with db fully sandboxed. Both are now patched
+below BEFORE any module touches disk. If a THIRD module turns up with its own
+hardcoded ROOT-based path (grep for `os.path.join(ROOT,` in any module a new
+route imports), sandbox it here too before running - this class of bug will
+keep recurring until every module's storage goes through db.py.
 
 Run: py -3.12 test_server_routes.py
 """
@@ -47,6 +60,7 @@ def main():
     auth.SESS = os.path.join(tmp, "sessions.json")
     import events
     events.SET = os.path.join(tmp, "settings.json")
+    events.EV = os.path.join(tmp, "events.jsonl")   # the append-only audit sink
 
     db.init(role="tool")   # NOT role="daemon" - this process owns no driver sessions
 
@@ -207,6 +221,19 @@ def main():
         ok(isinstance(body, dict) and body.get("error"), "/pm/report refuses a client (owner/operator only)")
         status, body = req("POST", "/pm/reconcile", {}, cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/pm/reconcile refuses a client (owner/operator only)")
+
+        # -- misc group (routes_misc.py) -----------------------------------------
+        status, body = req("GET", "/processes", cookie=sid, expect=200)
+        ok(isinstance(body, list), "/processes shape: a list (fresh sandboxed DB, syncs first)")
+
+        status, body = req("POST", "/processes/new", {"request": "a smoke-test process"},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("id"), "/processes/new POST creates a real process")
+        status, body = req("GET", "/processes", cookie=sid, expect=200)
+        ok(len(body) == 1, "/processes/new POST actually persisted (visible on the next GET)")
+
+        status, body = req("POST", "/processes/new", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/processes/new POST rejects a missing 'request'")
 
         status, body = req("GET", "/policy", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "policies" in body, "/policy shape: policies present (owner authorized)")

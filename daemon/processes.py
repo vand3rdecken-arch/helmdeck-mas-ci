@@ -11,32 +11,26 @@ each accepted step becomes a normal board card with an execution mode:
   human   - a person does it; the card only tracks it
 
 Dates: the proposer estimates days per step; due dates are laid end-to-end
-from today (capped by the process due date when set). Store: processes.json.
+from today (capped by the process due date when set). Store: db.py's
+processes table (migrated from the old processes.json flat file - db.init()
+imports it once and renames it *.imported, same safeguard as tracks/events).
 Steps link to their card (track id) once accepted; the timeline groups cards
 by process so one client engagement reads as a swimlane."""
 import json, os, re, shutil, subprocess, threading, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-STORE = os.path.join(ROOT, "processes.json")
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 MODES = ("do", "prepare", "cowork", "teach", "human")
 _lock = threading.Lock()
 
 def _load():
-    if not os.path.exists(STORE):
-        return []
-    try:
-        with open(STORE, encoding="utf-8") as f:
-            return json.load(f)
-    except ValueError:
-        return []
+    import db
+    return db.processes_all()
 
 def _save(ps):
-    tmp = STORE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(ps, f, indent=2)
-    os.replace(tmp, STORE)
+    import db
+    db.processes_replace(ps)
 
 def list_processes(client=None):
     ps = _load()
