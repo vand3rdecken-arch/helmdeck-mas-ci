@@ -6,11 +6,15 @@
 // title/sublabel type-scale split - a style to emulate, not a vendored
 // dependency (see daemon/cells.py's engineer Cell.tools for the reference).
 //
-// Layout is computed here in plain JS (no layout library needed at this
-// scale): one Cell box, an edge down to N category boxes in a row, an edge
-// from each category down to its own leaf boxes, wrapped into rows. A
-// category with nothing to show renders ONE muted leaf with the cell's
-// `role` text instead of an empty box.
+// v2 layout (owner feedback: v1 "looks ugly" - diagnosed and fixed): each
+// category is now a single narrow COLUMN (leaves stacked vertically inside a
+// grouped, softly-filled container) instead of a wide 2-per-row grid. That
+// keeps the whole diagram close to viewport width instead of sprawling past
+// 1800px, which was the real bug behind the ugliness - the Cell box, centered
+// over the FULL width, ended up floating alone near the right edge while only
+// the leftmost categories were visible without scrolling. Elbow (right-angle)
+// connectors replace the raw diagonals, matching the reference's clean
+// architecture-diagram convention.
 import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { G, Line, Rect, Text as SvgText } from "react-native-svg";
@@ -37,8 +41,16 @@ function categoriesFor(c: CellInfo): Category[] {
   ];
 }
 
-const LEAF_W = 168, LEAF_H = 28, LEAF_GAP = 8, CAT_GAP = 24, CAT_PAD = 10;
-const CELL_W = 140, CELL_H = 36;
+const LEAF_W = 152, LEAF_H = 26, LEAF_GAP = 6;
+const COL_PAD = 12, COL_GAP = 22;
+const COL_W = LEAF_W + COL_PAD * 2;
+const LABEL_H = 22;
+const CELL_W = 132, CELL_H = 34;
+const TOP_PAD = 12, GROUPS_Y_GAP = 28;
+
+function truncate(text: string, max = 24) {
+  return text.length > max ? "…" + text.slice(-(max - 1)) : text;
+}
 
 export function CellDiagram({ cell }: { cell: CellInfo }) {
   const t = useTheme();
@@ -46,69 +58,80 @@ export function CellDiagram({ cell }: { cell: CellInfo }) {
 
   const cats = useMemo(() => categoriesFor(cell), [cell]);
 
-  // Each category: leaves wrap at 2 per row (keeps boxes readable at phone
-  // width; desktop just gets more whitespace, not smaller text - matches the
-  // reference's "editorial, not dense" target).
-  const catBlocks = cats.map((cat) => {
-    const rows = Math.ceil(cat.leaves.length / 2);
-    return { ...cat, w: LEAF_W * 2 + LEAF_GAP, h: rows * (LEAF_H + LEAF_GAP) - LEAF_GAP, rows };
+  const cols = cats.map((cat) => ({
+    ...cat,
+    h: LABEL_H + cat.leaves.length * (LEAF_H + LEAF_GAP) - LEAF_GAP + COL_PAD * 2,
+  }));
+
+  const totalW = g(Math.max(CELL_W + 40, cols.length * COL_W + (cols.length - 1) * COL_GAP));
+  const groupsY = TOP_PAD + CELL_H + GROUPS_Y_GAP;
+  const maxColH = Math.max(...cols.map((c) => c.h), 0);
+  const totalH = g(groupsY + maxColH + TOP_PAD);
+
+  const rowW = cols.length * COL_W + (cols.length - 1) * COL_GAP;
+  let x = (totalW - rowW) / 2;
+  const positioned = cols.map((c) => {
+    const bx = g(x);
+    x += COL_W + COL_GAP;
+    return { ...c, x: bx };
   });
 
-  const totalW = g(Math.max(CELL_W, catBlocks.reduce((s, b) => s + b.w + CAT_GAP, -CAT_GAP)));
-  const catsY = 64;
-  const labelH = 20;
-  const maxCatH = Math.max(...catBlocks.map((b) => b.h), 0);
-  const totalH = g(catsY + CAT_PAD + labelH + maxCatH + CAT_PAD + 12);
-
-  let x = (totalW - catBlocks.reduce((s, b) => s + b.w + CAT_GAP, -CAT_GAP)) / 2;
-  const positioned = catBlocks.map((b) => {
-    const bx = x;
-    x += b.w + CAT_GAP;
-    return { ...b, x: g(bx) };
-  });
+  const cellX = g((totalW - CELL_W) / 2);
+  const cellMidX = cellX + CELL_W / 2;
+  const cellBottomY = TOP_PAD + CELL_H;
+  const elbowY = g(cellBottomY + GROUPS_Y_GAP / 2);
 
   return (
     <View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={totalW > 600} contentContainerStyle={{ paddingVertical: 8 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={totalW > 700} contentContainerStyle={{ paddingVertical: 8 }}>
         {/* Svg + the tap-target overlay share this fixed-size wrapper, so both
             scroll together - an overlay outside the ScrollView would drift
             out of alignment with the diagram as soon as it's wide enough to
-            scroll (every cell with more than a couple files hits this). */}
+            scroll. */}
         <View style={{ width: totalW, height: totalH }}>
         <Svg width={totalW} height={totalH}>
-          {/* the Cell box, top-center */}
-          <Rect x={g((totalW - CELL_W) / 2)} y={4} width={CELL_W} height={CELL_H} rx={8}
-            stroke={t.accent} strokeWidth={1.5} fill="transparent" />
-          <SvgText x={totalW / 2} y={4 + CELL_H / 2 + 5} fontSize={14} fontWeight="700"
+          {/* elbow connectors: cell -> midline -> each column's top-center */}
+          {positioned.map((c, i) => {
+            const colMidX = c.x + COL_W / 2;
+            return (
+              <G key={"e" + i}>
+                <Line x1={cellMidX} y1={cellBottomY} x2={cellMidX} y2={elbowY} stroke={t.glassBorder} strokeWidth={1} />
+                <Line x1={cellMidX} y1={elbowY} x2={colMidX} y2={elbowY} stroke={t.glassBorder} strokeWidth={1} />
+                <Line x1={colMidX} y1={elbowY} x2={colMidX} y2={groupsY} stroke={t.glassBorder} strokeWidth={1} />
+              </G>
+            );
+          })}
+
+          {/* the Cell box - the one focal element, accent-filled per the
+              reference's "1-2 focal elements, one accent color" rule */}
+          <Rect x={cellX} y={TOP_PAD} width={CELL_W} height={CELL_H} rx={8}
+            stroke={t.accent} strokeWidth={1.5} fill={t.accent} fillOpacity={0.12} />
+          <SvgText x={cellMidX} y={TOP_PAD + CELL_H / 2 + 5} fontSize={14} fontWeight="700"
             fill={t.txtPrimary} textAnchor="middle">{cell.id}</SvgText>
 
-          {positioned.map((b, i) => (
-            <Line key={"e" + i} x1={totalW / 2} y1={4 + CELL_H} x2={b.x + b.w / 2} y2={catsY}
-              stroke={t.glassBorder} strokeWidth={1} />
-          ))}
-
-          {positioned.map((b, i) => (
-            <G key={b.label}>
-              <SvgText x={b.x} y={catsY + labelH - 6} fontSize={10.5} fontWeight="700"
-                fill={t.txtTertiary} letterSpacing={0.6}>{b.label.toUpperCase()}</SvgText>
-              {b.leaves.map((leaf, li) => {
-                const col = li % 2, row = Math.floor(li / 2);
-                const lx = b.x + col * (LEAF_W + LEAF_GAP);
-                const ly = catsY + labelH + row * (LEAF_H + LEAF_GAP);
+          {positioned.map((c) => (
+            <G key={c.label}>
+              {/* grouped container: a soft-filled rounded rect behind the
+                  label + all its leaves, so each category reads as ONE
+                  visual unit instead of loose scattered boxes */}
+              <Rect x={c.x} y={groupsY} width={COL_W} height={c.h} rx={10}
+                stroke={t.glassBorder} strokeWidth={1} fill={t.surface1} fillOpacity={0.5} />
+              <SvgText x={c.x + COL_PAD} y={groupsY + LABEL_H - 7} fontSize={10} fontWeight="700"
+                fill={t.accent} letterSpacing={0.8}>{c.label.toUpperCase()}</SvgText>
+              {c.leaves.map((leaf, li) => {
+                const ly = groupsY + LABEL_H + li * (LEAF_H + LEAF_GAP);
                 return (
-                  <Rect key={li} x={lx} y={ly} width={LEAF_W} height={LEAF_H} rx={6}
+                  <Rect key={li} x={c.x + COL_PAD} y={ly} width={LEAF_W} height={LEAF_H} rx={6}
                     stroke={t.glassBorder} strokeWidth={1}
-                    fill={leaf.file ? "transparent" : t.canvas} />
+                    fill={leaf.file ? t.canvas : "transparent"} />
                 );
               })}
-              {b.leaves.map((leaf, li) => {
-                const col = li % 2, row = Math.floor(li / 2);
-                const lx = b.x + col * (LEAF_W + LEAF_GAP);
-                const ly = catsY + labelH + row * (LEAF_H + LEAF_GAP);
+              {c.leaves.map((leaf, li) => {
+                const ly = groupsY + LABEL_H + li * (LEAF_H + LEAF_GAP);
                 return (
-                  <SvgText key={"t" + li} x={lx + 8} y={ly + LEAF_H / 2 + 4} fontSize={11}
+                  <SvgText key={"t" + li} x={c.x + COL_PAD + 8} y={ly + LEAF_H / 2 + 4} fontSize={11}
                     fill={leaf.file ? t.txtPrimary : t.txtTertiary}>
-                    {leaf.text.length > 22 ? "…" + leaf.text.slice(-21) : leaf.text}
+                    {truncate(leaf.text)}
                   </SvgText>
                 );
               })}
@@ -117,25 +140,22 @@ export function CellDiagram({ cell }: { cell: CellInfo }) {
         </Svg>
 
         {/* SvgText's onPress works on native but is unreliable on web RN-SVG -
-            a transparent RN Pressable overlay grid gives every platform a
-            real tap target. Lives INSIDE the same fixed-size wrapper as the
-            Svg (not a sibling of the ScrollView) so it scrolls together with
-            the diagram instead of drifting out of alignment once the
-            diagram is wide enough to need horizontal scrolling. */}
-        <View style={{ position: "absolute", top: 0, left: 0, width: totalW, height: totalH }} pointerEvents="box-none">
-          {positioned.map((b) =>
-            b.leaves.map((leaf, li) => {
-              if (!leaf.file) return null;
-              const col = li % 2, row = Math.floor(li / 2);
-              const lx = b.x + col * (LEAF_W + LEAF_GAP);
-              const ly = catsY + labelH + row * (LEAF_H + LEAF_GAP);
-              return (
-                <Pressable key={b.label + li} onPress={() => setOpenFile(leaf.file!)}
-                  style={{ position: "absolute", left: lx, top: ly, width: LEAF_W, height: LEAF_H }} />
+            transparent RN Pressables give every platform a real tap target.
+            Rendered as DIRECT siblings of Svg (not wrapped in an
+            intermediate pointerEvents="box-none" container - that combo is
+            unreliable on react-native-web, confirmed by hand). Each is
+            individually absolutely positioned against the same fixed-size
+            parent View (RN Views default to position:"relative"). */}
+        {positioned.map((c) =>
+          c.leaves.map((leaf, li) => {
+            if (!leaf.file) return null;
+            const ly = groupsY + LABEL_H + li * (LEAF_H + LEAF_GAP);
+            return (
+              <Pressable key={c.label + li} onPress={() => setOpenFile(leaf.file!)}
+                style={{ position: "absolute", left: c.x + COL_PAD, top: ly, width: LEAF_W, height: LEAF_H }} />
               );
             })
           )}
-        </View>
         </View>
       </ScrollView>
 

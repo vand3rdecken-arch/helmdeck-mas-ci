@@ -31,7 +31,11 @@ def auth_setup(self, user, body):
     except ValueError as e:
         return self._send(400, json.dumps({"error": str(e)}))
     sid = auth.login(body["name"], body["password"])
-    return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+    # Same reasoning as auth_login below: the app's request layer needs a real
+    # Bearer token, not just the cookie, to actually use the account it just
+    # created.
+    tok = auth.issue_token(body["name"], "web-login")
+    return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
 
 
 def auth_register(self, user, body):
@@ -56,7 +60,10 @@ def auth_register(self, user, body):
                          args=(email, body.get("name", "")),
                          daemon=True).start()
     sid = auth.login(body["name"], body["password"])
-    return self._send_cookie(200, json.dumps({"ok": True}), sid=sid)
+    # Same reasoning as auth_login below: the app's request layer needs a real
+    # Bearer token, not just the cookie.
+    tok = auth.issue_token(body["name"], "web-login")
+    return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
 
 
 def auth_login(self, user, body):

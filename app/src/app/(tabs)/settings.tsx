@@ -10,6 +10,7 @@ import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import { useAuthGate } from "@/data/authgate";
 import { useCellEnabled } from "@/data/cells";
 import type { UserRow } from "@/data/types";
 import { LANGS, useT, type Lang } from "@/i18n";
@@ -285,11 +286,28 @@ export default function Settings() {
     catch (e) { fail(e); }
   }
 
+  // Restores the "Abmelden" control the old Next.js web app had (lost at the
+  // Expo cutover along with its login screen - see login_screen.tsx). Always
+  // reachable, not gated behind the owner-only settings block below: if
+  // you're stuck with a bad token, you need this REGARDLESS of whether
+  // /settings itself loads. Best-effort server-side logout (clears the
+  // cookie session too, for any other consumer that reads it), then clear
+  // the local token and re-show the login screen via the same gate a 401
+  // already drives.
+  const logout = () => {
+    api.post("/auth/logout", {}).catch(() => { /* best-effort - proceed regardless */ });
+    useConfig.getState().set({ token: "" });
+    useAuthGate.getState().reportAuthRequired();
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <ScreenHeader title={tr("nav.settings")} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 60,
         width: "100%", maxWidth: wide ? 1100 : undefined, alignSelf: "center" }}>
+        <Pressable onPress={logout} style={{ alignSelf: "flex-start" }}>
+          <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>Abmelden</Text>
+        </Pressable>
         {isLoading ? <ActivityIndicator color={t.accent} /> : null}
         {error ? <Text style={{ color: t.danger }}>{tr("settings.ownerOnly")}</Text> : null}
         {s ? (
