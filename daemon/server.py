@@ -61,6 +61,8 @@ import routes_pm
 import routes_misc
 import routes_control
 import routes_relay
+import routes_connectors
+import routes_checkpoints
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -376,16 +378,11 @@ class H(BaseHTTPRequestHandler):
                 if txt is None:
                     return self._send(404, json.dumps({"error": "Version nicht gefunden"}))
                 return self._send(200, json.dumps({"id": vid, "text": txt}, ensure_ascii=False))
-            if p == "/checkpoints":
-                import checkpoints
-                return self._send(200, json.dumps(checkpoints.list_checkpoints()))
+            if p in routes_checkpoints.GET_ROUTES:
+                return routes_checkpoints.GET_ROUTES[p](self, user)
             if p.startswith("/checkpoints/") and p.endswith("/diff"):
-                import checkpoints
                 cid = p[len("/checkpoints/"):-len("/diff")]
-                try:
-                    return self._send(200, json.dumps(checkpoints.diff(cid)))
-                except (RuntimeError, ValueError) as e:
-                    return self._send(404, json.dumps({"error": str(e)}))
+                return routes_checkpoints.checkpoints_diff_get(self, user, cid)
             if p == "/history":
                 # the git audit trail: main line + every card branch's commits.
                 import subprocess, sessions, events
@@ -428,9 +425,8 @@ class H(BaseHTTPRequestHandler):
                 branches.sort(key=lambda b: (b["track"] is None, b["name"]))
                 return self._send(200, json.dumps(
                     {"head": head, "main": main, "branches": branches[:40]}))
-            if p == "/connectors":
-                import connectors
-                return self._send(200, json.dumps(connectors.list_connectors()))
+            if p in routes_connectors.GET_ROUTES:
+                return routes_connectors.GET_ROUTES[p](self, user)
             if p in routes_misc.GET_ROUTES:
                 return routes_misc.GET_ROUTES[p](self, user)
             if p in routes_settings.GET_ROUTES:
@@ -665,33 +661,11 @@ class H(BaseHTTPRequestHandler):
                     return self._send(500, json.dumps({"error": str(e)[:300]}))
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "checkpoints" and parts[2] == "restore":
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import checkpoints
-                try:
-                    checkpoints.restore(parts[1], actor=user["name"])
-                    return self._send(200, json.dumps({"restored": parts[1]}))
-                except Exception as e:
-                    return self._send(400, json.dumps({"error": str(e)[:300]}))
+                return routes_checkpoints.checkpoints_restore_post(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "rollback":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import connectors, events
-                try:
-                    prev = connectors.rollback(parts[1])
-                    events.emit("connector", "-", action="rollback", name=parts[1], actor=user["name"])
-                    return self._send(200, json.dumps({"restored": prev}))
-                except Exception as e:
-                    return self._send(400, json.dumps({"error": str(e)[:300]}))
+                return routes_connectors.connectors_rollback_post(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "run":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import connectors
-                try:
-                    made = connectors.run_connector(parts[1], actor=user["name"])
-                    return self._send(200, json.dumps({"cards": len(made)}))
-                except Exception as e:
-                    return self._send(400, json.dumps({"error": str(e)[:300]}))
+                return routes_connectors.connectors_run_post(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "debt" and parts[2] == "fix":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
