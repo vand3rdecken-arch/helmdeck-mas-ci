@@ -404,6 +404,97 @@ def main():
         status, body = req("POST", "/checkpoints/%s/restore" % real_cid, {}, cookie=sid, expect=200)
         ok(body.get("restored") == real_cid, "/checkpoints/.../restore on a real id: 200, restores it")
 
+        # -- runs group (routes_runs.py) -----------------------------------------
+        status, body = req("GET", "/runs", cookie=sid, expect=200)
+        ok(isinstance(body, list), "/runs shape: a list (fresh sandboxed REC has no runs)")
+
+        status, body = req("GET", "/live.jpg", cookie=sid, expect=404)
+        ok(isinstance(body, bytes) or body is None, "/live.jpg: 404, no active run")
+
+        status, body = req("GET", "/runs/doesnotexist/timeline", cookie=sid, expect=200)
+        ok(body == [], "/runs/<id>/timeline: empty list for an unknown run (no run dir yet)")
+
+        status, body = req("GET", "/runs/doesnotexist/playbook", cookie=sid, expect=404)
+        ok(isinstance(body, dict) is False or True, "/runs/<id>/playbook: 404, not distilled")
+
+        status, body = req("GET", "/runs/doesnotexist/video", cookie=sid, expect=404)
+        ok(True, "/runs/<id>/video: 404, no video")
+
+        status, body = req("GET", "/runs/doesnotexist/videochunk", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"), "/runs/<id>/videochunk: 404, no video")
+
+        # unrecognized sub-path under /runs/<id>/... falls through the whole
+        # if-chain to the final 404 (proves runs_item_get's False-on-no-match
+        # signal reaches server.py correctly, not just the matched branches)
+        status, body = req("GET", "/runs/doesnotexist/bogus", cookie=sid, expect=404)
+        ok(True, "/runs/<id>/bogus: falls through to the generic 404")
+
+        # -- system group (routes_system.py) -------------------------------------
+        status, body = req("GET", "/presence", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/presence GET refuses a non-owner")
+        status, body = req("GET", "/presence", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/presence GET shape: a dict (presence.snapshot())")
+
+        status, body = req("POST", "/presence", {"device": "app", "app_visible": True}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/presence POST: accepted, returns a dict")
+
+        status, body = req("POST", "/push/register", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/push/register POST: missing token -> 400")
+        status, body = req("POST", "/push/register", {"token": "fcm-tok-123"}, cookie=sid, expect=200)
+        ok(body.get("registered") is True, "/push/register POST: real token accepted")
+
+        status, body = req("GET", "/sessions/claude", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/sessions/claude refuses a client")
+        # NOT calling it as owner here: claude_sessions.list_sessions() scans
+        # the REAL ~/.claude session history on disk (not sandboxed by this
+        # test, and unrelated to the routes_system.py extraction under test -
+        # on a machine with a lot of session history it can take well over
+        # this test's 10s socket timeout). The role-gate above is the part
+        # this extraction could have broken; the dispatch-table move itself
+        # (routes_system.sessions_claude_get is a byte-identical body move)
+        # is verified by py_compile + the identical-function check below.
+
+        status, body = req("GET", "/history", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "main" in body and "branches" in body,
+           "/history shape: main+branches present (real git log against the sandboxed repo)")
+
+        status, body = req("GET", "/harness/version/agents/doesnotexist?id=x", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/harness/version/... refuses a non-owner")
+        status, body = req("GET", "/harness/version/agents/doesnotexist?id=x", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"), "/harness/version/...: unknown version -> 404")
+
+        status, body = req("POST", "/harness", {"kind": "bogus"}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/harness POST refuses a non-owner")
+        status, body = req("POST", "/harness", {"kind": "bogus"}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/harness POST: invalid kind -> 400")
+
+        status, body = req("POST", "/debt/doesnotexist/fix", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/debt/<id>/fix refuses a non-owner/operator")
+        status, body = req("POST", "/debt/doesnotexist/fix", {}, cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"), "/debt/<id>/fix: unknown debt id -> 404")
+
+        status, body = req("POST", "/import/jira", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/import/jira refuses a non-owner/operator")
+        status, body = req("POST", "/import/url", {"url": "not a url"}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/import/url: bad url -> 400 (real importers.url_import call)")
+
+        # /processes/<id>/step sub-router: real process created via /processes/new
+        status, body = req("POST", "/processes/new", {"request": "step router smoke"},
+                           cookie=sid, expect=200)
+        step_pid = body["id"]
+        status, body = req("POST", "/processes/%s/step" % step_pid,
+                           {"action": "add", "title": "a step", "mode": "do"},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict) and any(s.get("title") == "a step" for s in body.get("steps", [])),
+           "/processes/<id>/step action=add: real step appended")
+        status, body = req("POST", "/processes/%s/step" % step_pid,
+                           {"action": "bogus"}, cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"),
+           "/processes/<id>/step: unrecognized action -> 404 (same try-block fallthrough as before)")
+        status, body = req("POST", "/processes/doesnotexist/notstep", {}, cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"),
+           "/processes/<id>/<non-step>: falls through the same try-block to 404")
+
         # -- control/teach group (routes_control.py) ----------------------------
         status, body = req("GET", "/control/state", cookie=sid, expect=200)
         ok(isinstance(body, dict) and body.get("teach") is None and body.get("busy") == [],

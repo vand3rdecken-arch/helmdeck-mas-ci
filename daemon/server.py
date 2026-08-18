@@ -67,6 +67,8 @@ import routes_projects
 import routes_copilot
 import routes_tracks
 import routes_track_actions
+import routes_runs
+import routes_system
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -176,73 +178,12 @@ class H(BaseHTTPRequestHandler):
                      "tokens": [{"label": t["label"], "token": t["token"],
                                  "created": t.get("created")} for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
-            if p == "/runs":
-                runs = list_runs()
-                for m in runs:
-                    m["steps"] = len(read_timeline(os.path.join(REC, m["id"])))
-                return self._send(200, json.dumps(runs))
-            if p == "/live.jpg":
-                lp = _active_live()
-                if not lp:
-                    return self._send(404, b"no active run", "text/plain")
-                with open(lp, "rb") as f:
-                    return self._send(200, f.read(), "image/jpeg")
+            if p in routes_runs.GET_ROUTES:
+                return routes_runs.GET_ROUTES[p](self, user)
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "runs":
-                rid, what = parts[1], parts[2]
-                d = os.path.join(REC, os.path.basename(rid))
-                if what == "timeline":
-                    return self._send(200, json.dumps(read_timeline(d)))
-                if what == "playbook":
-                    fp = os.path.join(d, "playbook.md")
-                    if os.path.exists(fp):
-                        with open(fp, "rb") as f:
-                            return self._send(200, f.read(), "text/markdown; charset=utf-8")
-                    return self._send(404, b"not distilled", "text/plain")
-                if what == "video":
-                    for name, ct in (("screen.mp4", "video/mp4"), ("browser.webm", "video/webm")):
-                        fp = os.path.join(d, name)
-                        if os.path.exists(fp):
-                            with open(fp, "rb") as f:
-                                return self._send(200, f.read(), ct)
-                    return self._send(404, b"no video", "text/plain")
-                if what == "videochunk":
-                    # Ranged, base64-in-JSON slices of the recording. The mobile
-                    # app reaches the daemon through an end-to-end encrypted
-                    # relay that carries TEXT frames, so a raw binary stream
-                    # cannot pass; slicing keeps recordings watchable on the
-                    # phone without weakening the tunnel or loading a whole
-                    # video into memory.
-                    import base64 as _b64, transcode
-                    q = parse_qs(urlparse(self.path).query)
-                    try:
-                        off = max(0, int((q.get("offset") or ["0"])[0]))
-                        ln = int((q.get("len") or ["262144"])[0])
-                    except ValueError:
-                        return self._send(400, json.dumps({"error": "bad offset/len"}))
-                    ln = max(1, min(ln, 1_048_576))          # 1 MiB ceiling per slice
-                    # A phone or a 600x600 glasses display cannot use a full
-                    # desktop capture; serving a small rendition cuts the bytes
-                    # that have to cross the relay by roughly an order of
-                    # magnitude. Made once on THIS machine, then cached.
-                    profile = (q.get("profile") or ["mobile"])[0]
-                    for name, ct in (("screen.mp4", "video/mp4"), ("browser.webm", "video/webm")):
-                        fp = os.path.join(d, name)
-                        if not os.path.exists(fp):
-                            continue
-                        fp = transcode.variant(fp, profile)
-                        if fp.endswith(".mp4"):
-                            ct = "video/mp4"
-                        size = os.path.getsize(fp)
-                        with open(fp, "rb") as f:
-                            f.seek(off)
-                            blob = f.read(ln)
-                        return self._send(200, json.dumps({
-                            "size": size, "mime": ct, "offset": off,
-                            "profile": profile, "scaled": transcode.available(),
-                            "eof": off + len(blob) >= size,
-                            "data": _b64.b64encode(blob).decode()}))
-                    return self._send(404, json.dumps({"error": "no video"}))
+                if routes_runs.runs_item_get(self, user, parts[1], parts[2]):
+                    return
             if p in routes_control.GET_ROUTES:
                 return routes_control.GET_ROUTES[p](self, user)
             # --- orchestrator: branches/sessions (the Paseo half) ---
@@ -288,100 +229,25 @@ class H(BaseHTTPRequestHandler):
             if p.startswith("/tracks/") and p.endswith("/stream"):
                 tid = p[len("/tracks/"):-len("/stream")]
                 return routes_track_actions.tracks_stream_get(self, user, tid)
-            if p == "/presence":
-                # who the daemon thinks is here (diagnostic for the notify
-                # policy: "why didn't my phone buzz?" has a checkable answer)
-                import presence
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(presence.snapshot()))
+            if p in routes_system.GET_ROUTES:
+                return routes_system.GET_ROUTES[p](self, user)
             if p in routes_info.GET_ROUTES:
                 return routes_info.GET_ROUTES[p](self, user)
             if p in routes_pm.GET_ROUTES:
                 return routes_pm.GET_ROUTES[p](self, user)
-            if p == "/sessions/claude":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import claude_sessions
-                return self._send(200, json.dumps(claude_sessions.list_sessions()))
             if len(parts) == 4 and parts[0] == "harness" and parts[1] == "version":
-                # /harness/version/<kind>/<name>?id=<vid> - the bytes of one
-                # archived version, so the owner can read a prior brief before
-                # deciding to roll back to it.
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import harness
-                # NO local `from urllib.parse import ...` here: parse_qs is
-                # already module-level (line 14), and a function-scoped import
-                # would make the name LOCAL to all of do_GET - which broke the
-                # /stream/wait long-poll 170 lines above with UnboundLocalError
-                # on every request that did not hit this branch first.
-                vid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
-                txt = harness.version_text(parts[2], parts[3], vid)
-                if txt is None:
-                    return self._send(404, json.dumps({"error": "Version nicht gefunden"}))
-                return self._send(200, json.dumps({"id": vid, "text": txt}, ensure_ascii=False))
+                return routes_system.harness_version_get(self, user, parts[2], parts[3])
             if p in routes_checkpoints.GET_ROUTES:
                 return routes_checkpoints.GET_ROUTES[p](self, user)
             if p.startswith("/checkpoints/") and p.endswith("/diff"):
                 cid = p[len("/checkpoints/"):-len("/diff")]
                 return routes_checkpoints.checkpoints_diff_get(self, user, cid)
-            if p == "/history":
-                # the git audit trail: main line + every card branch's commits.
-                import subprocess, sessions, events
-                repo = events.settings().get("default_repo")
-                if not repo:
-                    return self._send(200, json.dumps({"main": [], "branches": []}))
-                def git(*args):
-                    r = subprocess.run(["git", "-C", repo, *args],
-                                       capture_output=True, text=True, timeout=20)
-                    return r.stdout.strip() if r.returncode == 0 else ""
-                def parse(log):
-                    out = []
-                    for line in log.splitlines():
-                        bits = line.split("")
-                        if len(bits) >= 4:
-                            out.append({"h": bits[0], "msg": bits[1][:100],
-                                        "author": bits[2], "date": bits[3]})
-                    return out
-                fmt = "--pretty=format:%h%s%an%ad"
-                head = git("rev-parse", "--abbrev-ref", "HEAD") or "main"
-                main = parse(git("log", "-n", "40", "--date=short", fmt, head))
-                tmap = {}
-                for t in sessions.list_tracks():
-                    tmap.setdefault(t["branch"], t)
-                branches = []
-                for br in git("branch", "--format=%(refname:short)").splitlines():
-                    br = br.strip()
-                    if not br or br == head:
-                        continue
-                    commits = parse(git("log", "--date=short", fmt, "-n", "20",
-                                        "%s..%s" % (head, br)))
-                    t = tmap.get(br)
-                    branches.append({
-                        "name": br, "commits": commits,
-                        "track": t["id"] if t else None,
-                        "task": t["task"][:70] if t else "",
-                        "lane": t.get("lane") if t else None,
-                        "client": t.get("client") if t else "",
-                    })
-                branches.sort(key=lambda b: (b["track"] is None, b["name"]))
-                return self._send(200, json.dumps(
-                    {"head": head, "main": main, "branches": branches[:40]}))
             if p in routes_connectors.GET_ROUTES:
                 return routes_connectors.GET_ROUTES[p](self, user)
             if p in routes_misc.GET_ROUTES:
                 return routes_misc.GET_ROUTES[p](self, user)
             if p in routes_settings.GET_ROUTES:
                 return routes_settings.GET_ROUTES[p](self, user)
-            if p == "/dashboard/data":
-                import events, sessions
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                m = events.metrics(sessions.list_tracks())
-                if user["role"] != "owner":
-                    m.pop("settings", None)
-                return self._send(200, json.dumps(m))
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "live":
                 return routes_tracks.tracks_live_get(self, user, parts[1])
@@ -484,140 +350,21 @@ class H(BaseHTTPRequestHandler):
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "run":
                 return routes_connectors.connectors_run_post(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "debt" and parts[2] == "fix":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import debt, sessions, events
-                item = next((d for d in debt.DEBT if d["id"] == parts[1]), None)
-                if not item:
-                    return self._send(404, json.dumps({"error": "unknown debt id"}))
-                repo = events.settings().get("default_repo")
-                t = sessions.new_track(repo, "debt-" + item["id"], debt.fix_task(item),
-                                       lane="backlog", actor=user["name"], priority="high")
-                return self._send(200, json.dumps(t))
+                return routes_system.debt_fix_post(self, user, body, parts[1])
             if p in ("/import/jira", "/import/url"):
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import importers
-                try:
-                    if p.endswith("jira"):
-                        made = importers.jira_import(body.get("jql", ""), actor=user["name"])
-                        return self._send(200, json.dumps({"imported": len(made), "ids": made}))
-                    pr = importers.url_import(body.get("url", ""), client=body.get("client", ""),
-                                              due=body.get("due", ""), actor=user["name"])
-                    return self._send(200, json.dumps(pr))
-                except Exception as e:
-                    return self._send(400, json.dumps({"error": str(e)[:300]}))
+                return routes_system.import_post(self, user, body, p)
             # ---- processes: propose -> adjust -> accept into cards ----
             if p in routes_misc.POST_ROUTES:
                 return routes_misc.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
             if parts[0] == "processes" and len(parts) >= 3:
-                import processes, events
-                pid = parts[1]
-                try:
-                    if parts[2] == "step":
-                        act = body.get("action")
-                        idx = int(body.get("idx", -1))
-                        if act == "accept":
-                            repo = body.get("repo") or events.settings().get("default_repo")
-                            if not repo:
-                                return self._send(400, json.dumps({"error": "no default_repo preset"}))
-                            return self._send(200, json.dumps(
-                                processes.accept_step(pid, idx, repo, actor=user["name"])))
-                        if act == "update":
-                            return self._send(200, json.dumps(
-                                processes.update_step(pid, idx, body.get("patch") or {})))
-                        if act == "remove":
-                            return self._send(200, json.dumps(processes.remove_step(pid, idx)))
-                        if act == "add":
-                            return self._send(200, json.dumps(processes.add_step(
-                                pid, body.get("title", "new step"), body.get("mode", "do"))))
-                        if act == "accept_all":
-                            repo = body.get("repo") or events.settings().get("default_repo")
-                            pr = processes.get(pid)
-                            for i in range(len(pr["steps"])):
-                                if not pr["steps"][i].get("track"):
-                                    pr = processes.accept_step(pid, i, repo, actor=user["name"])
-                            return self._send(200, json.dumps(pr))
-                    return self._send(404, json.dumps({"error": "?"}))
-                except (RuntimeError, ValueError) as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_system.processes_sub_post(self, user, body, parts[1], parts[2])
             if p in routes_control.POST_ROUTES:
                 return routes_control.POST_ROUTES[p](self, user, body)
             if p in routes_settings.POST_ROUTES:
                 return routes_settings.POST_ROUTES[p](self, user, body)
-            if p == "/harness":
-                # Owner edits an agent brief or a settings layer. Validated
-                # against harness/schema/*.schema.json BEFORE the write, the
-                # replaced file archived so the edit is revertable, and the
-                # change appended to the audit log.
-                #
-                # The rejection is deliberately LOUD (400 with the reason). The
-                # read path in harness.py is total and falls back silently by
-                # design - a typo may never strand a card - but that same
-                # silence at write time would let the owner save a broken brief,
-                # see no error, and have every worker quietly keep running the
-                # old text. So: forgiving at spawn, strict at save.
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import harness, events
-                kind = body.get("kind")
-                name = body.get("name") or ""
-                if kind not in ("agents", "settings"):
-                    return self._send(400, json.dumps({"error": "kind muss 'agents' oder 'settings' sein"}))
-                try:
-                    vid = body.get("restore")
-                    if vid:
-                        res = harness.restore(kind, name, vid, actor=user["name"])
-                    elif kind == "agents":
-                        res = harness.write_agent(name, body.get("text") or "", actor=user["name"])
-                    else:
-                        res = harness.write_settings(name, body.get("text") or "", actor=user["name"])
-                except ValueError as e:
-                    return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False))
-                # `target`, NOT `kind`: emit()'s own first positional parameter is
-                # named kind, so passing kind= here raised TypeError AFTER the file
-                # had already been written - a changed brief with no audit row and
-                # a 500 at the client. Caught by exercising the endpoint, not by
-                # reading it.
-                events.emit("harness", "-", action=("restore" if body.get("restore") else "write"),
-                            target=kind, name=name, actor=user["name"],
-                            path=res.get("path"), sha256=(res.get("sha256") or "")[:16],
-                            kept_version=res.get("kept_version"), validator=res.get("validator"),
-                            restored=body.get("restore") or "")
-                # the fresh document back, so the editor re-renders the preview
-                # (argv, hashes, hook matrix) from the file that is now on disk
-                return self._send(200, json.dumps(dict(res, document=harness.document()),
-                                                  ensure_ascii=False))
-            if p == "/presence":
-                # Client heartbeat (Phase 2.1): who is here, is the app in the
-                # foreground, and which card is on screen. Drives the 3-tier
-                # notify policy in notify.should_push - the daemon stays silent
-                # about a card the owner is already looking at. Every role may
-                # report its own presence; it is about this connection only.
-                import presence
-                return self._send(200, json.dumps(presence.record(
-                    user["name"], body.get("device", "app"),
-                    focused_card=body.get("focused_card"),
-                    app_visible=bool(body.get("app_visible", True)),
-                    activity_at=body.get("last_activity_at"))))
-            if p == "/push/register":
-                # the phone announces its FCM token (arrives through the E2EE
-                # relay like every call); the daemon then pushes sealed data
-                # messages to exactly this device
-                import events
-                tok = (body.get("token") or "").strip()
-                if not tok:
-                    return self._send(400, json.dumps({"error": "token required"}))
-                events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
-                return self._send(200, json.dumps({"registered": True}))
-            if p == "/nightshift/plan":   # alias: run the PM plan now, file its cards
-                import pm
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                _bg("pm:plan", lambda: pm.make_plan(actor=user["name"]))
-                return self._send(200, json.dumps({"planning": True,
-                                                   "repos": pm._pm().get("repos") or []}))
+            if p in routes_system.POST_ROUTES:
+                return routes_system.POST_ROUTES[p](self, user, body)
             # --- orchestrator control ---
             if p in routes_projects.POST_ROUTES:
                 return routes_projects.POST_ROUTES[p](self, user, body)
