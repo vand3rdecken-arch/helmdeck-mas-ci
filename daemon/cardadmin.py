@@ -7,6 +7,7 @@ still-trapped dependency (_maybe_fast_track_ship, the fast-track cluster) is
 reached via a lazy `import sessions` inside update_track; get_track()'s trivial
 body (_find(_load(), tid)) is inlined rather than back-referenced.
 """
+import json
 import os
 import subprocess
 import time
