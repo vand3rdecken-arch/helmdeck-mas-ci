@@ -101,7 +101,12 @@ def create(request_text, client="", due="", actor="owner", steps=None):
     """File a process. With `steps` (a pre-built list, e.g. from the PM's vetted plan
     milestones) we ADOPT them directly and skip the generic proposer - the steps are
     already intelligent + gated. Without steps, the background proposer runs as before."""
-    pid = time.strftime("%Y%m%d-%H%M%S") + "-proc"
+    # Millisecond disambiguator (mirrors checkpoints.py): a bare per-SECOND id
+    # collides when two processes are filed in the same wall-clock second - the
+    # second INSERT then hits `UNIQUE constraint failed: processes.id` and the
+    # new process is lost with a 500. The zero-padded ms keeps ids lexically
+    # sortable within a second, so `ORDER BY id DESC` stays chronological.
+    pid = time.strftime("%Y%m%d-%H%M%S") + "-%03d-proc" % (int(time.time() * 1000) % 1000)
     p = {"id": pid, "request": request_text, "client": client, "due": due,
          "status": "proposing", "steps": [], "cost": 0.0,
          "created": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor}
