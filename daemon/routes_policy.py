@@ -32,6 +32,16 @@ def policy_swap(self, user, body):
                                        "policy": policy.load()}))
 
 
+def cells_get(self, user):
+    # The agentic-system registry + each cell's live enable-state, so the app
+    # renders exactly the cells that are on. Read-only; toggling a cell is a
+    # POST /policy/swap of its enabledKey (the existing tracked path).
+    if not user or user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    import cells
+    return self._send(200, json.dumps({"cells": cells.manifest()}))
+
+
 def reconfig_track(self, user, body):
     if not user or user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -45,6 +55,7 @@ def reconfig_track(self, user, body):
 
 GET_ROUTES = {
     "/policy": policy_get,
+    "/cells": cells_get,
 }
 POST_ROUTES = {
     "/policy/swap": policy_swap,
