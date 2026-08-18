@@ -151,6 +151,27 @@ def main():
                            cookie=sid, expect=400)
         ok(isinstance(body, dict) and body.get("error"), "/settings POST rejects an insecure relay url")
 
+        # -- info/introspection group (routes_info.py) --------------------------
+        status, body = req("GET", "/debt", cookie=sid, expect=200)
+        ok(isinstance(body, list), "/debt shape: a list (debt.list_debt())")
+
+        status, body = req("GET", "/charter", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "core" in body, "/charter shape: core present")
+
+        status, body = req("GET", "/loop/map", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "laws" in body and "charter" in body and body.get("harness"),
+           "/loop/map (routes_info version) shape: laws+charter+harness present")
+
+        status, body = req("GET", "/models", cookie=sid, expect=200)
+        ok(isinstance(body, list), "/models shape: a list (turnopts.list_models())")
+
+        status, body = req("GET", "/harness", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/harness shape: a dict (harness.document())")
+
+        status, body = req("GET", "/harness/schema", cookie=sid, expect=200)
+        ok(isinstance(body, dict) and "agent" in body and "settings" in body,
+           "/harness/schema shape: agent+settings schemas present")
+
         status, body = req("GET", "/loop/map", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "runtime" in body and "build" in body,
            "/loop/map shape: runtime+build present (apimeta._lane_flow + _loop_machine)")
