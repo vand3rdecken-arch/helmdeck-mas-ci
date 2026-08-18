@@ -76,7 +76,16 @@ today - **engineer** (cards/kanban), **pm**, **process** (n8n step-chains),
 default true), so toggling a whole system on/off is just a tracked `policy.swap`
 - `server.py` gates a path owned by a disabled cell (one derived
 `cells.path_disabled` check, routes 404 cleanly), the boot loop only starts an
-enabled cell's poller, and the app hides a disabled cell's nav surface.
+enabled cell's poller, and the app hides a disabled cell's real UI entry point
+(a nav tab for board/process/connectors; a direct component-level gate via
+`useCellEnabled()` for PM/Copilot, which have no tab - see `app/src/data/
+cells.ts`). Note: the Surface *plugins* built for each cell
+(`app/src/plugins/surfaces/*.tsx`) exist and are registered, but production
+boots the `app` profile, which loads `nav.tabs` for tab metadata, not those
+Surface plugins - screens still render from plain `expo-router` files, not
+`Surface.component`. That's the pre-existing, still-open
+`plugin-kernel-dual-nav` debt (order 29); per-cell enable/disable doesn't
+depend on it, since the gate operates on what's actually rendered.
 `GET /cells` exposes the live manifest. Machine-control and direct-task are NOT
 peer cells - they are **modes of the Engineer cell** (a card variant forking
 only at dispatch/accept/agent-selection), gated by the existing `policy.machine`.
@@ -93,7 +102,13 @@ machine/direct stay MODES of Engineer (not peer cells, see above), and
 `sessions.new_track`/`lanemachine.move_lane` carry no cross-cell disable guard
 - the route-level gate already covers every external actor, and other cells
 calling them directly is the daemon acting on itself, not a bypass (the same
-reasoning that left `copilot.py` unguarded in Phase 2).
+reasoning that left `copilot.py` unguarded in Phase 2). A follow-up fix closed
+a real gap found while restarting the live daemon for this verification pass:
+PM and Copilot have no `nav.tabs` entry (PM's UI is embedded in the dashboard/
+Settings, Copilot's is a floating chat button), so their nav-hide was
+previously a no-op - both now gate directly via `useCellEnabled()`. Known
+remaining, not chased (secondary, not primary): `more.tsx`'s static loopmap
+link ignores `pmEnabled`.
 
 Every policy change ALSO creates a **checkpoint** (settings + connectors
 snapshot, actor-attributed) with reversible restore - the older, narrower
