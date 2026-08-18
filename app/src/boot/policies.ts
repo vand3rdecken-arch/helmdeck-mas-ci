@@ -16,6 +16,14 @@ export const CHARTER_DEFAULTS: PolicySet = {
   // the super-agent may reconfigure, but a module swap is a big move — default
   // to requiring a user confirm; flip via a tracked swap if you want it autonomous.
   agentMaySwap: false,
+  // Per-cell enable flags (agentic-system registry, daemon cells.py). All on by
+  // default; the daemon's policy_seed.json is the canonical source these hydrate
+  // from at boot. Toggling one hides that whole system (nav surface + routes).
+  engineerEnabled: true,
+  pmEnabled: true,
+  processEnabled: true,
+  connectorsEnabled: true,
+  copilotEnabled: true,
 };
 
 /** Seed plugin: provides KEYS.POLICIES. tier:"seed" = came from the charter. */
