@@ -117,6 +117,35 @@ def main():
         status, body = req("GET", "/settings", cookie=sid, expect=200)
         ok(body.get("value_per_card") == 123, "/settings POST actually persisted the patch")
 
+        # -- glasses group (routes_glance.py) - token-gated, no session needed ---
+        status, body = req("GET", "/glance", expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance with no token configured: refused")
+
+        status, body = req("GET", "/glance/voice/doesnotexist.mp3", expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance/voice with no token configured: refused")
+
+        status, body = req("POST", "/glance/talk", {"message": "hi"}, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance/talk with no token configured: refused")
+
+        status, body = req("POST", "/glance/answer", {"id": "x"}, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance/answer with no token configured: refused")
+
+        # set a real glance_token, then exercise the token-checked (not the
+        # feature-flag-checked) half of each route - proves the dispatch-table
+        # move preserved the token comparison exactly.
+        req("POST", "/settings", {"glance_token": "test-tok-123"}, cookie=sid, expect=200)
+        status, body = req("GET", "/glance?token=wrong", expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance with wrong token: refused")
+        status, body = req("GET", "/glance?token=test-tok-123", expect=200)
+        ok(isinstance(body, dict) and "needs_you" in body and "econ" in body,
+           "/glance with correct token: real glance_payload shape (needs_you+econ)")
+        status, body = req("POST", "/glance/talk", {"token": "test-tok-123", "message": "hi"}, expect=403)
+        ok(body.get("error", "").startswith("talking to the board agent"),
+           "/glance/talk with correct token but glance_talk unset: feature-flag refusal (not a token error)")
+        status, body = req("POST", "/glance/answer", {"token": "test-tok-123", "id": "x"}, expect=403)
+        ok(body.get("error", "").startswith("deciding from the glasses"),
+           "/glance/answer with correct token but glance_decide unset: feature-flag refusal")
+
         # rejected relay url (plain http, not localhost) - real validation path
         status, body = req("POST", "/settings", {"relay": {"url": "http://evil.example.com"}},
                            cookie=sid, expect=400)
