@@ -555,6 +555,35 @@ def main():
         git("add", "README.md")
         git("commit", "-m", "initial")
 
+        # -- Cell registry gate (Phase 3, daemon/debt.py order 33 - the crown
+        # jewel, done last): the engineer cell wraps the WHOLE tracks-cluster
+        # round trip below in a preceding disable/enable cycle, reusing the
+        # real repo built above (repo_dir) instead of a fresh scaffold, to
+        # prove the gate 404s cleanly AND that toggling it doesn't corrupt the
+        # real dispatch/gate flow that follows.
+        import policy as _policy_engineer
+        _policy_engineer.swap("policies", {"engineerEnabled": False}, actor="test")
+        status, body = req("GET", "/tracks", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: GET /tracks 404s with 'cell disabled'")
+        status, body = req("POST", "/tracks/new",
+                           {"repo": repo_dir, "task": "should be gated", "lane": "backlog"},
+                           cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: POST /tracks/new 404s with 'cell disabled'")
+        status, body = req("GET", "/me", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "spine path /me stays reachable while engineer cell is off")
+        status, body = req("GET", "/pm/plan", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "other cell's route (/pm/plan) still works while ONLY engineer "
+           "is disabled - proves the gate is per-cell, not global")
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        eng_off = next((c for c in (body.get("cells") or []) if c["id"] == "engineer"), {})
+        ok(eng_off.get("enabled") is False, "/cells: manifest reflects engineer disabled")
+        _policy_engineer.swap("policies", {"engineerEnabled": True}, actor="test")   # restore
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        eng_back = next((c for c in (body.get("cells") or []) if c["id"] == "engineer"), {})
+        ok(eng_back.get("enabled") is True, "re-enable via tracked swap: engineer cell on again")
+
         # -- /tracks: empty list still holds after the earlier non-repo probe ---
         status, body = req("GET", "/tracks", cookie=sid, expect=200)
         base_count = len(body)
