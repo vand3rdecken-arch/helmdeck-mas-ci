@@ -1870,6 +1870,17 @@ DEBT = [
                "plan) - buildloop's correctness is proven by the sandboxed "
                "test, not by live-disabling the mechanism currently "
                "governing this agent's own session.",
+        "why_it_bites": "Without a real (not cosmetic) enable flag, an owner "
+                        "toggling buildloop off in /modules would silently do "
+                        "nothing - the Stop hook would keep blocking regardless, "
+                        "since it lived entirely outside the daemon and never "
+                        "consulted policy at all before this fix. A control "
+                        "that visibly exists but doesn't work is worse than no "
+                        "control, and erodes trust in every other cell's toggle "
+                        "too.",
+        "trigger": "an owner disables buildLoopEnabled via /modules expecting "
+                   "the Stop hook to stop blocking, or restarts the daemon "
+                   "after this change and checks /cells for the sixth entry",
         "order": 35,
     },
 ]
