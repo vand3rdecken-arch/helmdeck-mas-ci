@@ -113,6 +113,18 @@ class H(BaseHTTPRequestHandler):
     def _send_cookie(self, code, body, sid=None, clear=False):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        # Missing before today: every OTHER route answers via _send(), which
+        # sets these; _send_cookie() (auth login/setup/register/logout) never
+        # did. The OPTIONS preflight (do_OPTIONS) always set CORS correctly,
+        # masking this - but the browser blocks JS from READING the actual
+        # POST response body without this header on the response itself, so
+        # fetch() throws a network-looking TypeError. curl doesn't enforce
+        # CORS, so this was invisible there - only a real browser reproduces
+        # it. Found live: /auth/login worked perfectly via curl (200, real
+        # token) but failed in the browser with what looked like a connection
+        # error.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         if sid:
             self.send_header("Set-Cookie",
                 "sd_session=%s; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000" % sid)
