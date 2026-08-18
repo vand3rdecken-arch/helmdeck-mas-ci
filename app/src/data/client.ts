@@ -309,6 +309,10 @@ export interface HarnessWriteResult {
 
 // GET /cells manifest shape (daemon/cells.py manifest()) - one entry per
 // registered agentic-system cell, live enable-state derived from policy.
+// logicFiles/harnessFile/uiFiles are real repo-relative paths; routes is
+// DERIVED daemon-side from the cell's actual route module dispatch tables
+// (never hand-duplicated) - all of it is also the read_source() allowlist,
+// so anything listed here is exactly what GET /cells/<id>/source can serve.
 export interface CellInfo {
   id: string;
   enabled: boolean;
@@ -316,6 +320,12 @@ export interface CellInfo {
   role: string;
   surface: string;
   modes: string[];
+  logicFiles: string[];
+  storage: string;
+  harnessFile: string;
+  routes: string[];
+  uiFiles: string[];
+  tools: string[];
 }
 
 export const api = {
@@ -335,6 +345,11 @@ export const api = {
   // and whether each is enabled. Used to gate nav (see (tabs)/_layout.tsx) and
   // the Modules screen's CELLS section.
   cells: () => req<{ cells: CellInfo[] }>("GET", "/cells"),
+  // One file's real source text for the code-map diagram's click-to-code
+  // panel. Owner-only server-side; `file` must be one of that cell's OWN
+  // declared files (the manifest above IS the allowlist) or this 404s.
+  cellSource: (id: string, file: string) =>
+    req<{ file: string; text: string }>("GET", `/cells/${encodeURIComponent(id)}/source?file=${encodeURIComponent(file)}`),
   // ->working/review/done are run in the BACKGROUND by the daemon (the gate is a
   // subprocess, the merge + deploy hook follow it), so those reply {started,
   // gating} instead of the finished Track. The verdict arrives on the card
