@@ -207,3 +207,54 @@ def _git_state_broken(wt):
     if not os.path.isabs(gd):
         gd = os.path.join(wt, gd)
     return not os.path.isdir(gd)
+
+
+def _worktree_for(repo, branch):
+    from trackstore import _slug
+    base = os.path.abspath(os.path.join(repo, "..", WORKTREE_DIRNAME))
+    wt = os.path.join(base, _repo_hash(repo), _slug(branch))
+    os.makedirs(os.path.dirname(wt), exist_ok=True)
+    return wt
+
+
+def _base_ref(repo):
+    """The commit a NEW card branch starts from (Paseo
+    resolveBaseBranchForWorktree + normalizeRequiredBaseBranch). Explicit
+    instead of implicit: `worktree add -b` with no start point bases the card
+    on whatever HEAD happens to be - mid-rebase or detached, that is the wrong
+    code. So: name the base branch (rebase-guarded _current_branch), REJECT
+    detached/unborn, and prefer origin/<base> only when it is ahead-or-equal
+    of the local base. (Paseo always prefers origin because the remote is its
+    source of truth; HelmDeck merges cards into the LOCAL checkout, so a stale
+    origin must never win over local commits.) The caller passes --no-track so
+    the card branch never claims that base as upstream."""
+    base = _current_branch(repo)
+    if not base or base == "HEAD":
+        raise RuntimeError("cannot create the card branch: the repo checkout is "
+                           "detached (no base branch) - checkout the base branch first")
+    if _git_try(repo, "rev-parse", "--verify", "-q", base)[0] != 0:
+        raise RuntimeError("cannot create the card branch: base branch '%s' has "
+                           "no commits yet - make an initial commit first" % base)
+    origin = "origin/" + base
+    if (_git_try(repo, "rev-parse", "--verify", "-q", origin)[0] == 0
+            and _git_try(repo, "merge-base", "--is-ancestor", base, origin)[0] == 0):
+        return origin
+    return base
+
+
+def _worktree_of_branch(repo, branch):
+    """Path of an EXISTING worktree that already has `branch` checked out, or
+    None. git refuses to check the same branch out twice, so if a stale worktree
+    holds it (e.g. a swarmdeck->helmdeck rename left ../swarmdeck-worktrees),
+    dispatch must REUSE that path instead of failing on `git worktree add`."""
+    r = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    path = None
+    for line in r.stdout.splitlines():
+        if line.startswith("worktree "):
+            path = line[9:].strip()
+        elif line.startswith("branch ") and path and line[7:].strip() == "refs/heads/" + branch:
+            return path
+    return None
