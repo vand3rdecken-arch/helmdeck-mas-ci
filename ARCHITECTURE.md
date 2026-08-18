@@ -112,7 +112,7 @@ reaching into a monolith), then the HTTP surface itself was split into a
 dispatch table. As of this writing:
 
 ```
-server.py (H handler, 740 lines, was 2109)
+server.py (H handler, ~478 lines, was 2109)
   do_GET/do_POST check a per-concern ROUTE-DISPATCH TABLE first, then fall
   through to whatever hasn't been converted yet - each conversion is
   behavior-preserving (route body moves verbatim; server.H is never touched
@@ -142,11 +142,20 @@ server.py (H handler, 740 lines, was 2109)
   │                        _merge_to_main, "the crown jewel"): GET /tracks/
   │                        <id>/stream (live transcript SSE), POST /tracks/
   │                        <id>/steer,answer,cancel,lane
-  ├─ glances.py / apimeta.py / startup.py   module-level helpers (pre-dispatch-table)
-  └─ (a small residual grab-bag, not another crown jewel: presence/push/
-     harness/debt-fix/import routes, the runs/timeline/video/videochunk GET
-     group, the /processes/<id>/step path-param sub-router - still inline,
-     tracked in daemon/debt.py order 31)
+  ├─ routes_runs.py        /runs list, /live.jpg, /runs/<id>/timeline,
+  │                        playbook,video,videochunk (path-param sub-router,
+  │                        guard stays inline in server.py)
+  ├─ routes_system.py      /presence, /push/register, /sessions/claude,
+  │                        /history, /harness[+/version/<kind>/<name>],
+  │                        /debt/<id>/fix, /import/jira,url, /nightshift/plan,
+  │                        the /processes/<id>/step path-param sub-router
+  └─ glances.py / apimeta.py / startup.py   module-level helpers (pre-dispatch-table)
+
+  The route-dispatch breakup is now essentially COMPLETE: every route group
+  identified in the original 2109-line monolith has been extracted; what
+  remains inline is only per-request auth/role branching and the handful of
+  path-param guards the pattern itself calls for staying inline (see
+  daemon/debt.py order 31).
 
 sessions.py (the orchestrator, ~1050 lines, was 3927) sits on top of SERVICES:
   ├─ trackstore.py   the data layer: _load/_save/_mutate (THE one legal write path)
