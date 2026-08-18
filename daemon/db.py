@@ -63,6 +63,8 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS processes(
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS connector_state(
+        id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, kind TEXT, track TEXT, data TEXT)""")
@@ -137,6 +139,24 @@ def _migrate():
             print("db: imported %d processes from processes.json" % len(procs))
         except Exception as e:
             print("db: processes import failed:", e)
+    # connectors/_state.json (last-run timestamps keyed by connector name) -
+    # the connector CODE files themselves (connectors/<name>.py) stay on disk:
+    # they are real importable modules run in a sandboxed subprocess
+    # (connectors._run_sandboxed), not JSON records, so they are not a fit for
+    # a `data TEXT` row and are deliberately left out of this migration (see
+    # daemon/debt.py order 32). Only the small state dict moves.
+    csj = os.path.join(ROOT, "connectors", "_state.json")
+    if os.path.exists(csj):
+        try:
+            with open(csj, encoding="utf-8") as f:
+                cstate = json.load(f)
+            with c:
+                c.execute("INSERT OR REPLACE INTO connector_state(id,data) VALUES(?,?)",
+                          ("state", json.dumps(cstate)))
+            os.replace(csj, csj + ".imported")
+            print("db: imported connector state (%d connectors) from connectors/_state.json" % len(cstate))
+        except Exception as e:
+            print("db: connector state import failed:", e)
 
 # -- tracks --------------------------------------------------------------
 
@@ -203,6 +223,21 @@ def processes_replace(procs):
         for p in procs:
             c.execute("INSERT INTO processes(id,data) VALUES(?,?)",
                       (p["id"], json.dumps(p)))
+    bump()
+
+# -- connector state -------------------------------------------------------
+# connectors.py's _state()/_save_state() contract: one dict {name: last_run},
+# read-whole / write-whole, same shape as processes_all/processes_replace but
+# a single row (there is only ever one state dict, not one row per id).
+
+def connector_state_get():
+    r = conn().execute("SELECT data FROM connector_state WHERE id=?", ("state",)).fetchone()
+    return json.loads(r[0]) if r else {}
+
+def connector_state_put(d):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO connector_state(id,data) VALUES(?,?)",
+                  ("state", json.dumps(d)))
     bump()
 
 # -- events --------------------------------------------------------------
