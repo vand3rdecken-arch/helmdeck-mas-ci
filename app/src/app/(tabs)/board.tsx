@@ -5,6 +5,7 @@ import { Platform, Pressable, Text, useWindowDimensions, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import { useCellEnabled } from "@/data/cells";
 import { useT } from "@/i18n";
 import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { BoardList } from "@/ui/board";
@@ -40,6 +41,7 @@ export default function BoardTab() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const wide = Platform.OS === "web" && width >= 900;
+  const copilotEnabled = useCellEnabled("copilot");
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
       <GlowBackdrop />
@@ -51,14 +53,19 @@ export default function BoardTab() {
         <View style={{ flex: 1 }} />
       </View>
       <BoardList />
-      {/* floating board chat + new-request, bottom-right (works on desktop too) */}
+      {/* floating board chat + new-request, bottom-right (works on desktop too).
+          Copilot has no nav.tabs entry to hide, so its FAB (and only its FAB -
+          "+ new card" is the Engineer cell, not Copilot) gates off the cell flag
+          directly. */}
       <View style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84, alignItems: "center", gap: 12 }}>
-        <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat")}
-          style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
-            alignItems: "center", justifyContent: "center",
-            ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
-        </Pressable>
+        {copilotEnabled ? (
+          <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat")}
+            style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+              alignItems: "center", justifyContent: "center",
+              ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
+          </Pressable>
+        ) : null}
         <Pressable onPress={() => router.push("/new")}
           style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: t.accent, alignItems: "center", justifyContent: "center",
             ...(Platform.OS === "web" ? { boxShadow: "0 6px 18px rgba(0,0,0,0.35)" } as any : { elevation: 6 }) }}>
@@ -67,7 +74,7 @@ export default function BoardTab() {
       </View>
       {/* desktop: the copilot renders here as a right-side panel over the DIMMED,
           still-visible board (phone uses the /chat route instead) */}
-      <CopilotOverlay />
+      {copilotEnabled ? <CopilotOverlay /> : null}
     </View>
   );
 }
