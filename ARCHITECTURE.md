@@ -112,7 +112,7 @@ reaching into a monolith), then the HTTP surface itself was split into a
 dispatch table. As of this writing:
 
 ```
-server.py (H handler, 1073 lines, was 2109)
+server.py (H handler, 740 lines, was 2109)
   do_GET/do_POST check a per-concern ROUTE-DISPATCH TABLE first, then fall
   through to whatever hasn't been converted yet - each conversion is
   behavior-preserving (route body moves verbatim; server.H is never touched
@@ -132,13 +132,20 @@ server.py (H handler, 1073 lines, was 2109)
   ├─ routes_checkpoints.py /checkpoints list, /checkpoints/<id>/diff,restore
   ├─ routes_projects.py    /projects CRUD
   ├─ routes_copilot.py     /chat, /chat/cancel, /chat/history, /chat/live
+  ├─ routes_tracks.py      track CRUD/reads: /tracks list, new, reorder,
+  │                        <id>/archive,fork,fork-chat,delete,update,rewind,
+  │                        attach[+/remove],live,turns,history,transcript
+  │                        [+/live],checkpoints,attachments,attachment/<name>
+  ├─ routes_track_actions.py  the gate/dispatch-critical half of the tracks
+  │                        cluster, kept ISOLATED for extra scrutiny (sits
+  │                        directly on lanemachine.py's move_lane -> _gate ->
+  │                        _merge_to_main, "the crown jewel"): GET /tracks/
+  │                        <id>/stream (live transcript SSE), POST /tracks/
+  │                        <id>/steer,answer,cancel,lane
   ├─ glances.py / apimeta.py / startup.py   module-level helpers (pre-dispatch-table)
-  └─ (the rest: tracks/dispatch [highest value, DELIBERATELY LAST - touches
-     the sessions.py crown jewel: new_track, move_lane/lanemachine, the
-     answer/steer/cancel/lane sub-router, track CRUD, history/live/turns/
-     transcript/checkpoints/attachments GET sub-routers], the /processes/<id>/
-     step path-param sub-router, presence/push/harness/debt-fix/import
-     routes, the runs/timeline/video/videochunk GET group - still inline,
+  └─ (a small residual grab-bag, not another crown jewel: presence/push/
+     harness/debt-fix/import routes, the runs/timeline/video/videochunk GET
+     group, the /processes/<id>/step path-param sub-router - still inline,
      tracked in daemon/debt.py order 31)
 
 sessions.py (the orchestrator, ~1050 lines, was 3927) sits on top of SERVICES:
