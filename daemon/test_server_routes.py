@@ -62,6 +62,22 @@ def main():
     events.SET = os.path.join(tmp, "settings.json")
     events.EV = os.path.join(tmp, "events.jsonl")   # the append-only audit sink
 
+    # connectors.py and checkpoints.py each compute their own directory
+    # globals from __file__ (independent of db.ROOT - see
+    # test_checkpoints_db_migration.py) - sandbox both before any route
+    # touches them, so a connector list/rollback/run or checkpoint list/
+    # diff/restore route never reads or writes the real daemon/connectors/
+    # or daemon/checkpoints/ directories.
+    import connectors
+    connectors.CDIR = os.path.join(tmp, "connectors")
+    os.makedirs(connectors.CDIR, exist_ok=True)
+    connectors.VDIR = os.path.join(connectors.CDIR, "_versions")
+    os.makedirs(connectors.VDIR, exist_ok=True)
+    import checkpoints
+    checkpoints.ROOT = tmp
+    checkpoints.CPDIR = os.path.join(tmp, "checkpoints")
+    os.makedirs(checkpoints.CPDIR, exist_ok=True)
+
     db.init(role="tool")   # NOT role="daemon" - this process owns no driver sessions
 
     # a real owner user + session, so authenticated routes are exercised too
@@ -247,6 +263,42 @@ def main():
         ok(status in (400, 200), "/tracks/new against a non-repo path returns a real status: %d" % status)
         if status == 200:
             ok(isinstance(body, dict) and body.get("error"), "/tracks/new non-repo: error surfaced in the 200 body")
+
+        # -- connectors group (routes_connectors.py) -----------------------------
+        status, body = req("GET", "/connectors", cookie=sid, expect=200)
+        ok(body == [], "/connectors: empty list, sandboxed CDIR has no connector files")
+
+        status, body = req("POST", "/connectors/doesnotexist/rollback", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/connectors/.../rollback refuses a client")
+        status, body = req("POST", "/connectors/doesnotexist/rollback", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/connectors/.../rollback: no such connector -> 400")
+
+        status, body = req("POST", "/connectors/doesnotexist/run", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/connectors/.../run refuses a client")
+        status, body = req("POST", "/connectors/doesnotexist/run", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/connectors/.../run: no such connector -> 400")
+
+        # -- checkpoints group (routes_checkpoints.py) ---------------------------
+        status, body = req("GET", "/checkpoints", cookie=sid, expect=200)
+        ok(body == [], "/checkpoints: empty list, sandboxed CPDIR has no checkpoints yet")
+
+        status, body = req("GET", "/checkpoints/doesnotexist/diff", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"), "/checkpoints/.../diff: no such checkpoint -> 404")
+
+        status, body = req("POST", "/checkpoints/doesnotexist/restore", {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/checkpoints/.../restore refuses a non-owner")
+        status, body = req("POST", "/checkpoints/doesnotexist/restore", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/checkpoints/.../restore: no such checkpoint -> 400")
+
+        # a real checkpoint round-trip, straight through the sandboxed CPDIR
+        import checkpoints as _cp
+        real_cid = _cp.create(actor="routetest", reason="smoke")
+        status, body = req("GET", "/checkpoints", cookie=sid, expect=200)
+        ok(len(body) == 1 and body[0]["id"] == real_cid, "/checkpoints lists the real sandboxed checkpoint")
+        status, body = req("GET", "/checkpoints/%s/diff" % real_cid, cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("id") == real_cid, "/checkpoints/.../diff on a real id: 200")
+        status, body = req("POST", "/checkpoints/%s/restore" % real_cid, {}, cookie=sid, expect=200)
+        ok(body.get("restored") == real_cid, "/checkpoints/.../restore on a real id: 200, restores it")
 
         # -- control/teach group (routes_control.py) ----------------------------
         status, body = req("GET", "/control/state", cookie=sid, expect=200)
