@@ -59,6 +59,31 @@ SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
                 "helmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
 
+# Testable override, sandboxed tests point this at a temp dir instead of the
+# real daemon/ - never mutate this from anywhere except a test's own setup.
+_POLICY_ROOT = DAEMON
+
+
+def _build_loop_enabled():
+    """The build loop is Cell #6 (daemon/cells.py 'buildloop') - but it is NOT
+    daemon-hosted like the other 5: it governs THIS agent's own workflow via
+    Claude Code's hooks (.claude/settings.json -> this script), not a spawned
+    daemon worker. No HTTP round-trip - reads daemon/policy_live.json (falling
+    back to policy_seed.json, mirroring daemon/policy.py's own seed-then-live
+    semantics) DIRECTLY, so the flag works even when the daemon isn't running.
+
+    Fails OPEN (True) on any read error or missing key - a missing/corrupt
+    policy file, or an old checkout without buildLoopEnabled seeded yet, must
+    never silently disable the safety net."""
+    for name in ("policy_live.json", "policy_seed.json"):
+        path = os.path.join(_POLICY_ROOT, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                return bool(json.load(f).get("policies", {}).get("buildLoopEnabled", True))
+        except (OSError, ValueError):
+            continue
+    return True
+
 WORKORDER_TEMPLATE = """# Workorder
 
 ## Request
@@ -628,6 +653,8 @@ def stop_hook():
         payload = {}
     if payload.get("stop_hook_active"):
         return
+    if not _build_loop_enabled():
+        return
     t = [x for x in transitions() if x[0] != "WIP"]
     if not t:
         return
@@ -647,6 +674,13 @@ def session_start():
     print("Rule: ALIGN before code, ANALYZE before building, TEST means judged not "
           "rendered, COMMIT closes the loop. If the next action needs no user input, "
           "do it now.")
+    if not _build_loop_enabled():
+        # The safety net going quiet must never be silent about being off -
+        # this line has no --stop-hook equivalent (that path prints nothing
+        # at all when disabled, by design), so session start is the one place
+        # a disabled build loop is visibly announced.
+        print("[loop_state] NOTE: buildLoopEnabled=false (policy) - the Stop "
+              "hook will NOT block this session, even mid-loop.")
 
 
 if __name__ == "__main__":
