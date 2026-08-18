@@ -70,10 +70,19 @@ Two control planes carry this end to end:
 an agentic *system* - a "Cell" (a role like PM or Engineer), not a file or a
 screen. Each Cell bundles its own {orchestration logic, storage, harness/role,
 API connector routes, UI surface, lifecycle, enable-flag} and plugs INTO the
-spine above (which no Cell owns). `daemon/cells.py` is the registry: five cells
+spine above (which no Cell owns). `daemon/cells.py` is the registry: six cells
 today - **engineer** (cards/kanban), **pm**, **process** (n8n step-chains),
-**connectors**, **copilot**. Each has a `<cell>Enabled` seeded policy flag (all
-default true), so toggling a whole system on/off is just a tracked `policy.swap`
+**connectors**, **copilot**, and **buildloop** (the ALIGN>...>COMMIT loop that
+governs the current interactive agent's own build workflow). buildloop is
+structurally the odd one out: it is self-governing, not daemon-hosted - its
+enforcement is `.claude/settings.json`'s Stop/SessionStart hooks calling
+`tools/loop_state.py` directly, no HTTP round-trip, and `/loop/map` is only a
+read-only mirror of the same module. Its enable flag is still real though:
+`tools/loop_state.py` reads `buildLoopEnabled` from the same seeded policy
+file every other cell uses (failing open to `true` on any missing key or read
+error), so the Stop hook genuinely no-ops when an owner disables it. Each
+cell has a `<cell>Enabled` seeded policy flag (all default true), so toggling
+a whole system on/off is just a tracked `policy.swap`
 - `server.py` gates a path owned by a disabled cell (one derived
 `cells.path_disabled` check, routes 404 cleanly), the boot loop only starts an
 enabled cell's poller, and the app hides a disabled cell's real UI entry point
