@@ -37,7 +37,7 @@ Usage:
     python tools/loop_state.py --session-start  # orientation for fresh context
 
 Never fails (exit 0) - a state doctor, not a gate."""
-import json, os, subprocess, sys, time
+import hashlib, json, os, subprocess, sys, time
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -280,35 +280,64 @@ def _src_mtime(srcs):
     return newest_mtime(paths)
 
 
-# deploy/ship.sh's AUTHORITATIVE native fingerprint, reproduced byte-for-byte so
-# it equals the value ship.sh writes into deploy/.native_fp. mtime alone lied: an
-# OTA version bump re-touches app.json without changing a single native byte, and
+# deploy/ship.sh's AUTHORITATIVE native fingerprint. mtime alone lied: an OTA
+# version bump re-touches app.json without changing a single native byte, and
 # the APK then read 'stale' forever (the recurring BUILD nag with nothing to
-# build). The fingerprint EXCLUDES the churning version fields, so it moves only
-# on a real native change - the same call ship.sh makes to decide native-vs-JS.
-_GIT_BASH = (r"C:\Program Files\Git\bin\bash.exe",
-             r"C:\Program Files\Git\usr\bin\bash.exe",
-             r"C:\Program Files (x86)\Git\bin\bash.exe")
-_NATIVE_FP_PIPE = (
-    r'''{ sed -n 's/.*\("expo[^"]*"\|"react-native[^"]*"\).*/\1/p' app/package.json; '''
-    r'''grep -vE '"version"[[:space:]]*:|"versionCode"[[:space:]]*:' app/app.json 2>/dev/null; '''
-    r'''grep -v "EXPO_RUNTIME_VERSION" app/android/app/src/main/AndroidManifest.xml 2>/dev/null; '''
-    r'''} | sha256sum | cut -d' ' -f1''')
-
-
+# build). The fingerprint EXCLUDES the churning version fields, so it moves
+# only on a real native change - the same call ship.sh makes to decide
+# native-vs-JS.
+#
+# INCIDENT (2026-08-18): this used to be a hand-reimplemented sed/grep pipe
+# "reproduced byte-for-byte" from ship.sh's native_fp(). It drifted - the
+# reimplementation raw-grepped app.json's whole text (catching ios/extra
+# fields ship.sh deliberately excludes, see ship.sh's own incident note on
+# that), while ship.sh does a semantic JSON diff. Result: this function
+# reported a stale APK (moved fingerprint) when ship.sh's real algorithm said
+# nothing native had changed - a false-positive BUILD nag that triggered a
+# real, unnecessary APK rebuild.
+#
+# Fix considered and REJECTED: `bash -c "source deploy/ship.sh; native_fp"`.
+# ship.sh is a top-level SCRIPT, not a function library guarded by a __main__
+# check - sourcing it runs its whole body (the CUR/LAST compare and the
+# bump-version/build-APK/push branch), not just the function definitions.
+# Confirmed live: an attempted source during this incident's investigation
+# started "APK build starting... version bump failed" before `py` even
+# resolved on that shell's PATH. Actually reusing ship.sh's function has no
+# safe path without refactoring ship.sh itself (out of scope here), so this
+# stays pure Python, hand-kept identical to ship.sh's native_fp() (same
+# excluded fields) - the drift risk is real but at least no longer entangled
+# with an accidental deploy trigger.
 def _native_fp():
-    """ship.sh's native fingerprint via git-bash (NOT plain `bash`, which resolves
-    to WSL here). Returns "" if it can't be computed, so the caller falls back to
-    the mtime check rather than guessing."""
-    for b in _GIT_BASH:
-        if os.path.exists(b):
-            try:
-                r = subprocess.run([b, "-c", _NATIVE_FP_PIPE], cwd=ROOT,
-                                   capture_output=True, text=True, timeout=20)
-                return r.stdout.strip() if r.returncode == 0 else ""
-            except Exception:
-                return ""
-    return ""
+    """Mirrors deploy/ship.sh's native_fp() EXACTLY (same excluded fields:
+    version/versionCode, app.json's ios/extra objects, EXPO_RUNTIME_VERSION
+    lines) - keep the two in sync by hand if either changes. Returns "" on
+    any read error, so the caller falls back to the mtime check rather than
+    guessing."""
+    try:
+        with open(os.path.join(ROOT, "app", "app.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        e = {k: v for k, v in d.get("expo", {}).items() if k not in ("ios", "extra")}
+        e.pop("version", None)
+        android = dict(e.get("android") or {})
+        android.pop("versionCode", None)
+        e["android"] = android
+        blob = json.dumps(e, sort_keys=True)
+        try:
+            with open(os.path.join(ROOT, "app", "package.json"), encoding="utf-8") as f:
+                blob += f.read()
+        except OSError:
+            pass
+        try:
+            manifest_path = os.path.join(
+                ROOT, "app", "android", "app", "src", "main", "AndroidManifest.xml")
+            with open(manifest_path, encoding="utf-8") as f:
+                blob += "\n".join(
+                    l for l in f.read().splitlines() if "EXPO_RUNTIME_VERSION" not in l)
+        except OSError:
+            pass
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    except (OSError, ValueError):
+        return ""
 
 
 def touches_native(touched):
