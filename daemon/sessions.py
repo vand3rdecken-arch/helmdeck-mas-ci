@@ -890,6 +890,26 @@ def _epoch_of(stamp):
         return None
 
 
+def start_engineer_lifecycle():
+    """Launch the Engineer cell's two continuous pollers (the zombie reconciler
+    + the background-task auto-continue watcher) as ONE registrable entry point
+    for cells.start_enabled() (daemon/debt.py order 33, Phase 3). Both pollers
+    operate directly on track/session state (card `status`, session liveness,
+    background-task completion) - they are the Engineer cell's own lifecycle,
+    not spine-adjacent generic housekeeping, so they belong behind
+    engineerEnabled the same way pm's proactive loop belongs behind pmEnabled.
+    (Contrast: sessions.sweep_worktrees() stays a flat ONE-SHOT boot call in
+    serve() - it is a backstop pass over git worktrees at startup, not a
+    continuous poller, so it has nothing to "stop" if a cell is disabled later
+    and stays alongside the other one-shot boot calls like backfill_outcomes.)
+    Call this ONCE (cells.start_enabled() only calls a cell's `start` once per
+    boot): start_background_watcher() is internally idempotent
+    (_bg_watcher_started guard), start_zombie_reconciler() is not guarded and
+    would spawn a second sweep thread if invoked twice."""
+    start_zombie_reconciler()
+    start_background_watcher()
+
+
 def start_background_watcher(interval=None):
     """Start the auto-continue loop (idempotent). Called from server.serve."""
     global _bg_watcher_started

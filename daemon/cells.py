@@ -55,10 +55,16 @@ class Cell:
 CELLS = [
     Cell(
         id="engineer", enabled_key="engineerEnabled",
-        # the card/kanban spine-core. Its lifecycle (reconciler/watcher) stays a
-        # spine call in serve() for now - conformed last (Phase 3). machine/
-        # direct are MODES here, gated by the separate policy.machine, not a cell.
-        paths=("/tracks",), prefixes=("/tracks/", "/track/"),
+        # the card/kanban spine-core, conformed last (Phase 3, the crown
+        # jewel). Lifecycle: sessions.start_engineer_lifecycle() launches the
+        # zombie reconciler + background-task watcher, both of which operate
+        # directly on track/session state - genuinely this cell's own
+        # lifecycle, not spine-adjacent housekeeping - so disabling
+        # engineerEnabled also stops them, same as every other cell's poller.
+        # machine/direct are MODES here, gated by the separate policy.machine,
+        # not a cell.
+        paths=("/tracks",), prefixes=("/tracks/",),
+        start=("sessions", "start_engineer_lifecycle"),
         role="(card brief)", surface="surfaces.board",
         modes=("machine", "direct"),
     ),
