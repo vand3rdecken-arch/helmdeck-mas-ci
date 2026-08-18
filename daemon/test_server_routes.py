@@ -795,9 +795,17 @@ def main():
         status, body = req("GET", "/cells", cookie=sid, expect=200)
         pm_on = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
         ok(pm_on.get("enabled") is True, "/cells: pm cell enabled by default")
-        ok({"engineer", "pm", "process", "connectors", "copilot"}
+        ok({"engineer", "pm", "process", "connectors", "copilot", "buildloop"}
            <= {c["id"] for c in body.get("cells", [])},
-           "/cells: all five agentic systems registered")
+           "/cells: all six agentic systems registered (buildloop = Cell #6, "
+           "self-governing via tools/loop_state.py, not daemon-hosted)")
+        buildloop = next((c for c in body.get("cells", []) if c["id"] == "buildloop"), {})
+        ok(buildloop.get("enabled") is True, "/cells: buildloop enabled by default")
+        ok("tools/loop_state.py" in (buildloop.get("logicFiles") or []),
+           "/cells: buildloop manifest carries its real repo-root logic file")
+        ok(buildloop.get("harnessFile") == "CLAUDE.md",
+           "/cells: buildloop harness is CLAUDE.md")
+        ok(buildloop.get("routes") == [], "/cells: buildloop has no HTTP surface (self-governing)")
         policy.swap("policies", {"pmEnabled": False}, actor="test")
         status, body = req("GET", "/pm/plan", cookie=sid, expect=404)
         ok(isinstance(body, dict) and body.get("error") == "cell disabled",
