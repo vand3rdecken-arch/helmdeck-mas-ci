@@ -13,6 +13,7 @@ import type { Plugin, ProfileDoc } from "@/kernel";
 
 import { CORE_PLUGINS, CORE_IDS } from "./core";
 import { boardSurface } from "@/plugins/surfaces/board";
+import { connectorsSurface } from "@/plugins/surfaces/connectors";
 import { tabsNav } from "@/plugins/surfaces/tabs";
 import { claudeEngine } from "@/plugins/engines/claude";
 import { copilotEngine } from "@/plugins/engines/copilot";
@@ -42,6 +43,7 @@ export const PROFILE_DOCS: Record<string, ProfileDoc> = {
  */
 export const AVAILABLE_PLUGINS: Record<string, Plugin> = {
   "surfaces.board": boardSurface,
+  "surfaces.connectors": connectorsSurface,
   "nav.tabs": tabsNav,
   "engines.claude": claudeEngine,
   "engines.copilot": copilotEngine,
