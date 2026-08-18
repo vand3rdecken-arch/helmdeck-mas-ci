@@ -10,6 +10,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
 from copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
+from copilot_actions import _strip_actions_live, _parse_reply_actions
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
@@ -668,7 +669,6 @@ _cancelled = set()
 # backend differs. The copilot streams its PROSE reply into a per-user live feed
 # the board chat polls (like a card's live_partial), so the board agent "types"
 # live instead of a blocking "denkt". Actions still come as a trailing block.
-_ACTIONS_FENCE = re.compile(r"```actions\s*(.*?)```", re.S)
 
 
 def _pm_plan_digest():
@@ -732,45 +732,6 @@ def _crm(path):
         pass
 
 
-def _strip_actions_live(partial):
-    """The live view of a streaming reply: drop everything from the ```actions
-    fence (or a lone ``` / a leading raw-JSON blob) onward, so the user watches
-    PROSE stream in, not the raw action tail."""
-    if not partial:
-        return partial
-    s = partial.lstrip()
-    if s.startswith("{"):          # legacy JSON-blob reply - nothing prose to show yet
-        return ""
-    for marker in ("```actions", "```"):
-        i = partial.find(marker)
-        if i != -1:
-            return partial[:i].rstrip()
-    return partial
-
-
-def _parse_reply_actions(txt):
-    """(reply_prose, actions[]). New contract: prose reply + optional trailing
-    ```actions [..]``` block. Falls back to the legacy {"reply","actions"} JSON
-    blob, then to 'the whole text is the reply'."""
-    txt = txt or ""
-    mf = _ACTIONS_FENCE.search(txt)
-    if mf:
-        reply = txt[:mf.start()].strip()
-        try:
-            acts = json.loads(mf.group(1).strip())
-            acts = [acts] if isinstance(acts, dict) else acts
-            return reply, (acts if isinstance(acts, list) else [])
-        except ValueError:
-            return reply, []
-    mb = re.search(r"\{.*\}", txt, re.S)      # legacy blob
-    if mb:
-        try:
-            o = json.loads(mb.group(0))
-            if isinstance(o, dict) and ("reply" in o or "actions" in o):
-                return o.get("reply", ""), (o.get("actions") or [])
-        except ValueError:
-            pass
-    return txt.strip(), []
 
 
 def live(user):
