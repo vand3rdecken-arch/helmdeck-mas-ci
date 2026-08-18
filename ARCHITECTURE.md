@@ -66,6 +66,24 @@ Two control planes carry this end to end:
   /policy/swap` expose it; `POST /reconfig/track` mirrors app-side swaps into
   the same sink, so the journal spans both runtimes.
 
+**Cells (the agentic-system registry, 2026-08-18).** The unit of modularity is
+an agentic *system* - a "Cell" (a role like PM or Engineer), not a file or a
+screen. Each Cell bundles its own {orchestration logic, storage, harness/role,
+API connector routes, UI surface, lifecycle, enable-flag} and plugs INTO the
+spine above (which no Cell owns). `daemon/cells.py` is the registry: five cells
+today - **engineer** (cards/kanban), **pm**, **process** (n8n step-chains),
+**connectors**, **copilot**. Each has a `<cell>Enabled` seeded policy flag (all
+default true), so toggling a whole system on/off is just a tracked `policy.swap`
+- `server.py` gates a path owned by a disabled cell (one derived
+`cells.path_disabled` check, routes 404 cleanly), the boot loop only starts an
+enabled cell's poller, and the app hides a disabled cell's nav surface.
+`GET /cells` exposes the live manifest. Machine-control and direct-task are NOT
+peer cells - they are **modes of the Engineer cell** (a card variant forking
+only at dispatch/accept/agent-selection), gated by the existing `policy.machine`.
+This is the daemon-side plugin registry the full-dynamism decree first deferred;
+see `daemon/debt.py` `cell-registry-daemon-plugin-kernel` for the phase plan
+(app-side surfaces + per-cell hook guards + Engineer conformance still pending).
+
 Every policy change ALSO creates a **checkpoint** (settings + connectors
 snapshot, actor-attributed) with reversible restore - the older, narrower
 mechanism the full-dynamism decree's `TrackEntry`/`rollback()` generalizes.

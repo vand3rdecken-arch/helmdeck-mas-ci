@@ -1486,6 +1486,63 @@ DEBT = [
                "'grew by a plausible amount'.",
         "order": 32,
     },
+    {
+        "id": "cell-registry-daemon-plugin-kernel",
+        "title": "Cells: agentic systems as pluggable units - daemon registry "
+                 "built (Phase 0), per-cell surfaces + Engineer conformance pending",
+        "status": "open",
+        "what": "Owner decree: the unit of modularity is an agentic SYSTEM (a "
+                "'Cell' - a role like PM or Engineer), each bundling {logic, "
+                "storage, harness/role, API routes, UI surface, lifecycle, "
+                "enable-flag}, plugged into a shared spine, addable/removable/"
+                "swappable without editing the spine. This is the daemon-side "
+                "realization the full-dynamism-decree (order 30) deferred ('no "
+                "daemon-side plugin registry exists'). Phase 0 SHIPPED: "
+                "daemon/cells.py (pure-data Cell registry, 5 cells - engineer/pm/"
+                "process/connectors/copilot); server.py do_GET/do_POST gate a "
+                "path owned by a disabled cell (cells.path_disabled, ONE derived "
+                "check after auth, no per-route edits); boot's flat start_*() "
+                "calls -> cells.start_enabled() loop; 5 <cell>Enabled policy "
+                "flags (all true) toggled through the EXISTING tracked "
+                "policy.swap; GET /cells manifest; keys.ts PolicySet mirror. Zero "
+                "behavior change while all enabled (verified: 16-file suite green, "
+                "real files md5-identical).",
+        "why_it_bites": "Phase 0 is the registry + daemon gating only. NOT yet "
+                        "done: (1) the app half - each cell's UI surface is still "
+                        "a raw expo-router screen, not a kernel Surface plugin "
+                        "filtered by its cell flag (the profiles already enumerate "
+                        "surfaces.pm/processes/connectors/... but AVAILABLE_PLUGINS "
+                        "doesn't register them); nav does not yet hide a disabled "
+                        "cell's tab. (2) per-cell cross-cell-hook guards - a "
+                        "disabled cell's event hooks (pm.on_card_done from "
+                        "dispatch/lanemachine, processes.clear_step_stamps from "
+                        "move_lane) still fire; they need a one-line "
+                        "cells.enabled_id() guard at the ONE owning entry point "
+                        "(Phase 2). (3) the Engineer cell's own lifecycle "
+                        "(reconciler/watcher) is still a spine call in serve(), not "
+                        "registry-driven, and its /tracks routes aren't stress-"
+                        "tested under disable (Phase 3, done last - it is the "
+                        "gate/merge crown jewel).",
+        "trigger": "adding a new agentic system; a UI toggle for a whole system; "
+                   "any claim the daemon is fully cell-modular",
+        "fix": "Phase 1: conform Connectors (cleanest) end-to-end as the "
+               "reference - surface plugin + nav gate + enable-flag toggling off "
+               "cleanly. Phase 2: Copilot/Process/PM surfaces + the single "
+               "disabled-guard on each one's cross-cell hooks. Phase 3: Engineer "
+               "(+ machine/direct as its MODES, gated by policy.machine not a "
+               "cell flag) last, with the tracks-cluster gate/merge round-trip "
+               "re-verified.\n"
+               "DESIGN DECISION (evidence-backed, not an omission): machine-"
+               "control and direct-task are NOT peer cells - they are MODES of "
+               "the Engineer cell (a card variant with machine=True, forking only "
+               "at dispatch.py:160 dispatch, _accept_machine no-merge accept, and "
+               "drivers._agent_for role selection; sharing the same track store, "
+               "gate, worktree, and merge state machine). Registering them as "
+               "peers would duplicate the gate/merge machinery. They stay gated "
+               "by the existing policy.machine, with their own role file "
+               "(machine-worker.md) and the recordings surface.",
+        "order": 33,
+    },
 ]
 
 def list_debt():
