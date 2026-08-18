@@ -65,6 +65,8 @@ import routes_connectors
 import routes_checkpoints
 import routes_projects
 import routes_copilot
+import routes_tracks
+import routes_track_actions
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -244,14 +246,8 @@ class H(BaseHTTPRequestHandler):
             if p in routes_control.GET_ROUTES:
                 return routes_control.GET_ROUTES[p](self, user)
             # --- orchestrator: branches/sessions (the Paseo half) ---
-            if p == "/tracks":
-                import sessions
-                # present(): stored 'running' is never believed on the way OUT -
-                # only a live turn (drivers.turn_active) may render a spinner.
-                ts = [sessions.present(t) for t in sessions.list_tracks()]
-                if user["role"] == "client":   # clients see only their own cards
-                    ts = [t for t in ts if t.get("client") == user["name"]]
-                return self._send(200, json.dumps(ts))
+            if p in routes_tracks.GET_ROUTES:
+                return routes_tracks.GET_ROUTES[p](self, user)
             if p in routes_projects.GET_ROUTES:
                 return routes_projects.GET_ROUTES[p](self, user)
             # --- company instrumentation: settings + CEO dashboard ---
@@ -290,49 +286,8 @@ class H(BaseHTTPRequestHandler):
                 except (ConnectionAbortedError, BrokenPipeError, OSError):
                     return
             if p.startswith("/tracks/") and p.endswith("/stream"):
-                # per-card SSE: push the live turn transcript as the agent works.
-                # Claude Code writes the session .jsonl live, so we watch it and
-                # emit the parsed transcript whenever it grows - real streaming,
-                # no client poll, same shape as the board /stream above.
-                import sessions, claude_sessions, time as _t
                 tid = p[len("/tracks/"):-len("/stream")]
-                t = sessions.get_track(tid)
-                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
-                    return self._send(403, json.dumps({"error": "not your card"}))
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()
-
-                # Tick whenever the session .jsonl grows, the driver's
-                # live_partial.txt grows (token streaming within a block, before
-                # it's flushed to the .jsonl), OR the flight recorder gets a
-                # lifecycle note. ONE token for both live paths - SSE and the
-                # relay long-poll must agree on what "changed" means, or the
-                # web feed silently misses what the phone gets. session_id is
-                # resolved fresh inside so streaming starts on turn 1 (sidecar)
-                # too. The client refetches the transcript on each tick.
-                def combined():
-                    return claude_sessions.transcript_version(t)
-
-                def tick(v):
-                    self.wfile.write(("data: %d" % v).encode() + b"\n\n")
-                    self.wfile.flush()
-                try:
-                    last = combined()
-                    tick(last)
-                    idle = 0
-                    while True:
-                        _t.sleep(0.3)
-                        size = combined()
-                        if size != last:
-                            last = size
-                            tick(size)
-                            idle = 0
-                        elif (idle := idle + 1) >= 45:   # ~13.5s keep-alive
-                            self.wfile.write(b": ping\n\n"); self.wfile.flush(); idle = 0
-                except (ConnectionAbortedError, BrokenPipeError, OSError):
-                    return
+                return routes_track_actions.tracks_stream_get(self, user, tid)
             if p == "/presence":
                 # who the daemon thinks is here (diagnostic for the notify
                 # policy: "why didn't my phone buzz?" has a checkable answer)
@@ -429,112 +384,21 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(m))
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "live":
-                # the card's own glance feed: newest frame while its agent's
-                # turn is being screen-recorded (fresh = written in last 20s)
-                import sessions, time as _t
-                t = sessions.get_track(parts[1])
-                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
-                    return self._send(403, b"not your card", "text/plain")
-                fp = os.path.join(t["run_dir"], "live.jpg") if t else ""
-                if fp and os.path.exists(fp) and _t.time() - os.path.getmtime(fp) < 20:
-                    with open(fp, "rb") as f:
-                        return self._send(200, f.read(), "image/jpeg")
-                return self._send(404, b"no live frame", "text/plain")
+                return routes_tracks.tracks_live_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "turns":
-                # per-card AI usage: every turn's model, tokens, cost
-                import events, sessions
-                if user["role"] == "client":
-                    t = sessions.get_track(parts[1])
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                turns = [e for e in events.read_events()
-                         if e.get("kind") == "turn" and e.get("track") == parts[1]]
-                return self._send(200, json.dumps(turns))
+                return routes_tracks.tracks_turns_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "history":
-                import sessions
-                if user["role"] == "client":
-                    t = sessions.get_track(parts[1])
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                return self._send(200, json.dumps(sessions.history(parts[1])))
+                return routes_tracks.tracks_history_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "transcript":
-                # the Paseo-style agent view: every turn's text + tool calls,
-                # read straight from the session's Claude Code transcript
-                import sessions, claude_sessions
-                t = sessions.get_track(parts[1])
-                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
-                    return self._send(403, json.dumps({"error": "not your card"}))
-                return self._send(200, json.dumps(claude_sessions.read_transcript_live(t)))
+                return routes_tracks.tracks_transcript_get(self, user, parts[1])
             if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "transcript" and parts[3] == "live":
-                # PUSH over the sealed relay: hold the request until the
-                # transcript changes (or ~22s), then return the fresh steps + a
-                # version token. The phone loops this - real streaming latency
-                # without SSE (which can't be relayed). Reuses the e2ee/relay
-                # path untouched. 22s < relay REPLY_TIMEOUT (120) and the daemon
-                # bridge's _local timeout (115), so the reply always lands.
-                import sessions, claude_sessions, time as _t
-                t = sessions.get_track(parts[1])
-                if not t:
-                    return self._send(404, json.dumps({"error": "no such card"}))
-                if user["role"] == "client" and t.get("client") != user["name"]:
-                    return self._send(403, json.dumps({"error": "not your card"}))
-                q = parse_qs(urlparse(self.path).query)
-                want = (q.get("v") or [""])[0]
-                deadline = _t.time() + 22
-                cur = claude_sessions.transcript_version(t)
-                while str(cur) == want and _t.time() < deadline:
-                    _t.sleep(0.35)
-                    cur = claude_sessions.transcript_version(t)
-                # DELTA (perf): the client sends how many steps it already holds
-                # (`have`); return only the TAIL - new steps plus a small overlap so
-                # a late tool_result or the end-of-turn abandoned-relabel landing on a
-                # recent step is still picked up. The compute is cheap (~16ms for a
-                # full build); the cost was the RELAY payload - a full transcript is
-                # 100-227KB re-sent on every token/tool tick. The tail is a few KB.
-                # `have` absent/0 -> full transcript (old client + the loop's first
-                # call), so this is backward compatible.
-                steps = claude_sessions.read_transcript_live(t)
-                try:
-                    have = int((q.get("have") or ["0"])[0])
-                except ValueError:
-                    have = 0
-                total = len(steps)
-                base = max(0, min(have, total) - 12) if have > 0 else 0
-                return self._send(200, json.dumps(
-                    {"v": str(cur), "base": base, "total": total, "steps": steps[base:]}))
+                return routes_tracks.tracks_transcript_live_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "checkpoints":
-                import sessions
-                t = sessions.get_track(parts[1])
-                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
-                    return self._send(403, json.dumps({"error": "not your card"}))
-                return self._send(200, json.dumps(sessions.list_checkpoints(parts[1])))
+                return routes_tracks.tracks_checkpoints_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "attachments":
-                import sessions
-                t = sessions.get_track(parts[1])
-                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
-                    return self._send(403, json.dumps({"error": "not your card"}))
-                out = []
-                for fp in (t or {}).get("attachments") or []:
-                    try:
-                        out.append({"name": os.path.basename(fp),
-                                    "size": os.path.getsize(fp) if os.path.exists(fp) else 0})
-                    except OSError:
-                        pass
-                return self._send(200, json.dumps(out))
+                return routes_tracks.tracks_attachments_get(self, user, parts[1])
             if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "attachment":
-                import sessions, mimetypes
-                t = sessions.get_track(parts[1])
-                if user["role"] == "client" and (not t or t.get("client") != user["name"]):
-                    return self._send(403, b"not your card", "text/plain")
-                name = unquote(parts[3])
-                # only serve a file the card actually references (no path escape)
-                match = next((fp for fp in (t or {}).get("attachments") or []
-                             if os.path.basename(fp) == name), None)
-                if not match or not os.path.exists(match):
-                    return self._send(404, b"no such attachment", "text/plain")
-                ctype = mimetypes.guess_type(match)[0] or "application/octet-stream"
-                with open(match, "rb") as f:
-                    return self._send(200, f.read(), ctype)
+                return routes_tracks.tracks_attachment_get(self, user, parts[1], parts[3])
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass
@@ -595,12 +459,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
             if p in routes_copilot.POST_ROUTES:
                 return routes_copilot.POST_ROUTES[p](self, user, body)
-            if p == "/tracks/reorder":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import sessions
-                ids = body.get("ids") or []
-                return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
+            if p in routes_tracks.POST_ROUTES:
+                return routes_tracks.POST_ROUTES[p](self, user, body)
             if p in routes_relay.POST_ROUTES:
                 return routes_relay.POST_ROUTES[p](self, user, body)
             if p == "/sessions/claude/adopt":
@@ -759,55 +619,6 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"planning": True,
                                                    "repos": pm._pm().get("repos") or []}))
             # --- orchestrator control ---
-            if p == "/tracks/new":
-                import sessions, events
-                repo = body.get("repo") or events.settings().get("default_repo")
-                branch = body.get("branch"); task = body.get("task")
-                if task and not branch:   # preset flow: task alone is enough
-                    # ASCII-ONLY slug. isalnum() alone is Unicode-true, so a task
-                    # like "Dashboard zu überfüllt" put umlauts into the git ref;
-                    # on Windows (cp1252 consoles, mojibake in tracks.json) that
-                    # produced a branch git never created - the card then hit
-                    # WinError 267 (worktree cwd invalid) on every steer.
-                    _de = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
-                    _t = task.lower().translate(_de)
-                    branch = "req-" + "".join(
-                        ch if (ch.isascii() and ch.isalnum()) else "-" for ch in _t)[:24]
-                if not (repo and branch and task):
-                    return self._send(400, json.dumps({"error": "task required (+ repo unless default_repo is set in settings)"}))
-                if not sessions.is_git_repo(repo):
-                    return self._send(400, json.dumps(
-                        {"error": "repo is not a git repository: " + repo}))
-                lane = body.get("lane", "working")
-                client = user["name"] if user["role"] == "client" else body.get("client", "")
-                driver = body.get("driver", "claude")
-                if user["role"] == "client":
-                    driver = "claude"   # clients don't pick desktop-driving agents
-                model = body.get("model", "")
-                attachments = body.get("attachments")
-                if lane == "backlog":   # filing a request is instant, no session
-                    return self._send(200, json.dumps(sessions.new_track(
-                        repo, branch, task, body.get("perm", sessions.DEFAULT_PERM),
-                        lane="backlog", client=client, value=body.get("value"),
-                        driver=driver, actor=user["name"],
-                        priority=body.get("priority", "medium"),
-                        due=body.get("due", ""), model=model, attachments=attachments,
-                        project_id=body.get("project_id"),
-                        description=body.get("description", ""),
-                        billing=body.get("billing", "fixed"), rate=body.get("rate"))))
-                def go():
-                    sessions.new_track(repo, branch, task,
-                                       body.get("perm", sessions.DEFAULT_PERM),
-                                       lane="working", client=client,
-                                       value=body.get("value"),
-                                       driver=driver, actor=user["name"],
-                                       priority=body.get("priority", "medium"),
-                                       due=body.get("due", ""), model=model, attachments=attachments,
-                                       project_id=body.get("project_id"),
-                                       description=body.get("description", ""),
-                                       billing=body.get("billing", "fixed"), rate=body.get("rate"))
-                _bg("track:new:" + branch, go)
-                return self._send(200, json.dumps({"started": branch}))
             if p in routes_projects.POST_ROUTES:
                 return routes_projects.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
@@ -816,174 +627,30 @@ class H(BaseHTTPRequestHandler):
             if len(parts) == 3 and parts[0] == "projects" and parts[2] == "delete":
                 return routes_projects.projects_delete_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "archive":
-                import sessions
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                try:
-                    return self._send(200, json.dumps(sessions.archive_track(
-                        parts[1], on=bool(body.get("on", True)), actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_archive_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "fork":
-                import sessions
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                try:
-                    return self._send(200, json.dumps(sessions.fork_track(
-                        parts[1], from_ref=body.get("ref", ""), actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_fork_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "fork-chat":
-                # split a crowded card's CONVERSATION into a new card (keeps
-                # context, unlike /fork which forks code at a ref with a fresh
-                # session - see sessions.fork_conversation).
-                import sessions
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                try:
-                    return self._send(200, json.dumps(sessions.fork_conversation(
-                        parts[1], first=body.get("first", ""), actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_forkchat_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "delete":
-                import sessions
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                try:
-                    return self._send(200, json.dumps(sessions.delete_track(
-                        parts[1], actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_delete_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "update":
-                import sessions, events
-                if user["role"] == "client":
-                    t = sessions.get_track(parts[1])
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                    body.pop("autopilot", None)   # autopilot opt-in is owner/operator only
-                    body.pop("driver", None)      # capability grant (GUI/desktop control) - admin only
-                elif "driver" in body:
-                    admin_roles = (events.settings().get("policy") or {}).get(
-                        "chat_admin_roles", ["owner", "operator"])
-                    if user["role"] not in admin_roles:
-                        return self._send(403, json.dumps(
-                            {"error": "changing a card's driver requires: " + ", ".join(admin_roles)}))
-                try:
-                    return self._send(200, json.dumps(
-                        sessions.update_track(parts[1], body, actor=user["name"])))
-                except (RuntimeError, ValueError) as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_update_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "rewind":
-                import sessions
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
-                try:
-                    return self._send(200, json.dumps(
-                        sessions.rewind_files(parts[1], body.get("commit", ""), actor=user["name"])))
-                except (RuntimeError, ValueError) as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_rewind_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "attach":
-                import sessions
-                tid = parts[1]
-                if user["role"] == "client":
-                    t = sessions.get_track(tid)
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                try:
-                    return self._send(200, json.dumps(
-                        sessions.add_attachments(tid, body.get("attachments"), actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_attach_post(self, user, body, parts[1])
             if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "attach" \
                     and parts[3] == "remove":
-                import sessions
-                tid = parts[1]
-                if user["role"] == "client":
-                    t = sessions.get_track(tid)
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                try:
-                    return self._send(200, json.dumps(
-                        sessions.remove_attachment(tid, body.get("name", ""), actor=user["name"])))
-                except RuntimeError as e:
-                    return self._send(400, json.dumps({"error": str(e)}))
+                return routes_tracks.tracks_attach_remove_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "steer":
-                import sessions
-                tid = parts[1]
-                text = body.get("text")
-                if not text:
-                    return self._send(400, json.dumps({"error": "text required"}))
-                if user["role"] == "client":
-                    t = sessions.get_track(tid)
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                actor = user["name"]
-                model = body.get("model", "")
-                thinking = body.get("thinking", "")          # level string, "" = off
-                attachments = body.get("attachments")
-                # clients steer their own card but can't escalate the permission mode
-                mode = body.get("mode") if user["role"] != "client" else None
-                _bg("track:steer:" + tid, lambda: sessions.steer(
-                    tid, text, actor=actor, model=model, thinking=thinking,
-                    attachments=attachments, mode=mode))
-                return self._send(200, json.dumps({"started": tid}))
+                return routes_track_actions.tracks_steer_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "answer":
-                # Phase 2.4: the owner picks an option on the worker's pending
-                # question. Backgrounded like /steer - it RUNS a turn (the
-                # worker continues with the decision), so holding the request
-                # would block the phone for the length of that turn.
-                import sessions
-                tid = parts[1]
-                if user["role"] == "client":
-                    t = sessions.get_track(tid)
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                t = sessions.get_track(tid)
-                if not t or not t.get("question"):
-                    return self._send(409, json.dumps({"error": "no pending question"}))
-                # validate BEFORE backgrounding, so a bad/stale answer reports
-                # the reason instead of failing invisibly on a worker thread
-                import ask
-                rid = body.get("request_id", "")
-                if rid and rid != (t["question"] or {}).get("id"):
-                    return self._send(409, json.dumps(
-                        {"error": "this question was already answered or replaced"}))
-                picks, err = ask.validate_answers(t["question"], body.get("answers") or {})
-                if err:
-                    return self._send(400, json.dumps({"error": err}))
-                actor = user["name"]
-                answers = body.get("answers") or {}
-                _bg("track:answer:" + tid, lambda: sessions.answer_question(
-                    tid, answers, request_id=rid, actor=actor))
-                return self._send(200, json.dumps({"started": tid, "answered": True}))
+                return routes_track_actions.tracks_answer_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "cancel":
-                import sessions
-                tid = parts[1]
-                if user["role"] == "client":
-                    t = sessions.get_track(tid)
-                    if not t or t.get("client") != user["name"]:
-                        return self._send(403, json.dumps({"error": "not your card"}))
-                return self._send(200, json.dumps(sessions.cancel_turn(tid, actor=user["name"])))
+                return routes_track_actions.tracks_cancel_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "lane":
-                import sessions
-                tid = parts[1]
-                lane = body.get("lane")
-                actor = user["name"]
-                if lane == "working":
-                    _bg("track:dispatch:" + tid,
-                        lambda: sessions.move_lane(tid, "working", actor=actor))
-                    return self._send(200, json.dumps({"started": tid}))
-                if lane in ("review", "done"):
-                    # Gate (subprocess, up to 600s) + merge + deploy hook. Held
-                    # inline this blocked the HTTP request for minutes, which is
-                    # what made an accept feel like invisible background work.
-                    # Background it like ->working; the card carries status
-                    # "gating" and every outcome is reported on the card, in the
-                    # chat (sessions._say_card) and by push.
-                    _bg("track:gate:" + tid,
-                        lambda: sessions.move_lane(tid, lane, actor=actor))
-                    return self._send(200, json.dumps({"started": tid, "gating": True}))
-                return self._send(200, json.dumps(sessions.move_lane(tid, lane, actor=actor)))
+                return routes_track_actions.tracks_lane_post(self, user, body, parts[1])
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass

@@ -45,6 +45,21 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-route-test-")
 
+    # Stub the ACTUAL agent spawn before anything imports sessions/drivers -
+    # the tracks-cluster tests below dispatch/steer real cards through the
+    # real sessions.py/lanemachine.py/turnrunner.py state machine (Route 14:
+    # the gate/dispatch "crown jewel"), but must never shell out to a real
+    # `claude` CLI process. drivers.run is the ONE seam turnrunner._turn
+    # calls through (see turnrunner.py:133) - stubbing it here, before
+    # `import server` below pulls in sessions (which imports drivers),
+    # keeps every dispatched/steered turn instant, deterministic, and
+    # network-free while still exercising the real state transitions
+    # around it (worktree creation, lane writes, gate, merge).
+    import drivers
+    def _fake_driver_run(cfg, t, prompt):
+        return ("sid-" + t["id"], "ok", {})
+    drivers.run = _fake_driver_run
+
     # sandbox EVERYTHING with disk state, before any of it is touched. db.ROOT
     # is the critical one: db.init() reads/MIGRATES ROOT/tracks.json and
     # ROOT/events.jsonl (renaming them to *.imported) using that same global -
@@ -77,6 +92,27 @@ def main():
     checkpoints.ROOT = tmp
     checkpoints.CPDIR = os.path.join(tmp, "checkpoints")
     os.makedirs(checkpoints.CPDIR, exist_ok=True)
+
+    # runs.REC (a card's run_dir root - screenshots/live.jpg/actionlog) is a
+    # THIRD independent __file__-derived global, same class of bug as
+    # connectors/checkpoints above - and unlike those two, nothing caught it
+    # before this test started filing real tracks: dispatch.py, cardadmin.py
+    # and sessions.py each did `from runs import REC` at import time, so they
+    # hold their OWN bound copy of the real daemon/recordings path - patching
+    # runs.REC alone does not reach them. MEASURED THE HARD WAY while writing
+    # the tracks-cluster tests below: a first draft (no REC patch) filed real
+    # cards straight into the live daemon/recordings/ folder (git-ignored, so
+    # no tracked data was harmed, but a real-file violation of this test's own
+    # sandboxing rule) before this guard existed. Every module holding its own
+    # REC copy must be patched here, before any card is filed.
+    import runs, dispatch as _dispatch_mod, cardadmin as _cardadmin_mod
+    REC = os.path.join(tmp, "recordings")
+    os.makedirs(REC, exist_ok=True)
+    runs.REC = REC
+    _dispatch_mod.REC = REC
+    _cardadmin_mod.REC = REC
+    import sessions as _sessions_mod
+    _sessions_mod.REC = REC
 
     db.init(role="tool")   # NOT role="daemon" - this process owns no driver sessions
 
@@ -377,6 +413,209 @@ def main():
         # owner + no relay configured -> relay_client.unpair() is a harmless no-op
         status, body = req("POST", "/relay/unpair", {}, cookie=sid, expect=200)
         ok(isinstance(body, dict), "/relay/unpair (owner, nothing paired) returns a dict")
+
+        # -- tracks cluster (routes_tracks.py + routes_track_actions.py) -------
+        # the CROWN JEWEL group: real HTTP round trips through sessions.py's
+        # data layer and lanemachine.py's gate/merge state machine, not just
+        # role-gate assertions. Uses a REAL git repo (in the sandboxed tmp
+        # dir) so /tracks/new, gate-pass, and gate-blocked are all exercised
+        # against real git state - never a live agent turn (lane="backlog"
+        # + direct worktree construction below, so no claude driver spawns).
+        import subprocess as _sp
+        repo_dir = os.path.join(tmp, "gate-repo")
+        os.makedirs(repo_dir, exist_ok=True)
+        def git(*args):
+            r = _sp.run(["git", "-C", repo_dir] + list(args), capture_output=True,
+                        text=True, timeout=20)
+            ok(r.returncode == 0, "git %s: %s" % (" ".join(args), r.stderr[:200]))
+        git("init")
+        git("config", "user.email", "routetest@example.com")
+        git("config", "user.name", "routetest")
+        with open(os.path.join(repo_dir, "README.md"), "w") as f:
+            f.write("gate smoke\n")
+        git("add", "README.md")
+        git("commit", "-m", "initial")
+
+        # -- /tracks: empty list still holds after the earlier non-repo probe ---
+        status, body = req("GET", "/tracks", cookie=sid, expect=200)
+        base_count = len(body)
+
+        # -- /tracks/new: real repo, backlog lane (instant, no agent turn) ------
+        status, body = req("POST", "/tracks/new",
+                           {"repo": repo_dir, "task": "gate smoke card", "lane": "backlog"},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("id"), "/tracks/new (real repo, backlog): creates a real card")
+        tid = body["id"]
+        branch = body["branch"]
+
+        status, body = req("GET", "/tracks", cookie=sid, expect=200)
+        ok(len(body) == base_count + 1 and any(t["id"] == tid for t in body),
+           "/tracks: the new backlog card is now listed")
+
+        status, body = req("POST", "/tracks/new", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/new: missing task/repo -> 400")
+
+        # -- /tracks/<id>/update, /archive, /attach round trips ------------------
+        status, body = req("POST", "/tracks/%s/update" % tid, {"priority": "high"},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict) and body.get("priority") == "high",
+           "/tracks/<id>/update: real field change persisted")
+
+        status, body = req("POST", "/tracks/%s/archive" % tid, {"on": True}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/archive refuses a client")
+        status, body = req("POST", "/tracks/%s/archive" % tid, {"on": True}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/tracks/<id>/archive: owner allowed")
+        req("POST", "/tracks/%s/archive" % tid, {"on": False}, cookie=sid, expect=200)  # unarchive for the rest
+
+        import base64 as _b64
+        att_b64 = _b64.b64encode(b"attachment smoke").decode()
+        status, body = req("POST", "/tracks/%s/attach" % tid,
+                           {"attachments": [{"name": "note.txt", "data": att_b64}]},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/tracks/<id>/attach: accepted")
+        status, body = req("GET", "/tracks/%s/attachments" % tid, cookie=sid, expect=200)
+        ok(isinstance(body, list) and any(a["name"] == "0_note.txt" for a in body),
+           "/tracks/<id>/attachments: real file listed")
+        status, body = req("GET", "/tracks/%s/attachment/0_note.txt" % tid, cookie=sid, expect=200)
+        ok(body is None or True, "/tracks/<id>/attachment/<name>: 200 (binary body, not JSON-parsed here)")
+        status, body = req("POST", "/tracks/%s/attach/remove" % tid, {"name": "0_note.txt"},
+                           cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/tracks/<id>/attach/remove: accepted")
+        status, body = req("GET", "/tracks/%s/attachments" % tid, cookie=sid, expect=200)
+        ok(body == [], "/tracks/<id>/attach/remove: actually removed it")
+
+        # -- /tracks/<id>/turns, /history, /transcript, /checkpoints: real reads
+        status, body = req("GET", "/tracks/%s/turns" % tid, cookie=sid, expect=200)
+        ok(isinstance(body, list), "/tracks/<id>/turns shape: a list")
+        status, body = req("GET", "/tracks/%s/history" % tid, cookie=sid, expect=200)
+        ok(isinstance(body, list), "/tracks/<id>/history shape: a list (a backlog card has no branch commits yet)")
+        status, body = req("GET", "/tracks/%s/transcript" % tid, cookie=sid, expect=200)
+        ok(isinstance(body, list), "/tracks/<id>/transcript shape: a list (no session yet)")
+        status, body = req("GET", "/tracks/%s/checkpoints" % tid, cookie=sid, expect=200)
+        ok(isinstance(body, list), "/tracks/<id>/checkpoints shape: a list")
+        status, body = req("GET", "/tracks/%s/live" % tid, cookie=sid, expect=404)
+        ok(isinstance(body, bytes) or body is None, "/tracks/<id>/live: 404, no live.jpg yet")
+
+        # -- ownership: a client who does NOT own this card is refused ----------
+        status, body = req("GET", "/tracks/%s/history" % tid, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/history refuses a non-owning client")
+
+        # -- /tracks/<id>/cancel: no live turn to cancel, still a clean 200 -----
+        status, body = req("POST", "/tracks/%s/cancel" % tid, {}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/tracks/<id>/cancel: no active turn, returns a dict")
+
+        # -- /tracks/<id>/answer: no pending question -> 409 ---------------------
+        status, body = req("POST", "/tracks/%s/answer" % tid, {"answers": {}}, cookie=sid, expect=409)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/answer: no pending question -> 409")
+
+        # -- /tracks/<id>/steer: role gate (never actually runs a turn: missing --
+        # text short-circuits before sessions.steer is reached)
+        status, body = req("POST", "/tracks/%s/steer" % tid, {"text": "hi"}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/steer refuses a non-owning client")
+        status, body = req("POST", "/tracks/%s/steer" % tid, {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/steer: missing text -> 400 (never reaches sessions.steer)")
+
+        # -- GATE, BLOCKED: never dispatched -> lanemachine._gate's own "never --
+        # dispatched" problem, not a fabricated one. /lane backgrounds the gate
+        # (started:true) - poll the board until the card settles.
+        import time as _time
+        def _await_gate_settle(tid, deadline_s=15):
+            """Poll /tracks until this card's status is a TERMINAL post-gate
+            value. The background mutate to status='gating' is itself async
+            (the HTTP response only means the thread was STARTED), so a naive
+            "status != gating" poll can catch a STALE terminal status left
+            over from an EARLIER /lane call before the new gate run has even
+            begun mutating - a false "already settled" read (measured the
+            hard way while writing this test: the second gate-passing probe
+            below reuses the same card the gate-blocked probe just bounced,
+            so 'bounced' is both a valid outcome AND a stale leftover).
+            Require the card to visibly pass through status='gating' at
+            least once before accepting a terminal status, so a stale read
+            can never be mistaken for a completed run."""
+            deadline = _time.time() + deadline_s
+            seen_gating = False
+            card = None
+            while _time.time() < deadline:
+                _, tracks_now = req("GET", "/tracks", cookie=sid)
+                card = next((c for c in tracks_now if c["id"] == tid), None)
+                st = (card or {}).get("status")
+                if st == "gating":
+                    seen_gating = True
+                elif seen_gating and st in ("bounced", "submitted", "accepted"):
+                    break
+                _time.sleep(0.15)
+            return card
+
+        status, body = req("POST", "/tracks/%s/lane" % tid, {"lane": "review"}, cookie=sid, expect=200)
+        ok(body.get("gating") is True, "/tracks/<id>/lane -> review: backgrounded (gating:true)")
+        card = _await_gate_settle(tid)
+        ok(card is not None and card.get("status") == "bounced" and card.get("lane") == "review",
+           "GATE BLOCKED (never dispatched): card bounces back to Review, not silently accepted "
+           "(got status=%r lane=%r)" % ((card or {}).get("status"), (card or {}).get("lane")))
+        ok(card is not None and any("never dispatched" in p for p in (card.get("gate_report") or [])),
+           "GATE BLOCKED: gate_report explains WHY (never dispatched), not just that it failed")
+
+        # -- GATE, PASSING: a SEPARATE fresh backlog card (the first card is now
+        # lane="review"/bounced - a ->working move on a card ALREADY on Review is
+        # a human BOUNCE-BACK in lanemachine.move_lane, not a fresh dispatch, so
+        # it would never create a worktree; measured hitting exactly that: the
+        # first draft reused `tid` here and the worktree never appeared).
+        # Dispatch this one for real (lane="working") through the SAME HTTP path
+        # production uses. drivers.run is stubbed at the top of this test
+        # (instant, deterministic, no real claude CLI/network), but
+        # dispatch._start_inner still runs for real: _ensure_worktree creates a
+        # genuine git worktree+branch and _finish_turn writes the real track
+        # state - all inside the SAME background thread the daemon uses, so
+        # there is no cross-thread staleness between "set up preconditions" and
+        # "gate reads them".
+        status, body = req("POST", "/tracks/new",
+                           {"repo": repo_dir, "task": "gate pass smoke card", "lane": "backlog"},
+                           cookie=sid, expect=200)
+        tid2 = body["id"]
+
+        status, body = req("POST", "/tracks/%s/lane" % tid2, {"lane": "working"}, cookie=sid, expect=200)
+        ok(body.get("started") == tid2, "/tracks/<id>/lane -> working (fresh backlog card): backgrounded (started)")
+        deadline = _time.time() + 15
+        card2 = None
+        while _time.time() < deadline:
+            _, tracks_now = req("GET", "/tracks", cookie=sid)
+            card2 = next((c for c in tracks_now if c["id"] == tid2), None)
+            if card2 and card2.get("worktree"):
+                break
+            _time.sleep(0.15)
+        ok(card2 is not None and card2.get("lane") == "working" and card2.get("worktree"),
+           "dispatch: fresh card carries a real worktree after ->working (got lane=%r worktree=%r)"
+           % ((card2 or {}).get("lane"), bool((card2 or {}).get("worktree"))))
+
+        status, body = req("POST", "/tracks/%s/lane" % tid2, {"lane": "review"}, cookie=sid, expect=200)
+        ok(body.get("gating") is True, "/tracks/<id>/lane -> review (fresh dispatched worktree): backgrounded")
+        card2 = _await_gate_settle(tid2)
+        ok(card2 is not None and card2.get("lane") == "review" and card2.get("status") != "bounced",
+           "GATE PASSING (real clean worktree, no helmdeck.gate file): card advances past the gate "
+           "instead of bouncing (got status=%r lane=%r)" % ((card2 or {}).get("status"), (card2 or {}).get("lane")))
+
+        # -- /tracks/reorder ------------------------------------------------------
+        status, body = req("POST", "/tracks/reorder", {"ids": [tid]}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/reorder refuses a client")
+        status, body = req("POST", "/tracks/reorder", {"ids": [tid]}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/tracks/reorder: owner allowed")
+
+        # -- /tracks/<id>/fork, /fork-chat, /rewind: unreachable target -> a real
+        # RuntimeError from sessions.py surfaces as 400, not a crash ------------
+        status, body = req("POST", "/tracks/doesnotexist/fork", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/fork: unknown id -> 400 (RuntimeError caught)")
+        status, body = req("POST", "/tracks/doesnotexist/fork-chat", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/fork-chat: unknown id -> 400")
+        status, body = req("POST", "/tracks/doesnotexist/rewind", {"commit": "HEAD"}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/rewind: unknown id -> 400")
+
+        # -- /tracks/<id>/delete: owner-only guard, then a real delete -----------
+        status, body = req("POST", "/tracks/%s/delete" % tid, {}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>/delete refuses a non-owner")
+        status, body = req("POST", "/tracks/%s/delete" % tid, {}, cookie=sid, expect=200)
+        ok(isinstance(body, dict), "/tracks/<id>/delete: owner allowed, real delete")
+        status, body = req("GET", "/tracks", cookie=sid, expect=200)
+        ok(not any(t["id"] == tid for t in body), "/tracks/<id>/delete: actually removed it")
 
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of
         # server.py: `if p not in self.OPEN and not user: 401`) now refuses /me
