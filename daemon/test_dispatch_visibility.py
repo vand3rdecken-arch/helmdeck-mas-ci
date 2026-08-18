@@ -12,6 +12,7 @@ import os, shutil, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sessions, events
+import trackstore
 
 
 class FakeDB:
@@ -28,14 +29,14 @@ class FakeDB:
 
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
-    real_db, real_emit = sessions._db, events.emit
+    real_db, real_emit = trackstore._db, events.emit
     try:
         nongit = os.path.join(tmp, "not-a-repo")
         run_dir = os.path.join(tmp, "run")
         os.makedirs(nongit); os.makedirs(run_dir)
 
         fake = FakeDB()
-        sessions._db = fake
+        trackstore._db = fake
         emitted = []
         events.emit = lambda kind, track, **f: emitted.append(
             {"kind": kind, "track": track, **f})
@@ -82,7 +83,7 @@ def main():
               "event emitted, actionlog noted")
         print("ALL PASS")
     finally:
-        sessions._db = real_db
+        trackstore._db = real_db
         events.emit = real_emit
         shutil.rmtree(tmp, ignore_errors=True)
 

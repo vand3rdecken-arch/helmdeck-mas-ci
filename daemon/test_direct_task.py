@@ -23,7 +23,7 @@ Run: py -3.12 daemon/test_direct_task.py
 import os, subprocess, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import events, sessions, drivers
+import events, sessions, drivers, trackstore
 
 
 class FakeDB:
@@ -49,7 +49,7 @@ SETTINGS = {"drivers": {"claude": {"type": "claude"}},
             "policy": {}, "desktop_lock_wait_s": 5, "value_per_card": 0}
 events.settings = lambda: SETTINGS
 events.emit = lambda *a, **k: None
-sessions._db = FakeDB()
+trackstore._db = FakeDB()
 
 tmp = tempfile.mkdtemp(prefix="hd-direct-")
 repo = os.path.join(tmp, "repo")
