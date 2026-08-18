@@ -28,7 +28,7 @@ Run: py -3.12 daemon/test_mode_dispatch.py
 import os, shutil, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import events, pm, processes, sessions
+import events, pm, processes, sessions, trackstore
 
 
 class FakeDB:
@@ -65,7 +65,7 @@ def _card(tid, **over):
 
 
 def main():
-    real_db, real_emit = sessions._db, events.emit
+    real_db, real_emit = trackstore._db, events.emit
     real_settings = events.settings
     real_threading, real_dispatch = processes.threading, processes._auto_dispatch
     tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
@@ -89,7 +89,7 @@ def main():
         fake.track_put(_card("t-launch", autopilot=True, mode="auto",
                              run_dir=run_dir))
         fake.track_put(_card("t-busy", lane="working", status="running"))
-        sessions._db = fake
+        trackstore._db = fake
         emitted, dispatched = [], []
         events.emit = lambda kind, track, **f: emitted.append(
             {"kind": kind, "track": track, **f})
@@ -195,7 +195,7 @@ def main():
             processes._load, processes._save = real_pload, real_psave
         print("ALL PASS")
     finally:
-        sessions._db, events.emit = real_db, real_emit
+        trackstore._db, events.emit = real_db, real_emit
         events.settings = real_settings
         processes.threading, processes._auto_dispatch = real_threading, real_dispatch
         shutil.rmtree(tmp, ignore_errors=True)

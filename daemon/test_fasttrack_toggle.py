@@ -19,7 +19,7 @@ Run: py -3.12 daemon/test_fasttrack_toggle.py
 import os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import events, sessions
+import events, sessions, trackstore
 
 
 class FakeDB:
@@ -63,7 +63,7 @@ def main():
     (real_db, real_emit, real_settings, real_threading, real_isdir,
      real_git_try, real_current_branch, real_autocommit, real_gate,
      real_merge, real_hook) = (
-        sessions._db, events.emit, events.settings, sessions._threading,
+        trackstore._db, events.emit, events.settings, sessions._threading,
         os.path.isdir, sessions._git_try, sessions._current_branch,
         sessions._autocommit, sessions._gate, sessions._merge_to_main,
         sessions._repo_hook)
@@ -73,7 +73,7 @@ def main():
         run_dir = os.path.join(tmp, "run")
         os.makedirs(run_dir)
         fake.track_put(_card("t-ft", run_dir=run_dir))
-        sessions._db = fake
+        trackstore._db = fake
         events.emit = lambda *a, **k: None
         events.settings = lambda: {"policy": {}, "capacity": {}}
         sessions._threading = FakeThreading
@@ -113,7 +113,7 @@ def main():
 
         print("ALL PASS")
     finally:
-        (sessions._db, events.emit, events.settings, sessions._threading,
+        (trackstore._db, events.emit, events.settings, sessions._threading,
          os.path.isdir, sessions._git_try, sessions._current_branch,
          sessions._autocommit, sessions._gate, sessions._merge_to_main,
          sessions._repo_hook) = (
