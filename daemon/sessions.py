@@ -18,6 +18,7 @@ CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
 import db as _db
+from gitutil import (_git, _git_try, _branch_exists, is_git_repo, _current_branch, _checkpoint, _seed_worktree, _repo_hash, _owned_worktree, _git_state_broken, WORKTREE_DIRNAME)
 
 def _load():
     return _db.tracks_all()
@@ -52,122 +53,6 @@ def _unique_id(suffix):
         n += 1
     return tid
 
-def _git(repo, *args):
-    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("git %s: %s" % (" ".join(args), r.stderr.strip()))
-    return r.stdout.strip()
-
-def _checkpoint(worktree):
-    """A rewindable anchor for the worktree's CURRENT state - a dangling commit
-    that snapshots ALL files (tracked AND untracked, minus .gitignore), built in
-    a TEMP index so neither history nor the real index is touched. (git stash
-    create skips untracked files, which are exactly the ones an agent creates -
-    so it can't be used here.) Rewinding restores files from this commit."""
-    import tempfile
-    # a git worktree's .git is a FILE, so the temp index must live OUTSIDE the
-    # worktree (a normal repo would tolerate .git/, a worktree won't).
-    fd, idx = tempfile.mkstemp(suffix=".ckptindex")
-    os.close(fd)
-    try:
-        env = dict(os.environ, GIT_INDEX_FILE=idx)
-
-        def g(*a, check=True):
-            r = subprocess.run(["git", "-C", worktree, *a], env=env,
-                               capture_output=True, text=True)
-            if check and r.returncode != 0:
-                raise RuntimeError(r.stderr.strip())
-            return r.stdout.strip()
-
-        head = _git(worktree, "rev-parse", "HEAD")
-        g("read-tree", head)               # seed temp index from HEAD
-        g("add", "-A")                     # stage every worktree file into it
-        tree = g("write-tree")
-        # commit-tree uses the object db, not the index - real env is fine
-        commit = _git(worktree, "commit-tree", tree, "-p", head, "-m", "helmdeck checkpoint")
-        return commit or None
-    except Exception:
-        return None
-    finally:
-        try:
-            os.remove(idx)
-        except OSError:
-            pass
-
-def _seed_worktree(repo, wt):
-    """Copy the un-versioned files a build needs into a fresh worktree.
-
-    A worktree only contains TRACKED files, so anything git-ignored is missing -
-    and that is exactly where local toolchain config lives (local.properties
-    points at the Android SDK, .env holds local settings). Without them a card
-    cannot build what the same repo builds fine by hand.
-
-    Configure in settings.json; defaults deliberately carry NO signing material,
-    because handing an agent a release keystore should be a decision, not a
-    side effect:
-
-        "worktree_seed": ["apk/local.properties", ".env"]
-    """
-    import events
-    patterns = events.settings().get("worktree_seed")
-    if patterns is None:
-        patterns = ["apk/local.properties", "local.properties"]
-    copied = []
-    for rel in patterns:
-        src = os.path.join(repo, rel)
-        if not os.path.isfile(src):
-            continue
-        dst = os.path.join(wt, rel)
-        try:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
-            copied.append(rel)
-        except OSError:
-            pass
-    return copied
-
-
-def _branch_exists(repo, branch):
-    r = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", branch],
-                       capture_output=True, text=True)
-    return r.returncode == 0
-
-def is_git_repo(path):
-    """Intake check: dispatch needs `git worktree add`, so a non-repo path must
-    be rejected when the card is filed, not discovered mid-dispatch."""
-    if not path or not os.path.isdir(path):
-        return False
-    r = subprocess.run(["git", "-C", path, "rev-parse", "--git-dir"],
-                       capture_output=True, text=True)
-    return r.returncode == 0
-
-WORKTREE_DIRNAME = "helmdeck-worktrees"
-
-
-def _repo_hash(repo):
-    """8-char base36 fingerprint of the repo IDENTITY (Paseo
-    deriveWorktreeProjectHash): sha256 over the realpath of the repo ROOT,
-    resolved via `git rev-parse --git-common-dir` so a worktree of the repo
-    hashes the same as the repo itself. First 8 digest bytes -> base36 -> 8
-    chars. Falls back to hashing the given path when git is unreachable -
-    the hash must be computable even over a broken checkout."""
-    import hashlib
-    try:
-        rc, out, _ = _git_try(repo, "rev-parse", "--git-common-dir")
-        if rc != 0 or not out:
-            raise RuntimeError(out)
-        common = os.path.realpath(out if os.path.isabs(out)
-                                  else os.path.join(repo, out))
-        root = os.path.dirname(common) if os.path.basename(common) == ".git" else common
-    except Exception:
-        root = os.path.realpath(repo)
-    n = int.from_bytes(hashlib.sha256(root.encode("utf-8")).digest()[:8], "big")
-    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-    s = ""
-    while n:
-        n, r = divmod(n, 36)
-        s = digits[r] + s
-    return s.zfill(13)[:8]
 
 
 def _worktree_for(repo, branch):
@@ -177,42 +62,6 @@ def _worktree_for(repo, branch):
     return wt
 
 
-def _owned_worktree(path):
-    """Ownership by PATH SHAPE alone (Paseo isPaseoOwnedWorktreeCwd): may this
-    directory be rm'd even when git has forgotten it? Owned iff it sits at
-    <...>/helmdeck-worktrees/<8-char-base36-hash>/<name> - that prefix is
-    HelmDeck-private, nothing else writes there, so the shape is sufficient
-    proof even with git broken. Pre-hash FLAT trees (<...>/helmdeck-worktrees/
-    <name>) are NOT owned: only git may manage those (they could be anything)."""
-    p = os.path.realpath(path)
-    parent = os.path.dirname(p)                    # the <hash> dir
-    grand = os.path.dirname(parent)                # the helmdeck-worktrees dir
-    return bool(os.path.basename(p)) \
-        and os.path.basename(grand) == WORKTREE_DIRNAME \
-        and re.fullmatch(r"[0-9a-z]{8}", os.path.basename(parent)) is not None
-
-
-def _git_state_broken(wt):
-    """True when a worktree's link to its repo is severed (the class 4.1
-    reclaims): .git missing, unreadable, or pointing at an admin dir that no
-    longer exists (half-removed tree, pruned admin dir, moved repo). A .git
-    DIRECTORY means a full repo - never 'broken', never ours to judge."""
-    gitfile = os.path.join(wt, ".git")
-    if os.path.isdir(gitfile):
-        return False
-    if not os.path.exists(gitfile):
-        return True
-    try:
-        with open(gitfile, encoding="utf-8", errors="replace") as f:
-            m = re.search(r"gitdir:\s*(.+)", f.read())
-    except OSError:
-        return True
-    if not m:
-        return True
-    gd = m.group(1).strip()
-    if not os.path.isabs(gd):
-        gd = os.path.join(wt, gd)
-    return not os.path.isdir(gd)
 
 
 # -- per-card dev port (Paseo PASEO_WORKTREE_PORT) ----------------------------
@@ -1899,42 +1748,6 @@ def _merge_to_main(t):
             "reiche neu ein (der Worktree bleibt die sichere Sandbox)." % files)
 
 
-def _git_try(repo, *args):
-    """Run git, return (returncode, stdout, stderr) without raising."""
-    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
-    return r.returncode, r.stdout.strip(), r.stderr.strip()
-
-
-def _current_branch(repo):
-    """Name of the checked-out branch, with Paseo's rebase-HEAD guard
-    (checkout-git.ts getRebaseHeadBranch): during a rebase `rev-parse
-    --abbrev-ref HEAD` says just 'HEAD' (the rebase detaches), which callers
-    would misread as 'no base branch' and bounce dispatch/reclaim mid-rebase.
-    Recover the branch actually being rebased from rebase-merge/head-name or
-    rebase-apply/head-name. Genuinely detached -> 'HEAD' (callers already
-    treat that as blocked)."""
-    rc, out, _ = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")
-    if rc != 0:
-        # UNBORN branch (fresh repo, no commit): rev-parse has no commit to
-        # abbreviate, but symbolic-ref still names the branch - _base_ref then
-        # reports 'no commits yet' instead of a misleading 'detached'.
-        rc2, name, _ = _git_try(repo, "symbolic-ref", "--short", "HEAD")
-        return name if rc2 == 0 else ""
-    if out != "HEAD":
-        return out
-    for rel in ("rebase-merge/head-name", "rebase-apply/head-name"):
-        rc2, p, _ = _git_try(repo, "rev-parse", "--git-path", rel)
-        if rc2 != 0 or not p:
-            continue
-        fp = p if os.path.isabs(p) else os.path.join(repo, p)
-        try:
-            with open(fp, encoding="utf-8") as f:
-                name = f.read().strip()
-        except OSError:
-            continue
-        if name:
-            return name[len("refs/heads/"):] if name.startswith("refs/heads/") else name
-    return out
 
 
 # -- WORKTREE RECLAMATION (the second half of the isolation law) --------------
