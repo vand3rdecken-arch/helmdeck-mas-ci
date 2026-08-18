@@ -112,6 +112,7 @@ from apimeta import _loop_state_mod, _lane_flow, _loop_machine, _config_schema, 
 from glances import glance_payload, _glance_question
 import routes_auth
 import routes_policy
+import routes_settings
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -648,54 +649,8 @@ class H(BaseHTTPRequestHandler):
                            # never read as $-spend - so the mode rides here.
                            "ai_billing": events.ai_billing()},
                 }))
-            if p == "/settings":
-                import events
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(events.settings()))
-            if p == "/nightshift":   # kept as an alias; the PM loop is the system now
-                import pm
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                return self._send(200, json.dumps(pm.status()))
-            if p == "/usage":
-                # Claude subscription usage (5h + weekly rate-limit windows) with pacing,
-                # from the same source as Paseo's usage tab. Owner-only: it's the owner's
-                # account. Cached in usage.py so a poll doesn't hammer the endpoint.
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                import usage
-                return self._send(200, json.dumps(usage.snapshot()))
-            if p == "/automation":
-                # everything about the auto-working machinery in one place: the
-                # night shift (is it on, repos, limits, tonight's plan), the policy
-                # (auto-dispatch/accept), and the build-loop state machine + where
-                # it currently sits - so the UI can expose "what is the harness doing".
-                import events, pm
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                s = events.settings(); pol = s.get("policy") or {}
-                # ONE definition, shared with /loop/map (see _loop_machine). The
-                # hand-written list that used to sit here had drifted: it still
-                # promised BUILD would rebuild "Installer / APK / glasses" long
-                # after ARTIFACT_SRC was cut down to the signed APK alone.
-                _machine = _loop_machine()
-                loop_states = [[st["key"], st["instruction"]] for st in _machine["states"]]
-                current = _machine["current"]
-                config_schema = _config_schema(s)
-                return self._send(200, json.dumps({
-                    "nightshift": pm.status(),   # alias key: the PM loop's status
-                    "policy": {k: pol.get(k) for k in ("auto_dispatch_modes", "auto_dispatch_priority",
-                              "auto_accept_green", "chat_admin_roles", "chat_configure_roles")},
-                    "config_schema": config_schema,
-                    "repos": (s.get("pm") or {}).get("repos") or [],
-                    "default_repo": s.get("default_repo"),
-                    "loop_states": [{"state": st, "desc": d} for st, d in loop_states],
-                    "loop_current": current,
-                    # which half of the loop this checkout is actually running
-                    "loop_mode": _machine.get("mode"),
-                    "loop_mode_note": _machine.get("mode_note"),
-                }))
+            if p in routes_settings.GET_ROUTES:
+                return routes_settings.GET_ROUTES[p](self, user)
             if p == "/dashboard/data":
                 import events, sessions
                 if user["role"] == "client":
@@ -1222,19 +1177,8 @@ class H(BaseHTTPRequestHandler):
                 import swarm
                 _bg("demo", swarm.browser_demo)
                 return self._send(200, json.dumps({"started": "browser-demo"}))
-            if p == "/settings":
-                import events
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
-                rel = body.get("relay")
-                if isinstance(rel, dict) and rel.get("url"):
-                    import relay_client
-                    if relay_client.insecure_url(rel["url"]):
-                        return self._send(400, json.dumps({"error":
-                            "relay url must be https:// (or http://localhost for "
-                            "local testing) - pairing links carry a device token "
-                            "and must not cross the network unencrypted"}))
-                return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
+            if p in routes_settings.POST_ROUTES:
+                return routes_settings.POST_ROUTES[p](self, user, body)
             if p == "/harness":
                 # Owner edits an agent brief or a settings layer. Validated
                 # against harness/schema/*.schema.json BEFORE the write, the
