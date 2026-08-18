@@ -23,8 +23,13 @@ import importlib.util, json, os, shutil, subprocess, sys, threading, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CDIR = os.path.join(ROOT, "connectors")
-STATE = os.path.join(CDIR, "_state.json")
 os.makedirs(CDIR, exist_ok=True)
+# Last-run timestamps ({name: "YYYY-MM-DD HH:MM:SS"}) live in db.py's
+# connector_state table (migrated from connectors/_state.json - db._migrate()
+# imports it once and renames it .imported, same safeguard as processes.json).
+# The connector CODE files (connectors/<name>.py) are NOT migrated: they are
+# real importable modules run in a sandboxed subprocess, not JSON records - see
+# db._migrate()'s connector_state block and daemon/debt.py order 32.
 
 CONTRACT = """Create the file connectors/%(name)s.py (create the connectors/ folder at the
 repo root if missing). It must define:
@@ -132,15 +137,12 @@ def _load(name):
     return mod
 
 def _state():
-    try:
-        with open(STATE, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    import db
+    return db.connector_state_get()
 
 def _save_state(d):
-    with open(STATE, "w", encoding="utf-8") as f:
-        json.dump(d, f)
+    import db
+    db.connector_state_put(d)
 
 def run_connector(name, actor="owner"):
     """Execute an installed connector; its items become backlog cards."""
