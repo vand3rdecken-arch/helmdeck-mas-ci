@@ -763,4 +763,19 @@ def read_transcript(session_id, limit=400):
                     step["detail"] = detail
                 steps.append(step)
             # tool_result already folded into its tool step in pass 1
+        # Per-turn token/context usage (DeepSeek / Claude-Code parity): each
+        # assistant turn records message.usage. Surface it as one compact marker
+        # so the transcript shows what THIS turn cost + the context it carried.
+        if role == "assistant":
+            u = m.get("usage") if isinstance(m, dict) else None
+            if isinstance(u, dict):
+                inp = int(u.get("input_tokens") or 0)
+                out = int(u.get("output_tokens") or 0)
+                cr = int(u.get("cache_read_input_tokens") or 0)
+                cc = int(u.get("cache_creation_input_tokens") or 0)
+                ctx = inp + cr + cc  # everything the model actually saw this turn
+                if ctx or out:
+                    steps.append({"kind": "usage", "tokIn": inp, "tokOut": out,
+                                  "cacheRead": cr, "cacheWrite": cc, "ctx": ctx,
+                                  "ts": ts, "ta": ta})
     return steps[-limit:]

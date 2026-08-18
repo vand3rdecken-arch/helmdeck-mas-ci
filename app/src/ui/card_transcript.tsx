@@ -35,6 +35,7 @@ export interface TStep {
   error?: string | null;         // non-null exactly when status === "failed"
   event?: TurnEvent;             // kind === "turn": which lifecycle edge
   usage?: TurnUsage; cost?: number | null;   // turn-end economics (kind === "turn")
+  tokIn?: number; tokOut?: number; cacheRead?: number; cacheWrite?: number; ctx?: number;  // kind === "usage": per-turn tokens
   ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
   agent?: boolean;   // a board-Agent (copilot) message, not a Worker one
   streaming?: boolean; detail?: ToolDetail;
@@ -188,6 +189,31 @@ function RunningClock({ ta, t }: { ta?: number; t: ThemeTokens }) {
     <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
       <Ionicons name="time-outline" size={11} color={color} />
       <Text style={{ color, fontSize: 10.5, fontWeight: "700" }}>{label}</Text>
+    </View>
+  );
+}
+
+// Per-turn context/token usage (DeepSeek / Claude-Code parity): a compact chip
+// showing what THIS turn cost and the context it carried. ctx is everything the
+// model saw (input + cache read + cache write); the 200k window drives the %.
+const CTX_WINDOW = 200_000;
+function tokK(n?: number): string {
+  const v = n ?? 0;
+  return v >= 1000 ? `${(v / 1000).toFixed(v >= 10_000 ? 0 : 1)}k` : `${v}`;
+}
+function UsageChip({ s, t }: { s: TStep; t: ThemeTokens }) {
+  const ctx = s.ctx ?? 0;
+  const pct = Math.min(100, Math.round((ctx / CTX_WINDOW) * 100));
+  const cached = (s.cacheRead ?? 0) > 0;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3, paddingHorizontal: 2, flexWrap: "wrap" }}>
+      <Ionicons name="pulse-outline" size={12} color={t.txtTertiary} />
+      <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>
+        Kontext {tokK(ctx)} · {pct}%
+      </Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>
+        · ↓{tokK(s.tokIn)} ↑{tokK(s.tokOut)}{cached ? ` · Cache ${tokK(s.cacheRead)}` : ""}
+      </Text>
     </View>
   );
 }
@@ -382,6 +408,7 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
             </View>);
         }
+        if (kind === "usage") return <UsageChip key={key} s={s} t={t} />;
         if (kind === "tool") return <ToolCard key={key} s={s} t={t} defaultOpen={i === lastToolIdx} />;
         if (kind === "todos") return <Todos key={key} s={s} t={t} />;
         if (kind === "plan") return (
