@@ -112,25 +112,34 @@ reaching into a monolith), then the HTTP surface itself was split into a
 dispatch table. As of this writing:
 
 ```
-server.py (H handler, ~1165 lines, was 2109)
+server.py (H handler, 1073 lines, was 2109)
   do_GET/do_POST check a per-concern ROUTE-DISPATCH TABLE first, then fall
   through to whatever hasn't been converted yet - each conversion is
   behavior-preserving (route body moves verbatim; server.H is never touched
-  except to add one dispatch-table line).
-  ├─ routes_auth.py      auth/state/setup/register/login/logout
-  ├─ routes_policy.py    /policy, /policy/swap, /reconfig/track
-  ├─ routes_settings.py  settings, nightshift, usage, automation
-  ├─ routes_glance.py    the glasses surface (token-gated, first PREFIX route)
-  ├─ routes_info.py      debt/charter/loop-map/models/harness (read-only)
-  ├─ routes_pm.py        the proactive daily-loop's API surface
-  ├─ routes_misc.py      /processes, /me
-  ├─ routes_control.py   /control/state, teach/start, teach/stop, distill, demo
-  ├─ routes_relay.py     /relay/pair, /relay/unpair
+  except to add one dispatch-table line). Path-param routes (e.g.
+  /connectors/<name>/rollback) keep their `parts[0]==.../parts[2]==...` guard
+  inline in server.py - only the route BODY moved to the module.
+  ├─ routes_auth.py        auth/state/setup/register/login/logout
+  ├─ routes_policy.py      /policy, /policy/swap, /reconfig/track
+  ├─ routes_settings.py    settings, nightshift, usage, automation
+  ├─ routes_glance.py      the glasses surface (token-gated, first PREFIX route)
+  ├─ routes_info.py        debt/charter/loop-map/models/harness (read-only)
+  ├─ routes_pm.py          the proactive daily-loop's API surface
+  ├─ routes_misc.py        /processes, /me
+  ├─ routes_control.py     /control/state, teach/start, teach/stop, distill, demo
+  ├─ routes_relay.py       /relay/pair, /relay/unpair
+  ├─ routes_connectors.py  /connectors list, /connectors/<name>/rollback,run
+  ├─ routes_checkpoints.py /checkpoints list, /checkpoints/<id>/diff,restore
+  ├─ routes_projects.py    /projects CRUD
+  ├─ routes_copilot.py     /chat, /chat/cancel, /chat/history, /chat/live
   ├─ glances.py / apimeta.py / startup.py   module-level helpers (pre-dispatch-table)
-  └─ (the rest: tracks/dispatch [highest value, does LAST - touches the
-     sessions.py crown jewel], chat/copilot, connectors, checkpoints, processes'
-     /step sub-router, projects, presence/push/harness/runs -
-     still inline, tracked in daemon/debt.py order 31)
+  └─ (the rest: tracks/dispatch [highest value, DELIBERATELY LAST - touches
+     the sessions.py crown jewel: new_track, move_lane/lanemachine, the
+     answer/steer/cancel/lane sub-router, track CRUD, history/live/turns/
+     transcript/checkpoints/attachments GET sub-routers], the /processes/<id>/
+     step path-param sub-router, presence/push/harness/debt-fix/import
+     routes, the runs/timeline/video/videochunk GET group - still inline,
+     tracked in daemon/debt.py order 31)
 
 sessions.py (the orchestrator, ~1050 lines, was 3927) sits on top of SERVICES:
   ├─ trackstore.py   the data layer: _load/_save/_mutate (THE one legal write path)
