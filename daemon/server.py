@@ -69,6 +69,7 @@ import routes_tracks
 import routes_track_actions
 import routes_runs
 import routes_system
+import routes_cells
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -248,6 +249,8 @@ class H(BaseHTTPRequestHandler):
             if p.startswith("/checkpoints/") and p.endswith("/diff"):
                 cid = p[len("/checkpoints/"):-len("/diff")]
                 return routes_checkpoints.checkpoints_diff_get(self, user, cid)
+            if len(parts) == 3 and parts[0] == "cells" and parts[2] == "source":
+                return routes_cells.cell_source_get(self, user, parts[1])
             if p in routes_connectors.GET_ROUTES:
                 return routes_connectors.GET_ROUTES[p](self, user)
             if p in routes_misc.GET_ROUTES:

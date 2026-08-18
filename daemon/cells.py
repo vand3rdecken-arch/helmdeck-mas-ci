@@ -25,7 +25,20 @@ seed is behaviourally identical to the pre-cell daemon.
 Machine-control and direct-task are NOT peer cells: they are MODES of the
 Engineer cell (a card variant with machine=True, forking dispatch/accept/agent-
 selection only), gated by the existing policy.machine. See daemon/debt.py.
-"""
+
+`logic_files`/`storage`/`harness_file`/`route_modules` are the cell's DECLARED
+metadata for the UI code-map (GET /cells, GET /cells/<id>/source) - this same
+metadata is BOTH what the app displays AND the allowlist read_source() checks
+against, so nothing is readable that isn't already named as belonging to that
+cell (no separate list that could drift or be more permissive than the manifest
+itself claims)."""
+
+import os
+
+ROOT = os.path.dirname(os.path.abspath(__file__))          # daemon/
+REPO_ROOT = os.path.dirname(ROOT)                            # repo root (daemon/'s parent)
+APP_ROOT = os.path.join(REPO_ROOT, "app")                    # app/ (sibling)
+MAX_SOURCE_BYTES = 200_000
 
 
 class Cell:
@@ -33,21 +46,50 @@ class Cell:
     cell's own modules; this just names the seams (routes, lifecycle, flag)."""
 
     def __init__(self, id, enabled_key, paths=(), prefixes=(), start=None,
-                 role="", surface="", modes=()):
+                 role="", surface="", modes=(),
+                 logic_files=(), storage="", harness_file="",
+                 route_modules=(), ui_files=(), tools=()):
         self.id = id
         self.enabled_key = enabled_key      # policy flag, e.g. "pmEnabled"
         self.paths = tuple(paths)           # exact owned paths, e.g. ("/processes",)
         self.prefixes = tuple(prefixes)     # owned path prefixes, e.g. ("/pm/",)
         self.start = start                  # ("module","func") lazy lifecycle launcher, or None
-        self.role = role                    # harness brief filename (informational/manifest)
+        self.role = role                    # harness brief filename OR a short description
         self.surface = surface              # app-side kernel Surface id this cell renders
         self.modes = tuple(modes)           # sub-modes, e.g. engineer -> ("machine","direct")
+        self.logic_files = tuple(logic_files)    # daemon/*.py files, e.g. ("pm.py","pm_state.py")
+        self.storage = storage                   # short description, e.g. "loop.json (daemon/pm/)"
+        self.harness_file = harness_file         # REPO-ROOT-relative *.md path, or "" if inline/none
+        self.route_modules = tuple(route_modules)  # daemon module names, e.g. ("routes_pm",)
+        self.ui_files = tuple(ui_files)          # app/-relative paths: surface plugin + real screens
+        self.tools = tuple(tools)                # external tools/refs this cell's own tooling uses -
+                                                  # documentation only, never readable via read_source
 
     def owns(self, path):
         """Does this cell own the given request path?"""
         if path in self.paths:
             return True
         return any(path.startswith(pre) for pre in self.prefixes)
+
+    def allowed_files(self):
+        """Every filename this cell will serve via read_source() - the
+        allowlist. Built from this cell's OWN declared metadata only."""
+        out = set(f + ".py" if not f.endswith(".py") else f for f in self.logic_files)
+        if self.harness_file:
+            out.add(self.harness_file)
+        for mod in self.route_modules:
+            out.add(mod + ".py")
+        for f in self.ui_files:
+            out.add(f)
+        return out
+
+    def where(self, fname):
+        """Which root `fname` resolves under: 'app', 'repo', or 'daemon'."""
+        if fname in self.ui_files:
+            return "app"
+        if fname == self.harness_file:
+            return "repo"
+        return "daemon"
 
 
 # The registered cells. Order is presentation-only. enabled_key defaults true in
@@ -65,14 +107,33 @@ CELLS = [
         # not a cell.
         paths=("/tracks",), prefixes=("/tracks/",),
         start=("sessions", "start_engineer_lifecycle"),
-        role="(card brief)", surface="surfaces.board",
+        role="(card brief, per-task)", surface="surfaces.board",
         modes=("machine", "direct"),
+        logic_files=("sessions.py", "lanemachine.py", "dispatch.py",
+                     "cardadmin.py", "turnrunner.py"),
+        storage="tracks table + worktrees (db.py)",
+        route_modules=("routes_tracks", "routes_track_actions"),
+        ui_files=("src/plugins/surfaces/board.tsx", "src/ui/board.tsx",
+                   "src/app/(tabs)/board.tsx"),
+        # documentation-only reference (owner directive, 2026-08-18): the
+        # editorial-diagram visual language this cell's own code-map UI
+        # (this file's read_source() + app/src/ui/cell_diagram.tsx) follows.
+        # Not vendored, not a runtime dependency - registered here so the
+        # code-map itself shows what informed its own rendering style.
+        tools=("github.com/cathrynlavery/diagram-design (visual style ref "
+               "for the code-map diagram, not a vendored dependency)",),
     ),
     Cell(
         id="pm", enabled_key="pmEnabled",
         prefixes=("/pm/",),
         start=("pm", "start_loop"),
         role="pm.role.md", surface="surfaces.pm",
+        logic_files=("pm.py", "pm_state.py", "pm_budget.py"),
+        storage="loop.json (daemon/pm/)",
+        harness_file="daemon/pm.role.md",
+        route_modules=("routes_pm",),
+        ui_files=("src/plugins/surfaces/pm.tsx", "src/ui/pm_panel.tsx",
+                   "src/app/loopmap.tsx"),
     ),
     Cell(
         id="process", enabled_key="processEnabled",
@@ -80,18 +141,33 @@ CELLS = [
         # both SHARED modules - path ownership keeps /me (spine) ungated.
         paths=("/processes",), prefixes=("/processes/",),
         start=("processes", "start_chain_poller"),
-        role="(inline proposer prompt)", surface="surfaces.processes",
+        role="(inline proposer prompt in processes.py)", surface="surfaces.processes",
+        logic_files=("processes.py",),
+        storage="processes table (db.py)",
+        route_modules=("routes_misc", "routes_system"),
+        ui_files=("src/plugins/surfaces/processes.tsx",
+                   "src/app/(tabs)/processes.tsx"),
     ),
     Cell(
         id="connectors", enabled_key="connectorsEnabled",
         paths=("/connectors",), prefixes=("/connectors/",),
         start=("connectors", "start_scheduler"),
         role="(card-worker builds it)", surface="surfaces.connectors",
+        logic_files=("connectors.py",),
+        storage="connector_state table (db.py) + connectors/ code dir",
+        route_modules=("routes_connectors",),
+        ui_files=("src/plugins/surfaces/connectors.tsx",
+                   "src/app/(tabs)/connectors.tsx"),
     ),
     Cell(
         id="copilot", enabled_key="copilotEnabled",
         prefixes=("/chat",),
         role="board-copilot.md", surface="surfaces.chat",
+        logic_files=("copilot.py", "copilot_stats.py", "copilot_actions.py"),
+        storage="copilot_sessions.json, copilot_log.json",
+        harness_file="harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
+        route_modules=("routes_copilot",),
+        ui_files=("src/plugins/surfaces/copilot.tsx", "src/app/chat.tsx"),
     ),
 ]
 
@@ -151,6 +227,24 @@ def start_enabled():
             print("cells: %s.%s failed to start: %s" % (mod_name, func_name, e))
 
 
+def _cell_routes(c):
+    """DERIVE this cell's live endpoint list from its route modules' actual
+    GET_ROUTES/POST_ROUTES dicts - never hand-duplicated, so it can't drift
+    from what server.py really dispatches. Best-effort: an import error just
+    yields fewer entries, never a 500 (this feeds a read-only manifest)."""
+    out = []
+    for mod_name in c.route_modules:
+        try:
+            mod = __import__(mod_name)
+        except Exception:
+            continue
+        for p in sorted(getattr(mod, "GET_ROUTES", {}) or {}):
+            out.append("GET " + p)
+        for p in sorted(getattr(mod, "POST_ROUTES", {}) or {}):
+            out.append("POST " + p)
+    return out
+
+
 def manifest():
     """Read-only description of every cell + its live enable-state, for GET
     /cells. The app renders exactly the cells that are enabled here."""
@@ -161,4 +255,39 @@ def manifest():
         "role": c.role,
         "surface": c.surface,
         "modes": list(c.modes),
+        "logicFiles": list(c.logic_files),
+        "storage": c.storage,
+        "harnessFile": c.harness_file,
+        "routes": _cell_routes(c),
+        "uiFiles": list(c.ui_files),
+        "tools": list(c.tools),
     } for c in CELLS]
+
+
+def read_source(cid, fname):
+    """Return the text of `fname` if it is EXACTLY one of the cell `cid`'s own
+    declared files (logic_files/harness_file/route_modules/ui_files) - the
+    ALLOWLIST. Returns None on any mismatch (unknown cell, unknown file, not
+    that cell's file) - the caller turns None into a 404, never a path. Never
+    joins user input into a path beyond this fixed, pre-validated lookup - no
+    traversal is possible because `fname` is matched against a closed set of
+    known-safe relative paths, not used to build a path directly."""
+    c = _BY_ID.get(cid)
+    if c is None or fname not in c.allowed_files():
+        return None
+    root = {"app": APP_ROOT, "repo": REPO_ROOT, "daemon": ROOT}[c.where(fname)]
+    root = os.path.normpath(root)
+    full = os.path.normpath(os.path.join(root, fname))
+    # belt-and-suspenders: even though fname came from a closed allowlist,
+    # confirm the resolved path is still under the expected root before
+    # opening it - the allowlist is the real guarantee, this is a backstop.
+    if os.path.commonpath([full, root]) != root:
+        return None
+    try:
+        with open(full, encoding="utf-8", errors="replace") as f:
+            text = f.read(MAX_SOURCE_BYTES + 1)
+    except OSError:
+        return None
+    if len(text) > MAX_SOURCE_BYTES:
+        text = text[:MAX_SOURCE_BYTES] + "\n\n... (truncated)"
+    return text
