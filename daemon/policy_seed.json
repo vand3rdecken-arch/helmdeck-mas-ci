@@ -8,7 +8,12 @@
     "authRequired": true,
     "measuredEconomics": true,
     "wipLimit": 3,
-    "agentMaySwap": false
+    "agentMaySwap": false,
+    "engineerEnabled": true,
+    "pmEnabled": true,
+    "processEnabled": true,
+    "connectorsEnabled": true,
+    "copilotEnabled": true
   },
   "charter": {
     "source": "CLAUDE.md",

@@ -169,6 +169,12 @@ class H(BaseHTTPRequestHandler):
                 return routes_glance.GET_ROUTES[p](self, user)
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
+            # Cell gate: a path owned by a DISABLED agentic system 404s cleanly
+            # (the tab is gone on the app; the route reports absent). One derived
+            # check, no per-route edits. No-op while all cells default enabled.
+            import cells
+            if cells.path_disabled(p):
+                return self._send(404, json.dumps({"error": "cell disabled"}))
             if p == "/users":
                 import auth
                 if user["role"] != "owner":
@@ -289,6 +295,11 @@ class H(BaseHTTPRequestHandler):
                 return routes_glance.POST_ROUTES[p](self, user, body)
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
+            # Cell gate (see do_GET): a POST path owned by a DISABLED agentic
+            # system 404s cleanly. No-op while all cells default enabled.
+            import cells
+            if cells.path_disabled(p):
+                return self._send(404, json.dumps({"error": "cell disabled"}))
             # ---- user management (owner only) ----
             parts = p.strip("/").split("/")
             if parts[0] == "users":
@@ -446,12 +457,13 @@ def serve(port=8140):
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
-    import processes, connectors, relay_client
-    processes.start_chain_poller()
-    connectors.start_scheduler()
-    relay_client.start(port)   # reverse tunnel for mobile - idle until settings.relay is set
-    import pm
-    pm.start_loop()            # the single proactive loop - no-op until settings.pm.loop_enabled
+    import relay_client, cells
+    # Cell lifecycle: launch each ENABLED agentic system's poller through the
+    # registry (process chain poller, connectors scheduler, pm proactive loop).
+    # Replaces the flat start_*() calls - all cells default enabled, so this is
+    # behaviourally identical until an owner disables one via policy.swap.
+    cells.start_enabled()
+    relay_client.start(port)   # reverse tunnel for mobile (spine, not a cell) - idle until settings.relay is set
     # Transport (pays debt [single-secret-transport]): with TLS material
     # present, network traffic goes through the https listener and the plain
     # listener retreats to LOOPBACK ONLY - local tooling (relay bridge,

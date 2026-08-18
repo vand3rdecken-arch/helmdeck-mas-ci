@@ -60,6 +60,16 @@ def main():
         return ("sid-" + t["id"], "ok", {})
     drivers.run = _fake_driver_run
 
+    # processes.create() WITHOUT steps spawns a background thread that calls
+    # _propose_steps -> a REAL `claude -p` subprocess (300s timeout). Stub the
+    # proposer to return instantly, same seam/rationale as the drivers.run stub
+    # above: never shell out to a real claude, stay deterministic and
+    # network-free. (The same-second id-collision 500 this section also exposed
+    # is fixed for real in processes.create()'s id generation, not worked around
+    # here.)
+    import processes as _proc_mod
+    _proc_mod._propose_steps = lambda request_text: ([], 0.0)
+
     # sandbox EVERYTHING with disk state, before any of it is touched. db.ROOT
     # is the critical one: db.init() reads/MIGRATES ROOT/tracks.json and
     # ROOT/events.jsonl (renaming them to *.imported) using that same global -
@@ -102,6 +112,14 @@ def main():
     copilot.ROOT = tmp
     copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
     copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
+
+    # policy.py is a FIFTH __file__-derived-ROOT module: policy.swap() writes
+    # policy_live.json next to policy.py. The cell-gate tests below toggle cells
+    # through the REAL tracked policy.swap path, so LIVE must be sandboxed or
+    # they'd rewrite the daemon's live policy. SEED stays real (read-only) so the
+    # seeded <cell>Enabled=true defaults load exactly as in production.
+    import policy
+    policy.LIVE = os.path.join(tmp, "policy_live.json")
 
     # runs.REC (a card's run_dir root - screenshots/live.jpg/actionlog) is a
     # THIRD independent __file__-derived global, same class of bug as
@@ -717,6 +735,32 @@ def main():
         ok(isinstance(body, dict), "/tracks/<id>/delete: owner allowed, real delete")
         status, body = req("GET", "/tracks", cookie=sid, expect=200)
         ok(not any(t["id"] == tid for t in body), "/tracks/<id>/delete: actually removed it")
+
+        # -- Cell registry gate (Phase 0): a DISABLED agentic system's routes
+        # 404 cleanly, spine paths stay reachable, and GET /cells reflects the
+        # toggle. Exercises the REAL tracked policy.swap path (policy.LIVE
+        # sandboxed above). The disabled 404 fires in server.py's dispatch
+        # BEFORE any pm logic runs, so no real pm state is ever touched.
+        import policy
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        pm_on = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
+        ok(pm_on.get("enabled") is True, "/cells: pm cell enabled by default")
+        ok({"engineer", "pm", "process", "connectors", "copilot"}
+           <= {c["id"] for c in body.get("cells", [])},
+           "/cells: all five agentic systems registered")
+        policy.swap("policies", {"pmEnabled": False}, actor="test")
+        status, body = req("GET", "/pm/plan", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: /pm/plan 404s with 'cell disabled'")
+        status, body = req("GET", "/me", cookie=sid, expect=200)
+        ok(isinstance(body, dict), "spine path /me stays reachable while pm cell is off")
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        pm_off = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
+        ok(pm_off.get("enabled") is False, "/cells: manifest reflects pm disabled")
+        policy.swap("policies", {"pmEnabled": True}, actor="test")   # restore
+        status, body = req("GET", "/cells", cookie=sid, expect=200)
+        pm_back = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
+        ok(pm_back.get("enabled") is True, "re-enable via tracked swap: pm cell on again")
 
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of
         # server.py: `if p not in self.OPEN and not user: 401`) now refuses /me
