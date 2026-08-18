@@ -2,7 +2,7 @@
 // hooks let RN/web components read the live registries and re-render when
 // plugins load/unload (reversible effects reach the UI too).
 
-import React, { createContext, useContext, useSyncExternalStore } from "react";
+import React, { createContext, useContext, useEffect, useReducer, useSyncExternalStore } from "react";
 
 import type { Kernel } from "./kernel";
 import { KEYS, type Engine, type Surface } from "./keys";
@@ -18,6 +18,22 @@ export function useKernel(): Kernel {
   const k = useContext(KernelContext);
   if (!k) throw new Error("useKernel: no KernelProvider above this component");
   return k;
+}
+
+/** Kernel or null if no provider — for surfaces that must render either way. */
+export function useKernelOptional(): Kernel | null {
+  return useContext(KernelContext);
+}
+
+/** Live view of the reconfiguration journal (re-renders as entries append). */
+export function useJournal() {
+  const k = useContext(KernelContext);
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    if (!k) return;
+    return k.onTracked(() => force());
+  }, [k]);
+  return k ? k.journal() : [];
 }
 
 /** Subscribe to a Registry so the component re-renders on add/remove. */

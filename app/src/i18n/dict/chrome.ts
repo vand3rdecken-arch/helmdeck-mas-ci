@@ -16,6 +16,7 @@ export const chrome: Dict = {
   "nav.connectors": { de: "Connectoren", en: "Connectors" },
   "nav.automation": { de: "Automatik", en: "Automation" },
   "nav.settings": { de: "Einstellungen", en: "Settings" },
+  "nav.modules": { de: "Module", en: "Modules" },
   "nav.chat": { de: "Chat", en: "Chat" },
   "nav.feedback": { de: "Feedback geben", en: "Give feedback" },
 

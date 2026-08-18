@@ -49,6 +49,14 @@ function GlassTabBar() {
 function Sidebar({ state, navigation }: any) {
   const tr = useT();
   const activeName = state.routes[state.index]?.name;
+  // Sidebar items now come from the same kernel registry as the bottom bar
+  // (nav.tabs), excluding phone-only entries (More). Falls back to the
+  // hard-coded NAV when no kernel is provided.
+  const surfaces = useSurfaces();
+  const registryNav = surfaces
+    .filter((s) => s.route && s.nav && !s.nav.phoneOnly)
+    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, teamOnly: s.nav!.teamOnly }));
+  const navItems: NavItem[] = registryNav.length ? registryNav : NAV;
   const filter = useBoardFilter((s) => s.filter);
   const setFilter = useBoardFilter((s) => s.setFilter);
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
@@ -83,7 +91,7 @@ function Sidebar({ state, navigation }: any) {
         <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>HelmDeck</Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        {NAV.filter((item) => !(item.teamOnly && me?.role === "client")).map((item) => {
+        {navItems.filter((item) => !(item.teamOnly && me?.role === "client")).map((item) => {
           const active = activeName === item.name;
           const color = active ? t.txtPrimary : t.txtSecondary;
           return (
