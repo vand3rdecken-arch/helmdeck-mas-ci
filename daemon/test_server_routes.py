@@ -155,11 +155,13 @@ def main():
     th = threading.Thread(target=httpd.serve_forever, daemon=True)
     th.start()
     try:
-        def req(method, path, body=None, cookie=None, expect=None):
+        def req(method, path, body=None, cookie=None, expect=None, token=None):
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             headers = {"Content-Type": "application/json"}
             if cookie:
                 headers["Cookie"] = "sd_session=%s" % cookie
+            if token:
+                headers["Authorization"] = "Bearer %s" % token
             payload = json.dumps(body).encode("utf-8") if body is not None else None
             conn.request(method, path, body=payload, headers=headers)
             r = conn.getresponse()
@@ -185,6 +187,25 @@ def main():
         status, body = req("GET", "/me", cookie=sid, expect=200)
         ok(isinstance(body, dict) and body.get("name") == "routetest-owner",
            "/me returns the logged-in owner")
+
+        # -- POST /auth/login: the app's OWN login screen path. client.ts
+        # authenticates every request with a Bearer token (useConfig().token),
+        # never the sd_session cookie above - so /auth/login must hand back a
+        # real, independently-usable token, not just set a cookie. Prove it by
+        # calling an authenticated route with ONLY that token (no cookie at
+        # all) - a bare echo would fail this, a real device token won't.
+        status, body = req("POST", "/auth/login",
+                           {"name": "routetest-owner", "password": "s4ndb0x-pw"}, expect=200)
+        ok(isinstance(body, dict) and body.get("ok") is True, "/auth/login: ok")
+        login_token = body.get("token")
+        ok(isinstance(login_token, str) and login_token.startswith("sdk_"),
+           "/auth/login: response includes a real device token")
+        status, body = req("GET", "/me", token=login_token, expect=200)
+        ok(isinstance(body, dict) and body.get("name") == "routetest-owner",
+           "/auth/login's token alone (no cookie) authenticates a real route")
+        status, body = req("POST", "/auth/login",
+                           {"name": "routetest-owner", "password": "wrong"}, expect=401)
+        ok(isinstance(body, dict) and body.get("error"), "/auth/login: wrong password refused")
 
         status, body = req("GET", "/tracks", cookie=sid, expect=200)
         ok(isinstance(body, list) and body == [], "/tracks: empty list on a fresh sandboxed DB")
