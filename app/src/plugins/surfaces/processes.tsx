@@ -11,11 +11,13 @@ const processes: Surface = {
   title: "Processes",
   path: "/(tabs)/processes",
   component: ProcessesTab as Surface["component"],
-  // No `route` here on purpose (mirrors connectors.tsx): the tab slot for
-  // processes is already owned by nav.tabs' "processes" entry (same
-  // file-based router route). This Surface exists so the cell registry has a
-  // real app-side counterpart to gate/inspect - it is not a second tab.
-  nav: { group: "primary", order: 14, icon: "git-network-outline" },
+  // route + nav merged from nav.tabs' former "tab.processes" entry (dual-nav
+  // cutover, daemon/debt.py plugin-kernel-dual-nav): this Surface is now
+  // BOTH what renders (component) and where it lives in nav (route/nav).
+  // tabs.ts's matching entry is removed in the same change.
+  route: "processes",
+  nav: { group: "more", order: 3, icon: "git-network-outline", labelKey: "nav.processes",
+        sectionKey: "nav.sectionWorkflow", desktopOnly: true },
 };
 
 export const processesSurface: Plugin = {
