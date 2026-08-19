@@ -10,7 +10,7 @@ import json
 import os
 import time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 STATS = os.path.join(ROOT, "copilot_stats.json")
 
 
@@ -40,7 +40,8 @@ def _fold_stats(user, result, ctx_usage):
     sessions._record_econ documents - a long multi-call turn reads as millions
     of "context" tokens), so it feeds only the cumulative counters. A missing
     ctx reading means NO update, never a wrong one."""
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     u = result.get("usage") or {}
     models = list((result.get("modelUsage") or {}).keys())
     st = _stats()
@@ -88,7 +89,7 @@ def _plan_share(st):
     now = time.time()
     if now - _calib["t"] > 120:
         try:
-            import events
+            from daemon.spine import events
             _calib["flat"] = events.ai_billing() == "flat"
             _calib["v"] = events.plan_calibration() if _calib["flat"] else None
         except Exception:

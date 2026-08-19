@@ -11,7 +11,7 @@ the app shows a create-owner setup screen (POST /auth/setup, only works while
 the user table is empty)."""
 import hashlib, hmac, json, os, secrets, time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 USERS = os.path.join(ROOT, "users.json")
 SESS = os.path.join(ROOT, "sessions.json")
 SESSION_TTL = 30 * 86400

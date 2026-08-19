@@ -11,7 +11,7 @@ inside sweep_zombies.
 import os
 import time
 
-from trackstore import _load, _mutate
+from daemon.spine.trackstore import _load, _mutate
 
 
 _BOUNCE_ESCALATE_AT = 3   # consecutive daemon-restart bounces before the note stops
@@ -82,7 +82,7 @@ def present(t):
     stored value. Returns a copy when coercing, the original otherwise."""
     if (t or {}).get("status") != "running":
         return t
-    import drivers
+    from daemon.spine import drivers
     if drivers.turn_active(t["id"]):
         return t
     if _track_idle_s(t) <= PRESENT_IDLE_S:
@@ -94,7 +94,7 @@ def present(t):
 
 
 def sweep_zombies(min_idle_s=0):
-    import sessions  # lazy: reconcile_bg still lives there
+    from daemon.cells.engineer import sessions  # lazy: reconcile_bg still lives there
     """Reconcile status vs the live session: a card flagged status=running with no
     owning worker is a ZOMBIE (its turn died with a prior daemon, or a dead/racing
     steer thread left it stuck). Flip every such track to bounced with a visible
@@ -113,8 +113,10 @@ def sweep_zombies(min_idle_s=0):
     ownership wants the owner to know a turn was cut) - but the context is no
     longer thrown away, which is what made Paseo's silent idle-resume feel
     seamless. Cards with a promotable session get the resume note."""
-    import drivers, events, notify
-    from actionlog import ActionLog
+    from daemon.spine import drivers
+    from daemon.spine import events
+    from daemon.spine import notify
+    from daemon.spine.actionlog import ActionLog
     swept = []
     for t in _load():
         # STARTUP (min_idle_s==0): every worker tree died with the old daemon -

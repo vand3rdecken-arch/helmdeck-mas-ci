@@ -115,7 +115,7 @@ def list_sessions(limit=MAX):
     # dead end. With `card` set, the app renders the row as a link to the
     # owning card instead of a selectable option.
     try:
-        import sessions as _s
+        from daemon.cells.engineer import sessions as _s
         owner = {}
         for t in _s._load():
             for sid in [t.get("session_id")] + list(t.get("session_chain") or []):
@@ -257,7 +257,7 @@ def read_transcript_live(track, limit=400):
                 partial = f.read()
             # strip the question block here too: while the worker streams it,
             # the owner would otherwise watch raw protocol JSON being typed out.
-            import ask
+            from daemon.spine import ask
             partial = ask.strip_stream(partial)
             if partial.strip():
                 steps.append({"role": "assistant", "kind": "text",
@@ -438,7 +438,7 @@ def _first_line(s):
 
 def _tool_label(name, inp):
     """(label, text) - a human verb for the action and its concise subject."""
-    import i18n
+    from daemon.spine import i18n
     inp = inp or {}
     n = (name or "").strip()
     if n.startswith("mcp__"):
@@ -567,7 +567,7 @@ def _clean_text(text):
     machine-readable question block, which is rendered as real option buttons
     instead (ask.py). Leaving the raw <helmdeck-ask> JSON in the feed would show
     the owner the protocol rather than the question."""
-    import ask
+    from daemon.spine import ask
     out = ask.strip(_strip_ctx(text))
     # NOQUESTION is the ask-repair protocol's decline token ("I wasn't really
     # asking") - an internal handshake, never a reply. As a bubble it read like
@@ -677,7 +677,7 @@ def read_transcript(session_id, limit=400):
         # "STOP - do not continue the work" as his own message. Re-attribute to
         # a short neutral note, exactly like the envelopes above.
         if role == "user":
-            import ask
+            from daemon.spine import ask
             _tag = ask.harness_tag(_lead)
             if _tag:
                 steps.append({"kind": "system", "text": _HARNESS_NOTE.get(

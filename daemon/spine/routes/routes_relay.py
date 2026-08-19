@@ -10,7 +10,8 @@ import json
 def relay_pair_post(self, user, body):
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import relay_client, auth
+    from daemon.spine import relay_client
+    from daemon.spine import auth
     try:
         pay = relay_client.pairing_payload()
     except ValueError as e:   # plain-http relay url: refuse to mint
@@ -27,7 +28,7 @@ def relay_pair_post(self, user, body):
 def relay_unpair_post(self, user, body):
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import relay_client
+    from daemon.spine import relay_client
     return self._send(200, json.dumps(relay_client.unpair()))
 
 

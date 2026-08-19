@@ -33,8 +33,7 @@ import sys
 import tempfile
 import threading
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _fails = []
 def ok(cond, msg):
@@ -56,7 +55,7 @@ def main():
     # keeps every dispatched/steered turn instant, deterministic, and
     # network-free while still exercising the real state transitions
     # around it (worktree creation, lane writes, gate, merge).
-    import drivers
+    from daemon.spine import drivers
     def _fake_driver_run(cfg, t, prompt):
         return ("sid-" + t["id"], "ok", {})
     drivers.run = _fake_driver_run
@@ -68,7 +67,7 @@ def main():
     # network-free. (The same-second id-collision 500 this section also exposed
     # is fixed for real in processes.create()'s id generation, not worked around
     # here.)
-    import processes as _proc_mod
+    from daemon.cells.process import processes as _proc_mod
     _proc_mod._propose_steps = lambda request_text: ([], 0.0)
 
     # sandbox EVERYTHING with disk state, before any of it is touched. db.ROOT
@@ -78,13 +77,13 @@ def main():
     # (measured the hard way: a first draft of this test renamed the live
     # events.jsonl to .imported before this guard existed - recovered by
     # renaming it back, no data lost, but never again: ROOT must be sandboxed).
-    import db
+    from daemon.spine import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    import auth
+    from daemon.spine import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
-    import events
+    from daemon.spine import events
     events.SET = os.path.join(tmp, "settings.json")
     events.EV = os.path.join(tmp, "events.jsonl")   # the append-only audit sink
 
@@ -94,12 +93,12 @@ def main():
     # touches them, so a connector list/rollback/run or checkpoint list/
     # diff/restore route never reads or writes the real daemon/connectors/
     # or daemon/checkpoints/ directories.
-    import connectors
+    from daemon.cells.connectors import connectors
     connectors.CDIR = os.path.join(tmp, "connectors")
     os.makedirs(connectors.CDIR, exist_ok=True)
     connectors.VDIR = os.path.join(connectors.CDIR, "_versions")
     os.makedirs(connectors.VDIR, exist_ok=True)
-    import checkpoints
+    from daemon.spine import checkpoints
     checkpoints.ROOT = tmp
     checkpoints.CPDIR = os.path.join(tmp, "checkpoints")
     os.makedirs(checkpoints.CPDIR, exist_ok=True)
@@ -109,7 +108,7 @@ def main():
     # returned real production messages instead of an empty list because
     # copilot.CHATLOG/SESS were never sandboxed - a READ-only leak, no data
     # was written/corrupted, but it proves the bug class isn't fully swept).
-    import copilot
+    from daemon.cells.copilot import copilot
     copilot.ROOT = tmp
     copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
     copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
@@ -119,7 +118,7 @@ def main():
     # through the REAL tracked policy.swap path, so LIVE must be sandboxed or
     # they'd rewrite the daemon's live policy. SEED stays real (read-only) so the
     # seeded <cell>Enabled=true defaults load exactly as in production.
-    import policy
+    from daemon.spine import policy
     policy.LIVE = os.path.join(tmp, "policy_live.json")
 
     # runs.REC (a card's run_dir root - screenshots/live.jpg/actionlog) is a
@@ -134,13 +133,15 @@ def main():
     # no tracked data was harmed, but a real-file violation of this test's own
     # sandboxing rule) before this guard existed. Every module holding its own
     # REC copy must be patched here, before any card is filed.
-    import runs, dispatch as _dispatch_mod, cardadmin as _cardadmin_mod
+    from daemon.spine import runs
+    from daemon.cells.engineer import dispatch as _dispatch_mod
+    from daemon.cells.engineer import cardadmin as _cardadmin_mod
     REC = os.path.join(tmp, "recordings")
     os.makedirs(REC, exist_ok=True)
     runs.REC = REC
     _dispatch_mod.REC = REC
     _cardadmin_mod.REC = REC
-    import sessions as _sessions_mod
+    from daemon.cells.engineer import sessions as _sessions_mod
     _sessions_mod.REC = REC
 
     db.init(role="tool")   # NOT role="daemon" - this process owns no driver sessions
@@ -150,7 +151,7 @@ def main():
     sid = auth.login("routetest-owner", "s4ndb0x-pw")
     ok(bool(sid), "sandbox owner created + logged in")
 
-    import server
+    from daemon.spine import server
     httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.H)
     port = httpd.server_address[1]
     th = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -435,7 +436,7 @@ def main():
         ok(isinstance(body, dict) and body.get("error"), "/checkpoints/.../restore: no such checkpoint -> 400")
 
         # a real checkpoint round-trip, straight through the sandboxed CPDIR
-        import checkpoints as _cp
+        from daemon.spine import checkpoints as _cp
         real_cid = _cp.create(actor="routetest", reason="smoke")
         status, body = req("GET", "/checkpoints", cookie=sid, expect=200)
         ok(len(body) == 1 and body[0]["id"] == real_cid, "/checkpoints lists the real sandboxed checkpoint")
@@ -583,7 +584,7 @@ def main():
         # real repo built above (repo_dir) instead of a fresh scaffold, to
         # prove the gate 404s cleanly AND that toggling it doesn't corrupt the
         # real dispatch/gate flow that follows.
-        import policy as _policy_engineer
+        from daemon.spine import policy as _policy_engineer
         _policy_engineer.swap("policies", {"engineerEnabled": False}, actor="test")
         status, body = req("GET", "/tracks", cookie=sid, expect=404)
         ok(isinstance(body, dict) and body.get("error") == "cell disabled",
@@ -792,7 +793,7 @@ def main():
         # toggle. Exercises the REAL tracked policy.swap path (policy.LIVE
         # sandboxed above). The disabled 404 fires in server.py's dispatch
         # BEFORE any pm logic runs, so no real pm state is ever touched.
-        import policy
+        from daemon.spine import policy
         status, body = req("GET", "/cells", cookie=sid, expect=200)
         pm_on = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
         ok(pm_on.get("enabled") is True, "/cells: pm cell enabled by default")
@@ -837,7 +838,7 @@ def main():
         # process cell is off, not just its route. Seed one process with a step
         # carrying a stamp, call the guarded function directly (bypassing HTTP
         # entirely), and assert the stamp survives untouched.
-        import processes
+        from daemon.cells.process import processes
         seed_tid = "test-track-clear-stamps"
         processes._save([{"id": "proc-1", "request": "r", "status": "active",
                            "steps": [{"title": "s1", "track": seed_tid, "auto_dispatched": True}]}])

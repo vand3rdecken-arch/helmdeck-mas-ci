@@ -14,7 +14,7 @@ degraded, never broken.
 """
 import os, shutil, subprocess, threading
 
-from _subpaths import REPO_ROOT as _REPO_ROOT
+from daemon.paths import REPO_ROOT as _REPO_ROOT
 
 # height, video bitrate, audio: what each surface actually needs
 PROFILES = {

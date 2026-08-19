@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 def cell_source_get(self, user, cid):
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import cells
+    from daemon.spine import cells
     fname = (parse_qs(urlparse(self.path).query).get("file") or [""])[0]
     text = cells.read_source(cid, fname)
     if text is None:

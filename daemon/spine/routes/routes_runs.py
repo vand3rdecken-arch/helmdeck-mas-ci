@@ -9,8 +9,8 @@ byte-identical to the inline blocks they replace.
 """
 import json, os
 from urllib.parse import parse_qs, urlparse
-from actionlog import read_timeline
-from runs import REC, list_runs
+from daemon.spine.actionlog import read_timeline
+from daemon.spine.runs import REC, list_runs
 
 
 def runs_get(self, user):
@@ -21,7 +21,7 @@ def runs_get(self, user):
 
 
 def live_jpg_get(self, user):
-    import server
+    from daemon.spine import server
     lp = server._active_live()
     if not lp:
         return self._send(404, b"no active run", "text/plain")
@@ -62,7 +62,8 @@ def runs_item_get(self, user, rid, what):
         # cannot pass; slicing keeps recordings watchable on the
         # phone without weakening the tunnel or loading a whole
         # video into memory.
-        import base64 as _b64, transcode
+        import base64 as _b64
+        from daemon.spine import transcode
         q = parse_qs(urlparse(self.path).query)
         try:
             off = max(0, int((q.get("offset") or ["0"])[0]))

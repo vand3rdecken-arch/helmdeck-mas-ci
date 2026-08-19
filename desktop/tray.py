@@ -107,9 +107,14 @@ def _open_daemon_log():
 def _spawn_daemon():
     out = _open_daemon_log()
     env = dict(os.environ, PYTHONUNBUFFERED="1")
+    # daemon/ is a real Python package now (absolute `daemon.spine`/
+    # `daemon.cells.<id>` imports, not a sys.path trick) - it must be
+    # launched as a module from the REPO ROOT, not as a bare script from
+    # inside daemon/ (see daemon/debt.py sys-path-trick-to-real-package-
+    # imports).
     return subprocess.Popen(
-        [_python_for_daemon(), "swarm.py", "serve"],
-        cwd=DAEMON_DIR, creationflags=CREATE_NO_WINDOW, env=env,
+        [_python_for_daemon(), "-m", "daemon.swarm", "serve"],
+        cwd=ROOT, creationflags=CREATE_NO_WINDOW, env=env,
         stdout=out, stderr=out,
     )
 

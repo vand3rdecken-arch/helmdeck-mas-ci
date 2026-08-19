@@ -15,7 +15,7 @@ routes - reached via a lazy `import server` (no cycle: resolved at call time).
 import json
 from urllib.parse import parse_qs, quote, urlparse
 
-from glances import glance_payload, _glance_question
+from daemon.spine.glances import glance_payload, _glance_question
 
 GLASS_BRIEF = (
     "SURFACE: you are being read on Meta Ray-Ban DISPLAY GLASSES, not the phone.\n"
@@ -45,7 +45,8 @@ def glance_voice(self, user):
     # switch. The id is a content hash minted by voice.render, and
     # voice.path_for refuses anything that is not exactly that shape
     # - the URL must never become a file-read primitive.
-    import events, voice
+    from daemon.spine import events
+    from daemon.spine import voice
     p = self.path.split("?")[0]
     tok = events.settings().get("glance_token") or ""
     given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
@@ -73,7 +74,8 @@ def glance_get(self, user):
     # cookie coupling. Off unless settings.glance_token is set.
     # READS here; the one write is POST /glance/answer, which is
     # separately gated by settings.glance_decide - see there.
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     tok = events.settings().get("glance_token") or ""
     given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
     if not tok or given != tok:
@@ -104,7 +106,8 @@ def glance_talk(self, user, body):
     # Its own switch, not glance_decide: this SPENDS PLAN QUOTA on
     # every tap, which is a different thing to consent to than
     # answering a question a worker already asked.
-    import ask, events
+    from daemon.spine import ask
+    from daemon.spine import events
     s = events.settings()
     tok = s.get("glance_token") or ""
     given = (body.get("token") or "").strip() or \
@@ -119,7 +122,7 @@ def glance_talk(self, user, body):
     msg = (body.get("message") or "").strip()[:400]
     if not msg:
         return self._send(400, json.dumps({"error": "message required"}))
-    import copilot
+    from daemon.cells.copilot import copilot
     try:
         out = copilot.chat("owner", msg, role="owner",
                            allow_actions=False, extra_system=GLASS_BRIEF)
@@ -133,7 +136,7 @@ def glance_talk(self, user, body):
     # the prose is spoken - reading six option labels aloud is
     # slower than glancing at them, and the options are the one part
     # the display is genuinely good at.
-    import voice
+    from daemon.spine import voice
     vid = voice.render(spoken)
     return self._send(200, json.dumps({
         # the prose WITHOUT the block - ask.parse already strips it
@@ -167,7 +170,9 @@ def glance_answer(self, user, body):
     #      lens showing a stale screen cannot answer a question the
     #      card has already moved past;
     #   4. it can only ever pick among options the WORKER wrote.
-    import ask, events, sessions
+    from daemon.spine import ask
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     s = events.settings()
     tok = s.get("glance_token") or ""
     given = (body.get("token") or "").strip() or \
@@ -194,7 +199,7 @@ def glance_answer(self, user, body):
         return self._send(400, json.dumps(
             {"error": "the glasses may only pick offered options"}))
     answers = body.get("answers") or {}
-    import server
+    from daemon.spine import server
     server._bg("track:answer:" + tid, lambda: sessions.answer_question(
         tid, answers, request_id=rid, actor="glasses"))
     return self._send(200, json.dumps({"started": tid, "answered": True}))

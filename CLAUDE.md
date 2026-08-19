@@ -52,9 +52,9 @@ well-formed → propose the commit when work goes quiet).
 ## Run / verify
 
 ```
-cd daemon && py -3.12 swarm.py serve        # API :8140
+py -3.12 -m daemon.swarm serve               # API :8140 (run from REPO ROOT - daemon/ is a real package now)
 cd web && npm run dev -- --port 3300        # UI
-py -3.12 -m py_compile daemon/*.py          # quick daemon check
+py -3.12 -m py_compile daemon/*.py daemon/spine/*.py daemon/spine/routes/*.py daemon/cells/*/*.py   # quick daemon check
 cd web && npx tsc --noEmit                  # web types
 ```
 E2E smoke: Playwright against :3300 (login owner; password in owner's hands).

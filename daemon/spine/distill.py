@@ -3,8 +3,8 @@
 claude run and asks for an editable, agent-executable playbook. The playbook is TEXT the
 owner reviews before any agent runs it - that's the safety gate of demonstrate->learn."""
 import json, os, subprocess, sys
-from actionlog import read_timeline
-from runs import REC, load_meta
+from daemon.spine.actionlog import read_timeline
+from daemon.spine.runs import REC, load_meta
 
 PROMPT = """You are distilling a human's recorded demonstration into a reusable playbook.
 

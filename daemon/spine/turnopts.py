@@ -12,7 +12,7 @@ routing, the thinking-mode directive, and attachment saving. Kept honest:
 """
 import base64, json, os, re, time, urllib.request
 
-from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 
 # Curated Claude model manifest - same source-of-truth idea as Paseo's
 # CLAUDE_MODEL_MANIFEST (packages/server/.../claude/model-manifest.ts): the

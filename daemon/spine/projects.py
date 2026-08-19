@@ -13,7 +13,7 @@ events.metrics() reads real hours from real lane-in-"working" duration
 (events.time_in_work), not the touch-count tariff (that stays what it is:
 human capacity/utilization, unrelated to billing)."""
 import time
-import db
+from daemon.spine import db
 
 BILLINGS = ("fixed", "tm")
 

@@ -14,7 +14,7 @@ import json
 
 
 def control_state_get(self, user):
-    import server
+    from daemon.spine import server
     with server._ctl_lock:
         s = server._ctl["teach"]
         return self._send(200, json.dumps(
@@ -23,8 +23,8 @@ def control_state_get(self, user):
 
 
 def control_teach_start_post(self, user, body):
-    import server
-    from teach import TeachSession
+    from daemon.spine import server
+    from daemon.spine.teach import TeachSession
     with server._ctl_lock:
         if server._ctl["teach"] and not server._ctl["teach"].stopped.is_set():
             return self._send(409, json.dumps({"error": "already recording",
@@ -35,7 +35,7 @@ def control_teach_start_post(self, user, body):
 
 
 def control_teach_stop_post(self, user, body):
-    import server
+    from daemon.spine import server
     with server._ctl_lock:
         s = server._ctl["teach"]
     if not s:
@@ -45,17 +45,19 @@ def control_teach_stop_post(self, user, body):
 
 
 def control_distill_post(self, user, body):
-    import os, server
+    import os
+    from daemon.spine import server
     rid = os.path.basename(body.get("id") or "")
     if not rid:
         return self._send(400, json.dumps({"error": "id required"}))
-    from distill import distill
+    from daemon.spine.distill import distill
     server._bg("distill:" + rid, lambda: distill(rid))
     return self._send(200, json.dumps({"started": rid}))
 
 
 def control_demo_post(self, user, body):
-    import server, swarm
+    import swarm
+    from daemon.spine import server
     server._bg("demo", swarm.browser_demo)
     return self._send(200, json.dumps({"started": "browser-demo"}))
 

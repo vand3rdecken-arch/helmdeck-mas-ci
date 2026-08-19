@@ -11,7 +11,7 @@ counted in touch units against a daily budget; margin per card = value - AI cost
 the human question is utilization/headroom, not dollars."""
 import json, os, time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 EV = os.path.join(ROOT, "events.jsonl")
 SET = os.path.join(ROOT, "settings.json")
 
@@ -143,7 +143,7 @@ def save_settings(patch, actor="system", reason=""):
     significant = bool(reason) or (patch and any(k in SIGNIFICANT_SETTINGS for k in patch))
     if patch and significant:
         try:
-            import checkpoints
+            from daemon.spine import checkpoints
             checkpoints.create(actor=actor,
                                reason=reason or ("changed: " + ", ".join(sorted(patch))))
         except Exception as e:
@@ -159,7 +159,7 @@ def save_settings(patch, actor="system", reason=""):
         json.dump(s, f, indent=2)
     os.replace(tmp, SET)
     try:
-        import db
+        from daemon.spine import db
         db.bump()
     except Exception:
         pass
@@ -177,7 +177,7 @@ def emit(kind, track, **fields):
     # invisible to every consumer of read_events(). Best-effort: the jsonl
     # append above is the durable record regardless of db state.
     try:
-        import db
+        from daemon.spine import db
         db.event_insert(row)
     except Exception:
         pass
@@ -188,7 +188,7 @@ def log(kind, msg):
     return emit(kind, "-", msg=msg)
 
 def read_events():
-    import db
+    from daemon.spine import db
     return db.events_all()
 
 def consecutive_gate_fails(track, ev=None):
@@ -236,7 +236,7 @@ def plan_effective(s=None):
     if plan and plan != "auto":
         return plan, "setting"
     try:
-        import usage
+        from daemon.spine import usage
         lm = usage.login_method()
     except Exception:
         lm = {}
@@ -302,7 +302,7 @@ def plan_calibration(ev=None, s=None):
         return {"tokens_per_pct": float(per_week) / 100.0, "source": "configured",
                 "window": "weekly", "used_pct": None, "observed_tokens": None}
     try:
-        import usage as _usage
+        from daemon.spine import usage as _usage
         snap = _usage.cached()          # never blocks; None while the cache is cold
     except Exception:
         return None
@@ -494,7 +494,7 @@ def metrics(tracks):
     # minus their AI cost. Cards not in any process bill standalone (still in
     # `cards`). This replaces the old separate projects.py billing wrapper -
     # billing now lives on the card, the process is just the grouping.
-    import processes as _processes
+    from daemon.cells.process import processes as _processes
     track_proc, proc_meta = {}, {}
     for p in _processes.list_processes():
         proc_meta[p["id"]] = {"name": (p.get("request") or p["id"])[:70],
@@ -538,7 +538,7 @@ def metrics(tracks):
     # defensive: any policy hiccup falls back to the settings value.
     wip_limit = s["capacity"]["wip_limit"]
     try:
-        import policy
+        from daemon.spine import policy
         wip_limit = int(policy.get_policies().get("wipLimit", wip_limit))
     except Exception:
         pass

@@ -8,9 +8,9 @@ into readable chunks. Two ways to stop: Ctrl+Esc at the keyboard, or TeachSessio
 (the phone's stop button via the control API - same capabilities on mobile)."""
 import ctypes, threading
 from pynput import mouse, keyboard
-import wincap
-from actionlog import ActionLog
-from runs import new_run, finish_run
+from daemon.spine import wincap
+from daemon.spine.actionlog import ActionLog
+from daemon.spine.runs import new_run, finish_run
 
 def _fg_window():
     try:

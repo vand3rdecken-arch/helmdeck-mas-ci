@@ -22,7 +22,7 @@ import json
 import os
 import threading
 
-from _subpaths import DAEMON_ROOT as HERE
+from daemon.paths import DAEMON_ROOT as HERE
 SEED = os.path.join(HERE, "policy_seed.json")
 LIVE = os.path.join(HERE, "policy_live.json")  # git-ignored; current composed value
 
@@ -48,7 +48,7 @@ def load():
             # FROM it so the policy plane never diverges from the live board on
             # first run; after that a tracked swap() owns the value.
             try:
-                import events
+                from daemon.spine import events
                 sw = events.settings().get("capacity", {}).get("wip_limit")
                 if isinstance(sw, int):
                     doc.setdefault("policies", {})["wipLimit"] = sw
@@ -118,7 +118,7 @@ def _mirror(**fields):
     """Append the reconfiguration to the real append-only audit. Best-effort on
     the db write-through (same contract as events.emit), durable in events.jsonl."""
     try:
-        import events
+        from daemon.spine import events
         events.emit("reconfig", "-", **fields)
     except Exception:
         # never let an audit-sink hiccup swallow the fact of the change; the

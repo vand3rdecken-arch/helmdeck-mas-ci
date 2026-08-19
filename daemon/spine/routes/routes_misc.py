@@ -11,7 +11,7 @@ import json
 
 
 def processes_get(self, user):
-    import processes
+    from daemon.cells.process import processes
     try:
         processes.sync()
     except Exception:
@@ -28,7 +28,7 @@ def me_get(self, user):
     # /dashboard/data can't serve it: it strips settings for
     # non-owners and 403s clients. Whitelisted, never the whole
     # settings blob - that stays owner-only.
-    import events
+    from daemon.spine import events
     pol = events.settings().get("policy") or {}
     return self._send(200, json.dumps({
         "name": user["name"], "role": user["role"],
@@ -42,7 +42,7 @@ def me_get(self, user):
 
 
 def processes_new_post(self, user, body):
-    import processes
+    from daemon.cells.process import processes
     req = body.get("request")
     if not req:
         return self._send(400, json.dumps({"error": "request required"}))

@@ -6,11 +6,11 @@ ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
 import json, os, re, shutil, subprocess, threading, time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
-from copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
-from copilot_actions import _strip_actions_live, _parse_reply_actions
+from daemon.cells.copilot.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
+from daemon.cells.copilot.copilot_actions import _strip_actions_live, _parse_reply_actions
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
@@ -153,7 +153,9 @@ def _save_sessions(d):
 
 
 def _snapshot():
-    import sessions, processes, events
+    from daemon.cells.engineer import sessions
+    from daemon.cells.process import processes
+    from daemon.spine import events
     m = events.metrics(sessions.list_tracks())
     pol = events.settings().get("policy") or {}
     lines = ["POLICY: " + json.dumps(pol)]
@@ -186,7 +188,7 @@ def _snapshot():
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "), tail))
     try:
-        import connectors as _c
+        from daemon.cells.connectors import connectors as _c
         cs = _c.list_connectors()
         if cs:
             lines.append("INSTALLED CONNECTORS: " + ", ".join(
@@ -194,7 +196,7 @@ def _snapshot():
     except Exception:
         pass
     try:
-        import debt as _d
+        from daemon.spine import debt as _d
         open_items = [d for d in _d.list_debt() if d["status"] != "paid"]
         if open_items:
             lines.append("STRUCTURAL DEBT (open, ordered): " + "; ".join(
@@ -212,7 +214,7 @@ def _snapshot():
     return "\n".join(lines)
 
 def _find_card(frag):
-    import sessions
+    from daemon.cells.engineer import sessions
     frag = frag.lower()
     hits = [t for t in sessions.list_tracks()
             if frag in t["id"].lower() or frag in t["branch"].lower()
@@ -233,7 +235,7 @@ ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
 def _card_hint(kind, frag, hits):
     """A miss on a card reference, answered with the actual candidates so the
     owner's next message resolves it in one move."""
-    import sessions
+    from daemon.cells.engineer import sessions
     if hits:
         opts = "; ".join("%s (%s, %s)" % (t["branch"], t["id"], t.get("lane"))
                          for t in hits[:6])
@@ -249,7 +251,9 @@ def _denied(kind, role, roles, key, extra=""):
             "%s aendern%s." % (kind, role, "/".join(roles), key, (" - " + extra) if extra else ""))
 
 def _run_action(a, actor, role="operator"):
-    import sessions, processes, events
+    from daemon.cells.engineer import sessions
+    from daemon.cells.process import processes
+    from daemon.spine import events
     kind = a.get("type")
     if kind == "configure":
         allowed_roles = (events.settings().get("policy") or {}).get("chat_configure_roles", ["owner"])
@@ -276,7 +280,7 @@ def _run_action(a, actor, role="operator"):
                     "eine Code-Aenderung: sag 'leg eine Karte dafuer an', dann baut ein Agent "
                     "es mit Gate und deiner Abnahme. Die restlichen Keys kann ich sofort setzen."
                     % ", ".join(sorted(bad)))
-        import events as _ev
+        from daemon.spine import events as _ev
         _ev.save_settings(patch, actor=actor, reason="via chat")
         _ev.emit("config", "-", actor=actor, patch=patch)
         return "policy updated: " + json.dumps(patch)[:300]
@@ -433,7 +437,7 @@ def _run_action(a, actor, role="operator"):
             return "set_driver failed: %s" % e
         return "%s: Treiber auf '%s' gesetzt." % (t["branch"], driver)
     if kind == "build_integration":
-        import connectors
+        from daemon.cells.connectors import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]
         repo = events.settings().get("default_repo")
         if not repo:
@@ -446,11 +450,11 @@ def _run_action(a, actor, role="operator"):
         return ("integration card dispatched (%s) - the agent is writing the connector; "
                 "gate + your accept installs it" % t["id"])
     if kind == "run_connector":
-        import connectors
+        from daemon.cells.connectors import connectors
         made = connectors.run_connector(a.get("name", ""), actor=actor)
         return "connector ran: %d new backlog cards" % len(made)
     if kind == "rollback_connector":
-        import connectors
+        from daemon.cells.connectors import connectors
         prev = connectors.rollback(a.get("name", ""))
         events.emit("connector", "-", action="rollback", name=a.get("name"), actor=actor)
         return "rolled back %s to %s" % (a.get("name"), prev)
@@ -464,12 +468,12 @@ def _run_action(a, actor, role="operator"):
         events.save_settings({"connectors": sched})
         return "connector schedule updated: %s" % json.dumps(sched)
     if kind == "import_url":
-        import importers
+        from daemon.spine import importers
         p2 = importers.url_import(a.get("url", ""), client=a.get("client", ""),
                                   due=a.get("due", ""), actor=actor)
         return "imported %s - agent is deriving the process steps" % a.get("url")
     if kind == "import_jira":
-        import importers
+        from daemon.spine import importers
         made = importers.jira_import(a.get("jql", ""), actor=actor)
         return "imported %d Jira issues into the backlog" % len(made)
     if kind == "clarify_goal":
@@ -479,7 +483,7 @@ def _run_action(a, actor, role="operator"):
         # folds it into the planner's ground truth (pm.add_clarification) and
         # re-plans NOW, one turn, so the chat is a real answer channel, not a
         # dead end that still requires editing the Ziel field by hand.
-        import pm
+        from daemon.cells.pm import pm
         text = (a.get("text") or "").strip()
         if not text:
             return "clarify_goal: kein Text übergeben"
@@ -557,7 +561,8 @@ def _maybe_compact(user):
     global _autocompact_supported
     if _autocompact_supported is False:
         return None
-    import sessions, drivers
+    from daemon.cells.engineer import sessions
+    from daemon.spine import drivers
     st = _stats().get(user) or {}
     ctx = st.get("ctx_tokens") or 0
     sess = _sessions()
@@ -610,7 +615,7 @@ def _maybe_compact(user):
         _save_sessions(sess)
     # measured economics: the compact turn is billed too, but NOT counted as a
     # conversation turn (card parity: sessions._record_econ, not _record_turn).
-    import events
+    from daemon.spine import events
     u = result.get("usage") or {}
     models = list((result.get("modelUsage") or {}).keys())
     m["cost"] = round(float(m.get("cost") or 0.0)
@@ -653,7 +658,7 @@ def say(text, cls="pm"):
     and the event log, so the chat looked frozen while the daemon worked.
     Best-effort by design: never let a chat write break the work it reports."""
     try:
-        import auth
+        from daemon.spine import auth
         owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
         if not owner:
             return
@@ -676,7 +681,7 @@ def _pm_plan_digest():
     it (owner decisions, DoD, risks, feasibility, the measured triangle) instead
     of improvising a second, shallower plan. Empty when no goal is planned."""
     try:
-        import pm
+        from daemon.cells.pm import pm
         p = pm.live_plan() or {}
     except Exception:
         return ""
@@ -789,7 +794,8 @@ def build_argv(cli_model, sid, system):
     the payload that broke --resume, so there we keep the old prefix-the-turn
     shape: degraded role separation beats a mangled command line.
     """
-    import drivers, harness
+    from daemon.spine import drivers
+    from daemon.spine import harness
     argv = [CLAUDE, "-p", "--output-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
@@ -819,7 +825,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     extra_system is appended to the resolved system brief, for a surface with a
     hard shape requirement (the lens: short prose, always end in tappable
     options) that the shared board brief should not have to carry."""
-    import turnopts
+    from daemon.spine import turnopts
     sess = _sessions()
     sid = sess.get(user)
     paths = turnopts.save_attachments(os.path.join(ROOT, ".copilot_attachments", user),
@@ -840,7 +846,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # The ROLE is data now: harness/agents/board-copilot.md. SYSTEM above stays as
     # the built-in fallback, so a mangled/absent file costs the customisation and
     # never the chat turn.
-    import harness
+    from daemon.spine import harness
     system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
     if extra_system:
         system = system + "\n\n" + extra_system
@@ -858,7 +864,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # drivers._cmd_line, NOT ["cmd","/c",...]: routing claude.cmd through cmd.exe
     # silently mangles quoted arguments (it ate the card workers' --resume - see
     # drivers._real_claude_exe).
-    import drivers
+    from daemon.spine import drivers
     argv, role_in_turn = build_argv(cli_model, sid, system)
     prompt = (system + "\n\n" + turn) if role_in_turn else turn
     cmd = drivers._cmd_line(argv)
@@ -945,7 +951,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # only ever advances to a session that demonstrably holds THIS turn
         # (proven by the result read off it); the old head is kept, never lost.
         if sid and sid_final != sid:
-            import sessions
+            from daemon.cells.engineer import sessions
             st = _stats().get(user) or {}
             meta = {"resumed_from": sid, "resume_echo": resume_echo, "ctx_first": ctx_first}
             if sessions.resume_detached(st.get("ctx_tokens"), meta):

@@ -10,7 +10,7 @@ sessions.py re-imports both names.
 import os
 import shutil
 
-from gitutil import (_git_try, _owned_worktree, _current_branch,
+from daemon.spine.gitutil import (_git_try, _owned_worktree, _current_branch,
                      _git_state_broken, _repo_hash, WORKTREE_DIRNAME)
 
 
@@ -76,7 +76,7 @@ def sweep_worktrees():
     in the done lane) is now kept regardless of git's merge verdict - "is
     anyone still using this" is the daemon's own fact, and it must win over
     what git alone can see. Returns the number reclaimed."""
-    import sessions
+    from daemon.cells.engineer import sessions
     tracks = sessions._load()
     repos = {t.get("repo") for t in tracks if t.get("repo")}
     referenced = {os.path.realpath(t["worktree"]) for t in tracks if t.get("worktree")}

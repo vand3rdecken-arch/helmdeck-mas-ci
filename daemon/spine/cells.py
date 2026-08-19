@@ -35,9 +35,32 @@ itself claims)."""
 
 import os
 
-from _subpaths import DAEMON_ROOT as ROOT, REPO_ROOT
+from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT
 APP_ROOT = os.path.join(REPO_ROOT, "app")                    # app/ (sibling)
 MAX_SOURCE_BYTES = 200_000
+
+
+def _import_by_bare_name(mod_name, owner_cell_id=None):
+    """Cell.start/route_modules store BARE names (e.g. 'routes_pm') because
+    they double as the security allowlist (Cell.allowed_files() - see
+    read_source()'s docstring: the manifest IS the allowlist). daemon/ is a
+    real Python package now, so actually IMPORTING one of these needs its
+    real dotted path - tried here in owner-cell-first order, then the two
+    spine locations, rather than storing the dotted path a second place
+    that could drift from the physical file."""
+    import importlib
+    candidates = []
+    if owner_cell_id:
+        candidates.append(f"daemon.cells.{owner_cell_id}.{mod_name}")
+    candidates += [f"daemon.spine.{mod_name}", f"daemon.spine.routes.{mod_name}"]
+    last_err = None
+    for cand in candidates:
+        try:
+            return importlib.import_module(cand)
+        except ImportError as e:
+            last_err = e
+            continue
+    raise last_err or ImportError(mod_name)
 
 
 class Cell:
@@ -99,13 +122,17 @@ class Cell:
 
     def daemon_roots(self):
         """Candidate physical directories for this cell's OWN daemon-local
-        files, in search order. The Cell-folder reorg moves each cell's files
-        into daemon/cells/<id>/ one cell at a time (see daemon/debt.py), so at
-        any point some cells have moved and some haven't - this tries the
-        post-move location FIRST, then falls back to the pre-move flat
-        daemon/ root, so read_source() keeps working across the whole
-        migration without per-phase edits here."""
-        return (os.path.join(ROOT, "cells", self.id), ROOT)
+        files, in search order: this cell's own folder first
+        (daemon/cells/<id>/), then the two spine locations (route_modules
+        can legitimately name a SHARED route module that lives in
+        daemon/spine/ or daemon/spine/routes/ - e.g. process cell's
+        routes_misc.py/routes_system.py, both multi-owner), then flat
+        daemon/ as a last-resort fallback for anything not yet swept into
+        one of the above."""
+        return (os.path.join(ROOT, "cells", self.id),
+                os.path.join(ROOT, "spine"),
+                os.path.join(ROOT, "spine", "routes"),
+                ROOT)
 
 
 # The registered cells. Order is presentation-only. enabled_key defaults true in
@@ -222,7 +249,7 @@ _BY_ID = {c.id: c for c in CELLS}
 
 def _policies():
     try:
-        import policy
+        from daemon.spine import policy
         return policy.get_policies()
     except Exception:
         return {}
@@ -267,7 +294,7 @@ def start_enabled():
             continue
         mod_name, func_name = c.start
         try:
-            mod = __import__(mod_name)
+            mod = _import_by_bare_name(mod_name, c.id)
             getattr(mod, func_name)()
         except Exception as e:
             print("cells: %s.%s failed to start: %s" % (mod_name, func_name, e))
@@ -281,7 +308,7 @@ def _cell_routes(c):
     out = []
     for mod_name in c.route_modules:
         try:
-            mod = __import__(mod_name)
+            mod = _import_by_bare_name(mod_name, c.id)
         except Exception:
             continue
         for p in sorted(getattr(mod, "GET_ROUTES", {}) or {}):

@@ -126,7 +126,7 @@ def _seed_worktree(repo, wt):
 
         "worktree_seed": ["apk/local.properties", ".env"]
     """
-    import events
+    from daemon.spine import events
     patterns = events.settings().get("worktree_seed")
     if patterns is None:
         patterns = ["apk/local.properties", "local.properties"]
@@ -210,7 +210,7 @@ def _git_state_broken(wt):
 
 
 def _worktree_for(repo, branch):
-    from trackstore import _slug
+    from daemon.spine.trackstore import _slug
     base = os.path.abspath(os.path.join(repo, "..", WORKTREE_DIRNAME))
     wt = os.path.join(base, _repo_hash(repo), _slug(branch))
     os.makedirs(os.path.dirname(wt), exist_ok=True)

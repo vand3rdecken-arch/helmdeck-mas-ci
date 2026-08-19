@@ -266,10 +266,18 @@ function startDaemon(pyOverride) {
     // directly, which also removes the cmd.exe hop that was swallowing this
     // process's stdout/stderr (see resolvePython/realInterpreter above).
     const daemonNeedsShell = process.platform === "win32" && !path.isAbsolute(py.cmd);
-    daemon = spawn(py.cmd, [...py.args, "swarm.py", "serve", String(DAEMON_PORT)],
+    // daemon/ is a real Python package now (absolute daemon.spine/
+    // daemon.cells.<id> imports) - launched as a module from the REPO
+    // ROOT, not a bare script from inside daemon/ (daemon/debt.py
+    // sys-path-trick-to-real-package-imports). swarm.py itself stays put.
+    daemon = spawn(py.cmd, [...py.args, "-m", "daemon.swarm", "serve", String(DAEMON_PORT)],
       // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F
       // (SINGLETON eviction, a competing supervisor) - no flush window needed.
-      { cwd: daemonDir, env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true,
+      // cwd is daemonDir's PARENT (not the top-level `root` const) so a
+      // resolveDaemonDir() override (userData daemon-dir.txt pointing at a
+      // dev checkout) still resolves `daemon` as a package from the right
+      // place, exactly like the bundled case.
+      { cwd: path.dirname(daemonDir), env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true,
         shell: daemonNeedsShell, detached: true,
         stdio: ["ignore", out, out] });
     daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));
@@ -286,9 +294,12 @@ function mintDesktopToken(pyOverride) {
   const py = pyOverride || resolvePython();
   try {
     // a helper script (not `-c`) so Windows shell quoting can't mangle it;
-    // same shell-only-for-a-bare-name rule as the daemon spawn above.
-    const r = spawnSync(py.cmd, [...py.args, "mint_token.py", "owner", "desktop"],
-      { cwd: daemonDir, shell: process.platform === "win32" && !path.isAbsolute(py.cmd),
+    // same shell-only-for-a-bare-name rule as the daemon spawn above. Run
+    // as a module from daemonDir's parent, same reasoning as the daemon
+    // spawn (daemon/ is a real package, mint_token.py stays put but needs
+    // -m from one level up).
+    const r = spawnSync(py.cmd, [...py.args, "-m", "daemon.mint_token", "owner", "desktop"],
+      { cwd: path.dirname(daemonDir), shell: process.platform === "win32" && !path.isAbsolute(py.cmd),
         windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && r.stdout) desktopToken = r.stdout.trim();
   } catch { /* leave empty */ }

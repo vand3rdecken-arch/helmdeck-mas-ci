@@ -9,7 +9,7 @@ import os
 import socket
 import subprocess
 
-from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 
 
 def _tls_config():
@@ -17,7 +17,7 @@ def _tls_config():
     settings.tls {cert,key,port} beats auto-detected daemon/certs/tls.crt+key
     (what tools/make_tls_cert.py writes). Returns (cert, key, port) or
     (None, None, port) when TLS is not configured."""
-    import events
+    from daemon.spine import events
     t = events.settings().get("tls") or {}
     cert = os.environ.get("HELMDECK_TLS_CERT") or t.get("cert") or ""
     key = os.environ.get("HELMDECK_TLS_KEY") or t.get("key") or ""
@@ -178,7 +178,7 @@ def _take_singleton_lock(port):
         middle'). The store is the shared truth both daemons can see; the
         driver pidfile is NOT (it read {} during a live turn)."""
         try:
-            import db
+            from daemon.spine import db
             return [d.get("id") for d in db.tracks_all() if d.get("status") == "running"]
         except Exception:
             return []

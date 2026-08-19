@@ -8,7 +8,7 @@ re-imports the names. Not monkeypatched.
 """
 import os
 
-from _subpaths import REPO_ROOT as _REPO_ROOT
+from daemon.paths import REPO_ROOT as _REPO_ROOT
 
 
 def _loop_state_mod():
@@ -26,7 +26,7 @@ def _lane_flow(lane_labels):
     already reads, so the richer graph arrives as an ADDITION - `edges` is new,
     every existing field keeps its meaning."""
     try:
-        import sessions
+        from daemon.cells.engineer import sessions
         f = sessions.flow(lane_labels)
         return {"lanes": f["nodes"], "gate": f["gate"], "edges": f["edges"]}
     except Exception as e:                                   # noqa: BLE001

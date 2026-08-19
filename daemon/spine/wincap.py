@@ -5,7 +5,7 @@ overwritten ~1/s - the Herald-cast-style glance feed the APK/glasses viewer read
 import json, os, signal, subprocess, threading
 import imageio_ffmpeg
 
-from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -57,7 +57,7 @@ def start(run_dir, fps=8):
            "-update", "1", "-q:v", "7", live]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             creationflags=subprocess.CREATE_NO_WINDOW)
-    import drivers
+    from daemon.spine import drivers
     with _pid_lock:
         pids = _read_pids()
         pids[str(proc.pid)] = drivers._proc_start_epoch(proc.pid)
@@ -86,7 +86,7 @@ def reap_orphans():
     """On daemon start, kill any recorder left running by a PREVIOUS daemon
     (crash/eviction) - drivers.reap_orphans' exact pattern, pid-reuse-safe via
     the same OS-reported start-time check. Only pids WE recorded are touched."""
-    import drivers
+    from daemon.spine import drivers
     with _pid_lock:
         rec = _read_pids()
         _write_pids({})

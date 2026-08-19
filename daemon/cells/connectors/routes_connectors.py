@@ -15,14 +15,15 @@ import json
 
 
 def connectors_list_get(self, user):
-    import connectors
+    from daemon.cells.connectors import connectors
     return self._send(200, json.dumps(connectors.list_connectors()))
 
 
 def connectors_rollback_post(self, user, name):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import connectors, events
+    from daemon.cells.connectors import connectors
+    from daemon.spine import events
     try:
         prev = connectors.rollback(name)
         events.emit("connector", "-", action="rollback", name=name, actor=user["name"])
@@ -34,7 +35,7 @@ def connectors_rollback_post(self, user, name):
 def connectors_run_post(self, user, name):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import connectors
+    from daemon.cells.connectors import connectors
     try:
         made = connectors.run_connector(name, actor=user["name"])
         return self._send(200, json.dumps({"cards": len(made)}))

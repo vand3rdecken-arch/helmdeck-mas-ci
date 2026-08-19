@@ -18,7 +18,8 @@ def _record_econ(t, meta):
     and the 'measured economics' law admits no unbilled calls - but it is not a
     turn of the conversation, so it must not move the failure signal or drop a
     rewind checkpoint."""
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     u = meta.get("usage") or {}
     cost = events.price_turn(meta.get("models"), u, meta.get("cost_usd"))
     t["ai_cost"] = round(t.get("ai_cost", 0.0) + cost, 6)

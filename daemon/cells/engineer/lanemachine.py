@@ -15,11 +15,11 @@ import os
 import re
 import time
 
-from trackstore import _find, _load, _mutate, _slug
-from gitutil import _git, _git_try, is_git_repo
-from blockers import blocker
-from outcomes import _record_outcome
-from worktrees import reclaim_worktree
+from daemon.spine.trackstore import _find, _load, _mutate, _slug
+from daemon.spine.gitutil import _git, _git_try, is_git_repo
+from daemon.spine.blockers import blocker
+from daemon.spine.outcomes import _record_outcome
+from daemon.spine.worktrees import reclaim_worktree
 
 
 _GATE_PASS_RE = re.compile(r"gate: (PASS \(\d+ checks\)|nothing to run on this branch - PASS)")
@@ -231,7 +231,7 @@ def _pull_main_into_branch(t):
 
 
 def dispatch_conflict_resolution(card_id, actor="board copilot", background=True):
-    import sessions  # lazy: steer() still lives in sessions.py
+    from daemon.cells.engineer import sessions  # lazy: steer() still lives in sessions.py
     """Hand a REAL <<<<<<< merge conflict to the card's OWN worker as an edit-only
     task - the chat itself never edits code, but it can dispatch the card's agent.
     Sets up (or reuses) conflict markers in the worker's worktree via
@@ -372,7 +372,8 @@ def _repo_hook(t, kind):
     long phases through it - "npm ci starting", "gradle running, ~10-15
     min", "APK built") - without this a healthy 15-20 min build looked from
     the owner's phone identical to a genuinely stuck card."""
-    import collections, events, subprocess, threading
+    import collections, subprocess, threading
+    from daemon.spine import events
     import time as _t
     st = events.settings()
     hooks = (st.get("repo_hooks") or {}).get(t.get("repo") or "", {})
@@ -387,7 +388,7 @@ def _repo_hook(t, kind):
     idle = _num("hook_idle_s", 900.0)       # 15 min of TOTAL silence = wedged
     hard = _num("hook_max_s", 0.0)          # optional absolute cap; default none
     cwd = t.get("worktree") if kind == "preview" else t.get("repo")
-    from actionlog import ActionLog
+    from daemon.spine.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "%s HOOK: %s" % (kind.upper(), cmd))
     proc, why = None, ""
@@ -445,7 +446,7 @@ def _repo_hook(t, kind):
     return ok
 
 
-import i18n as _i18n          # owner-facing prose only; the audit trail stays English
+from daemon.spine import i18n as _i18n  # owner-facing prose only; the audit trail stays English
 
 
 def _say_card(t, text):
@@ -457,7 +458,7 @@ def _say_card(t, text):
     bounce with nothing to show for it. Best-effort by design - reporting an
     outcome must never break the work that produced it."""
     try:
-        import copilot
+        from daemon.cells.copilot import copilot
         title = (t.get("task") or "").replace("\n", " ")[:60]
         copilot.say("'%s': %s" % (title, text), cls="pm")
     except Exception:
@@ -465,11 +466,11 @@ def _say_card(t, text):
 
 
 def move_lane(tid, lane, actor="owner", _autopark=True):
-    import sessions  # lazy: LANES/_start/_accept_machine still live in sessions.py
+    from daemon.cells.engineer import sessions  # lazy: LANES/_start/_accept_machine still live in sessions.py
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
     ->done accepts (records the acceptance economics)."""
-    import events
+    from daemon.spine import events
     if lane not in sessions.LANES:
         raise RuntimeError("bad lane: " + lane)
     tracks = _load()
@@ -481,7 +482,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
     # Review/Done/Working/Backlog reads alongside the agent's work, not just in the
     # global event log. The lane-specific handlers below add the outcome detail.
     if t.get("run_dir") and prev != lane:
-        from actionlog import ActionLog as _AL
+        from daemon.spine.actionlog import ActionLog as _AL
         _lane_label = {"backlog": "Backlog", "working": "In Arbeit", "review": "Review", "done": "Done"}
         _AL(t["run_dir"]).log("note", "→ verschoben nach %s von %s"
                               % (_lane_label.get(lane, lane), actor))
@@ -489,7 +490,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         # pulling a card back OUT of review is a human bounce - the reject touch
         if prev == "review":
             events.emit("touch", tid, touch="bounce", actor=actor)
-            from actionlog import ActionLog
+            from daemon.spine.actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "BOUNCED by owner - back to Working")
 
             def _bounce(tt):
@@ -498,7 +499,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             _say_card(t, _i18n.t("say.bouncedToWorking"))
             return t
         return sessions._start(tid)   # idempotent: resumes position if already started
-    from actionlog import ActionLog
+    from daemon.spine.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     # ALREADY LANDED - an accept is IDEMPOTENT. status='accepted' is only ever
     # set after a successful merge, so a repeat move to Review/Done has nothing
@@ -691,7 +692,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         except Exception:
             pass
         if t.get("connector"):
-            import connectors, checkpoints
+            from daemon.cells.connectors import connectors
+            from daemon.spine import checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))
             try:
                 inst = connectors.install_from_worktree(t)
@@ -713,7 +715,7 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         # loop above cannot reach - without this the card came back clean but
         # its step stayed "already dispatched" and never ran again.
         try:
-            import processes
+            from daemon.cells.process import processes
             processes.clear_step_stamps(tid)
         except Exception as e:      # a board move must not fail on the chain store
             print("clear_step_stamps failed for %s: %s" % (tid, e))
@@ -783,7 +785,7 @@ def park_and_retry_merge(tid, actor="owner"):
              "wip: park uncommitted %s work so card %s could merge (by %s)" % (cur, t["branch"], actor))
         _git(repo, "checkout", cur)     # back on the original branch, now clean
         parked = wip
-        import events
+        from daemon.spine import events
         events.log("merge", "parked dirty tree of %s onto %s to unblock %s (%s)"
                    % (cur, wip, t["branch"], actor))
     # tree is clean now -> re-run the review/merge check (no auto-park recursion)

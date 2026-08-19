@@ -20,7 +20,7 @@ from urllib.parse import unquote
 
 
 def tracks_list_get(self, user):
-    import sessions
+    from daemon.cells.engineer import sessions
     # present(): stored 'running' is never believed on the way OUT -
     # only a live turn (drivers.turn_active) may render a spinner.
     ts = [sessions.present(t) for t in sessions.list_tracks()]
@@ -32,7 +32,8 @@ def tracks_list_get(self, user):
 def tracks_live_get(self, user, tid):
     # the card's own glance feed: newest frame while its agent's
     # turn is being screen-recorded (fresh = written in last 20s)
-    import sessions, time as _t
+    import time as _t
+    from daemon.cells.engineer import sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, b"not your card", "text/plain")
@@ -45,7 +46,8 @@ def tracks_live_get(self, user, tid):
 
 def tracks_turns_get(self, user, tid):
     # per-card AI usage: every turn's model, tokens, cost
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:
@@ -56,7 +58,7 @@ def tracks_turns_get(self, user, tid):
 
 
 def tracks_history_get(self, user, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:
@@ -67,7 +69,8 @@ def tracks_history_get(self, user, tid):
 def tracks_transcript_get(self, user, tid):
     # the Paseo-style agent view: every turn's text + tool calls,
     # read straight from the session's Claude Code transcript
-    import sessions, claude_sessions
+    from daemon.cells.engineer import sessions
+    from daemon.spine import claude_sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
@@ -81,7 +84,9 @@ def tracks_transcript_live_get(self, user, tid):
     # without SSE (which can't be relayed). Reuses the e2ee/relay
     # path untouched. 22s < relay REPLY_TIMEOUT (120) and the daemon
     # bridge's _local timeout (115), so the reply always lands.
-    import sessions, claude_sessions, time as _t
+    import time as _t
+    from daemon.cells.engineer import sessions
+    from daemon.spine import claude_sessions
     from urllib.parse import parse_qs, urlparse
     t = sessions.get_track(tid)
     if not t:
@@ -115,7 +120,7 @@ def tracks_transcript_live_get(self, user, tid):
 
 
 def tracks_checkpoints_get(self, user, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
@@ -123,7 +128,7 @@ def tracks_checkpoints_get(self, user, tid):
 
 
 def tracks_attachments_get(self, user, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
@@ -138,7 +143,8 @@ def tracks_attachments_get(self, user, tid):
 
 
 def tracks_attachment_get(self, user, tid, name):
-    import sessions, mimetypes
+    import mimetypes
+    from daemon.cells.engineer import sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, b"not your card", "text/plain")
@@ -156,13 +162,14 @@ def tracks_attachment_get(self, user, tid, name):
 def tracks_reorder_post(self, user, body):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import sessions
+    from daemon.cells.engineer import sessions
     ids = body.get("ids") or []
     return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
 
 
 def tracks_new_post(self, user, body):
-    import sessions, events
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     repo = body.get("repo") or events.settings().get("default_repo")
     branch = body.get("branch"); task = body.get("task")
     if task and not branch:   # preset flow: task alone is enough
@@ -208,13 +215,13 @@ def tracks_new_post(self, user, body):
                            project_id=body.get("project_id"),
                            description=body.get("description", ""),
                            billing=body.get("billing", "fixed"), rate=body.get("rate"))
-    import server
+    from daemon.spine import server
     server._bg("track:new:" + branch, go)
     return self._send(200, json.dumps({"started": branch}))
 
 
 def tracks_archive_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     try:
@@ -225,7 +232,7 @@ def tracks_archive_post(self, user, body, tid):
 
 
 def tracks_fork_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     try:
@@ -239,7 +246,7 @@ def tracks_forkchat_post(self, user, body, tid):
     # split a crowded card's CONVERSATION into a new card (keeps
     # context, unlike /fork which forks code at a ref with a fresh
     # session - see sessions.fork_conversation).
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     try:
@@ -250,7 +257,7 @@ def tracks_forkchat_post(self, user, body, tid):
 
 
 def tracks_delete_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     try:
@@ -261,7 +268,8 @@ def tracks_delete_post(self, user, body, tid):
 
 
 def tracks_update_post(self, user, body, tid):
-    import sessions, events
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:
@@ -282,7 +290,7 @@ def tracks_update_post(self, user, body, tid):
 
 
 def tracks_rewind_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     try:
@@ -293,7 +301,7 @@ def tracks_rewind_post(self, user, body, tid):
 
 
 def tracks_attach_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:
@@ -306,7 +314,7 @@ def tracks_attach_post(self, user, body, tid):
 
 
 def tracks_attach_remove_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:

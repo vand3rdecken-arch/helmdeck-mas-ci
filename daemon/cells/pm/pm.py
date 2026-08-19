@@ -15,9 +15,9 @@ executes work; turning items into cards stays an explicit, gated step.
 """
 import json, math, os, re, subprocess, threading, time
 
-import i18n as _i18n
+from daemon.spine import i18n as _i18n
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 ROLE_FILE = os.path.join(ROOT, "pm.role.md")
 PLANS = os.path.join(ROOT, "pm")
 
@@ -55,7 +55,7 @@ PM_DEFAULTS = {
 
 
 def _pm():
-    import events
+    from daemon.spine import events
     c = dict(PM_DEFAULTS)
     c.update(events.settings().get("pm") or {})
     return c
@@ -66,7 +66,7 @@ def get_goal():
 
 
 def set_goal(goal):
-    import events
+    from daemon.spine import events
     pm = dict(events.settings().get("pm") or {})
     pm["goal"] = (goal or "").strip()
     events.save_settings({"pm": pm})
@@ -124,7 +124,8 @@ def _role():
 
 def economics():
     """Real spend/token/velocity facts, so estimates are grounded in THIS board."""
-    import sessions, events
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     from datetime import datetime
     tracks = sessions.list_tracks()
     m = events.metrics(tracks)
@@ -176,7 +177,7 @@ def _system_state():
     gate derive scope from them, they are never a stamped verdict."""
     lines = []
     try:
-        import auth
+        from daemon.spine import auth
         users = auth.list_users()
         roles = {}
         for u in users:
@@ -187,7 +188,7 @@ def _system_state():
     except Exception:
         pass
     try:
-        import events
+        from daemon.spine import events
         reg = events.settings().get("registration")
         if reg:
             lines.append("REGISTRATION: " + json.dumps(reg, ensure_ascii=False)[:200])
@@ -196,9 +197,9 @@ def _system_state():
     return "\n".join(lines) or "(keine gesonderten System-Fakten)"
 
 
-from pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
+from daemon.cells.pm.pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
                        _usage_flag_text, _quota_floor, _goal_budget_text, _triage_green)
-from pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle, LOOPSTATE
+from daemon.cells.pm.pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle, LOOPSTATE
 
 
 def live_plan():
@@ -282,7 +283,7 @@ def on_card_done(tid):
     CROSSES the ok<->blocked line do we spend one re-scope (make_plan), so a normal
     completion costs zero planning turns. Threaded so the accept path never blocks
     on a model call (mirrors review_burn)."""
-    import cells
+    from daemon.spine import cells
     if not cells.enabled_id("pm"):
         return
     threading.Thread(target=_on_card_done, args=(tid,), daemon=True,
@@ -290,7 +291,7 @@ def on_card_done(tid):
 
 
 def _on_card_done(_tid):
-    import events
+    from daemon.spine import events
     try:
         if not get_goal():
             return
@@ -340,7 +341,7 @@ def reconcile_corner(corner, actor="owner"):
     Law-abiding (NO MONKEY PATCHES): the agent never stamps a corner's colour - it
     supplies the facts the planner was missing; the corner stays DERIVED, folded in
     at this event, mutated at one owner (_gate_triangle)."""
-    import copilot
+    from daemon.cells.copilot import copilot
     corner = (corner or "").strip().lower()
     if corner not in ("budget", "timeline", "scope"):
         return {"error": "corner must be budget|timeline|scope"}
@@ -363,7 +364,8 @@ def reconcile_corner(corner, actor="owner"):
 
 
 def _ask(prompt, model=""):
-    import copilot, drivers
+    from daemon.cells.copilot import copilot
+    from daemon.spine import drivers
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
     # args on a .cmd shim (see drivers._real_claude_exe).
     argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
@@ -414,7 +416,7 @@ def _verify_plan(plan, econ, quota):
     failure - a 14-day calendar test sized as 2 days, a not-yet-started recruiting long-pole,
     an unresolved decision. Fail-open: if the pass errors, don't block."""
     try:
-        import turnopts
+        from daemon.spine import turnopts
         cli_model, _ = turnopts.resolve_model("auto", "verify plan", False, signals={"priority": "high"})
         keep = {k: plan.get(k) for k in ("goal", "summary", "milestones", "feasibility",
                                          "assumptions", "open_questions", "budget")}
@@ -488,7 +490,9 @@ def _reconcile_block(prev):
 def brief(goal=None, model=""):
     """The PM/CTO report: milestones with timelines, next actions, budget grounded
     in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
-    import copilot, turnopts, events
+    from daemon.cells.copilot import copilot
+    from daemon.spine import turnopts
+    from daemon.spine import events
     if goal is not None and goal.strip():
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
@@ -583,7 +587,7 @@ def plan_items(b=None):
     that card, not separate tickets, so a card is a long-lived, context-rich
     chat instead of a fragment. Returns (items, brief). Each item:
     {title, description, priority, repo}."""
-    import events
+    from daemon.spine import events
     b = b or brief()
     order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     default_repo = events.settings().get("default_repo") or ""
@@ -623,7 +627,8 @@ working/review/done cards alone. Prefer FEW streams. Reply with ONLY JSON:
 
 def consolidation_proposal(model=""):
     """Read-only: the PM's proposed roll-up of backlog cards into stream cards."""
-    import copilot, turnopts
+    from daemon.cells.copilot import copilot
+    from daemon.spine import turnopts
     cli_model, _ = turnopts.resolve_model(model or "auto", "consolidate the board",
                                           False, signals={"priority": "high"})
     prompt = _CONSOLIDATE_ASK + "\n\nBOARD SNAPSHOT:\n" + copilot._snapshot()
@@ -636,7 +641,7 @@ def apply_consolidation(repos, actor="owner"):
     """Non-destructive: create each stream card, then REVERSIBLY archive its
     members (their titles roll into the stream card's description). Returns what
     changed so the caller can show/undo it."""
-    import sessions
+    from daemon.cells.engineer import sessions
     tracks = {t["id"]: t for t in sessions.list_tracks()}
     created, archived = [], []
     for rp in repos or []:
@@ -697,7 +702,7 @@ def _limit_hit(track):
 def make_plan(actor="owner"):
     """Run the PM role now and file its NEW items as backlog cards (deduped).
     The reviewable brief is the day's plan artifact. One planning brain."""
-    import sessions
+    from daemon.cells.engineer import sessions
     items, brief = plan_items()
     # When a goal is set it is managed as a PROCESS (epic): the process owns the goal-path
     # cards (step -> card, dated, in a SoW), built from THIS plan's vetted milestones once
@@ -751,7 +756,7 @@ def _notify_deliveries(day, tracks, st, pm):
     resolved = set(day.get("resolved", []))
     fcm = None
     try:
-        import notify
+        from daemon.spine import notify
         if notify.fcm_ready():
             fcm = notify
     except Exception:
@@ -771,7 +776,7 @@ def _notify_deliveries(day, tracks, st, pm):
             # asking, not finished. notify.card_event already pushed this one
             # through the presence policy (and deduped it), so the PM only
             # speaks in chat here - a second push would defeat that policy.
-            import ask
+            from daemon.spine import ask
             _say(_i18n.t("pm.asking", task=task,
                          question=ask.summary(t["question"])[:140]))
             notified.add(t["id"]); changed = True
@@ -825,7 +830,7 @@ def _bounce_kind(t):
                  uncommitted shared checkout -> park_and_retry_merge (resolve_blocker)
       conflict - real <<<<<<< markers -> the card's own worker resolves by editing
       gate     - gate red / error / zombie note -> steer the worker with the reason"""
-    import sessions
+    from daemon.cells.engineer import sessions
     wt = t.get("worktree")
     if not wt or not os.path.isdir(wt):
         return "dispatch"
@@ -902,7 +907,7 @@ def _resolve_next(pm, st, day):
     (a fix can take minutes; the tick must not block). Attempts are counted in
     day['resolve_attempts']; after _RESOLVE_MAX failed attempts the card moves to
     day['resolved'] and _notify_deliveries escalates it WITH a proposal."""
-    import sessions
+    from daemon.cells.engineer import sessions
     todo = _bounced_to_resolve(sessions.list_tracks(), pm, day)
     if not todo:
         return
@@ -977,7 +982,7 @@ def _burn_judge(b, t):
 def _push_burn(t, task, b):
     n, tool, corr = b.get("n", 0), b.get("name", ""), b.get("corrections", 0)
     try:
-        import notify
+        from daemon.spine import notify
         notify.push_fcm(_i18n.t("push.pmBurn"),
                         _i18n.t("push.pmBurnBody", task=task, n=n, tool=tool), t["id"])
     except Exception:
@@ -986,7 +991,7 @@ def _push_burn(t, task, b):
 
 
 def _review_burn(tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     try:
         t = sessions._find(sessions._load(), tid)
         b = (t or {}).get("burn")
@@ -1060,7 +1065,7 @@ def _resolve_card(tid, attempt):
     path, then RE-SUBMIT to Review so the gate verdict decides whether the card
     is unstuck - the loop never waits for a human to press retry. A second
     attempt explicitly demands a DIFFERENT approach from the worker."""
-    import sessions
+    from daemon.cells.engineer import sessions
     note = ""
     try:
         t = sessions._find(sessions._load(), tid)
@@ -1155,7 +1160,7 @@ def _usage_checkin(st):
     weekly window (keyed on its reset), so it's a heads-up, not a nag - the live usage
     meter carries the running numbers."""
     try:
-        import usage
+        from daemon.spine import usage
         flag = usage.weekly_pacing_flag()
     except Exception:
         return
@@ -1231,7 +1236,7 @@ def _triangle_watch(st):
     corners = []
     # BUDGET — the weekly quota is burning ahead of pace
     try:
-        import usage
+        from daemon.spine import usage
         bf = usage.weekly_pacing_flag()
     except Exception:
         bf = None
@@ -1242,7 +1247,7 @@ def _triangle_watch(st):
     gp = st.get("goal_process") or {}
     if gp.get("pid") and gp.get("goal") == get_goal():
         try:
-            import processes
+            from daemon.cells.process import processes
             p = processes.get(gp["pid"])
         except Exception:
             p = None
@@ -1289,7 +1294,7 @@ def _watch_budget_ctx():
       ("usd", None)  - no plan size known (cold calibration, capless API):
                        the measured API-equivalent $ - degraded but never
                        silent, and never labeled as spend (ai_billing)."""
-    import events
+    from daemon.spine import events
     plan, _src = events.plan_effective()
     if plan == "api" and (_pm().get("monthly_eur") or 0) > 0:
         return "eur", None
@@ -1470,7 +1475,7 @@ def _goal_process(pm, st):
     if not steps:
         return
     try:
-        import processes
+        from daemon.cells.process import processes
         p = processes.create(goal, client="", due="", actor="pm", steps=steps)
     except Exception as e:
         print("PM goal_process error:", e)
@@ -1490,7 +1495,7 @@ def _goal_process_status(st):
     if gp.get("goal") != get_goal() or not gp.get("pid"):
         return None
     try:
-        import processes
+        from daemon.cells.process import processes
         p = processes.get(gp["pid"])
     except Exception:
         return None
@@ -1513,7 +1518,7 @@ def _stakeholder_update(st):
     if not goal:
         return
     try:
-        import usage
+        from daemon.spine import usage
         snap = usage.snapshot()
     except Exception:
         return
@@ -1559,7 +1564,7 @@ def _overview_stale(plan, tracks):
     """True if the plan's roadmap isn't reflected on the board yet: a card that
     belongs to a dated milestone still lacks that due date (Timeline), or the
     dashboard layout isn't set."""
-    import events
+    from daemon.spine import events
     if not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles"):
         return True
     byid = {t["id"]: t for t in tracks}
@@ -1582,7 +1587,8 @@ def _build_overview(plan):
       board Timeline lays out the roadmap.
     - DASHBOARD: ensure a sensible economics layout exists.
     Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
-    import sessions, events
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     all_t = sessions.list_tracks()
     byid = {t["id"]: t for t in all_t}
     by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
@@ -1618,7 +1624,7 @@ def _state():
     pm = _pm()
     if not pm.get("loop_enabled"):
         return ("OFF", "Proaktiv ist aus.")
-    import sessions
+    from daemon.cells.engineer import sessions
     tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
     st = _loopstate()
     day = st.get(_today(), {})
@@ -1655,7 +1661,8 @@ def _state():
 
 
 def _dispatch_next(pm, st, day):
-    import sessions, events
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     if sum(1 for t in sessions.list_tracks() if t.get("lane") == "working") >= events.settings()["capacity"]["wip_limit"]:
         return                                           # respect WIP headroom
     todo = _backlog(sessions.list_tracks(), pm, day)
@@ -1672,7 +1679,7 @@ def _dispatch_next(pm, st, day):
         if not kept:
             key = ""
             try:
-                import usage
+                from daemon.spine import usage
                 key = (usage.weekly_pacing_flag() or {}).get("resetsAt") or ""
             except Exception:
                 pass
@@ -1720,7 +1727,7 @@ def _tick():
     then the acting states run - but only while you are away. Proactive on/off +
     the notify/ask/act ladder is a Settings control now, not a dashboard one."""
     # 1 - GATHER
-    import cells
+    from daemon.spine import cells
     if not cells.enabled_id("pm"):
         # ADDITIONAL early-return, not a replacement: loop_enabled (below) is
         # the owner's proactive on/off Settings control; cellEnabled is the
@@ -1731,7 +1738,7 @@ def _tick():
         return
     st = _loopstate()
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
-    import sessions
+    from daemon.cells.engineer import sessions
     tracks = sessions.list_tracks()
     plan = latest_plan()
 
@@ -1819,7 +1826,7 @@ def _say(text):
     One voice: the shared writer in copilot.say, which the lane pipeline uses
     too - so everything non-interactive speaks in the same chat."""
     try:
-        import copilot
+        from daemon.cells.copilot import copilot
         copilot.say(text, cls="pm")
     except Exception:
         pass
@@ -1832,7 +1839,7 @@ def _escalation_tid():
     where the owner's attention would be; with none, "" still gives the correct
     present/absent split (nobody can be 'focused' on no card)."""
     try:
-        import sessions
+        from daemon.cells.engineer import sessions
         working = [t for t in sessions.list_tracks()
                    if t.get("lane") == "working" and not t.get("archived")]
         if working:
@@ -1853,7 +1860,7 @@ def _escalate(text, tid="", title=""):
     (silent / in-app / push)."""
     _say(text)
     try:
-        import notify
+        from daemon.spine import notify
         notify.escalate(title or _i18n.t("push.pmAlert"), text[:180],
                         tid or _escalation_tid())
     except Exception as e:
@@ -1872,7 +1879,7 @@ def _read_activity(n=20):
 def activity():
     """The DAU narrative: what's running now, what's next, what needs you, and
     the blockers - all from live card state, plus the recent activity feed."""
-    import sessions
+    from daemon.cells.engineer import sessions
     # PRESENTED, not stored: "arbeitet gerade an X" was a lie for any card whose
     # turn had died - it reads `running` in the store until the reconciler heals
     # it, so the narrative claimed work was in flight AND left the card out of

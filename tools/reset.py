@@ -20,8 +20,7 @@ import argparse, os, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DAEMON = os.path.join(ROOT, "daemon")
-sys.path.insert(0, DAEMON)
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, ROOT)
 
 
 def backup():
@@ -45,7 +44,7 @@ def backup():
 
 
 def wipe_cards():
-    import sessions
+    from daemon.cells.engineer import sessions
     ts = sessions.list_tracks()
     ok = 0
     for t in ts:
@@ -60,7 +59,7 @@ def wipe_cards():
 
 
 def clear_events():
-    import db
+    from daemon.spine import db
     with db.conn() as c:
         c.execute("DELETE FROM events")
     db.bump()
@@ -70,7 +69,7 @@ def clear_events():
 
 
 def clear_recordings():
-    import sessions
+    from daemon.cells.engineer import sessions
     rec = sessions.REC
     if os.path.isdir(rec):
         for n in os.listdir(rec):
@@ -113,7 +112,7 @@ def main():
     clear_processes(); print("cleared process templates")
 
     if a.connectors:
-        import connectors
+        from daemon.cells.connectors import connectors
         st = os.path.join(os.path.dirname(connectors.STATE), "_state.json")
         if os.path.exists(st):
             os.remove(st); print("cleared connector import state (they'll re-pull fresh)")

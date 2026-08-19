@@ -9,8 +9,8 @@ import sys
 import tempfile
 import types
 
-import _subpaths; _subpaths.ensure_cell_paths()
-import policy
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from daemon.spine import policy
 
 _fails = []
 def ok(cond, msg):
@@ -30,9 +30,10 @@ _tmp = tempfile.mkdtemp()
 policy.LIVE = os.path.join(_tmp, "policy_live.json")
 
 _emitted = []
-_fake = types.ModuleType("events")
+_fake = types.ModuleType("daemon.spine.events")
 _fake.emit = lambda kind, track, **fields: _emitted.append((kind, fields)) or {"kind": kind}
-sys.modules["events"] = _fake
+_fake.settings = lambda: {}   # policy.load()'s first-run wipLimit seed reads this
+sys.modules["daemon.spine.events"] = _fake
 
 print("policy control-plane self-test")
 

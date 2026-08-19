@@ -13,14 +13,14 @@ import json
 
 
 def projects_list_get(self, user):
-    import projects
+    from daemon.spine import projects
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     return self._send(200, json.dumps(projects.list_projects()))
 
 
 def projects_new_post(self, user, body):
-    import projects
+    from daemon.spine import projects
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     try:
@@ -33,7 +33,7 @@ def projects_new_post(self, user, body):
 
 
 def projects_update_post(self, user, body, pid):
-    import projects
+    from daemon.spine import projects
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     try:
@@ -44,7 +44,7 @@ def projects_update_post(self, user, body, pid):
 
 
 def projects_delete_post(self, user, body, pid):
-    import projects
+    from daemon.spine import projects
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     try:

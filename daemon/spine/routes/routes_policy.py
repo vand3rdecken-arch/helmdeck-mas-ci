@@ -13,14 +13,14 @@ import json
 def policy_get(self, user):
     if not user or user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import policy
+    from daemon.spine import policy
     return self._send(200, json.dumps(policy.load()))
 
 
 def policy_swap(self, user, body):
     if not user or user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import policy
+    from daemon.spine import policy
     try:
         before = policy.swap(body.get("section") or "policies",
                              body.get("patch") or {},
@@ -38,14 +38,14 @@ def cells_get(self, user):
     # POST /policy/swap of its enabledKey (the existing tracked path).
     if not user or user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import cells
+    from daemon.spine import cells
     return self._send(200, json.dumps({"cells": cells.manifest()}))
 
 
 def reconfig_track(self, user, body):
     if not user or user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import events
+    from daemon.spine import events
     events.emit("reconfig", "-", source="app",
                 op=body.get("op"), pluginId=body.get("pluginId"),
                 actor=body.get("actor"), replaced=body.get("replaced"),

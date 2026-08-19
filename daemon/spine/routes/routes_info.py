@@ -10,7 +10,7 @@ byte-identical to the inline blocks they replace.
 """
 import json
 
-from apimeta import _lane_flow, _loop_machine, _config_schema
+from daemon.spine.apimeta import _lane_flow, _loop_machine, _config_schema
 
 
 def _harness_state():
@@ -20,19 +20,20 @@ def _harness_state():
     rather than breaking a spawn, so nothing would otherwise SAY that an edit is
     being ignored."""
     try:
-        import harness
+        from daemon.spine import harness
         return harness.describe()
     except Exception as e:                                   # noqa: BLE001
         return {"agents": [], "errors": {"harness": str(e)[:200]}}
 
 
 def debt_get(self, user):
-    import debt
+    from daemon.spine import debt
     return self._send(200, json.dumps(debt.list_debt()))
 
 
 def charter_get(self, user):
-    import charter, events
+    from daemon.spine import charter
+    from daemon.spine import events
     return self._send(200, json.dumps(
         {"core": charter.CHARTER,
          "house_rules": (events.settings().get("policy") or {}).get("house_rules", "")}))
@@ -48,7 +49,8 @@ def loop_map_get(self, user):
     # (this one had silently lost the BUILD state altogether). The
     # renderer gets sessions.flow() and loop_state.machine() verbatim,
     # so a new state or a changed condition shows up here by itself.
-    import charter, events
+    from daemon.spine import charter
+    from daemon.spine import events
     _s = events.settings()
     ll = (_s.get("policy") or {}).get("lane_labels") or {}
     return self._send(200, json.dumps({
@@ -93,7 +95,7 @@ def loop_map_get(self, user):
 
 
 def models_get(self, user):
-    import turnopts
+    from daemon.spine import turnopts
     return self._send(200, json.dumps(turnopts.list_models()))
 
 
@@ -106,7 +108,7 @@ def harness_get(self, user):
     # names paths on his machine.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import harness
+    from daemon.spine import harness
     return self._send(200, json.dumps(harness.document(), ensure_ascii=False))
 
 
@@ -116,7 +118,7 @@ def harness_schema_get(self, user):
     # discovering them one rejected save at a time.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import harness
+    from daemon.spine import harness
     return self._send(200, json.dumps({
         "agent": harness.load_schema("agent"),
         "settings": harness.load_schema("settings"),

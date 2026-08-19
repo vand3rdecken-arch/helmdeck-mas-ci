@@ -39,7 +39,8 @@ def _adf_text(node):
     return " ".join(x for x in out if x)
 
 def jira_import(jql, actor="owner", limit=50):
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     cfg = events.settings().get("jira") or {}
     if not (cfg.get("base") and cfg.get("email") and cfg.get("api_token")):
         raise RuntimeError("configure settings.jira first (base, email, api_token)")
@@ -66,7 +67,8 @@ def jira_import(jql, actor="owner", limit=50):
     return made
 
 def url_import(url, client="", due="", actor="owner"):
-    import events, processes
+    from daemon.spine import events
+    from daemon.cells.process import processes
     if not re.match(r"^https?://", url):
         raise RuntimeError("http(s) URL required")
     req = urllib.request.Request(url, headers={"User-Agent": "HelmDeck/0.1"})

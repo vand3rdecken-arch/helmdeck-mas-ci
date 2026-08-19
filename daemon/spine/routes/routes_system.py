@@ -14,7 +14,7 @@ import json
 def presence_get(self, user):
     # who the daemon thinks is here (diagnostic for the notify
     # policy: "why didn't my phone buzz?" has a checkable answer)
-    import presence
+    from daemon.spine import presence
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     return self._send(200, json.dumps(presence.snapshot()))
@@ -23,7 +23,7 @@ def presence_get(self, user):
 def sessions_claude_get(self, user):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import claude_sessions
+    from daemon.spine import claude_sessions
     return self._send(200, json.dumps(claude_sessions.list_sessions()))
 
 
@@ -33,7 +33,7 @@ def harness_version_get(self, user, kind, name):
     # deciding to roll back to it.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import harness
+    from daemon.spine import harness
     from urllib.parse import parse_qs, urlparse
     vid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
     txt = harness.version_text(kind, name, vid)
@@ -44,7 +44,9 @@ def harness_version_get(self, user, kind, name):
 
 def history_get(self, user):
     # the git audit trail: main line + every card branch's commits.
-    import subprocess, sessions, events
+    import subprocess
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     repo = events.settings().get("default_repo")
     if not repo:
         return self._send(200, json.dumps({"main": [], "branches": []}))
@@ -87,7 +89,8 @@ def history_get(self, user):
 
 
 def dashboard_data_get(self, user):
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     m = events.metrics(sessions.list_tracks())
@@ -102,7 +105,7 @@ def presence_post(self, user, body):
     # notify policy in notify.should_push - the daemon stays silent
     # about a card the owner is already looking at. Every role may
     # report its own presence; it is about this connection only.
-    import presence
+    from daemon.spine import presence
     return self._send(200, json.dumps(presence.record(
         user["name"], body.get("device", "app"),
         focused_card=body.get("focused_card"),
@@ -114,7 +117,7 @@ def push_register_post(self, user, body):
     # the phone announces its FCM token (arrives through the E2EE
     # relay like every call); the daemon then pushes sealed data
     # messages to exactly this device
-    import events
+    from daemon.spine import events
     tok = (body.get("token") or "").strip()
     if not tok:
         return self._send(400, json.dumps({"error": "token required"}))
@@ -124,10 +127,10 @@ def push_register_post(self, user, body):
 
 def nightshift_plan_post(self, user, body):
     # alias: run the PM plan now, file its cards
-    import pm
+    from daemon.cells.pm import pm
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    from server import _bg
+    from daemon.spine.server import _bg
     _bg("pm:plan", lambda: pm.make_plan(actor=user["name"]))
     return self._send(200, json.dumps({"planning": True,
                                        "repos": pm._pm().get("repos") or []}))
@@ -147,7 +150,8 @@ def harness_post(self, user, body):
     # old text. So: forgiving at spawn, strict at save.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import harness, events
+    from daemon.spine import harness
+    from daemon.spine import events
     kind = body.get("kind")
     name = body.get("name") or ""
     if kind not in ("agents", "settings"):
@@ -181,7 +185,9 @@ def harness_post(self, user, body):
 def debt_fix_post(self, user, body, did):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import debt, sessions, events
+    from daemon.spine import debt
+    from daemon.cells.engineer import sessions
+    from daemon.spine import events
     item = next((d for d in debt.DEBT if d["id"] == did), None)
     if not item:
         return self._send(404, json.dumps({"error": "unknown debt id"}))
@@ -194,7 +200,7 @@ def debt_fix_post(self, user, body, did):
 def import_post(self, user, body, p):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import importers
+    from daemon.spine import importers
     try:
         if p.endswith("jira"):
             made = importers.jira_import(body.get("jql", ""), actor=user["name"])
@@ -210,7 +216,8 @@ def processes_sub_post(self, user, body, pid, step):
     # step == parts[2] of /processes/<pid>/<step>; only "step" is a real
     # action, anything else falls through to the same 404 the original
     # inline try-block produced (kept verbatim, including the try scope).
-    import processes, events
+    from daemon.cells.process import processes
+    from daemon.spine import events
     try:
         if step == "step":
             act = body.get("action")
