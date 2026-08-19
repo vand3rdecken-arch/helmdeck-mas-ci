@@ -47,7 +47,7 @@ import json, os, shutil, subprocess, sys, tempfile
 
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import _subpaths; _subpaths.ensure_cell_paths()
 import drivers                                   # _cmd_line: never exec the .cmd shim
 import harness                                    # the shipped settings files to validate
