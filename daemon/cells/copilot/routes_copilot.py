@@ -51,8 +51,8 @@ def chat_post(self, user, body):
         # Henry's PROSE is spoken - never the ```actions block, which
         # is machine syntax and unlistenable.
         if body.get("voice"):
-            from daemon.spine import ask
-            from daemon.spine import voice as _voice
+            from daemon.spine.ops import ask
+            from daemon.spine.media import voice as _voice
             _, prose = ask.parse(out.get("reply") or "")
             clip = _voice.render_b64(
                 (prose or out.get("reply") or "").split("```")[0])

@@ -16,17 +16,17 @@ that extracting bottom-up collapses coupling instead of hiding it.
 import os
 import time
 
-from daemon.spine.runs import REC
+from daemon.spine.ops.runs import REC
 
-from daemon.spine.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
-from daemon.spine.gitutil import (_git, _git_try, _branch_exists, _git_state_broken,
+from daemon.spine.storage.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
+from daemon.spine.git.gitutil import (_git, _git_try, _branch_exists, _git_state_broken,
                      _owned_worktree, _seed_worktree, _base_ref,
                      _worktree_for, _worktree_of_branch)
 from daemon.cells.engineer.turnrunner import _turn, _finish_turn, is_delivered
 from daemon.cells.engineer.lanemachine import _gate, _say_card, move_lane
 from daemon.cells.engineer.devport import _alloc_dev_port
-from daemon.spine.blockers import blocker
-from daemon.spine.outcomes import extract_outcome, _record_outcome
+from daemon.spine.turn.blockers import blocker
+from daemon.spine.turn.outcomes import extract_outcome, _record_outcome
 
 # same env var as sessions.DEFAULT_PERM - process-idempotent, safe to read
 # independently rather than importing sessions (would cycle).
@@ -43,8 +43,8 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     margin is computable at acceptance. project_id assigns the card to a
     fixed-price/T&M project (projects.py); its own `value` then stops feeding
     the totals - the project's billing does (events.metrics)."""
-    from daemon.spine import events
-    from daemon.spine import turnopts
+    from daemon.spine.storage import events
+    from daemon.spine.agent import turnopts
     repo = os.path.abspath(repo)
     tracks = _load()
     tid = _unique_id(_slug(branch))
@@ -77,7 +77,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(run_dir).log("note", "REQUEST filed: %s (branch %s)" % (task, branch))
     events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver=t["driver"])
     _save_track(t)
@@ -89,9 +89,9 @@ def _dispatch_failed(t, e):
     """Dispatch runs on a background thread, so an uncaught exception is
     invisible - the card must carry the error itself: status=bounced,
     the failure in last_reply, a note in the flight recorder, an event."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     err = "DISPATCH FAILED: %s" % e
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     try:
         log = ActionLog(t["run_dir"])
         log.log("note", err[:2000])
@@ -162,12 +162,12 @@ def _start_inner(t):
         return _start_machine(t)
     tid = t["id"]
     wt = _ensure_worktree(t)
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "DISPATCHED -> branch %s" % t["branch"])
     log.log("steer", t["task"])
     log.log("turn", "Turn gestartet", event="started")
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.emit("lane", tid, frm=t.get("lane"), to="working")
 
     port = t.get("dev_port") or _alloc_dev_port(exclude_tid=tid)
@@ -184,7 +184,7 @@ def _start_inner(t):
         prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
     sid, result, meta = _turn(t, prompt)
     t, reason = _finish_turn(tid, sid, result, meta, log)
-    from daemon.spine import notify
+    from daemon.spine.comms import notify
     notify.card_event(t, reason)
     return t
 
@@ -216,7 +216,7 @@ def machine_policy():
         roots:   [] = the whole machine; else allowed parent directories
         perm:    driver permission mode (headless needs bypassPermissions to be
                  able to run commands at all - an unanswerable prompt IS a block)"""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     p = dict((events.settings().get("policy") or {}).get("machine") or {})
     p.setdefault("enabled", True)
     p.setdefault("roles", ["owner"])
@@ -249,7 +249,7 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
     agent MUST have the GUI/browser tools. With the plain `claude` driver it can
     only read/write files and ends up talking instead of acting - exactly how the
     "open Chrome, log into Play Console, upload the AAB" card drifted and stuck."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     pol = machine_policy()
     if not pol.get("enabled", True):
         raise RuntimeError("machine tasks are switched off (policy.machine.enabled=false)")
@@ -271,7 +271,7 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
         tt["machine"] = True
         tt["worktree"] = cwd         # the driver's cwd - a real folder, no worktree
     cur = _mutate(t["id"], _mark) or t
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(cur["run_dir"]).log("note", "MACHINE task filed - workplace %s (by %s)" % (cwd, actor))
     events.emit("machine", cur["id"], action="filed", cwd=cwd, actor=actor)
     if dispatch:
@@ -300,7 +300,7 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
     Two direct cards on the same tree are serialized in _turn (bounded queue,
     same pattern as the desktop lock) so they cannot edit blind over each other.
     Gated by the same policy.machine switch/roles as machine work."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     pol = machine_policy()
     if not pol.get("enabled", True):
         raise RuntimeError("direct tasks are switched off (policy.machine.enabled=false)")
@@ -318,7 +318,7 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
         tt["direct"] = True          # serialized per-tree in _turn; shown as direct
         tt["worktree"] = repo        # the driver's cwd - the LIVE tree, no copy
     cur = _mutate(t["id"], _mark) or t
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(cur["run_dir"]).log(
         "note", "DIRECT build filed - workplace is the live tree %s (by %s)" % (repo, actor))
     events.emit("machine", cur["id"], action="filed_direct", cwd=repo, actor=actor)
@@ -330,12 +330,12 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
 def _start_machine(t):
     """Dispatch a machine card: no worktree, no branch - just open the session in
     its directory and run the first turn there."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     tid = t["id"]
     cwd = t.get("worktree") or t.get("repo")
     if not cwd or not os.path.isdir(cwd):
         raise RuntimeError("machine task has no working directory: %r" % cwd)
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "DISPATCHED (machine) -> %s" % cwd)
     log.log("steer", t["task"])
@@ -352,7 +352,7 @@ def _start_machine(t):
         prompt += "\n\nAttached files (read them as needed): " + ", ".join(t["attachments"])
     sid, result, meta = _turn(t, prompt)
     t, reason = _finish_turn(tid, sid, result, meta, log)
-    from daemon.spine import notify
+    from daemon.spine.comms import notify
     notify.card_event(t, reason)
     return t
 
@@ -482,7 +482,7 @@ def _accept_machine(t, lane, actor, log):
     """Review/Done for a machine card. There is no branch to gate or merge, so
     Review RESTS it for the owner to judge and Done records the acceptance
     economics. The repo deploy hook does NOT run (nothing landed in a repo)."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     if lane == "review":
         log.log("note", "REVIEW (machine): erledigt auf dem Rechner - wartet auf deine Abnahme.")
 

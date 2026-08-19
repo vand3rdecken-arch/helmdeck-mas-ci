@@ -23,7 +23,7 @@ def connectors_rollback_post(self, user, name):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from daemon.cells.connectors import connectors
-    from daemon.spine import events
+    from daemon.spine.storage import events
     try:
         prev = connectors.rollback(name)
         events.emit("connector", "-", action="rollback", name=name, actor=user["name"])

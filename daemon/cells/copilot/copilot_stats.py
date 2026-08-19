@@ -40,7 +40,7 @@ def _fold_stats(user, result, ctx_usage):
     sessions._record_econ documents - a long multi-call turn reads as millions
     of "context" tokens), so it feeds only the cumulative counters. A missing
     ctx reading means NO update, never a wrong one."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     from daemon.cells.engineer import sessions
     u = result.get("usage") or {}
     models = list((result.get("modelUsage") or {}).keys())
@@ -89,7 +89,7 @@ def _plan_share(st):
     now = time.time()
     if now - _calib["t"] > 120:
         try:
-            from daemon.spine import events
+            from daemon.spine.storage import events
             _calib["flat"] = events.ai_billing() == "flat"
             _calib["v"] = events.plan_calibration() if _calib["flat"] else None
         except Exception:

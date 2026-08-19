@@ -31,14 +31,14 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-procdb-test-")
 
-    from daemon.spine import db
+    from daemon.spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     # processes.create()/sync() call events.emit() directly - events.py has its
     # OWN independent ROOT/EV globals, never covered by db.ROOT (measured the
     # hard way: an earlier run of this exact test appended real lines to the
     # production events.jsonl before this sandbox line existed).
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 

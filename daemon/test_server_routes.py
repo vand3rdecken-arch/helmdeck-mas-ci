@@ -55,7 +55,7 @@ def main():
     # keeps every dispatched/steered turn instant, deterministic, and
     # network-free while still exercising the real state transitions
     # around it (worktree creation, lane writes, gate, merge).
-    from daemon.spine import drivers
+    from daemon.spine.agent import drivers
     def _fake_driver_run(cfg, t, prompt):
         return ("sid-" + t["id"], "ok", {})
     drivers.run = _fake_driver_run
@@ -77,13 +77,13 @@ def main():
     # (measured the hard way: a first draft of this test renamed the live
     # events.jsonl to .imported before this guard existed - recovered by
     # renaming it back, no data lost, but never again: ROOT must be sandboxed).
-    from daemon.spine import db
+    from daemon.spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine import auth
+    from daemon.spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
     events.EV = os.path.join(tmp, "events.jsonl")   # the append-only audit sink
 
@@ -98,7 +98,7 @@ def main():
     os.makedirs(connectors.CDIR, exist_ok=True)
     connectors.VDIR = os.path.join(connectors.CDIR, "_versions")
     os.makedirs(connectors.VDIR, exist_ok=True)
-    from daemon.spine import checkpoints
+    from daemon.spine.ops import checkpoints
     checkpoints.ROOT = tmp
     checkpoints.CPDIR = os.path.join(tmp, "checkpoints")
     os.makedirs(checkpoints.CPDIR, exist_ok=True)
@@ -118,7 +118,7 @@ def main():
     # through the REAL tracked policy.swap path, so LIVE must be sandboxed or
     # they'd rewrite the daemon's live policy. SEED stays real (read-only) so the
     # seeded <cell>Enabled=true defaults load exactly as in production.
-    from daemon.spine import policy
+    from daemon.spine.auth import policy
     policy.LIVE = os.path.join(tmp, "policy_live.json")
 
     # runs.REC (a card's run_dir root - screenshots/live.jpg/actionlog) is a
@@ -133,7 +133,7 @@ def main():
     # no tracked data was harmed, but a real-file violation of this test's own
     # sandboxing rule) before this guard existed. Every module holding its own
     # REC copy must be patched here, before any card is filed.
-    from daemon.spine import runs
+    from daemon.spine.ops import runs
     from daemon.cells.engineer import dispatch as _dispatch_mod
     from daemon.cells.engineer import cardadmin as _cardadmin_mod
     REC = os.path.join(tmp, "recordings")
@@ -151,7 +151,7 @@ def main():
     sid = auth.login("routetest-owner", "s4ndb0x-pw")
     ok(bool(sid), "sandbox owner created + logged in")
 
-    from daemon.spine import server
+    from daemon.spine.http import server
     httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.H)
     port = httpd.server_address[1]
     th = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -436,7 +436,7 @@ def main():
         ok(isinstance(body, dict) and body.get("error"), "/checkpoints/.../restore: no such checkpoint -> 400")
 
         # a real checkpoint round-trip, straight through the sandboxed CPDIR
-        from daemon.spine import checkpoints as _cp
+        from daemon.spine.ops import checkpoints as _cp
         real_cid = _cp.create(actor="routetest", reason="smoke")
         status, body = req("GET", "/checkpoints", cookie=sid, expect=200)
         ok(len(body) == 1 and body[0]["id"] == real_cid, "/checkpoints lists the real sandboxed checkpoint")
@@ -584,7 +584,7 @@ def main():
         # real repo built above (repo_dir) instead of a fresh scaffold, to
         # prove the gate 404s cleanly AND that toggling it doesn't corrupt the
         # real dispatch/gate flow that follows.
-        from daemon.spine import policy as _policy_engineer
+        from daemon.spine.auth import policy as _policy_engineer
         _policy_engineer.swap("policies", {"engineerEnabled": False}, actor="test")
         status, body = req("GET", "/tracks", cookie=sid, expect=404)
         ok(isinstance(body, dict) and body.get("error") == "cell disabled",
@@ -793,7 +793,7 @@ def main():
         # toggle. Exercises the REAL tracked policy.swap path (policy.LIVE
         # sandboxed above). The disabled 404 fires in server.py's dispatch
         # BEFORE any pm logic runs, so no real pm state is ever touched.
-        from daemon.spine import policy
+        from daemon.spine.auth import policy
         status, body = req("GET", "/cells", cookie=sid, expect=200)
         pm_on = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
         ok(pm_on.get("enabled") is True, "/cells: pm cell enabled by default")

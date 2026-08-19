@@ -9,7 +9,7 @@ Store: tracks.json (one list). Worktrees: <repo>/../helmdeck-worktrees/<repo-has
 Permission mode is per-track and defaults to acceptEdits - the worktree is the blast-radius
 control. Escalate a track to bypassPermissions only deliberately (owner decision)."""
 import json, os, re, shutil, subprocess, time
-from daemon.spine.runs import REC
+from daemon.spine.ops.runs import REC
 
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT
 STORE = os.path.join(ROOT, "tracks.json")
@@ -17,15 +17,15 @@ DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
-from daemon.spine import db as _db
-from daemon.spine.worktrees import reclaim_worktree, sweep_worktrees
-from daemon.spine.outcomes import extract_outcome, _record_outcome
-from daemon.spine.blockers import _blocker_text, blocker, manual_backlog, owner_blockers, waits_for_owner, MANUAL_MODES
-from daemon.spine.econ import _record_econ, _record_turn, _log_turn_end
-from daemon.spine.gitutil import (_git, _git_try, _branch_exists, is_git_repo, _current_branch, _checkpoint, _seed_worktree, _repo_hash, _owned_worktree, _git_state_broken, WORKTREE_DIRNAME)
-from daemon.spine.gitutil import _worktree_for, _base_ref, _worktree_of_branch
-from daemon.spine.trackstore import _load, _save, _save_track, _find, _slug, _unique_id, _mutate, _mutate_lock_for
-from daemon.spine.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
+from daemon.spine.storage import db as _db
+from daemon.spine.git.worktrees import reclaim_worktree, sweep_worktrees
+from daemon.spine.turn.outcomes import extract_outcome, _record_outcome
+from daemon.spine.turn.blockers import _blocker_text, blocker, manual_backlog, owner_blockers, waits_for_owner, MANUAL_MODES
+from daemon.spine.turn.econ import _record_econ, _record_turn, _log_turn_end
+from daemon.spine.git.gitutil import (_git, _git_try, _branch_exists, is_git_repo, _current_branch, _checkpoint, _seed_worktree, _repo_hash, _owned_worktree, _git_state_broken, WORKTREE_DIRNAME)
+from daemon.spine.git.gitutil import _worktree_for, _base_ref, _worktree_of_branch
+from daemon.spine.storage.trackstore import _load, _save, _save_track, _find, _slug, _unique_id, _mutate, _mutate_lock_for
+from daemon.spine.git.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
 from daemon.cells.engineer.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE)
 from daemon.cells.engineer.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, _say_card, move_lane, _is_dirty_block, park_and_retry_merge)
 from daemon.cells.engineer.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED)
@@ -139,13 +139,13 @@ def flag_burn(tid, evidence):
     if t is None or not box.get("ok"):
         return
     try:
-        from daemon.spine.actionlog import ActionLog
+        from daemon.spine.ops.actionlog import ActionLog
         ActionLog(t["run_dir"]).log(
             "note", "⚠ Worker wiederholt denselben Schritt (%dx %s) - PM prueft"
             % (evidence.get("n", 0), evidence.get("name", "")))
     except Exception:
         pass
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.emit("burn", tid, n=evidence.get("n"), name=evidence.get("name"))
     try:
         from daemon.cells.pm import pm
@@ -333,8 +333,8 @@ def _pending_context(t):
     # Thrash guard: if this card has failed its gate several times in a row, a
     # naive rewrite-and-retry keeps burning the budget (SageRoute's rewrite/retest
     # trap). Tell the worker to stop rewriting and change approach - break the loop.
-    from daemon.spine import events
-    from daemon.spine import turnopts
+    from daemon.spine.storage import events
+    from daemon.spine.agent import turnopts
     fails = events.consecutive_gate_fails(t["id"])
     if fails >= turnopts.ESCALATE_TURNS:
         parts.append("This card has FAILED its quality gate %d times in a row. Do "
@@ -456,12 +456,12 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if not t.get("session_id"):
         _start(tid)                      # steering a backlog card dispatches it first
         tracks = _load(); t = _find(tracks, tid)
-    from daemon.spine import events
-    from daemon.spine import turnopts
-    from daemon.spine import drivers
+    from daemon.spine.storage import events
+    from daemon.spine.agent import turnopts
+    from daemon.spine.agent import drivers
     events.emit("touch", tid, touch="steer", actor=actor)
     was_bounced = t.get("status") == "bounced"   # routing signal, read BEFORE 'running'
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     # INTERRUPT-AND-REPLACE: if a turn is live, soft-interrupt it and start THIS
     # instruction now (Paseo's replaceAgentRun), instead of queuing behind it on
@@ -492,7 +492,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     log.log("turn", "Turn gestartet", event="started")
     # the card is moving again, so whatever we last pushed about it is stale -
     # the next notification is news and must not be swallowed by the dedup
-    from daemon.spine import notify
+    from daemon.spine.comms import notify
     notify.clear_dedup(tid)
 
     def _begin(tt):
@@ -586,7 +586,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         t = _maybe_compact(t, log) or t
     except Exception as _e:
         log.log("note", "auto-compact skipped: %s" % str(_e)[:200])
-    from daemon.spine import notify
+    from daemon.spine.comms import notify
     notify.card_event(t, reason)
     # FAST-TRACK = ship EVERY finished turn, hands-free. The flag used to fire
     # only when the OWNER dragged the card to Review - which is exactly the
@@ -629,8 +629,8 @@ def _maybe_fast_track_ship(t, log):
             "Die Karte bleibt in Arbeit.")
 
     def _ship():
-        from daemon.spine.actionlog import ActionLog
-        from daemon.spine import events
+        from daemon.spine.ops.actionlog import ActionLog
+        from daemon.spine.storage import events
         lg = ActionLog(t["run_dir"])
         try:
             if _autocommit(t) == "markers":
@@ -723,7 +723,7 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     free text (the Paseo 'Other' escape hatch) - see ask.validate_answers. Free
     text is no injection risk: the owner is authenticated and could type the
     same thing through /steer anyway."""
-    from daemon.spine import ask
+    from daemon.spine.ops import ask
     # CLAIM the question atomically via _mutate (the per-card MUTATION lock,
     # deliberately NOT the turn lock - answering ends in a steer, whose turn
     # holds that one). Answering is backgrounded by the server, so two quick
@@ -749,9 +749,9 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     if t is None:
         raise RuntimeError("no such track: " + tid)
     q, picks = box["q"], box["picks"]
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(t["run_dir"]).log("note", ask.answer_note(picks))
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.emit("answer", tid, actor=actor, qkind=q.get("kind"),
                 picks=[ask._pick_parts(p) for p in picks])
     # steer() clears the pending question itself and runs the turn under the
@@ -780,7 +780,7 @@ _bg_watcher_started = False
 def _bg_continue_on(t):
     """policy.auto_continue (default on). Off => the card keeps the cue but is
     never steered automatically."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     pol = events.settings().get("policy") or {}
     return bool(pol.get("auto_continue", True))
 
@@ -788,7 +788,7 @@ def _bg_continue_on(t):
 def _continue_prompt():
     """Tagged as harness-injected so the card feed renders it as a system note
     instead of a message the owner appears to have typed (ask.harness_msg)."""
-    from daemon.spine import ask
+    from daemon.spine.ops import ask
     return ask.harness_msg(
         "background-done",
         "Dein Hintergrund-Task ist fertig - das hier ist ein automatischer "
@@ -819,7 +819,7 @@ def _sweep_background():
         # flight, the tasks died with their parent - flip the still-running ones
         # to 'canceled' NOW instead of parking the card for the full 6h. The
         # continue-on-clear path below then resumes the worker to pick up.
-        from daemon.spine import drivers
+        from daemon.spine.agent import drivers
         if not drivers.has_session(t["id"]) and not drivers.turn_active(t["id"]):
             if reconcile_bg(t["id"]):
                 t = _find(_load(), t["id"]) or t
@@ -833,7 +833,7 @@ def _sweep_background():
                 tt.pop("background", None)
             _mutate(t["id"], _giveup)
             continue
-        from daemon.spine import claude_sessions
+        from daemon.spine.agent import claude_sessions
         try:
             state, _payload = claude_sessions.background_state(t)
         except Exception:
@@ -859,7 +859,7 @@ def _sweep_background():
         _mutate(t["id"], _claim)
         if not claim.get("ok"):
             continue
-        from daemon.spine.actionlog import ActionLog
+        from daemon.spine.ops.actionlog import ActionLog
         # steer only ACTIVE work, and only if the owner allows auto-continue;
         # otherwise the cue is cleared (above) and the card honestly waits on
         # the owner instead of on a task that has already reported.
@@ -870,7 +870,7 @@ def _sweep_background():
             continue
         ActionLog(t["run_dir"]).log(
             "note", "Hintergrund-Task fertig - Karte laeuft automatisch weiter")
-        from daemon.spine import events
+        from daemon.spine.storage import events
         events.emit("autocontinue", t["id"], actor="daemon")
 
         # A continuation is a full turn (up to 1800s). Run it OFF the watcher
@@ -942,7 +942,7 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
         session, seeded with the original's starting request (source untouched).
     No git commit is made either way - tracking is the card's audit trail; a fork
     creates a branch pointer, real commits come only when the agent commits code."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     cwd = os.path.abspath(cwd)
     if not os.path.isdir(cwd):
         raise RuntimeError("session working dir not found: " + cwd)
@@ -988,7 +988,7 @@ def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(run_dir).log("note", "ADOPTED Claude session %s (cwd %s)" % (session_id, cwd))
     events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver="claude")
     _save_track(t)
@@ -1022,14 +1022,14 @@ def cancel_turn(tid, actor="owner"):
     a spinner that Stop could never clear. Now Stop unfreezes it exactly like the
     startup sweep does (bounce + resend note), so the button always does
     something instead of no-oping on a dead session."""
-    from daemon.spine import drivers
-    from daemon.spine import events
+    from daemon.spine.agent import drivers
+    from daemon.spine.storage import events
     killed = drivers.cancel(tid)
     if killed:
         events.emit("touch", tid, touch="cancel", actor=actor)
         t = get_track(tid)
         if t:
-            from daemon.spine.actionlog import ActionLog
+            from daemon.spine.ops.actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "turn CANCELLED by %s" % actor)
 
             # Reset the card OFF "running" here. Normally the steer thread does
@@ -1061,7 +1061,7 @@ def cancel_turn(tid, actor="owner"):
         _mutate(tid, _unfreeze)
         if "note" in box:
             try:
-                from daemon.spine.actionlog import ActionLog
+                from daemon.spine.ops.actionlog import ActionLog
                 ActionLog(t["run_dir"]).log("note", "STOP on a dead session - " + box["note"])
             except Exception:
                 pass

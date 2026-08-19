@@ -55,13 +55,13 @@ WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 # Fully package-qualified now that daemon/ is a real Python package (import
 # daemon.cells.pm.pm, not a sys.path trick) - each entry is checked via
 # `import <entry>` in a fresh subprocess run with cwd=ROOT (repo root).
-CORE_MODULES = ["daemon.spine.db", "daemon.spine.events",
-                "daemon.cells.engineer.sessions", "daemon.spine.drivers",
+CORE_MODULES = ["daemon.spine.storage.db", "daemon.spine.storage.events",
+                "daemon.cells.engineer.sessions", "daemon.spine.agent.drivers",
                 "daemon.cells.process.processes", "daemon.cells.copilot.copilot",
-                "daemon.cells.connectors.connectors", "daemon.spine.charter",
-                "daemon.spine.checkpoints", "daemon.spine.auth",
-                "daemon.spine.importers", "daemon.spine.debt",
-                "daemon.spine.server"]
+                "daemon.cells.connectors.connectors", "daemon.spine.auth.charter",
+                "daemon.spine.ops.checkpoints", "daemon.spine.auth.auth",
+                "daemon.spine.ops.importers", "daemon.spine.registry.debt",
+                "daemon.spine.http.server"]
 SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
                 "helmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
@@ -225,7 +225,7 @@ def hygiene_problems():
     try:
         sys.path.insert(0, ROOT)
         import importlib
-        import daemon.spine.debt as _d
+        import daemon.spine.registry.debt as _d
         importlib.reload(_d)
         for item in _d.DEBT:
             if item.get("status") not in ("open", "in_progress", "paid"):

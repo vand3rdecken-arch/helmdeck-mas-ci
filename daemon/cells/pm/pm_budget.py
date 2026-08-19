@@ -43,7 +43,7 @@ def _quota_floor():
     this returns the lowest-priority rank still allowed to dispatch (0=urgent .. 3=low),
     or None when there's headroom to dispatch everything. Cheap (cached snapshot)."""
     try:
-        from daemon.spine import usage
+        from daemon.spine.ops import usage
         f = usage.weekly_pacing_flag()
     except Exception:
         return None
@@ -111,7 +111,7 @@ def _quota_signal():
     """Compact LIVE budget for the planning brain: the weekly + 5h quota windows so
     the PM can judge budget-FIT (not just scope). Empty/failsafe when unavailable."""
     try:
-        from daemon.spine import usage
+        from daemon.spine.ops import usage
         s = usage.snapshot()
     except Exception:
         return {}
@@ -166,7 +166,7 @@ def _budget_assess(econ, est_turns, pace):
         return b, state
     # -- Max / flat plan: the usage allowance IS the budget --------------------
     try:
-        from daemon.spine import usage as _usage
+        from daemon.spine.ops import usage as _usage
         snap = _usage.snapshot()
     except Exception:
         snap = {}

@@ -12,12 +12,12 @@ import os
 import subprocess
 import time
 
-from daemon.spine.runs import REC
+from daemon.spine.ops.runs import REC
 
-from daemon.spine import db as _db
-from daemon.spine.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
-from daemon.spine.gitutil import _git, _branch_exists, _checkpoint, _worktree_for
-from daemon.spine.worktrees import reclaim_worktree
+from daemon.spine.storage import db as _db
+from daemon.spine.storage.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
+from daemon.spine.git.gitutil import _git, _branch_exists, _checkpoint, _worktree_for
+from daemon.spine.git.worktrees import reclaim_worktree
 
 # same source-of-truth as sessions.{ROOT,DEFAULT_PERM} - process-idempotent,
 # safe to read independently rather than importing sessions (would cycle).
@@ -43,7 +43,7 @@ BOOLFIELDS = ("autopilot", "fast_track")
 
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
 
     def _flag(tt):
         tt["archived"] = bool(on)
@@ -51,7 +51,7 @@ def archive_track(tid, on=True, actor="owner"):
     if not t:
         raise RuntimeError("no such track: " + tid)
     events.emit("archive", tid, on=bool(on), actor=actor)
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", ("ARCHIVED" if on else "UNARCHIVED") + " by " + actor)
     if on:
@@ -64,7 +64,7 @@ def archive_track(tid, on=True, actor="owner"):
 def delete_track(tid, actor="owner"):
     """Destructive but bounded: removes the card, its worktree and branch.
     The audit trail is NOT deletable - events and the recording stay."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     tracks = _load()
     t = _find(tracks, tid)
     if not t:
@@ -94,13 +94,13 @@ def update_track(tid, patch, actor="owner"):
     fast_track/resolve_conflict: policy.chat_admin_roles checked BEFORE
     calling this), but "is this even a real driver" and "not mid-turn" are
     invariants no caller should be able to skip."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     if "driver" in patch and patch["driver"] is not None:
         valid = set((events.settings().get("drivers") or {}).keys())
         if patch["driver"] not in valid:
             raise ValueError("unknown driver '%s' - choices: %s"
                               % (patch["driver"], ", ".join(sorted(valid)) or "(none configured)"))
-        from daemon.spine import drivers
+        from daemon.spine.agent import drivers
         if drivers.turn_active(tid):
             raise RuntimeError("cannot change driver while a turn is running - wait for it to finish")
     changed = {}
@@ -125,7 +125,7 @@ def update_track(tid, patch, actor="owner"):
         raise RuntimeError("no such track: " + tid)
     if changed:
         events.emit("edit", tid, actor=actor, fields=changed)
-        from daemon.spine.actionlog import ActionLog
+        from daemon.spine.ops.actionlog import ActionLog
         log = ActionLog(t["run_dir"])
         log.log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
         # Visible capability-grant note (never a silent change) whenever the
@@ -144,7 +144,7 @@ def update_track(tid, patch, actor="owner"):
             # any surviving session is IDLE - drop it now instead of leaving the
             # stale old-grant process to linger until the next turn notices. The
             # flip then takes hold on the very next message with no ghost process.
-            from daemon.spine import drivers as _drivers
+            from daemon.spine.agent import drivers as _drivers
             _drivers.drop_session(tid)
         # Flipping fast_track ON is itself a ship trigger, not just future turns:
         # a card can already be sitting on a finished-but-undeployed turn (owner
@@ -197,8 +197,8 @@ def add_attachments(tid, attachments, actor="owner"):
     """Attach files (PDF etc.) to an existing card, Jira/Plane-style. Saved into
     the card's run_dir/.attachments and appended to the card's file list; the
     worker sees them on its next turn (prompt lists attached files)."""
-    from daemon.spine import turnopts
-    from daemon.spine import events
+    from daemon.spine.agent import turnopts
+    from daemon.spine.storage import events
     t = _find(_load(), tid)
     if not t:
         raise RuntimeError("no such track: " + tid)
@@ -208,7 +208,7 @@ def add_attachments(tid, attachments, actor="owner"):
             tt["attachments"] = (tt.get("attachments") or []) + new_paths
         t = _mutate(tid, _attach) or t
         events.emit("edit", tid, actor=actor, fields={"attachments": len(new_paths)})
-        from daemon.spine.actionlog import ActionLog
+        from daemon.spine.ops.actionlog import ActionLog
         ActionLog(t["run_dir"]).log("note", "%s attached %d file(s)" % (actor, len(new_paths)))
     return t
 
@@ -252,9 +252,9 @@ def rewind_files(tid, commit, actor="owner"):
                 {"turn": tt.get("turns"), "commit": undo,
                  "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "reply": "(pre-rewind snapshot)"})
         _mutate(tid, _anchor)
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.emit("rewind", tid, commit=commit[:12], undo=(undo or "")[:12], actor=actor)
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(t["run_dir"]).log("note", "REWOUND files to %s (undo %s) by %s"
                                 % (commit[:8], (undo or "?")[:8], actor))
     return {"ok": True, "undo": undo}
@@ -282,7 +282,7 @@ def fork_conversation(tid, first="", actor="owner"):
     cards there today. A git card gets its OWN worktree (checked out at the
     source's CURRENT branch tip) so two cards never write into the same
     checkout at once - a chat split is not a licence for concurrent edits."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     src = _find(_load(), tid)
     if not src:
         raise RuntimeError("no such card: " + tid)
@@ -318,7 +318,7 @@ def fork_conversation(tid, first="", actor="owner"):
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(run_dir).log("note", "KONVERSATION FORKED von Karte %s (Session %s...)"
                            % (tid, sid[:8]))
     events.emit("chatfork", new_id, source_card=tid, session=sid, actor=actor)
@@ -331,7 +331,7 @@ def fork_track(tid, from_ref="", actor="owner"):
     commit hash). Append-only: creates a new branch/worktree/session off the
     ref; the source card is never modified. The forked worktree carries the
     code exactly as of `ref`."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     src = _find(_load(), tid)
     if not src:
         raise RuntimeError("no such card: " + tid)
@@ -357,7 +357,7 @@ def fork_track(tid, from_ref="", actor="owner"):
          "forked_from": tid, "forked_ref": from_ref or "tip",
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
-    from daemon.spine.actionlog import ActionLog
+    from daemon.spine.ops.actionlog import ActionLog
     ActionLog(run_dir).log("note", "FORKED from card %s (%s%s) by %s" % (
         tid, short or "tip of ", src["branch"], actor))
     _save_track(t)
@@ -366,7 +366,7 @@ def fork_track(tid, from_ref="", actor="owner"):
 
 def history(tid):
     """The track's conversation as recorded steers/replies (the reviewable timeline)."""
-    from daemon.spine.actionlog import read_timeline
+    from daemon.spine.ops.actionlog import read_timeline
     t = _find(_load(), tid)
     if not t:
         return []
