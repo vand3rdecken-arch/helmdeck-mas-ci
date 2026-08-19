@@ -33,7 +33,7 @@ edit a brief, next turn uses it, no daemon restart.
 """
 import json, os, threading
 
-from _subpaths import REPO_ROOT as ROOT
+from daemon.paths import REPO_ROOT as ROOT
 HARNESS = os.path.join(ROOT, "harness")
 AGENTS = os.path.join(HARNESS, "agents")
 SETTINGS = os.path.join(HARNESS, "settings")
@@ -203,7 +203,7 @@ def _resolve(body, fm):
     if not fm.get("ask_protocol"):
         return body.replace(ASK_MARKER, "").strip()
     try:
-        import ask
+        from daemon.spine import ask
         proto = ask.BRIEF
     except Exception:
         return body.replace(ASK_MARKER, "").strip()
@@ -807,13 +807,13 @@ def preview(surface_key, cfg=None):
     # -- the argv, from the one real builder -------------------------------
     try:
         if surface_key == "pm":
-            import copilot
+            from daemon.cells.copilot import copilot
             argv, role_in_turn = copilot.build_argv("<model>", "<session-id>", BRIEF_ARG_MARKER)
             out["note"] = ("Der Rollen-Prompt reist als --append-system-prompt." if not role_in_turn
                            else "cmd.exe-Fallback aktiv: die Rolle wird dem Turn vorangestellt "
                                 "statt als --append-system-prompt uebergeben.")
         else:
-            import drivers
+            from daemon.spine import drivers
             cfg = dict(cfg or {"type": "claude"})
             cfg.setdefault("perm", "acceptEdits")
             argv = drivers.build_argv(agent, cfg, BRIEF_ARG_MARKER,
@@ -828,7 +828,7 @@ def preview(surface_key, cfg=None):
         # made every worker start with a fresh mind. A preview that showed only
         # the pre-rewrite form would hide the single most consequential thing
         # about how this process actually starts.
-        import drivers as _d
+        from daemon.spine import drivers as _d
         exec_argv = _d._cmd_line(list(argv))
         out["exec_form"] = ("argv-list" if _d.argv_form_safe(argv[0])
                             else "cmd.exe-string (Argumente koennen verstuemmelt werden)")

@@ -10,10 +10,9 @@ import json
 import os
 import sys
 
-import _subpaths; _subpaths.ensure_cell_paths()
-import auth
+from daemon.spine import auth
 
-from _subpaths import DAEMON_ROOT as HERE
+from daemon.paths import DAEMON_ROOT as HERE
 USERS = os.path.join(HERE, "users.json")
 
 

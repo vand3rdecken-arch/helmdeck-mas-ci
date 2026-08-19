@@ -11,9 +11,9 @@ import os
 import re
 import threading as _threading
 import time
-import db as _db
+from daemon.spine import db as _db
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 STORE = os.path.join(ROOT, "tracks.json")
 
 

@@ -58,7 +58,7 @@ def _pubs_of(rel):
 
 
 def _cfg():
-    import events
+    from daemon.spine import events
     r = events.settings().get("relay") or {}
     return ((r.get("url", "") or "").rstrip("/"), r.get("room", "") or "",
             r.get("sk", "") or "", _pubs_of(r))
@@ -70,7 +70,7 @@ def _admit(pub):
     otherwise returns (False, reason) - the reason is sealed back to the caller
     so pairing failures surface in the app instead of hanging."""
     with _pin_lock:
-        import events
+        from daemon.spine import events
         rel = dict(events.settings().get("relay") or {})
         pubs = _pubs_of(rel)
         if pub in pubs:
@@ -123,7 +123,7 @@ def _local(port, inner):
 
 
 def _serve_one(relay, room, sk_b64, port, frame):
-    import e2ee
+    from daemon.spine import e2ee
     fid = frame.get("id")
     pub = frame.get("pub", "")
     ok, reason = _admit(pub)
@@ -206,7 +206,7 @@ def _loop(port):
                 # new pairing links are refused until the URL is https.
                 warned_http = True
                 try:
-                    import events
+                    from daemon.spine import events
                     events.log("relay", "relay url is plain http:// - frames are "
                                "still E2EE-sealed, but pairing is refused until "
                                "the relay URL is https (Settings -> Mobile app)")
@@ -215,7 +215,7 @@ def _loop(port):
             frame = _pull(relay, room)
             if errs:
                 try:
-                    import events
+                    from daemon.spine import events
                     events.log("relay", "bridge reconnected after %d failed attempt(s)" % errs)
                 except Exception:
                     pass
@@ -227,7 +227,7 @@ def _loop(port):
             errs += 1
             if errs == 1 or errs % 10 == 0:
                 try:
-                    import events
+                    from daemon.spine import events
                     events.log("relay", "bridge unreachable (attempt %d, retry in %ds): %s"
                                % (errs, delay, str(e)[:200]))
                 except Exception:
@@ -252,7 +252,9 @@ def pairing_payload():
     issuance) silently unpaired the current phone the moment the owner
     GENERATED a code, then re-pinned whichever device spoke first.
     (The phone also needs a device token for daemon auth - added by the caller.)"""
-    import os, base64, events, e2ee
+    import os, base64
+    from daemon.spine import events
+    from daemon.spine import e2ee
     rel = dict(events.settings().get("relay") or {})
     if insecure_url(rel.get("url", "")):
         # Refuse BEFORE opening the window or minting anything: the code this
@@ -279,7 +281,9 @@ def unpair():
     room + keypair, so every pairing code/QR/link ever issued is dead - a
     deterministic kill-switch, not just "let the next phone pin itself". The
     push token goes too (it belongs to the unpaired phone)."""
-    import os, base64, events, e2ee
+    import os, base64
+    from daemon.spine import events
+    from daemon.spine import e2ee
     rel = dict(events.settings().get("relay") or {})
     sk, _ = e2ee.generate_keypair()
     rel.update({"sk": e2ee.export_sec(sk),

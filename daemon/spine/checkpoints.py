@@ -8,7 +8,7 @@ version of the workspace is ever lost. Work data (tracks, events, recordings)
 is never part of a restore - checkpoints roll back the machine, not history."""
 import json, os, shutil, time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 CPDIR = os.path.join(ROOT, "checkpoints")
 os.makedirs(CPDIR, exist_ok=True)
 KEEP = 60
@@ -108,6 +108,6 @@ def restore(cid, actor="owner"):
                 shutil.copy2(os.path.join(s, f), os.path.join(dst, f))
         elif os.path.exists(s):
             shutil.copy2(s, dst)
-    import events
+    from daemon.spine import events
     events.emit("checkpoint", "-", action="restored", checkpoint=cid, actor=actor)
     return cid

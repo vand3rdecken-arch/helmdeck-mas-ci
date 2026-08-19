@@ -14,12 +14,12 @@ import json
 
 
 def checkpoints_list_get(self, user):
-    import checkpoints
+    from daemon.spine import checkpoints
     return self._send(200, json.dumps(checkpoints.list_checkpoints()))
 
 
 def checkpoints_diff_get(self, user, cid):
-    import checkpoints
+    from daemon.spine import checkpoints
     try:
         return self._send(200, json.dumps(checkpoints.diff(cid)))
     except (RuntimeError, ValueError) as e:
@@ -29,7 +29,7 @@ def checkpoints_diff_get(self, user, cid):
 def checkpoints_restore_post(self, user, cid):
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import checkpoints
+    from daemon.spine import checkpoints
     try:
         checkpoints.restore(cid, actor=user["name"])
         return self._send(200, json.dumps({"restored": cid}))

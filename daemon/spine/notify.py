@@ -18,7 +18,7 @@ import json, urllib.request
 
 import base64, json as _json, os, threading, time as _time
 
-from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 _SA = os.path.join(_DAEMON_ROOT, "fcm_service_account.json")
 _tok = {"val": None, "exp": 0}
 _tok_lock = threading.Lock()
@@ -49,14 +49,15 @@ def _access_token():
 
 
 def fcm_ready():
-    import events
+    from daemon.spine import events
     return (os.path.exists(_SA)
             and bool((events.settings().get("push") or {}).get("fcm_token")))
 
 
 def push_fcm(title, body, track_id=""):
     """Sealed data message to the paired phone. Best-effort like push()."""
-    import events, e2ee
+    from daemon.spine import events
+    from daemon.spine import e2ee
     s = events.settings()
     device = (s.get("push") or {}).get("fcm_token", "")
     rel = s.get("relay") or {}
@@ -122,7 +123,7 @@ def should_push(track, status):
     with _dedup_lock:
         if _last_push.get(tid) == key:
             return False, "already pushed (dedup %s)" % key
-    import presence
+    from daemon.spine import presence
     decision = presence.plan(tid)
     if decision == "silent":
         return False, "owner is looking at this card"
@@ -152,7 +153,7 @@ def escalate(title, body, track_id=""):
     track_id may be "" for goal-level alerts: then no client can be 'focused'
     and only the present/absent split applies - absent still pushes, which is
     the safe direction to be wrong in."""
-    import presence
+    from daemon.spine import presence
     decision = presence.plan(track_id)
     if decision != "push":
         print("notify: escalation suppressed (%s) - %s" % (decision, title))
@@ -169,7 +170,7 @@ def card_event(track, status):
     ended on a typed question reports "question" so the owner learns there is a
     decision waiting (with the question itself as the body) instead of the
     generic "card finished"."""
-    import i18n
+    from daemon.spine import i18n
     # NB "background" is deliberately absent: a card waiting on its own
     # background task is NOT the owner's move, so it must never buzz his phone.
     # It shows as an in-app cue and auto-continues when the task finishes.
@@ -183,7 +184,7 @@ def card_event(track, status):
         return
     body = "%s  [%s]" % (track.get("task", "")[:80], track.get("id", ""))
     if status == "question":
-        import ask
+        from daemon.spine import ask
         q = ask.summary(track.get("question"))
         if q:
             body = "%s\n%s" % (q[:120], track.get("task", "")[:60])

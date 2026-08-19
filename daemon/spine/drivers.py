@@ -31,9 +31,9 @@ apps/browser on this PC with the whole turn recorded - the flight-recorder
 promise, now per-card."""
 import hashlib, json, os, re as _re, shutil, subprocess, threading, time as _time, uuid
 import urllib.request
-from spawnenv import _card_env, _env
-from proctable import (_pid_table, _descendants, _tree_kill, _read_pids, _write_pids, _record_pid, _forget_pid, _proc_start_epoch, _is_agent_pid, _is_ours, reap_orphans)
-from agentcli import (_real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
+from daemon.spine.spawnenv import _card_env, _env
+from daemon.spine.proctable import (_pid_table, _descendants, _tree_kill, _read_pids, _write_pids, _record_pid, _forget_pid, _proc_start_epoch, _is_agent_pid, _is_ours, reap_orphans)
+from daemon.spine.agentcli import (_real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
 
 _re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
 
@@ -48,8 +48,8 @@ def _text_of(content):
     return ""
 
 
-import ask   # the typed question channel taught to every worker (Phase 2.4)
-import harness  # briefs + settings layers as data (harness/), never raises
+from daemon.spine import ask  # the typed question channel taught to every worker (Phase 2.4)
+from daemon.spine import harness  # briefs + settings layers as data (harness/), never raises
 
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
@@ -129,7 +129,7 @@ _sweeper_started = False
 
 def _idle_ttl():
     try:
-        import events
+        from daemon.spine import events
         v = events.settings().get("idle_session_ttl_s")
         if v:
             return float(v)
@@ -151,7 +151,7 @@ def _running_cards():
         outlives the 5-minute idle TTL, so without this the feature would kill
         its own subject - the session stays until the task is done."""
     try:
-        import sessions
+        from daemon.cells.engineer import sessions
         return {t.get("id") for t in sessions._load()
                 if t.get("status") == "running" or t.get("waiting_on") == "background"}
     except Exception:
@@ -424,7 +424,7 @@ class _ClaudeSession:
         self._bg_candidates = {}
         self._bg_open = {}
         try:
-            import sessions
+            from daemon.cells.engineer import sessions
             sessions.reconcile_bg(self.tid)
         except Exception:
             pass
@@ -434,7 +434,7 @@ class _ClaudeSession:
             # spawn. Degrade to a FRESH session and leave a visible note in the
             # card feed instead of a dead card.
             try:
-                import claude_sessions
+                from daemon.spine import claude_sessions
                 lost = claude_sessions._find_transcript(self.session_id) is None
             except Exception:
                 lost = False
@@ -446,7 +446,7 @@ class _ClaudeSession:
                 self.adopted_source = None
                 if self.run_dir:
                     try:
-                        from actionlog import ActionLog
+                        from daemon.spine.actionlog import ActionLog
                         ActionLog(self.run_dir).log("note", note)
                     except Exception:
                         pass
@@ -464,7 +464,7 @@ class _ClaudeSession:
         # the truth in the card feed, so that class is diagnosable in seconds.
         if self.run_dir:
             try:
-                from actionlog import ActionLog
+                from daemon.spine.actionlog import ActionLog
                 ActionLog(self.run_dir).log("note", "SESSION spawn: %s%s" % (
                     ("resume " + self.session_id[:8]) if self.session_id else "FRESH (kein Kontext)",
                     " +fork" if ("--fork-session" in argv) else ""))
@@ -643,7 +643,7 @@ class _ClaudeSession:
         c = m.get("content")
         if not isinstance(c, list):
             return
-        import sessions
+        from daemon.cells.engineer import sessions
         for p in c:
             if not isinstance(p, dict):
                 continue
@@ -705,7 +705,7 @@ class _ClaudeSession:
                 if n >= level:
                     cur["burn_fired"] = level
                     try:
-                        import sessions
+                        from daemon.cells.engineer import sessions
                         sessions.flag_burn(self.tid, {
                             "n": n, "name": p.get("name"), "sig": sig, "sample": blob[:200]})
                     except Exception:

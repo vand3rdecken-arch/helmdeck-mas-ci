@@ -28,8 +28,7 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _fails = []
 def ok(cond, msg):
@@ -41,7 +40,7 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-voicedb-test-")
 
-    import voice
+    from daemon.spine import voice
     cache = os.path.join(tmp, "voice_cache")
     voice.CACHE = cache
     # do NOT create `cache` up front - path_for()/stats() must tolerate a

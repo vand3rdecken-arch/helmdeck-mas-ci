@@ -23,8 +23,8 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-from actionlog import ActionLog
-import wincap
+from daemon.spine.actionlog import ActionLog
+from daemon.spine import wincap
 
 DEFAULT_PORT = int(os.environ.get("HELMDECK_CHROME_PORT") or "9222")
 

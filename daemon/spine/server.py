@@ -13,8 +13,8 @@ decision: mobile = same capabilities), so besides pulling it can drive:
 import json, os, threading
 from urllib.parse import unquote, quote, parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from actionlog import read_timeline
-from runs import REC, list_runs
+from daemon.spine.actionlog import read_timeline
+from daemon.spine.runs import REC, list_runs
 
 _ctl = {"teach": None, "busy": []}   # current TeachSession + background job names
 _ctl_lock = threading.Lock()
@@ -47,29 +47,29 @@ def _active_live():
 LEGACY_UI = ("/", "/classic", "/recorder", "/dashboard")
 
 def _web_url():
-    import events
+    from daemon.spine import events
     return (events.settings().get("web_url") or "http://localhost:3300").rstrip("/")
 
-from apimeta import _loop_state_mod, _lane_flow, _loop_machine, _config_schema, CONTROLS
-from glances import glance_payload, _glance_question
-import routes_auth
-import routes_policy
-import routes_settings
-import routes_glance
-import routes_info
-import routes_pm
-import routes_misc
-import routes_control
-import routes_relay
-import routes_connectors
-import routes_checkpoints
-import routes_projects
-import routes_copilot
-import routes_tracks
-import routes_track_actions
-import routes_runs
-import routes_system
-import routes_cells
+from daemon.spine.apimeta import _loop_state_mod, _lane_flow, _loop_machine, _config_schema, CONTROLS
+from daemon.spine.glances import glance_payload, _glance_question
+from daemon.spine.routes import routes_auth
+from daemon.spine.routes import routes_policy
+from daemon.spine.routes import routes_settings
+from daemon.spine.routes import routes_glance
+from daemon.spine.routes import routes_info
+from daemon.cells.pm import routes_pm
+from daemon.spine.routes import routes_misc
+from daemon.spine.routes import routes_control
+from daemon.spine.routes import routes_relay
+from daemon.cells.connectors import routes_connectors
+from daemon.spine.routes import routes_checkpoints
+from daemon.spine.routes import routes_projects
+from daemon.cells.copilot import routes_copilot
+from daemon.cells.engineer import routes_tracks
+from daemon.cells.engineer import routes_track_actions
+from daemon.spine.routes import routes_runs
+from daemon.spine.routes import routes_system
+from daemon.spine.routes import routes_cells
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -88,7 +88,7 @@ class H(BaseHTTPRequestHandler):
         return None
 
     def _user(self):
-        import auth
+        from daemon.spine import auth
         tok = ""
         h = self.headers.get("Authorization") or ""
         if h.startswith("Bearer "):
@@ -106,7 +106,7 @@ class H(BaseHTTPRequestHandler):
             # board look permanently busy and the PM/night loop would never
             # find its idle window again. Heartbeats say "he is here", which is
             # a different question from "he is working" - see presence.py.
-            import pm
+            from daemon.cells.pm import pm
             pm.touch()
         return u
 
@@ -185,11 +185,11 @@ class H(BaseHTTPRequestHandler):
             # Cell gate: a path owned by a DISABLED agentic system 404s cleanly
             # (the tab is gone on the app; the route reports absent). One derived
             # check, no per-route edits. No-op while all cells default enabled.
-            import cells
+            from daemon.spine import cells
             if cells.path_disabled(p):
                 return self._send(404, json.dumps({"error": "cell disabled"}))
             if p == "/users":
-                import auth
+                from daemon.spine import auth
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 return self._send(200, json.dumps([
@@ -219,7 +219,7 @@ class H(BaseHTTPRequestHandler):
                 # returns {v}. The phone loops it and invalidates on change -
                 # live board updates in relay mode, no fixed poll. 22s < relay
                 # REPLY_TIMEOUT (120) and bridge _local (115).
-                import db
+                from daemon.spine import db
                 want = (parse_qs(urlparse(self.path).query).get("v") or ["0"])[0]
                 try:
                     last = int(want)
@@ -229,7 +229,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/stream":
                 # SSE: push a version tick whenever board data changes - pays
                 # the polling debt. Client refetches on tick.
-                import db
+                from daemon.spine import db
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
@@ -298,7 +298,7 @@ class H(BaseHTTPRequestHandler):
         except ValueError:
             body = {}
         try:
-            import auth
+            from daemon.spine import auth
             user = self._user()
             # Dispatch-table routes (see do_GET) - checked before the inline
             # if-chain, so this is a pure relocation of the 4 auth POST routes.
@@ -312,7 +312,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(401, json.dumps({"error": "auth required"}))
             # Cell gate (see do_GET): a POST path owned by a DISABLED agentic
             # system 404s cleanly. No-op while all cells default enabled.
-            import cells
+            from daemon.spine import cells
             if cells.path_disabled(p):
                 return self._send(404, json.dumps({"error": "cell disabled"}))
             # ---- user management (owner only) ----
@@ -358,7 +358,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/sessions/claude/adopt":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
-                import sessions
+                from daemon.cells.engineer import sessions
                 try:
                     return self._send(200, json.dumps(sessions.adopt_session(
                         body.get("session_id", ""), body.get("cwd", ""),
@@ -430,32 +430,33 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(500, json.dumps({"error": str(e)}))
 
-from startup import _tls_config, _hydrate_windows_path, _hydrate_registry_env, _take_singleton_lock
+from daemon.spine.startup import _tls_config, _hydrate_windows_path, _hydrate_registry_env, _take_singleton_lock
 
 
 def serve(port=8140):
     _hydrate_windows_path()      # bash-launched daemons lack Windows dirs on PATH -> gate/py/cmd fail
     _hydrate_registry_env()      # + JAVA_HOME/ANDROID_HOME/user-PATH from the registry (build env)
     _take_singleton_lock(port)   # evict a prior daemon so the relay poll never races a restart
-    import db
+    from daemon.spine import db
     # role="daemon": loading the store AS THE DAEMON structurally devalues any
     # persisted 'running'/'gating' (db._devalue_persisted_running - the old
     # serve()-side sweep_zombies call, now part of the load path itself).
     db.init(role="daemon")
-    import drivers, atexit
+    import atexit
+    from daemon.spine import drivers
     reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
     if reaped:
         print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
     # SINGLETON eviction's taskkill /T does not reliably cascade to a
     # grandchild ffmpeg subprocess, so a screen recorder can outlive the
     # daemon that started it - reap those too (wincap.py's own reap_orphans).
-    import wincap
+    from daemon.spine import wincap
     rreaped = wincap.reap_orphans()
     if rreaped:
         print("WINCAP: reaped %d orphan screen recorder(s) from a previous run." % rreaped)
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
     atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
-    import sessions
+    from daemon.cells.engineer import sessions
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
         print("SESSIONS: reclaimed %d merged worktree(s)" % reclaimed)  # stays clean by having none at all.
@@ -469,13 +470,15 @@ def serve(port=8140):
     stamped = sessions.backfill_outcomes()  # one-shot: stamp reviewed outcomes onto pre-outcome
     if stamped:                             # done cards (pays debt legacy-outcome-on-read)
         print("SESSIONS: backfilled outcome on %d legacy done card(s)" % stamped)
-    import auth, events
+    from daemon.spine import auth
+    from daemon.spine import events
     if auth.migrate_legacy(events.settings().get("users")):
         print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
-    import relay_client, cells
+    from daemon.spine import relay_client
+    from daemon.spine import cells
     # Cell lifecycle: launch each ENABLED agentic system's poller through the
     # registry (process chain poller, connectors scheduler, pm proactive loop).
     # Replaces the flat start_*() calls - all cells default enabled, so this is

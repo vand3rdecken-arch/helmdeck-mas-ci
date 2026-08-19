@@ -22,9 +22,10 @@ Run: py -3.12 daemon/test_desktop_lock_wait.py
 """
 import os, sys, tempfile, threading, time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
-import events, sessions, drivers
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from daemon.spine import events
+from daemon.cells.engineer import sessions
+from daemon.spine import drivers
 
 
 # --- sandbox ---------------------------------------------------------------

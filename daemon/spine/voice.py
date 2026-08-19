@@ -31,7 +31,7 @@ import os
 import threading
 import time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 CACHE = os.path.join(ROOT, "voice_cache")
 
 # The multilingual voice is deliberate: HelmDeck card titles are mixed

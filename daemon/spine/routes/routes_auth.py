@@ -14,7 +14,8 @@ import json
 
 
 def auth_state(self, user):
-    import auth, events
+    from daemon.spine import auth
+    from daemon.spine import events
     reg = events.settings().get("registration") or {}
     return self._send(200, json.dumps(
         {"setup_needed": not auth.list_users(), "user": user,
@@ -23,7 +24,7 @@ def auth_state(self, user):
 
 
 def auth_setup(self, user, body):
-    import auth
+    from daemon.spine import auth
     if auth.list_users():
         return self._send(403, json.dumps({"error": "already set up"}))
     try:
@@ -39,7 +40,9 @@ def auth_setup(self, user, body):
 
 
 def auth_register(self, user, body):
-    import auth, events, secrets as _s
+    import secrets as _s
+    from daemon.spine import auth
+    from daemon.spine import events
     reg = events.settings().get("registration") or {}
     code = (body.get("invite") or "").strip()
     if not reg.get("open"):
@@ -55,7 +58,8 @@ def auth_register(self, user, body):
     # above, never blocks/fails the signup if Loops is down.
     email = (body.get("email") or "").strip()
     if email:
-        import threading, loops_client
+        import threading
+        from daemon.spine import loops_client
         threading.Thread(target=loops_client.signup_contact,
                          args=(email, body.get("name", "")),
                          daemon=True).start()
@@ -67,7 +71,7 @@ def auth_register(self, user, body):
 
 
 def auth_login(self, user, body):
-    import auth
+    from daemon.spine import auth
     name = body.get("name", "")
     sid = auth.login(name, body.get("password", ""))
     if not sid:
@@ -85,7 +89,7 @@ def auth_login(self, user, body):
 
 
 def auth_logout(self, user, body):
-    import auth
+    from daemon.spine import auth
     if self._sid():
         auth.logout(self._sid())
     return self._send_cookie(200, json.dumps({"ok": True}), clear=True)

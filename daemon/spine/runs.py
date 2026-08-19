@@ -3,7 +3,7 @@
 Keep-all retention (owner decision) - nothing here ever deletes a run."""
 import json, os, time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 REC = os.path.join(ROOT, "recordings")
 
 def new_run(kind, title):

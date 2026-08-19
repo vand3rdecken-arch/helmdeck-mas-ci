@@ -52,9 +52,16 @@ LOOPDIR = os.path.join(ROOT, ".loop")
 WORKORDER = os.path.join(LOOPDIR, "workorder.md")
 WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 
-CORE_MODULES = ["db", "events", "sessions", "drivers", "processes", "copilot",
-                "connectors", "charter", "checkpoints", "auth", "importers",
-                "debt", "server"]
+# Fully package-qualified now that daemon/ is a real Python package (import
+# daemon.cells.pm.pm, not a sys.path trick) - each entry is checked via
+# `import <entry>` in a fresh subprocess run with cwd=ROOT (repo root).
+CORE_MODULES = ["daemon.spine.db", "daemon.spine.events",
+                "daemon.cells.engineer.sessions", "daemon.spine.drivers",
+                "daemon.cells.process.processes", "daemon.cells.copilot.copilot",
+                "daemon.cells.connectors.connectors", "daemon.spine.charter",
+                "daemon.spine.checkpoints", "daemon.spine.auth",
+                "daemon.spine.importers", "daemon.spine.debt",
+                "daemon.spine.server"]
 SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
                 "helmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
@@ -195,10 +202,8 @@ def checks_red(touched):
             pass   # a state doctor must never crash; types are re-checked in session
     if not problems and any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
         r = subprocess.run(
-            [sys.executable, "-c",
-             "import _subpaths; _subpaths.ensure_cell_paths(); import "
-             + ",".join(CORE_MODULES)],
-            cwd=DAEMON, capture_output=True, text=True, timeout=60)
+            [sys.executable, "-c", "import " + ",".join(CORE_MODULES)],
+            cwd=ROOT, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             problems.append("daemon wiring: " + (r.stderr or "").strip().splitlines()[-1][:120])
     try:
@@ -218,9 +223,9 @@ def hygiene_problems():
         if (base in SECRET_NAMES or base.endswith(".env")) and not t.startswith(".claude/"):
             problems.append("secret file tracked: " + t)
     try:
-        sys.path.insert(0, DAEMON)
-        import _subpaths; _subpaths.ensure_cell_paths()
-        import importlib, debt as _d
+        sys.path.insert(0, ROOT)
+        import importlib
+        import daemon.spine.debt as _d
         importlib.reload(_d)
         for item in _d.DEBT:
             if item.get("status") not in ("open", "in_progress", "paid"):

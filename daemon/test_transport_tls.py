@@ -7,13 +7,12 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main():
-    import events
-    import relay_client as rc
+    from daemon.spine import events
+    from daemon.spine import relay_client as rc
 
     # sandbox: settings live in a temp dir for the duration of this test
     tmp = tempfile.mkdtemp(prefix="helmdeck-tls-test-")
@@ -51,7 +50,7 @@ def main():
     assert pay["url"].startswith("https://")
     print("pairing_payload with https url OK (room + pub minted)")
 
-    import server
+    from daemon.spine import server
     os.environ.pop("HELMDECK_TLS_CERT", None)
     os.environ.pop("HELMDECK_TLS_KEY", None)
     os.environ["HELMDECK_TLS_PORT"] = "9999"

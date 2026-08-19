@@ -25,8 +25,7 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _fails = []
 def ok(cond, msg):
@@ -38,11 +37,11 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-cpdb-test-")
 
-    import events
+    from daemon.spine import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
-    import checkpoints
+    from daemon.spine import checkpoints
     cpdir = os.path.join(tmp, "checkpoints")
     os.makedirs(cpdir, exist_ok=True)
     checkpoints.CPDIR = cpdir

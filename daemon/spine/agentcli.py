@@ -74,7 +74,7 @@ def argv_form_safe(exe=None):
     system prompt can go in --append-system-prompt (real role separation) or has
     to stay in the stdin prompt (the old way, safe everywhere)."""
     if exe is None:
-        import drivers            # lazy: drivers.CLAUDE is the single source, no import cycle
+        from daemon.spine import drivers  # lazy: drivers.CLAUDE is the single source, no import cycle
         exe = drivers.CLAUDE
     if os.name != "nt":
         return True

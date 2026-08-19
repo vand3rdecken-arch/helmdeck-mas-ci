@@ -220,7 +220,7 @@ def lang():
     """The workspace language, from policy. Defaults to de and never raises -
     a settings read must not be able to break a message."""
     try:
-        import events
+        from daemon.spine import events
         v = ((events.settings().get("policy") or {}).get("lang") or "de").lower()
         return v if v in LANGS else "de"
     except Exception:

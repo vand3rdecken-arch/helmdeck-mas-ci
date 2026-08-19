@@ -13,7 +13,7 @@ import time
 
 # same source-of-truth as pm.{ROOT,PLANS} - process-idempotent directory
 # join, safe to compute independently rather than importing pm (would cycle).
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 PLANS = os.path.join(ROOT, "pm")
 
 
@@ -61,7 +61,7 @@ def _in_window(pm):
 def _board_idle(pm):
     """Idle = nothing running and no presence for idle_minutes. The gate that
     makes the loop non-competitive: it never runs while you are around."""
-    import sessions
+    from daemon.cells.engineer import sessions
     for t in sessions.list_tracks():
         if t.get("status") == "running":
             return False

@@ -21,7 +21,7 @@ Scheduling: settings.connectors {name: {"every_minutes": N}} - the poller
 runs due connectors and files whatever they return."""
 import importlib.util, json, os, shutil, subprocess, sys, threading, time
 
-from _subpaths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT
 CDIR = os.path.join(ROOT, "connectors")
 os.makedirs(CDIR, exist_ok=True)
 # Last-run timestamps ({name: "YYYY-MM-DD HH:MM:SS"}) live in db.py's
@@ -80,7 +80,7 @@ def install_from_worktree(track):
     src = os.path.join(track.get("worktree") or "", "connectors")
     if not os.path.isdir(src):
         return []
-    import charter
+    from daemon.spine import charter
     installed, blocked = [], []
     for f in os.listdir(src):
         if f.endswith(".py") and not f.startswith("_"):
@@ -137,16 +137,17 @@ def _load(name):
     return mod
 
 def _state():
-    import db
+    from daemon.spine import db
     return db.connector_state_get()
 
 def _save_state(d):
-    import db
+    from daemon.spine import db
     db.connector_state_put(d)
 
 def run_connector(name, actor="owner"):
     """Execute an installed connector; its items become backlog cards."""
-    import events, sessions
+    from daemon.spine import events
+    from daemon.cells.engineer import sessions
     repo = events.settings().get("default_repo")
     if not repo:
         raise RuntimeError("no default_repo preset")
@@ -172,7 +173,7 @@ def start_scheduler(interval=60):
         last = {}
         while True:
             try:
-                import events
+                from daemon.spine import events
                 sched = events.settings().get("connectors") or {}
                 now = time.time()
                 for name, cfg in sched.items():

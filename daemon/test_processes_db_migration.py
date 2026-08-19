@@ -19,8 +19,7 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _fails = []
 def ok(cond, msg):
@@ -32,14 +31,14 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-procdb-test-")
 
-    import db
+    from daemon.spine import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     # processes.create()/sync() call events.emit() directly - events.py has its
     # OWN independent ROOT/EV globals, never covered by db.ROOT (measured the
     # hard way: an earlier run of this exact test appended real lines to the
     # production events.jsonl before this sandbox line existed).
-    import events
+    from daemon.spine import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
@@ -63,7 +62,7 @@ def main():
     ok(not os.path.exists(legacy_path), "processes.json renamed away after migration")
     ok(os.path.exists(legacy_path + ".imported"), "processes.json.imported now exists (nothing lost)")
 
-    import processes
+    from daemon.cells.process import processes
     got = processes.list_processes()
     ok(len(got) == 2, "both synthetic legacy processes migrated into the db")
     ids = {p["id"] for p in got}

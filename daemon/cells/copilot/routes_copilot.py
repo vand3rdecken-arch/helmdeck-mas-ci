@@ -12,7 +12,7 @@ import json
 def chat_history_get(self, user):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import copilot
+    from daemon.cells.copilot import copilot
     return self._send(200, json.dumps(copilot.history(user["name"])))
 
 
@@ -22,21 +22,21 @@ def chat_live_get(self, user):
     # by the chat only while busy.
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import copilot
+    from daemon.cells.copilot import copilot
     return self._send(200, json.dumps(copilot.live(user["name"])))
 
 
 def chat_cancel_post(self, user, body):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import copilot
+    from daemon.cells.copilot import copilot
     return self._send(200, json.dumps({"cancelled": copilot.cancel(user["name"])}))
 
 
 def chat_post(self, user, body):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import copilot
+    from daemon.cells.copilot import copilot
     text = body.get("text", "").strip()
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
@@ -51,7 +51,8 @@ def chat_post(self, user, body):
         # Henry's PROSE is spoken - never the ```actions block, which
         # is machine syntax and unlistenable.
         if body.get("voice"):
-            import ask, voice as _voice
+            from daemon.spine import ask
+            from daemon.spine import voice as _voice
             _, prose = ask.parse(out.get("reply") or "")
             clip = _voice.render_b64(
                 (prose or out.get("reply") or "").split("```")[0])

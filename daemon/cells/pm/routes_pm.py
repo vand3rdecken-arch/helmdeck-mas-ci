@@ -15,7 +15,7 @@ def pm_economics_get(self, user):
     # cheap, no-LLM economics snapshot + the stored MVP goal
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import pm
+    from daemon.cells.pm import pm
     return self._send(200, json.dumps({"goal": pm.get_goal(), "economics": pm.economics()}))
 
 
@@ -24,7 +24,7 @@ def pm_plan_get(self, user):
     # so the Dashboard shows instantly; /pm/report refreshes it.
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import pm
+    from daemon.cells.pm import pm
     return self._send(200, json.dumps({"goal": pm.get_goal(),
         "economics": pm.economics(), "plan": pm.live_plan(),
         "config": pm._pm(), "activity": pm.activity()}))
@@ -35,7 +35,8 @@ def pm_config_post(self, user, body):
     # repos allowlist, timing/caps). Whitelisted keys only.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import pm, events
+    from daemon.cells.pm import pm
+    from daemon.spine import events
     allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
                "replan_minutes", "max_dispatch_per_day", "goal", "plan",
                "monthly_eur", "quota_turns_per_day")
@@ -54,7 +55,7 @@ def pm_consolidate_post(self, user, body):
     # roll-up of many small cards into 2-5 stream cards per repo.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import pm
+    from daemon.cells.pm import pm
     try:
         if body.get("mode") == "apply":
             return self._send(200, json.dumps(pm.apply_consolidation(
@@ -70,7 +71,7 @@ def pm_report_post(self, user, body):
     # token/cost projection grounded in real spend. One model turn.
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import pm
+    from daemon.cells.pm import pm
     try:
         return self._send(200, json.dumps(pm.brief(
             goal=body.get("goal"), model=body.get("model", ""))))
@@ -84,7 +85,7 @@ def pm_reconcile_post(self, user, body):
     # agent supplies facts; the gate re-derives the corner (no monkey patch).
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    import pm
+    from daemon.cells.pm import pm
     try:
         return self._send(200, json.dumps(pm.reconcile_corner(
             body.get("corner", ""), actor=user["name"])))

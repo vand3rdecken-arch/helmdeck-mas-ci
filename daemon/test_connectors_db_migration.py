@@ -22,8 +22,7 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _subpaths; _subpaths.ensure_cell_paths()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _fails = []
 def ok(cond, msg):
@@ -35,17 +34,17 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-conndb-test-")
 
-    import db
+    from daemon.spine import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    import events
+    from daemon.spine import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
     # sandbox connectors.py's own directory globals too - CDIR/VDIR are NOT
     # under db.ROOT's umbrella, they are module-level paths computed at import
     # time from connectors.py's own __file__.
-    import connectors
+    from daemon.cells.connectors import connectors
     cdir = os.path.join(tmp, "connectors")
     vdir = os.path.join(cdir, "_versions")
     os.makedirs(vdir, exist_ok=True)

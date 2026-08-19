@@ -21,7 +21,9 @@ def tracks_stream_get(self, user, tid):
     # Claude Code writes the session .jsonl live, so we watch it and
     # emit the parsed transcript whenever it grows - real streaming,
     # no client poll, same shape as the board /stream above.
-    import sessions, claude_sessions, time as _t
+    import time as _t
+    from daemon.cells.engineer import sessions
+    from daemon.spine import claude_sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
@@ -62,7 +64,7 @@ def tracks_stream_get(self, user, tid):
 
 
 def tracks_steer_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     text = body.get("text")
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
@@ -76,7 +78,7 @@ def tracks_steer_post(self, user, body, tid):
     attachments = body.get("attachments")
     # clients steer their own card but can't escalate the permission mode
     mode = body.get("mode") if user["role"] != "client" else None
-    import server
+    from daemon.spine import server
     server._bg("track:steer:" + tid, lambda: sessions.steer(
         tid, text, actor=actor, model=model, thinking=thinking,
         attachments=attachments, mode=mode))
@@ -88,7 +90,7 @@ def tracks_answer_post(self, user, body, tid):
     # question. Backgrounded like /steer - it RUNS a turn (the
     # worker continues with the decision), so holding the request
     # would block the phone for the length of that turn.
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:
@@ -98,7 +100,7 @@ def tracks_answer_post(self, user, body, tid):
         return self._send(409, json.dumps({"error": "no pending question"}))
     # validate BEFORE backgrounding, so a bad/stale answer reports
     # the reason instead of failing invisibly on a worker thread
-    import ask
+    from daemon.spine import ask
     rid = body.get("request_id", "")
     if rid and rid != (t["question"] or {}).get("id"):
         return self._send(409, json.dumps(
@@ -108,14 +110,14 @@ def tracks_answer_post(self, user, body, tid):
         return self._send(400, json.dumps({"error": err}))
     actor = user["name"]
     answers = body.get("answers") or {}
-    import server
+    from daemon.spine import server
     server._bg("track:answer:" + tid, lambda: sessions.answer_question(
         tid, answers, request_id=rid, actor=actor))
     return self._send(200, json.dumps({"started": tid, "answered": True}))
 
 
 def tracks_cancel_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:
@@ -124,10 +126,10 @@ def tracks_cancel_post(self, user, body, tid):
 
 
 def tracks_lane_post(self, user, body, tid):
-    import sessions
+    from daemon.cells.engineer import sessions
     lane = body.get("lane")
     actor = user["name"]
-    import server
+    from daemon.spine import server
     if lane == "working":
         server._bg("track:dispatch:" + tid,
             lambda: sessions.move_lane(tid, "working", actor=actor))

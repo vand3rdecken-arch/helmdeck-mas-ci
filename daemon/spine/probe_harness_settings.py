@@ -48,9 +48,8 @@ import json, os, shutil, subprocess, sys, tempfile
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import _subpaths; _subpaths.ensure_cell_paths()
-import drivers                                   # _cmd_line: never exec the .cmd shim
-import harness                                    # the shipped settings files to validate
+from daemon.spine import drivers  # _cmd_line: never exec the .cmd shim
+from daemon.spine import harness  # the shipped settings files to validate
 
 USER_MODEL = "fable"          # what ~/.claude/settings.json pins (the tell)
 
@@ -296,7 +295,7 @@ def skills():
     Code process and those variables are absent, so scrubbing them is the
     faithful reproduction, not a convenience.
     """
-    import harness
+    from daemon.spine import harness
     rows = []
     # The BASELINE matters as much as the surfaces: "the card set differs from
     # the inherit-everything set" is only meaningful against the full other set.

@@ -9,18 +9,18 @@ identical to the inline blocks they replace.
 """
 import json
 
-from apimeta import _loop_machine, _config_schema
+from daemon.spine.apimeta import _loop_machine, _config_schema
 
 
 def settings_get(self, user):
-    import events
+    from daemon.spine import events
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     return self._send(200, json.dumps(events.settings()))
 
 
 def nightshift_get(self, user):
-    import pm
+    from daemon.cells.pm import pm
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     return self._send(200, json.dumps(pm.status()))
@@ -32,7 +32,7 @@ def usage_get(self, user):
     # account. Cached in usage.py so a poll doesn't hammer the endpoint.
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
-    import usage
+    from daemon.spine import usage
     return self._send(200, json.dumps(usage.snapshot()))
 
 
@@ -41,7 +41,8 @@ def automation_get(self, user):
     # night shift (is it on, repos, limits, tonight's plan), the policy
     # (auto-dispatch/accept), and the build-loop state machine + where
     # it currently sits - so the UI can expose "what is the harness doing".
-    import events, pm
+    from daemon.spine import events
+    from daemon.cells.pm import pm
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     s = events.settings(); pol = s.get("policy") or {}
@@ -69,12 +70,12 @@ def automation_get(self, user):
 
 
 def settings_post(self, user, body):
-    import events
+    from daemon.spine import events
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     rel = body.get("relay")
     if isinstance(rel, dict) and rel.get("url"):
-        import relay_client
+        from daemon.spine import relay_client
         if relay_client.insecure_url(rel["url"]):
             return self._send(400, json.dumps({"error":
                 "relay url must be https:// (or http://localhost for "
