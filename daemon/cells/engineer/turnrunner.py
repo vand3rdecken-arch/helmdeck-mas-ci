@@ -15,11 +15,11 @@ stay resolvable via that re-import.
 import os
 import time
 
-from daemon.spine.gitutil import _checkpoint
-from daemon.spine.trackstore import _mutate, _load, _find
-from daemon.spine.locks import _desktop_lock, _direct_lock_for, _lock_for, _uses_desktop_control
-from daemon.spine.econ import _record_econ, _record_turn, _log_turn_end
-from daemon.spine.blockers import blocker
+from daemon.spine.git.gitutil import _checkpoint
+from daemon.spine.storage.trackstore import _mutate, _load, _find
+from daemon.spine.git.locks import _desktop_lock, _direct_lock_for, _lock_for, _uses_desktop_control
+from daemon.spine.turn.econ import _record_econ, _record_turn, _log_turn_end
+from daemon.spine.turn.blockers import blocker
 from daemon.cells.engineer.devport import _alloc_dev_port
 
 ZOMBIE_NOTE = "daemon restarted mid-turn - resend the last instruction"
@@ -35,8 +35,8 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
     the driver's configured values. `idle_timeout` overrides the driver's
     900s-of-silence watchdog for callers who know their own turn is bounded
     (e.g. _maybe_compact - see there for why)."""
-    from daemon.spine import drivers
-    from daemon.spine import events
+    from daemon.spine.agent import drivers
+    from daemon.spine.storage import events
     # Pre-P4 cards were dispatched without a reserved dev port - claim one on
     # their next turn so HELMDECK_DEV_PORT is always there (sticky afterwards).
     if not t.get("machine") and t.get("worktree") and not t.get("dev_port"):
@@ -59,7 +59,7 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
     # own facts - deliberate routing always, global leak never. An explicit
     # model (composer pick or the card's stored choice) still wins untouched.
     if not model or model == "auto":
-        from daemon.spine import turnopts
+        from daemon.spine.agent import turnopts
         model, _ = turnopts.resolve_model("auto", prompt, signals={
             "value": t.get("value"), "priority": t.get("priority"),
             "turns": t.get("turns"), "failed": bool(t.get("gate_failed")),
@@ -73,7 +73,7 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
     rec = None
     if cfg.get("record"):
         try:
-            from daemon.spine import wincap
+            from daemon.spine.media import wincap
             rec = wincap.start(t["run_dir"])
         except Exception as e:
             print("recorder failed to start:", e)
@@ -93,7 +93,7 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
         except Exception:
             wait_s = 960.0
         try:
-            from daemon.spine.actionlog import ActionLog
+            from daemon.spine.ops.actionlog import ActionLog
             ActionLog(t["run_dir"]).log(
                 "note", "Desktop control busy (another card is driving the "
                         "screen) - queued, waiting up to %ds for it to free." % wait_s)
@@ -115,7 +115,7 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
         except Exception:
             wait_s = 960.0
         try:
-            from daemon.spine.actionlog import ActionLog
+            from daemon.spine.ops.actionlog import ActionLog
             ActionLog(t["run_dir"]).log(
                 "note", "Working tree busy (another direct card is editing it) - "
                         "queued, waiting up to %ds." % wait_s)
@@ -138,9 +138,9 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
         if desktop:
             _desktop_lock.release()
         if rec:
-            from daemon.spine import wincap
+            from daemon.spine.media import wincap
             wincap.stop(rec)
-            from daemon.spine.actionlog import ActionLog
+            from daemon.spine.ops.actionlog import ActionLog
             ActionLog(t["run_dir"]).log("note", "screen recording captured for this turn")
 
 
@@ -157,8 +157,8 @@ def _repair_question(t, log):
     Bounded by construction: called only from _settle_reply, never recursive
     (its own result is parsed, not re-repaired), and the worker can decline with
     NOQUESTION. Switch it off with policy.ask_repair=false."""
-    from daemon.spine import ask
-    from daemon.spine import events
+    from daemon.spine.ops import ask
+    from daemon.spine.storage import events
     try:
         _sid, out, meta = _turn(t, ask.REPAIR)
     except Exception as e:
@@ -180,7 +180,7 @@ def _repair_question(t, log):
 def _ask_repair_on(t):
     """policy.ask_repair (default on). Off => a prose question parks the card
     exactly as it did before Phase 2.4 - no repair turn, no extra cost."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     pol = events.settings().get("policy") or {}
     return bool(pol.get("ask_repair", True))
 
@@ -207,7 +207,7 @@ def _settle_reply_compute(t, result, log):
     mutation lock (the question-repair is a whole model turn, the background
     probe reads the transcript from disk). Pure compute: touches nothing on the
     stored track. Returns (question, cleaned, bg)."""
-    from daemon.spine import ask
+    from daemon.spine.ops import ask
     question, cleaned = ask.parse(result or "")
     if not question and _ask_repair_on(t) and ask.looks_like_question(cleaned):
         question = _repair_question(t, log)
@@ -216,7 +216,7 @@ def _settle_reply_compute(t, result, log):
         # A turn may not be waiting on the OWNER: one that ended while a
         # background task it launched is still running is waiting on THAT
         # (Phase 2.5). Saying "waiting for you" there parked cards in limbo.
-        from daemon.spine import claude_sessions
+        from daemon.spine.agent import claude_sessions
         try:
             bg = claude_sessions.background_wait(t)
         except Exception:
@@ -232,8 +232,8 @@ def _settle_reply_apply(t, question, cleaned, bg, log):
     stripped from BOTH the audit line and last_reply: the owner reads those, and
     raw protocol JSON in them is noise - the parsed question carries the same
     information in typed form. Returns the notify reason."""
-    from daemon.spine import ask
-    from daemon.spine import events
+    from daemon.spine.ops import ask
+    from daemon.spine.storage import events
     log.log("reply", cleaned[:2000])
     t["last_reply"] = cleaned[:2000]
     if not question:

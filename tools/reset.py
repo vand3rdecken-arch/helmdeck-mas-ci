@@ -59,7 +59,7 @@ def wipe_cards():
 
 
 def clear_events():
-    from daemon.spine import db
+    from daemon.spine.storage import db
     with db.conn() as c:
         c.execute("DELETE FROM events")
     db.bump()

@@ -15,7 +15,7 @@ executes work; turning items into cards stays an explicit, gated step.
 """
 import json, math, os, re, subprocess, threading, time
 
-from daemon.spine import i18n as _i18n
+from daemon.spine.registry import i18n as _i18n
 
 from daemon.paths import DAEMON_ROOT as ROOT
 ROLE_FILE = os.path.join(ROOT, "pm.role.md")
@@ -55,7 +55,7 @@ PM_DEFAULTS = {
 
 
 def _pm():
-    from daemon.spine import events
+    from daemon.spine.storage import events
     c = dict(PM_DEFAULTS)
     c.update(events.settings().get("pm") or {})
     return c
@@ -66,7 +66,7 @@ def get_goal():
 
 
 def set_goal(goal):
-    from daemon.spine import events
+    from daemon.spine.storage import events
     pm = dict(events.settings().get("pm") or {})
     pm["goal"] = (goal or "").strip()
     events.save_settings({"pm": pm})
@@ -125,7 +125,7 @@ def _role():
 def economics():
     """Real spend/token/velocity facts, so estimates are grounded in THIS board."""
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     from datetime import datetime
     tracks = sessions.list_tracks()
     m = events.metrics(tracks)
@@ -177,7 +177,7 @@ def _system_state():
     gate derive scope from them, they are never a stamped verdict."""
     lines = []
     try:
-        from daemon.spine import auth
+        from daemon.spine.auth import auth
         users = auth.list_users()
         roles = {}
         for u in users:
@@ -188,7 +188,7 @@ def _system_state():
     except Exception:
         pass
     try:
-        from daemon.spine import events
+        from daemon.spine.storage import events
         reg = events.settings().get("registration")
         if reg:
             lines.append("REGISTRATION: " + json.dumps(reg, ensure_ascii=False)[:200])
@@ -283,7 +283,7 @@ def on_card_done(tid):
     CROSSES the ok<->blocked line do we spend one re-scope (make_plan), so a normal
     completion costs zero planning turns. Threaded so the accept path never blocks
     on a model call (mirrors review_burn)."""
-    from daemon.spine import cells
+    from daemon.spine.registry import cells
     if not cells.enabled_id("pm"):
         return
     threading.Thread(target=_on_card_done, args=(tid,), daemon=True,
@@ -291,7 +291,7 @@ def on_card_done(tid):
 
 
 def _on_card_done(_tid):
-    from daemon.spine import events
+    from daemon.spine.storage import events
     try:
         if not get_goal():
             return
@@ -365,7 +365,7 @@ def reconcile_corner(corner, actor="owner"):
 
 def _ask(prompt, model=""):
     from daemon.cells.copilot import copilot
-    from daemon.spine import drivers
+    from daemon.spine.agent import drivers
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
     # args on a .cmd shim (see drivers._real_claude_exe).
     argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
@@ -416,7 +416,7 @@ def _verify_plan(plan, econ, quota):
     failure - a 14-day calendar test sized as 2 days, a not-yet-started recruiting long-pole,
     an unresolved decision. Fail-open: if the pass errors, don't block."""
     try:
-        from daemon.spine import turnopts
+        from daemon.spine.agent import turnopts
         cli_model, _ = turnopts.resolve_model("auto", "verify plan", False, signals={"priority": "high"})
         keep = {k: plan.get(k) for k in ("goal", "summary", "milestones", "feasibility",
                                          "assumptions", "open_questions", "budget")}
@@ -491,8 +491,8 @@ def brief(goal=None, model=""):
     """The PM/CTO report: milestones with timelines, next actions, budget grounded
     in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
     from daemon.cells.copilot import copilot
-    from daemon.spine import turnopts
-    from daemon.spine import events
+    from daemon.spine.agent import turnopts
+    from daemon.spine.storage import events
     if goal is not None and goal.strip():
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
@@ -587,7 +587,7 @@ def plan_items(b=None):
     that card, not separate tickets, so a card is a long-lived, context-rich
     chat instead of a fragment. Returns (items, brief). Each item:
     {title, description, priority, repo}."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     b = b or brief()
     order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     default_repo = events.settings().get("default_repo") or ""
@@ -628,7 +628,7 @@ working/review/done cards alone. Prefer FEW streams. Reply with ONLY JSON:
 def consolidation_proposal(model=""):
     """Read-only: the PM's proposed roll-up of backlog cards into stream cards."""
     from daemon.cells.copilot import copilot
-    from daemon.spine import turnopts
+    from daemon.spine.agent import turnopts
     cli_model, _ = turnopts.resolve_model(model or "auto", "consolidate the board",
                                           False, signals={"priority": "high"})
     prompt = _CONSOLIDATE_ASK + "\n\nBOARD SNAPSHOT:\n" + copilot._snapshot()
@@ -756,7 +756,7 @@ def _notify_deliveries(day, tracks, st, pm):
     resolved = set(day.get("resolved", []))
     fcm = None
     try:
-        from daemon.spine import notify
+        from daemon.spine.comms import notify
         if notify.fcm_ready():
             fcm = notify
     except Exception:
@@ -776,7 +776,7 @@ def _notify_deliveries(day, tracks, st, pm):
             # asking, not finished. notify.card_event already pushed this one
             # through the presence policy (and deduped it), so the PM only
             # speaks in chat here - a second push would defeat that policy.
-            from daemon.spine import ask
+            from daemon.spine.ops import ask
             _say(_i18n.t("pm.asking", task=task,
                          question=ask.summary(t["question"])[:140]))
             notified.add(t["id"]); changed = True
@@ -982,7 +982,7 @@ def _burn_judge(b, t):
 def _push_burn(t, task, b):
     n, tool, corr = b.get("n", 0), b.get("name", ""), b.get("corrections", 0)
     try:
-        from daemon.spine import notify
+        from daemon.spine.comms import notify
         notify.push_fcm(_i18n.t("push.pmBurn"),
                         _i18n.t("push.pmBurnBody", task=task, n=n, tool=tool), t["id"])
     except Exception:
@@ -1160,7 +1160,7 @@ def _usage_checkin(st):
     weekly window (keyed on its reset), so it's a heads-up, not a nag - the live usage
     meter carries the running numbers."""
     try:
-        from daemon.spine import usage
+        from daemon.spine.ops import usage
         flag = usage.weekly_pacing_flag()
     except Exception:
         return
@@ -1236,7 +1236,7 @@ def _triangle_watch(st):
     corners = []
     # BUDGET — the weekly quota is burning ahead of pace
     try:
-        from daemon.spine import usage
+        from daemon.spine.ops import usage
         bf = usage.weekly_pacing_flag()
     except Exception:
         bf = None
@@ -1294,7 +1294,7 @@ def _watch_budget_ctx():
       ("usd", None)  - no plan size known (cold calibration, capless API):
                        the measured API-equivalent $ - degraded but never
                        silent, and never labeled as spend (ai_billing)."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     plan, _src = events.plan_effective()
     if plan == "api" and (_pm().get("monthly_eur") or 0) > 0:
         return "eur", None
@@ -1518,7 +1518,7 @@ def _stakeholder_update(st):
     if not goal:
         return
     try:
-        from daemon.spine import usage
+        from daemon.spine.ops import usage
         snap = usage.snapshot()
     except Exception:
         return
@@ -1564,7 +1564,7 @@ def _overview_stale(plan, tracks):
     """True if the plan's roadmap isn't reflected on the board yet: a card that
     belongs to a dated milestone still lacks that due date (Timeline), or the
     dashboard layout isn't set."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     if not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles"):
         return True
     byid = {t["id"]: t for t in tracks}
@@ -1588,7 +1588,7 @@ def _build_overview(plan):
     - DASHBOARD: ensure a sensible economics layout exists.
     Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     all_t = sessions.list_tracks()
     byid = {t["id"]: t for t in all_t}
     by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
@@ -1662,7 +1662,7 @@ def _state():
 
 def _dispatch_next(pm, st, day):
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     if sum(1 for t in sessions.list_tracks() if t.get("lane") == "working") >= events.settings()["capacity"]["wip_limit"]:
         return                                           # respect WIP headroom
     todo = _backlog(sessions.list_tracks(), pm, day)
@@ -1679,7 +1679,7 @@ def _dispatch_next(pm, st, day):
         if not kept:
             key = ""
             try:
-                from daemon.spine import usage
+                from daemon.spine.ops import usage
                 key = (usage.weekly_pacing_flag() or {}).get("resetsAt") or ""
             except Exception:
                 pass
@@ -1727,7 +1727,7 @@ def _tick():
     then the acting states run - but only while you are away. Proactive on/off +
     the notify/ask/act ladder is a Settings control now, not a dashboard one."""
     # 1 - GATHER
-    from daemon.spine import cells
+    from daemon.spine.registry import cells
     if not cells.enabled_id("pm"):
         # ADDITIONAL early-return, not a replacement: loop_enabled (below) is
         # the owner's proactive on/off Settings control; cellEnabled is the
@@ -1860,7 +1860,7 @@ def _escalate(text, tid="", title=""):
     (silent / in-app / push)."""
     _say(text)
     try:
-        from daemon.spine import notify
+        from daemon.spine.comms import notify
         notify.escalate(title or _i18n.t("push.pmAlert"), text[:180],
                         tid or _escalation_tid())
     except Exception as e:

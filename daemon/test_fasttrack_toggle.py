@@ -19,9 +19,9 @@ Run: py -3.12 daemon/test_fasttrack_toggle.py
 import os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine import events
+from daemon.spine.storage import events
 from daemon.cells.engineer import sessions
-from daemon.spine import trackstore
+from daemon.spine.storage import trackstore
 
 
 class FakeDB:

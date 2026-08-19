@@ -25,11 +25,11 @@ MODES = ("do", "prepare", "cowork", "teach", "human")
 _lock = threading.Lock()
 
 def _load():
-    from daemon.spine import db
+    from daemon.spine.storage import db
     return db.processes_all()
 
 def _save(ps):
-    from daemon.spine import db
+    from daemon.spine.storage import db
     db.processes_replace(ps)
 
 def list_processes(client=None):
@@ -61,7 +61,7 @@ REQUEST:
 %s"""
 
 def _propose_steps(request_text):
-    from daemon.spine import drivers
+    from daemon.spine.agent import drivers
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
     # args on a .cmd shim (see drivers._real_claude_exe).
     r = subprocess.run(drivers._cmd_line([CLAUDE, "-p", "--output-format", "json",
@@ -116,7 +116,7 @@ def create(request_text, client="", due="", actor="owner", steps=None):
         _lay_dates(p)
     with _lock:
         ps = _load(); ps.insert(0, p); _save(ps)
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.emit("process", pid, action="filed", actor=actor)
     if steps:
         return p                       # adopted the plan's steps; no proposer needed
@@ -188,7 +188,7 @@ def sync():
     whether a green gate auto-accepts (autonomy) or waits for a human
     (control)."""
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     policy = events.settings().get("policy") or {}
     auto_modes = policy.get("auto_dispatch_modes", ["do", "prepare"])
     auto_accept = bool(policy.get("auto_accept_green"))
@@ -239,7 +239,7 @@ def sync():
         if p["steps"] and all(x.get("done") for x in p["steps"]):
             if p.get("status") != "done":
                 p["status"] = "done"
-                from daemon.spine import events as _e
+                from daemon.spine.storage import events as _e
                 _e.emit("process", p["id"], action="completed")
         elif p.get("status") == "done":
             p["status"] = "running"
@@ -262,7 +262,7 @@ def clear_step_stamps(tid):
     (_dispatch_failed marks it bounced without moving the lane), so clearing on
     "is in backlog" would re-dispatch a broken step on every 20s poll - the
     same trap _priority_dispatch just had. move_lane fires once, per move."""
-    from daemon.spine import cells
+    from daemon.spine.registry import cells
     if not cells.enabled_id("process"):
         return
     with _lock:
@@ -308,7 +308,7 @@ def _priority_dispatch():
     failure would mark a perfectly healthy card bounced. Re-queueing to Backlog
     clears the stamp (sessions.move_lane) - that is the retry handle."""
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     s = events.settings()
     floor = (s.get("policy") or {}).get("auto_dispatch_priority") or ""
     if floor not in ("urgent", "high", "medium", "low"):
@@ -346,7 +346,7 @@ def _auto_resolve(t):
     budget: the autopilot only supplies the always-on trigger. When the ladder
     is exhausted, alert ONCE - with the ladder's own unblock proposal, so the
     escalation is a decision you can act on, never a bare 'it is stuck'."""
-    from daemon.spine import events
+    from daemon.spine.storage import events
     from daemon.cells.pm import pm
     tid = t["id"]
     state = pm.resolve_card_now(tid)
@@ -356,8 +356,8 @@ def _auto_resolve(t):
     pm.mark_notified(tid)      # exactly ONE ping: don't let the PM push it again
     events.emit("process", "-", action="autopilot_escalate", card=tid)
     try:
-        from daemon.spine import notify
-        from daemon.spine import i18n as _i18n  # `t` is the track dict here, so alias the translator
+        from daemon.spine.comms import notify
+        from daemon.spine.registry import i18n as _i18n  # `t` is the track dict here, so alias the translator
         notify.push_fcm(_i18n.t("push.autopilotStuck"),
                         _i18n.t("push.autopilotStuckBody",
                                 task=(t.get("task") or "")[:50],
@@ -380,7 +380,7 @@ def _autopilot():
     red still bounces, green is still required. Autopilot removes the WAITING,
     not the checks and not your accept."""
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     tracks = sessions.list_tracks()
     auto = [t for t in tracks if t.get("autopilot") and not t.get("archived")]
     if not auto:

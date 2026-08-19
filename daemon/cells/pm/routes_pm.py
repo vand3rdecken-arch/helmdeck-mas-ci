@@ -36,7 +36,7 @@ def pm_config_post(self, user, body):
     if user["role"] != "owner":
         return self._send(403, json.dumps({"error": "owner only"}))
     from daemon.cells.pm import pm
-    from daemon.spine import events
+    from daemon.spine.storage import events
     allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
                "replan_minutes", "max_dispatch_per_day", "goal", "plan",
                "monthly_eur", "quota_turns_per_day")

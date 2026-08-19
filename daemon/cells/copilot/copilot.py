@@ -155,7 +155,7 @@ def _save_sessions(d):
 def _snapshot():
     from daemon.cells.engineer import sessions
     from daemon.cells.process import processes
-    from daemon.spine import events
+    from daemon.spine.storage import events
     m = events.metrics(sessions.list_tracks())
     pol = events.settings().get("policy") or {}
     lines = ["POLICY: " + json.dumps(pol)]
@@ -196,7 +196,7 @@ def _snapshot():
     except Exception:
         pass
     try:
-        from daemon.spine import debt as _d
+        from daemon.spine.registry import debt as _d
         open_items = [d for d in _d.list_debt() if d["status"] != "paid"]
         if open_items:
             lines.append("STRUCTURAL DEBT (open, ordered): " + "; ".join(
@@ -253,7 +253,7 @@ def _denied(kind, role, roles, key, extra=""):
 def _run_action(a, actor, role="operator"):
     from daemon.cells.engineer import sessions
     from daemon.cells.process import processes
-    from daemon.spine import events
+    from daemon.spine.storage import events
     kind = a.get("type")
     if kind == "configure":
         allowed_roles = (events.settings().get("policy") or {}).get("chat_configure_roles", ["owner"])
@@ -280,7 +280,7 @@ def _run_action(a, actor, role="operator"):
                     "eine Code-Aenderung: sag 'leg eine Karte dafuer an', dann baut ein Agent "
                     "es mit Gate und deiner Abnahme. Die restlichen Keys kann ich sofort setzen."
                     % ", ".join(sorted(bad)))
-        from daemon.spine import events as _ev
+        from daemon.spine.storage import events as _ev
         _ev.save_settings(patch, actor=actor, reason="via chat")
         _ev.emit("config", "-", actor=actor, patch=patch)
         return "policy updated: " + json.dumps(patch)[:300]
@@ -468,12 +468,12 @@ def _run_action(a, actor, role="operator"):
         events.save_settings({"connectors": sched})
         return "connector schedule updated: %s" % json.dumps(sched)
     if kind == "import_url":
-        from daemon.spine import importers
+        from daemon.spine.ops import importers
         p2 = importers.url_import(a.get("url", ""), client=a.get("client", ""),
                                   due=a.get("due", ""), actor=actor)
         return "imported %s - agent is deriving the process steps" % a.get("url")
     if kind == "import_jira":
-        from daemon.spine import importers
+        from daemon.spine.ops import importers
         made = importers.jira_import(a.get("jql", ""), actor=actor)
         return "imported %d Jira issues into the backlog" % len(made)
     if kind == "clarify_goal":
@@ -562,7 +562,7 @@ def _maybe_compact(user):
     if _autocompact_supported is False:
         return None
     from daemon.cells.engineer import sessions
-    from daemon.spine import drivers
+    from daemon.spine.agent import drivers
     st = _stats().get(user) or {}
     ctx = st.get("ctx_tokens") or 0
     sess = _sessions()
@@ -615,7 +615,7 @@ def _maybe_compact(user):
         _save_sessions(sess)
     # measured economics: the compact turn is billed too, but NOT counted as a
     # conversation turn (card parity: sessions._record_econ, not _record_turn).
-    from daemon.spine import events
+    from daemon.spine.storage import events
     u = result.get("usage") or {}
     models = list((result.get("modelUsage") or {}).keys())
     m["cost"] = round(float(m.get("cost") or 0.0)
@@ -658,7 +658,7 @@ def say(text, cls="pm"):
     and the event log, so the chat looked frozen while the daemon worked.
     Best-effort by design: never let a chat write break the work it reports."""
     try:
-        from daemon.spine import auth
+        from daemon.spine.auth import auth
         owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
         if not owner:
             return
@@ -794,8 +794,8 @@ def build_argv(cli_model, sid, system):
     the payload that broke --resume, so there we keep the old prefix-the-turn
     shape: degraded role separation beats a mangled command line.
     """
-    from daemon.spine import drivers
-    from daemon.spine import harness
+    from daemon.spine.agent import drivers
+    from daemon.spine.registry import harness
     argv = [CLAUDE, "-p", "--output-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
@@ -825,7 +825,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     extra_system is appended to the resolved system brief, for a surface with a
     hard shape requirement (the lens: short prose, always end in tappable
     options) that the shared board brief should not have to carry."""
-    from daemon.spine import turnopts
+    from daemon.spine.agent import turnopts
     sess = _sessions()
     sid = sess.get(user)
     paths = turnopts.save_attachments(os.path.join(ROOT, ".copilot_attachments", user),
@@ -846,7 +846,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # The ROLE is data now: harness/agents/board-copilot.md. SYSTEM above stays as
     # the built-in fallback, so a mangled/absent file costs the customisation and
     # never the chat turn.
-    from daemon.spine import harness
+    from daemon.spine.registry import harness
     system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
     if extra_system:
         system = system + "\n\n" + extra_system
@@ -864,7 +864,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # drivers._cmd_line, NOT ["cmd","/c",...]: routing claude.cmd through cmd.exe
     # silently mangles quoted arguments (it ate the card workers' --resume - see
     # drivers._real_claude_exe).
-    from daemon.spine import drivers
+    from daemon.spine.agent import drivers
     argv, role_in_turn = build_argv(cli_model, sid, system)
     prompt = (system + "\n\n" + turn) if role_in_turn else turn
     cmd = drivers._cmd_line(argv)

@@ -46,7 +46,7 @@ def tracks_live_get(self, user, tid):
 
 def tracks_turns_get(self, user, tid):
     # per-card AI usage: every turn's model, tokens, cost
-    from daemon.spine import events
+    from daemon.spine.storage import events
     from daemon.cells.engineer import sessions
     if user["role"] == "client":
         t = sessions.get_track(tid)
@@ -70,7 +70,7 @@ def tracks_transcript_get(self, user, tid):
     # the Paseo-style agent view: every turn's text + tool calls,
     # read straight from the session's Claude Code transcript
     from daemon.cells.engineer import sessions
-    from daemon.spine import claude_sessions
+    from daemon.spine.agent import claude_sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
@@ -86,7 +86,7 @@ def tracks_transcript_live_get(self, user, tid):
     # bridge's _local timeout (115), so the reply always lands.
     import time as _t
     from daemon.cells.engineer import sessions
-    from daemon.spine import claude_sessions
+    from daemon.spine.agent import claude_sessions
     from urllib.parse import parse_qs, urlparse
     t = sessions.get_track(tid)
     if not t:
@@ -169,7 +169,7 @@ def tracks_reorder_post(self, user, body):
 
 def tracks_new_post(self, user, body):
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     repo = body.get("repo") or events.settings().get("default_repo")
     branch = body.get("branch"); task = body.get("task")
     if task and not branch:   # preset flow: task alone is enough
@@ -215,7 +215,7 @@ def tracks_new_post(self, user, body):
                            project_id=body.get("project_id"),
                            description=body.get("description", ""),
                            billing=body.get("billing", "fixed"), rate=body.get("rate"))
-    from daemon.spine import server
+    from daemon.spine.http import server
     server._bg("track:new:" + branch, go)
     return self._send(200, json.dumps({"started": branch}))
 
@@ -269,7 +269,7 @@ def tracks_delete_post(self, user, body, tid):
 
 def tracks_update_post(self, user, body, tid):
     from daemon.cells.engineer import sessions
-    from daemon.spine import events
+    from daemon.spine.storage import events
     if user["role"] == "client":
         t = sessions.get_track(tid)
         if not t or t.get("client") != user["name"]:

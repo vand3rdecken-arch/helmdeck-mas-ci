@@ -23,7 +23,7 @@ def tracks_stream_get(self, user, tid):
     # no client poll, same shape as the board /stream above.
     import time as _t
     from daemon.cells.engineer import sessions
-    from daemon.spine import claude_sessions
+    from daemon.spine.agent import claude_sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
@@ -78,7 +78,7 @@ def tracks_steer_post(self, user, body, tid):
     attachments = body.get("attachments")
     # clients steer their own card but can't escalate the permission mode
     mode = body.get("mode") if user["role"] != "client" else None
-    from daemon.spine import server
+    from daemon.spine.http import server
     server._bg("track:steer:" + tid, lambda: sessions.steer(
         tid, text, actor=actor, model=model, thinking=thinking,
         attachments=attachments, mode=mode))
@@ -100,7 +100,7 @@ def tracks_answer_post(self, user, body, tid):
         return self._send(409, json.dumps({"error": "no pending question"}))
     # validate BEFORE backgrounding, so a bad/stale answer reports
     # the reason instead of failing invisibly on a worker thread
-    from daemon.spine import ask
+    from daemon.spine.ops import ask
     rid = body.get("request_id", "")
     if rid and rid != (t["question"] or {}).get("id"):
         return self._send(409, json.dumps(
@@ -110,7 +110,7 @@ def tracks_answer_post(self, user, body, tid):
         return self._send(400, json.dumps({"error": err}))
     actor = user["name"]
     answers = body.get("answers") or {}
-    from daemon.spine import server
+    from daemon.spine.http import server
     server._bg("track:answer:" + tid, lambda: sessions.answer_question(
         tid, answers, request_id=rid, actor=actor))
     return self._send(200, json.dumps({"started": tid, "answered": True}))
@@ -129,7 +129,7 @@ def tracks_lane_post(self, user, body, tid):
     from daemon.cells.engineer import sessions
     lane = body.get("lane")
     actor = user["name"]
-    from daemon.spine import server
+    from daemon.spine.http import server
     if lane == "working":
         server._bg("track:dispatch:" + tid,
             lambda: sessions.move_lane(tid, "working", actor=actor))

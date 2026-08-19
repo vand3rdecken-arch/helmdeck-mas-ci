@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from daemon.spine import auth
+from daemon.spine.auth import auth
 
 from daemon.paths import DAEMON_ROOT as HERE
 USERS = os.path.join(HERE, "users.json")

@@ -37,11 +37,11 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-cpdb-test-")
 
-    from daemon.spine import events
+    from daemon.spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
-    from daemon.spine import checkpoints
+    from daemon.spine.ops import checkpoints
     cpdir = os.path.join(tmp, "checkpoints")
     os.makedirs(cpdir, exist_ok=True)
     checkpoints.CPDIR = cpdir
