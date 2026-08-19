@@ -24,8 +24,8 @@ def ensure_cell_paths():
     Call once per process, before any other daemon-local import - the top of
     every entrypoint (swarm.py) and every test_*.py's/tools/*.py's existing
     sys.path.insert(0, DAEMON) block."""
-    for sub in ("spine", "cells/engineer", "cells/pm", "cells/process",
-                "cells/connectors", "cells/copilot"):
+    for sub in ("spine", "spine/routes", "cells/engineer", "cells/pm",
+                "cells/process", "cells/connectors", "cells/copilot"):
         p = os.path.join(DAEMON_ROOT, *sub.split("/"))
         if os.path.isdir(p) and p not in sys.path:
             sys.path.insert(0, p)
