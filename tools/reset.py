@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DAEMON = os.path.join(ROOT, "daemon")
 sys.path.insert(0, DAEMON)
+import _subpaths; _subpaths.ensure_cell_paths()
 
 
 def backup():

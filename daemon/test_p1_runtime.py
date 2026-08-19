@@ -22,6 +22,7 @@ Run: py -3.12 daemon/test_p1_runtime.py
 import json, os, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _subpaths; _subpaths.ensure_cell_paths()
 import drivers
 import claude_sessions
 from drivers import _ClaudeSession

@@ -10,6 +10,13 @@
 """
 import sys, time
 
+# Must run before any other daemon-local import: registers daemon/spine and
+# every daemon/cells/<id> on sys.path so flat `import sessions`/`import
+# events` keep resolving once those modules physically live in subfolders
+# (the Cell-folder reorg, daemon/_subpaths.py).
+import _subpaths
+_subpaths.ensure_cell_paths()
+
 # Line-buffer stdout/stderr regardless of launcher (Electron/tray redirect to a
 # file, which Python block-buffers by default - a crash before the buffer fills
 # left daemon.out.log looking untouched even though the process ran for a

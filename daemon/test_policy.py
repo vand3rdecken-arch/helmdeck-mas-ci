@@ -9,6 +9,7 @@ import sys
 import tempfile
 import types
 
+import _subpaths; _subpaths.ensure_cell_paths()
 import policy
 
 _fails = []

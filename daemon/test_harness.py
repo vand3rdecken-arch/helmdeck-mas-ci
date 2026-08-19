@@ -46,6 +46,7 @@ import json, os, shutil, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+import _subpaths; _subpaths.ensure_cell_paths()
 
 import harness
 

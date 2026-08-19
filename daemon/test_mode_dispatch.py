@@ -28,6 +28,7 @@ Run: py -3.12 daemon/test_mode_dispatch.py
 import os, shutil, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _subpaths; _subpaths.ensure_cell_paths()
 import events, pm, processes, sessions, trackstore
 
 
