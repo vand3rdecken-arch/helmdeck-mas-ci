@@ -512,6 +512,15 @@ class H(BaseHTTPRequestHandler):
                     slot["evt"].set()
             return self._send(200, json.dumps({"ok": True}))
         if p == "/relay":                             # phone -> daemon (request)
+            # Read the body FIRST, before any early return. protocol_version is
+            # HTTP/1.1 (keep-alive): an early 400/503 that skips an unread POST
+            # body leaves those bytes sitting in the socket, and the NEXT request
+            # parsed off the same reused connection gets its request line
+            # corrupted by that leftover JSON (seen live: a GET /health came back
+            # as "Unsupported method" with a prior push's cipher payload spliced
+            # into it). nginx used to mask this - it always buffers the full
+            # request before proxying - but Cloudflare Tunnel connects directly.
+            raw_body = self._body()
             rid = self._room_id()
             if not rid:
                 return self._send(400, json.dumps({"error": "room required"}))
@@ -519,7 +528,7 @@ class H(BaseHTTPRequestHandler):
             if time.time() - room["last_pull"] > PULL_TIMEOUT + 15:
                 return self._send(503, json.dumps({"error": "no daemon connected for this room"}))
             try:
-                data = json.loads(self._body() or b"{}")
+                data = json.loads(raw_body or b"{}")
             except ValueError:
                 return self._send(400, json.dumps({"error": "bad json"}))
             if not data.get("cipher") or not data.get("pub"):
