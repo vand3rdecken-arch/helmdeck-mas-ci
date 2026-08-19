@@ -21,7 +21,7 @@ from worktrees import reclaim_worktree
 
 # same source-of-truth as sessions.{ROOT,DEFAULT_PERM} - process-idempotent,
 # safe to read independently rather than importing sessions (would cycle).
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
 
 

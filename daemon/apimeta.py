@@ -8,11 +8,13 @@ re-imports the names. Not monkeypatched.
 """
 import os
 
+from _subpaths import REPO_ROOT as _REPO_ROOT
+
 
 def _loop_state_mod():
     """tools/loop_state.py, imported from the daemon."""
     import sys as _sys
-    tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+    tools = os.path.join(_REPO_ROOT, "tools")
     if tools not in _sys.path:
         _sys.path.insert(0, tools)
     import loop_state

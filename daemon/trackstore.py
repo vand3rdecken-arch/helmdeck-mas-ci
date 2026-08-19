@@ -13,7 +13,7 @@ import threading as _threading
 import time
 import db as _db
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 STORE = os.path.join(ROOT, "tracks.json")
 
 

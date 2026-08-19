@@ -18,7 +18,7 @@ Steps link to their card (track id) once accepted; the timeline groups cards
 by process so one client engagement reads as a swimlane."""
 import json, os, re, shutil, subprocess, threading, time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 MODES = ("do", "prepare", "cowork", "teach", "human")

@@ -11,7 +11,7 @@ counted in touch units against a daily budget; margin per card = value - AI cost
 the human question is utilization/headroom, not dollars."""
 import json, os, time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 EV = os.path.join(ROOT, "events.jsonl")
 SET = os.path.join(ROOT, "settings.json")
 

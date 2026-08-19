@@ -6,7 +6,7 @@ ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
 import json, os, re, shutil, subprocess, threading, time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
 from copilot_stats import _stats, _save_stats, _fold_stats, _plan_share

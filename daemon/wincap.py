@@ -5,6 +5,8 @@ overwritten ~1/s - the Herald-cast-style glance feed the APK/glasses viewer read
 import json, os, signal, subprocess, threading
 import imageio_ffmpeg
 
+from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 # Orphan-reaping (drivers.py's reap_orphans pattern, applied here - found live
@@ -19,7 +21,7 @@ FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 # run_dir it was spawned in, which pinned an app/ subdirectory against
 # deletion until found and killed by hand). Track pids the same pid-reuse-
 # safe way drivers.py does; reap on the next boot.
-_PIDFILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recorder_pids.json")
+_PIDFILE = os.path.join(_DAEMON_ROOT, "recorder_pids.json")
 _pid_lock = threading.Lock()
 
 

@@ -12,7 +12,7 @@ import sys
 
 import auth
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as HERE
 USERS = os.path.join(HERE, "users.json")
 
 

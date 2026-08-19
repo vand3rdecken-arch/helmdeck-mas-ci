@@ -17,7 +17,7 @@ import json, math, os, re, subprocess, threading, time
 
 import i18n as _i18n
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 ROLE_FILE = os.path.join(ROOT, "pm.role.md")
 PLANS = os.path.join(ROOT, "pm")
 
