@@ -1506,7 +1506,22 @@ DEBT = [
                "(5) DONE going forward: this session's migration/sandbox work "
                "verified with md5sum/checksum, not file-size+mtime, per the "
                "earlier lesson that mtime cannot distinguish 'untouched' from "
-               "'grew by a plausible amount'.",
+               "'grew by a plausible amount'. "
+               "(6) DONE 2026-08-19, a DIFFERENT sub-risk than (4) - don't "
+               "conflate them: the physical Cell-folder reorg (daemon/cells/"
+               "<id>/ + daemon/spine/) needed every module's independent "
+               "`ROOT = dirname(abspath(__file__))` (~26 copies) consolidated "
+               "into one shared daemon/_subpaths.py, since a file moving one "
+               "folder deeper would otherwise have silently broken its own "
+               "path math with no error. This closes the ROOT-DUPLICATION "
+               "half of the class of bug (every module's storage-root "
+               "constant is now correct regardless of the file's physical "
+               "location), but does NOT close item (4) - each module's "
+               "OWN derived directory (events.EV, connectors.CDIR/VDIR, "
+               "checkpoints.CPDIR, voice.CACHE, copilot.SESS/CHATLOG, "
+               "copilot_runs/, .copilot_attachments/) still needs per-module "
+               "sandboxing in new tests; a shared sandbox helper remains "
+               "worth adding.",
         "order": 32,
     },
     {

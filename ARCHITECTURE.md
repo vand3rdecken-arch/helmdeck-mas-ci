@@ -127,6 +127,32 @@ previously a no-op - both now gate directly via `useCellEnabled()`. Known
 remaining, not chased (secondary, not primary): `more.tsx`'s static loopmap
 link ignores `pmEnabled`.
 
+**Physical Cell folders (2026-08-19).** The registry above was, until this
+date, metadata over files still physically interleaved flat in `daemon/*.py`
+- a real gap against the "everything is a plugin" claim (compared directly
+against `deepseek-harness`, which splits every capability into its own
+`packages/<category>/<name>/` folder). Closed: each cell's own files now
+physically live under `daemon/cells/<id>/` (`engineer/`, `pm/`, `process/`,
+`connectors/`, `copilot/`), and everything no cell owns - `db.py`, `events.py`,
+`policy.py`, `auth.py`, `server.py`, `cells.py` itself, and the 13 route
+modules that are multi-owner or spine-owned - lives under `daemon/spine/`
+(routes further nested at `daemon/spine/routes/`). Every existing `import
+sessions`/`import events`-style flat import needed ZERO rewrites: a new
+`daemon/_subpaths.py` (which never itself moves) adds each subfolder to
+`sys.path` at boot (`ensure_cell_paths()`, called first thing by every
+entrypoint), so module names keep resolving unchanged regardless of physical
+location - the Python equivalent of a `.pth` file or a tsconfig `paths` map,
+not a runtime heuristic. Three files stay flat in `daemon/` deliberately:
+`_subpaths.py` itself, and `swarm.py`/`mint_token.py` (both spawned by
+`desktop/tray.py`/`desktop/main.js` via a relative script path with
+`cwd=daemon/` - moving them would mean touching the Electron spawn code,
+out of scope for a folder-cleanliness pass). See `daemon/debt.py`
+`orphan-root-paths-events-jsonl-incident` fix (6) for the prerequisite that
+made this safe: every module's own `ROOT = dirname(abspath(__file__))` (~26
+independent copies) was consolidated into `_subpaths.py` FIRST, since a file
+moving one folder deeper would otherwise have silently broken its own path
+math with no error.
+
 Every policy change ALSO creates a **checkpoint** (settings + connectors
 snapshot, actor-attributed) with reversible restore - the older, narrower
 mechanism the full-dynamism decree's `TrackEntry`/`rollback()` generalizes.
@@ -170,7 +196,12 @@ The daemon is NOT a handful of god-files anymore. Debt `daemon-god-files`
 tracks an ongoing strangler-pattern breakup: pure SERVICES were extracted
 bottom-up first (so higher-level modules become thin dependents instead of
 reaching into a monolith), then the HTTP surface itself was split into a
-dispatch table. As of this writing:
+dispatch table. The module names below are unchanged since the Cell-folder
+reorg above physically moved them - `server.py` and every `routes_*.py` now
+live under `daemon/spine/`/`daemon/spine/routes/`, `sessions.py`/
+`lanemachine.py`/`dispatch.py`/`cardadmin.py`/`turnrunner.py`/`routes_tracks.py`/
+`routes_track_actions.py` under `daemon/cells/engineer/` - see that section
+for the full mapping. As of this writing:
 
 ```
 server.py (H handler, ~478 lines, was 2109)
