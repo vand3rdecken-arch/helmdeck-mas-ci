@@ -97,6 +97,16 @@ class Cell:
             return "repo"
         return "daemon"
 
+    def daemon_roots(self):
+        """Candidate physical directories for this cell's OWN daemon-local
+        files, in search order. The Cell-folder reorg moves each cell's files
+        into daemon/cells/<id>/ one cell at a time (see daemon/debt.py), so at
+        any point some cells have moved and some haven't - this tries the
+        post-move location FIRST, then falls back to the pre-move flat
+        daemon/ root, so read_source() keeps working across the whole
+        migration without per-phase edits here."""
+        return (os.path.join(ROOT, "cells", self.id), ROOT)
+
 
 # The registered cells. Order is presentation-only. enabled_key defaults true in
 # policy_seed.json, so all of this is a no-op until an owner flips a flag.
@@ -311,19 +321,27 @@ def read_source(cid, fname):
     c = _BY_ID.get(cid)
     if c is None or fname not in c.allowed_files():
         return None
-    root = {"app": APP_ROOT, "repo": REPO_ROOT, "daemon": ROOT}[c.where(fname)]
-    root = os.path.normpath(root)
-    full = os.path.normpath(os.path.join(root, fname))
-    # belt-and-suspenders: even though fname came from a closed allowlist,
-    # confirm the resolved path is still under the expected root before
-    # opening it - the allowlist is the real guarantee, this is a backstop.
-    if os.path.commonpath([full, root]) != root:
-        return None
-    try:
-        with open(full, encoding="utf-8", errors="replace") as f:
-            text = f.read(MAX_SOURCE_BYTES + 1)
-    except OSError:
-        return None
-    if len(text) > MAX_SOURCE_BYTES:
-        text = text[:MAX_SOURCE_BYTES] + "\n\n... (truncated)"
-    return text
+    where = c.where(fname)
+    if where != "daemon":
+        roots = ({"app": APP_ROOT, "repo": REPO_ROOT}[where],)
+    else:
+        # cell-owned daemon files may live in the post-reorg daemon/cells/<id>/
+        # or the pre-move flat daemon/ - try both (see Cell.daemon_roots()).
+        roots = c.daemon_roots()
+    for root in roots:
+        root = os.path.normpath(root)
+        full = os.path.normpath(os.path.join(root, fname))
+        # belt-and-suspenders: even though fname came from a closed allowlist,
+        # confirm the resolved path is still under the expected root before
+        # opening it - the allowlist is the real guarantee, this is a backstop.
+        if os.path.commonpath([full, root]) != root:
+            continue
+        try:
+            with open(full, encoding="utf-8", errors="replace") as f:
+                text = f.read(MAX_SOURCE_BYTES + 1)
+        except OSError:
+            continue
+        if len(text) > MAX_SOURCE_BYTES:
+            text = text[:MAX_SOURCE_BYTES] + "\n\n... (truncated)"
+        return text
+    return None
