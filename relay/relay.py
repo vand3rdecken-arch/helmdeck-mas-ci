@@ -75,7 +75,7 @@ border-radius:10px;text-decoration:none;font-weight:600}.p{background:#2893cc;co
 # text is derived from the app's ACTUAL data flows (app/src/data/*, this
 # relay, daemon/notify.py); keep it in sync when transport behavior changes.
 # Play Console -> App content -> Privacy policy:
-#   https://141.144.227.105.sslip.io/privacy
+#   https://relay.helmdeck.de/privacy
 PRIVACY_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>HelmDeck – Datenschutzerklärung / Privacy Policy</title>

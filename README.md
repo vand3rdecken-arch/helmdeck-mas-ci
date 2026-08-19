@@ -13,7 +13,7 @@ The app talks only to **your own machine**, over LAN or a zero-knowledge relay. 
 - No analytics
 - Your data never touches our servers, because there are none
 
-[Privacy policy](https://141.144.227.105.sslip.io/privacy)
+[Privacy policy](https://relay.helmdeck.de/privacy)
 
 ## Downloads
 
