@@ -35,36 +35,38 @@ only. Harden it with Cloudflare Access (free) if you want a second door.
 
 ## LIVE DEPLOYMENT (what is actually running)
 
-The relay is deployed on the Oracle Always Free VM and reachable at:
+The relay runs on **trooper** (an existing GPU/AI box, `trooperai@trooper` -
+see the `trooper` alias in `~/.ssh/config`) and is reachable at:
 
-    https://141.144.227.105.sslip.io/health     -> {"ok": true, ...}
+    https://relay.helmdeck.de/health     -> {"ok": true, ...}
 
-Layout on that box (Ubuntu 20.04, ARM, `ubuntu@141.144.227.105`,
-key `~/.ssh/oracle_relay`):
+trooper sits behind its provider's own NAT/proxy - even ports it already
+publishes itself (e.g. its LightRAG container) aren't reachable from the
+open internet, and there's no dashboard access to request 80/443 forwarding.
+So instead of nginx+certbot+public-bind, the relay is fronted by a
+**Cloudflare Tunnel** (outbound-only from trooper, no inbound ports needed):
 
 | piece | where |
 |---|---|
 | relay code | `/opt/helmdeck-relay.py` |
 | service | `helmdeck-relay.service`, bound to **127.0.0.1:6790** (not public) |
-| TLS + proxy | **nginx** vhost `/etc/nginx/sites-available/helmdeck-relay` |
-| certificate | Let's Encrypt via certbot, auto-renewing |
-| nginx backup | `/home/ubuntu/nginx-backup-<ts>.tgz` |
-
-That box previously served **stocknews-gpt.com**. It is now *deactivated, not
-deleted*: `myproject.service` is stopped+disabled and its nginx site unlinked,
-while `/home/ubuntu/flask_gpt`, the PostgreSQL data and
-`/etc/nginx/sites-available/myproject` are untouched. To bring it back:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/myproject /etc/nginx/sites-enabled/
-sudo systemctl enable --now myproject && sudo nginx -t && sudo systemctl reload nginx
-```
+| tunnel | `cloudflared` systemd service, config at `/etc/cloudflared/config.yml` |
+| tunnel name/id | `helmdeck-relay` / `ee91e959-61a9-4856-a2f7-6a640c477485` |
+| DNS | CNAME `relay.helmdeck.de` -> the tunnel (zone already on Cloudflare NS) |
+| TLS | terminated by Cloudflare's edge - no certbot on the box at all |
 
 > `push_relay.sh` is the UPDATE script for this box: it ships `relay/relay.py`,
-> the Expo APK + `/apk/version.json` (built by `tools/release.sh android`), and
-> restarts the service. It does NOT touch nginx or TLS (the first-install
-> version wrote a Caddyfile; that was removed exactly because it would fight
-> nginx for :443). JS-only changes ride OTA instead: `deploy/push_update.sh`.
+> the Expo APK + `/apk/version.json` (built by `tools/release.sh android`),
+> and restarts `helmdeck-relay.service`. It does NOT touch the tunnel/DNS -
+> those were set up once (`cloudflared tunnel login` / `create` / `route dns`,
+> then `cloudflared service install` pointed at `/etc/cloudflared/config.yml`).
+> JS-only changes ride OTA instead: `deploy/push_update.sh`.
+
+The previous Oracle Always Free VM (`141.144.227.105`) is **retired** - it
+needed payment to reboot and was abandoned. `deploy/setup_relay_vm.sh`
+(nginx+certbot+systemd, the old Path B recipe) is kept as a fallback if a
+dedicated VM with a real public IP is ever wanted again, but is not what's
+currently live.
 
 ---
 

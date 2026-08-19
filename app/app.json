@@ -13,7 +13,7 @@
     },
     "updates": {
       "enabled": true,
-      "url": "https://141.144.227.105.sslip.io/updates/manifest",
+      "url": "https://relay.helmdeck.de/updates/manifest",
       "checkAutomatically": "ON_LOAD",
       "requestHeaders": {
         "expo-channel-name": "production"
@@ -52,7 +52,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "141.144.227.105.sslip.io",
+              "host": "relay.helmdeck.de",
               "pathPrefix": "/pair"
             }
           ],
