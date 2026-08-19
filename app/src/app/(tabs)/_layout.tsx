@@ -35,11 +35,12 @@ const NAV: NavItem[] = [
   { name: "settings", labelKey: "nav.settings", icon: "settings-outline", teamOnly: true },
 ];
 // Cell-enable nav gating (Phase 1 of the cell-registry decree, daemon/debt.py
-// order 33): a disabled cell's tab must not appear, even though server.py
-// already 404s its routes. Keyed off the /cells manifest generically (by
-// surface id, not "connectors") so cells 2-5 pick this up automatically once
-// they register a Surface+nav entry - today only Connectors does, so this is
-// currently a no-op unless connectorsEnabled is flipped off.
+// order 33; the 3 tab-bearing surfaces got real route+nav in the
+// plugin-kernel-dual-nav cutover): a disabled cell's tab must not appear,
+// even though server.py already 404s its routes. Keyed off the /cells
+// manifest generically (by surface id, not a hardcoded cell name) so any
+// cell with a Surface+nav entry (today: board/engineer, processes, connectors)
+// is covered automatically.
 function useDisabledCellSurfaces(): Set<string> {
   const { data } = useQuery({ queryKey: ["cells"], queryFn: api.cells, staleTime: 30000, retry: false });
   const disabled = new Set<string>();

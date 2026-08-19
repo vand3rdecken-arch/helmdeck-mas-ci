@@ -11,7 +11,13 @@ const board: Surface = {
   title: "Board",
   path: "/(tabs)",
   component: BoardTab as Surface["component"],
-  nav: { group: "primary", order: 0, icon: "albums" },
+  // route + nav merged from nav.tabs' former "tab.board" entry (dual-nav
+  // cutover, daemon/debt.py plugin-kernel-dual-nav): this Surface is now
+  // BOTH what renders (component) and where it lives in nav (route/nav),
+  // instead of two separate objects. tabs.ts's matching entry is removed
+  // in the same change.
+  route: "board",
+  nav: { group: "primary", order: 1, icon: "grid-outline", labelKey: "nav.board" },
 };
 
 export const boardSurface: Plugin = {

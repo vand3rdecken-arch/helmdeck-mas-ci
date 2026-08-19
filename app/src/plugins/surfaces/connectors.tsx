@@ -19,13 +19,13 @@ const connectors: Surface = {
   title: "Connectors",
   path: "/(tabs)/connectors",
   component: ConnectorsTab as Surface["component"],
-  // No `route` here on purpose (mirrors board.tsx): the phone/desktop tab slot
-  // for connectors is already owned by nav.tabs' "tab.connectors" entry
-  // (points at the same file-based router route). This Surface exists so a
-  // kernel-driven renderer can show the Connectors cell directly, and so the
-  // cell registry has a real app-side counterpart to gate/inspect - it is
-  // deliberately NOT a second competing tab.
-  nav: { group: "primary", order: 12, icon: "sync-outline" },
+  // route + nav merged from nav.tabs' former "tab.connectors" entry (dual-nav
+  // cutover, daemon/debt.py plugin-kernel-dual-nav): this Surface is now
+  // BOTH what renders (component) and where it lives in nav (route/nav).
+  // tabs.ts's matching entry is removed in the same change.
+  route: "connectors",
+  nav: { group: "more", order: 7, icon: "sync-outline", labelKey: "nav.connectors",
+        sectionKey: "nav.sectionSetup", teamOnly: true, desktopOnly: true },
 };
 
 export const connectorsSurface: Plugin = {
