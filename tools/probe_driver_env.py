@@ -11,6 +11,7 @@ confirm the agent really sees the toolchain:
 import json, os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daemon"))
+import _subpaths; _subpaths.ensure_cell_paths()  # noqa: E402
 import drivers  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))

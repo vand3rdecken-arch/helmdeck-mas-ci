@@ -194,8 +194,11 @@ def checks_red(touched):
         except (OSError, subprocess.SubprocessError):
             pass   # a state doctor must never crash; types are re-checked in session
     if not problems and any(p.startswith("daemon/") and p.endswith(".py") for p in touched):
-        r = subprocess.run([sys.executable, "-c", "import " + ",".join(CORE_MODULES)],
-                           cwd=DAEMON, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import _subpaths; _subpaths.ensure_cell_paths(); import "
+             + ",".join(CORE_MODULES)],
+            cwd=DAEMON, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             problems.append("daemon wiring: " + (r.stderr or "").strip().splitlines()[-1][:120])
     try:
@@ -216,6 +219,7 @@ def hygiene_problems():
             problems.append("secret file tracked: " + t)
     try:
         sys.path.insert(0, DAEMON)
+        import _subpaths; _subpaths.ensure_cell_paths()
         import importlib, debt as _d
         importlib.reload(_d)
         for item in _d.DEBT:

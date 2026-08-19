@@ -23,6 +23,7 @@ Run: py -3.12 daemon/test_direct_task.py
 import os, subprocess, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _subpaths; _subpaths.ensure_cell_paths()
 import events, sessions, drivers, trackstore
 
 

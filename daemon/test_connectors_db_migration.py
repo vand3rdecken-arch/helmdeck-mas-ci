@@ -23,6 +23,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _subpaths; _subpaths.ensure_cell_paths()
 
 _fails = []
 def ok(cond, msg):
