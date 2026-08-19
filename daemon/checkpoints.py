@@ -8,7 +8,7 @@ version of the workspace is ever lost. Work data (tracks, events, recordings)
 is never part of a restore - checkpoints roll back the machine, not history."""
 import json, os, shutil, time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 CPDIR = os.path.join(ROOT, "checkpoints")
 os.makedirs(CPDIR, exist_ok=True)
 KEEP = 60

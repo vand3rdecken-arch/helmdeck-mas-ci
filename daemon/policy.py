@@ -22,7 +22,7 @@ import json
 import os
 import threading
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as HERE
 SEED = os.path.join(HERE, "policy_seed.json")
 LIVE = os.path.join(HERE, "policy_live.json")  # git-ignored; current composed value
 

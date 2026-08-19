@@ -13,7 +13,7 @@ import os
 import urllib.error
 import urllib.request
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from _subpaths import REPO_ROOT as _ROOT
 _ENV = os.path.join(_ROOT, ".env")
 API = "https://app.loops.so/api/v1"
 

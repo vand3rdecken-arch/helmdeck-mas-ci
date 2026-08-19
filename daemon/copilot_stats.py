@@ -10,7 +10,7 @@ import json
 import os
 import time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 STATS = os.path.join(ROOT, "copilot_stats.json")
 
 

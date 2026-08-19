@@ -3,7 +3,7 @@
 Keep-all retention (owner decision) - nothing here ever deletes a run."""
 import json, os, time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 REC = os.path.join(ROOT, "recordings")
 
 def new_run(kind, title):

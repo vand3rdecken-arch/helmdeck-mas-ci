@@ -21,7 +21,7 @@ Scheduling: settings.connectors {name: {"every_minutes": N}} - the poller
 runs due connectors and files whatever they return."""
 import importlib.util, json, os, shutil, subprocess, sys, threading, time
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 CDIR = os.path.join(ROOT, "connectors")
 os.makedirs(CDIR, exist_ok=True)
 # Last-run timestamps ({name: "YYYY-MM-DD HH:MM:SS"}) live in db.py's

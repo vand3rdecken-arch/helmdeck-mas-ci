@@ -35,8 +35,7 @@ itself claims)."""
 
 import os
 
-ROOT = os.path.dirname(os.path.abspath(__file__))          # daemon/
-REPO_ROOT = os.path.dirname(ROOT)                            # repo root (daemon/'s parent)
+from _subpaths import DAEMON_ROOT as ROOT, REPO_ROOT
 APP_ROOT = os.path.join(REPO_ROOT, "app")                    # app/ (sibling)
 MAX_SOURCE_BYTES = 200_000
 

@@ -12,6 +12,8 @@ routing, the thinking-mode directive, and attachment saving. Kept honest:
 """
 import base64, json, os, re, time, urllib.request
 
+from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+
 # Curated Claude model manifest - same source-of-truth idea as Paseo's
 # CLAUDE_MODEL_MANIFEST (packages/server/.../claude/model-manifest.ts): the
 # `claude` CLI has no "list models" API, so the base list is hand-maintained.
@@ -75,7 +77,7 @@ def _settings_models():
 # it for: curated labels/order + an OFFLINE FALLBACK. Cached 24h; any failure
 # (no token, offline, 401) silently falls back to the last cache, then the
 # manifest - the picker is never empty.
-_MODELS_CACHE = os.path.join(os.path.dirname(__file__), "models_cache.json")
+_MODELS_CACHE = os.path.join(_DAEMON_ROOT, "models_cache.json")
 _DISCOVER_TTL = 24 * 3600
 
 

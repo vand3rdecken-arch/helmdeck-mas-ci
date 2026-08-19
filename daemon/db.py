@@ -7,7 +7,7 @@ first start and renamed *.imported - originals preserved, per the safeguard
 rule."""
 import json, os, sqlite3, threading
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 DBPATH = os.path.join(ROOT, "helmdeck.db")
 
 # The HelmDeck rename (2026) changed the DB filename from swarmdeck.db. Carry the

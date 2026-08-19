@@ -13,7 +13,7 @@ import time
 
 # same source-of-truth as pm.{ROOT,PLANS} - process-idempotent directory
 # join, safe to compute independently rather than importing pm (would cycle).
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT
 PLANS = os.path.join(ROOT, "pm")
 
 

@@ -33,7 +33,7 @@ edit a brief, next turn uses it, no daemon restart.
 """
 import json, os, threading
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from _subpaths import REPO_ROOT as ROOT
 HARNESS = os.path.join(ROOT, "harness")
 AGENTS = os.path.join(HARNESS, "agents")
 SETTINGS = os.path.join(HARNESS, "settings")

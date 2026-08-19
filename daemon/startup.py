@@ -9,6 +9,8 @@ import os
 import socket
 import subprocess
 
+from _subpaths import DAEMON_ROOT as _DAEMON_ROOT
+
 
 def _tls_config():
     """Resolve the daemon's TLS material: env (HELMDECK_TLS_CERT/KEY) beats
@@ -20,7 +22,7 @@ def _tls_config():
     cert = os.environ.get("HELMDECK_TLS_CERT") or t.get("cert") or ""
     key = os.environ.get("HELMDECK_TLS_KEY") or t.get("key") or ""
     if not (cert and key):
-        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs")
+        base = os.path.join(_DAEMON_ROOT, "certs")
         c, k = os.path.join(base, "tls.crt"), os.path.join(base, "tls.key")
         if os.path.isfile(c) and os.path.isfile(k):
             cert, key = c, k
@@ -132,7 +134,7 @@ def _take_singleton_lock(port):
     daemon (pidfile + tree-kill) and wait for the port to actually free before
     binding, making restart deterministic instead of a bind race."""
     import socket, subprocess, time, signal
-    pidfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.pid")
+    pidfile = os.path.join(_DAEMON_ROOT, "daemon.pid")
 
     def _kill(pid, why):
         if not pid or pid == os.getpid():

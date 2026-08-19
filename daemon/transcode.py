@@ -14,6 +14,8 @@ degraded, never broken.
 """
 import os, shutil, subprocess, threading
 
+from _subpaths import REPO_ROOT as _REPO_ROOT
+
 # height, video bitrate, audio: what each surface actually needs
 PROFILES = {
     "mobile":  {"height": 480, "vb": "700k",  "fps": 15, "audio": False},
@@ -30,8 +32,7 @@ def ffmpeg_path():
     p = shutil.which("ffmpeg")
     if p:
         return p
-    local = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         "tools", "ffmpeg", "ffmpeg.exe")
+    local = os.path.join(_REPO_ROOT, "tools", "ffmpeg", "ffmpeg.exe")
     return local if os.path.exists(local) else None
 
 

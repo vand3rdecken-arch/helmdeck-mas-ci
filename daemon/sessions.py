@@ -11,7 +11,7 @@ control. Escalate a track to bypassPermissions only deliberately (owner decision
 import json, os, re, shutil, subprocess, time
 from runs import REC
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from _subpaths import DAEMON_ROOT as ROOT, REPO_ROOT
 STORE = os.path.join(ROOT, "tracks.json")
 DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
@@ -267,7 +267,7 @@ def flow(lane_labels=None):
     # for why it is derived rather than written down.
     try:
         import sys as _sys
-        _tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+        _tools = os.path.join(REPO_ROOT, "tools")
         if _tools not in _sys.path:
             _sys.path.insert(0, _tools)
         from loop_state import _decl_lines
