@@ -39,6 +39,18 @@ runtime's own signals at event time, never a stored "busy" flag.
    but not by SOMEONE ELSE'S noise).
 5. Scope guard: this is ADMISSION (defer the start of heavy ops), not cgroup
    enforcement - do not try to throttle running processes.
+6. GATE SINGLETON (measured 2026-08-20, Display-Glasses card): a worker,
+   blind to WHY its gate was slow (box at 100% from a build it can't see),
+   started a SECOND full gate in the same worktree - two 66-file suites then
+   starved each other. The gate verdict for a tree is load-bearing state and
+   briefly had two owners, violating the one-owner law. Paseo's
+   replaceAgentRun is the precedent: a gate run per tree is a singleton -
+   a second request JOINS the running one (or replaces it last-wins), never
+   stacks beside it. This holds independently of load admission.
+7. Gate cost is O(repo), not O(diff), and grows monotonically (66 files
+   today). Out of scope here, but note the pressure: per-card gates that run
+   everything are the structural reason this card exists. A diff-scoped
+   fast gate + full suite only at accept is the eventual shape.
 
 ## Verify
 
