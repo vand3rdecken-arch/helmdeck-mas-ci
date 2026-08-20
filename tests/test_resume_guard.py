@@ -9,10 +9,10 @@ Pins the exact numbers of the 'Voellig falscher Kontext' incident."""
 import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "daemon"))
-import db
+sys.path.insert(0, os.path.dirname(HERE))
+from daemon.spine.storage import db
 db.init()
-import sessions as S
+from daemon.cells.engineer import sessions as S
 
 _fails = []
 

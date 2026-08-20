@@ -29,20 +29,23 @@ Run: py -3.12 tests/test_question_channel.py
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-q-")
 
-import db
+from daemon.spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+from daemon.spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-import ask, claude_sessions, sessions
-from actionlog import ActionLog
+from daemon.spine.ops import ask
+from daemon.spine.agent import claude_sessions
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import turnrunner
+from daemon.spine.ops.actionlog import ActionLog
 
 _fails = []
 
@@ -171,14 +174,14 @@ def test_settle_and_repair():
 
     print("_settle_reply repair path:")
     calls = []
-    orig_turn = sessions._turn
+    orig_turn = turnrunner._turn
 
     def fake_turn(track, prompt, model=None, perm=None):
         calls.append(prompt)
         return "sess", BLOCK, {"usage": {"input_tokens": 10, "output_tokens": 5},
                                "cost_usd": 0.25, "models": ["m"]}
 
-    sessions._turn = fake_turn
+    turnrunner._turn = fake_turn
     try:
         t2 = _track("t-repair")
         reason = sessions._settle_reply(t2, "Soll ich A oder B nehmen?", log)
@@ -193,7 +196,7 @@ def test_settle_and_repair():
 
         # a worker that declines must not leave a phantom question
         calls.clear()
-        sessions._turn = lambda track, prompt, model=None, perm=None: (
+        turnrunner._turn = lambda track, prompt, model=None, perm=None: (
             "sess", ask.NO_QUESTION, {"usage": {}, "cost_usd": 0, "models": []})
         t3 = _track("t-noq")
         reason = sessions._settle_reply(t3, "Soll ich A oder B nehmen?", log)
@@ -202,7 +205,7 @@ def test_settle_and_repair():
 
         # a DELIVERED turn must not spend a repair turn at all
         calls.clear()
-        sessions._turn = fake_turn
+        turnrunner._turn = fake_turn
         t4 = _track("t-done")
         sessions._settle_reply(t4, "DELIVERED - fertig. Ready for Review", log)
         check(not calls, "no repair turn spent on delivered work")
@@ -215,7 +218,7 @@ def test_settle_and_repair():
         check(not calls, "policy.ask_repair=false disables the repair turn")
         events.save_settings({"policy": {"ask_repair": True}})
     finally:
-        sessions._turn = orig_turn
+        turnrunner._turn = orig_turn
 
 
 def test_answer():

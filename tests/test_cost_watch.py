@@ -33,12 +33,14 @@ Run: py -3.12 tests/test_cost_watch.py
 import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-import pm
-import notify
-import presence
-import events
+from daemon.cells.pm import pm
+from daemon.cells.pm import pm_watchdog
+from daemon.cells.pm import pm_comm
+from daemon.spine.comms import notify
+from daemon.spine.comms import presence
+from daemon.spine.storage import events
 
 FAILS = []
 
@@ -58,11 +60,11 @@ def track(tid, lane="working", cost=0.0, tok=0, ctx=0, prio="medium", archived=F
 # --- sandbox pm + events -----------------------------------------------------
 _orig_escalate = pm._escalate
 CFG = dict(pm.PM_DEFAULTS)                     # base 5%, reserve 40%, floor $5, ctx 150k
-pm._pm = lambda: dict(CFG)
-pm._save_loopstate = lambda s: None
-pm._activity = lambda *a, **k: None
+pm._pm = lambda: dict(CFG)   # _cost_watch imports _pm LAZILY (fresh each call) - this seam still works
+pm_watchdog._save_loopstate = lambda s: None
+pm_watchdog._activity = lambda *a, **k: None
 ESC = []
-pm._escalate = lambda text, tid="", title="": ESC.append(
+pm_watchdog._escalate = lambda text, tid="", title="": ESC.append(
     {"text": text, "tid": tid, "title": title})
 PLAN = ["max"]                                 # mutable so scenarios can flip it
 CALIB = [{"cost_per_pct": 1.0, "tokens_per_pct": 1_000_000.0}]   # $1 = 1%, 1M tok = 1%
@@ -194,8 +196,8 @@ finally:
 
 print("12. pm._escalate: chat always, notify pipe with proxy id")
 SAID, PIPED = [], []
-pm._say = lambda text: SAID.append(text)
-pm._escalation_tid = lambda: "proxy-card"
+pm_comm._say = lambda text: SAID.append(text)
+pm_comm._escalation_tid = lambda: "proxy-card"
 _orig_notify_escalate = notify.escalate
 notify.escalate = lambda title, body, tid="": PIPED.append((title, body, tid)) or True
 try:

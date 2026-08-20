@@ -16,19 +16,23 @@ real machine."""
 import json, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="helmdeck-machine-")
 
-import db
+from daemon.spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+from daemon.spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-import sessions, copilot, drivers, notify
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import dispatch
+from daemon.cells.copilot import copilot
+from daemon.spine.agent import drivers
+from daemon.spine.comms import notify
 
 WORKPLACE = os.path.join(SANDBOX, "Desktop")     # stands in for a real PC folder
 os.makedirs(WORKPLACE, exist_ok=True)
@@ -44,7 +48,7 @@ def check(cond, msg):
 
 # the driver turn, faked: record where it would have run + with which brief
 turns = []
-sessions._turn = lambda t, prompt, model=None, perm=None: (
+dispatch._turn = lambda t, prompt, model=None, perm=None: (
     turns.append({"cwd": t.get("worktree"), "perm": t.get("perm"),
                   "machine": t.get("machine"), "prompt": prompt})
     or ("sess-1", "DELIVERED: habe es auf dem Rechner erledigt.", {"usage": {}, "models": []}))
@@ -94,7 +98,7 @@ def test_machine_accept_path(t):
 def test_machine_brief():
     # the briefs are data now (harness/agents/*.md via daemon/harness.py), so ask
     # for them the way drivers.py does - by the surface a track resolves to.
-    import harness
+    from daemon.spine.registry import harness
     b = harness.brief(drivers._agent_for({"machine": True}))
     check("run commands" in b and "owner's own" in b, "machine brief grants the machine")
     check("NEVER end with just 'I cannot do X'" in b, "machine brief forbids dead-ending")

@@ -13,8 +13,8 @@ net at all - worse off than cards ever were, since even the pre-fix card bug
 import json, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "daemon"))
-import copilot as c
+sys.path.insert(0, os.path.dirname(HERE))
+from daemon.cells.copilot import copilot as c
 
 _fails = []
 

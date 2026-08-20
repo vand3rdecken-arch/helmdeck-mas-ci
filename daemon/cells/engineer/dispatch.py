@@ -14,9 +14,11 @@ failed machine-task attempt, and the 4 lanemachine needed) - concrete proof
 that extracting bottom-up collapses coupling instead of hiding it.
 """
 import os
+import shutil
 import time
 
 from daemon.spine.ops.runs import REC
+from daemon.spine.registry import i18n as _i18n
 
 from daemon.spine.storage.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
 from daemon.spine.git.gitutil import (_git, _git_try, _branch_exists, _git_state_broken,

@@ -12,10 +12,11 @@ its own pid-file + temp run dirs, no daemon, no board state."""
 import os, sys, time, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
-import drivers
+from daemon.spine.agent import drivers
+from daemon.spine.agent import agentcli
 
 # Generate the fake-CLI wrapper with the ABSOLUTE python path (the bare `py`
 # launcher isn't guaranteed on a spawned process's PATH). The driver's
@@ -184,7 +185,7 @@ def test_tool_grant_forces_respawn():
 
 def test_structured_error_and_nightshift():
     import sys as _sys
-    dmn = os.path.join(os.path.dirname(HERE), "daemon")
+    dmn = os.path.dirname(HERE)
     if dmn not in _sys.path:
         _sys.path.insert(0, dmn)
     t = {"id": "t-err", "worktree": os.getcwd(),
@@ -197,7 +198,7 @@ def test_structured_error_and_nightshift():
     # _limit_hit lives in pm.py since the PM loop absorbed nightshift.py (the
     # old `import nightshift` kept "working" as a namespace package - the
     # daemon/nightshift/ DATA folder - and then failed on the attribute).
-    import pm
+    from daemon.cells.pm import pm
     track = {"last_subtype": meta.get("subtype"), "last_error": meta.get("error"),
              "last_reply": "all fine here"}   # reply is clean; only structured field flags it
     check(pm._limit_hit(track), "PM loop detects limit from STRUCTURED field, not prose")
@@ -233,8 +234,8 @@ def test_mcp_config_bridges_grant_to_server():
     must bridge the two from the user's ~/.claude.json via --mcp-config, or the
     grant authorises a ghost the card can never reach (the windows-mcp bug)."""
     import json as _j
-    saved = drivers._user_mcp_servers
-    drivers._user_mcp_servers = lambda: {
+    saved = agentcli._user_mcp_servers
+    agentcli._user_mcp_servers = lambda: {
         "windows-mcp": {"type": "stdio", "command": "uvx",
                         "args": ["windows-mcp", "serve"], "env": {}}}
     try:
@@ -250,15 +251,15 @@ def test_mcp_config_bridges_grant_to_server():
         check(drivers._mcp_config_arg({"allowed_tools": ["mcp__ghost__*"]}) == [],
               "a grant naming an undefined server injects nothing (reported, not invented)")
     finally:
-        drivers._user_mcp_servers = saved
+        agentcli._user_mcp_servers = saved
 
 
 def test_mcp_config_never_invents_a_command():
     """An unresolvable bare command is passed verbatim - the daemon warns, it does
     not fabricate a path (which would fail confusingly instead of diagnosably)."""
     import json as _j
-    saved = drivers._user_mcp_servers
-    drivers._user_mcp_servers = lambda: {
+    saved = agentcli._user_mcp_servers
+    agentcli._user_mcp_servers = lambda: {
         "srv": {"command": "definitely-not-a-real-binary-xyz", "args": []}}
     try:
         arg = drivers._mcp_config_arg({"allowed_tools": ["mcp__srv__*"]})
@@ -266,14 +267,14 @@ def test_mcp_config_never_invents_a_command():
         check(cmd == "definitely-not-a-real-binary-xyz",
               "unresolvable command stays verbatim (got %r)" % cmd)
     finally:
-        drivers._user_mcp_servers = saved
+        agentcli._user_mcp_servers = saved
 
 
 def test_build_argv_threads_mcp_config():
     """The end-to-end wiring: a claude-desktop-shaped cfg produces a spawn argv
     that carries BOTH the grant and the server registration."""
-    saved = drivers._user_mcp_servers
-    drivers._user_mcp_servers = lambda: {
+    saved = agentcli._user_mcp_servers
+    agentcli._user_mcp_servers = lambda: {
         "windows-mcp": {"command": "uvx", "args": ["windows-mcp"]}}
     try:
         argv = drivers.build_argv("card-worker",
@@ -284,7 +285,7 @@ def test_build_argv_threads_mcp_config():
         plain = drivers.build_argv("card-worker", {"type": "claude"}, "BRIEF", exe="claude")
         check("--mcp-config" not in plain, "a plain-claude card injects no --mcp-config")
     finally:
-        drivers._user_mcp_servers = saved
+        agentcli._user_mcp_servers = saved
 
 
 if __name__ == "__main__":

@@ -16,10 +16,10 @@ pidfile bookkeeping + reap logic directly, which is where the bug was)."""
 import json, os, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
-import wincap
+from daemon.spine.media import wincap
 
 _fails = []
 
@@ -43,7 +43,7 @@ def _spawn_dummy():
 
 def test_start_stop_bookkeeping():
     p = _spawn_dummy()
-    import drivers
+    from daemon.spine.agent import drivers
     with wincap._pid_lock:
         pids = wincap._read_pids()
         pids[str(p.pid)] = drivers._proc_start_epoch(p.pid)
@@ -57,7 +57,7 @@ def test_start_stop_bookkeeping():
 def test_reap_kills_a_real_orphan():
     p = _spawn_dummy()
     time.sleep(0.3)   # let the OS start-time stamp settle
-    import drivers
+    from daemon.spine.agent import drivers
     with wincap._pid_lock:
         pids = wincap._read_pids()
         pids[str(p.pid)] = drivers._proc_start_epoch(p.pid)

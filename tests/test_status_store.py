@@ -18,11 +18,17 @@ round-trip), stubbed events/notify/drivers, tmp run_dir - no daemon, no real DB.
 import json, os, random, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-import db
+from daemon.spine.storage import db
 db.init()                      # role defaults to "tool": NO boot devaluation here
-import sessions, drivers, events, notify
+from daemon.spine.storage import trackstore
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import lifecycle
+from daemon.cells.engineer import turnrunner
+from daemon.spine.agent import drivers
+from daemon.spine.storage import events
+from daemon.spine.comms import notify
 
 _fails = []
 
@@ -47,12 +53,29 @@ def _save(t):
 
 sessions._load = _load
 sessions._save_track = _save
+
+
+class FakeDB:
+    """cancel_turn/_finish_turn/_mutate call _load/_find/_mutate imported
+    directly from trackstore, not through sessions - so the fake backing
+    store (with the deep-copy DB-round-trip simulation) has to sit under
+    trackstore._db."""
+    def tracks_all(self):
+        return [json.loads(json.dumps(t)) for t in store.values()]
+    def track_put(self, t):
+        store[t["id"]] = json.loads(json.dumps(t))
+    def track_get(self, tid):
+        t = store.get(tid)
+        return json.loads(json.dumps(t)) if t else None
+
+
+trackstore._db = FakeDB()
 events.emit = lambda *a, **k: None
 notify.card_event = lambda *a, **k: None
 notify.clear_dedup = lambda *a, **k: None
-sessions._ask_repair_on = lambda t: False
-sessions._record_econ = lambda t, meta: 0.0
-sessions._promote_live_session = lambda t: False
+turnrunner._ask_repair_on = lambda t: False
+turnrunner._record_econ = lambda t, meta: 0.0
+lifecycle._promote_live_session = lambda t: False
 
 TMP = tempfile.mkdtemp(prefix="helmdeck-status-store-")
 
@@ -131,13 +154,13 @@ class Stub:
         return True
 
 
-_real_idle = sessions._track_idle_s
+_real_idle = lifecycle._track_idle_s
 
 t_running = {"id": "COERCE", "status": "running", "run_dir": TMP}
 
 # stored running, NO live turn, idle > 45s -> delivered as needs_you, store untouched
 drivers._sessions.pop("COERCE", None)
-sessions._track_idle_s = lambda t: 999
+lifecycle._track_idle_s = lambda t: 999
 out = sessions.present(dict(t_running))
 check(out.get("status") == "needs_you" and out.get("status_derived") is True,
       "(c) running + no turn + idle>45 -> served as needs_you (derived)")
@@ -151,16 +174,16 @@ check(out.get("status") == "running", "(c) live turn (turn_active) -> stays runn
 drivers._sessions.pop("COERCE", None)
 
 # the spawn window (idle <= 45s) is never coerced - no needs_you flicker on start
-sessions._track_idle_s = lambda t: 3
+lifecycle._track_idle_s = lambda t: 3
 out = sessions.present(dict(t_running))
 check(out.get("status") == "running", "(c) spawn window (idle<=45) -> stays running")
 
 # non-running statuses pass through untouched
-sessions._track_idle_s = lambda t: 999
+lifecycle._track_idle_s = lambda t: 999
 same = {"id": "COERCE", "status": "needs_you", "run_dir": TMP}
 check(sessions.present(same) is same, "(c) non-running -> passed through as-is")
 
-sessions._track_idle_s = _real_idle
+lifecycle._track_idle_s = _real_idle
 
 print()
 if _fails:

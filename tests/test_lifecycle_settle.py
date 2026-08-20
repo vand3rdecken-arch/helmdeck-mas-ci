@@ -11,11 +11,16 @@ Self-sandboxing: monkeypatched load/save, no daemon, no real audit writes."""
 import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-import db
+from daemon.spine.storage import db
 db.init()
-import sessions, drivers, events, notify
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import lifecycle
+from daemon.spine.storage import trackstore
+from daemon.spine.agent import drivers
+from daemon.spine.storage import events
+from daemon.spine.comms import notify
 
 _fails = []
 
@@ -29,11 +34,24 @@ def check(cond, msg):
 # -- isolate from production: no real saves, no audit pollution, no push ------
 saved = []
 _track = {}
-sessions._load = lambda: [dict(_track)]
-sessions._save_track = lambda t: saved.append(dict(t))
+
+
+class FakeDB:
+    """lifecycle.sweep_zombies calls _load/_mutate imported directly from
+    trackstore, not through sessions - so the fake backing store has to sit
+    under trackstore._db, not sessions."""
+    def tracks_all(self):
+        return [dict(_track)]
+    def track_put(self, t):
+        saved.append(dict(t))
+    def track_get(self, tid):
+        return dict(_track) if _track.get("id") == tid else None
+
+
+trackstore._db = FakeDB()
 events.emit = lambda *a, **k: None
 notify.card_event = lambda *a, **k: None
-sessions._promote_live_session = lambda t: False
+lifecycle._promote_live_session = lambda t: False
 
 
 class Stub:
@@ -59,7 +77,7 @@ def sweep(status, session, idle=999):
     drivers._sessions.pop("TEST-X", None)
     if session is not None:
         drivers._sessions["TEST-X"] = session
-    sessions._track_idle_s = lambda t: idle
+    lifecycle._track_idle_s = lambda t: idle
     try:
         sessions.sweep_zombies(min_idle_s=45)
     finally:

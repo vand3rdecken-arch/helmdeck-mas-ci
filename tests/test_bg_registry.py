@@ -10,10 +10,11 @@ pins the driver's emitted lifecycle events."""
 import inspect, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "daemon"))
-import db
+sys.path.insert(0, os.path.dirname(HERE))
+from daemon.spine.storage import db
 db.init()
-import drivers, sessions
+from daemon.spine.agent import drivers
+from daemon.cells.engineer import sessions
 
 _fails = []
 
