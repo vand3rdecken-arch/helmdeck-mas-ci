@@ -13,6 +13,7 @@ technique proven on trackstore._db).
 """
 import os
 import re
+import subprocess
 import time
 
 from daemon.spine.storage.trackstore import _find, _load, _mutate, _slug
