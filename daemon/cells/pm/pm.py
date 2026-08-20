@@ -1202,7 +1202,8 @@ def start_loop():
                 _tick()
             except Exception as e:
                 try:
-                    import events; events.log("pm", "tick error: %s" % e)
+                    from daemon.spine.storage import events
+                    events.log("pm", "tick error: %s" % e)
                 except Exception:
                     pass
             time.sleep(120)

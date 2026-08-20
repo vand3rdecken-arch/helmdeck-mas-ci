@@ -552,7 +552,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                 tt.pop("gate_report", None)                       # the CURRENT blocker is the conflict
                 tt["merge_report"] = msg; tt["merge_kind"] = "conflict"
             t = _mutate(tid, _markers) or t
-            import notify; notify.card_event(t, "bounced")
+            from daemon.spine.comms import notify
+            notify.card_event(t, "bounced")
             _say_card(t, _i18n.t("say.conflictMarkers", detail=msg))
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
             return t
@@ -577,7 +578,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                 tt["status"] = "bounced"; tt["lane"] = "review"; tt["gate_report"] = problems   # stay on Review
                 tt.pop("merge_report", None); tt.pop("merge_kind", None)   # the CURRENT blocker is the gate
             t = _mutate(tid, _gatefail) or t
-            import notify; notify.card_event(t, "bounced")
+            from daemon.spine.comms import notify
+            notify.card_event(t, "bounced")
             # The chat gets the FULL problem text, not the one-line `punch`:
             # a gate failure's actual output (which test, which assertion) lives
             # on the lines after the header, and the chat is where the owner
@@ -655,7 +657,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
                 tt["merge_report"] = mergemsg; tt["merge_kind"] = kind
                 tt.pop("gate_report", None)          # gate ran green before the merge
             t = _mutate(tid, _mergefail) or t
-            import notify; notify.card_event(t, "bounced")
+            from daemon.spine.comms import notify
+            notify.card_event(t, "bounced")
             _say_card(t, _i18n.t("say.cannotLand", kind=kind, detail=mergemsg[:400]))
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = kind
             return t
@@ -686,9 +689,11 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
         _dh = t.get("deploy_hook") or {}
         _say_card(t, _i18n.t(_LANDED.get(kind, "say.landed.plain")) + (
             "" if not _dh else _i18n.t("say.deployOk" if _dh.get("ok") else "say.deployFailed")))
-        import notify; notify.card_event(t, "done")
+        from daemon.spine.comms import notify
+        notify.card_event(t, "done")
         try:
-            import pm; pm.on_card_done(tid)   # re-judge the golden triangle at event time
+            from daemon.cells.pm import pm
+            pm.on_card_done(tid)   # re-judge the golden triangle at event time
         except Exception:
             pass
         if t.get("connector"):
