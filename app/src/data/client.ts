@@ -440,7 +440,13 @@ export const api = {
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
   chatLive: () => req<{ text: string; thinking?: string; running: boolean }>("GET", "/chat/live"),
 
-  models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models"),
+  // The daemon guarantees a non-empty list (manifest fallback), so an empty or
+  // non-array answer is a transport artifact - throw so react-query retries
+  // instead of caching a picker that only shows "Auto".
+  models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models").then((m) => {
+    if (!Array.isArray(m) || m.length === 0) throw new TransportError("empty /models");
+    return m;
+  }),
   loopMap: () => req<LoopMap>("GET", "/loop/map"),
   harness: () => req<HarnessDocument>("GET", "/harness"),
   /** Write a brief or a settings layer, or roll one back with `restore`.

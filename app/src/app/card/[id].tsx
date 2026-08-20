@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type SteerOpts } from "@/data/client";
 import { usePresence } from "@/data/presence";
+import { useModels } from "@/data/use_models";
 import type { Track, Me, EconCard } from "@/data/types";
 import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
@@ -579,7 +580,7 @@ export default function CardScreen() {
     queryKey: ["transcript", id], queryFn: () => api.transcript(id!) as Promise<TStep[]>,
     enabled: !!id, staleTime: Infinity, refetchInterval: false });
   const { data: hist } = useQuery({ queryKey: ["history", id], queryFn: () => api.history(id!), enabled: !!id });
-  const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, staleTime: 300000 });
+  const { data: models } = useModels();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 10000 });
 
