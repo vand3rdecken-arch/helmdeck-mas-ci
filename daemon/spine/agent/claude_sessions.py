@@ -5,7 +5,7 @@ Claude Code session is a <uuid>.jsonl transcript under
 ~/.claude/projects/<encoded-cwd>/; `claude --resume <uuid>` continues it. We
 surface: id (uuid), cwd, project label, first user message, last activity.
 Nothing here mutates the sessions - it only reads them."""
-import json, os, re, time
+import json, os, re, threading, time
 
 HOME = os.path.expanduser("~")
 PROJECTS = os.path.join(HOME, ".claude", "projects")
@@ -155,6 +155,53 @@ def _tail_lines(path, max_bytes=1_200_000):
         data = f.read()
     lines = data.decode("utf-8", "replace").split("\n")
     return lines[1:] if size > max_bytes else lines   # drop the partial first line
+
+
+# Incremental per-session parse cache. A session .jsonl only ever APPENDS, so
+# every already-parsed line is immutable - fold the NEW bytes in at event time
+# (the Paseo principle: derive from the runtime's own signal, one owner, no
+# re-scan). This replaces the 1.2MB tail cap for the CARD FEED: a screenshot-
+# heavy Playwright turn grew its session to 6.4MB and the tail cap silently
+# dropped the first ~80% of the conversation from the chat (2026-08-20,
+# "full conversation not shown"). A shrunk file means rotation -> full reparse.
+_OBJS_LOCK = threading.Lock()
+_OBJS_CACHE = {}       # path -> {"read": consumed bytes, "buf": partial line, "objs": [dict]}
+_OBJS_CACHE_MAX = 6    # sessions watched at once; each can hold a few MB of objects
+
+
+def _session_objects(path):
+    """All parsed json objects of a session .jsonl, reading only appended bytes."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return []
+    with _OBJS_LOCK:
+        ent = _OBJS_CACHE.get(path)
+        if ent is None or size < ent["read"]:
+            ent = {"read": 0, "buf": b"", "objs": []}
+            _OBJS_CACHE[path] = ent
+            while len(_OBJS_CACHE) > _OBJS_CACHE_MAX:
+                _OBJS_CACHE.pop(next(iter(k for k in _OBJS_CACHE if k != path)))
+        if size > ent["read"]:
+            with open(path, "rb") as f:
+                f.seek(ent["read"])
+                chunk = f.read()
+            ent["read"] += len(chunk)
+            buf = ent["buf"] + chunk
+            nl = buf.rfind(b"\n")
+            if nl < 0:
+                ent["buf"] = buf          # still mid-line (agent mid-flush)
+            else:
+                complete, ent["buf"] = buf[:nl], buf[nl + 1:]
+                for line in complete.decode("utf-8", "replace").split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ent["objs"].append(json.loads(line))
+                    except ValueError:
+                        continue
+        return ent["objs"]
 
 
 def live_session_id(track):
@@ -444,15 +491,9 @@ def read_transcript(session_id, limit=400):
     path = _find_transcript(session_id)
     if not path:
         return []
-    parsed = []
-    for line in _tail_lines(path):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            parsed.append(json.loads(line))
-        except ValueError:
-            continue
+    # incremental cache, NOT the 1.2MB tail cap - see _session_objects. The
+    # step passes below stay read-only on these shared objects.
+    parsed = _session_objects(path)
 
     # pass 1: tool_use_id -> result, so each tool call carries its own output.
     # `interrupted` marks the runtime's own Stop sentinel: that result is not an
