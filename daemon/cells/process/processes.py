@@ -220,7 +220,7 @@ def sync():
                 # accepting it would merge the branch and discard the question.
                 if auto_accept and s["ready"] and sessions.is_delivered(t) \
                    and s.get("mode") in auto_modes and not s.get("auto_accepted"):
-                    ok, _problems = sessions._gate(t)
+                    ok, _problems = _probe_gate(t)
                     if ok:
                         s["auto_accepted"] = True
                         events.emit("process", p["id"], action="auto_accept",
@@ -293,6 +293,24 @@ def _auto_accept(tid):
         sessions.move_lane(tid, "done", actor="policy")
     except Exception as e:
         print("policy auto-accept failed:", tid, e)
+
+
+def _probe_gate(t):
+    """The auto-accept PRE-CHECK, kept aligned with what move_lane('done') will
+    actually do: sync the card's base in first (lanemachine._sync_base), THEN
+    gate. Probing the stale tree re-opened debt gate-base-lag for exactly the
+    autonomous paths: a delivered card whose base drifted probed red on code it
+    never touched and was never auto-accepted - forever, silently, on every
+    poll tick - even though the real submit would sync and gate it green.
+    Same entry as move_lane uses (one owner for the worktree mutation, one
+    definition of 'the gate'), reached via the sessions module so the tests'
+    _gate stubs keep working. A sync conflict is NOT green: the markers stay
+    in the worktree as the resolution medium (dispatch_conflict_resolution
+    reuses them), and an auto-accept must never land a half-merge."""
+    from daemon.cells.engineer import sessions
+    if sessions._sync_base(t).startswith("conflict"):
+        return False, ["base-sync conflict - resolve the markers first"]
+    return sessions._gate(t)
 
 def _priority_dispatch():
     """Policy: backlog cards at/above auto_dispatch_priority start themselves
@@ -399,7 +417,7 @@ def _autopilot():
                or time.time() - (t.get("autopilot_ts") or 0) < AUTOPILOT_RETRY_SECONDS:
                 continue
             _stamp(t["id"], autopilot_ts=time.time())
-            ok, _problems = sessions._gate(t)
+            ok, _problems = _probe_gate(t)
             if ok:
                 _stamp(t["id"], autopilot_accepted=True)
                 events.emit("process", "-", action="autopilot_accept", card=t["id"])
