@@ -231,6 +231,102 @@ def _pull_main_into_branch(t):
     return "markers:" + (files or _err[:150])
 
 
+def _base_branch(t):
+    """The branch this card must be gated AGAINST, DERIVED and VERIFIED - never
+    taken on faith from the stored field. Order:
+      1. the base recorded at branch creation (dispatch._record_base_branch) -
+         the only moment the fork point is a fact;
+      2. its LOCAL twin when the record names a remote ref (`origin/main` ->
+         `main`): _base_ref may fork a card from origin, but the accept merges
+         into the LOCAL checkout, so the local branch is the code the card will
+         actually land beside;
+      3. the repo checkout's current branch - the fallback for cards dispatched
+         before the field existed, and exactly what _pull_main_into_branch has
+         always used.
+    Every candidate must resolve to a commit IN THE WORKTREE (a card branch is
+    the only place the merge will run) before it is returned; a name that no
+    longer exists falls through instead of being merged blindly. Returns the
+    ref name or None when nothing verifiable is left."""
+    wt = t.get("worktree"); repo = t.get("repo")
+
+    def _resolves(ref):
+        return bool(ref) and _git_try(wt, "rev-parse", "--verify", "-q",
+                                      ref + "^{commit}")[0] == 0
+
+    rec = t.get("base_branch")
+    if rec:
+        local = rec.split("/", 1)[1] if rec.startswith("origin/") else None
+        if _resolves(local):
+            return local
+        if _resolves(rec):
+            return rec
+    rc, cur, _err = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    if rc != 0 or not cur or cur == "HEAD" or cur == t.get("branch"):
+        return None                      # detached, unborn, or parked ON the card branch
+    return cur if _resolves(cur) else None
+
+
+def _sync_base(t):
+    """Merge the card's BASE into the card's branch BEFORE the gate runs.
+
+    A worktree is isolated from base drift for the card's ENTIRE open lifetime,
+    and move_lane never merged the base back in while the card was open - so a
+    card gated the code it forked from, not the code it will land beside. When
+    base changes a shared behaviour and its test in separate commits, the card
+    reds for code it never touched (debt gate-base-lag; hit live on
+    proc-20260816-s2, reddened by a 56-file base-only test-wiring fix). The gate
+    is only meaningful against the CURRENT base, so sync first, then gate.
+
+    A conflict is left as editable MARKERS in the worktree - the same
+    resolve-by-editing loop _pull_main_into_branch built (the agent never runs a
+    git merge; the next submit's _autocommit completes it). Returns:
+      "uptodate"          - the branch already contains the base
+      "synced:<n>"        - n base commit(s) merged in
+      "conflict:<files>"  - markers left in the worktree; caller must bounce
+      "skip:<why>"        - not a worktree card / no tree to sync
+      "error:<msg>"       - the merge could not run; caller gates as-is (a
+                            sync failure must never block an otherwise green
+                            card - it only degrades to the old behaviour)"""
+    wt = t.get("worktree"); repo = t.get("repo")
+    if t.get("machine") or not t.get("branch"):
+        return "skip:no card branch"
+    if not wt or not repo or not os.path.isdir(wt):
+        return "skip:no worktree"
+    # FAST-TRACK / direct cards edit the LIVE tree (worktree == repo, debt
+    # fast-track-no-gate): there is no copy to drift, and merging the base into
+    # itself would be a no-op at best and a surprise commit in the owner's own
+    # checkout at worst.
+    if os.path.normcase(os.path.abspath(wt)) == os.path.normcase(os.path.abspath(repo)):
+        return "skip:card edits the live tree"
+    if not os.path.exists(os.path.join(wt, ".git")):
+        return "skip:worktree reclaimed"     # _gate says this properly, with the repair path
+    if _git_try(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] == 0:
+        # _autocommit runs first and completes any resolved merge, so a MERGE_HEAD
+        # still standing here means unresolved work - report it as the conflict it is
+        # rather than letting `git merge` fail with "already merging".
+        files = (_git_try(wt, "diff", "--name-only", "--diff-filter=U")[1] or "").strip()
+        return "conflict:" + (files or "(merge in progress)")
+    base = _base_branch(t)
+    if not base:
+        return "error:no verifiable base branch for this card"
+    rc, behind, err = _git_try(wt, "rev-list", "--count", "HEAD..%s" % base)
+    if rc != 0:
+        return "error:cannot compare against %s: %s" % (base, err[:120])
+    if int(behind or "0") == 0:
+        return "uptodate"
+    rc, _out, err = _git_try(wt, "merge", base, "--no-edit", "-m",
+                             "HelmDeck base-sync: %s into %s" % (base, t.get("branch")))
+    if rc == 0:
+        return "synced:%s" % behind
+    files = (_git_try(wt, "diff", "--name-only", "--diff-filter=U")[1] or "").strip()
+    if files:
+        return "conflict:" + files          # markers left in place, on purpose
+    # The merge never started (dirty tree it would clobber, index lock, ...) -
+    # nothing to abort, nothing resolved. Degrade to gating the branch as-is.
+    _git_try(wt, "merge", "--abort")
+    return "error:%s" % (err[:200] or "merge failed with no conflicting files")
+
+
 def dispatch_conflict_resolution(card_id, actor="board copilot", background=True):
     from daemon.cells.engineer import sessions  # lazy: steer() still lives in sessions.py
     """Hand a REAL <<<<<<< merge conflict to the card's OWN worker as an edit-only
@@ -560,6 +656,41 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             return t
         if ac is True:
             log.log("note", "COMMITTED worktree changes on the branch before merge")
+        # BASE-SYNC before the gate (debt gate-base-lag). The card's worktree was
+        # isolated from the base the whole time it was open, so gating it as-is
+        # asks "was this green against the code we forked from?" when the only
+        # question that matters is "is it green against the code it will land
+        # beside?". Merge the base in first - AFTER _autocommit (so the card's own
+        # work is committed and cannot be clobbered) and BEFORE _gate.
+        sync = _sync_base(t)
+        if sync.startswith("conflict"):
+            files = sync.split(":", 1)[1]
+            msg = ("Die Basis hat sich weiterbewegt und kollidiert mit dieser Karte. Der "
+                   "Harness hat die Basis in deinen Branch geholt - die Konflikte stehen "
+                   "jetzt als Markierungen (<<<<<<< / >>>>>>>) im Worktree:\n%s\n"
+                   "Steuere den Agenten: 'loese die Konfliktmarkierungen in diesen Dateien' "
+                   "(nur editieren, kein git) und reiche neu ein - dann committet der "
+                   "Harness und gatet gegen die aktuelle Basis." % files[:400])
+            log.log("note", "BASE-SYNC CONFLICT - stays on Review to resolve: " + files[:300])
+            events.emit("merge", tid, ok=False, outcome="conflict",
+                        detail="base-sync: " + files[:200])
+
+            def _basefail(tt):
+                tt["status"] = "bounced"; tt["lane"] = "review"   # stay on Review, not back to Working
+                tt.pop("gate_report", None)                       # the CURRENT blocker is the conflict
+                tt["merge_report"] = msg; tt["merge_kind"] = "conflict"
+            t = _mutate(tid, _basefail) or t
+            from daemon.spine.comms import notify
+            notify.card_event(t, "bounced")
+            _say_card(t, _i18n.t("say.baseDrifted", detail=msg))
+            t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
+            return t
+        if sync.startswith("synced"):
+            log.log("note", "BASE-SYNC: merged %s base commit(s) into the branch - gating "
+                            "against the CURRENT base" % sync.split(":", 1)[1])
+        elif sync.startswith("error"):
+            # Never block a card on a failed sync: say so, then gate as before.
+            log.log("note", "BASE-SYNC skipped (%s) - gating the branch as-is" % sync[6:])
         # the repo's own quality gate (helmdeck.gate command). The committed
         # check now trivially passes because we just committed. Say it in the CARD
         # chat first: the gate runs daemon-side (outside the agent session), so

@@ -184,20 +184,35 @@ DEBT = [
         "id": "accept-merge-base-branch",
         "title": "Accept merges into the checkout's CURRENT branch, ff-agnostic",
         "status": "open",
-        "what": "move_lane('done') now merges the card branch via _merge_to_main, "
-                "but into whatever branch t['repo'] currently has checked out "
-                "(assumed to be the base/main) rather than a base branch RECORDED "
-                "on the card at dispatch. It also always --no-ff and does not push.",
+        "what": "TWO halves, one shared missing record. HALF A (base INTO the "
+                "card) is now PAID: dispatch._record_base_branch folds "
+                "base_branch onto the card at branch creation, and "
+                "lanemachine._sync_base merges that base into the card's "
+                "worktree between _autocommit and _gate - so a card is gated "
+                "against the code it will land beside, not the code it forked "
+                "from. That merge-base-INTO-the-card direction was the "
+                "undocumented gap behind debt gate-base-lag. HALF B is still "
+                "OPEN: move_lane('done') merges the card branch via "
+                "_merge_to_main into whatever branch t['repo'] currently has "
+                "checked out, NOT into the recorded base_branch. It also always "
+                "--no-ff and does not push.",
         "why_it_bites": "If the owner leaves the main checkout on a different "
                         "branch, an accept would merge into the wrong target (the "
                         "guard only refuses detached HEAD or the card branch "
-                        "itself). No push means 'deployed' still depends on a "
+                        "itself). Worse now that half A exists: the gate would "
+                        "have synced against the RECORDED base while the merge "
+                        "lands into the CHECKED-OUT one, so green stops proving "
+                        "mergeable. No push means 'deployed' still depends on a "
                         "deploy hook to publish.",
         "trigger": "a repo whose cards fork from a non-default base, or a checkout "
                    "parked on a feature branch at accept time",
-        "fix": "Record base_branch on the card at dispatch; merge into THAT "
-               "(checking it out / using a dedicated integration worktree), offer "
-               "ff-only vs --no-ff by policy, and push when the repo is remote.",
+        "fix": "PAID (half A): base_branch recorded at dispatch, verified (never "
+               "trusted) by _base_branch, and merged in by _sync_base before the "
+               "gate; a sync conflict bounces to Review with editable markers "
+               "instead of a mystery-red gate. REMAINING (half B): merge into "
+               "THAT recorded base (checking it out / using a dedicated "
+               "integration worktree), offer ff-only vs --no-ff by policy, and "
+               "push when the repo is remote.",
         "order": 9,
     },
     {

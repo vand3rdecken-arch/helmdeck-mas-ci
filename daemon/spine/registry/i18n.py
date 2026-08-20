@@ -31,6 +31,10 @@ MESSAGES = {
         "de": "bleibt auf Review - im Worktree stehen noch offene Konfliktmarkierungen. {detail}",
         "en": "stays on Review - there are still open conflict markers in the worktree. {detail}",
     },
+    "say.baseDrifted": {
+        "de": "bleibt auf Review - die Basis hat sich weiterbewegt und kollidiert mit dieser Karte. {detail}",
+        "en": "stays on Review - the base moved on and collides with this card. {detail}",
+    },
     # -- readable action labels for the card transcript (claude_sessions) -----
     "tool.read": {"de": "Lesen", "en": "Read"},
     "tool.edit": {"de": "Bearbeiten", "en": "Edit"},
