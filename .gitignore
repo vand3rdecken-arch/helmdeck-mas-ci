@@ -29,6 +29,7 @@ daemon/checkpoints/
 daemon/swarmdeck.db
 daemon/helmdeck.db
 daemon/*.imported
+daemon/**/*.imported
 daemon/tracks.json.imported
 .loop/
 daemon/copilot_log.json
@@ -41,6 +42,7 @@ daemon/restart_stderr.log
 daemon/daemon.out.log
 app/dist-desktop/
 web/devserver.log
+app/web_dev.log
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 daemon/helmdeck.db-wal
