@@ -467,4 +467,74 @@ export const screens: Dict = {
     en: "No connection to the desktop.",
   },
   "health.unreachable": { de: "Desktop nicht erreichbar.", en: "Desktop unreachable." },
+
+  // ---- modules & rules (the plugin kernel surface) ------------------------
+  // app/(tabs)/modules.tsx shipped with its copy hardcoded in German - exactly
+  // the mix this dict exists to prevent. NOT here: the charter laws and the
+  // journal lines themselves; those arrive from the daemon and stay as they
+  // come, like every other audit line.
+  "modules.title": { de: "Module & Regeln", en: "Modules & rules" },
+  "modules.sub": {
+    de: "Alles ist ein Modul. Regeln sind aus dem Charter geseedet — anpassbar, jede Änderung wird protokolliert.",
+    en: "Everything is a module. The rules are seeded from the charter — adjustable, and every change is recorded.",
+  },
+  "modules.engines": { de: "Engines", en: "Engines" },
+  "modules.enginesHint": {
+    de: "Agent-Backends hinter einem Kontrakt (Claude / Copilot / DeepSeek).",
+    en: "Agent backends behind one contract (Claude / Copilot / DeepSeek).",
+  },
+  "modules.engineOn": { de: "verfügbar", en: "available" },
+  "modules.engineOff": { de: "aus", en: "off" },
+  "modules.noKernel": { de: "Kein Kernel — Fallback aktiv.", en: "No kernel — fallback active." },
+  "modules.surfaces": { de: "Surfaces", en: "Surfaces" },
+  "modules.surfacesHint": {
+    de: "{n} registrierte Oberflächen (Nav aus der Registry).",
+    en: "{n} registered surfaces (nav comes from the registry).",
+  },
+  "modules.rules": { de: "Regeln (geseedet)", en: "Rules (seeded)" },
+  "modules.rulesHint": {
+    de: "Standard = heutiger Charter. Umschalten schreibt einen getrackten Swap.",
+    en: "The default is today's charter. Toggling writes a tracked swap.",
+  },
+  "modules.gateBeforeReview": { de: "Gate vor Review", en: "Gate before review" },
+  "modules.gateBeforeReviewSub": {
+    de: "Suite muss grün sein, bevor reviewt wird",
+    en: "The suite must be green before review",
+  },
+  "modules.auditAppendOnly": { de: "Append-only Audit", en: "Append-only audit" },
+  "modules.worktreeIsolation": { de: "Worktree-Isolation", en: "Worktree isolation" },
+  "modules.authRequired": { de: "Auth erforderlich", en: "Auth required" },
+  "modules.measuredEconomics": { de: "Gemessene Ökonomie", en: "Measured economics" },
+  "modules.agentMaySwap": { de: "Agent darf Module tauschen", en: "Agent may swap modules" },
+  "modules.agentMaySwapSub": {
+    de: "Aus = Human-Bestätigung nötig",
+    en: "Off = a human has to confirm",
+  },
+  "modules.wipLimit": { de: "WIP-Limit", en: "WIP limit" },
+  "modules.wipLimitSub": { de: "laufende Karten", en: "cards in flight" },
+  "modules.cells": { de: "Cells", en: "Cells" },
+  "modules.cellsHint": {
+    de: "Agentische Systeme (Rolle + Route + UI-Surface + Enable-Flag) - daemon/cells.py. Aus schaltet die Routen UND den Tab ab. Antippen zeigt die Architektur - Logic, Storage, Harness, API-Routes, UI-Surface - mit echtem Code beim Antippen einer Datei.",
+    en: "Agentic systems (role + route + UI surface + enable flag) - daemon/cells.py. Off disables the routes AND the tab. Tap one for its architecture - logic, storage, harness, API routes, UI surface - with the real code behind every file.",
+  },
+  "modules.noCells": { de: "Keine Cells geladen.", en: "No cells loaded." },
+  "modules.charter": { de: "Charter (geseedet)", en: "Charter (seeded)" },
+  "modules.charterHint": {
+    de: "Quelle: {source} — selbst ein tauschbares Modul.",
+    en: "Source: {source} — itself a swappable module.",
+  },
+  "modules.journal": { de: "Reconfig-Journal", en: "Reconfig journal" },
+  "modules.journalHint": {
+    de: "Jede Modul-/Regeländerung, mit Urheber (die einzige Invariante: nichts ungetrackt).",
+    en: "Every module/rule change, with its author (the one invariant: nothing untracked).",
+  },
+  "modules.journalBy": { de: "von {actor}", en: "by {actor}" },
+  "modules.journalReplaced": { de: " (ersetzt {id})", en: " (replaced {id})" },
+  "modules.noJournal": { de: "Noch keine Einträge.", en: "No entries yet." },
+
+  // ui/cell_diagram.tsx - the architecture diagram behind a tapped cell. The
+  // category labels (Logic, Storage, Harness, API-Routes, UI-Surface) and the
+  // leaves are file paths and route names: audit side, untranslated by design.
+  "cell.noRoutes": { de: "keine Routen", en: "no routes" },
+  "cell.sourceLoading": { de: "Quelle wird geladen…", en: "Loading the source…" },
 };

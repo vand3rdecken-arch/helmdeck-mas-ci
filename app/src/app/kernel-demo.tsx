@@ -14,10 +14,17 @@ import { boot, dump } from "@/boot";
 import { hydratePolicies } from "@/boot/hydrate";
 import { attachDaemonTrackSink } from "@/boot/tracksink";
 
+// A DIAGNOSTIC, not UI copy - deliberately untranslated, and hoisted out of the
+// JSX so that reads as the decision it is instead of a label the language switch
+// forgot. It can only appear if the boot profile registered no surface at all,
+// i.e. a broken build on a dev-only route; an owner has no path here. Same split
+// as the audit trail in i18n/index.ts: technical record, English everywhere.
+const NO_SURFACE_DIAGNOSTIC = "no renderable surface";
+
 function RegistryHost() {
   const surfaces = useSurfaces();
   const first = surfaces.find((s) => s.component);
-  if (!first?.component) return <Text style={{ color: "#fff", padding: 24 }}>no renderable surface</Text>;
+  if (!first?.component) return <Text style={{ color: "#fff", padding: 24 }}>{NO_SURFACE_DIAGNOSTIC}</Text>;
   const Screen = first.component;
   return <Screen />;
 }

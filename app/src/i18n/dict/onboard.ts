@@ -1,7 +1,11 @@
 import type { Dict } from "../index";
 
 /** First run on the desktop shell: one screen, one button. Claude Code is the
- *  installer; the screen ends on the pairing QR. See ui/onboard.tsx. */
+ *  installer; the screen ends on the pairing QR. See ui/onboard.tsx.
+ *
+ *  The sign-in screen (ui/login_screen.tsx) lives here too: it is the same
+ *  arrival chrome - the first thing a new workspace sees - and it was hardcoded
+ *  German end to end until this dict reached it. */
 export const onboard: Dict = {
   "onboard.title": { de: "HelmDeck einrichten", en: "Set up HelmDeck" },
   "onboard.sub": {
@@ -24,4 +28,21 @@ export const onboard: Dict = {
     de: "Kopplung fehlgeschlagen — ist eine Relay-URL in den Einstellungen hinterlegt?",
     en: "Pairing failed — is a relay URL configured in Settings?",
   },
+
+  // ---- sign in / register (ui/login_screen.tsx) ---------------------------
+  // The error the daemon returns on a failed attempt is NOT here - routes_auth
+  // speaks through daemon/i18n.py, so it arrives already in the right language.
+  "login.signIn": { de: "Anmelden", en: "Sign in" },
+  "login.createAccount": { de: "Konto erstellen", en: "Create account" },
+  "login.setupTitle": { de: "Owner-Konto anlegen", en: "Create the owner account" },
+  "login.setupHint": {
+    de: "Erster Start - dieses Konto verwaltet alles, inklusive weiterer Benutzer.",
+    en: "First run - this account manages everything, including any further users.",
+  },
+  "login.setupSubmit": { de: "Anlegen & anmelden", en: "Create & sign in" },
+  "login.user": { de: "Benutzername", en: "Username" },
+  "login.password": { de: "Passwort", en: "Password" },
+  "login.passwordNew": { de: "Passwort (mind. 8 Zeichen)", en: "Password (at least 8 characters)" },
+  "login.invite": { de: "Einladungscode", en: "Invitation code" },
+  "login.failed": { de: "Anmeldung fehlgeschlagen", en: "Sign-in failed" },
 };
