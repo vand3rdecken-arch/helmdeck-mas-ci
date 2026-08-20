@@ -8,11 +8,14 @@ Self-sandboxing: a stub driver whose _turn is interruptible; no real CLI."""
 import os, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-import db
+from daemon.spine.storage import db
 db.init()
-import sessions, drivers, events, notify
+from daemon.cells.engineer import sessions
+from daemon.spine.agent import drivers
+from daemon.spine.storage import events
+from daemon.spine.comms import notify
 
 _fails = []
 
@@ -49,9 +52,9 @@ sessions._ensure_worktree = lambda t: ""
 sessions._maybe_compact = lambda t, log: t
 sessions._maybe_fast_track_ship = lambda t, log: None
 
-import actionlog
+from daemon.spine.ops import actionlog
 actionlog.ActionLog = lambda rd: type("L", (), {"log": lambda *a, **k: None})()
-import turnopts
+from daemon.spine.agent import turnopts
 turnopts.save_attachments = lambda *a, **k: []
 turnopts.resolve_model = lambda *a, **k: ("model", None)
 turnopts.augment_prompt = lambda text, *a, **k: text

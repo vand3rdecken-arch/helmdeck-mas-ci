@@ -16,8 +16,15 @@ Run: py -3.12 tests/test_autopilot.py
 import json, os, shutil, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "daemon"))
-import sessions, events, processes, pm
+sys.path.insert(0, os.path.dirname(HERE))
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import cardadmin
+from daemon.spine.storage import events
+from daemon.spine.storage import trackstore
+from daemon.cells.process import processes
+from daemon.cells.pm import pm
+from daemon.cells.pm import pm_state
+from daemon.cells.pm import pm_resolve
 
 
 class FakeDB:
@@ -62,23 +69,24 @@ def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
     run_dir = os.path.join(tmp, "run")
     os.makedirs(run_dir)
-    real_db, real_emit = sessions._db, events.emit
+    real_db, real_emit = trackstore._db, events.emit
     real_threading, real_gate = processes.threading, sessions._gate
-    real_directives = sessions.DIRECTIVES
+    real_directives = cardadmin.DIRECTIVES
     real_settings = events.settings
-    real_pm_threading, real_loopstate, real_say = pm.threading, pm.LOOPSTATE, pm._say
+    real_pm_threading, real_loopstate, real_say = (
+        pm_resolve.threading, pm_state.LOOPSTATE, pm_resolve._say)
     try:
         fake = FakeDB()
-        sessions._db = fake
+        trackstore._db = fake
         emitted = []
         events.emit = lambda kind, track, **f: emitted.append(
             {"kind": kind, "track": track, **f})
         processes.threading = FakeThreading
         # the PM ladder is driven, not run: its threads are recorded, its
         # loopstate lives in the temp dir, and it never speaks into the chat
-        pm.threading = FakeThreading
-        pm.LOOPSTATE = os.path.join(tmp, "loop.json")
-        pm._say = lambda *a, **k: None
+        pm_resolve.threading = FakeThreading
+        pm_state.LOOPSTATE = os.path.join(tmp, "loop.json")
+        pm_resolve._say = lambda *a, **k: None
 
         # -- the flag is its own field, editable both ways ------------------
         card(fake, "t-edit", run_dir)
@@ -94,10 +102,10 @@ def main():
         print("PASS autopilot flag: own field, on/off, no collision with mode")
 
         # -- board directives: applied once, done cards untouched ----------
-        sessions.DIRECTIVES = os.path.join(tmp, "board_directives.json")
+        cardadmin.DIRECTIVES = os.path.join(tmp, "board_directives.json")
         card(fake, "t-dir", run_dir)
         card(fake, "t-done", run_dir, lane="done", status="accepted", mode="assisted")
-        with open(sessions.DIRECTIVES, "w", encoding="utf-8") as f:
+        with open(cardadmin.DIRECTIVES, "w", encoding="utf-8") as f:
             json.dump([{"id": "d1", "card": "t-dir", "set": {"autopilot": True}},
                        {"id": "d2", "card": "t-done", "set": {"autopilot": True}},
                        {"id": "d3", "card": "t-gone", "set": {"autopilot": True}}], f)
@@ -133,6 +141,7 @@ def main():
         assert not FakeThread.spawned, "dispatched past the WIP limit"
         for i in range(wip_limit):
             del fake.tracks["t-wip%d" % i]
+        del fake.tracks["t-full"]
         print("PASS autopilot dispatch: respects WIP headroom")
 
         # -- autopilot bounce: runs the PM's ONE ladder, then escalates ----
@@ -205,13 +214,14 @@ def main():
 
         print("ALL PASS")
     finally:
-        sessions._db = real_db
+        trackstore._db = real_db
         events.emit = real_emit
         events.settings = real_settings
         processes.threading = real_threading
         sessions._gate = real_gate
-        sessions.DIRECTIVES = real_directives
-        pm.threading, pm.LOOPSTATE, pm._say = real_pm_threading, real_loopstate, real_say
+        cardadmin.DIRECTIVES = real_directives
+        pm_resolve.threading, pm_state.LOOPSTATE, pm_resolve._say = (
+            real_pm_threading, real_loopstate, real_say)
         pm._resolving.clear()
         shutil.rmtree(tmp, ignore_errors=True)
 

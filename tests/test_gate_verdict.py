@@ -15,9 +15,9 @@ tools/run_gate.py invocation, no daemon, no network."""
 import os, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-import sessions
+from daemon.cells.engineer import sessions
 
 _fails = []
 

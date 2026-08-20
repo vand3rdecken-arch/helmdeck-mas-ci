@@ -7,19 +7,21 @@ gap the inactivity watchdog cannot see (a looping worker keeps streaming)."""
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-burn-")
-import db
+from daemon.spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+from daemon.spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
-import runs
+from daemon.spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs"); os.makedirs(runs.REC, exist_ok=True)
-import drivers, sessions, pm
+from daemon.spine.agent import drivers
+from daemon.cells.engineer import sessions
+from daemon.cells.pm import pm
 sessions.REC = runs.REC
 
 _WRAP = os.path.join(tempfile.mkdtemp(), "fake_claude.cmd")
@@ -63,7 +65,7 @@ check("burn-1" in seen, "the PM was handed the judgement (review_burn called)")
 
 # --- 2) a clean turn end clears the stale burn signal -------------------------
 sessions._finish_turn("burn-1", "sess-x", "all good, done", {"subtype": "success"},
-                      __import__("actionlog").ActionLog(t["run_dir"]))
+                      __import__("daemon.spine.ops.actionlog", fromlist=["ActionLog"]).ActionLog(t["run_dir"]))
 check(not (sessions._find(sessions._load(), "burn-1") or {}).get("burn"),
       "a clean turn end clears the burn signal")
 
@@ -87,7 +89,7 @@ check(not steers, "legit verdict -> worker left alone (no steer)")
 # --- 5) already corrected _RESOLVE_MAX times -> escalate, no steer -----------
 steers.clear()
 pushes = []
-import notify
+from daemon.spine.comms import notify
 notify.push_fcm = lambda title, body, tid="": pushes.append(tid)
 pm._ask = lambda prompt, model="": {"verdict": "loop", "fix": "x"}
 _track("burn-5", burn={"n": 20, "name": "Bash", "sample": "{}", "corrections": pm._RESOLVE_MAX})

@@ -20,12 +20,17 @@ chat + push captured - no daemon, no git, no network, no LLM."""
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-import claude_sessions, copilot, notify, sessions
+from daemon.spine.agent import claude_sessions
+from daemon.cells.copilot import copilot
+from daemon.spine.comms import notify
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import lanemachine
+from daemon.spine.storage import trackstore
 
 _fails = []
 
@@ -44,9 +49,23 @@ pushed = []         # notify.card_event() transitions
 copilot.say = lambda text, cls="pm": chat.append(text)
 notify.card_event = lambda t, status: pushed.append(status)
 notify.push_fcm = lambda *a, **k: None
-sessions._load = lambda: list(store.values())
-sessions.list_tracks = lambda: list(store.values())
-sessions._save_track = lambda t: store.__setitem__(t["id"], t)
+
+
+class FakeDB:
+    """Backs the SAME `store` dict, so trackstore._load/_find/_mutate/
+    _save_track (called directly by lanemachine, not through sessions) see
+    and mutate exactly what `store[tid]` reads/writes below."""
+    def tracks_all(self):
+        return list(store.values())
+    def track_put(self, t):
+        store[t["id"]] = t
+    def track_get(self, tid):
+        return store.get(tid)
+    def track_delete(self, tid):
+        store.pop(tid, None)
+
+
+trackstore._db = FakeDB()
 
 RUN = os.path.join(SANDBOX, "run")
 WT = os.path.join(SANDBOX, "wt")
@@ -69,7 +88,7 @@ class FakeEvents:
         return "auto"
 
 
-sys.modules["events"] = FakeEvents
+sys.modules["daemon.spine.storage.events"] = FakeEvents
 
 
 def card(tid, **kw):
@@ -86,16 +105,16 @@ def reset():
 
 
 # The slow/dangerous seams: never run a real gate, merge or hook in a test.
-sessions._autocommit = lambda t: True
-sessions._repo_hook = lambda t, kind: True
+lanemachine._autocommit = lambda t: True
+lanemachine._repo_hook = lambda t, kind: True
 
 print("lane-move visibility")
 
 # -- 1. a GREEN landing speaks and pushes -------------------------------------
 reset()
 card("c-ok")
-sessions._gate = lambda t: (True, [])
-sessions._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
+lanemachine._gate = lambda t: (True, [])
+lanemachine._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
 out = sessions.move_lane("c-ok", "done", actor="owner")
 
 check(out.get("lane") == "done" and out.get("status") == "accepted",
@@ -108,7 +127,7 @@ check("done" in pushed,
 # -- 2. a RED gate bounces, stays on Review, and says WHY ----------------------
 reset()
 card("c-gate")
-sessions._gate = lambda t: (False, ["gate command failed (run_gate):\ntest_x.py exit 1"])
+lanemachine._gate = lambda t: (False, ["gate command failed (run_gate):\ntest_x.py exit 1"])
 out = sessions.move_lane("c-gate", "done", actor="owner")
 
 check(out.get("status") == "bounced" and out.get("lane") == "review",
@@ -121,9 +140,9 @@ check("bounced" in pushed, "the bounce still pushes")
 # -- 3. a merge CONFLICT on Done bounces with the resolve path -----------------
 reset()
 card("c-conf")
-sessions._gate = lambda t: (True, [])
-sessions._merge_to_main = lambda t: (False, "conflict", "kollidiert in daemon/pm.py")
-sessions._pull_main_into_branch = lambda t: "markers:daemon/pm.py"
+lanemachine._gate = lambda t: (True, [])
+lanemachine._merge_to_main = lambda t: (False, "conflict", "kollidiert in daemon/pm.py")
+lanemachine._pull_main_into_branch = lambda t: "markers:daemon/pm.py"
 out = sessions.move_lane("c-conf", "done", actor="owner")
 
 check(out.get("status") == "bounced" and out.get("lane") == "review",
@@ -136,8 +155,8 @@ check(any("Konfliktmarkierungen" in m or "daemon/pm.py" in m for m in chat),
 # -- 4. the REVIEW preview reports its verdict --------------------------------
 reset()
 card("c-prev", lane="working", status="needs_you")
-sessions._gate = lambda t: (True, [])
-sessions._classify_merge = lambda t: ("mergeable", "sauber mergebar")
+lanemachine._gate = lambda t: (True, [])
+lanemachine._classify_merge = lambda t: ("mergeable", "sauber mergebar")
 out = sessions.move_lane("c-prev", "review", actor="owner")
 
 check(out.get("status") == "submitted" and out.get("lane") == "review",
@@ -158,8 +177,8 @@ def slow_gate(t):
     return True, []
 
 
-sessions._gate = slow_gate
-sessions._merge_to_main = lambda t: (True, "merged", "ok")
+lanemachine._gate = slow_gate
+lanemachine._merge_to_main = lambda t: (True, "merged", "ok")
 sessions.move_lane("c-slow", "done", actor="owner")
 
 check(seen.get("status") == "gating",
@@ -176,7 +195,7 @@ claude_sessions.live_session_id = lambda t: None      # no agent session at all
 track = {"id": "v", "run_dir": VRUN}
 
 before = claude_sessions.transcript_version(track)
-from actionlog import ActionLog
+from daemon.spine.ops.actionlog import ActionLog
 ActionLog(VRUN).log("note", "GATE FAILED - stays on Review")
 after = claude_sessions.transcript_version(track)
 

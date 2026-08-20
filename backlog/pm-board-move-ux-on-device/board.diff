@@ -1,0 +1,386 @@
+diff --git a/app/src/ui/board.tsx b/app/src/ui/board.tsx
+index c1a797f..7997115 100644
+--- a/app/src/ui/board.tsx
++++ b/app/src/ui/board.tsx
+@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
+ import React, { useCallback, useEffect, useRef, useState } from "react";
+ import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+ import { Ionicons } from "@expo/vector-icons";
++import * as Haptics from "expo-haptics";
+ import { Gesture, GestureDetector } from "react-native-gesture-handler";
+ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+ 
+@@ -280,13 +281,13 @@ function DraggableCard({
+ }
+ 
+ function WideKanban({
+-  tracks, label, qc, onError, onInfo,
++  tracks, label, qc, onError, onMoveCard,
+ }: {
+   tracks: Track[];
+   label: (l: string) => string;
+   qc: QueryClient;
+   onError: (m: string) => void;
+-  onInfo: (m: string | null) => void;
++  onMoveCard: (k: Track, lane: string) => Promise<void>;
+ }) {
+   const t = useTheme();
+   const colFrames = useRef<Record<string, Frame>>({});
+@@ -331,16 +332,15 @@ function WideKanban({
+     if (!lane || !card) return;
+     try {
+       if ((card.lane || "working") !== lane) {
+-        const res = await api.moveLane(id, lane);
+-        onInfo(laneVerdict(res, lane));
++        await onMoveCard(card, lane);   // shared optimistic move (WIP guard + rollback)
+       } else {
+         const ordered = byLane(lane).map((k) => k.id).filter((cid) => cid !== id);
+         ordered.splice(indexAt(lane, y, id), 0, id);
+         await api.reorder(ordered);
++        await qc.invalidateQueries({ queryKey: ["tracks"] });
+       }
+-      await qc.invalidateQueries({ queryKey: ["tracks"] });
+     } catch (e) { onError(String((e as Error).message)); }
+-  }, [tracks, byLane, indexAt, laneAt, qc, onError, onInfo]);
++  }, [tracks, byLane, indexAt, laneAt, qc, onError, onMoveCard]);
+ 
+   const Ins = () => <View style={{ height: 2, borderRadius: 2, backgroundColor: t.accent, marginVertical: 2 }} />;
+ 
+@@ -386,6 +386,101 @@ function WideKanban({
+   );
+ }
+ 
++// ---- on-device drag (phone board) --------------------------------------------
++// The phone stacks lanes vertically in one ScrollView, so cross-lane dragging
++// can't rely on column hit-testing like the desktop kanban. Instead: a long
++// press lifts the card, a full-screen overlay with four big lane BANDS appears
++// (labelled from settings.policy.lane_labels), a ghost chip follows the finger,
++// and releasing over a band moves the card. Releasing without having dragged
++// falls back to the move sheet. NO reanimated worklets on this path: the
++// enabled React Compiler mangles useAnimatedStyle on device (see RunningPulse),
++// so the gesture runs .runOnJS(true) and the ghost is core-Animated.
++
++function DeviceDragCard({ k, dragging, onLift, onDragMove, onDrop, onDragEnd, children }: {
++  k: Track;
++  dragging: boolean;
++  onLift: (k: Track, x: number, y: number) => void;
++  onDragMove: (x: number, y: number) => void;
++  onDrop: (k: Track, y: number, moved: boolean) => void;
++  onDragEnd: () => void;
++  children: React.ReactNode;
++}) {
++  const moved = useRef(false);
++  const pan = Gesture.Pan()
++    .activateAfterLongPress(260)
++    .runOnJS(true)
++    .onStart((e) => { moved.current = false; onLift(k, e.absoluteX, e.absoluteY); })
++    .onUpdate((e) => {
++      if (!moved.current && Math.hypot(e.translationX, e.translationY) > 8) moved.current = true;
++      onDragMove(e.absoluteX, e.absoluteY);
++    })
++    .onEnd((e) => onDrop(k, e.absoluteY, moved.current))
++    .onFinalize(() => onDragEnd());
++  return (
++    <GestureDetector gesture={pan}>
++      <View style={{ opacity: dragging ? 0.35 : 1 }}>{children}</View>
++    </GestureDetector>
++  );
++}
++
++function LaneDropOverlay({ drag, band, tracks, label, wip, wipLimit, topInset, ghostPos, onBandFrame }: {
++  drag: { task: string; lane: string };
++  band: number;
++  tracks: Track[];
++  label: (l: string) => string;
++  wip: number;
++  wipLimit: number;
++  topInset: number;
++  ghostPos: RNAnimated.ValueXY;
++  onBandFrame: (i: number, y: number, h: number) => void;
++}) {
++  const t = useTheme();
++  const bandRefs = useRef<Record<number, View | null>>({});
++  return (
++    <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, backgroundColor: "rgba(6,9,16,0.62)" }}>
++      <View style={{ flex: 1, paddingTop: topInset + 10, paddingBottom: 10, paddingHorizontal: 14, gap: 10 }}>
++        {LANES.map((lane, i) => {
++          const active = band === i;
++          const current = drag.lane === lane;
++          const full = lane === "working" && !current && wipLimit > 0 && wip >= wipLimit;
++          const n = tracks.filter((k) => (k.lane || "working") === lane && !k.archived).length;
++          return (
++            <View
++              key={lane}
++              ref={(r) => { bandRefs.current[i] = r; }}
++              onLayout={() => bandRefs.current[i]?.measureInWindow((_x, y, _w, h) => onBandFrame(i, y, h))}
++              // label sits top-left so the finger-following ghost (mid-band)
++              // never covers it
++              style={{ flex: 1, borderRadius: 16, borderWidth: 2, padding: 14, gap: 3,
++                alignItems: "flex-start", justifyContent: "flex-start",
++                borderColor: active ? (full ? t.danger : t.accent) : full ? t.danger + "88" : laneColor(t, lane) + "55",
++                backgroundColor: active ? (full ? t.danger + "1F" : t.accent + "24") : t.surface1 + "E6" }}
++            >
++              <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
++                <Dot color={laneColor(t, lane)} size={9} />
++                <Text style={{ color: active ? t.txtPrimary : t.txtSecondary, fontSize: 15.5, fontWeight: "700" }}>{label(lane)}</Text>
++                <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{n}</Text>
++              </View>
++              {current ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>aktuelle Spur – loslassen bricht ab</Text> : null}
++              {full ? <Text style={{ color: t.danger, fontSize: 11, fontWeight: "600" }}>WIP-Limit {wip}/{wipLimit} – voll</Text> : null}
++            </View>
++          );
++        })}
++        <Text style={{ color: t.txtTertiary, fontSize: 11, textAlign: "center" }}>Auf eine Spur ziehen und loslassen</Text>
++      </View>
++      <RNAnimated.View style={{ position: "absolute", left: 0, top: 0, width: 240, transform: ghostPos.getTranslateTransform() }}>
++        <View style={{ backgroundColor: t.surface2, borderColor: t.accent + "88", borderWidth: 1.5, borderRadius: 12,
++          padding: 10, gap: 3, ...(isWeb ? { boxShadow: "0 8px 24px rgba(0,0,0,0.45)" } as any : { elevation: 8 }) }}>
++          <Text numberOfLines={2} style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>{drag.task}</Text>
++          <Text style={{ color: band >= 0 ? t.accent : t.txtTertiary, fontSize: 10.5, fontWeight: "600" }}>
++            {band >= 0 ? "→ " + label(LANES[band]) : "ziehen…"}
++          </Text>
++        </View>
++      </RNAnimated.View>
++    </View>
++  );
++}
++
+ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topInset?: number }) {
+   const t = useTheme();
+   const router = useRouter();
+@@ -394,7 +489,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
+   // Freshness is driven by the global version long-poll (useGlobalStream); this
+   // interval is just a slow safety net if that loop errors.
+   const { data, isLoading, error } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, refetchInterval: 20000 });
+-  const [busy, setBusy] = useState(false);
++  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
+   const [layout, setLayout] = useState("board");
+   const [toast, setToast] = useState<string | null>(null);
+   const showToast = useCallback((m: string | null) => {
+@@ -424,21 +519,88 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
+     return !k.archived; // "all"
+   });
+ 
+-  function onMove(k: Track) {
++  // WIP is policy the daemon reports but does NOT enforce on manual moves
++  // (events.py capacity) - honouring capacity.wip_limit on the board is the
++  // client's job. Count from the live tracks cache so an optimistic move
++  // already occupies its slot.
++  const wipLimit = metrics?.capacity?.wip_limit ?? metrics?.settings?.capacity?.wip_limit ?? 0;
++  const wip = rows.filter((k) => (k.lane || "working") === "working" && !k.archived).length;
++  const wipFull = wipLimit > 0 && wip >= wipLimit;
++
++  /** One move path for sheet, phone drag and desktop drop: guard the WIP limit,
++   *  flip the lane in the cache NOW (optimistic), roll back if the API fails.
++   *  A gate/merge bounce is not a failure - the invalidate pulls the card back
++   *  and the verdict toast explains why. */
++  const doMove = useCallback(async (k: Track, lane: string) => {
++    const from = k.lane || "working";
++    if (lane === from) return;
++    if (lane === "working" && wipFull) {
++      if (!isWeb) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
++      showToast(`WIP-Limit erreicht (${wip}/${wipLimit}) – „${label("working")}“ ist voll. Erst eine Karte abschließen oder das Limit in den Einstellungen erhöhen.`);
++      return;
++    }
++    await qc.cancelQueries({ queryKey: ["tracks"] });
++    const prev = qc.getQueryData<Track[]>(["tracks"]);
++    qc.setQueryData<Track[]>(["tracks"], (old) =>
++      Array.isArray(old) ? old.map((x) => (x.id === k.id ? { ...x, lane } : x)) : old);
++    try {
++      const res = await api.moveLane(k.id, lane);
++      // req() only throws on 401/network - a daemon 500 arrives as a parsed
++      // {error} body. Treat it as a failure so the rollback below runs.
++      const errMsg = res && typeof res === "object" && "error" in res ? String((res as { error?: unknown }).error ?? "") : "";
++      if (errMsg) throw new Error(errMsg);
++      showToast(laneVerdict(res, lane));
++      await qc.invalidateQueries({ queryKey: ["tracks"] });
++    } catch (e) {
++      if (prev !== undefined) qc.setQueryData(["tracks"], prev);   // rollback
++      await qc.invalidateQueries({ queryKey: ["tracks"] });
++      Alert.alert("Fehler – Zug zurückgenommen", String((e as Error).message));
++    }
++  }, [qc, wipFull, wip, wipLimit, label, showToast]);
++
++  const onMove = useCallback((k: Track) => {
+     sheet.show({
+       title: k.task,
+       message: "Verschieben nach…",
+-      options: LANES.filter((l) => l !== k.lane).map((l) => ({
+-        label: "→ " + label(l),
+-        onPress: async () => {
+-          setBusy(true);
+-          try { const res = await api.moveLane(k.id, l); showToast(laneVerdict(res, l)); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+-          catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+-          finally { setBusy(false); }
+-        },
++      options: LANES.filter((l) => l !== (k.lane || "working")).map((l) => ({
++        label: "→ " + label(l) + (l === "working" && wipFull ? `  (WIP ${wip}/${wipLimit} voll)` : ""),
++        onPress: () => doMove(k, l),
+       })),
+     });
+-  }
++  }, [sheet, label, wipFull, wip, wipLimit, doMove]);
++
++  // ---- phone drag state: which card is lifted, which band the finger is over.
++  const [drag, setDrag] = useState<{ id: string; lane: string; task: string } | null>(null);
++  const [band, setBand] = useState(-1);
++  const bandRef = useRef(-1);
++  const bandFrames = useRef<Record<number, { y: number; h: number }>>({});
++  const ghostPos = useRef(new RNAnimated.ValueXY({ x: -999, y: -999 })).current;
++  const bandAt = useCallback((y: number) => {
++    for (const [i, f] of Object.entries(bandFrames.current)) if (y >= f.y && y <= f.y + f.h) return Number(i);
++    return -1;
++  }, []);
++  const onLiftCard = useCallback((k: Track, x: number, y: number) => {
++    bandFrames.current = {}; bandRef.current = -1; setBand(-1);
++    ghostPos.setValue({ x: x - 120, y: y - 100 });
++    setDrag({ id: k.id, lane: k.lane || "working", task: k.task });
++    if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
++  }, [ghostPos]);
++  const onDragMoveCard = useCallback((x: number, y: number) => {
++    ghostPos.setValue({ x: x - 120, y: y - 100 });
++    const b = bandAt(y);
++    if (b !== bandRef.current) {
++      bandRef.current = b; setBand(b);
++      if (b >= 0 && !isWeb) Haptics.selectionAsync().catch(() => {});
++    }
++  }, [ghostPos, bandAt]);
++  const onDropCard = useCallback((k: Track, y: number, moved: boolean) => {
++    setDrag(null); setBand(-1); bandRef.current = -1;
++    if (!moved) { onMove(k); return; }        // held but not dragged -> move sheet
++    const b = bandAt(y);
++    if (b < 0) return;
++    doMove(k, LANES[b]);                       // current lane band == no-op cancel
++  }, [bandAt, doMove, onMove]);
++  const onDragEndCard = useCallback(() => { setDrag(null); setBand(-1); bandRef.current = -1; }, []);
+ 
+   const nextUp = (data ?? [])
+     .filter((k) => k.lane !== "done" && !k.archived && (k.status === "needs_you" || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
+@@ -446,18 +608,14 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
+ 
+   return (
+     <>
+-    <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingTop: topInset + (wide ? 8 : 8),
++    <ScrollView scrollEnabled={!drag} contentContainerStyle={{ padding: wide ? 20 : 12, paddingTop: topInset + (wide ? 8 : 8),
+       paddingBottom: 120, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
+       refreshControl={undefined}>
+       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
+       {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || "Desktop nicht erreichbar – läuft HelmDeck?"}</Text> : null}
+-      {busy ? <ActivityIndicator color={t.accent} /> : null}
+       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
+       {!filter && nextUp.length > 0 ? (
+-        <NextUp items={nextUp} onDone={async (k) => {
+-          try { const res = await api.moveLane(k.id, "done"); showToast(laneVerdict(res, "done") ?? "Step erledigt – die Kette rückt vor"); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
+-          catch (e) { Alert.alert("Fehler", String((e as Error).message)); }
+-        }} />
++        <NextUp items={nextUp} onDone={(k) => doMove(k, "done")} />
+       ) : null}
+       {filter === "needs_you" ? (
+         shown.length === 0 ? <Empty text="Nichts wartet gerade auf dich." /> :
+@@ -468,7 +626,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
+         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
+       ) : wide && layout === "board" ? (
+         // desktop kanban: four column plates side by side, drag to move/reorder
+-        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert("Fehler", m)} onInfo={showToast} />
++        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert("Fehler", m)} onMoveCard={doMove} />
+       ) : (
+         LANES.map((lane) => {
+           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
+@@ -483,14 +641,27 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
+               {inLane.length === 0 ? <Empty text="leer" /> :
+                 inLane.map((k) => layout === "list"
+                   ? <LRow key={k.id} k={k} onOpen={() => router.push(`/card/${k.id}`)} onMove={() => onMove(k)} />
+-                  : <Card key={k.id} k={k} onMove={onMove} />)}
++                  : (
++                    // phone board: long-press lifts into the lane-band drag;
++                    // Card's own onLongPress stays no-op so the gesture owns it
++                    // (a lift-without-drag release still opens the sheet).
++                    <DeviceDragCard key={k.id} k={k} dragging={drag?.id === k.id}
++                      onLift={onLiftCard} onDragMove={onDragMoveCard} onDrop={onDropCard} onDragEnd={onDragEndCard}>
++                      <Card k={k} onMove={() => {}} />
++                    </DeviceDragCard>
++                  ))}
+             </View>
+           );
+         })
+       )}
+     </ScrollView>
++    {drag ? (
++      <LaneDropOverlay drag={drag} band={band} tracks={rows} label={label} wip={wip} wipLimit={wipLimit}
++        topInset={topInset} ghostPos={ghostPos} onBandFrame={(i, y, h) => { bandFrames.current[i] = { y, h }; }} />
++    ) : null}
+     {toast ? (
+-      <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 24, alignItems: "center" }}>
++      // bottom: 92 keeps a two-line toast clear of the floating tab bar
++      <View pointerEvents="none" style={{ position: "absolute", left: 12, right: 12, bottom: 92, alignItems: "center" }}>
+         <View style={{ maxWidth: 560, backgroundColor: t.surface1, borderColor: t.borderStrong, borderWidth: 1,
+           borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
+           ...(isWeb ? { boxShadow: "0 6px 20px rgba(0,0,0,0.35)" } as any : { elevation: 6 }) }}>
+diff --git a/tools/mock_board.py b/tools/mock_board.py
+index 804ada6..7b3443c 100644
+--- a/tools/mock_board.py
++++ b/tools/mock_board.py
+@@ -27,20 +27,35 @@ TRACKS = [
+      "status": "accepted", "priority": "medium", "mode": "teach", "branch": "feed-order", "turns": 4,
+      "ai_cost": 0.51, "updated": "08:41"},
+ ]
+-DASH = {"wip": 3, "wip_limit": 5, "touches": 12, "touch_budget": 40, "headroom": 28,
+-        "ai_cost": 5.09, "billed": 800, "margin": 794.91, "cards": [],
+-        "settings": {"policy": {"lane_labels": {"backlog": "Backlog", "working": "In Arbeit",
+-                     "review": "Review", "done": "Erledigt"}}}}
+-SETTINGS = {"policy": {"lane_labels": {"backlog": "Backlog", "working": "In Arbeit",
+-            "review": "Review", "done": "Erledigt"}}, "default_repo": "helmdeck"}
++# Real daemon shapes (events.py metrics): capacity is an OBJECT, lane_labels
++# live under settings.policy. wip==wip_limit on purpose - the board must show
++# "In Arbeit" as full and refuse moves into it (the daemon never enforces this).
++LABELS = {"backlog": "Inbox", "working": "In Arbeit", "review": "Abnahme", "done": "Fertig"}
++DASH = {"capacity": {"wip": 2, "wip_limit": 2, "touches_today": 12,
++                     "touch_budget_day": 40, "headroom": 0},
++        "cards": [], "sows": [], "yield_first_pass": [3, 4], "automation": [2, 3],
++        "gate_failures": [],
++        "totals": {"value_delivered": 800, "ai_spend": 5.09, "margin": 794.91, "leverage_per_touch": 66.7},
++        "settings": {"currency": "EUR", "value_per_card": 200, "default_repo": "helmdeck",
++                     "capacity": {"wip_limit": 2, "touch_budget_day": 40,
++                                  "tariff": {"steer": 1, "review": 2, "bounce": 3}},
++                     "policy": {"lane_labels": LABELS}}}
++SETTINGS = {"policy": {"lane_labels": LABELS}, "default_repo": "helmdeck"}
+ 
+ 
+ class H(BaseHTTPRequestHandler):
+     def log_message(self, *a): pass
+-    def _send(self, obj):
++    def _send(self, obj, status=200):
+         b = json.dumps(obj).encode()
+-        self.send_response(200); self.send_header("Content-Type", "application/json")
++        self.send_response(status); self.send_header("Content-Type", "application/json")
++        self.send_header("Access-Control-Allow-Origin", "*")   # Expo WEB judge runs cross-origin
+         self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
++    def do_OPTIONS(self):
++        self.send_response(204)
++        self.send_header("Access-Control-Allow-Origin", "*")
++        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
++        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
++        self.end_headers()
+     def do_GET(self):
+         p = self.path.split("?")[0]
+         if p == "/tracks": return self._send(TRACKS)
+@@ -49,6 +64,19 @@ class H(BaseHTTPRequestHandler):
+         if p == "/me": return self._send({"role": "owner", "name": "owner"})
+         return self._send([])
+     def do_POST(self):
++        p = self.path.split("?")[0]
++        body = self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}"
++        # deterministic failure to judge the board's optimistic ROLLBACK:
++        # any lane move of card 5 blows up like a real daemon 500 {"error"}.
++        if p == "/tracks/5/lane":
++            return self._send({"error": "mock: Daemon-Fehler (Test) - Zug muss zurueckrollen"}, 500)
++        if p.endswith("/lane") and p.startswith("/tracks/"):
++            tid = p.split("/")[2]
++            lane = json.loads(body).get("lane")
++            for t in TRACKS:
++                if t["id"] == tid and lane:
++                    t["lane"] = lane
++            return self._send(next((t for t in TRACKS if t["id"] == tid), {"ok": True}))
+         self._send({"ok": True})
+ 
+ 

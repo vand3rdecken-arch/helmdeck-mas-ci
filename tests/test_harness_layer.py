@@ -27,10 +27,10 @@ import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "daemon"))
+sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-import harness
+from daemon.spine.registry import harness
 
 _fails = []
 
@@ -43,7 +43,8 @@ def check(cond, msg):
 
 # -- 1. the data and the built-in fallback must not drift --------------------
 def test_no_drift():
-    import drivers, copilot
+    from daemon.spine.agent import drivers
+    from daemon.cells.copilot import copilot
     check(harness.brief("card-worker") == harness._resolve(
         harness._DEFAULT_CARD, harness._DEFAULTS["card-worker"][1]),
         "harness/agents/card-worker.md == the built-in card fallback")
@@ -59,7 +60,7 @@ def test_no_drift():
 
 # -- 2. the wire protocol is spliced in, and stays owned by ask.py ------------
 def test_ask_protocol():
-    import ask
+    from daemon.spine.ops import ask
     card = harness.brief("card-worker")
     check(ask.BRIEF in card, "the card brief carries ask.BRIEF verbatim")
     check(harness.ASK_MARKER not in card, "the {{ask_protocol}} marker is consumed")
@@ -236,7 +237,9 @@ def test_loop_state():
 
 # -- 6. one definition, both endpoints ---------------------------------------
 def test_one_definition():
-    import sessions, server
+    from daemon.cells.engineer import sessions
+    from daemon.spine.http import server
+    from daemon.spine.http.routes import routes_info
     f = sessions.flow({"done": "Geliefert"})
     check([n["key"] for n in f["nodes"]] == list(sessions.LANES),
           "the lane graph covers exactly the real LANES tuple")
@@ -253,7 +256,7 @@ def test_one_definition():
     check([s["key"] for s in m["states"]] ==
           [s["key"] for s in __import__("loop_state").machine()["states"]],
           "the two endpoints cannot drift - they are one call")
-    h = server._harness_state()
+    h = routes_info._harness_state()
     check(not h["errors"], "the shipped harness/ files all load clean: %s" % h["errors"])
 
 
@@ -345,7 +348,9 @@ def _ts_interfaces():
 
 
 def test_export_matches_the_app_contract():
-    import harness, sessions, loop_state
+    from daemon.spine.registry import harness
+    from daemon.cells.engineer import sessions
+    import loop_state
     fields = _ts_interfaces()
     check(os.path.exists(CLIENT_TS), "app/src/data/client.ts is where we think it is")
 
@@ -438,7 +443,7 @@ def test_policy_knob_contract():
     screen nobody looks at twice. And a labelKey with no dict entry renders the
     raw key. Neither is a type error on either side."""
     import re
-    import server
+    from daemon.spine.http import server
     schema = server._config_schema({})
     check(bool(schema), "server._config_schema() is importable and non-empty")
 

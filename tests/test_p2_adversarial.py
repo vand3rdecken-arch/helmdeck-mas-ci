@@ -19,20 +19,22 @@ Run: py -3.12 tests/test_p2_adversarial.py
 import json, os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-adv-")
 
-import db
+from daemon.spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+from daemon.spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-import ask, presence, sessions
-from actionlog import ActionLog
+from daemon.spine.ops import ask
+from daemon.spine.comms import presence
+from daemon.cells.engineer import sessions
+from daemon.spine.ops.actionlog import ActionLog
 
 _fails = []
 

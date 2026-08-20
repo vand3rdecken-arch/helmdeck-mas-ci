@@ -15,16 +15,28 @@ captured - no daemon, no git, no network, no LLM."""
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-import pm, sessions, notify
+from daemon.cells.pm import pm
+from daemon.cells.pm import pm_comm
+from daemon.cells.pm import pm_state
+from daemon.cells.pm import pm_resolve
+from daemon.cells.engineer import sessions
+from daemon.spine.comms import notify
 
-pm.PLANS = os.path.join(SANDBOX, "pm")
-pm.LOOPSTATE = os.path.join(pm.PLANS, "loop.json")
-pm._ACTIVITY = os.path.join(pm.PLANS, "activity.jsonl")
+# pm.py, pm_comm.py and pm_state.py each independently compute their own
+# PLANS/LOOPSTATE/_ACTIVITY (extracted from pm.py, no shared reference) - the
+# functions _resolve_card/_notify_deliveries actually call live in pm_resolve
+# and pm_comm, so those are the modules that need redirecting, not pm.py.
+PLANS = os.path.join(SANDBOX, "pm")
+pm.PLANS = PLANS
+pm_comm.PLANS = PLANS
+pm_comm._ACTIVITY = os.path.join(PLANS, "activity.jsonl")
+pm_state.PLANS = PLANS
+pm_state.LOOPSTATE = os.path.join(PLANS, "loop.json")
 
 _fails = []
 
@@ -41,7 +53,8 @@ said = []           # pm._say messages
 pushed = []         # notify.push_fcm calls
 calls = []          # delegation calls: (verb, detail)
 
-pm._say = lambda text: said.append(text)
+pm_resolve._say = lambda text: said.append(text)   # used by _resolve_card's own bare `_say`
+pm._say = lambda text: said.append(text)           # used by _notify_deliveries's own bare `_say`
 notify.push_fcm = lambda title, body, tid=None: pushed.append((title, body))
 sessions._load = lambda: list(store.values())
 sessions.list_tracks = lambda: list(store.values())

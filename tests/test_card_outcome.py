@@ -26,12 +26,16 @@ no daemon, no git, no network, no LLM."""
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-import copilot, notify, sessions
+from daemon.cells.copilot import copilot
+from daemon.spine.comms import notify
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import lanemachine
+from daemon.spine.storage import trackstore
 
 _fails = []
 
@@ -48,9 +52,24 @@ store = {}
 copilot.say = lambda text, cls="pm": None
 notify.card_event = lambda t, status: None
 notify.push_fcm = lambda *a, **k: None
-sessions._load = lambda: list(store.values())
-sessions.list_tracks = lambda: list(store.values())
-sessions._save_track = lambda t: store.__setitem__(t["id"], t)
+
+
+class FakeDB:
+    """Backs the SAME `store` dict, so trackstore._load/_find/_mutate/
+    _save_track (called directly by the extracted lanemachine/cardadmin
+    modules, not through sessions) see and mutate exactly what `store[tid]`
+    reads/writes below."""
+    def tracks_all(self):
+        return list(store.values())
+    def track_put(self, t):
+        store[t["id"]] = t
+    def track_get(self, tid):
+        return store.get(tid)
+    def track_delete(self, tid):
+        store.pop(tid, None)
+
+
+trackstore._db = FakeDB()
 
 RUN = os.path.join(SANDBOX, "run")
 WT = os.path.join(SANDBOX, "wt")
@@ -87,15 +106,15 @@ class FakeProcesses:
         return []
 
 
-sys.modules["events"] = FakeEvents
-sys.modules["processes"] = FakeProcesses
+sys.modules["daemon.spine.storage.events"] = FakeEvents
+sys.modules["daemon.cells.process.processes"] = FakeProcesses
 
 # The slow/dangerous seams: never run a real gate, merge, hook or git in a test.
-sessions._autocommit = lambda t: True
-sessions._repo_hook = lambda t, kind: True
-sessions._gate = lambda t: (True, [])
-sessions._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
-sessions.reclaim_worktree = lambda t, log=None: None
+lanemachine._autocommit = lambda t: True
+lanemachine._repo_hook = lambda t, kind: True
+lanemachine._gate = lambda t: (True, [])
+lanemachine._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
+lanemachine.reclaim_worktree = lambda t, log=None: None
 
 
 def card(tid, **kw):
@@ -157,9 +176,9 @@ check("Autostart-Task angelegt" in store["c-mach"].get("outcome", ""),
 # shipped. A repeat accept must settle the card, not re-run gate/merge.
 _gate_calls = []
 _merge_calls = []
-_real_gate, _real_merge = sessions._gate, sessions._merge_to_main
-sessions._gate = lambda t: (_gate_calls.append(t["id"]), (True, []))[1]
-sessions._merge_to_main = lambda t: (_merge_calls.append(t["id"]),
+_real_gate, _real_merge = lanemachine._gate, lanemachine._merge_to_main
+lanemachine._gate = lambda t: (_gate_calls.append(t["id"]), (True, []))[1]
+lanemachine._merge_to_main = lambda t: (_merge_calls.append(t["id"]),
                                      (True, "merged", "gemergt"))[1]
 
 out = sessions.move_lane("c-repo", "done", actor="owner")   # c-repo is accepted already
@@ -172,9 +191,9 @@ check(not out.get("gate_report") and not out.get("merge_failed"),
       "a landed card is never handed a gate punch list by a second accept")
 check("29 organische" in store["c-repo"].get("outcome", ""),
       "the outcome recorded at the real accept survives the re-accept")
-sessions._gate, sessions._merge_to_main = _real_gate, _real_merge
-sessions._gate = lambda t: (True, [])
-sessions._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
+lanemachine._gate, lanemachine._merge_to_main = _real_gate, _real_merge
+lanemachine._gate = lambda t: (True, [])
+lanemachine._merge_to_main = lambda t: (True, "merged", "2 commits nach main gemergt")
 
 # -- 3. the snapshot carries the result of FINISHED cards -----------------------
 card("c-open", lane="working", status="needs_you", last_reply="Welche DB soll ich nehmen?")

@@ -8,19 +8,19 @@ hatch, documented at the guard)."""
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-adopt-")
-import db
+from daemon.spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+from daemon.spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
-import runs
+from daemon.spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs"); os.makedirs(runs.REC, exist_ok=True)
-import sessions
+from daemon.cells.engineer import sessions
 sessions.REC = runs.REC
 
 _fails = []

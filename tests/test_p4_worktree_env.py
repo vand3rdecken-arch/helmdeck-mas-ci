@@ -19,11 +19,15 @@ events.settings - no daemon, no real DB writes.
 import os, shutil, socket, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-import db
+from daemon.spine.storage import db
 db.init()
-import sessions, drivers, events
+from daemon.spine.storage import trackstore
+from daemon.cells.engineer import sessions
+from daemon.cells.engineer import devport
+from daemon.spine.agent import drivers
+from daemon.spine.storage import events
 
 _fails = []
 
@@ -59,6 +63,20 @@ store = {}
 sessions._load = lambda: list(store.values())
 sessions._save_track = lambda t: store.__setitem__(t["id"], dict(t))
 events.emit = lambda *a, **k: None
+
+
+class FakeDB:
+    """devport._alloc_dev_port calls _load imported directly from trackstore,
+    not through sessions - so it needs its own seam onto the SAME store."""
+    def tracks_all(self):
+        return list(store.values())
+    def track_put(self, t):
+        store[t["id"]] = dict(t)
+    def track_get(self, tid):
+        return store.get(tid)
+
+
+trackstore._db = FakeDB()
 
 # ---------------------------------------------------------------- 4.1 hash + shape
 repo = mkrepo("repo")
@@ -176,16 +194,16 @@ events.settings = lambda: {"dev_port_range": [3951, 3954], "value_per_card": 0}
 store.clear()
 store["T-A"] = {"id": "T-A", "dev_port": 3951}
 store["T-B"] = {"id": "T-B", "dev_port": 3952}
-got = {sessions._alloc_dev_port(exclude_tid="T-C") for _ in range(20)}
+got = {devport._alloc_dev_port(exclude_tid="T-C") for _ in range(20)}
 check(got <= {3953, 3954}, "(4.2) allocator skips ports OTHER cards persist: %s" % got)
 
 blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 blocker.bind(("127.0.0.1", 3953)); blocker.listen(1)
 try:
-    got = {sessions._alloc_dev_port(exclude_tid="T-C") for _ in range(20)}
+    got = {devport._alloc_dev_port(exclude_tid="T-C") for _ in range(20)}
     check(got == {3954}, "(4.2) allocator bind-checks (a busy port is skipped): %s" % got)
     store["T-D"] = {"id": "T-D", "dev_port": 3954}
-    check(sessions._alloc_dev_port(exclude_tid="T-C") is None,
+    check(devport._alloc_dev_port(exclude_tid="T-C") is None,
           "(4.2) exhausted range -> None (card still runs, just unreserved)")
 finally:
     blocker.close()
@@ -211,7 +229,7 @@ del os.environ["HELMDECK_TLS_CERT"]; del os.environ["BASH_ENV"]
 
 # registry hydration: absent vars appear, present vars are NOT clobbered
 if os.name == "nt":
-    import server
+    from daemon.spine.http import server
     os.environ["HELMDECK_P4_SENTINEL"] = "keep"
     before_path = os.environ.get("PATH", "")
     server._hydrate_registry_env()

@@ -7,17 +7,17 @@ fixed 1800s wall-clock cap killed a machine card mid-gradle-build."""
 import os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(HERE), "daemon")
+DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-idle-")
-import db
+from daemon.spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+from daemon.spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
-import drivers
+from daemon.spine.agent import drivers
 
 _WRAP = os.path.join(tempfile.mkdtemp(), "fake_claude.cmd")
 with open(_WRAP, "w", encoding="utf-8") as f:

@@ -14,8 +14,9 @@ Load-bearing: chat.tsx renders the meter + usage line straight off this."""
 import os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "daemon"))
-import copilot as c
+sys.path.insert(0, os.path.dirname(HERE))
+from daemon.cells.copilot import copilot as c
+from daemon.cells.copilot import copilot_stats
 
 _fails = []
 
@@ -27,7 +28,7 @@ def check(cond, msg):
 
 
 tmp = tempfile.mkdtemp(prefix="copilot_stats_")
-c.STATS = os.path.join(tmp, "copilot_stats.json")
+copilot_stats.STATS = os.path.join(tmp, "copilot_stats.json")
 c.SESS = os.path.join(tmp, "copilot_sessions.json")
 c.CHATLOG = os.path.join(tmp, "copilot_log.json")
 
@@ -66,14 +67,14 @@ m2 = c._fold_stats("other", {"usage": {}, "modelUsage": {}, "total_cost_usd": 0.
 check(m2["ctx_window"] == 1000000, "proof beyond 200k -> 1M-tier window, not a pinned 100%")
 
 # 5) history() serves the stats; plan_pct is None when not calibratable
-c._calib.update({"t": time.time(), "flat": False, "v": None})
+copilot_stats._calib.update({"t": time.time(), "flat": False, "v": None})
 h = c.history("owner")
 st = h.get("stats") or {}
 check(st.get("turns") == 4 and st.get("ctx_tokens") == 73000, "history exposes the folded stats")
 check(st.get("plan_pct") is None, "not calibratable -> plan_pct None (UI falls back to tokens)")
 
 # 6) calibrated flat plan: cost basis wins (cache reads must not over-weight)
-c._calib.update({"t": time.time(), "flat": True, "v": {"cost_per_pct": 0.5, "tokens_per_pct": 1e6}})
+copilot_stats._calib.update({"t": time.time(), "flat": True, "v": {"cost_per_pct": 0.5, "tokens_per_pct": 1e6}})
 st2 = (c.history("owner").get("stats") or {})
 check(st2.get("plan_pct") == round(st2["cost"] / 0.5, 4), "flat plan: plan share = cost / cost_per_pct")
 

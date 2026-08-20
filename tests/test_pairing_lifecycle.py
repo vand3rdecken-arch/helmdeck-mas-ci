@@ -8,15 +8,15 @@ Run: py -3.12 tests/test_pairing_lifecycle.py
 """
 import os, sys, tempfile, threading, time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daemon"))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import events  # noqa: E402
+from daemon.spine.storage import events  # noqa: E402
 
 _TMP = tempfile.mkdtemp(prefix="helmdeck-pairtest-")
 events.SET = os.path.join(_TMP, "settings.json")
 events.EV = os.path.join(_TMP, "events.jsonl")
 
-import relay_client as rc  # noqa: E402  (after the sandbox redirect)
+from daemon.spine.comms import relay_client as rc  # noqa: E402  (after the sandbox redirect)
 
 FAILS = []
 
