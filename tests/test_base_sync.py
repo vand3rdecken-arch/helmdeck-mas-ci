@@ -215,6 +215,46 @@ def test_base_branch_is_derived_and_verified():
           "no base -> error (caller gates as-is), never a bounce")
 
 
+def test_autoaccept_probe_syncs_before_gating():
+    """The chain poller / autopilot pre-gate a delivered card before spawning
+    the real accept (processes._probe_gate). Probing the STALE tree re-opened
+    gate-base-lag for exactly the autonomous paths: a drifted card probed red
+    on foreign code forever and never auto-accepted, even though move_lane
+    would sync and gate it green. The probe must sync first - and a sync
+    CONFLICT must read as red (an auto-accept never lands a half-merge)."""
+    from daemon.cells.process import processes
+    repo = new_repo()
+    write(os.path.join(repo, "lib.py"), "def f():\n    return 1\n")
+    write(os.path.join(repo, "check.py"),
+          "import os, sys\nsys.path.insert(0, os.getcwd())\n"
+          "import lib\nsys.exit(0 if lib.f() == 1 else 1)\n")
+    write(os.path.join(repo, "helmdeck.gate"),
+          '"%s" "%s"' % (sys.executable.replace("\\", "\\\\"),
+                         os.path.join(repo, "check.py").replace("\\", "\\\\")))
+    git(repo, "add", "-A"); git(repo, "commit", "-m", "lib + its check")
+    t = card(repo, "card-probe")
+    # base drifts behaviour + check together; the card touched neither
+    write(os.path.join(repo, "lib.py"), "def f():\n    return 2\n")
+    write(os.path.join(repo, "check.py"),
+          "import os, sys\nsys.path.insert(0, os.getcwd())\n"
+          "import lib\nsys.exit(0 if lib.f() == 2 else 1)\n")
+    git(repo, "add", "-A"); git(repo, "commit", "-m", "base drift")
+
+    check(not sessions._gate(t)[0], "stale probe would be red (the starvation)")
+    ok, _p = processes._probe_gate(t)
+    check(ok, "probe syncs first -> green, the card can auto-accept")
+
+    # a colliding card must probe RED, with the markers left as the medium
+    t2 = card(repo, "card-probe-clash")
+    write(os.path.join(t2["worktree"], "base.txt"), "card take\n")
+    git(t2["worktree"], "add", "-A"); git(t2["worktree"], "commit", "-m", "card")
+    write(os.path.join(repo, "base.txt"), "base take\n")
+    git(repo, "add", "-A"); git(repo, "commit", "-m", "base")
+    ok2, problems2 = processes._probe_gate(t2)
+    check(not ok2 and "base-sync conflict" in problems2[0],
+          "sync conflict probes red - an auto-accept never lands a half-merge")
+
+
 def test_dispatch_records_the_base_at_branch_creation():
     """The fork point is only a fact at the fork. dispatch._ensure_worktree
     records it there, into the STORE (not just the caller's snapshot), and the
@@ -252,6 +292,7 @@ if __name__ == "__main__":
     test_collision_leaves_editable_markers()
     test_live_tree_cards_are_skipped()
     test_base_branch_is_derived_and_verified()
+    test_autoaccept_probe_syncs_before_gating()
     test_dispatch_records_the_base_at_branch_creation()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)
