@@ -623,6 +623,71 @@ def _maybe_fast_track_ship(t, log):
     _threading.Thread(target=_ship, daemon=True).start()
 
 
+def _convert_fast_track_live(t, log):
+    """Fast-track ON for a card that STARTED worktree-isolated: move it onto
+    the live-tree rails instead of leaving it gated for its lifetime. The old
+    keep-isolated stance protected the cwd-keyed transcript and the branch
+    work - but it also meant fast-track was no escape hatch when the gate
+    itself was the broken part (measured 2026-08-20: the card carrying the
+    gate's own daemon fix could never pass the gate the buggy daemon ran; the
+    merge had to be done by hand outside the harness). Conversion only runs on
+    an IDLE turn (update_track raises otherwise): land the branch work on the
+    base (autocommit + the same _merge_to_main the accept path uses - the gate
+    skip IS what fast-track means, debt fast-track-no-gate), reclaim the
+    worktree, repoint the card onto the live tree, drop the idle session so
+    the next spawn is cwd-keyed to the live tree. Any refusal (conflict
+    markers, merge conflict) leaves the card EXACTLY as it was - isolated and
+    gated - with the reason in chat; nothing is half-converted. Returns the
+    updated track, or None if refused."""
+    tid = t["id"]
+    if _autocommit(t) == "markers":
+        log.log("note", "FAST-TRACK an: offene Konfliktmarkierungen im Worktree "
+                "- Karte bleibt worktree-isoliert (Gate+Merge+Deploy). Konflikt "
+                "aufloesen, dann Fast-Track erneut einschalten.")
+        return None
+    ok, kind, msg = _merge_to_main(t)
+    from daemon.spine.storage import events
+    events.emit("merge", tid, ok=bool(ok), outcome=kind,
+                detail="fast-track-convert: " + (msg or "")[:200])
+    if not ok:
+        log.log("note", "FAST-TRACK an: Branch nicht auf die Basis mergebar (%s) "
+                "- Karte bleibt worktree-isoliert. %s" % (kind, (msg or "")[:300]))
+        return None
+    from daemon.spine.git.worktrees import reclaim_worktree
+    reclaim_worktree(t, log)
+    def _mark(tt):
+        tt["machine"] = True         # ride the no-worktree dispatch/accept path
+        tt["direct"] = True          # serialized per-tree in _turn
+        tt["worktree"] = tt["repo"]  # the LIVE tree, no copy
+    t = _mutate(tid, _mark) or t
+    from daemon.spine.agent import drivers as _drivers
+    _drivers.drop_session(tid)       # idle by the guard; next turn respawns on the live tree
+    log.log("note", "FAST-TRACK an: Karte auf den Live-Tree umgezogen (%s) - "
+            "Branch gelandet, Worktree zurueckgegeben; ab jetzt Autocommit+"
+            "Deploy ohne Gate nach jedem Turn." % kind)
+    if kind == "merged":
+        # real commits just landed on the base - deploy them NOW, same contract
+        # as every fast-track ship (and same hook-persist dance: _repo_hook ran
+        # on this thread's local `t`, so the fields must be written back).
+        def _dep():
+            from daemon.spine.ops.actionlog import ActionLog
+            lg = ActionLog(t["run_dir"])
+            try:
+                hk = _repo_hook(t, "deploy")
+                _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
+                if _hooks:
+                    _mutate(tid, lambda tt: tt.update(_hooks))
+                if hk is False:
+                    lg.log("note", "FAST-TRACK: Deploy-Hook rot nach dem Umzug.")
+            except Exception as e:
+                try:
+                    lg.log("note", "FAST-TRACK Umzugs-Deploy fehlgeschlagen: %s" % str(e)[:250])
+                except Exception:
+                    pass
+        _threading.Thread(target=_dep, daemon=True).start()
+    return t
+
+
 def _maybe_fast_track_ship_direct(t, log):
     """FAST-TRACK on the no-worktree Paseo path (dispatch._start_inner marks
     machine+direct+worktree=repo for a fast_track card, owner-decreed

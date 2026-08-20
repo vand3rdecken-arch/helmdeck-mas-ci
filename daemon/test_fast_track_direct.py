@@ -199,11 +199,18 @@ check("toggle back ON: direct ship fires immediately (autocommit + deploy)",
       (t["id"], "deploy") in deploy_calls and git(repo, "status", "--porcelain")[1] == "")
 check("toggle round-trip: still no gate and no merge", not gate_calls and not merge_calls)
 
-# 6c) toggle ON for a card that already STARTED worktree-isolated: it stays
-#     isolated (session+branch hang off the worktree) - never converted.
+# 6c) toggle ON for a card that already STARTED worktree-isolated: it is
+#     CONVERTED onto the live-tree rails (2026-08-20) - branch landed via the
+#     accept-path merge with NO gate run, worktree reclaimed, card repointed
+#     direct/live-tree. The old keep-isolated stance made fast-track useless
+#     as an escape hatch when the gate itself was the broken part.
+old_wt = plain.get("worktree")
 plain = sessions.update_track(plain["id"], {"fast_track": True})
-check("worktree card promoted to fast-track stays worktree-isolated",
-      not plain.get("direct") and not plain.get("machine")
-      and plain.get("worktree") != os.path.abspath(repo))
+check("worktree card promoted to fast-track converts to the live-tree rails",
+      plain.get("direct") is True and plain.get("machine") is True
+      and os.path.normcase(plain.get("worktree"))
+          == os.path.normcase(os.path.abspath(repo)))
+check("conversion reclaimed the old worktree", not os.path.isdir(old_wt))
+check("conversion never ran the gate", not gate_calls)
 
 print("PASS test_fast_track_direct")
