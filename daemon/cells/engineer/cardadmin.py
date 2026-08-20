@@ -103,6 +103,21 @@ def update_track(tid, patch, actor="owner"):
         from daemon.spine.agent import drivers
         if drivers.turn_active(tid):
             raise RuntimeError("cannot change driver while a turn is running - wait for it to finish")
+    if patch.get("fast_track"):
+        # Flipping fast-track ON for a worktree-isolated card CONVERTS it onto
+        # the live-tree rails (branch landed, worktree reclaimed, session
+        # respawned against the live tree) - a conversion mid-turn would rip
+        # the cwd out from under the running worker, so it is an invariant
+        # here, not caller courtesy (same stance as the driver guard above).
+        cur = _find(_load(), tid) or {}
+        wt = cur.get("worktree") or ""
+        if (not cur.get("fast_track") and not cur.get("direct") and wt
+                and os.path.isdir(wt)
+                and os.path.abspath(wt) != os.path.abspath(cur.get("repo") or "")):
+            from daemon.spine.agent import drivers
+            if drivers.turn_active(tid):
+                raise RuntimeError("cannot switch to fast-track while a turn is "
+                                   "running - wait for it to finish")
     changed = {}
 
     def _edit(t):
@@ -153,21 +168,24 @@ def update_track(tid, patch, actor="owner"):
         # NEXT turn completes, and the owner asks "why didn't it deploy" while
         # the worker (unaware fast-track exists) wrongly says to use Review.
         #
-        # Which ship depends on where the card LIVES, decided by its first
-        # dispatch (fast-track-no-gate debt): direct = live tree, autocommit+
-        # deploy; a card that already STARTED worktree-isolated stays isolated
-        # for its lifetime (converting a live session would orphan its
-        # transcript - cwd-keyed - and its branch work), so it keeps the
-        # gate+merge ship; a not-yet-dispatched card needs no ship at all -
-        # _start_inner routes it onto the live-tree rails when it dispatches.
+        # Which ship depends on where the card LIVES: direct = live tree,
+        # autocommit+deploy. A card that STARTED worktree-isolated is CONVERTED
+        # onto the live-tree rails (branch landed via the accept-path merge, no
+        # gate - that skip IS fast-track, debt fast-track-no-gate; worktree
+        # reclaimed; idle session dropped so the next spawn is cwd-keyed to the
+        # live tree). The old keep-isolated stance made fast-track useless as
+        # an escape hatch when the gate itself was broken (measured
+        # 2026-08-20). A refused conversion (markers/conflict) leaves the card
+        # isolated+gated with the reason in chat. A not-yet-dispatched card
+        # needs no ship at all - _start_inner routes it onto the live-tree
+        # rails when it dispatches.
         if changed.get("fast_track") is True:
             if t.get("direct"):
                 sessions._maybe_fast_track_ship_direct(t, log)
-            elif t.get("session_id"):
-                log.log("note", "FAST-TRACK an: Karte laeuft bereits worktree-"
-                        "isoliert und bleibt es (Session + Branch haengen am "
-                        "Worktree) - Gate+Merge+Deploy nach jedem Turn.")
-                sessions._maybe_fast_track_ship(t, log)
+            elif (t.get("worktree") and os.path.isdir(t["worktree"])
+                    and os.path.abspath(t["worktree"])
+                        != os.path.abspath(t.get("repo") or "")):
+                t = sessions._convert_fast_track_live(t, log) or t
         elif changed.get("fast_track") is False and t.get("direct"):
             # Toggle OFF on a live-tree card: there is no worktree to go back
             # to - the work is already in the shared tree. Deploys stop, but

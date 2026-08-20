@@ -986,7 +986,15 @@ DEBT = [
                 "branch, ever. sessions._maybe_fast_track_ship_direct replaces "
                 "the normal gate+merge ship with autocommit-only (still refuses "
                 "open conflict markers - data hygiene, not a gate) + the deploy "
-                "hook, fired automatically after every finished turn.",
+                "hook, fired automatically after every finished turn. Extended "
+                "2026-08-20: flipping fast_track ON for a card that STARTED "
+                "worktree-isolated now CONVERTS it onto these rails "
+                "(sessions._convert_fast_track_live: idle-turn-only, branch "
+                "landed via the accept-path merge WITHOUT a gate run, worktree "
+                "reclaimed, session dropped) - the conversion merge rides this "
+                "same gate skip. Before, such a card stayed gated for life, "
+                "which made fast-track useless as an escape hatch when the "
+                "gate itself was the broken part (the base-sync card).",
         "why_it_bites": "Everything direct-build-no-gate already bites, PLUS: "
                         "(1) Fast-Track is MORE automated than a direct card - "
                         "direct_task is owner-requested solo building, Fast-"
