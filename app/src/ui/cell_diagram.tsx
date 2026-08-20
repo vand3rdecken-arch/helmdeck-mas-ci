@@ -20,6 +20,10 @@ import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { G, Line, Rect, Text as SvgText } from "react-native-svg";
 
 import { api, type CellInfo } from "@/data/client";
+// `t` is the theme in this file, so the translator travels as `tr` - and into
+// categoriesFor as an ARGUMENT, since that one is a plain module function with
+// no hooks of its own.
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
 const GRID = 4;
@@ -27,7 +31,10 @@ const g = (n: number) => Math.round(n / GRID) * GRID;
 
 type Category = { label: string; leaves: { text: string; file?: string }[] };
 
-function categoriesFor(c: CellInfo): Category[] {
+// The category labels and every leaf are file paths, route names and the cell's
+// role - audit-side strings that read identically in both languages. Only the
+// empty-state fallback is copy, so only it is translated.
+function categoriesFor(c: CellInfo, tr: (key: string) => string): Category[] {
   const mk = (label: string, items: string[], fallback: string): Category => ({
     label,
     leaves: items.length ? items.map((text) => ({ text, file: text })) : [{ text: fallback }],
@@ -36,7 +43,7 @@ function categoriesFor(c: CellInfo): Category[] {
     mk("Logic", c.logicFiles, "—"),
     { label: "Storage", leaves: [{ text: c.storage || "—" }] },
     mk("Harness", c.harnessFile ? [c.harnessFile] : [], c.role || "—"),
-    mk("API-Routes", c.routes, "keine Routen"),
+    mk("API-Routes", c.routes, tr("cell.noRoutes")),
     mk("UI-Surface", c.uiFiles, "—"),
   ];
 }
@@ -54,9 +61,12 @@ function truncate(text: string, max = 24) {
 
 export function CellDiagram({ cell }: { cell: CellInfo }) {
   const t = useTheme();
+  const tr = useT();
   const [openFile, setOpenFile] = useState<string | null>(null);
 
-  const cats = useMemo(() => categoriesFor(cell), [cell]);
+  // `tr` is a real dependency, not decoration: without it the fallback labels
+  // would keep the language they were first built in after a language switch.
+  const cats = useMemo(() => categoriesFor(cell, tr), [cell, tr]);
 
   const cols = cats.map((cat) => ({
     ...cat,
@@ -166,6 +176,7 @@ export function CellDiagram({ cell }: { cell: CellInfo }) {
 
 function SourceModal({ cellId, file, onClose }: { cellId: string; file: string; onClose: () => void }) {
   const t = useTheme();
+  const tr = useT();
   const [text, setText] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useMemo(() => {
@@ -185,7 +196,7 @@ function SourceModal({ cellId, file, onClose }: { cellId: string; file: string; 
           </View>
           <ScrollView style={{ padding: 14 }}>
             {err ? <Text style={{ color: t.danger, fontSize: 12 }}>{err}</Text> : null}
-            {text === null && !err ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>Lädt…</Text> : null}
+            {text === null && !err ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("cell.sourceLoading")}</Text> : null}
             {text !== null ? (
               <Text style={{ color: t.txtSecondary, fontSize: 11.5, fontFamily: "monospace", lineHeight: 16 }}>{text}</Text>
             ) : null}
