@@ -110,3 +110,7 @@ glasses/worker/node_modules/
 # machine. Same rule as push.env: never committed.
 *.dev.vars
 .dev.vars
+# stray stdout/stderr redirects from a backgrounded `wrangler dev` - local run
+# artifacts, not source. Two of these leaked into a commit once; never again.
+glasses/worker/dev.log
+glasses/worker/dev.err
