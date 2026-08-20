@@ -537,8 +537,14 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # is testable without touching the board. The gate still guards (red gate
     # bounces back with the report), a pending question still parks the card
     # (the owner's decision comes first), and a turn that produced NOTHING new
-    # to ship is skipped so a chat-only turn can't close the card.
-    _maybe_fast_track_ship(t, log)
+    # to ship is skipped so a chat-only turn can't close the card. A card
+    # dispatched onto the no-worktree Paseo path (dispatch._start_inner,
+    # owner-decreed 2026-08-20) has no branch to gate or merge - autocommit +
+    # deploy only.
+    if t.get("direct"):
+        _maybe_fast_track_ship_direct(t, log)
+    else:
+        _maybe_fast_track_ship(t, log)
     return t
 
 
@@ -611,6 +617,57 @@ def _maybe_fast_track_ship(t, log):
         except Exception as e:
             try:
                 lg.log("note", "FAST-TRACK fehlgeschlagen: %s" % str(e)[:250])
+            except Exception:
+                pass
+    _threading.Thread(target=_ship, daemon=True).start()
+
+
+def _maybe_fast_track_ship_direct(t, log):
+    """FAST-TRACK on the no-worktree Paseo path (dispatch._start_inner marks
+    machine+direct+worktree=repo for a fast_track card, owner-decreed
+    2026-08-20 - pays no debt into gate-base-lag/finalize-loses-uncommitted,
+    because there is no separate worktree copy to drift or reclaim). Same
+    'ship every finished turn' contract as _maybe_fast_track_ship, but there
+    is no branch to gate or merge - the turn already edited the LIVE tree.
+    So: autocommit only (still refuses to land open conflict markers - that
+    is data hygiene, not the gate) -> deploy hook. NO test gate, NO merge -
+    Paseo semantics, registered as debt fast-track-no-gate (daemon/spine/
+    registry/debt.py)."""
+    if not (t.get("fast_track") and t.get("machine") and t.get("direct")
+            and t.get("status") == "needs_you" and not t.get("question")):
+        return
+    wt = t.get("worktree") or ""
+    if not os.path.isdir(wt):
+        return
+    rc, dirty, _ = _git_try(wt, "status", "--porcelain")
+    if not (rc == 0 and dirty):
+        return                          # chat-only turn - nothing to deploy
+    tid = t["id"]
+    log.log("note", "FAST-TRACK (direct): Turn fertig -> Autocommit + Deploy im "
+            "Hintergrund. Die Karte bleibt in Arbeit.")
+
+    def _ship():
+        from daemon.spine.ops.actionlog import ActionLog
+        lg = ActionLog(t["run_dir"])
+        try:
+            if _autocommit(t) == "markers":
+                lg.log("note", "FAST-TRACK (direct): offene Konfliktmarkierungen - "
+                       "nicht deployed.")
+                return
+            hk = _repo_hook(t, "deploy")   # None = no hook configured
+            _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
+            if _hooks:
+                _mutate(tid, lambda tt: tt.update(_hooks))
+            lg.log("note", "FAST-TRACK (direct) deployed%s - teste auf dem Handy; "
+                   "die Karte bleibt in Arbeit, steuern geht einfach weiter."
+                   % (" · ACHTUNG: Deploy-Hook rot" if hk is False else ""))
+            if hk is False:
+                _try_auto_fix_deploy(t, lg)
+            elif hk is True:
+                _mutate(tid, lambda tt: tt.pop("deploy_fail_streak", None))
+        except Exception as e:
+            try:
+                lg.log("note", "FAST-TRACK (direct) fehlgeschlagen: %s" % str(e)[:250])
             except Exception:
                 pass
     _threading.Thread(target=_ship, daemon=True).start()

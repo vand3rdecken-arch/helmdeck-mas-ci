@@ -152,8 +152,38 @@ def update_track(tid, patch, actor="owner"):
         # only fires at turn-end - without this the flag does nothing until the
         # NEXT turn completes, and the owner asks "why didn't it deploy" while
         # the worker (unaware fast-track exists) wrongly says to use Review.
+        #
+        # Which ship depends on where the card LIVES, decided by its first
+        # dispatch (fast-track-no-gate debt): direct = live tree, autocommit+
+        # deploy; a card that already STARTED worktree-isolated stays isolated
+        # for its lifetime (converting a live session would orphan its
+        # transcript - cwd-keyed - and its branch work), so it keeps the
+        # gate+merge ship; a not-yet-dispatched card needs no ship at all -
+        # _start_inner routes it onto the live-tree rails when it dispatches.
         if changed.get("fast_track") is True:
-            sessions._maybe_fast_track_ship(t, log)   # lazy: fast-track cluster still in sessions.py
+            if t.get("direct"):
+                sessions._maybe_fast_track_ship_direct(t, log)
+            elif t.get("session_id"):
+                log.log("note", "FAST-TRACK an: Karte laeuft bereits worktree-"
+                        "isoliert und bleibt es (Session + Branch haengen am "
+                        "Worktree) - Gate+Merge+Deploy nach jedem Turn.")
+                sessions._maybe_fast_track_ship(t, log)
+        elif changed.get("fast_track") is False and t.get("direct"):
+            # Toggle OFF on a live-tree card: there is no worktree to go back
+            # to - the work is already in the shared tree. Deploys stop, but
+            # anything sitting uncommitted lands NOW (else it piles up
+            # invisibly in the live tree, the exact silent-loss class the
+            # finalize bug already burned us with). Skipped while a turn is
+            # running - committing half-done work is worse than waiting.
+            from daemon.spine.agent import drivers as _drivers
+            if not _drivers.turn_active(tid):
+                ac = sessions._autocommit(t)
+                log.log("note", "FAST-TRACK aus: Karte bleibt auf dem Live-Tree "
+                        "(kein Worktree vorhanden), Auto-Deploy stoppt.%s"
+                        % (" Offene Aenderungen committet." if ac is True else ""))
+            else:
+                log.log("note", "FAST-TRACK aus: Auto-Deploy stoppt nach dem "
+                        "laufenden Turn; Karte bleibt auf dem Live-Tree.")
     return t
 
 DIRECTIVES = os.path.join(ROOT, "board_directives.json")
