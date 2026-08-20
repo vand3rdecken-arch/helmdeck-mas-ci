@@ -2069,6 +2069,66 @@ DEBT = [
                "restructured away.",
         "order": 36,
     },
+    {
+        "id": "semicolon-combo-imports-survived-the-rewrite",
+        "title": "7 UNGUARDED semicolon-combined bare imports (import X; X.fn())"
+                 " survived the Phase 0 import-rewrite - found + fixed 2026-08-20",
+        "status": "paid",
+        "what": "The Phase 0 import-rewrite script (sys-path-trick-to-real-"
+                "package-imports, order 36) explicitly skipped any line "
+                "containing a semicolon (`if ';' in rest: return None`) - a "
+                "deliberate guard for the ONE known semicolon-combo pattern "
+                "at the time (`import _subpaths; _subpaths.ensure_cell_"
+                "paths()`), but the guard was blanket, not pattern-specific, "
+                "so it silently skipped every OTHER `import X; X.fn(...)` "
+                "line too. Found while reading pm.py's own remaining tick "
+                "logic for a further extraction pass: `start_loop()`'s error "
+                "handler still had a bare `import events; events.log(...)`. "
+                "A targeted repo-wide grep for the same shape then found 7 "
+                "more, all in daemon/cells/engineer/{dispatch,lanemachine}.py "
+                "- the gate/merge/accept 'crown jewel' flow: `import notify; "
+                "notify.card_event(t, \"done\"|\"bounced\")` (6 call sites, "
+                "NONE wrapped in try/except) and `import pm; pm.on_card_done"
+                "(...)` (2 call sites, both already try/except-wrapped, so "
+                "those two were merely silently no-op'ing rather than "
+                "crashing).",
+        "why_it_bites": "The 6 unguarded notify.card_event call sites are "
+                        "hard AttributeError/ModuleNotFoundError crashes with "
+                        "NO try/except around them, sitting directly in "
+                        "lanemachine.py's bounce path (gate-red, merge-"
+                        "conflict, dirty-checkout - 3 of the 4 real bounce "
+                        "kinds) and its accept/merge path, plus dispatch.py's "
+                        "machine-task accept path. Any card actually bouncing "
+                        "or landing through these paths after the Phase 0 "
+                        "commit (c00ac2c onward) would have crashed mid-"
+                        "mutation - the card's status/lane update already "
+                        "happened (via _mutate) but the notification and "
+                        "everything after it in the same function never ran, "
+                        "an inconsistent half-finished state.",
+        "trigger": "a card actually bounces (gate red / merge conflict / dirty "
+                   "checkout) or completes via lanemachine.py's accept path, "
+                   "or a machine-task card completes via dispatch.py's "
+                   "accept path, while the daemon is running code from the "
+                   "affected commit range",
+        "fix": "PAID. Checked the real daemon/events.jsonl DB table for any "
+               "'done'/'lane'/'touch' event after the Phase 3 live restart "
+               "(2026-08-19 ~20:0x, the first restart to run the affected "
+               "code) - zero rows. No card activity happened in that window, "
+               "so this was a real, live-armed bug that was never actually "
+               "triggered, not an incident with real impact. Fixed: all 7 "
+               "sites converted to the same two-line "
+               "`from daemon.X.Y import mod` + `mod.fn(...)` form used "
+               "everywhere else post-Phase-0 (notify -> daemon.spine.comms, "
+               "pm -> daemon.cells.pm). Also grepped the entire daemon tree "
+               "for the same `import \\w+;` shape with zero remaining hits - "
+               "this was exhaustively swept, not spot-fixed. Verified: "
+               "compiles clean, full 17-file daemon test suite green, real "
+               "state files byte-identical before/after. The live daemon "
+               "still needs a restart to pick up this fix (not done as part "
+               "of this fix - the owner restarts deliberately per this "
+               "session's established practice).",
+        "order": 37,
+    },
 ]
 
 def list_debt():
