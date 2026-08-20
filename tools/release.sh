@@ -73,6 +73,13 @@ build_android() {
     echo "==> relay: ship APK + version.json (phone installs it from the pairing link)"
     bash deploy/push_relay.sh || { fail+=("push"); return 1; }
     ok+=("push: relay updated")
+    echo "==> notify: paired phone (sealed FCM push, best-effort)"
+    py -3.12 -c "
+from daemon.spine.comms import notify
+import json
+build = json.load(open('app/app.json', encoding='utf-8'))['expo']['android']['versionCode']
+notify.push_fcm('Update verfuegbar', 'Build %d ist bereit - unter Mehr installieren' % build)
+" || echo "    (notify skipped - daemon not importable from here, non-fatal)"
   fi
 }
 
