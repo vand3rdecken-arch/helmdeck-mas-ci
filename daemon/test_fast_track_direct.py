@@ -24,7 +24,7 @@ a temp git repo - nothing touches the real board or spawns anything.
 
 Run: py -3.12 daemon/test_fast_track_direct.py
 """
-import os, subprocess, sys, tempfile, time
+import os, subprocess, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from daemon.spine.storage import events
@@ -53,6 +53,23 @@ class FakeDB:
 def check(desc, ok):
     assert ok, desc
     print("  ok: " + desc)
+
+
+def wait_ship(timeout=60):
+    """Join every live _ship thread instead of a fixed sleep. The ship runs a
+    REAL git autocommit on a background thread, and on a loaded Windows box
+    those subprocess spawns alone measured ~3.5s (gate run 2026-08-20) - a
+    time.sleep(2) raced it and red-gated on the deploy-hook check while the
+    hook was still seconds away. The thread is started synchronously inside
+    steer()/update_track() before they return, so enumerate() cannot miss it."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ships = [th for th in threading.enumerate() if "_ship" in th.name]
+        if not ships:
+            return
+        for th in ships:
+            th.join(max(0.1, deadline - time.time()))
+    # leftovers mean a wedged ship - fall through and let the checks say so
 
 
 def git(repo, *args):
@@ -118,8 +135,10 @@ check("the edit landed on the live tree", os.path.exists(os.path.join(repo, "new
 # the existing pre-change design - the dispatch turn itself never ships), so
 # exercise a follow-up turn, not just the initial dispatch.
 t = sessions.steer(t["id"], "one more thing")
-time.sleep(2)   # _ship runs on a background thread
-check("autocommit landed the edit", git(repo, "log", "--oneline", "-1")[1] != "")
+wait_ship()     # _ship runs on a background thread - join it, never race it
+# a REAL check: the edited file must be TRACKED now. `git log -1` non-empty
+# was vacuously true from the init commit and hid exactly this race.
+check("autocommit landed the edit", git(repo, "ls-files", "new_file.txt")[1] != "")
 check("deploy hook WAS called", (t["id"], "deploy") in deploy_calls)
 check("_gate was NEVER called", not gate_calls)
 check("_merge_to_main was NEVER called", not merge_calls)
@@ -142,7 +161,7 @@ t2 = sessions.new_track(repo, "conflict-branch", "second fast turn", lane="backl
 sessions._mutate(t2["id"], lambda tt: tt.__setitem__("fast_track", True))
 t2 = sessions._start(t2["id"])
 t2 = sessions.steer(t2["id"], "one more thing")
-time.sleep(2)
+wait_ship()
 check("open conflict markers block deploy even with no gate",
       (t2["id"], "deploy") not in deploy_calls)
 # clean the markers back out - later sections need a healthy shared tree
@@ -160,7 +179,7 @@ t3 = sessions.new_track(repo, "chat-only-branch", "just a question", lane="backl
 sessions._mutate(t3["id"], lambda tt: tt.__setitem__("fast_track", True))
 t3 = sessions._start(t3["id"])
 t3 = sessions.steer(t3["id"], "one more thing")
-time.sleep(2)
+wait_ship()
 check("chat-only turn (clean tree) ships nothing", not deploy_calls)
 
 
@@ -194,7 +213,7 @@ check("toggle OFF: no deploy fired", not deploy_calls)
 with open(os.path.join(repo, "again.txt"), "w", encoding="utf-8") as f:
     f.write("dirty again before re-enabling\n")
 t = sessions.update_track(t["id"], {"fast_track": True})
-time.sleep(2)
+wait_ship()
 check("toggle back ON: direct ship fires immediately (autocommit + deploy)",
       (t["id"], "deploy") in deploy_calls and git(repo, "status", "--porcelain")[1] == "")
 check("toggle round-trip: still no gate and no merge", not gate_calls and not merge_calls)
