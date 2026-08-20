@@ -40,14 +40,47 @@ export async function restoreCache(): Promise<void> {
   }
 }
 
+// Keep the persisted blob inside Android's AsyncStorage budget (~6MB total,
+// and one oversized setItem fails SILENTLY - which would kill the cross-launch
+// cache for EVERYTHING, board included). Transcripts are the only unbounded
+// entries, so bound them: keep the newest steps per card, and if the whole
+// blob is still too big, drop transcript entries largest-first. The board and
+// small queries always survive; a clipped transcript just re-fetches its older
+// steps from the daemon on open (the feed protocol sends the full list then
+// deltas), so nothing is lost - only re-downloaded.
+const PERSIST_MAX_BYTES = 3_500_000;   // headroom under the ~6MB Android cap
+const PERSIST_STEPS_PER_CARD = 200;    // newest steps kept per transcript
+
+function boundedState() {
+  const state = dehydrate(queryClient);   // successful queries only, by default
+  interface Q { queryKey: readonly unknown[]; state: { data?: unknown } }
+  const qs = state.queries as unknown as Q[];
+  for (const q of qs) {
+    const d = q.state?.data;
+    if (q.queryKey?.[0] === "transcript" && Array.isArray(d) && d.length > PERSIST_STEPS_PER_CARD) {
+      q.state.data = d.slice(-PERSIST_STEPS_PER_CARD);
+    }
+  }
+  let out = JSON.stringify({ at: Date.now(), state });
+  while (out.length > PERSIST_MAX_BYTES) {
+    const idx = qs.reduce((best, q, i) =>
+      q.queryKey?.[0] === "transcript" &&
+      (best < 0 || JSON.stringify(q.state?.data ?? null).length >
+                   JSON.stringify(qs[best].state?.data ?? null).length) ? i : best, -1);
+    if (idx < 0) break;                  // nothing droppable left - persist as-is
+    qs.splice(idx, 1);
+    out = JSON.stringify({ at: Date.now(), state });
+  }
+  return out;
+}
+
 // Persist on cache settle, debounced so a burst of query updates writes once.
 let _timer: ReturnType<typeof setTimeout> | null = null;
 export function startCachePersist(): () => void {
   const flush = () => {
     _timer = null;
     try {
-      const state = dehydrate(queryClient);   // successful queries only, by default
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), state })).catch(() => {});
+      AsyncStorage.setItem(CACHE_KEY, boundedState()).catch(() => {});
     } catch {
       /* persistence must never break the app */
     }
