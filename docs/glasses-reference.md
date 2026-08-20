@@ -596,8 +596,15 @@ which is not vendored.
 Already conformant: `mrbd-web-app-capable` present; 600×600 viewport; `body`
 `#000` with `#1C1E21` surfaces; 8dp safe margin; header 24dp/64dp; system font
 stack; H1 28px; three files and no dependencies (well under the request/JS
-budget); no idle timers. It also ships a `prefers-reduced-motion` block, which
-the toolkit doesn't even ask for.
+budget). It also ships a `prefers-reduced-motion` block, which the toolkit
+doesn't even ask for.
+
+⚠ **Updated 2026-08-20**: this used to also say "no idle timers." That changed
+on purpose for the proactive-notification card (§7) — there is now one bounded
+60s poll, started only while the page is visible and stopped the instant it
+hides. That is exactly the pattern `performance-guidelines.md` asks for
+("start them on demand, stop them when not visible"), not a violation of it —
+worth re-reading as still-conformant, not as new debt.
 
 Four real deltas:
 
@@ -637,7 +644,7 @@ toolkit contradicts itself in those three places — the guidelines win.
 | Step | Verdict from the sources |
 |---|---|
 | **SDK access check** | **Largely ANSWERED — see §11.7 before acting on this row.** The 0.8.0 artifacts are already in this machine's Gradle cache (resolve offline, no token), and the MIC is not a DAT module at all. A PAT is only needed to fetch an UNCACHED version. Original framing, still true for that case: (a) a GitHub PAT with `read:packages` resolves `com.meta.wearable:mwdat-*`; (b) Developer mode (tap App version 5×). Germany is supported. §5, §11.7 |
-| **Proactive notification** | Cannot come from the webapp — no background execution, no notification API (§3.2). It must originate in the daemon. The proven channel is `outbox/events/` (2 s poll, atomic write, consume-before-send), and the JID trap is the thing that will silently eat it. §4.3, §3.3 |
+| **Proactive notification** | Off-device / while-closed alerting still cannot come from the webapp — no background execution, no notification API (§3.2). That direction is still the daemon → `outbox/events/` path (2 s poll, atomic write, consume-before-send), JID trap and all. §4.3, §3.3. **Narrower, while-open case shipped 2026-08-20:** `glasses/app.js` now runs a bounded 60s poll ONLY while the page is visible (started on foreground, stopped on hide — same "start on demand, stop when hidden" rule as §6.4's performance guideline), diffs `needs_you` ids against the last fetch, and surfaces a fresh one as a badge on "Needs you" (persists until opened) plus a glance-safe count-only banner (never a task name). This does not contradict the background-execution finding — it only ever fires while the lens is already being looked at. |
 | **Voice reading** | SETTLED: server-side edge-tts → ogg/opus mono 32k → `[[voice:…]]` over WhatsApp. Not device TTS — the toolkit has none, and the SDK path would drag in the HFP audio downgrade. Independent of SDK access. §4 |
 | **Companion app** | Only if something needs the glasses' *mic* or a *native lens push*. It is a sensing layer, never a renderer: *"the native app never draws a pixel on the glasses"* (`native-companion-plan.md:57`). If built: backend-driven config, `safe {}` everywhere, full FGS type set, and the Android-14 typed-FGS decision written down. §2.4, §3.4 |
 | **Anything on the lens** | Gate it on `AGENTS.md:263-270` first: is the *consuming* moment hands-busy / eyes-up? If not, it is a phone feature. §1 |
