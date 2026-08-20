@@ -14,6 +14,7 @@ import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-nativ
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useConfig } from "@/data/config";
+import { useT } from "@/i18n";
 import { fieldStyle, Hint } from "@/ui/settings_sections";
 import { useTheme } from "@/theme";
 
@@ -21,6 +22,10 @@ type Mode = "in" | "up" | "setup";
 
 export function LoginScreen() {
   const t = useTheme();
+  // Sign-in runs BEFORE there is a token, so useT()'s /me query cannot resolve a
+  // workspace language here - it falls back to the device locale, which is the
+  // right answer for a screen that greets someone who has not paired yet.
+  const tr = useT();
   const qc = useQueryClient();
   const field = fieldStyle(t);
   const [mode, setMode] = useState<Mode>("in");
@@ -54,7 +59,7 @@ export function LoginScreen() {
         : mode === "up" ? await api.authRegister(name.trim(), password, invite.trim())
         : await api.login(name.trim(), password);
       if (!r.ok || !r.token) {
-        setErr(r.error || "Anmeldung fehlgeschlagen"); setBusy(false); return;
+        setErr(r.error || tr("login.failed")); setBusy(false); return;
       }
       applyToken(r.token);
     } catch (e) {
@@ -62,7 +67,7 @@ export function LoginScreen() {
     }
   };
 
-  const title = mode === "setup" ? "Owner-Konto anlegen" : mode === "up" ? "Konto erstellen" : "Anmelden";
+  const title = tr(mode === "setup" ? "login.setupTitle" : mode === "up" ? "login.createAccount" : "login.signIn");
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
@@ -70,30 +75,30 @@ export function LoginScreen() {
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{title}</Text>
           {mode === "setup" ? (
-            <Hint text="Erster Start - dieses Konto verwaltet alles, inklusive weiterer Benutzer." />
+            <Hint text={tr("login.setupHint")} />
           ) : null}
         </View>
 
         {mode !== "setup" ? (
           <View style={{ flexDirection: "row", gap: 16 }}>
             <Pressable onPress={() => setMode("in")}>
-              <Text style={{ color: mode === "in" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>Anmelden</Text>
+              <Text style={{ color: mode === "in" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.signIn")}</Text>
             </Pressable>
             {registrationOpen ? (
               <Pressable onPress={() => setMode("up")}>
-                <Text style={{ color: mode === "up" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>Konto erstellen</Text>
+                <Text style={{ color: mode === "up" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.createAccount")}</Text>
               </Pressable>
             ) : null}
           </View>
         ) : null}
 
-        <TextInput placeholder="Benutzername" placeholderTextColor={t.txtTertiary} autoCapitalize="none"
+        <TextInput placeholder={tr("login.user")} placeholderTextColor={t.txtTertiary} autoCapitalize="none"
           autoCorrect={false} autoFocus value={name} onChangeText={setName} style={field} />
-        <TextInput placeholder={mode === "in" ? "Passwort" : "Passwort (mind. 8 Zeichen)"} placeholderTextColor={t.txtTertiary}
+        <TextInput placeholder={tr(mode === "in" ? "login.password" : "login.passwordNew")} placeholderTextColor={t.txtTertiary}
           secureTextEntry value={password} onChangeText={setPassword} style={field}
           onSubmitEditing={submit} />
         {mode === "up" && !registrationOpen ? (
-          <TextInput placeholder="Einladungscode" placeholderTextColor={t.txtTertiary}
+          <TextInput placeholder={tr("login.invite")} placeholderTextColor={t.txtTertiary}
             value={invite} onChangeText={setInvite} style={field} />
         ) : null}
 
@@ -104,7 +109,7 @@ export function LoginScreen() {
             backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 14, opacity: !name.trim() || !password ? 0.6 : 1 }}>
           {busy ? <ActivityIndicator color="#fff" /> : null}
           <Text style={{ color: busy ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>
-            {mode === "setup" ? "Anlegen & anmelden" : mode === "up" ? "Konto erstellen" : "Anmelden"}
+            {tr(mode === "setup" ? "login.setupSubmit" : mode === "up" ? "login.createAccount" : "login.signIn")}
           </Text>
         </Pressable>
       </View>
