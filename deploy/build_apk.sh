@@ -41,6 +41,14 @@ node app/plugins/withLanCleartext.js app/android \
 node app/plugins/withGlassVoice.js app/android \
   || { echo "[build_apk] glass-voice manifest apply FAILED"; exit 1; }
 
+# Same rule once more: the OTA update URL + /pair deep-link host from
+# app.json. This was the one nobody wrote: the relay cutover changed app.json
+# but the stale manifest kept the dead Oracle VM, so builds 48 + the first 49
+# shipped with an OTA URL that can never answer - and an OTA cannot fix a
+# wrong OTA URL. Emulator-proven (UpdateFailedToLoad, connect timeout).
+node app/plugins/withUpdateUrl.js app/android \
+  || { echo "[build_apk] update-url manifest apply FAILED"; exit 1; }
+
 # Sync the hand-managed native version from app.json BEFORE building. The bump
 # automation (ship.sh) only touches app.json version + versionCode, but the
 # git-ignored app/android is hand-managed and does NOT regenerate: build.gradle's
