@@ -12,6 +12,7 @@ import os
 import time
 
 from daemon.spine.storage.trackstore import _load, _mutate
+from daemon.cells.engineer.turnrunner import ZOMBIE_NOTE, RESUME_NOTE
 
 
 _BOUNCE_ESCALATE_AT = 3   # consecutive daemon-restart bounces before the note stops
