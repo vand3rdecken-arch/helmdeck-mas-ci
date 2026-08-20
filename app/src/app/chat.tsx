@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, type ChatMsg, type SteerOpts } from "@/data/client";
+import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { planLabel, useAiFlat } from "@/ui/billing";
@@ -138,7 +139,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // poll the transcript so the PM's proactive messages appear LIVE (the chat
   // moves on its own); don't clobber optimistic messages mid-turn (busy).
   const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory, enabled: me?.role !== "client", refetchInterval: 8000 });
-  const { data: models } = useQuery({ queryKey: ["models"], queryFn: api.models, enabled: me?.role !== "client" });
+  const { data: models } = useModels(me?.role !== "client");
   // PM-session economics (card parity): context fill + spend, folded by the
   // daemon per finished turn (copilot._fold_stats) and served with the history.
   const stats = data?.stats;
