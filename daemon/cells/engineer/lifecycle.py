@@ -12,7 +12,7 @@ import os
 import time
 
 from daemon.spine.storage.trackstore import _load, _mutate
-from daemon.cells.engineer.turnrunner import ZOMBIE_NOTE, RESUME_NOTE
+from daemon.cells.engineer.turnrunner import ZOMBIE_NOTE, RESUME_NOTE, GATE_CUT_NOTE
 
 
 _BOUNCE_ESCALATE_AT = 3   # consecutive daemon-restart bounces before the note stops
@@ -27,7 +27,7 @@ def _interrupt_note_report(t, note):
     cause across 2-3 dead-end steers. Prepend the interrupt note but PRESERVE any
     substantive prior failure lines (dropping only stacked interrupt notes)."""
     prior = [l for l in (t.get("gate_report") or [])
-             if RESUME_NOTE not in l and ZOMBIE_NOTE not in l]
+             if RESUME_NOTE not in l and ZOMBIE_NOTE not in l and GATE_CUT_NOTE not in l]
     return [note] + prior
 
 
@@ -185,9 +185,21 @@ def sweep_zombies(min_idle_s=0):
                 continue
         elif st == "gating":
             # the gate runs SYNCHRONOUSLY in a request thread (no session to check),
-            # so a restart mid-gate freezes the card at 'gating' forever. Reap it -
-            # but only once idle past a real gate's runtime (~2min) so a legit slow
-            # gate is never cut. 0 at startup (a gating card then died with the daemon).
+            # so a restart mid-gate freezes the card at 'gating' forever. Whether
+            # THIS process is running that pipeline right now is an OBSERVATION
+            # (lanemachine.lane_active - drivers.turn_active's pattern): a live
+            # gate/merge/deploy is NEVER reaped, however long the suite takes.
+            # The previous idle-clock bound here ("a real gate's runtime, ~2min")
+            # was a duration GUESS, and the day the suite outgrew it the sweep
+            # bounced every live gate at ~120s with a phantom "daemon restarted"
+            # note while the real gate finished minutes later (measured
+            # 2026-08-20, card req-worktree-base-sync). The clock below now only
+            # reaps a gating card whose pipeline is verifiably NOT alive in this
+            # process: the daemon died mid-gate (startup, min_idle_s==0) or the
+            # pipeline thread crashed without writing a terminal status.
+            from daemon.cells.engineer import lanemachine  # lazy: avoids an import cycle at module load
+            if lanemachine.lane_active(t["id"]):
+                continue
             if _track_idle_s(t) < (120 if min_idle_s else 0):
                 continue
         else:
@@ -202,7 +214,13 @@ def sweep_zombies(min_idle_s=0):
         def _bounce(tt, st=st):
             if tt.get("status") != st:
                 return False             # settled by another writer meanwhile
-            note = RESUME_NOTE if _promote_live_session(tt) else ZOMBIE_NOTE
+            if st == "gating":
+                # No worker turn was in flight - a gate/merge pipeline was. There
+                # is no session to promote and no "last instruction" to resend;
+                # say what actually died and how to recover (re-submit).
+                note = GATE_CUT_NOTE
+            else:
+                note = RESUME_NOTE if _promote_live_session(tt) else ZOMBIE_NOTE
             if prior_bounces + 1 >= _BOUNCE_ESCALATE_AT:
                 note = ("daemon restarted mid-turn %dx IN A ROW on this card - "
                          "resending the same instruction has failed repeatedly and "

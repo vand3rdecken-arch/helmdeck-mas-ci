@@ -562,11 +562,51 @@ def _say_card(t, text):
         pass
 
 
+_LANE_LIVE = {}   # tid -> re-entry depth of a move_lane pipeline on a live thread in
+                  # THIS process. Written by exactly ONE owner (the move_lane wrapper
+                  # below), at event time, try/finally-paired - never persisted.
+
+
+def lane_active(tid):
+    """A move_lane pipeline for this card is on a live thread's stack in THIS
+    process - lifecycle as an OBSERVATION (drivers.turn_active's pattern), not a
+    stored flag or a duration guess. The zombie reconciler consults this before
+    reaping a status='gating' card: the gate/merge/deploy pipeline is a
+    synchronous subprocess chain that legitimately runs for many minutes while
+    the card's run_dir stays silent, so any idle-clock bound on "a real gate's
+    runtime" starts reaping LIVE gates the day the suite outgrows the guess
+    (measured 2026-08-20: the ~5min suite got card req-worktree-base-sync
+    bounced at ~2min mid-gate with a phantom 'daemon restarted' note). Liveness
+    is the runtime's own signal; the gate subprocess timeout (600s) stays the
+    real bound on a runaway gate."""
+    return _LANE_LIVE.get(tid, 0) > 0
+
+
 def move_lane(tid, lane, actor="owner", _autopark=True):
-    from daemon.cells.engineer import sessions  # lazy: LANES/_start/_accept_machine still live in sessions.py
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
-    ->done accepts (records the acceptance economics)."""
+    ->done accepts (records the acceptance economics).
+
+    Registration wrapper: the pipeline is registered in _LANE_LIVE BEFORE the
+    body publishes status='gating' (its first mutate), so no observer can ever
+    see 'gating' without also seeing the live registration - the reconciler's
+    load-then-check has no race window. A DEPTH counter, not a flag:
+    park_and_retry_merge re-enters move_lane('review') from inside a 'done'
+    pipeline, and the outer pipeline must stay observable when the inner one
+    unwinds."""
+    _LANE_LIVE[tid] = _LANE_LIVE.get(tid, 0) + 1
+    try:
+        return _move_lane(tid, lane, actor=actor, _autopark=_autopark)
+    finally:
+        _depth = _LANE_LIVE.get(tid, 1) - 1
+        if _depth > 0:
+            _LANE_LIVE[tid] = _depth
+        else:
+            _LANE_LIVE.pop(tid, None)
+
+
+def _move_lane(tid, lane, actor="owner", _autopark=True):
+    from daemon.cells.engineer import sessions  # lazy: LANES/_start/_accept_machine still live in sessions.py
     from daemon.spine.storage import events
     if lane not in sessions.LANES:
         raise RuntimeError("bad lane: " + lane)

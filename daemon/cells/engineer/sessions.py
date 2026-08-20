@@ -26,8 +26,8 @@ from daemon.spine.git.gitutil import (_git, _git_try, _branch_exists, is_git_rep
 from daemon.spine.git.gitutil import _worktree_for, _base_ref, _worktree_of_branch
 from daemon.spine.storage.trackstore import _load, _save, _save_track, _find, _slug, _unique_id, _mutate, _mutate_lock_for
 from daemon.spine.git.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
-from daemon.cells.engineer.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE)
-from daemon.cells.engineer.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, _say_card, move_lane, _is_dirty_block, park_and_retry_merge)
+from daemon.cells.engineer.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE, GATE_CUT_NOTE)
+from daemon.cells.engineer.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, _say_card, move_lane, lane_active, _is_dirty_block, park_and_retry_merge)
 from daemon.cells.engineer.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED)
 from daemon.cells.engineer.cardadmin import (archive_track, delete_track, update_track, apply_board_directives, add_attachments, remove_attachment, list_checkpoints, rewind_files, fork_conversation, fork_track, history, EDITABLE, CLEARABLE, BOOLFIELDS, DIRECTIVES)
 from daemon.cells.engineer.lifecycle import (_interrupt_note_report, _promote_live_session, _track_idle_s, present, sweep_zombies, start_zombie_reconciler, PRESENT_IDLE_S, _BOUNCE_ESCALATE_AT)
@@ -265,7 +265,8 @@ def _pending_context(t):
     gr = t.get("gate_report")
     if t.get("gate_failed") and gr:
         parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))
-    elif isinstance(gr, list) and any(RESUME_NOTE in x or ZOMBIE_NOTE in x for x in gr):
+    elif isinstance(gr, list) and any(RESUME_NOTE in x or ZOMBIE_NOTE in x
+                                      or GATE_CUT_NOTE in x for x in gr):
         # A zombie-sweep/Stop interrupt (no gate involved) also stashes its note
         # in gate_report - the only channel _pending_context reads. Without this
         # branch a bare "continue" after an interrupt resumes BLIND: the worker

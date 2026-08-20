@@ -127,9 +127,93 @@ def test_escalation():
     check(events.consecutive_bounces(tid) == 0, "a completed turn resets the streak")
 
 
+def test_gating_pipeline():
+    """status='gating' is a live gate/merge pipeline, not a stuck turn. The old
+    reap bound here was a duration GUESS ("a real gate runs ~2min") and the day
+    the suite outgrew it (2026-08-20, ~5min) the reconciler bounced every LIVE
+    gate at ~120s with a phantom 'daemon restarted' note while the real gate
+    finished minutes later. Liveness must be an in-process OBSERVATION
+    (lanemachine.lane_active, drivers.turn_active's pattern): a registered
+    pipeline is never reaped no matter how long it runs; an UNregistered gating
+    card (daemon died mid-gate / pipeline thread crashed) still is - with the
+    gating-specific note, since there was no instruction to resend."""
+    from daemon.cells.engineer import lanemachine
+
+    tid = "t-gate-live"
+    g = _track(tid, "gating")
+    g["gate_report"] = ["gate FAILED:\nold punch list"]   # prior substance must survive
+    db.track_put(g)
+    # the empty run_dir reads as VERY idle - far past the old 120s bound, so
+    # pre-fix this sweep reaped the live gate; only the observation saves it
+    lanemachine._LANE_LIVE[tid] = 1
+    try:
+        swept = sessions.sweep_zombies(min_idle_s=45)
+        check(tid not in swept, "LIVE pipeline never reaped, however long the suite runs")
+        check(db.track_get(tid)["status"] == "gating",
+              "card stays 'gating' while its pipeline is verifiably alive")
+    finally:
+        lanemachine._LANE_LIVE.pop(tid, None)
+
+    swept = sessions.sweep_zombies(min_idle_s=45)
+    check(tid in swept, "unregistered gating card (pipeline died) still reaped")
+    z = db.track_get(tid)
+    check(z["status"] == "bounced", "dead-pipeline card bounced (got %r)" % z["status"])
+    gr = z.get("gate_report") or []
+    check(gr and gr[0] == sessions.GATE_CUT_NOTE,
+          "gating cut gets the gate note, not 'resend the last instruction'")
+    check("gate FAILED:\nold punch list" in gr,
+          "prior gate report preserved under the note")
+
+
+def test_move_lane_registration():
+    """move_lane registers the pipeline BEFORE its body runs (so no observer can
+    see 'gating' unregistered), releases it on every exit, and counts DEPTH -
+    park_and_retry_merge re-enters move_lane('review') from inside a 'done'
+    pipeline and the outer registration must survive the inner unwind."""
+    from daemon.cells.engineer import lanemachine
+
+    tid = "t-lane-reg"
+    calls = []
+    real = lanemachine._move_lane
+
+    def _fake(t_id, lane, actor="owner", _autopark=True):
+        calls.append((lane, lanemachine.lane_active(t_id)))
+        if _autopark:   # re-enter once - the park_and_retry_merge shape
+            lanemachine.move_lane(t_id, "review", actor=actor, _autopark=False)
+            calls.append(("after-inner", lanemachine.lane_active(t_id)))
+        return {"id": t_id}
+
+    lanemachine._move_lane = _fake
+    try:
+        lanemachine.move_lane(tid, "done")
+    finally:
+        lanemachine._move_lane = real
+    check(calls == [("done", True), ("review", True), ("after-inner", True)],
+          "pipeline observable inside the body, incl. across re-entry (got %r)" % calls)
+    check(not lanemachine.lane_active(tid), "registration released once the move returns")
+
+    # break-it: the body raising must still release the registration
+    def _boom(t_id, lane, actor="owner", _autopark=True):
+        raise RuntimeError("gate blew up")
+
+    lanemachine._move_lane = _boom
+    try:
+        try:
+            lanemachine.move_lane(tid, "done")
+            check(False, "raising body propagated")
+        except RuntimeError:
+            check(True, "raising body propagated")
+    finally:
+        lanemachine._move_lane = real
+    check(not lanemachine.lane_active(tid),
+          "registration released even when the pipeline raises")
+
+
 if __name__ == "__main__":
     test_sweep()
     test_escalation()
+    test_gating_pipeline()
+    test_move_lane_registration()
     print()
     if _fails:
         print("FAILED: %d check(s)" % len(_fails))

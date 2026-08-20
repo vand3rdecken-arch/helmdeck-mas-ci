@@ -24,6 +24,13 @@ from daemon.cells.engineer.devport import _alloc_dev_port
 
 ZOMBIE_NOTE = "daemon restarted mid-turn - resend the last instruction"
 RESUME_NOTE = "Turn unterbrochen - erneut steuern setzt den Kontext fort"
+# The gating twin of ZOMBIE_NOTE: a card cut at status='gating' lost a gate/merge
+# pipeline, not a worker turn - "resend the last instruction" is the wrong verb
+# (there was no instruction in flight) and sends the owner steering a worker that
+# was never running. Nothing landed (merge + deploy only run AFTER a green gate),
+# so the honest recovery is to re-submit the card.
+GATE_CUT_NOTE = ("gate/merge pipeline died mid-run (daemon restart) - nothing was "
+                 "landed; move the card to Review again to re-run the gate")
 
 
 def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
@@ -377,7 +384,8 @@ def _finish_turn(tid, sid, result, meta, log):
         # otherwise the card keeps reading "daemon restarted mid-turn" from a
         # PAST bounce when the turn just ended cleanly.
         gr = tt.get("gate_report")
-        if isinstance(gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x for x in gr):
+        if isinstance(gr, list) and any(ZOMBIE_NOTE in x or RESUME_NOTE in x
+                                        or GATE_CUT_NOTE in x for x in gr):
             tt.pop("gate_report", None)
         # A turn that ended CLEANLY (real reply, not an error) broke out of any
         # loop, so the burn signal is stale - clear it. A looping turn never
