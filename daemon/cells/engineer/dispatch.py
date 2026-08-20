@@ -153,10 +153,36 @@ def _ensure_worktree(t):
         else:
             # Explicit base + --no-track (Paseo): never branch off whatever HEAD
             # happens to be, and never let the card branch claim an upstream.
+            base = _base_ref(t["repo"])
             _git(t["repo"], "worktree", "add", wt,
-                 "-b", t["branch"], "--no-track", _base_ref(t["repo"]))
+                 "-b", t["branch"], "--no-track", base)
+            _record_base_branch(t, base)
         _seed_worktree(t["repo"], wt)
     return wt
+
+
+def _record_base_branch(t, base):
+    """Fold the card's BASE onto the card at the one event where it is a fact -
+    branch creation - and never again (debt accept-merge-base-branch). The base
+    cannot be re-derived later: the repo checkout moves, so reading HEAD at gate
+    or accept time answers a different question than "what did this card fork
+    from". Recording it at the fork is the same shape as drivers.turn_active and
+    sessions.record_bg - observed once, at event time, by exactly one owner.
+
+    lanemachine._sync_base consumes it (merge the base INTO the card before the
+    gate, so a card never reds on base drift it never touched - debt
+    gate-base-lag) and VERIFIES the ref still resolves rather than trusting the
+    stored string. A card dispatched before this existed simply has no field;
+    the consumer falls back to the repo's checked-out branch, never a guess
+    written back to the card."""
+    def _base(tt):
+        tt["base_branch"] = base
+
+    t["base_branch"] = base        # the caller's snapshot sees it immediately
+    try:
+        _mutate(t["id"], _base)
+    except Exception:
+        pass                        # a card not (yet) in the store is not a dispatch failure
 
 
 def _start_inner(t):
