@@ -53,8 +53,13 @@ class FakeThreading:
 
 
 def _card(tid, **over):
+    # session_id is set: the pinned scenario is a card with a FINISHED turn
+    # (which always has a session) - update_track routes the toggle-on ship
+    # by it since the no-worktree fast-track split (a session-less card has
+    # nothing to ship and gets routed onto the live-tree rails at dispatch).
     t = {"id": tid, "task": "task " + tid, "lane": "working", "status": "needs_you",
          "fast_track": False, "machine": False, "question": None,
+         "session_id": "sess-" + tid,
          "worktree": "/fake/wt", "repo": "/fake/repo", "branch": "card/" + tid,
          "priority": "medium", "created": "", "archived": None}
     t.update(over)

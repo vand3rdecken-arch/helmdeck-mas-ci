@@ -160,6 +160,22 @@ def _ensure_worktree(t):
 
 
 def _start_inner(t):
+    if t.get("fast_track") and not t.get("machine"):
+        # FAST-TRACK, Paseo semantics (owner-decreed 2026-08-20, debt
+        # fast-track-no-worktree): the whole point of worktree isolation - a
+        # regenerable, disposable copy - kept fast-track cards exposed to base
+        # drift for the card's ENTIRE open lifetime (a gate can red on code the
+        # card never touched, see debt gate-base-lag). The owner chose to drop
+        # isolation for this class rather than build the sync-loop fix: a
+        # fast-track card edits the LIVE tree directly, same no-worktree rails
+        # as new_direct_task (below) - no branch, no gate-before-review, no
+        # merge. sessions._maybe_fast_track_ship_direct replaces the normal
+        # gate+merge ship with autocommit+deploy for these cards.
+        def _mark(tt):
+            tt["machine"] = True         # ride the no-worktree dispatch/accept path
+            tt["direct"] = True          # serialized per-tree in _turn
+            tt["worktree"] = tt["repo"]  # the LIVE tree, no copy
+        t = _mutate(t["id"], _mark) or t
     if t.get("machine"):
         return _start_machine(t)
     tid = t["id"]
@@ -483,7 +499,11 @@ def backfill_outcomes():
 def _accept_machine(t, lane, actor, log):
     """Review/Done for a machine card. There is no branch to gate or merge, so
     Review RESTS it for the owner to judge and Done records the acceptance
-    economics. The repo deploy hook does NOT run (nothing landed in a repo)."""
+    economics. The repo deploy hook does NOT run for a real machine/PC-folder
+    card (nothing landed in a repo) - but DOES run for a direct card (worktree
+    == the live repo tree, so a Done here is the first/only time this specific
+    accept path deploys it, for an owner who accepts by hand instead of
+    relying on fast-track's own auto-ship)."""
     from daemon.spine.storage import events
     if lane == "review":
         log.log("note", "REVIEW (machine): erledigt auf dem Rechner - wartet auf deine Abnahme.")
@@ -510,6 +530,9 @@ def _accept_machine(t, lane, actor, log):
         _record_outcome(tt)
     t = _mutate(t["id"], _accept) or t
     events.emit("lane", t["id"], frm="review", to="done")
+    if t.get("direct"):
+        from daemon.cells.engineer.lanemachine import _repo_hook
+        _repo_hook(t, "deploy")   # something DID land in a repo for a direct card
     _say_card(t, _i18n.t("say.machineAccepted"))
     from daemon.spine.comms import notify
     notify.card_event(t, "done")

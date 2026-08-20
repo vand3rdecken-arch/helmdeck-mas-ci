@@ -954,6 +954,45 @@ DEBT = [
         "order": 28,
     },
     {
+        "id": "fast-track-no-gate",
+        "title": "Fast-Track cards ride the no-worktree direct path - no isolation, no gate, auto-deploy",
+        "status": "open",
+        "what": "Owner-decreed 2026-08-20: worktree isolation was supposed to be "
+                "regenerable, disposable state, but it left an open Fast-Track "
+                "card exposed to base drift for its ENTIRE open lifetime - a "
+                "56-file base-only test-wiring fix reddened a card's gate for "
+                "code it never touched (debt gate-base-lag, hit live on card "
+                "proc-20260816-s2), and the daemon has no sync-loop to fix that "
+                "drift while a card sits open. Rather than build the sync loop, "
+                "the owner chose to drop worktree isolation for Fast-Track "
+                "entirely: dispatch._start_inner marks a fast_track (non-machine) "
+                "card machine=True + direct=True + worktree=repo at first "
+                "dispatch (same no-worktree rails as new_direct_task) - no "
+                "branch, ever. sessions._maybe_fast_track_ship_direct replaces "
+                "the normal gate+merge ship with autocommit-only (still refuses "
+                "open conflict markers - data hygiene, not a gate) + the deploy "
+                "hook, fired automatically after every finished turn.",
+        "why_it_bites": "Everything direct-build-no-gate already bites, PLUS: "
+                        "(1) Fast-Track is MORE automated than a direct card - "
+                        "direct_task is owner-requested solo building, Fast-"
+                        "Track ships every turn UNATTENDED, so a broken change "
+                        "can deploy with nobody watching, repeatedly, before "
+                        "anyone notices. (2) _accept_machine's Done path now "
+                        "also deploys for ANY direct card (fixed alongside this "
+                        "change, since something DID land in a repo) - a plain "
+                        "new_direct_task card that the owner accepts by hand "
+                        "now deploys too, where it silently didn't before.",
+        "trigger": "a Fast-Track card's turn breaks the tree; two humans/agents "
+                   "touch the same Fast-Track tree at once; a Fast-Track card "
+                   "runs a long time unattended and ships something bad",
+        "fix": "Same fix direct-build-no-gate already names (snapshot-before-"
+               "turn rollback point, advisory post-turn gate, 'card active on "
+               "this tree' surfaced in the app) - Fast-Track needs it more "
+               "urgently than a solo direct card because it is unattended by "
+               "design.",
+        "order": 29,
+    },
+    {
         "id": "plugin-kernel-dual-nav",
         "title": "Plugin kernel boots alongside expo-router (two navigation systems)",
         "status": "open",
