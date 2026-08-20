@@ -95,6 +95,13 @@ if os.path.isdir(DICT_DIR):
 # "Kein Code eingegeben" have none, and those all slipped through the first
 # version of this rule. Match umlauts OR a German function word, which English
 # UI copy does not contain.
+#
+# Still not airtight, and it cannot be: "Konto erstellen", "Benutzername",
+# "Anmeldung fehlgeschlagen" carry neither. ui/login_screen.tsx was hardcoded
+# German end to end and this rule saw NONE of it (rule D caught one JSX node).
+# So a finding here means READ THE FILE - the flagged line is a symptom, and
+# fixing only it ships "Create account" next to "Anmelden", the exact mix this
+# tool exists to prevent.
 GERMAN_WORDS = (r"\b(nicht|kein[e]?[nmrs]?|und|oder|der|die|das|des|dem|den|ein[e]?[nmrs]?|"
                 r"ist|sind|wird|werden|wurde|hat|haben|sich|noch|schon|nur|auch|"
                 r"mit|ohne|f[uü]r|von|vom|zum|zur|beim|im|am|auf|aus|bei|"
@@ -106,6 +113,12 @@ for path in sorted(walk(APP, (".ts", ".tsx"))):
     if any(s in path for s in SKIP_APP):
         continue
     for i, code in enumerate(code_lines(open(path, encoding="utf-8").read()), 1):
+        # NOTE the marker is matched against the COMMENT-STRIPPED line, so an
+        # `// i18n-exempt` (or a JSX `{/* i18n-exempt */}`) is already gone by
+        # the time we look - it exempts nothing, silently. It only works inside
+        # real code. Prefer restructuring: a genuine non-copy string hoisted to
+        # a named constant stops being a JSX text node and says WHY in the name
+        # (app/src/app/kernel-demo.tsx's NO_SURFACE_DIAGNOSTIC).
         if "eslint" in code or "i18n-exempt" in code:
             continue
         for m in GERMAN.finditer(code):
