@@ -107,6 +107,10 @@ harness/.versions/
 # step, exactly like glass-crud-harness's apps/ -> worker/public/.
 glasses/worker/public/
 glasses/worker/node_modules/
+# stray stdout/stderr redirects from a backgrounded `wrangler dev` - local run
+# artifacts, not source. Two of these leaked into a commit once; never again.
+glasses/worker/dev.log
+glasses/worker/dev.err
 .wrangler/
 # .dev.vars holds DAEMON_URL for `wrangler dev` - a route into the owner's
 # machine. Same rule as push.env: never committed.
