@@ -99,7 +99,10 @@
           updateBadge();
           // never mid-decision: a decide screen is an active input flow, and a
           // banner there would be pure distraction, not help.
-          if (screenStack[screenStack.length - 1] !== 'decide') notifyBanner(unseenNew);
+          if (screenStack[screenStack.length - 1] !== 'decide') {
+            notifyBanner(unseenNew);
+            speakBanner(unseenNew);       // same count, spoken (mute-aware)
+          }
         }
       })
       .catch(function (e) {
@@ -391,6 +394,62 @@
     catch (e) { /* silent */ }
   }
 
+  // ---- VOICE-OUT for blockers: mute + repeat --------------------------------
+  // "Blocker werden vorgelesen" - the fresh-blocker banner (notifyBanner,
+  // below) gets a spoken counterpart, reusing the exact mechanism already
+  // shipped for talk replies (speak()/replyAudio above): the lens cannot
+  // synthesise speech, so the daemon renders a clip and hands back a URL
+  // (GET /glance/banner - routes_glance.py). GLANCE-SAFE by construction: the
+  // daemon only ever speaks a COUNT, never a task name (SS4.4/SS11.3).
+  //
+  // Two controls, both required because a proactive (non-gesture) play can
+  // be silently blocked by the browser's autoplay policy (undocumented for
+  // this webview - docs/glasses-reference.md SS6.4) and because a bystander
+  // conversation can talk over a first attempt anyway:
+  //   - MUTE: persisted in cfg, so a public/meeting setting stays quiet.
+  //   - REPEAT: manual playback of the last-announced count - also the
+  //     fallback when autoplay was blocked and nothing was heard at all.
+  var voiceMuted = !!cfg.voiceMuted;
+  var lastBlockerVoiceUrl = null;
+
+  function bannerVoiceEndpoint(n) {
+    if (!connected()) return null;
+    if (sameOrigin()) return '/glance/banner?n=' + n;
+    return apiBase() + '/glance/banner?n=' + n + '&token=' + encodeURIComponent(cfg.token);
+  }
+  function speakBanner(n) {
+    if (voiceMuted) return;
+    var url = bannerVoiceEndpoint(n);
+    if (!url) return;
+    fetch(url, { cache: 'no-store', headers: glanceHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.voice) { lastBlockerVoiceUrl = j.voice; speak(j.voice); }
+      })
+      .catch(function () { /* speech is an enhancement - never break the banner for it */ });
+  }
+  function toggleVoiceMuted() {
+    voiceMuted = !voiceMuted;
+    cfg.voiceMuted = voiceMuted;
+    saveCfg(cfg);
+    updateVoiceToggleLabel();
+    toast(voiceMuted ? 'Voice off' : 'Voice on');
+  }
+  function updateVoiceToggleLabel() {
+    setText('voice-toggle-btn', voiceMuted ? 'Voice off' : 'Voice on');
+  }
+  function repeatBlockerVoice() {
+    if (!lastBlockerVoiceUrl) { toast('Nothing to repeat'); return; }
+    audioUnlock();                       // this tap IS a gesture - unlocks too
+    // same clip already loaded (nothing spoken since) - just restart it;
+    // otherwise (re)load it fresh, same as a first play
+    if (replyAudio && replyAudio.src && replyAudio.src.indexOf(lastBlockerVoiceUrl) !== -1) {
+      replay();
+    } else {
+      speak(lastBlockerVoiceUrl);
+    }
+  }
+
   function talkStart() {
     audioUnlock();                       // MUST be inside the gesture
     talk('Where do things stand, and what should I do next?');
@@ -533,6 +592,8 @@
       case 'talk-replay': replay(); break;
       // the tapped option IS the next message - that is the whole conversation
       case 'talk-pick': audioUnlock(); talk(btn.getAttribute('data-label')); break;
+      case 'voice-toggle': toggleVoiceMuted(); break;
+      case 'voice-repeat': repeatBlockerVoice(); break;
       case 'save-settings': doSaveSettings(); break;
     }
   }
@@ -598,6 +659,7 @@
   // The registered URL may carry the token, in which case the glasses go
   // straight to the board and the Connect screen is never seen.
   adoptUrlToken();
+  updateVoiceToggleLabel();
   if (!connected()) { fillSettings(); showScreen('settings', true); }
   else { showScreen('home', true); refresh(); if (!document.hidden) startPoll(); }
 })();
