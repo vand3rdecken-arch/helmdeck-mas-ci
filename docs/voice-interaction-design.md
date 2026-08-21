@@ -403,6 +403,57 @@ Owner-Urteil zu diesen zwei Dateien:**
   Punkt 5) probehören, statt Stufe 1 auf einer Engine zu bauen, die schon in
   der Probe durchfällt.
 
+### 8b. Stufe 1 ist GEBAUT (2026-08-21)
+
+Auf Owner-Anweisung („can you build it directly") direkt umgesetzt, nicht nur
+entworfen. Was existiert:
+
+| Datei | Rolle |
+|---|---|
+| `app/src/data/voice.ts` | Die EINE Naht. `caps()` / `speak()` / `listen()`, je ein Web- und ein Native-Körper. |
+| `app/src/ui/voice_mode.tsx` | Der Vollbild-Sprachmodus: Orb, Zustandsautomat, Verlauf-Umschalter, drei Regler. |
+| `app/src/app/chat.tsx` | `ask()` — fährt denselben Turn wie der Composer, nur mit `voice: true`. |
+| `app/src/ui/card_composer.tsx` | Mikrofonknopf; ersetzt Senden, solange nichts getippt ist (ChatGPT-Muster). |
+
+Drei Entwurfsentscheidungen, die der Bau erzwungen hat:
+
+1. **Fähigkeit wird ERFRAGT, nie angenommen** (Paseo-Prinzip). `caps()` löst das
+   Modul tatsächlich auf. Ein OTA-Bundle, das auf einem älteren APK landet,
+   meldet dann `speak:false` und fällt auf Text zurück — statt am fehlenden
+   Native-Modul weiß aufzuschlagen.
+2. **`expo-speech-recognition` wurde NICHT als Abhängigkeit aufgenommen.** Es
+   gibt keinen SDK-57-Build (npm `latest` = 56.0.1), und seine Peer-Deps sind
+   Wildcards — es würde sich also stillschweigend installieren und erst beim
+   Native-Build brechen. Der Adapter ist trotzdem geschrieben und getippt; der
+   `require` ist lazy. Gemessen: Metro (`allowOptionalDependencies`) übersetzt
+   einen `require` im try/catch in einen werfenden Stub, statt den Build zu
+   fällen — Web- UND Android-Bundle wurden damit erfolgreich gebaut. Als Schuld
+   `voice-native-stt` registriert.
+3. **Die „kein Ton"-Meldung ist KLEBRIG.** Erste Fassung setzte sie pro Turn —
+   und der nächste `startListening()` löschte sie Millisekunden später wieder.
+   Bei fehlendem edge-tts wäre der Sprachmodus damit dauerhaft stumm gewesen,
+   ohne je zu sagen warum. Genau der Totlauf, den §4.5 verbietet. Vom
+   E2E-Test gefunden, nicht durch Lesen.
+
+**Verifiziert, nicht behauptet:**
+- `npx tsc --noEmit` sauber; `tools/i18n_lint.py` PASS (982 Keys); `run_gate.py` PASS.
+- `tools/e2e_voice_playback.py` — ein ECHTER edge-tts-Clip, als `data:`-URI genau
+  so gebaut wie in `voice.ts`, dekodiert in echtem Chromium zu **2,71 s und
+  feuert `ended`**. Das ist der Daemon↔Browser-Vertrag, der sich still verlieren
+  könnte (falscher MIME → iOS' `data:audio/`-Präfixprüfung greift nicht mehr).
+- `tools/e2e_voice_loop.py` — **8/8**. Fährt den Zustandsautomaten im echten
+  Browser; nur Erkennung und Wiedergabe sind an der Browsergrenze gefälscht,
+  alles dazwischen ist der ausgelieferte Code. Prüft u. a., dass beim Schließen
+  das Mikrofon wirklich freigegeben wird.
+- Screenshots beurteilt (nicht nur gerendert): dabei zwei echte Mängel gefunden
+  und behoben — im Verlauf fehlte jede Zustandsanzeige (man sah nicht mehr, ob
+  zugehört wird), und die letzte Sprechblase stieß ohne Abstand an die
+  Reglerleiste.
+
+**Was Stufe 1 NICHT liefert:** Zuhören auf dem Telefon (siehe Punkt 2 —
+Web/Desktop können beides, Native spricht nur), und weiterhin kein echtes
+Barge-in (§4.5, unverändert die richtige Entscheidung).
+
 ---
 
 ## 9. Nicht verifiziert — Risiken, die ein Bau erst schließt

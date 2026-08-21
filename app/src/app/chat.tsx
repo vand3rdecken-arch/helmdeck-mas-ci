@@ -15,6 +15,7 @@ import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { ContextMeter } from "@/ui/context_meter";
 import { Empty } from "@/ui/kit";
+import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
 
 // Desktop copilot is an IN-PAGE overlay (not a route), so the board stays mounted
 // and visible-behind-dimmed — a route/transparentModal leaves a black void on web
@@ -126,6 +127,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // hides behind the keyboard. Measure the keyboard height and lift the content
   // manually (a height:kb spacer) - works on both platforms without a native lib.
   const [kb, setKb] = useState(0);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  // Asked once per mount, not per render: capability is resolved by actually
+  // probing the runtime (data/voice.ts caps()), which must not run on every
+  // keystroke. A build with no audio module simply has no microphone button.
+  const canVoice = useRef(voiceUsable()).current;
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
     const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
@@ -183,6 +189,32 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     turn.current++;              // invalidate the in-flight turn client-side
     api.chatCancel().catch(() => {});   // kill the copilot subprocess server-side
     setBusy(false);
+  }
+
+  // VOICE MODE runs the SAME turn as the composer — api.chat, same session, same
+  // history — with one flag added: `voice: true` makes the daemon also render
+  // Henry's prose to speech and inline it (routes_copilot.chat_post). So a
+  // spoken turn lands in the text transcript too, and switching between talking
+  // and typing mid-conversation loses nothing. Two send paths would have been
+  // two chats one refresh apart.
+  async function ask(text: string) {
+    setMsgs((m) => [...m, { cls: "user", text }]);
+    setBusy(true);
+    const id = ++turn.current;
+    try {
+      const r = await api.chat(text, { voice: true });
+      if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
+      const said = r.reply || r.error || tr("chat.noReply");
+      setMsgs((m) => [...m, { cls: r.error ? "error" : "bot", text: said }]);
+      qc.invalidateQueries({ queryKey: ["tracks"] });
+      qc.invalidateQueries({ queryKey: ["chatHistory"] });
+      // Speak the PROSE only. The daemon already strips the ```actions block and
+      // any <helmdeck-ask> markup before rendering, so what is heard and what is
+      // read are the same sentence — never machine syntax read aloud.
+      return { reply: said, clip: r.voice ?? null };
+    } finally {
+      if (turn.current === id) setBusy(false);
+    }
   }
 
   const header = (
@@ -253,10 +285,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           ) : null}
           <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"
+            onVoice={canVoice ? () => setVoiceOpen(true) : undefined}
             bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
         </View>
         {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
+      <VoiceMode visible={voiceOpen} onClose={() => setVoiceOpen(false)} onAsk={ask} busy={busy} />
     </View>
   );
 }
