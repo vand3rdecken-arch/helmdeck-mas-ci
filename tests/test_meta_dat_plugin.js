@@ -169,6 +169,129 @@ console.log("app/build.gradle:");
   );
 }
 
+// --- THE REAL TREE'S SHAPE (regression fixture) ----------------------------
+//
+// COPIED VERBATIM from C:\hd\app\android on 2026-08-21, after the plugin
+// silently did nothing against it. The fixtures above model the NEWER template
+// (dependencyResolutionManagement in settings.gradle); this app is Expo 57 /
+// RN 0.86 with a hand-managed android/, whose settings.gradle has NO
+// dependencyResolutionManagement at all - repositories live in the ROOT
+// build.gradle under allprojects{}. The plugin reported "settings.gradle
+// already ok" and added no repository anywhere, which would have surfaced much
+// later as "could not resolve com.meta.wearable:mwdat-core".
+
+const REAL_SETTINGS = `
+pluginManagement {
+  def reactNativeGradlePlugin = new File(
+    providers.exec { workingDir(rootDir); commandLine("node", "--print", "x") }.standardOutput.asText.get().trim()
+  ).getParentFile().absolutePath
+  includeBuild(reactNativeGradlePlugin)
+}
+plugins {
+  id("com.facebook.react.settings")
+  id("expo-autolinking-settings")
+}
+expoAutolinking.useExpoModules()
+rootProject.name = 'HelmDeck'
+expoAutolinking.useExpoVersionCatalog()
+include ':app'
+`;
+
+const REAL_ROOT_GRADLE = `
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath('com.android.tools.build:gradle')
+  }
+}
+
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
+  }
+}
+
+apply plugin: "expo-root-project"
+`;
+
+console.log("the REAL tree shape (no dependencyResolutionManagement):");
+{
+  ok(
+    P.patchSettingsGradle(REAL_SETTINGS, false) === REAL_SETTINGS,
+    "real settings.gradle is correctly left ALONE (no dependencyResolutionManagement)"
+  );
+  const out = P.patchRootGradle(REAL_ROOT_GRADLE, false);
+  ok(out !== REAL_ROOT_GRADLE, "root build.gradle IS patched instead");
+  ok(out.includes(P.MAVEN_URL), "the GitHub Packages URL lands in the root gradle");
+  // It must go in allprojects, NOT buildscript - buildscript repositories are
+  // for gradle plugins, and putting it there resolves nothing at compile time.
+  const allIdx = out.indexOf("allprojects");
+  const urlIdx = out.indexOf(P.MAVEN_URL);
+  ok(urlIdx > allIdx, "the repo lands in allprojects{}, not in buildscript{}");
+  ok(
+    out.indexOf("google()", allIdx) > urlIdx,
+    "spliced at the top of the allprojects repositories block"
+  );
+  ok(
+    !/gh[pous]_[A-Za-z0-9]/.test(out),
+    "no literal token written into the root gradle either"
+  );
+  ok(P.patchRootGradle(out, false) === out, "IDEMPOTENT on the root gradle");
+}
+
+// end-to-end on a tree shaped like the real one
+console.log("applyToAndroidDir against the REAL tree shape:");
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "realtree-"));
+  fs.mkdirSync(path.join(dir, "app", "src", "main"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "settings.gradle"), REAL_SETTINGS);
+  fs.writeFileSync(path.join(dir, "build.gradle"), REAL_ROOT_GRADLE);
+  fs.writeFileSync(path.join(dir, "app", "build.gradle"), APP_GRADLE);
+  fs.writeFileSync(
+    path.join(dir, "app", "src", "main", "AndroidManifest.xml"),
+    '<?xml version="1.0"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n' +
+      "  <application>\n  </application>\n</manifest>\n"
+  );
+
+  const r = P.applyToAndroidDir(dir);
+  ok(r.repoPlaced === true, "repoPlaced=true - the repository really landed somewhere");
+  ok(r.rootGradle === true, "it went into the ROOT build.gradle");
+  ok(r.settings === false, "and NOT into settings.gradle");
+  const root = fs.readFileSync(path.join(dir, "build.gradle"), "utf8");
+  const settings = fs.readFileSync(path.join(dir, "settings.gradle"), "utf8");
+  ok(root.includes(P.MAVEN_URL), "root build.gradle on disk has the repo");
+  ok(
+    !settings.includes(P.MAVEN_URL),
+    "settings.gradle on disk does NOT - the repo is declared exactly once"
+  );
+
+  const r2 = P.applyToAndroidDir(dir);
+  ok(
+    r2.rootGradle === false && r2.settings === false && r2.repoPlaced === true,
+    "second run: no rewrite, and still reports the repo as placed"
+  );
+  const root2 = fs.readFileSync(path.join(dir, "build.gradle"), "utf8");
+  // split(), NOT new RegExp(MARKER) - the marker contains "(", ")" and ".",
+  // which are regex metacharacters, so a RegExp built from it silently matches
+  // nothing and the assertion passes/fails for the wrong reason. (It failed
+  // for exactly that reason when first written.)
+  ok(
+    root2.split(P.MARKER).length - 1 === 1,
+    "the repo block appears exactly ONCE after two runs"
+  );
+  ok(
+    root2.split(P.MAVEN_URL).length - 1 === 1,
+    "the maven URL appears exactly ONCE after two runs"
+  );
+
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 // --- AndroidManifest.xml ---------------------------------------------------
 
 const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
