@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """Glasses (Meta Ray-Ban Display) routes - fourth slice of server.py's
-dispatch-table split (see routes_auth.py for the pattern/rationale). All four
+dispatch-table split (see routes_auth.py for the pattern/rationale). All five
 are token-gated (settings.glance_token), not session-cookie-coupled - the lens
 authenticates with a single shared secret, not a login. GET /glance (the
 board-state read, via glances.glance_payload), GET /glance/voice/<id>.mp3 (the
-agent's answer as speech), POST /glance/talk (ADVISORY chat with the board
-copilot - allow_actions=False, never touches the board), POST /glance/answer
-(the lens's ONLY write - picks among options the worker itself offered).
-Bodies are byte-identical to the inline blocks they replace. `_glance_question`
-comes from glances.py (already a real module); `_bg` (background-job runner)
-stays in server.py since it shares _ctl_lock/_ctl state with many other
-routes - reached via a lazy `import server` (no cycle: resolved at call time).
+agent's answer as speech), GET /glance/banner (a fresh-blocker count as
+speech, for the on-lens mute/repeat controls - see glance_banner_voice), POST
+/glance/talk (ADVISORY chat with the board copilot - allow_actions=False,
+never touches the board), POST /glance/answer (the lens's ONLY write - picks
+among options the worker itself offered). Bodies are byte-identical to the
+inline blocks they replace. `_glance_question` comes from glances.py (already
+a real module); `_bg` (background-job runner) stays in server.py since it
+shares _ctl_lock/_ctl state with many other routes - reached via a lazy
+`import server` (no cycle: resolved at call time).
 """
 import json
 from urllib.parse import parse_qs, quote, urlparse
@@ -66,6 +68,45 @@ def glance_voice(self, user):
     self.send_header("Cache-Control", "public, max-age=86400")
     self.end_headers()
     self.wfile.write(data)
+
+
+def glance_banner_voice(self, user):
+    # A fresh-blocker COUNT as speech, for the lens's proactive banner
+    # (app.js notifyBanner/speakBanner) - the in-app half of "Blocker werden
+    # vorgelesen" (docs/glasses-reference.md SS4.6/SS11.6: the webview has no
+    # speechSynthesis but plays audio, so the daemon renders and the lens
+    # plays a clip URL, exactly the shape /glance/talk already returns).
+    #
+    # GLANCE-SAFE BY CONSTRUCTION (SS4.4/SS11.3): this endpoint only ever
+    # speaks a NUMBER, never a task name or client - a bystander overhearing
+    # the lens learns nothing. `n` is supplied by the caller (app.js already
+    # computes "how many are new since I last looked"; the daemon has no way
+    # to know that without per-client state) and is clamped hard so a bad
+    # value can only ever change which small integer gets read aloud, never
+    # inject arbitrary text into edge-tts.
+    #
+    # Same token as /glance, no extra switch - identical rationale to
+    # glance_voice: speaking a count is strictly less than /glance's
+    # needs_you list already hands out in plain JSON.
+    from daemon.spine.storage import events
+    from daemon.spine.media import voice
+    tok = events.settings().get("glance_token") or ""
+    q = parse_qs(urlparse(self.path).query)
+    given = (q.get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+    try:
+        n = int((q.get("n") or ["1"])[0])
+    except ValueError:
+        n = 1
+    n = max(1, min(99, n))
+    phrase = "1 new card needs you." if n == 1 else ("%d new cards need you." % n)
+    vid = voice.render(phrase)
+    return self._send(200, json.dumps({
+        # None when speech is unavailable (offline, no edge-tts) - the lens
+        # then simply keeps its silent visual banner, never an error
+        "voice": ("/glance/voice/%s.mp3?token=%s" % (vid, quote(given)))
+                 if vid else None}))
 
 
 def glance_get(self, user):
@@ -214,6 +255,7 @@ GET_PREFIX_ROUTES = [
 ]
 GET_ROUTES = {
     "/glance": glance_get,
+    "/glance/banner": glance_banner_voice,
 }
 POST_ROUTES = {
     "/glance/talk": glance_talk,
