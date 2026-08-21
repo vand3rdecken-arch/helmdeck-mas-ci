@@ -154,6 +154,8 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const flat = useAiFlat();
   const router = useRouter();
   const tint = k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
+  // tap-to-expand for the last-reply/report preview (see below)
+  const [subOpen, setSubOpen] = useState(false);
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
   const cards = metrics?.cards ?? [];
   const e = cards.find((c) => c.id === k.id);
@@ -217,8 +219,25 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       </View>
       <Text style={[s.task, { color: t.txtPrimary }]} numberOfLines={3}>{k.task}</Text>
       {k.status === "running" ? <LiveThumb trackId={k.id} /> : null}
-      {sub ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={2}>{sub.replace(/\n/g, " ")}</Text> : null}
-      {report ? <Text style={{ color: reportColor, fontSize: 11 }} numberOfLines={1}>{report.slice(0, 140)}</Text> : null}
+      {/* Last-reply preview: clamped by default, TAP to expand in place. The
+          hard 2-line clamp with flattened newlines made long worker replies
+          unreadable on the board (owner report) - and the only alternative was
+          opening the card. A nested Pressable (same trick as the ⋯ menu above)
+          toggles the clamp without also navigating into the card. */}
+      {sub ? (
+        <Pressable onPress={() => setSubOpen((v) => !v)} hitSlop={4}>
+          <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={subOpen ? undefined : 2}>
+            {subOpen ? sub : sub.replace(/\n/g, " ")}
+          </Text>
+        </Pressable>
+      ) : null}
+      {report ? (
+        <Pressable onPress={() => setSubOpen((v) => !v)} hitSlop={4}>
+          <Text style={{ color: reportColor, fontSize: 11 }} numberOfLines={subOpen ? undefined : 1}>
+            {subOpen ? report : report.slice(0, 140)}
+          </Text>
+        </Pressable>
+      ) : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
         {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepM ? tr("board.step", { n: stepM[1] }) : (k.process_title ?? tr("board.process"))}</Text> : null}
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
