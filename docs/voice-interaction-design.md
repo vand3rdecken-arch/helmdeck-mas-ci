@@ -358,10 +358,11 @@ Abhängigkeit.
 
 ## 8. Offene Entscheidungen — das, was hier freigegeben werden muss
 
-1. **Ambitionsstufe** (§7.3) — Stufe 1 (UI-Parität auf heutiger Architektur),
-   Stufe 2 (schnellere eigene Pipeline) oder Stufe 3 (zweiter KI-Anbieter für
-   die Audio-Ebene)? *Empfehlung: Stufe 1 jetzt, Stufe 2/3 nur mit eigenem
-   Auftrag.*
+1. ~~**Ambitionsstufe** (§7.3)~~ — **ENTSCHIEDEN (2026-08-21): Stufe 1.** Kein
+   Audio-LLM (Stufe 3 explizit abgelehnt — "I wouldn't use a audio LLM right
+   now"), UI-Parität mit ChatGPT/Gemini auf der heutigen turn-basierten
+   Architektur. Gate davor: **TTS-Qualität muss erst überzeugen** ("if tts is
+   Not too bad let's try it first") — siehe §8a, zwei Hörproben liegen bereit.
 2. **Reihenfolge** — ist §6 die richtige, oder soll Telefon-Sprache (Henry
    voice-first) vor die Brille?
 3. **Rückfrage im Ohr-Flow** — B1 (Optionen vorlesen, max. 3) oder B2 (Prosa
@@ -373,6 +374,34 @@ Abhängigkeit.
 5. **edge-tts-Risiko** — so lassen (kostenlos, fällt weich aus) oder Azure AI
    Speech als vertragliche Reserve einplanen? *Empfehlung: so lassen, Risiko
    notiert.*
+
+### 8a. TTS-Qualitätsprobe (2026-08-21) — der Gate-Test aus Entscheidung 1
+
+Vor Stufe 1 wollte der Owner erst hören, ob `edge_tts` (die bestehende
+`voice.py`-Engine, `en-US-AndrewMultilingualNeural`, +8 % Rate) überhaupt gut
+genug klingt, um darauf zu bauen. Zwei Proben über die ECHTE Rendering-Pipeline
+(`daemon/spine/media/voice.render`, nicht simuliert) erzeugt und nach
+`C:\Users\Tien Duy Vo\Downloads\` kopiert, zum direkten Anhören:
+
+- `voice-sample-1-deploy-blocked.mp3` (35 KB) — gemischt Deutsch/Englisch, der
+  Fall, den `DEFAULT_VOICE` laut §3.1-Kommentar explizit adressiert: *"Der
+  Deploy ist blockiert - drei Karten warten auf dich. Soll ich mit dem
+  groessten zuerst anfangen?"*
+- `voice-sample-2-all-clear.mp3` (18 KB) — reines Englisch, der `/glance`-
+  Normalfall: *"Nothing needs you right now. Everything on the board is
+  green."*
+
+Beide Renders liefen ohne Fehler durch (edge_tts erreichbar, keine
+Rate-Limit-Meldung bei zwei Requests) — das bestätigt nur die MECHANIK, nicht
+die Qualität. Das Qualitätsurteil selbst kann nur der Owner fällen, indem er
+reinhört; dieses Dokument nimmt es nicht vorweg. **Nächster Schritt hängt am
+Owner-Urteil zu diesen zwei Dateien:**
+- klingt "nicht zu schlecht" → Stufe 1 startet wie in §8 Punkt 1 entschieden,
+  mit `voice.py`/`edge_tts` als TTS-Engine, keine weitere Kartenprüfung nötig;
+- klingt schlecht/robotisch/unverständlich bei gemischtem DE/EN → vor dem Bau
+  eine zweite Stimme (`edge-tts --list-voices`) oder Azure AI Speech (§8
+  Punkt 5) probehören, statt Stufe 1 auf einer Engine zu bauen, die schon in
+  der Probe durchfällt.
 
 ---
 
