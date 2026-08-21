@@ -254,6 +254,22 @@ console.log("applyToAndroidDir (hand-managed path):");
     "the camera takes the radio arbiter before touching the SDK"
   );
 
+  // BOTH product shapes. The display/non-display split must be ASKED of the
+  // SDK, never inferred from a model-name list that rots on the next frame
+  // Meta ships (CLAUDE.md's no-monkey-patches law).
+  const devKt = path.join(dir, "app", "src", "main", "java", "app", "helmdeck",
+                          "glasses", "GlassesDevice.kt");
+  ok(fs.existsSync(devKt), "GlassesDevice.kt installed (display vs non-display)");
+  const devSrc = fs.readFileSync(devKt, "utf8");
+  ok(
+    devSrc.includes("isDisplayCapable()"),
+    "display capability is READ FROM THE SDK, not inferred"
+  );
+  ok(
+    !/RAYBAN_META\s*(==|->|,)/.test(devSrc.replace(/\/\*[\s\S]*?\*\//g, "")),
+    "no hardcoded model-name matching outside comments"
+  );
+
   const r2 = P.applyToAndroidDir(dir);
   ok(
     r2.settings === false && r2.app === false && r2.manifest === false &&
