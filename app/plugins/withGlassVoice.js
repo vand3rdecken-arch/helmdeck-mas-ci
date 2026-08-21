@@ -62,6 +62,36 @@ const PERMISSIONS = [
 const SERVICE_NAME = "app.helmdeck.voice.GlassVoiceService";
 const FGS_TYPE = "microphone"; // NARROW - see the header
 
+// PACKAGE VISIBILITY - the line that decides whether the phone can hear at all.
+//
+// Android 11 (API 30) hid other packages from an app by default, and
+// SpeechRecognizer is IMPLEMENTED BY ANOTHER APP (normally the Google app). With
+// no <queries> declaration the recognizer is simply invisible: the APK builds
+// clean, RECORD_AUDIO is granted, and `SpeechRecognizer.isRecognitionAvailable()`
+// returns false forever. That is the worst failure shape there is - correct code,
+// correct permission, silent dead microphone, on device only.
+//
+// WHY THIS LIVES HERE AND NOT IN expo-speech-recognition's OWN PLUGIN. That
+// package ships an app.plugin.js which adds exactly this. We deliberately do NOT
+// register it, for two reasons:
+//   1. It only runs on the `expo prebuild` path. HelmDeck's app/android is
+//      HAND-MANAGED (DEPLOY.md) and regenerates from nothing, so every native
+//      fact has to be re-applied by a CLI at build time - which that plugin has
+//      no half for. Registering it would make the managed and hand-managed
+//      builds disagree, and only the phone would ever find out.
+//   2. It sets NSMicrophoneUsageDescription / NSSpeechRecognitionUsageDescription
+//      to English Apple-boilerplate defaults at config-resolution time, which is
+//      BEFORE this plugin's withInfoPlist mod runs - so its `if (!c.modResults[k])`
+//      guard would find the slots already filled and quietly keep the English
+//      strings, replacing the German ones the owner sees at the permission prompt.
+// One owner for the voice native config, both paths, no drift.
+const QUERY_ACTION = "android.speech.RecognitionService";
+// The Google app implements RecognitionService on essentially every Play device.
+// The <intent> filter below is the general form; this named package is the belt
+// to its braces, because a handful of OEM builds answer the explicit package
+// query but not the intent one.
+const QUERY_PACKAGE = "com.google.android.googlequicksearchbox";
+
 // iOS. HelmDeck really does ship there (ASC app 6801637667, TestFlight), so an
 // Android-only voice plugin is not "unfinished", it is BROKEN on half the
 // product: iOS kills an app on first microphone access when
@@ -91,6 +121,19 @@ function serviceXml() {
   );
 }
 
+function queryEntriesXml() {
+  return (
+    `    <package android:name="${QUERY_PACKAGE}" />\n` +
+    `    <intent>\n` +
+    `      <action android:name="${QUERY_ACTION}" />\n` +
+    `    </intent>`
+  );
+}
+
+function queriesXml() {
+  return `  <queries>\n${queryEntriesXml()}\n  </queries>\n`;
+}
+
 // --- expo prebuild path -----------------------------------------------------
 function withGlassVoice(config) {
   const { withAndroidManifest, withInfoPlist } = require("expo/config-plugins");
@@ -113,6 +156,22 @@ function withGlassVoice(config) {
         (p) => p.$ && p.$["android:name"] === name
       );
       if (!has) manifest["uses-permission"].push({ $: { "android:name": name } });
+    }
+    // package visibility for the speech recogniser (see QUERY_ACTION above).
+    // MERGED INTO the existing <queries> rather than appended as a second one:
+    // this app already declares a <queries> for the https VIEW intent, and
+    // <queries> is a once-per-manifest element. Two of them may well survive the
+    // merger, but "may well" is not a thing to find out from a phone.
+    manifest.queries = manifest.queries || [];
+    if (!JSON.stringify(manifest.queries).includes(QUERY_ACTION)) {
+      if (!manifest.queries.length) manifest.queries.push({});
+      const q = manifest.queries[0];
+      q.package = q.package || [];
+      if (!q.package.some((p) => p.$ && p.$["android:name"] === QUERY_PACKAGE)) {
+        q.package.push({ $: { "android:name": QUERY_PACKAGE } });
+      }
+      q.intent = q.intent || [];
+      q.intent.push({ action: [{ $: { "android:name": QUERY_ACTION } }] });
     }
     const app = (manifest.application || [])[0];
     if (app) {
@@ -148,6 +207,15 @@ function patchManifestXml(xml) {
   if (!out.includes(SERVICE_NAME)) {
     // insert before </application>, the only place a <service> may live
     out = out.replace(/([ \t]*)<\/application>/, `${serviceXml()}$1</application>`);
+  }
+  if (!out.includes(QUERY_ACTION)) {
+    // <queries> is a MANIFEST-level element - a sibling of <application>, not a
+    // child - and it may appear only ONCE. This tree already ships one (the
+    // https VIEW intent from expo-web-browser), so extend that block when it is
+    // there and only create one when it is not.
+    out = /<queries>/.test(out)
+      ? out.replace("<queries>", `<queries>\n${queryEntriesXml()}`)
+      : out.replace(/([ \t]*)<\/manifest>/, `${queriesXml()}$1</manifest>`);
   }
   return out;
 }
@@ -192,6 +260,8 @@ module.exports.PERMISSIONS = PERMISSIONS;
 module.exports.IOS_INFO = IOS_INFO;
 module.exports.SERVICE_NAME = SERVICE_NAME;
 module.exports.FGS_TYPE = FGS_TYPE;
+module.exports.QUERY_ACTION = QUERY_ACTION;
+module.exports.QUERY_PACKAGE = QUERY_PACKAGE;
 module.exports.patchManifestXml = patchManifestXml;
 module.exports.applyToAndroidDir = applyToAndroidDir;
 
@@ -204,7 +274,8 @@ if (require.main === module) {
   const r = applyToAndroidDir(target);
   console.log(
     `[withGlassVoice] ${r.permissions.length} permissions + ${r.service} ` +
-      `(FGS type: ${FGS_TYPE})` + (r.wroteKotlin ? " + service source installed" : "") +
+      `(FGS type: ${FGS_TYPE}) + <queries> ${QUERY_ACTION}` +
+      (r.wroteKotlin ? " + service source installed" : "") +
       (r.changed ? " - manifest patched" : " - manifest already ok")
   );
 }

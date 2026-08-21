@@ -2235,6 +2235,204 @@ DEBT = [
                "unit suite.",
         "order": 38,
     },
+    {
+        "id": "voice-native-stt",
+        "title": "Voice mode HEARS on web/desktop only - native has no speech-recognition module",
+        "status": "paid",
+        "what": "Voice mode (app/src/ui/voice_mode.tsx) ships both halves of a "
+                "spoken turn, but only web/desktop can currently do both. "
+                "SPEAKING works everywhere the daemon reaches: the reply is "
+                "rendered server-side by voice.py and played via expo-audio "
+                "(native) or HTMLAudioElement (web). HEARING is platform work, "
+                "and the intended package - jamsch/expo-speech-recognition - "
+                "HAS NO SDK 57 BUILD: npm `latest` is 56.0.1, the repo's main "
+                "branch still pins expo ~56.0.12, and there is no sdk-57 "
+                "dist-tag, release note or tracking issue (checked "
+                "2026-08-21). Its peerDependencies are wildcards (expo:*, "
+                "react-native:*), so it would INSTALL silently into an SDK 57 "
+                "app and only fail at native build time - which is why it was "
+                "deliberately NOT added as a dependency. On native, "
+                "data/voice.ts caps() therefore reports hear:false and the UI "
+                "opens in speak-only mode. "
+                "[CORRECTION, see fix] That last inference was wrong, and the "
+                "wrongness is the lesson: 'fails at native build time' was "
+                "REASONED from the missing release, never measured. It was "
+                "then measured, and it builds.",
+        "why_it_bites": "The owner asked for ChatGPT/Gemini-parity voice mode, "
+                        "and on the phone - the surface that matters most for "
+                        "hands-busy use - half of it is a read-only "
+                        "experience until this resolves. Worse, the gap is "
+                        "invisible from the code: the adapter is written, "
+                        "typed and wired, so a reader sees a complete "
+                        "implementation and only the missing package makes it "
+                        "inert. The capability probe is what keeps that "
+                        "honest at runtime instead of shipping a dead "
+                        "microphone button.",
+        "trigger": "expo-speech-recognition publishes a 57.x; OR the owner "
+                   "asks why the phone will not listen when the desktop does",
+        "fix": "PAID - by measuring the premise instead of trusting it. "
+               "'No SDK 57 build' turned out to be a statement about upstream "
+               "TESTING, not about compatibility: expo autolinking compiles "
+               "community modules FROM SOURCE against the app's own "
+               "expo-modules-core, so there is no prebuilt ABI that could "
+               "mismatch. Proof: `:expo-speech-recognition:"
+               "compileReleaseKotlin` against this app's real SDK 57 / "
+               "RN 0.86 / Kotlin 2.1.20 tree is BUILD SUCCESSFUL, zero "
+               "warnings. So (1) 56.0.1 is a dependency, pinned EXACTLY to "
+               "the version that was compiled - no caret, because a future "
+               "upstream release is exactly the thing that has not been "
+               "verified; (2) the Android <queries> package-visibility entry "
+               "the recogniser needs went into app/plugins/withGlassVoice.js "
+               "rather than by registering the vendor's own config plugin - "
+               "that plugin has no hand-managed-android half (DEPLOY.md), so "
+               "the two build paths would have disagreed, and it would have "
+               "overwritten the German iOS permission strings with English "
+               "Apple boilerplate; (3) caps() now asks "
+               "isRecognitionAvailable() rather than settling for 'the module "
+               "loaded', because on a Play-less device the module loads fine "
+               "and every start() fails; (4) voiceUsable() now requires an "
+               "EAR, since speak-only voice mode was a screen with no way in. "
+               "Residual risk moved to [voice-stt-sdk-lag].",
+        "order": 39,
+    },
+    {
+        "id": "voice-stt-sdk-lag",
+        "title": "Speech recognition runs on an SDK-56 package pinned into an SDK-57 app",
+        "status": "open",
+        "what": "app/package.json pins expo-speech-recognition to EXACTLY "
+                "56.0.1 - upstream's newest release, published for Expo SDK "
+                "56. Its Android half was compile-verified against this app's "
+                "SDK 57 toolchain before adoption (see [voice-native-stt]) "
+                "and the whole APK links and runs. The iOS half was NOT "
+                "compile-verified here, because that needs a macOS/Xcode "
+                "host, which this machine is not: it is Swift against "
+                "expo-modules-core's Swift API, which is a different surface "
+                "from the Kotlin one that was proven.",
+        "why_it_bites": "Two distinct ways this bites, and neither shows up "
+                        "on Windows. (a) The first iOS/EAS build after this "
+                        "lands is where an SDK 56->57 Swift API change would "
+                        "surface - as a pod compile error in a cloud build, "
+                        "far from this commit. (b) `npx expo install --check` "
+                        "will keep flagging the pin as off-SDK forever, and "
+                        "the tempting one-word fix (bump to whatever is "
+                        "newest) silently discards the compile evidence this "
+                        "pin represents.",
+        "trigger": "the next iOS/EAS build; OR expo-speech-recognition "
+                   "publishes a 57.x; OR `expo install --check` flags it",
+        "fix": "When a 57.x ships, `npx expo install "
+               "expo-speech-recognition` and re-run the same proof that "
+               "bought the current pin: `cd app/android && ./gradlew "
+               ":expo-speech-recognition:compileReleaseKotlin`, then a full "
+               "APK + emulator smoke. Do NOT bump on the version number "
+               "alone. For iOS, the honest close is one EAS build - it is "
+               "the only compiler that can answer, and it answers in ~20 "
+               "minutes. If that build fails, the fallback is unchanged and "
+               "still stands: the repo already owns a native Android "
+               "SpeechRecognizer (app/plugins/glassvoice/"
+               "GlassVoiceService.kt) that could be promoted into a local "
+               "Expo module, and iOS SFSpeechRecognizer written beside it.",
+        "order": 40,
+    },
+    {
+        "id": "voice-stream-cost",
+        "title": "Streaming speech costs one edge-tts round trip PER SENTENCE, and the client's tail wait is bounded",
+        "status": "open",
+        "what": "voice_stream.py renders Henry's reply sentence by sentence so "
+                "voice mode starts talking about a second into a turn instead "
+                "of after it (docs/voice-interaction-design.md SS8d). Two "
+                "load-bearing shortcuts come with that. (a) A turn that used "
+                "to be ONE edge-tts render is now typically 2-4, so the "
+                "unmeasured quota question in SS9.5 got sharper rather than "
+                "softer - and edge-tts is an unofficial client of a Microsoft "
+                "service with no published limit. (b) chat.tsx's post-turn "
+                "drain waits at most 40x250ms = 10s for chunks still "
+                "rendering; past that the last sentence is silently dropped.",
+        "why_it_bites": "Both fail in the same shape: quietly, and only under "
+                        "load or a slow network - the two conditions under "
+                        "which nobody is watching a test. A rate-limit would "
+                        "show up as voice mode going mute mid-answer (the "
+                        "render fails soft, so there is no error to see), and "
+                        "the drain cap shows up as replies that lose their "
+                        "final sentence only sometimes. Neither is visible "
+                        "from the code, and neither is caught by "
+                        "e2e_voice_stream.py, whose render is stubbed by "
+                        "design.",
+        "trigger": "voice mode goes silent partway through answers; OR a reply "
+                   "reproducibly loses its last sentence; OR the first real "
+                   "day of heavy voice use",
+        "fix": "Measure before tuning. Count renders per turn and log "
+               "edge-tts failures in voice.py (today a failure returns None "
+               "and vanishes) - a soft failure that leaves no trace is the "
+               "actual bug here. Then: raise BATCH_CHARS if the count is the "
+               "problem, and reuse the existing content-hash cache harder "
+               "(short sentences like 'Soll ich anfangen?' repeat across "
+               "turns and should never re-render). For the drain, replace the "
+               "fixed cap with a wait keyed on voice_pending going false, "
+               "with the cap only as a backstop, and say so on screen when it "
+               "is hit rather than dropping the sentence in silence.",
+        "order": 41,
+    },
+    {
+        "id": "voice-barge-in",
+        "title": "Barge-in is a TAP everywhere - and on two of three surfaces that is now a library gap, not a law",
+        "status": "open",
+        "what": "Interrupting Henry means tapping the orb. The reason on "
+                "record was 'HFP and A2DP are mutually exclusive', which is "
+                "true but was read far too broadly - it is about the GLASSES' "
+                "microphone over Bluetooth Classic, and AOSP names the "
+                "trigger as MODE_IN_COMMUNICATION, a mode GlassVoiceService "
+                "asks for itself (docs/glasses-reference.md SS3.1, corrected). "
+                "With that scope fixed, three surfaces have three different "
+                "blockers. GLASSES: solved this commit - "
+                "ACTION_LISTEN_PHONE_MIC listens on the phone and leaves A2DP "
+                "up; UNVERIFIED, no device here. PHONE: Android exposes both "
+                "AcousticEchoCanceler and the AEC-documented "
+                "VOICE_COMMUNICATION source, but expo-speech-recognition "
+                "reaches neither - ExpoAudioRecorder.kt hardcodes "
+                "MediaRecorder.AudioSource.VOICE_RECOGNITION and its "
+                "`audioSource` option takes a FILE URI, not an input device - "
+                "so the phone would transcribe its own answer. DESKTOP/WEB: "
+                "Chromium opens a RAW capture for the Web Speech API "
+                "(speech_recognizer_impl.cc wires no AudioProcessingSettings "
+                "and no echo reference), so our own playback is not cancelled.",
+        "why_it_bites": "It is the last thing separating this from the "
+                        "ChatGPT/Gemini feel the owner asked for, and it now "
+                        "looks closer than it is: the constraint that "
+                        "justified giving up turned out to be mis-scoped, "
+                        "which makes it tempting to assume the rest is "
+                        "cheap. It is not. The measurement that matters says "
+                        "NO: Chromium 150 (Electron 43, the newest shell "
+                        "there is) neither advertises `echoCancellationMode` "
+                        "in getSupportedConstraints() nor returns it from "
+                        "track.getSettings() when asked for it explicitly - "
+                        "so the documented full-duplex path does not exist in "
+                        "a runtime we could ship, whatever the Chrome 141 "
+                        "release note says. Bumping Electron for this would "
+                        "have bought nothing.",
+        "trigger": "`py -3.12 tools/probe_duplex.js` (via electron) reports "
+                   "DUPLEX AVAILABLE; OR expo-speech-recognition exposes an "
+                   "input-device / audio-source option; OR the glasses turn "
+                   "out to speak LE Audio",
+        "fix": "Per surface, cheapest first. DESKTOP: re-run "
+               "tools/probe_duplex.js after any Electron bump; when "
+               "echoCancellationMode comes back true, add the duplex branch "
+               "to listenWeb (getUserMedia({echoCancellationMode:'all'}) -> "
+               "recognition.start(track)) and flip caps().duplex's consumer "
+               "on - the probe is already wired, so nothing else changes. "
+               "Trap: the 'speech-recognition' content hint defaults "
+               "echoCancellation/AGC/NS to FALSE, which is backwards here. "
+               "PHONE: needs a device. Either upstream an input-source option "
+               "to expo-speech-recognition, or attach "
+               "AcousticEchoCanceler.create(sessionId) in a fork - and "
+               "measure with a real acoustic loop, which no emulator has. "
+               "GLASSES: ACTION_LISTEN_PHONE_MIC needs one real-device test; "
+               "the notification now reports which microphone actually "
+               "opened, so the answer is readable off the lens. Longer term "
+               "LE Audio removes the whole question on Android 13+, but "
+               "whether the Ray-Ban Display supports it is unanswered, and "
+               "for iOS no primary Apple source on LE Audio exists at all.",
+        "order": 42,
+    },
 ]
 
 def list_debt():

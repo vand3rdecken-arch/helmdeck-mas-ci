@@ -8,6 +8,7 @@ import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
 import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow } from "./types";
+import type { VoiceClip } from "./voice";
 
 export class AuthRequired extends Error {}
 // Transport never reached the daemon (relay down, network, crypto mismatch).
@@ -136,13 +137,31 @@ export interface ChatStats {
 // POST /chat returns the copilot's answer, not a ChatMsg: {reply, actions, ...}
 // (or {error} on a rejection). Keep ChatMsg for /chat/history entries.
 export interface ChatReply { reply?: string; error?: string; cost?: number;
-  actions?: { tool?: string; detail?: string }[]; usage?: unknown }
+  actions?: { tool?: string; detail?: string }[]; usage?: unknown;
+  /** Henry's prose as speech, rendered by the daemon and inlined as base64 —
+   *  present only when the request asked for it (`voice: true`). It rides inside
+   *  this JSON because the phone reaches the daemon through the E2EE relay,
+   *  which seals one request/response and offers no second binary channel
+   *  (daemon/spine/media/voice.py render_b64). Absent when speech was
+   *  unavailable, which is a soft failure: the text reply is still here. */
+  voice?: VoiceClip | null }
 
 // `attachments` was dropped when the archived web composer (SendOpts, which had
 // it) was ported to RN - the daemon has accepted it the whole time. Both /steer
 // and /chat spread these opts into the request body, so adding it here wires it.
 export interface SteerOpts {
   model?: string; thinking?: string; mode?: string; attachments?: Attach[];
+  /** Ask the daemon to also render the reply as speech. Per REQUEST, not a
+   *  server setting, because only the client knows whether the owner is looking
+   *  at the screen or driving (daemon/cells/copilot/routes_copilot.py).
+   *
+   *  `true` renders ONE clip after the turn finishes and returns it inline.
+   *  `"stream"` renders sentence by sentence WHILE the turn runs; those clips
+   *  are collected from `chatLive(voiceFrom)` instead, so speech starts about a
+   *  second in rather than after the whole answer. Only a caller that actually
+   *  polls may ask for "stream" — the daemon then skips the one-shot render, so
+   *  a client that asked and did not collect would simply hear nothing. */
+  voice?: boolean | "stream";
 }
 
 // legacy shape (pre-PMP-epic plans on disk) - kept optional so an old
@@ -438,7 +457,18 @@ export const api = {
   },
   chatCancel: () => req("POST", "/chat/cancel", {}),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
-  chatLive: () => req<{ text: string; thinking?: string; running: boolean }>("GET", "/chat/live"),
+  /** The live turn. `voiceFrom` is a READ CURSOR (the highest chunk seq already
+   *  taken): pass it to also collect the speech the daemon has rendered so far,
+   *  omit it to stay the text-only poller the board chat has always been — the
+   *  clips are by far the heaviest part of this response, and the text chat has
+   *  no use for them. `voice_pending` is why the loop cannot simply stop when
+   *  `running` goes false: the turn can be over while the last sentence is
+   *  still rendering. */
+  chatLive: (voiceFrom?: number) => req<{
+    text: string; thinking?: string; running: boolean;
+    voice?: (VoiceClip & { seq: number; text?: string })[];
+    voice_pending?: boolean;
+  }>("GET", voiceFrom === undefined ? "/chat/live" : `/chat/live?voice_from=${voiceFrom}`),
 
   // The daemon guarantees a non-empty list (manifest fallback), so an empty or
   // non-array answer is a transport artifact - throw so react-query retries

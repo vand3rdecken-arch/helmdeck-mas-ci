@@ -25,6 +25,7 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
+  onVoice,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   busy?: boolean;
@@ -36,6 +37,12 @@ export function Composer({
   seed?: { text: string; key: number };
   bottomInset?: number;
   draftKey?: string;   // persist in-progress text per surface (board / each card)
+  /** Open voice mode. Passed in rather than mounted here so the composer stays
+   *  a pure input surface: only the chat screen knows how to run a turn, and
+   *  voice must go through that same path (one chat, spoken or typed). Omitted
+   *  on surfaces that have no voice — the button then does not exist at all,
+   *  rather than existing and refusing. */
+  onVoice?: () => void;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -288,11 +295,21 @@ export function Composer({
             <Ionicons name="stop" size={20} color="#fff" />
           </Pressable>
         ) : null}
-        {/* send stays enabled while busy — the message is queued instead of dropped */}
-        <Pressable onPress={fire} disabled={!text.trim() && !atts.length}
-          style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: (!text.trim() && !atts.length) ? 0.5 : 1 }}>
-          <Ionicons name={busy ? "add" : "arrow-up"} size={22} color="#fff" />
-        </Pressable>
+        {/* Empty composer -> voice; anything typed -> send. The same swap
+            ChatGPT makes, and for the same reason: the two are never both the
+            obvious next action, so one slot can carry both without a choice. */}
+        {onVoice && !text.trim() && !atts.length ? (
+          <Pressable onPress={onVoice} accessibilityLabel={tr("voice.open")}
+            style={{ backgroundColor: t.accent2, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="mic" size={21} color="#fff" />
+          </Pressable>
+        ) : (
+          /* send stays enabled while busy — the message is queued instead of dropped */
+          <Pressable onPress={fire} disabled={!text.trim() && !atts.length}
+            style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: (!text.trim() && !atts.length) ? 0.5 : 1 }}>
+            <Ionicons name={busy ? "add" : "arrow-up"} size={22} color="#fff" />
+          </Pressable>
+        )}
       </View>
 
       {/* attachment source sheet. On web the photo picker IS a file dialog, so
