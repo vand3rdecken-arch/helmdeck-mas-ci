@@ -1,5 +1,15 @@
 # Dual architecture: Henry as the full-context layer over context-poor workers
 
+> **CORE SHIPPED 2026-08-21 (~05:30, owner: "baue direkt hier")**:
+> `daemon/spine/registry/escalations.py` - append-only store (state FOLDED,
+> never flagged), emit seams at aborted-by-restart / conflict-unresolved /
+> deploy-red, broker loop via the pm._ask headless seam, bounded verbs
+> (rerun_deploy | steer | notify_owner | ignore), 2-attempt cap, policy =
+> settings.json `henry_policy` (data). Pinned once by
+> `daemon/test_escalations.py`. Open: more emit points (ship collision wait
+> note, starved-gate), a UI surface for the escalation log, richer snapshot
+> (box load once the load-aware-admission seam exists).
+
 **Owner decree 2026-08-21 (~05:15), after the double-ship night.** The system
 must exist DUALLY, Paseo-style: card workers stay deliberately context-poor
 (worktree + own chat - isolation is correct), and above them ONE Paseo-like

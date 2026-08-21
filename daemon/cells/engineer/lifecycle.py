@@ -139,7 +139,15 @@ def sweep_zombies(min_idle_s=0):
                 try:
                     ActionLog(t["run_dir"]).log(
                         "note", "Hintergrund-Task(s) mit dem Daemon-Neustart abgebrochen: %s "
-                        "- steuern startet sie neu." % names)
+                        "- Henry prueft, ob sie neu gestartet werden." % names)
+                except Exception:
+                    pass
+                # Judgement about WHAT to do with the aborted work (re-run the
+                # deploy? obsolete?) is Henry's, not code's - report, don't decide
+                # (owner decree 2026-08-21, backlog/henry-exception-broker).
+                try:
+                    from daemon.spine.registry import escalations
+                    escalations.emit("aborted-by-restart", card=t["id"], detail=names)
                 except Exception:
                     pass
         st = t.get("status")
