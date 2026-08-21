@@ -340,5 +340,49 @@ console.log("withGlassVoice installs the shared arbiter:");
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// --- EVERY local plugin must be applied by build_apk.sh --------------------
+//
+// THE BUG THIS EXISTS FOR, found 2026-08-21 while wiring withMetaDat: app.json
+// listed the plugin, but deploy/build_apk.sh did not apply it. app/android is
+// git-ignored and hand-managed, so an unapplied plugin contributes NOTHING to
+// the tree - gradle then builds an APK with the whole feature missing and
+// EXITS ZERO, because there is nothing to fail. DEPLOY.md §2 names this class
+// exactly: "the skips are SILENT: the build goes green and the artifact is
+// wrong."
+//
+// The manifest/gradle assertions above cannot catch it: they prove the plugin
+// WORKS, not that anyone RUNS it. This closes the gap generically, so the next
+// plugin someone adds to app.json cannot repeat it.
+
+console.log("build_apk.sh applies every local plugin:");
+{
+  const appJson = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "app", "app.json"), "utf8")
+  );
+  const sh = fs.readFileSync(
+    path.join(__dirname, "..", "deploy", "build_apk.sh"), "utf8"
+  );
+  // Local plugins only: "./plugins/withX" (string form) or ["./plugins/withX", {...}].
+  const local = appJson.expo.plugins
+    .map((p) => (Array.isArray(p) ? p[0] : p))
+    .filter((p) => typeof p === "string" && p.startsWith("./plugins/"))
+    .map((p) => p.replace("./plugins/", ""));
+
+  ok(local.length > 0, `found ${local.length} local plugins in app.json`);
+  for (const name of local) {
+    ok(
+      sh.includes(`node app/plugins/${name}.js app/android`),
+      `build_apk.sh applies ${name}`
+    );
+  }
+  // And each one must actually exist on disk, or the build dies at run time.
+  for (const name of local) {
+    ok(
+      fs.existsSync(path.join(__dirname, "..", "app", "plugins", `${name}.js`)),
+      `app/plugins/${name}.js exists`
+    );
+  }
+}
+
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILURE(S)`);
 process.exit(fails === 0 ? 0 : 1);
