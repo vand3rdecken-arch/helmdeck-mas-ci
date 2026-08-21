@@ -41,6 +41,27 @@ object GlassesDevice {
     private const val TAG = "GlassesDevice"
 
     /**
+     * ⚠ THE OTHER HALF OF THE tools:overrideLibrary DECISION (withMetaDat.js).
+     *
+     * Both mwdat-core and mwdat-camera 0.9.0 declare minSdkVersion 29, and this
+     * app ships minSdk 24. Rather than drop every Android 7-9 user from the
+     * whole product for a glasses feature, the manifest merger is overridden -
+     * and Android's own warning for that override is "may lead to runtime
+     * failures". That warning is correct, and THIS is what makes it untrue for
+     * us: no DAT class is ever touched below API 29.
+     *
+     * It works because ART resolves a class on FIRST USE. As long as every
+     * entry point checks here first, an API 24 device never loads a single
+     * com.meta.wearable class and cannot fail on one. Any new entry point into
+     * the SDK must call [supported] before anything else - that is the whole
+     * contract.
+     */
+    const val MIN_SDK = 29
+
+    /** True when this device can run the DAT SDK at all. */
+    fun supported(): Boolean = android.os.Build.VERSION.SDK_INT >= MIN_SDK
+
+    /**
      * @param name          the device's own name, for a UI that should say
      *                      "Ray-Ban Display" rather than "glasses"
      * @param type          the DeviceType enum name (RAYBAN_META,
@@ -80,15 +101,21 @@ object GlassesDevice {
      *
      * So the only true failure here is a *different* error, or a throw.
      */
-    fun ensureInitialized(context: Context): Boolean = try {
-        val r = Wearables.initialize(context.applicationContext)
-        r.isSuccess || r.errorOrNull() == WearablesError.ALREADY_INITIALIZED
-    } catch (t: Throwable) {
-        Log.d(TAG, "initialize: ${t.javaClass.simpleName}: ${t.message}")
-        false
+    fun ensureInitialized(context: Context): Boolean {
+        // BEFORE any DAT symbol is referenced - see MIN_SDK. This early return
+        // is what keeps `Wearables` out of the verifier's way on an old device.
+        if (!supported()) return false
+        return try {
+            val r = Wearables.initialize(context.applicationContext)
+            r.isSuccess || r.errorOrNull() == WearablesError.ALREADY_INITIALIZED
+        } catch (t: Throwable) {
+            Log.d(TAG, "initialize: ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
     }
 
     fun current(context: Context): Info? {
+        if (!supported()) return null
         return try {
             // Calling this here means a caller that only wants to ASK does not
             // have to know the SDK's lifecycle.

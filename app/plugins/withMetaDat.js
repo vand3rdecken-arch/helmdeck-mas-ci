@@ -178,6 +178,34 @@ function patchAppGradle(text) {
 // `connectedDevice` is the honest type. Declaring `camera` here would claim a
 // capability we do not use and drag in the Android 14 typed-FGS crash class
 // (glasses-reference 3.4) for nothing.
+// ⚠ THE MINSDK COLLISION - measured by an actual build on 2026-08-21, not
+// predicted. BOTH mwdat-core and mwdat-camera 0.9.0 declare
+// `<uses-sdk android:minSdkVersion="29">`, and this app is minSdk 24, so the
+// manifest merger HARD-FAILS the build:
+//
+//     uses-sdk:minSdkVersion 24 cannot be smaller than version 29 declared in
+//     library [com.meta.wearable:mwdat-camera:0.9.0]
+//
+// Two ways out, and the choice matters to every HelmDeck user, not just to
+// glasses owners:
+//
+//   1. Raise the app's minSdk 24 -> 29. One line, and it DROPS every Android
+//      7.0 / 7.1 / 8.0 / 8.1 / 9 device from the whole product - for a feature
+//      most users will never touch. (The reference project glass-crud-harness
+//      could do this freely: it was glasses-only and already shipped minSdk 29.
+//      HelmDeck is a board app that also talks to glasses.)
+//   2. tools:overrideLibrary + a HARD RUNTIME GUARD. Nobody loses the app; the
+//      camera is simply unavailable below API 29.
+//
+// This takes (2). Android's own suggestion text warns the override "may lead to
+// runtime failures", and that warning is exactly right IF you then call the
+// library on an old device - so the guard is not optional decoration, it is the
+// other half of this decision. GlassCameraService and GlassesDevice both refuse
+// before touching a single DAT class below MIN_SDK, and ART only loads a class
+// on first use, so an old device never resolves them.
+const DAT_MIN_SDK = 29;
+const OVERRIDE_LIBS = "com.meta.wearable.dat.core,com.meta.wearable.dat.camera";
+
 const CAMERA_SERVICE = "app.helmdeck.glasses.GlassCameraService";
 const CAMERA_FGS_TYPE = "connectedDevice";
 const CAMERA_PERMISSIONS = [
@@ -219,6 +247,30 @@ function installKotlin(androidDir) {
 /** Add the camera service + its FGS permissions to a raw AndroidManifest.xml. */
 function patchManifestXml(xml) {
   let out = xml;
+  // The uses-sdk override (see DAT_MIN_SDK above). Needs the tools namespace;
+  // this app already declares it, but a regenerated manifest might not, so add
+  // it rather than assume - a missing xmlns makes the attribute a silent no-op
+  // and the build fails again with the same merger error.
+  if (!out.includes('xmlns:tools=')) {
+    out = out.replace(
+      /(<manifest\b[^>]*?)(>)/,
+      '$1 xmlns:tools="http://schemas.android.com/tools"$2'
+    );
+  }
+  if (!out.includes("overrideLibrary")) {
+    if (/<uses-sdk\b/.test(out)) {
+      // Extend an existing uses-sdk rather than adding a second one.
+      out = out.replace(
+        /(<uses-sdk\b)([^>]*?)(\/?>)/,
+        `$1$2 tools:overrideLibrary="${OVERRIDE_LIBS}"$3`
+      );
+    } else {
+      out = out.replace(
+        /(<manifest\b[^>]*>)/,
+        `$1\n    <uses-sdk tools:overrideLibrary="${OVERRIDE_LIBS}" />`
+      );
+    }
+  }
   for (const name of CAMERA_PERMISSIONS) {
     if (!out.includes(`android:name="${name}"`)) {
       out = out.replace(
@@ -248,6 +300,16 @@ function withMetaDat(config) {
 
   config = withAndroidManifest(config, (c) => {
     const manifest = c.modResults.manifest;
+    // Same override as the CLI half (see DAT_MIN_SDK). The tools namespace is
+    // an attribute on <manifest> itself in this representation.
+    manifest.$ = manifest.$ || {};
+    if (!manifest.$["xmlns:tools"]) {
+      manifest.$["xmlns:tools"] = "http://schemas.android.com/tools";
+    }
+    manifest["uses-sdk"] = manifest["uses-sdk"] || [{ $: {} }];
+    const usesSdk = manifest["uses-sdk"][0];
+    usesSdk.$ = usesSdk.$ || {};
+    usesSdk.$["tools:overrideLibrary"] = OVERRIDE_LIBS;
     manifest["uses-permission"] = manifest["uses-permission"] || [];
     for (const name of CAMERA_PERMISSIONS) {
       const has = manifest["uses-permission"].some(
@@ -365,6 +427,8 @@ module.exports.MWDAT_VERSION = MWDAT_VERSION;
 module.exports.MWDAT_ARTIFACTS = MWDAT_ARTIFACTS;
 module.exports.MAVEN_URL = MAVEN_URL;
 module.exports.MARKER = MARKER;
+module.exports.DAT_MIN_SDK = DAT_MIN_SDK;
+module.exports.OVERRIDE_LIBS = OVERRIDE_LIBS;
 module.exports.CAMERA_SERVICE = CAMERA_SERVICE;
 module.exports.CAMERA_FGS_TYPE = CAMERA_FGS_TYPE;
 module.exports.CAMERA_PERMISSIONS = CAMERA_PERMISSIONS;

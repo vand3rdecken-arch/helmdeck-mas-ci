@@ -330,8 +330,74 @@ console.log("AndroidManifest.xml:");
     out.indexOf(P.CAMERA_SERVICE) < out.indexOf("</application>"),
     "the service lands inside <application>"
   );
+  // THE MINSDK OVERRIDE. Both DAT artifacts declare minSdkVersion 29 and this
+  // app is 24, so without this the manifest merger hard-fails the build - which
+  // is exactly how it was found (a real gradle run, 2026-08-21).
+  ok(
+    out.includes("tools:overrideLibrary"),
+    "uses-sdk carries tools:overrideLibrary (else the merger rejects minSdk 24)"
+  );
+  ok(
+    out.includes("com.meta.wearable.dat.core") &&
+      out.includes("com.meta.wearable.dat.camera"),
+    "BOTH mwdat artifacts are overridden - core declares minSdk 29 too, not just camera"
+  );
+  ok(
+    out.includes("xmlns:tools"),
+    "the tools namespace is present (without it the attribute is a silent no-op)"
+  );
+
   const twice = P.patchManifestXml(out);
   ok(twice === out, "IDEMPOTENT: patching an already-patched manifest is a no-op");
+
+  // A manifest that lacks xmlns:tools must GET it, not silently produce a
+  // no-op attribute.
+  const noTools = MANIFEST.replace(
+    ' xmlns:tools="http://schemas.android.com/tools"', ""
+  );
+  const fixed = P.patchManifestXml(noTools);
+  ok(
+    fixed.includes("xmlns:tools") && fixed.includes("tools:overrideLibrary"),
+    "a manifest without xmlns:tools has the namespace added"
+  );
+
+  // An EXISTING uses-sdk must be extended, never duplicated - two <uses-sdk>
+  // elements is itself a merger error.
+  const withUsesSdk = MANIFEST.replace(
+    "<application",
+    '<uses-sdk android:minSdkVersion="24" />\n    <application'
+  );
+  const ext = P.patchManifestXml(withUsesSdk);
+  ok(
+    ext.split("<uses-sdk").length - 1 === 1,
+    "an existing <uses-sdk> is EXTENDED, not duplicated"
+  );
+  ok(
+    ext.includes("tools:overrideLibrary") && ext.includes('android:minSdkVersion="24"'),
+    "extending keeps the original attributes"
+  );
+}
+
+// The Kotlin must actually honour the API floor the override depends on.
+console.log("the runtime guard that makes the override safe:");
+{
+  const dev = fs.readFileSync(
+    path.join(__dirname, "..", "app", "plugins", "metadat", "GlassesDevice.kt"), "utf8");
+  const cam = fs.readFileSync(
+    path.join(__dirname, "..", "app", "plugins", "metadat", "GlassCameraService.kt"), "utf8");
+  ok(dev.includes(`MIN_SDK = ${P.DAT_MIN_SDK}`),
+     `GlassesDevice.MIN_SDK matches the plugin's ${P.DAT_MIN_SDK}`);
+  ok(dev.includes("SDK_INT >= MIN_SDK"), "supported() checks the running API level");
+  ok(dev.includes("if (!supported()) return false"),
+     "ensureInitialized refuses BEFORE referencing Wearables");
+  ok(cam.includes("GlassesDevice.supported()"),
+     "the camera service checks the API floor");
+  // Order matters: the floor check must precede the radio claim, or a refused
+  // old device would still take (and maybe leak) the radio.
+  ok(
+    cam.indexOf("GlassesDevice.supported()") < cam.indexOf("GlassesRadio.acquire"),
+    "the API-floor check comes BEFORE the radio claim"
+  );
 }
 
 // --- the CLI half, against a temp tree -------------------------------------
