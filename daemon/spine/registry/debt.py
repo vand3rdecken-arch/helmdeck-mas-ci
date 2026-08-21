@@ -2235,6 +2235,50 @@ DEBT = [
                "unit suite.",
         "order": 38,
     },
+    {
+        "id": "voice-native-stt",
+        "title": "Voice mode HEARS on web/desktop only - native has no speech-recognition module",
+        "status": "open",
+        "what": "Voice mode (app/src/ui/voice_mode.tsx) ships both halves of a "
+                "spoken turn, but only web/desktop can currently do both. "
+                "SPEAKING works everywhere the daemon reaches: the reply is "
+                "rendered server-side by voice.py and played via expo-audio "
+                "(native) or HTMLAudioElement (web). HEARING is platform work, "
+                "and the intended package - jamsch/expo-speech-recognition - "
+                "HAS NO SDK 57 BUILD: npm `latest` is 56.0.1, the repo's main "
+                "branch still pins expo ~56.0.12, and there is no sdk-57 "
+                "dist-tag, release note or tracking issue (checked "
+                "2026-08-21). Its peerDependencies are wildcards (expo:*, "
+                "react-native:*), so it would INSTALL silently into an SDK 57 "
+                "app and only fail at native build time - which is why it was "
+                "deliberately NOT added as a dependency. On native, "
+                "data/voice.ts caps() therefore reports hear:false and the UI "
+                "opens in speak-only mode.",
+        "why_it_bites": "The owner asked for ChatGPT/Gemini-parity voice mode, "
+                        "and on the phone - the surface that matters most for "
+                        "hands-busy use - half of it is a read-only "
+                        "experience until this resolves. Worse, the gap is "
+                        "invisible from the code: the adapter is written, "
+                        "typed and wired, so a reader sees a complete "
+                        "implementation and only the missing package makes it "
+                        "inert. The capability probe is what keeps that "
+                        "honest at runtime instead of shipping a dead "
+                        "microphone button.",
+        "trigger": "expo-speech-recognition publishes a 57.x; OR the owner "
+                   "asks why the phone will not listen when the desktop does",
+        "fix": "When a 57.x ships: `npx expo install "
+               "expo-speech-recognition`, add its config plugin to app.json "
+               "(microphonePermission + speechRecognitionPermission + "
+               "androidSpeechServicePackages), rebuild the APK - and change "
+               "NOTHING in data/voice.ts, whose lazy require and local "
+               "interface were written against that package's real API for "
+               "exactly this moment. Fallback if it stays dead: the repo "
+               "already owns a native Android SpeechRecognizer service "
+               "(app/plugins/glassvoice/GlassVoiceService.kt, currently "
+               "unstarted) that could be promoted into a small Expo module "
+               "instead of taking a third-party dependency.",
+        "order": 39,
+    },
 ]
 
 def list_debt():
