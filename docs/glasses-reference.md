@@ -1414,6 +1414,38 @@ cannot occur. And the camera captures a **photo**, not a video stream: one frame
 is what a board assistant needs, and sustained video is where every failure in
 Discussion #130 lives.
 
+### 12.8 BOTH product shapes — display and non-display
+
+Owner 2026-08-21: *"Ship for both display and non display version."* The two are
+not "supported vs unsupported"; they are **different surfaces**, and the SDK
+itself draws the line.
+
+`DeviceType` in DAT 0.9.0 (read from the AAR, not guessed) has seven values —
+`UNKNOWN`, `RAYBAN_META`, `OAKLEY_META_HSTN`, `OAKLEY_META_VANGUARD`,
+`META_RAYBAN_DISPLAY`, `RAYBAN_META_OPTICS`, `META_GLASSES` — and both
+`DeviceType` and `Device` expose **`isDisplayCapable()`**. So the split is a
+question we ASK the runtime, never a hardcoded model list that rots the next
+time Meta ships a frame (`app/plugins/metadat/GlassesDevice.kt`).
+
+| Capability | Non-display (Ray-Ban Meta, Oakley, Optics) | Display (Meta Ray-Ban Display) |
+|---|---|---|
+| **Spoken blockers** (`/notify/speak` → phone audio) | ✅ the whole product | ✅ |
+| **Talk to Henry** (glasses mic → `/glance/talk` → spoken reply) | ✅ | ✅ |
+| **Camera photo** (DAT `capturePhoto`) | ✅ *(they all have cameras)* | ✅ |
+| **GLASS MODE lens webapp** (`glasses/`, blocker list, tappable options) | ❌ **no screen exists** | ✅ |
+
+The important consequence, and it reframes the original audio-only card: **three
+of the four capabilities are already device-agnostic.** Audio, mic and camera
+are ordinary Bluetooth and DAT; none of them needs a lens. Only the webapp is
+display-only. So "ship for both" is mostly a matter of *not offering the lens
+surface where there is no lens* — which is what `GlassesDevice.hasLens()` is
+for — rather than a second implementation.
+
+`current()` returns **null** for "cannot know" (SDK absent, nothing paired) and
+that is deliberately distinct from `displayCapable = false`. Treating null as
+"no display" would be the same silent dead end this document keeps recording:
+routing to a surface that is not there and never finding out.
+
 ### 12.6 What a future card should NOT re-buy
 
 - Do not check the Releases/Tags page for the DAT version — it is empty by

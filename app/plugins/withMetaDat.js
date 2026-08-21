@@ -151,6 +151,13 @@ const CAMERA_PERMISSIONS = [
 const KOTLIN_FILES = [
   ["metadat/GlassCameraService.kt",
    ["app", "src", "main", "java", "app", "helmdeck", "glasses", "GlassCameraService.kt"]],
+  // Which glasses are attached and whether they have a LENS. Ships with the
+  // camera plugin rather than the voice one because it needs DAT classes
+  // (Wearables/Device) that only exist once mwdat-core is on the classpath -
+  // putting it with the voice plugin would make the mic build depend on the
+  // camera SDK, which is exactly backwards.
+  ["metadat/GlassesDevice.kt",
+   ["app", "src", "main", "java", "app", "helmdeck", "glasses", "GlassesDevice.kt"]],
 ];
 // NB GlassesRadio.kt is installed by withGlassVoice.js, not here - one owner
 // per file. This plugin only consumes it.
