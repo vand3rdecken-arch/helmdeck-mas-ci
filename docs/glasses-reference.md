@@ -1506,6 +1506,51 @@ GitHub Packages repository, the `gh` OAuth token, and the 0.9.0 dependency pins.
 The artifacts resolved, downloaded and transformed on the first run — §12.1b's
 credential finding is now proven by a build, not just by an HTTP 200.
 
+### 12.10 THE APK EXISTS — verified, and what it is NOT
+
+`assembleRelease` → **BUILD SUCCESSFUL**, `app-release.apk`, 162 MB, zero
+warnings. Verified against the ARTIFACT rather than trusting the green build,
+which is DEPLOY.md §2's explicit rule:
+
+| Check | Result |
+|---|---|
+| `minSdkVersion` | **24** — the `overrideLibrary` worked; no Android 7/8/9 user is dropped |
+| `GlassVoiceService` in merged manifest | ✅ FGS type `0x80` = `microphone` |
+| `GlassCameraService` in merged manifest | ✅ FGS type `0x10` = `connectedDevice` |
+| DAT classes linked into the dex | ✅ `Wearables`, `Camera`, `Stream`, **`SessionCameraExtensionsKt`** |
+| Our classes in the dex | ✅ `GlassCameraService`, `GlassesDevice`, `GlassesRadio` |
+| Signature | v2/v3 (no v1 block — normal for a modern build) |
+
+`SessionCameraExtensionsKt` being present matters specifically: it is the class
+that carries the `addCamera`/`removeCamera` **extension functions**, so its
+presence proves the extension imports resolved and linked, which was the single
+most likely compile failure predicted for this code.
+
+⚠ **This is a BUILD-VERIFICATION artifact, not a shippable one**, and the reason
+is the trap DEPLOY.md §2 already documents — walked into deliberately-but-not,
+and caught only because that section says to verify:
+
+```
+APK:      versionCode 44 / versionName 1.0.8
+app.json: version 1.0.11 / versionCode 50
+```
+
+Running `gradlew assembleRelease` **by hand skips `build_apk.sh`'s version-sync
+step**, so the APK carries whatever the hand-managed `android/app/build.gradle`
+last held. That is exactly the documented incident where a 52-minute build
+produced a stale-stamped APK. A wrong stamp is not cosmetic: `runtimeVersion`
+is derived from the version, so a mis-stamped APK either rejects the matching
+OTA bundle or accepts one it should not.
+
+**So the shippable APK still comes from the accept path**, which bumps the
+version, syncs all three places, smoke-tests on the emulator and distributes —
+none of which a hand-run gradle does. What this build proves is narrower and
+was the point: **the code compiles, links, and lands in the artifact.**
+
+Still true, and not changed by a green build: `/glance/photo` does not exist on
+the daemon, nothing in `app/src` starts either service, and none of this has
+run on actual glasses.
+
 ### 12.6 What a future card should NOT re-buy
 
 - Do not check the Releases/Tags page for the DAT version — it is empty by
