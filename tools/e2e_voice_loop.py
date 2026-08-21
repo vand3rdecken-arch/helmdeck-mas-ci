@@ -66,10 +66,22 @@ class FakeAudio {
 window.Audio = FakeAudio;
 """
 
+# The mirror image of STUBS: a runtime with NO speech API at all. That is what
+# Firefox, Brave and Chrome-on-iOS actually are, and what an OTA bundle landing
+# on an APK older than the speech module actually is. Both must degrade to plain
+# text rather than to a microphone button that cannot work.
+NO_EAR = """
+Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined });
+Object.defineProperty(window, 'SpeechRecognition', { value: undefined });
+"""
+
 fails = []
+total = 0
 
 
 def check(cond, msg):
+    global total
+    total += 1
     print(("  PASS  " if cond else "  FAIL  ") + msg)
     if not cond:
         fails.append(msg)
@@ -133,9 +145,33 @@ with sync_playwright() as p:
           "recognition was aborted on close (mic not left open)")
 
     ctx.close()
+
+    print("7. a runtime with NO ear offers no microphone at all")
+    # The honest-degradation half. voiceUsable() requires HEARING, because every
+    # orb state routes through startListening — a speak-only voice mode is a
+    # screen with no way in. A fresh context (same build, no speech API) must
+    # therefore show a composer with no voice button, and must still be a
+    # working text chat rather than a crash or an empty screen.
+    deaf = b.new_context(viewport={"width": 430, "height": 932})
+    deaf.add_init_script(NO_EAR)
+    dp = deaf.new_page()
+    dp.goto(base + "/", wait_until="domcontentloaded")
+    dp.evaluate("localStorage.setItem('helmdeck.demo','1')")
+    dp.goto(base + "/chat", wait_until="domcontentloaded")
+    dp.wait_for_timeout(6000)
+    check(dp.evaluate("window.SpeechRecognition === undefined "
+                      "&& window.webkitSpeechRecognition === undefined"),
+          "the deaf runtime really has no speech API (the premise holds)")
+    mic = dp.get_by_label("Sprachmodus", exact=True).or_(
+        dp.get_by_label("Voice mode", exact=True))
+    check(mic.count() == 0, "no microphone button is offered without an ear")
+    composer = dp.get_by_placeholder("Frage…").or_(dp.get_by_placeholder("Question…"))
+    check(composer.count() > 0, "the text composer is untouched — it degrades, it does not break")
+    deaf.close()
+
     b.close()
 
-print("\n%d/%d checks passed" % (6 + 2 - len(fails), 8))
+print("\n%d/%d checks passed" % (total - len(fails), total))
 if fails:
     print("FAILED:")
     for f in fails:

@@ -425,8 +425,14 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
 }
 
 /** Whether this runtime can do voice at all — the composer hides its microphone
- *  rather than offering a button that cannot work. */
+ *  rather than offering a button that cannot work.
+ *
+ *  HEARING is the requirement, not speaking. A voice mode that can only speak is
+ *  a screen with no way IN: the orb's every state routes through startListening,
+ *  so without a recogniser the tap does nothing and the owner is left poking a
+ *  pretty circle. Speaking without hearing already has a home — it is what the
+ *  text chat does when it plays back an answer. So: no ear, no microphone button,
+ *  and the composer is unchanged rather than lying. */
 export function voiceUsable() {
-  const c = caps();
-  return c.speak || c.hear;
+  return caps().hear;
 }
