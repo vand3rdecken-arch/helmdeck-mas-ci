@@ -47,7 +47,11 @@ building**, don't trust this page as current on the platform side.
   table for lens, phone, watch, desktop and WhatsApp. It records two measured
   facts this document did not have: `GlassVoiceService.kt` is never started by
   anything, and it drops the `question` half of `/glance/talk` — so the ear-only
-  flow is a dead end today.
+  flow is a dead end today. Its §7 also answers "can HelmDeck have a ChatGPT-
+  /Gemini-style voice mode": the UI (full-screen orb, state animation, barge-in
+  gesture) is copyable on today's turn-based architecture, but the *feel*
+  (continuous, sub-400ms, server-VAD interruption) is not — those products run
+  native audio-in/audio-out models, and Anthropic has no public equivalent.
 
 ---
 

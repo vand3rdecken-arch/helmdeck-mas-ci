@@ -2,7 +2,7 @@
 
 **STATUS: ENTWURF ZUR FREIGABE.** Kein Code in diesem Kartenlauf. Dieses
 Dokument soll entschieden werden, *bevor* plattformspezifisch gebaut wird — die
-offenen Entscheidungen stehen in §7.
+offenen Entscheidungen stehen in §8.
 
 **Stand:** 2026-08-21. Alles unter „verifiziert" ist in diesem Worktree gelesen
 (Datei:Zeile) oder aus einer Primärquelle belegt (URL). Alles andere ist als
@@ -79,7 +79,7 @@ Drei Befunde daraus, die den Bau steuern:
 |---|---|
 | Henrys **Prosa** (max. 2 Sätze) | der ```actions```-Block — Maschinensyntax, unhörbar (`routes_copilot.py:51`) |
 | Eine **Zahl** bei proaktiven Meldungen: „3 new cards need you." | Kartentitel, Kundennamen, Pfade in proaktiven Meldungen |
-| Bei Bedarf: die **Optionen** (Entscheidung §7.2) | Code, Stacktraces, Gate-Reports (`glasses-reference.md` §4.4) |
+| Bei Bedarf: die **Optionen** (Entscheidung §8.3) | Code, Stacktraces, Gate-Reports (`glasses-reference.md` §4.4) |
 | | Transkripte — b64-Audio im Relay ist ~33 % größer (`voice.py:143`) |
 
 Die Zahl-statt-Name-Regel ist keine Stilfrage, sondern **glance-safe by
@@ -125,7 +125,7 @@ Kartentitel, `voice.py:37-41`).
 
 Geräte-TTS *wäre* auf Telefon, Watch und Desktop verfügbar (§5) — als
 **Offline-Rückfall**, nicht als Standard. Das ist eine Owner-Entscheidung
-(§7.3), weil es eine zweite Stimme und einen zweiten Ort für das Register
+(§8.4), weil es eine zweite Stimme und einen zweiten Ort für das Register
 bedeutet.
 
 ⚠ **Risiko, das benannt gehört: edge-tts ist unsanktioniert.** Es ist gepflegt
@@ -176,7 +176,7 @@ Daemon liefert die Optionen mit, der Client wirft sie weg. Ein Owner, der nicht
 hinschaut, bekommt also eine Antwort und keinen Weg weiter: exakt die
 Sackgasse, die §4.1 verbietet.
 
-**Das ist die eine Design-Entscheidung, die dieses Dokument braucht** (§7.2).
+**Das ist die eine Design-Entscheidung, die dieses Dokument braucht** (§8.3).
 Drei Möglichkeiten, keine davon gratis:
 
 | Variante | Wie | Kosten |
@@ -269,23 +269,114 @@ zeichnet nie ein Pixel auf die Brille.
 
 ---
 
-## 7. Offene Entscheidungen — das, was hier freigegeben werden muss
+## 7. „Gleicher Voice Mode wie ChatGPT/Gemini" — was das wirklich heißt
 
-1. **Reihenfolge** — ist §6 die richtige, oder soll Telefon-Sprache (Henry
+Owner-Anfrage 2026-08-21: gleiches Voice-Mode-**UI** wie ChatGPT und Gemini.
+Recherchiert (Primärquellen der Anbieter, nicht geraten). Ergebnis vorweg: **die
+Oberfläche ist kopierbar, das Gefühl dahinter nicht** — und das ist keine
+Bauqualitätsfrage, sondern eine Architekturfrage, die sich nicht wegarbeiten
+lässt, ohne den Modell-Anbieter zu wechseln.
+
+### 7.1 Was ChatGPT und Gemini auf dem Schirm zeigen
+
+| | ChatGPT Advanced Voice Mode | Gemini Live |
+|---|---|---|
+| Visuell | animierte Sphäre („blue orb"), pulsiert je Zustand (hört zu/denkt/spricht) | Wellenform/Blob, Vollbild |
+| Einstieg | Mikro-Icon im Composer | Wellenform-Icon, eigene Vollbild-Ansicht |
+| Layout | zwei Varianten im Feld: eingebettet im Chat (Standard) **oder** Vollbild-Orb („Separate Mode") | durchgehend Vollbild, mit Kamera-/Screenshare-Buttons |
+| Transkript | eingebettet: Chat-Bubbles wie im Text-Chat; Vollbild-Orb: kein Text | eigener „Live Captions"-Umschalter, **standardmäßig aus**, Overlay-Box |
+| Stopp | End-Call/X | End-Control oder Wisch-Geste |
+| Unterbrechen (Barge-in) | einfach reinsprechen; neuere „Full-Duplex"-Modelle hören und sprechen gleichzeitig | „du kannst Gemini jederzeit unterbrechen" |
+| Modus | Standard: durchgehend/freihändig; Push-to-Talk als Option in den Einstellungen (gegen Fehl-Unterbrechungen) | durchgehend, solange die Live-Session offen ist; kein Push-to-Talk im Consumer-Client |
+
+Quellen: openai.com/index/introducing-gpt-live, support.google.com/gemini/answer/15274899,
+ai.google.dev/gemini-api/docs/live-api/capabilities.
+
+**Das UI-Rezept daraus ist klar umsetzbar** und unabhängig vom Modell-Anbieter:
+Vollbild-Übernahme mit einer animierten, zustandsgetriebenen Form (hören/
+denken/sprechen), Transkript standardmäßig **aus** und als Toggle nachrüstbar,
+ein einziger großer Stopp-Kontrolle. Nichts davon braucht eine bestimmte
+Backend-Architektur — es ist reines UI, das HelmDecks Telefon-App heute nicht
+hat (§2: keine Audio-Abhängigkeit im Baum).
+
+### 7.2 Was darunter läuft — und warum es nicht kopierbar ist
+
+Beide Produkte sind **echte Sprache-zu-Sprache-Modelle**: Audio rein, Audio
+raus, ohne Text als Zwischenschritt (OpenAI: *„process 24kHz PCM audio
+directly into continuous latent representations"*, openai.com/index/
+introducing-gpt-realtime; Google führt für `gemini-2.5-flash-preview-
+native-audio-dialog` dieselbe Architektur). Das ist der Grund für zwei Dinge,
+die das Erlebnis ausmachen:
+
+- **Latenz ~232–320 ms** (OpenAI-eigene Zahl, vergleichbar mit menschlicher
+  Gesprächspause). Kein Wert für Gemini verifiziert, aber dieselbe Klasse.
+- **Server-seitiges Barge-in ohne Zwischenschritt**: Voice-Activity-Detection
+  im selben Modellprozess erkennt Sprache und **bricht die laufende Antwort
+  serverseitig ab** (OpenAI Realtime API: `speech_started`/`speech_stopped`-
+  Events, automatische Abbruch-Truncation; Gemini Live API:
+  `automatic_activity_detection`, `START_OF_ACTIVITY` verwirft die laufende
+  Antwort). Transport ist WebRTC oder ein durchgehender WebSocket
+  (`BidiGenerateContent`), nicht Request/Response.
+
+**Anthropic hat kein Äquivalent — verifiziert, nicht angenommen.** Es gibt
+keine öffentliche Claude-Realtime- oder Live-API mit Audio-in/Audio-out. Claudes
+eigener Voice Mode (Web/Mobile, Claude Code `/voice`) ist selbst eine
+**STT → Text-Claude → externe TTS**-Kette (ElevenLabs berichtet), turnbasiert,
+kein natives Audiomodell.
+
+**Das ist genau die Kette, die HelmDeck heute schon fährt** —
+`voice.render()` ist bereits „Text → TTS-Datei", `/glance/talk` und `/chat` sind
+bereits Request/Response, nicht Stream. §4.5.2 dieses Dokuments hat „kein
+Barge-in" nicht aus Bequemlichkeit festgelegt, sondern weil es die einzige
+Form ist, die eine Text-API wie Claudes überhaupt hergibt, ohne HFP/A2DP
+zusätzlich zu verletzen (§4.5.1).
+
+### 7.3 Was tatsächlich erreichbar ist — drei Stufen, keine davon „wie ChatGPT"
+
+| Stufe | Was | Latenzklasse | Aufwand |
+|---|---|---|---|
+| **1 — UI-Parität (empfohlen als Ziel)** | Vollbild-Orb/Wellenform, Zustandsanimation, Transkript-Toggle, ein Stopp-Button — auf der HEUTIGEN Turn-Architektur (`/chat {voice:true}`, §6 Karte 3) | unverändert: ein Server-Turn pro Runde (Sekunden, nicht Millisekunden) | klein — reines RN-UI, keine neue Infrastruktur |
+| **2 — Schnellere Pipeline** | Streaming-STT (erkennt während des Sprechens) + Streaming-TTS (spricht bevor der ganze Text fertig ist) + eigene VAD, um TTS bei Sprachbeginn abzubrechen | ~500 ms – 1,5 s, je nach STT/TTS-Anbieter | groß — neuer Transport (WebSocket statt REST), Streaming-fähiges TTS statt edge-tts (das rendert komplette Dateien, nicht Chunks), eigene Unterbrechungslogik |
+| **3 — echtes Voice Mode wie ChatGPT/Gemini** | OpenAI- oder Gemini-Realtime-Modell übernimmt die Audio-Ebene, Claude bleibt nur für Text-Reasoning/Function-Calling im Hintergrund verdrahtet | ~300 ms, nativ | am größten — **zweiter KI-Anbieter im Stack**, eigenes Vertrags-/Kostenmodell, eigene Latenz-/Ausfall-Abhängigkeit von einem Nicht-Anthropic-Dienst |
+
+**Empfehlung: Stufe 1.** Sie liefert genau das, was „gleiches UI" wörtlich
+verlangt, ohne eine der bestehenden Architekturentscheidungen zu brechen
+(server-gerenderte Sprache, ein Anbieter, ein Transport). Stufe 3 ist keine
+Bau-Entscheidung mehr, sondern eine Produktentscheidung — HelmDeck würde für
+die Audio-Hälfte einen zweiten Modell-Anbieter neben Claude einführen, mit
+allem, was das an Kosten- und Abhängigkeitsfläche bedeutet. Das gehört, wenn
+gewollt, in eine eigene Karte, nicht in diese.
+
+**Für RN/Expo konkret, falls Stufe 2 oder 3 je gebaut werden**: `react-native-
+webrtc` ist der belegte Weg für WebRTC-Transport (Opus-Codec, eingebautes
+Jitter-Handling) gegenüber handgerolltem WebSocket-Audio-Chunking. Ein
+Referenz-Repo existiert (`thorwebdev/expo-webrtc-openai-realtime`, 145 Stars,
+Demo-Qualität, nicht gepflegte SDK) — als Leseprobe brauchbar, nicht als
+Abhängigkeit.
+
+---
+
+## 8. Offene Entscheidungen — das, was hier freigegeben werden muss
+
+1. **Ambitionsstufe** (§7.3) — Stufe 1 (UI-Parität auf heutiger Architektur),
+   Stufe 2 (schnellere eigene Pipeline) oder Stufe 3 (zweiter KI-Anbieter für
+   die Audio-Ebene)? *Empfehlung: Stufe 1 jetzt, Stufe 2/3 nur mit eigenem
+   Auftrag.*
+2. **Reihenfolge** — ist §6 die richtige, oder soll Telefon-Sprache (Henry
    voice-first) vor die Brille?
-2. **Rückfrage im Ohr-Flow** — B1 (Optionen vorlesen, max. 3) oder B2 (Prosa
+3. **Rückfrage im Ohr-Flow** — B1 (Optionen vorlesen, max. 3) oder B2 (Prosa
    ins Ohr, Optionen auf die Linse)? *Empfehlung: B2, mit B1 als Nachrüstung,
    sobald eine Oberfläche ohne Display spricht.*
-3. **Geräte-TTS als Offline-Rückfall** ja/nein — zweite Stimme und zweiter Ort
+4. **Geräte-TTS als Offline-Rückfall** ja/nein — zweite Stimme und zweiter Ort
    fürs Register, dafür Sprache ohne Netz. *Empfehlung: nein, Text-Rückfall
    genügt.*
-4. **edge-tts-Risiko** — so lassen (kostenlos, fällt weich aus) oder Azure AI
+5. **edge-tts-Risiko** — so lassen (kostenlos, fällt weich aus) oder Azure AI
    Speech als vertragliche Reserve einplanen? *Empfehlung: so lassen, Risiko
    notiert.*
 
 ---
 
-## 8. Nicht verifiziert — Risiken, die ein Bau erst schließt
+## 9. Nicht verifiziert — Risiken, die ein Bau erst schließt
 
 1. Ob Apples 1-Minuten- und Tageslimits **auch on-device** gelten. Apple
    schränkt die Aussage nirgends ein — **nicht dagegen designen**.
@@ -303,10 +394,14 @@ zeichnet nie ein Pixel auf die Brille.
 7. `GlassVoiceService` ist `exported=false` und war **nie auf einem Gerät** —
    die gesamte Mikro-Route ist konstruktiv verteidigt, nicht getestet
    (`:104-108`).
+8. **Kein Claude-Realtime-Äquivalent geprüft über einen einzelnen Recherchelauf
+   hinaus** (§7.2) — Anthropic bewegt sich in diesem Themenfeld selbst schnell
+   (eigener Voice Mode erst Juli 2026 aktualisiert); vor einer Stufe-3-Karte
+   erneut prüfen, ob sich das geändert hat.
 
 ---
 
-## 9. Provenance
+## 10. Provenance
 
 Aus erster Hand in diesem Worktree gelesen: `daemon/spine/media/voice.py`,
 `daemon/spine/http/routes/routes_glance.py`,
@@ -319,6 +414,14 @@ Befunde, dass nichts den Voice-Service startet und dass er `question` verwirft.
 Plattformregeln in §5 stammen aus Primärquellen (developer.apple.com,
 developer.android.com, docs.expo.dev, MDN, electron#46143, AOSP-Javadoc) und
 sind mit Datum belegt; alles, was dort nicht bestätigt werden konnte, steht in
-§8 statt in §5. Meta bewegt sich schnell (`glasses-reference.md` §9) — die
+§9 statt in §5. Meta bewegt sich schnell (`glasses-reference.md` §9) — die
 Linsen-Zeile ist gegen die gemessenen On-Device-Befunde von 2026-07 belegt,
 nicht gegen aktuelle Meta-Dokumentation.
+
+§7 (ChatGPT/Gemini) stammt aus Primärquellen der Anbieter: openai.com/index/
+introducing-gpt-realtime, developers.openai.com/api/docs/guides/realtime-
+conversations, ai.google.dev/gemini-api/docs/live-api/{capabilities,
+get-started-websocket}, support.google.com/gemini/answer/15274899. Der Befund
+„kein Claude-Realtime-Äquivalent" ist eine Abwesenheitsprüfung (keine
+öffentliche API gefunden), keine Anthropic-eigene Aussage — siehe Punkt 8
+oben.
