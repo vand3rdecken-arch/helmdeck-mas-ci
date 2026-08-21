@@ -300,6 +300,14 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   if (path === "/me") return ME;
   if (path === "/dashboard/data") return metrics();
   if (path === "/models") return [{ id: "claude-opus-4-8", label: "Opus 4.8" }];
+  if (path === "/escalations") return [
+    { id: "aborted-by-restart-1", ts: "2026-08-21T04:19:07", kind: "aborted-by-restart",
+      card: "20260816-193639-proc-20260816-s3", detail: "apk build (npm ci + gradle)",
+      attempts: 1, closed: true, action: "rerun_deploy", why: "Deploy starb mit dem Daemon-Neustart" },
+    { id: "conflict-unresolved-2", ts: "2026-08-21T04:05:05", kind: "conflict-unresolved",
+      card: "20260816-193639-proc-20260816-s3", detail: "tests/test_driver_session.py",
+      attempts: 1, closed: false },
+  ];
   if (path === "/chat/history") {
     return { messages: chatLog.map((c) => ({ cls: c.cls, ts: c.ts, text: c.textKey ? t(c.textKey) : (c.text ?? "") })),
              session_id: "demo",
