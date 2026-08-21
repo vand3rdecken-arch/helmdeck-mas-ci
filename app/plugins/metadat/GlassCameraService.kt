@@ -76,6 +76,16 @@ class GlassCameraService : Service() {
         const val ACTION_CAPTURE = "app.helmdeck.glasses.CAPTURE"
         const val ACTION_STOP = "app.helmdeck.glasses.CAMERA_STOP"
 
+        /**
+         * WHICH CARD the frame belongs to. Required, not optional, and not
+         * defaulted - POST /glance/photo refuses without it on purpose. The
+         * tempting default ("attach it to whatever the owner is focused on")
+         * is a heuristic, and silently attaching a photo of the owner's room
+         * to the WRONG card cannot be undone, whereas a refusal can. The
+         * caller knows which card is on the lens; it says so.
+         */
+        const val EXTRA_CARD = "card"
+
         /** Shared with the voice service - written by the RN app at pairing. */
         const val PREFS = "helmdeck_glass_voice"
         const val KEY_BASE = "base_url"
@@ -116,7 +126,18 @@ class GlassCameraService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { teardown(); stopSelf() }
-            else -> scope.launch { capture() }
+            else -> {
+                val card = intent?.getStringExtra(EXTRA_CARD).orEmpty()
+                if (card.isBlank()) {
+                    // Refuse BEFORE opening the camera. Capturing a frame we
+                    // already know we cannot deliver would photograph the
+                    // owner's surroundings for nothing.
+                    say("Keine Karte angegeben")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                scope.launch { capture(card) }
+            }
         }
         // NOT sticky, unlike the voice service: a photo is a one-shot the owner
         // asked for. Silently re-running a capture after the OS restarts this
@@ -158,7 +179,7 @@ class GlassCameraService : Service() {
 
     // ---- the capture ------------------------------------------------------
 
-    private suspend fun capture() {
+    private suspend fun capture(card: String) {
         // API FLOOR FIRST, before even the radio: DAT needs API 29 and the
         // manifest merger is overridden to allow this app's minSdk 24 (see
         // GlassesDevice.MIN_SDK). Touching any com.meta.wearable class below 29
@@ -232,7 +253,7 @@ class GlassCameraService : Service() {
                 return
             }
             say("Senden…")
-            post(jpeg)
+            post(jpeg, card)
         } catch (t: Throwable) {
             Log.w(TAG, "capture: ${t.javaClass.simpleName}: ${t.message}")
             fail(t.javaClass.simpleName)
@@ -309,12 +330,17 @@ class GlassCameraService : Service() {
      * both capabilities at once and there is one credential, not two (§11.1:
      * one device, one glance_token - do NOT re-add a ticket registry).
      *
-     * ⚠ The daemon endpoint this targets does NOT exist yet. It is named here
-     * so the contract is explicit and reviewable; wiring it is the daemon half
-     * of this feature and belongs in the card that can build and test both
-     * ends together.
+     * The endpoint is `POST /glance/photo` (routes_glance.glance_photo), which
+     * attaches the frame to the named CARD via the same cardadmin path the
+     * phone's attachment picker uses - so a glasses capture and a phone upload
+     * land in exactly one place, not two that can drift.
+     *
+     * It is gated by its own `settings.glance_photo`, default OFF: reading the
+     * board, spending quota and pointing a head-worn CAMERA at a room are three
+     * different things to consent to. A 403 here means that switch is off and
+     * says so, rather than looking like a network fault.
      */
-    private fun post(jpeg: ByteArray) {
+    private fun post(jpeg: ByteArray, card: String) {
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val base = prefs.getString(KEY_BASE, "").orEmpty().trimEnd('/')
         val token = prefs.getString(KEY_TOKEN, "").orEmpty()
@@ -334,12 +360,20 @@ class GlassCameraService : Service() {
             }
             val body = org.json.JSONObject()
                 .put("token", token)
+                .put("id", card)
                 .put("mime", "image/jpeg")
                 .put("b64", b64)
                 .toString()
             c.outputStream.use { it.write(body.toByteArray()) }
             val code = c.responseCode
-            say(if (code in 200..299) "Gesendet" else "Fehler $code")
+            // Name the two refusals that are CONFIGURATION rather than faults,
+            // because on a head-worn surface "Fehler 403" is a dead end.
+            say(when {
+                code in 200..299 -> "Gesendet"
+                code == 403 -> "Foto-Freigabe aus (glance_photo)"
+                code == 409 -> "Karte nicht gefunden"
+                else -> "Fehler $code"
+            })
         }
     }
 
