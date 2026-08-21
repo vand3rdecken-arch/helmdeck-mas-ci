@@ -60,6 +60,61 @@ _persist = {}            # user -> {"p": Popen, "key": (model, pmode)}
 _persist_lock = threading.Lock()
 
 
+_turn_locks = {}
+
+
+def _turn_lock(user):
+    """One turn at a time per user on the shared warm process - a prewarm
+    draining events while a real turn writes would interleave two pumps."""
+    with _persist_lock:
+        return _turn_locks.setdefault(user, threading.Lock())
+
+
+def prewarm(user):
+    """Fire-and-forget: spawn the user's warm chat process AND run a hidden
+    warmup turn on it. Called when voice mode OPENS (the greeting fetch),
+    so the two slow parts - node boot and the prompt-cache prefill of a big
+    resumed session (128k measured 2026-08-21 = the '20s first turn') -
+    happen while the owner is still hearing the greeting and speaking the
+    question. The warmup lands in the session history but never in the chat
+    UI (copilot_log carries only real turns)."""
+    def _go():
+        try:
+            from daemon.spine.agent import drivers, turnopts
+            from daemon.spine.storage import events
+            from daemon.spine.registry import harness
+            if not drivers.argv_form_safe(CLAUDE):
+                return
+            vm = events.settings().get("voice_model")
+            model = (vm if vm is not None else "haiku") or ""
+            cli_model, _ = turnopts.resolve_model(model or "auto", "", False)
+            base = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
+            lock = _turn_lock(user)
+            if not lock.acquire(blocking=False):
+                return                      # a real turn is running - already warm
+            try:
+                p, fresh = _persist_get(user, cli_model, _sessions().get(user), base)
+                if not fresh:
+                    return                  # already warm AND cached
+                p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
+                              "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
+                p.stdin.flush()
+                t0 = time.time()
+                for line in p.stdout:
+                    if time.time() - t0 > 120:
+                        break
+                    try:
+                        if json.loads(line.strip() or "{}").get("type") == "result":
+                            break
+                    except ValueError:
+                        continue
+            finally:
+                lock.release()
+        except Exception:
+            pass
+    threading.Thread(target=_go, daemon=True).start()
+
+
 def _persist_drop(user):
     """Kill + forget the user's warm process. Next turn respawns with
     --resume, so nothing is lost but the warmth."""
@@ -696,27 +751,34 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # drivers._real_claude_exe).
     from daemon.spine.agent import drivers
     _cancelled.discard(user)
+    # serialize with prewarm (and any concurrent send) on the shared process
+    _lk = _turn_lock(user)
+    _lk.acquire()
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
     # reuse the warm stream-json process - the 8-12s spawn is paid once, not
     # per turn (voice-speed decree). The cmd.exe-degraded box keeps the old
     # one-shot spawn; its problem is quoting, not latency.
     persistable = drivers.argv_form_safe(CLAUDE)
-    if persistable:
-        # base brief only at spawn (constant); per-turn overlays (VOICE_STYLE
-        # et al) ride inside the turn text so voice<->typed does not respawn.
-        base_system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
-        p, _fresh = _persist_get(user, cli_model, sid, base_system)
-        prompt = (extra_system + "\n\n" + turn) if extra_system else turn
-    else:
-        argv, _role = build_argv(cli_model, sid, system)
-        prompt = system + "\n\n" + turn
-        # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
-        # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
-        # stderr -> DEVNULL: we read stdout line-by-line (the pump), so an undrained
-        # stderr pipe could fill and DEADLOCK the process mid-turn.
-        p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             text=True, encoding="utf-8", errors="replace")
+    try:
+        if persistable:
+            # base brief only at spawn (constant); per-turn overlays (VOICE_STYLE
+            # et al) ride inside the turn text so voice<->typed does not respawn.
+            base_system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
+            p, _fresh = _persist_get(user, cli_model, sid, base_system)
+            prompt = (extra_system + "\n\n" + turn) if extra_system else turn
+        else:
+            argv, _role = build_argv(cli_model, sid, system)
+            prompt = system + "\n\n" + turn
+            # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
+            # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
+            # stderr -> DEVNULL: we read stdout line-by-line (the pump), so an undrained
+            # stderr pipe could fill and DEADLOCK the process mid-turn.
+            p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, encoding="utf-8", errors="replace")
+    except Exception:
+        _lk.release()      # a failed spawn must not deadlock every later turn
+        raise
     _running[user] = p
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     resume_echo, ctx_first = False, {}
@@ -818,6 +880,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # a cancelled or dead process must not be reused - next turn
             # respawns via --resume and loses nothing but the warmth
             _persist_drop(user)
+        _lk.release()
         if voice_stream:
             # Flush BEFORE the live file is cleared: the last sentence of a reply
             # usually has no trailing whitespace, so the turn ending is the only

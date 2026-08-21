@@ -352,7 +352,16 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     if (ability.hear) {
       (async () => {
         try {
-          if (!greetCache) greetCache = (await api.speak(tr("voice.greeting"))).clip;
+          // ALWAYS fire the request - the daemon uses it as the "voice mode
+          // is opening" signal to prewarm the chat process (spawn + cache
+          // prefill), which is what makes the FIRST question fast. The
+          // cached clip still plays instantly; the response just refreshes it.
+          const req = api.speak(tr("voice.greeting"));
+          if (greetCache) {
+            req.then((r) => { if (r.clip) greetCache = r.clip; }).catch(() => {});
+          } else {
+            greetCache = (await req).clip;
+          }
           if (greetCache && alive.current) await speak(greetCache);
         } catch { /* greeting is decor, never a blocker */ }
         if (alive.current) startListening();

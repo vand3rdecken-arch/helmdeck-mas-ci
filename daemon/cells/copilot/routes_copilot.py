@@ -129,6 +129,14 @@ def notify_speak_post(self, user, body):
     text = (body.get("text") or "").strip()[:300]
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
+    # Opening voice mode fetches the greeting through THIS route - use the
+    # signal: prewarm the chat process (spawn + hidden cache-prefill turn) in
+    # the background NOW, so the first real question hits a warm process
+    # instead of paying node boot + a 128k resume prefill (~20s measured).
+    # Harmless on the other caller (push read-aloud): worst case the chat is
+    # warm for nothing.
+    from daemon.cells.copilot import copilot
+    copilot.prewarm(user["name"])
     from daemon.spine.media import voice
     return self._send(200, json.dumps({"clip": voice.render_b64(text)}))
 
