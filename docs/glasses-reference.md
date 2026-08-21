@@ -41,6 +41,13 @@ building**, don't trust this page as current on the platform side.
 - **GLASS MODE is the live direction**: the lens shows what is blocked and the
   owner *decides* on it by tapping options the worker offered. No companion app,
   no SDK, no PAT. → §11.
+- **Voice is now designed per platform, not only for the lens**:
+  `docs/voice-interaction-design.md` (DRAFT, awaiting owner sign-off) carries the
+  read-aloud format, the follow-up-question flows and the per-SDK allow/forbid
+  table for lens, phone, watch, desktop and WhatsApp. It records two measured
+  facts this document did not have: `GlassVoiceService.kt` is never started by
+  anything, and it drops the `question` half of `/glance/talk` — so the ear-only
+  flow is a dead end today.
 
 ---
 
