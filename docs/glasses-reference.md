@@ -41,6 +41,17 @@ building**, don't trust this page as current on the platform side.
 - **GLASS MODE is the live direction**: the lens shows what is blocked and the
   owner *decides* on it by tapping options the worker offered. No companion app,
   no SDK, no PAT. → §11.
+- **Voice is now designed per platform, not only for the lens**:
+  `docs/voice-interaction-design.md` (DRAFT, awaiting owner sign-off) carries the
+  read-aloud format, the follow-up-question flows and the per-SDK allow/forbid
+  table for lens, phone, watch, desktop and WhatsApp. It records two measured
+  facts this document did not have: `GlassVoiceService.kt` is never started by
+  anything, and it drops the `question` half of `/glance/talk` — so the ear-only
+  flow is a dead end today. Its §7 also answers "can HelmDeck have a ChatGPT-
+  /Gemini-style voice mode": the UI (full-screen orb, state animation, barge-in
+  gesture) is copyable on today's turn-based architecture, but the *feel*
+  (continuous, sub-400ms, server-VAD interruption) is not — those products run
+  native audio-in/audio-out models, and Anthropic has no public equivalent.
 
 ---
 
@@ -189,7 +200,7 @@ reached independently (no idle timers; refresh on foreground + navigation).
 | **No German TTS voice on the device** | `apps/navigation/findings.md:3-16` (2026-07-16): a `de-DE` Web Speech attempt was silent — *"The glasses very likely have no German TTS voice installed"*. Switched to `en-US`. | Never depend on a device voice, least of all a German one. |
 | **Raw `<video>` never reaches the lens** | `verdict.md:19-21` — hardware overlay not composited; *"aber ich sehe nix"*. Canvas-mirror workaround shipped and confirmed. | If you ever render video, mirror frames to a 2D canvas. |
 | **Sensors** | `verdict.md:22-24`, on-device: compass YES, tilt YES, devicemotion YES, **GPS NO**, ambient light NO. | GPS on the lens needs the phone. |
-| **HFP and A2DP are mutually exclusive** | `android-dat-research.md:24-26`: *"while the mic is on, ALL glasses audio output drops to telephone quality"*; mic is 8 kHz mono HFP only, *"no wideband path exists"*. | Listening degrades speaking. Decisive for §4. |
+| **HFP and A2DP are mutually exclusive** | `android-dat-research.md:24-26`: *"while the mic is on, ALL glasses audio output drops to telephone quality"*; mic is 8 kHz mono HFP only, *"no wideband path exists"*. | ⚠ **SCOPE CORRECTED 2026-08-21 — this was being read far more broadly than it says.** It is about the **glasses' microphone over Bluetooth Classic**, not about "listening" in general. AOSP names the exact trigger: audiopolicy `Engine.cpp`, STRATEGY_PHONE, `// Do not use A2DP devices when in call` — it then *removes* the A2DP outputs — and "in call" means **`MODE_IN_COMMUNICATION`**, which `GlassVoiceService.routeToGlasses()` asks for itself in order to reach the SCO mic. The collapse is the documented consequence of **our own routing choice**. Listen on the **phone's** mic instead (stay in `MODE_NORMAL`, never call `setCommunicationDevice`) and A2DP survives → `ACTION_LISTEN_PHONE_MIC`. Android also documents the constraint away outright on **LE Audio** (13+): *"Headsets can maintain high output audio quality when using microphones… input and output sampling can reach 32 kHz."* Still exactly true for the glasses mic; **never** a reason to call barge-in impossible everywhere. |
 | **DAT sessions are fragile by design** | `android-dat-research.md:27-33`: three states, *"the API never tells you WHY a transition happened, you must not restart while PAUSED"*, and system gestures / other apps / Bluetooth loss / **hinge-close** kill sessions with no auto-restart. | Any DAT work needs defensive session management from day one. |
 | **Known SDK crash** | `android-dat-research.md:31-33` — intermittent crash on rapid captures during >1-min streams. Workaround: recycle the session. | |
 | **Mock Device Kit does not cover Display glasses** | `android-dat-research.md:50-53`. | Display UI cannot be tested without the real device. |
