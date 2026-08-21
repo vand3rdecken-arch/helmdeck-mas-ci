@@ -67,6 +67,37 @@ node app/plugins/withGlassVoice.js app/android \
 node app/plugins/withMetaDat.js app/android \
   || { echo "[build_apk] meta-dat wiring apply FAILED"; exit 1; }
 
+# THE CREDENTIAL, and WHY IT IS DERIVED HERE rather than assumed to be present.
+# Resolving com.meta.wearable needs a read:packages token at GRADLE time. Every
+# build so far supplied it by hand from an interactive shell - but this script's
+# real caller is deploy/ship.sh, run by the DAEMON's accept hook, which has no
+# interactive shell and no exported GITHUB_TOKEN. Left as-is, the deploy would
+# npm ci, apply plugins, and then die ~15 minutes later inside gradle on an
+# unauthorized lookup that reads like a code failure and is not one.
+#
+# The owner's ordinary `gh` login already carries read:packages (DEPLOY.md:405,
+# measured 2026-08-21: HTTP 200 on all four 0.9.0 artifacts), so ask it. Note
+# that gradle also accepts `github_token` in app/android/local.properties -
+# checked below so a box without the gh CLI can still build.
+if [ -z "$GITHUB_TOKEN" ]; then
+  GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
+  export GITHUB_TOKEN
+  [ -n "$GITHUB_TOKEN" ] && echo "[build_apk] GITHUB_TOKEN derived from the gh CLI"
+fi
+# FAIL EARLY AND CLEARLY. Without this the same missing credential surfaces a
+# quarter of an hour later as a gradle resolution error - the expensive place to
+# learn it. Only blocks when the DAT deps are actually declared, so a tree
+# without the glasses camera still builds with no token at all.
+if [ -z "$GITHUB_TOKEN" ] \
+   && ! grep -q "github_token" app/android/local.properties 2>/dev/null \
+   && grep -q "com.meta.wearable" app/android/app/build.gradle 2>/dev/null; then
+  echo "[build_apk] NO read:packages CREDENTIAL - the Meta DAT artifacts cannot resolve."
+  echo "[build_apk] Fix with ONE of:"
+  echo "[build_apk]   export GITHUB_TOKEN=\"\$(gh auth token)\"   # needs the gh CLI logged in"
+  echo "[build_apk]   echo 'github_token=<PAT>' >> app/android/local.properties"
+  exit 1
+fi
+
 # Same rule once more: the OTA update URL + /pair deep-link host from
 # app.json. This was the one nobody wrote: the relay cutover changed app.json
 # but the stale manifest kept the dead Oracle VM, so builds 48 + the first 49
