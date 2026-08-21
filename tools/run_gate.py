@@ -4,8 +4,8 @@ NOT by the card's agent. The harness has full command access, so these checks
 always run even when the agent's permission mode gates commands.
 
 LIGHT BY DECREE (owner, 2026-08-21, debt [gate-light]): a gate is data hygiene,
-not judgment - CODE CHECK (it parses and lints) + FUNCTION CHECK (the daemon
-wires up), seconds not minutes. The old form ran every test_*.py per card -
+not judgment - CODE CHECK (it parses) + FUNCTION CHECK (the daemon wires up),
+seconds not minutes. No lints, no tests, no style. The old form ran every test_*.py per card -
 66 files, ~8 minutes, growing daily, red on base breakage and on box load
 (the Paseo lesson: verification of BEHAVIOR is the owner testing the deploy).
 The full suite lives on in tools/run_suite.py as a BASE health monitor - run
@@ -37,19 +37,15 @@ def run(label, args):
 
 
 # -- CODE CHECK ---------------------------------------------------------------
-# 1. everything python parses - ALL daemon packages, not just the top level
+# Everything python parses - ALL daemon packages, not just the top level.
+# NOTE the lints (design_lint_selftest, i18n_lint) were removed by decree
+# 2026-08-21: they are style JUDGMENT, not hygiene - a hardcoded German label
+# must not hold a merge hostage. They remain manual tools and belong to the
+# e2e-before-build step, where presentation is actually looked at.
 daemon_py = sorted(glob.glob(os.path.join("daemon", "**", "*.py"), recursive=True))
 daemon_py = [p for p in daemon_py if "__pycache__" not in p]
 if daemon_py:
     run("py_compile daemon/**/*.py", [PY, "-m", "py_compile", *daemon_py])
-
-# 2. design-lint selftest
-if os.path.exists(os.path.join("tools", "design_lint_selftest.py")):
-    run("design_lint_selftest", [PY, "tools/design_lint_selftest.py"])
-
-# 2b. one language, no leftovers (the mix creeps back one hardcoded label at a time)
-if os.path.exists(os.path.join("tools", "i18n_lint.py")):
-    run("i18n_lint", [PY, "tools/i18n_lint.py"])
 
 # -- FUNCTION CHECK -----------------------------------------------------------
 # The daemon WIRES UP: importing the serve entrypoint pulls the spine, routes
