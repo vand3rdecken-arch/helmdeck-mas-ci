@@ -31,7 +31,11 @@ _INTERVAL_S = 90
 
 DEFAULT_POLICY = (
     "Du bist Henry, die einzige Instanz mit vollem Systemkontext ueber dem "
-    "HelmDeck-Board. Entscheide die Eskalation mit gesundem Urteil:\n"
+    "HelmDeck-Board. Du hast HAENDE (owner decree 2026-08-21): du darfst in "
+    "diesem Turn selbst Dateien lesen/aendern und Kommandos ausfuehren, um das "
+    "Problem DIREKT zu beheben - melde dann action \"did\" mit dem, was du "
+    "getan hast. Delegiere nur, wenn die Reparatur echte Feature-Arbeit ist.\n"
+    "Entscheide die Eskalation mit gesundem Urteil:\n"
     "- Bevorzuge WARTEN/WIEDERANLAUF vor Toeten; toete nie Arbeit, die noch "
     "lebt und Fortschritt macht.\n"
     "- Ein durch Daemon-Neustart abgebrochener DEPLOY/SHIP wird neu "
@@ -48,17 +52,27 @@ DEFAULT_POLICY = (
 
 def _ask(prompt, model=""):
     """Headless one-shot judgement call - same spawn shape as the board
-    copilot/PM (drivers._cmd_line, never a bare .cmd with quoted args)."""
+    copilot/PM (drivers._cmd_line, never a bare .cmd with quoted args).
+
+    Runs in a WORKING permission mode, not plan (owner decree 2026-08-21:
+    "Henry should start in normal mode... do stuff directly"): Henry may fix
+    the exception himself in this turn - hands like a direct/machine card, on
+    the live tree, cwd repo root. The bounded-verb JSON stays as the CLOSING
+    report, not the only channel. Override via settings `henry_permission_mode`."""
     from daemon.cells.copilot import copilot
     from daemon.spine.agent import drivers
-    argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
+    from daemon.spine.storage import events
+    pmode = (events.settings().get("henry_permission_mode") or "").strip() or "acceptEdits"
+    argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", pmode]
     if model:
         argv += ["--model", model]
-    p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+    p = subprocess.Popen(drivers._cmd_line(argv), cwd=os.path.dirname(ROOT),
+                         stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace")
     try:
-        stdout, stderr = p.communicate(input=prompt, timeout=300)
+        # 300s judged fine; a turn that ACTS (build retry, file fix) needs room.
+        stdout, stderr = p.communicate(input=prompt, timeout=900)
     except subprocess.TimeoutExpired:
         p.kill()          # a timed-out judgement must not linger as a zombie
         p.communicate()
@@ -176,10 +190,11 @@ def _decide(esc):
             esc["kind"], esc.get("card") or "-", esc.get("detail") or "")
         + ("\n== KARTE (actionlog, juengste zuerst unten) ==\n" + card_log + "\n" if card_log else "")
         + "\n== SYSTEM ==\n" + _snapshot()
-        + "\n\nAntworte NUR mit diesem JSON:\n"
-          '{"action": "rerun_deploy|steer|notify_owner|ignore",\n'
+        + "\n\nDu darfst vor der Antwort selbst handeln (Dateien, Kommandos). "
+          "Antworte am ENDE NUR mit diesem JSON:\n"
+          '{"action": "did|rerun_deploy|steer|notify_owner|ignore",\n'
           ' "card": "karten-id oder leer",\n'
-          ' "text": "steer-anweisung bzw. owner-nachricht",\n'
+          ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "why": "ein satz begruendung"}')
     try:
         d = _ask(prompt)
@@ -193,7 +208,9 @@ def _decide(esc):
     if not _execute(action, card, text, esc):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why)
-    _audit(card, "HENRY entschieden (%s): %s - %s" % (esc["kind"], action, why or text[:120]))
+    _audit(card, "HENRY entschieden (%s): %s - %s" % (
+        esc["kind"], action,
+        (text[:200] + (" | " + why if why else "")) if action == "did" else (why or text[:120])))
     return True
 
 
@@ -201,6 +218,11 @@ def _execute(action, card, text, esc):
     from daemon.spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
     if action == "ignore":
+        return True
+    if action == "did":
+        # Henry already acted with his own hands inside the judgement turn
+        # (owner decree 2026-08-21) - the work is done, this verb just closes
+        # the escalation; `text` (what he did) lands in the audit note.
         return True
     if action == "steer" and t and text:
         from daemon.cells.engineer import sessions

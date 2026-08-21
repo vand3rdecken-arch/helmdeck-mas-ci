@@ -10,6 +10,26 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "henry-direct-hands",
+        "title": "Henry acts on the live tree with no gate/isolation",
+        "status": "open",
+        "what": "Owner decree 2026-08-21 ('normal mode, not planning - do stuff "
+                "directly'): the exception broker's judgement turn now spawns in "
+                "a working permission mode (default acceptEdits, settings "
+                "henry_permission_mode) with cwd at the repo root, and may fix "
+                "escalations itself (action 'did') instead of only steering "
+                "workers. No worktree, no gate, no review lane for those edits.",
+        "why_it_bites": "A wrong Henry fix lands unreviewed on the live tree - "
+                        "the same exposure the card rails exist to prevent, now "
+                        "on the one agent that fires unattended every 90s.",
+        "trigger": "any escalation Henry decides to fix himself",
+        "fix": "Bound his hands the way direct cards are bound: run his acting "
+               "turns through the direct-task queue (per-tree serialization), "
+               "auto-commit a labelled baseline before he edits, and surface "
+               "his 'did' diffs in the History view for after-the-fact review.",
+        "order": -1,
+    },
+    {
         "id": "expo-cutover-pipeline",
         "title": "Old frontends archived, but build/deploy/loop still point at them",
         "status": "paid",
