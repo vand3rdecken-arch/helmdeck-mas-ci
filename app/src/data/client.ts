@@ -470,6 +470,13 @@ export const api = {
     voice_pending?: boolean;
   }>("GET", voiceFrom === undefined ? "/chat/live" : `/chat/live?voice_from=${voiceFrom}`),
 
+  // Render text the phone already holds (a decrypted push's title/body) as
+  // speech - the proactive-blocker half of phone voice (data/push.ts). Same
+  // daemon-renders/client-plays split as chat's voice:true; `clip` is null
+  // when speech is unavailable (offline, no edge-tts) and the caller just
+  // stays with the visual notification.
+  speak: (text: string) => req<{ clip: VoiceClip | null }>("POST", "/notify/speak", { text }),
+
   // The daemon guarantees a non-empty list (manifest fallback), so an empty or
   // non-array answer is a transport artifact - throw so react-query retries
   // instead of caching a picker that only shows "Auto".

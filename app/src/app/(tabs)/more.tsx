@@ -6,6 +6,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAnalytics } from "@/data/analytics";
+import { useBlockerVoice } from "@/data/blocker_voice";
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
@@ -47,6 +48,8 @@ export default function MoreTab() {
   const paired = relayMode();
   const analyticsOn = useAnalytics((s) => s.enabled);
   const setAnalytics = useAnalytics((s) => s.setEnabled);
+  const blockerVoiceOn = useBlockerVoice((s) => s.enabled);
+  const setBlockerVoice = useBlockerVoice((s) => s.setEnabled);
 
   // Apply the code, then PROVE the connection with a real round-trip before
   // claiming success — a parsed-but-dead code (expired window, relay down,
@@ -119,6 +122,11 @@ export default function MoreTab() {
             style={{ backgroundColor: t.accent, borderRadius: 8, padding: 11, alignItems: "center" }}>
             <Text style={{ color: "#fff", fontWeight: "600" }}>{tr("ui.save")}</Text>
           </Pressable>
+        </Panel>
+        <Panel>
+          <SectionLabel text={tr("settings.voice.section")} />
+          <Hint text={tr("settings.voice.hint")} />
+          <Toggle label={tr("settings.voice.speakBlockers")} value={blockerVoiceOn} onChange={setBlockerVoice} />
         </Panel>
         <Panel>
           <SectionLabel text={tr("settings.privacy.section")} />
