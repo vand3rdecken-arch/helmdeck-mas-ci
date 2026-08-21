@@ -62,6 +62,12 @@ def push_fcm(title, body, track_id=""):
     device = (s.get("push") or {}).get("fcm_token", "")
     rel = s.get("relay") or {}
     if not (device and os.path.exists(_SA) and rel.get("sk") and rel.get("phone_pub")):
+        # Say WHICH leg is missing. This used to be a bare False - release.sh's
+        # "notify" step then looked identical whether the push was sent, skipped
+        # or impossible, and an unnotified phone read as "shipped fine".
+        missing = [n for n, ok in (("fcm_token", device), ("service_account", os.path.exists(_SA)),
+                                   ("relay.sk", rel.get("sk")), ("relay.phone_pub", rel.get("phone_pub"))) if not ok]
+        print("notify: fcm skipped - missing:", ", ".join(missing))
         return False
     try:
         sa = _json.load(open(_SA, encoding="utf-8"))
