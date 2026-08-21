@@ -28,6 +28,7 @@ already works silently - it must never be able to take the answer away.
 """
 import hashlib
 import os
+import re
 import threading
 import time
 
@@ -84,13 +85,36 @@ def _prune():
             pass
 
 
+_MD_STRIP = [
+    (re.compile(r"```.*?(```|$)", re.S), " "),          # code fences: unlistenable
+    (re.compile(r"`([^`]*)`"), r"\1"),                  # inline code ticks
+    (re.compile(r"\*{1,3}([^*]*)\*{1,3}"), r"\1"),      # *em* **bold** ***both***
+    (re.compile(r"_{1,2}([^_]*)_{1,2}"), r"\1"),        # _em_ __bold__
+    (re.compile(r"^#{1,6}\s*", re.M), ""),              # # headings
+    (re.compile(r"^\s*[-*•]\s+", re.M), ""),            # bullet markers
+    (re.compile(r"\[([^\]]+)\]\([^)]*\)"), r"\1"),      # [text](url) -> text
+    (re.compile(r"[|>~]+"), " "),                       # tables/quotes glyphs
+]
+
+
+def speakable(text):
+    """Markdown -> prose a HUMAN would say. The model writes for the screen
+    (**bold**, bullets, `code`) and edge-tts reads the glyphs LITERALLY -
+    measured 2026-08-21: Henry saying 'Stern Stern Stern' mid-sentence. One
+    owner for the cleanup, applied INSIDE render, so every speech path (chat
+    voice, streaming sentences, /notify/speak, glance) is covered."""
+    for rx, rep in _MD_STRIP:
+        text = rx.sub(rep, text)
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
+
+
 def render(text, voice=DEFAULT_VOICE):
     """Text -> cache id of a playable mp3, or None if speech is unavailable.
 
     Never raises: a missing package, no network, or a service error all mean
     "no audio this time", which the caller degrades to text.
     """
-    text = (text or "").strip()
+    text = speakable((text or "")).strip()
     if not text:
         return None
     if len(text) > MAX_TEXT:
