@@ -98,7 +98,11 @@ per the platform guidance). The poll exists so a new blocker lands proactively:
 each refresh diffs `needs_you` against the ids it already knew about, and a
 freshly-appeared card lights a badge on "Needs you" (clears when you open the
 list) plus a short glance-safe banner — a count only, never a task name, so a
-bystander glancing at the lens learns nothing. The home screen prints the age
+bystander glancing at the lens learns nothing. The same count is also spoken
+(the lens has no `speechSynthesis` but plays audio, same mechanism as the
+board-agent replies below), with **Voice on/off** and **Repeat** controls on
+the Needs screen — mute for a meeting, repeat when the browser blocked the
+unprompted playback or you just missed it. The home screen prints the age
 next to the count, and a failed fetch keeps the last data but drops the
 connection dot to red rather than implying it is current. A stale "all clear" is
 the one thing this display must never show.

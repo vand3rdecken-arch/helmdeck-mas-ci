@@ -962,6 +962,23 @@ glance surface re-reads the same few sentences constantly.
   is offline, and every surface falls back to text. Speech may never take the
   answer away.
 
+⚠ **Extended 2026-08-21: BLOCKERS are now spoken too, with mute/repeat.** The
+proactive fresh-blocker banner (§7's "Narrower, while-open case", `app.js
+notifyBanner`) was visual-only. `GET /glance/banner?token=…&n=<count>`
+(`routes_glance.glance_banner_voice`) renders the SAME shape of clip as
+`/glance/talk` for a fixed, glance-safe phrase - *"N new cards need you."* -
+never a task name, same rule as the banner text itself. `n` is supplied by the
+client (only it knows which ids are new since its last poll) and clamped
+1-99 server-side, so the shared token can only ever change which small
+integer gets read aloud, not inject arbitrary text into edge-tts. Two lens
+controls, on the Needs screen nav-bar: **Voice on/off** (persisted in
+`localStorage`, so a meeting stays quiet) and **Repeat** (manual replay of the
+last announcement - also the fallback when the browser's undocumented
+autoplay policy silently blocked the proactive attempt, since this play is
+never inside a user gesture the way a talk reply's is). Talk-reply speech is
+unchanged and not gated by this mute switch - it is a separate concern
+(agent's answer to a tap) from a background alert.
+
 **TALKING to the agent — walled in the WEBAPP, open on the phone.** (This
 paragraph originally ended "…blocked on the PAT". It was wrong; §11.7 below is
 the correction and supersedes it.) `mic-test/verdict.md`, on-device
