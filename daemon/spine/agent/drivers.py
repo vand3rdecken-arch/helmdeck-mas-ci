@@ -853,9 +853,17 @@ class _ClaudeSession:
         # forever. Poll in slices so a cancel is noticed promptly.
         idle = self.cfg.get("idle_timeout", 900)     # 15 min of TOTAL silence = hung
         hard = self.cfg.get("timeout")               # optional absolute cap; default none
-        # Poll finer than the idle window so silence (and a cancel) is noticed
-        # promptly, but never hot-spin: a few seconds in production, sub-second
-        # when a test dials idle right down.
+        # Poll finer than the idle window so silence is noticed promptly, but
+        # never hot-spin: a few seconds in production, sub-second when a test
+        # dials idle right down. The poll serves ONLY the idle/hard checks:
+        # completion and cancel both release via cur["done"] (the result frame,
+        # the cancel escort's ack/grace branches, or the pump's exit path - all
+        # bounded). There is deliberately NO `tid in _cancelled` early-break
+        # here: releasing the waiter on that flag BEFORE the interrupted turn's
+        # terminal frame landed, without arming _drop_results, let the next
+        # turn consume the OLD turn's result as its own (stale-result race);
+        # only the escort knows whether suppression must be armed, so only the
+        # escort may release a cancelled waiter early.
         poll = min(5.0, max(0.5, idle / 4.0))
         start = _time.time()
         finished, why = False, ""
@@ -863,8 +871,6 @@ class _ClaudeSession:
             if cur["done"].wait(poll):
                 finished = True
                 break
-            if self.tid in _cancelled:
-                break                                # cancel path handles it below
             now = _time.time()
             if now - cur.get("last_event", start) > idle:
                 why = "no output for %ds" % idle
