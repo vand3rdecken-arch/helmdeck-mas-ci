@@ -15,6 +15,25 @@ CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
 
+# Appended ONLY on voice turns (routes_copilot.chat_post): a spoken answer has
+# a hard time budget the written one does not. The base SYSTEM already says
+# "lead with the answer", but measured 2026-08-21: a voice question still got a
+# minute-long reply full of options and counter-questions - unlistenable. This
+# is a per-turn overlay, not a SYSTEM edit, so typed chat keeps its depth.
+VOICE_STYLE = (
+    "VOICE TURN - the owner is LISTENING, not reading, probably walking or "
+    "driving. HARD RULES for this reply:\n"
+    "- At most 2-3 short sentences (~15 seconds spoken). Answer first, one "
+    "detail if essential, stop.\n"
+    "- NEVER speak lists, options, menus, card ids, branch names, file paths "
+    "or numbers with more than two digits. Summarize instead ('three cards "
+    "are waiting' - not which).\n"
+    "- Do not end with a question unless you are genuinely BLOCKED. No "
+    "'should I A or B' - pick the sensible default, act, say what you did.\n"
+    "- Depth on request only: offer it in five words or less ('Details am "
+    "Bildschirm.'), never inline.")
+
+
 def henry_pmode():
     """Permission mode for every Henry surface - board chat AND the escalation
     broker (ONE knob, settings `henry_permission_mode`). Owner decree

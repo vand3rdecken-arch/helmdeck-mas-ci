@@ -74,7 +74,10 @@ def chat_post(self, user, body):
         out = copilot.chat(
             user["name"], text, role=user["role"], model=body.get("model", ""),
             thinking=body.get("thinking", ""), attachments=body.get("attachments"),
-            card=body.get("card"), voice_stream=streaming)
+            card=body.get("card"), voice_stream=streaming,
+            # spoken turns get the hard brevity overlay - a minute of options
+            # read aloud is not an answer (owner report 2026-08-21)
+            extra_system=copilot.VOICE_STYLE if want_voice else "")
         # VOICE MODE (phone). The client asks per-request rather than
         # by a server setting, because it is the client that knows
         # whether the owner is looking at the screen or driving. Only
