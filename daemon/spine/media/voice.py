@@ -39,7 +39,19 @@ CACHE = os.path.join(ROOT, "voice_cache")
 # German/English ("Dashboard zu überfüllt"), and voice_note.py:11 picked this one
 # for exactly that reason - "handles mixed German/English naturally".
 DEFAULT_VOICE = "en-US-AndrewMultilingualNeural"
-RATE = "+8%"                 # voice_note.py:31
+# +8% (voice_note.py:31) was tuned for short glance announcements; for a real
+# conversation the owner asked for SLOWER, clearly understandable speech
+# (2026-08-21). +0% = the voice's natural pace; settings `tts_rate` overrides
+# (e.g. "-5%" slower still, "+8%" the old announcement pace).
+RATE = "+0%"
+
+
+def _rate():
+    try:
+        from daemon.spine.storage import events
+        return (events.settings().get("tts_rate") or "").strip() or RATE
+    except Exception:
+        return RATE
 
 MAX_TEXT = 1200              # ~90s of speech; a lens reply is 2 sentences
 MAX_FILES = 200              # cache bound, oldest pruned
@@ -58,7 +70,7 @@ def available():
 
 
 def _key(text, voice):
-    return hashlib.sha256(("%s|%s|%s" % (voice, RATE, text)).encode("utf-8")).hexdigest()[:20]
+    return hashlib.sha256(("%s|%s|%s" % (voice, _rate(), text)).encode("utf-8")).hexdigest()[:20]
 
 
 def path_for(vid):
@@ -148,7 +160,7 @@ def render(text, voice=""):
         out = os.path.join(CACHE, vid + ".mp3")
         try:
             async def _gen():
-                await edge_tts.Communicate(text, voice, rate=RATE).save(tmp)
+                await edge_tts.Communicate(text, voice, rate=_rate()).save(tmp)
             asyncio.run(_gen())
             if not os.path.exists(tmp) or os.path.getsize(tmp) < 512:
                 raise RuntimeError("empty render")
