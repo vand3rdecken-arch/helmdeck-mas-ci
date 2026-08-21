@@ -267,13 +267,20 @@ class GlassCameraService : Service() {
 
     /**
      * PhotoData is a SEALED interface with exactly two shapes in 0.9.0.
-     * Both are handled; an unknown third (a future SDK) returns null rather
-     * than guessing, which surfaces as "Bild nicht lesbar" instead of a crash.
+     *
+     * NO `else` BRANCH, deliberately, and the first version of this had one.
+     * kotlinc's "'when' is exhaustive so 'else' is redundant" was right to
+     * flag it: the defensive reading ("a future SDK might add a third variant")
+     * does not apply to a statically linked, version-pinned AAR - the runtime
+     * library cannot differ from the one this compiled against. Adopting a
+     * newer mwdat-camera means recompiling, and WITHOUT an else that recompile
+     * fails loudly on the unhandled variant instead of silently returning null
+     * and reporting "Bild nicht lesbar" for a photo the SDK handed us
+     * perfectly well. The compiler is the better guard here.
      */
     private fun encode(photo: PhotoData): ByteArray? = when (photo) {
         is PhotoData.Bitmap -> bitmapToJpeg(photo.bitmap)
         is PhotoData.HEIC -> bufferToBytes(photo.data)
-        else -> null
     }
 
     private fun bitmapToJpeg(bmp: Bitmap): ByteArray? = try {
