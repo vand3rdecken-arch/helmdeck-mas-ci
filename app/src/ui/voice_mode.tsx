@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { caps, listen, openSpeech, stopSpeaking, type Listener, type SpeechQueue, type VoiceClip } from "@/data/voice";
+import { api } from "@/data/client";
+import { caps, listen, openSpeech, speak, stopSpeaking, type Listener, type SpeechQueue, type VoiceClip } from "@/data/voice";
 import { getLang, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Empty } from "@/ui/kit";
@@ -148,6 +149,10 @@ function Orb({ state, level }: { state: VoiceState; level: number }) {
 }
 
 // -- the screen --------------------------------------------------------------
+
+// The rendered greeting clip, kept for the app session: the phrase is static,
+// so one /notify/speak round trip covers every later open (instant greeting).
+let greetCache: VoiceClip | null = null;
 
 export function VoiceMode({ visible, onClose, onAsk, busy }: {
   visible: boolean;
@@ -312,7 +317,21 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     setProblem(""); setCaption(""); setState("idle"); setLevel(0); setSilent(false);
     // The opening tap IS the user gesture browsers require before audio may
     // play, so starting here is what unlocks playback for the whole session.
-    if (ability.hear) startListening();
+    // GREET FIRST (owner ask 2026-08-21: "so know he's hearing"): a short
+    // spoken "Ja?" is the audible proof the session is live - the visual orb
+    // is useless in a pocket or on glasses. Spoken BEFORE the mic opens (no
+    // duplex - his own ear must not transcribe his own greeting), cached
+    // after the first open so later opens greet instantly. Best-effort: if
+    // the render fails, the mic still starts - listening beats greeting.
+    if (ability.hear) {
+      (async () => {
+        try {
+          if (!greetCache) greetCache = (await api.speak(tr("voice.greeting"))).clip;
+          if (greetCache && alive.current) await speak(greetCache);
+        } catch { /* greeting is decor, never a blocker */ }
+        if (alive.current) startListening();
+      })();
+    }
     return () => {
       alive.current = false;
       stopListening();
