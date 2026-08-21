@@ -111,6 +111,43 @@ function patchSettingsGradle(text, isKts) {
 }
 
 /**
+ * Add the repository to the ROOT build.gradle's `allprojects { repositories }`.
+ *
+ * WHY BOTH THIS AND patchSettingsGradle EXIST - measured against the real tree
+ * on 2026-08-21, and the first version of this plugin was WRONG because it only
+ * had the other one. There are two template generations in the wild:
+ *
+ *   - NEWER: settings.gradle declares `dependencyResolutionManagement`, which by
+ *     default FAILS any build that also declares project repositories. The repo
+ *     must go there.
+ *   - THIS APP (Expo 57 / RN 0.86, hand-managed android/): settings.gradle has
+ *     NO dependencyResolutionManagement at all - it is pluginManagement plus
+ *     expoAutolinking - and repositories live in the ROOT build.gradle under
+ *     `allprojects { repositories { google(); mavenCentral(); jitpack } }`.
+ *
+ * The synthetic fixture in the test modelled only the first shape, so the
+ * plugin reported "settings.gradle already ok" against the real tree and
+ * silently added no repository - which would have surfaced much later as a
+ * gradle "could not resolve com.meta.wearable:mwdat-core". The test now carries
+ * a fixture copied from the REAL file so this cannot regress.
+ *
+ * Exactly ONE of the two is written, chosen by which the tree actually uses -
+ * declaring the repo in both places is what triggers the
+ * dependencyResolutionManagement failure this is trying to avoid.
+ */
+function patchRootGradle(text, isKts) {
+  if (!text || text.includes(MARKER)) return text;
+  const idx = text.indexOf("allprojects");
+  if (idx < 0) return text;
+  const repoIdx = text.indexOf("repositories", idx);
+  if (repoIdx < 0) return text;
+  const braceIdx = text.indexOf("{", repoIdx);
+  if (braceIdx < 0) return text;
+  const block = isKts ? mavenBlockKts() : mavenBlockGroovy();
+  return text.slice(0, braceIdx + 1) + block + text.slice(braceIdx + 1);
+}
+
+/**
  * Add the DAT dependencies to an app/build.gradle[.kts].
  *
  * Only touches the LAST `dependencies {` block, which in both the Expo Groovy
@@ -259,18 +296,46 @@ function applyToAndroidDir(androidDir) {
   // reported `undefined` rather than `false` - which reads as falsy in an `if`
   // and as a bug in a `=== false` check. A status object that is sometimes
   // missing a field is worse than one that is always complete.
-  const out = { settings: false, app: false, manifest: false, kotlin: false };
+  const out = { settings: false, rootGradle: false, repoPlaced: false,
+                app: false, manifest: false, kotlin: false };
+  // THE REPOSITORY GOES IN EXACTLY ONE PLACE - see patchRootGradle. Try the
+  // settings.gradle form first (newer templates, where project repositories are
+  // forbidden), and fall back to the root build.gradle's allprojects block only
+  // when settings.gradle did not take it. `already` guards the idempotent case:
+  // a second run changes nothing, and must NOT then decide the file "didn't
+  // take it" and write the repo into the OTHER file as well.
+  let placed = false;
   for (const name of ["settings.gradle", "settings.gradle.kts"]) {
     const p = path.join(androidDir, name);
     if (!fs.existsSync(p)) continue;
     const before = fs.readFileSync(p, "utf8");
+    if (before.includes(MARKER)) { placed = true; break; }
     const after = patchSettingsGradle(before, name.endsWith(".kts"));
     if (after !== before) {
       fs.writeFileSync(p, after);
       out.settings = true;
+      placed = true;
     }
     break;
   }
+  if (!placed) {
+    for (const name of ["build.gradle", "build.gradle.kts"]) {
+      const p = path.join(androidDir, name);
+      if (!fs.existsSync(p)) continue;
+      const before = fs.readFileSync(p, "utf8");
+      if (before.includes(MARKER)) { placed = true; break; }
+      const after = patchRootGradle(before, name.endsWith(".kts"));
+      if (after !== before) {
+        fs.writeFileSync(p, after);
+        out.rootGradle = true;
+        placed = true;
+      }
+      break;
+    }
+  }
+  // A tree where NEITHER shape matched would build until gradle cannot resolve
+  // com.meta.wearable, which is a confusing place to learn it. Say so here.
+  out.repoPlaced = placed;
   for (const name of ["build.gradle", "build.gradle.kts"]) {
     const p = path.join(androidDir, "app", name);
     if (!fs.existsSync(p)) continue;
@@ -304,6 +369,7 @@ module.exports.CAMERA_SERVICE = CAMERA_SERVICE;
 module.exports.CAMERA_FGS_TYPE = CAMERA_FGS_TYPE;
 module.exports.CAMERA_PERMISSIONS = CAMERA_PERMISSIONS;
 module.exports.patchSettingsGradle = patchSettingsGradle;
+module.exports.patchRootGradle = patchRootGradle;
 module.exports.patchAppGradle = patchAppGradle;
 module.exports.patchManifestXml = patchManifestXml;
 module.exports.applyToAndroidDir = applyToAndroidDir;
@@ -315,11 +381,25 @@ if (require.main === module) {
     process.exit(2);
   }
   const r = applyToAndroidDir(target);
+  const where = r.settings ? "settings.gradle"
+    : r.rootGradle ? "root build.gradle"
+    : "already present";
   console.log(
     `[withMetaDat] mwdat ${MWDAT_VERSION} (${MWDAT_ARTIFACTS.join(", ")}) - ` +
-      `settings.gradle ${r.settings ? "patched" : "already ok"}, ` +
+      `repo: ${where}, ` +
       `app build.gradle ${r.app ? "patched" : "already ok"}, ` +
       `manifest ${r.manifest ? "patched" : "already ok"}` +
-      (r.kotlin ? ", camera service source installed" : "")
+      (r.kotlin ? ", kotlin sources installed" : "")
   );
+  if (!r.repoPlaced) {
+    // LOUD, and non-zero. A missing repository does not fail here - it fails
+    // deep in gradle as "could not resolve com.meta.wearable", long after
+    // anyone connects it to this step.
+    console.error(
+      "[withMetaDat] ERROR: no repositories block found. Expected either " +
+        "dependencyResolutionManagement in settings.gradle or allprojects{} " +
+        "in the root build.gradle. The DAT artifacts will NOT resolve."
+    );
+    process.exit(1);
+  }
 }
