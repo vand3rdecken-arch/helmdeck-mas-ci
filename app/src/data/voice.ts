@@ -57,6 +57,31 @@ export interface VoiceClip { id: string; mime: string; b64: string }
 export interface VoiceCaps {
   speak: boolean;
   hear: boolean;
+  /** Can this runtime listen WHILE speaking without transcribing its own voice?
+   *
+   *  This is the whole barge-in question and it has exactly one documented
+   *  answer today. Chromium's speech recogniser opens a RAW capture device -
+   *  `speech_recognizer_impl.cc` wires no `AudioProcessingSettings` and no echo
+   *  reference at all - so the Web Speech API does not cancel our own playback.
+   *  Two recent additions change that: Chrome 135 lets `start()` take a
+   *  MediaStreamTrack, and Chrome 141 added `echoCancellationMode: "all"`,
+   *  defined as removing "all sound being played by the system". Together they
+   *  are the only path where full duplex is documented rather than hoped for.
+   *
+   *  MEASURED FALSE EVERYWHERE, 2026-08-21, and that is why there is no duplex
+   *  code path behind this flag. Chromium 150 (Electron 43, the newest shell
+   *  there is) does not advertise `echoCancellationMode` in
+   *  `getSupportedConstraints()` AND does not return it from
+   *  `track.getSettings()` when asked for explicitly - i.e. the constraint the
+   *  release notes describe is not honoured in the runtime we would ship. Run
+   *  `tools/probe_duplex.js` to re-check; the day it comes back true, THAT is
+   *  when the listening path gets its duplex branch, tested against a browser
+   *  that actually has it. Shipping the branch now would mean shipping code no
+   *  test on earth could exercise.
+   *
+   *  Probed through the browser's own answer rather than a version sniff, so it
+   *  flips on by itself. */
+  duplex: boolean;
   /** Why `hear` is false, for a UI that must never be a silent dead end.
    *  - `unsupported`  the browser has no Web Speech API (Firefox, Chrome-on-iOS)
    *  - `no-module`    this native binary predates the STT module (an OTA bundle
@@ -179,10 +204,26 @@ function webSpeechCtor(): (new () => WebSpeechRecognition) | null {
 }
 
 /** What this runtime can do — asked, not assumed. Cheap and side-effect free. */
+/** Does this browser expose `echoCancellationMode`? That constraint is the one
+ *  documented way to cancel the page's OWN audio out of a capture stream -
+ *  plain `echoCancellation: true` only "SHOULD" attempt it and in Chrome
+ *  historically cancelled remote WebRTC audio only, which is useless here. */
+function webDuplex(): boolean {
+  if (!isWeb || typeof navigator === "undefined") return false;
+  try {
+    const s = navigator.mediaDevices?.getSupportedConstraints?.() as
+      Record<string, boolean> | undefined;
+    return !!s?.echoCancellationMode && typeof navigator.mediaDevices?.getUserMedia === "function";
+  } catch {
+    return false;
+  }
+}
+
 export function caps(): VoiceCaps {
   if (isWeb) {
     const hear = !!webSpeechCtor();
     return {
+      duplex: hear && webDuplex(),
       // Every browser that runs the app has HTMLAudioElement; there is nothing
       // to feature-detect that could plausibly be false.
       speak: typeof window !== "undefined" && typeof window.Audio === "function",
@@ -193,7 +234,15 @@ export function caps(): VoiceCaps {
   }
   const stt = expoStt();
   const speak = !!expoAudio();
-  if (!stt) return { speak, hear: false, hearReason: "no-module" };
+  // NATIVE HAS NO DUPLEX, and the reason is the library rather than the OS.
+  // Android exposes both halves - `AcousticEchoCanceler` and the
+  // VOICE_COMMUNICATION source, which is the one documented to apply AEC - but
+  // expo-speech-recognition reaches neither: its ExpoAudioRecorder.kt builds
+  // its AudioRecord on `MediaRecorder.AudioSource.VOICE_RECOGNITION` and its
+  // `audioSource` option takes a FILE URI, not an input device. So the phone
+  // would transcribe its own answer. Reported false until measured otherwise on
+  // a real device - see debt `voice-barge-in`.
+  if (!stt) return { speak, hear: false, duplex: false, hearReason: "no-module" };
   // ASK THE OS, don't infer from the import. A linked module proves the binary
   // shipped the code; it does not prove this device has a recogniser to talk to.
   // Android hands recognition to another app (normally Google's), so on an
@@ -204,7 +253,7 @@ export function caps(): VoiceCaps {
   // whole capability probe exists to prevent.
   let live = false;
   try { live = stt.ExpoSpeechRecognitionModule.isRecognitionAvailable(); } catch { live = false; }
-  return { speak, hear: live, hearReason: live ? undefined : "unavailable" };
+  return { speak, hear: live, duplex: false, hearReason: live ? undefined : "unavailable" };
 }
 
 // -- speaking ----------------------------------------------------------------

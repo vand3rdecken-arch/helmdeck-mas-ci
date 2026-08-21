@@ -2372,6 +2372,67 @@ DEBT = [
                "is hit rather than dropping the sentence in silence.",
         "order": 41,
     },
+    {
+        "id": "voice-barge-in",
+        "title": "Barge-in is a TAP everywhere - and on two of three surfaces that is now a library gap, not a law",
+        "status": "open",
+        "what": "Interrupting Henry means tapping the orb. The reason on "
+                "record was 'HFP and A2DP are mutually exclusive', which is "
+                "true but was read far too broadly - it is about the GLASSES' "
+                "microphone over Bluetooth Classic, and AOSP names the "
+                "trigger as MODE_IN_COMMUNICATION, a mode GlassVoiceService "
+                "asks for itself (docs/glasses-reference.md SS3.1, corrected). "
+                "With that scope fixed, three surfaces have three different "
+                "blockers. GLASSES: solved this commit - "
+                "ACTION_LISTEN_PHONE_MIC listens on the phone and leaves A2DP "
+                "up; UNVERIFIED, no device here. PHONE: Android exposes both "
+                "AcousticEchoCanceler and the AEC-documented "
+                "VOICE_COMMUNICATION source, but expo-speech-recognition "
+                "reaches neither - ExpoAudioRecorder.kt hardcodes "
+                "MediaRecorder.AudioSource.VOICE_RECOGNITION and its "
+                "`audioSource` option takes a FILE URI, not an input device - "
+                "so the phone would transcribe its own answer. DESKTOP/WEB: "
+                "Chromium opens a RAW capture for the Web Speech API "
+                "(speech_recognizer_impl.cc wires no AudioProcessingSettings "
+                "and no echo reference), so our own playback is not cancelled.",
+        "why_it_bites": "It is the last thing separating this from the "
+                        "ChatGPT/Gemini feel the owner asked for, and it now "
+                        "looks closer than it is: the constraint that "
+                        "justified giving up turned out to be mis-scoped, "
+                        "which makes it tempting to assume the rest is "
+                        "cheap. It is not. The measurement that matters says "
+                        "NO: Chromium 150 (Electron 43, the newest shell "
+                        "there is) neither advertises `echoCancellationMode` "
+                        "in getSupportedConstraints() nor returns it from "
+                        "track.getSettings() when asked for it explicitly - "
+                        "so the documented full-duplex path does not exist in "
+                        "a runtime we could ship, whatever the Chrome 141 "
+                        "release note says. Bumping Electron for this would "
+                        "have bought nothing.",
+        "trigger": "`py -3.12 tools/probe_duplex.js` (via electron) reports "
+                   "DUPLEX AVAILABLE; OR expo-speech-recognition exposes an "
+                   "input-device / audio-source option; OR the glasses turn "
+                   "out to speak LE Audio",
+        "fix": "Per surface, cheapest first. DESKTOP: re-run "
+               "tools/probe_duplex.js after any Electron bump; when "
+               "echoCancellationMode comes back true, add the duplex branch "
+               "to listenWeb (getUserMedia({echoCancellationMode:'all'}) -> "
+               "recognition.start(track)) and flip caps().duplex's consumer "
+               "on - the probe is already wired, so nothing else changes. "
+               "Trap: the 'speech-recognition' content hint defaults "
+               "echoCancellation/AGC/NS to FALSE, which is backwards here. "
+               "PHONE: needs a device. Either upstream an input-source option "
+               "to expo-speech-recognition, or attach "
+               "AcousticEchoCanceler.create(sessionId) in a fork - and "
+               "measure with a real acoustic loop, which no emulator has. "
+               "GLASSES: ACTION_LISTEN_PHONE_MIC needs one real-device test; "
+               "the notification now reports which microphone actually "
+               "opened, so the answer is readable off the lens. Longer term "
+               "LE Audio removes the whole question on Android 13+, but "
+               "whether the Ray-Ban Display supports it is unanswered, and "
+               "for iOS no primary Apple source on LE Audio exists at all.",
+        "order": 42,
+    },
 ]
 
 def list_debt():
