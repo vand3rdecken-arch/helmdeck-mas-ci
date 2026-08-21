@@ -226,21 +226,35 @@ function patchManifestXml(xml) {
 // nothing, so anything that must survive a rebuild has to be re-applied from a
 // tracked source. Keeping it as .kt rather than a string inside this JS is the
 // difference between code you can review and code you can only hope about.
-const KOTLIN_SRC = "glassvoice/GlassVoiceService.kt";
-const KOTLIN_DST = ["app", "src", "main", "java", "app", "helmdeck", "voice",
-                    "GlassVoiceService.kt"];
+// TWO files now, and the second one is shared. GlassesRadio.kt is the
+// process-wide arbiter that keeps the glasses MIC and the DAT CAMERA off the
+// Bluetooth radio at the same time (docs/glasses-reference.md 12.4 - a measured
+// law, see the file's own header). It lives with the voice plugin and is
+// installed by it because the mic shipped first and always exists; the camera
+// plugin (withMetaDat.js) merely USES it and does not install a second copy.
+// One owner per file, so the two plugins can never write competing versions.
+const KOTLIN_FILES = [
+  ["glassvoice/GlassVoiceService.kt",
+   ["app", "src", "main", "java", "app", "helmdeck", "voice", "GlassVoiceService.kt"]],
+  ["glassvoice/GlassesRadio.kt",
+   ["app", "src", "main", "java", "app", "helmdeck", "glasses", "GlassesRadio.kt"]],
+];
 
 function installKotlin(androidDir) {
   const fs = require("fs");
   const path = require("path");
-  const src = path.join(__dirname, KOTLIN_SRC);
-  const dst = path.join(androidDir, ...KOTLIN_DST);
-  const code = fs.readFileSync(src, "utf8");
-  const had = fs.existsSync(dst) ? fs.readFileSync(dst, "utf8") : null;
-  if (had === code) return false;
-  fs.mkdirSync(path.dirname(dst), { recursive: true });
-  fs.writeFileSync(dst, code);
-  return true;
+  let wrote = 0;
+  for (const [rel, dstParts] of KOTLIN_FILES) {
+    const src = path.join(__dirname, rel);
+    const dst = path.join(androidDir, ...dstParts);
+    const code = fs.readFileSync(src, "utf8");
+    const had = fs.existsSync(dst) ? fs.readFileSync(dst, "utf8") : null;
+    if (had === code) continue;
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.writeFileSync(dst, code);
+    wrote++;
+  }
+  return wrote > 0;
 }
 
 function applyToAndroidDir(androidDir) {

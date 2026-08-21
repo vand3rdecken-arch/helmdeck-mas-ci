@@ -1364,6 +1364,56 @@ It is still a **native** change, so it needs an APK rebuild from a short real
 path such as `C:\hd\app` (`DEPLOY.md` §2 — an APK cannot be built from a card
 worktree), and a matching OTA.
 
+### 12.7 What was BUILT on 2026-08-21, and what it is worth
+
+Owner chose "write source here" knowing an APK cannot be built from a card
+worktree. So this is source, deliberately, and the honesty about which half is
+proven matters more than the volume:
+
+**Verified here (54 assertions, `tests/test_meta_dat_plugin.js`, no network):**
+- `app/plugins/withMetaDat.js` — the Gradle wiring. Adds the GitHub Packages
+  repo to `settings.gradle` (correct Groovy *vs* KTS credential syntax — the
+  dialect is PASSED IN, never sniffed, because the wrong one fails on the build
+  machine rather than at parse time), pins `mwdat-core` + `mwdat-camera` at
+  0.9.0, declares the camera service in the manifest with the narrow
+  `connectedDevice` FGS type, and installs the Kotlin. Idempotent on every path,
+  in memory and on disk. Asserted: **no literal token is ever written into a
+  Gradle file**, and the phone `CAMERA` permission is never widened.
+- The service name in the manifest, the Kotlin class, and the package path it
+  installs to all agree — a mismatch there is a runtime
+  `ClassNotFoundException` a manifest cannot warn about.
+
+**Measured, not guessed — the DAT 0.9.0 API.** Every symbol used was read out of
+the real AARs with `javap` after fetching them from GitHub Packages:
+
+```
+Wearables.initialize(ctx) / .createSession(DeviceSelector) -> DatResult<DeviceSession, DeviceSessionError>
+session.start() / .stop() / .state: StateFlow<DeviceSessionState>
+session.addCamera(StreamConfiguration) -> DatResult<Camera, …>   // EXTENSION fn
+camera.stream.start() -> DatResult<Unit, StreamError>
+stream.capturePhoto() -> DatResult<PhotoData, CaptureError>       // suspend
+PhotoData is SEALED: PhotoData.Bitmap(bitmap) | PhotoData.HEIC(data: ByteBuffer)
+StreamConfiguration(VideoQuality.LOW|MEDIUM|HIGH, frameRate: Int, compressVideo: Boolean)
+DeviceSessionError.SESSION_ENDED_BY_DEVICE | NO_ELIGIBLE_DEVICE | THERMAL_* | …
+```
+
+**NOT verified — uncompiled, and registered as debt `glasses-native-uncompiled`:**
+`GlassCameraService.kt`, `GlassesRadio.kt`, and the `GlassVoiceService.kt` edits
+have never been through kotlinc. Two known gaps beyond that: the daemon endpoint
+the camera POSTs to (`/glance/photo`) **does not exist yet**, and **nothing in
+`app/src` starts either service** — so this is not reachable from the UI and must
+not be described as shipped.
+
+**The one design decision worth carrying forward:** §12.4 is enforced in *code*,
+not in a comment. `GlassesRadio` is a process-wide arbiter that hands the
+Bluetooth radio to `MIC` or `CAMERA` and refuses the second caller. It is
+deliberately NARROW — only the *glasses* mic contends, because only it opens an
+HFP/SCO link; `ACTION_LISTEN_PHONE_MIC` stays in `MODE_NORMAL` and is never
+blocked, since gating it would cost a working feature to prevent a conflict that
+cannot occur. And the camera captures a **photo**, not a video stream: one frame
+is what a board assistant needs, and sustained video is where every failure in
+Discussion #130 lives.
+
 ### 12.6 What a future card should NOT re-buy
 
 - Do not check the Releases/Tags page for the DAT version — it is empty by
