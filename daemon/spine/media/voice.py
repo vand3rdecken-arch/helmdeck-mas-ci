@@ -108,12 +108,27 @@ def speakable(text):
     return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
-def render(text, voice=DEFAULT_VOICE):
+def _voice_choice(explicit):
+    """settings `tts_voice` overrides the default (owner ask 2026-08-21: the
+    multilingual Andrew auto-switches to German but keeps a non-native tint;
+    a native de-DE voice is one settings line away, e.g.
+    de-DE-SeraphinaMultilingualNeural). Explicit caller choice still wins."""
+    if explicit:
+        return explicit
+    try:
+        from daemon.spine.storage import events
+        return (events.settings().get("tts_voice") or "").strip() or DEFAULT_VOICE
+    except Exception:
+        return DEFAULT_VOICE
+
+
+def render(text, voice=""):
     """Text -> cache id of a playable mp3, or None if speech is unavailable.
 
     Never raises: a missing package, no network, or a service error all mean
     "no audio this time", which the caller degrades to text.
     """
+    voice = _voice_choice(voice)
     text = speakable((text or "")).strip()
     if not text:
         return None
@@ -149,7 +164,7 @@ def render(text, voice=DEFAULT_VOICE):
         return vid
 
 
-def render_b64(text, voice=DEFAULT_VOICE):
+def render_b64(text, voice=""):
     """Speech as an INLINE base64 data payload, or None.
 
     The glasses take a URL (`/glance/voice/<id>.mp3`) because they talk to the
