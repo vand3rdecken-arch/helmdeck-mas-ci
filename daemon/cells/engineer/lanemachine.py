@@ -861,6 +861,20 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         _dh = t.get("deploy_hook") or {}
         _say_card(t, _i18n.t(_LANDED.get(kind, "say.landed.plain")) + (
             "" if not _dh else _i18n.t("say.deployOk" if _dh.get("ok") else "say.deployFailed")))
+        if _dh and not _dh.get("ok"):
+            # Report the failed post-accept deploy to Henry - the fast-track path
+            # already escalates (deploy-red after its retry cap) but THIS path only
+            # said "ACHTUNG: Deploy-Hook fehlgeschlagen" in chat and moved on
+            # (measured 2026-08-21 17:51: npm ci EBUSY against a concurrently
+            # running gradle build, main merged, nothing shipped, Henry deaf).
+            # Emit the fact; whether to rerun is Henry's judgement, not code's.
+            try:
+                from daemon.spine.registry import escalations
+                escalations.emit("deploy-red", card=tid,
+                                 detail="Deploy-Hook nach Accept rot:\n"
+                                        + ((_dh.get("tail") or "")[:600]))
+            except Exception:
+                pass
         from daemon.spine.comms import notify
         notify.card_event(t, "done")
         try:
