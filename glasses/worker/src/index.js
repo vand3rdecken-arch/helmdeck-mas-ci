@@ -44,7 +44,7 @@
 //   "Incorrect type for map entry 'MAX_BODY'"
 // Keeping them next door also lets the gate test execute the real routing
 // function under plain node. This module exports the handler and nothing else.
-import { resolveRoute, MAX_BODY } from "./routes.js";
+import { resolveRoute, maxBodyFor } from "./routes.js";
 
 // Headers we refuse to pass upstream. Cookie/Authorization are the load-bearing
 // ones (see the header); the rest are hop-by-hop or edge metadata that would
@@ -97,7 +97,10 @@ async function proxy(request, env, path) {
   let body;
   if (request.method === "POST") {
     body = await request.arrayBuffer();
-    if (body.byteLength > MAX_BODY) {
+    // PER-ROUTE cap. `path` here is the value resolveRoute() already returned,
+    // i.e. one of the allowlisted paths - never raw user input - so it cannot
+    // be steered to pick the wide photo cap for a different route.
+    if (body.byteLength > maxBodyFor(path)) {
       return json(413, { error: "glance body too large" });
     }
   }
