@@ -1,8 +1,10 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { useBlockerVoice } from "./blocker_voice";
 import { api } from "./client";
 import { useConfig } from "./config";
 import { open } from "./e2ee";
+import { speak } from "./voice";
 
 // Foreground presentation of the local notifications we raise from decrypted
 // data messages.
@@ -49,4 +51,31 @@ export async function presentDecrypted(data?: Record<string, string>) {
     content: { title: m.title, body: m.body, data: { track: m.track ?? "" } },
     trigger: null,
   });
+}
+
+/** Speak a decrypted push aloud - the proactive-blocker half of phone voice
+ *  (docs/glasses-reference.md §11.8's "what the app still needs", closed with
+ *  the native player data/voice.ts already ships for the chat voice mode).
+ *  Fires from the SAME foreground received-listener as presentDecrypted, so a
+ *  card that needs the owner is announced through whatever audio route the
+ *  phone is on right now - ordinary Bluetooth media playback when paired
+ *  with the glasses, no DAT, no companion project.
+ *
+ *  Off by default (useBlockerVoice), and only ever runs while the app process
+ *  is alive to receive the event - same structural limit the glasses webapp
+ *  itself has (no background execution), not a bug to work around here. A
+ *  render failure (offline, no edge-tts) degrades to silence; the visual
+ *  notification from presentDecrypted already carries the news. */
+export async function announceDecrypted(data?: Record<string, string>) {
+  if (!useBlockerVoice.getState().enabled) return;
+  const m = decryptPush(data);
+  if (!m) return;
+  try {
+    // Strip the trailing " [card-id]" notify.card_event appends for the
+    // human-readable body - useful in a text notification, noise read aloud.
+    const body = (m.body || "").replace(/\s*\[[^[\]]*\]\s*$/, "").trim();
+    const text = body ? `${m.title}. ${body}` : m.title;
+    const { clip } = await api.speak(text);
+    if (clip) await speak(clip);
+  } catch { /* speech is an enhancement - the visual notification already landed */ }
 }

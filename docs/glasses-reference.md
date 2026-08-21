@@ -31,8 +31,14 @@ building**, don't trust this page as current on the platform side.
 - **SDK access is much smaller than "partner approval"** — a GitHub PAT for the
   packages, plus Developer mode (and possibly a preview form). → §5. **And the
   MIC needs none of it**: the glasses microphone is plain Bluetooth HFP via
-  standard Android APIs, not a DAT module, and the 0.8.0 artifacts are already
-  cached on this machine. → §11.7.
+  standard Android APIs, not a DAT module. → §11.7, re-confirmed at 0.9.0 in
+  §12.3. ⚠ **But the "already cached" half is DEAD** — the cache is gone as of
+  2026-08-21, so CAMERA/DISPLAY now need a `read:packages` credential at build
+  time. **The owner's existing `gh` token already satisfies it — measured, all
+  four 0.9.0 artifacts return HTTP 200.** Nothing new to obtain. → **§12.1**.
+- **Mic and camera must never run AT THE SAME TIME on Android** — SCO starves the
+  Bluetooth video link and the glasses kill the session; it is handset-dependent
+  and unfixable from our side. → **§12.4**.
 - **HelmDeck's `glasses/` app is already ~80% conformant** with Meta's real
   display guidelines; four concrete deltas remain. → §6.
 - The proven pairing/auth model is **valet tickets + device-code + anchor
@@ -654,7 +660,7 @@ toolkit contradicts itself in those three places — the guidelines win.
 
 | Step | Verdict from the sources |
 |---|---|
-| **SDK access check** | **Largely ANSWERED — see §11.7 before acting on this row.** The 0.8.0 artifacts are already in this machine's Gradle cache (resolve offline, no token), and the MIC is not a DAT module at all. A PAT is only needed to fetch an UNCACHED version. Original framing, still true for that case: (a) a GitHub PAT with `read:packages` resolves `com.meta.wearable:mwdat-*`; (b) Developer mode (tap App version 5×). Germany is supported. §5, §11.7 |
+| **SDK access check** | ⚠ **RE-CHECKED 2026-08-21 — read §12.1/§12.1b before acting on this row.** The "already cached, resolves offline" answer is DEAD (`com.meta.wearable` is gone from the Gradle cache), so camera/display now need a `read:packages` credential at build time, at version **0.9.0** (§12.2). **But nothing must be obtained: the owner's existing `gh` token already carries `read:packages` and was measured resolving all four artifacts (HTTP 200) — §12.1b.** The MIC half needs no credential at all (§12.3). Still required for on-device use: Developer mode (tap App version 5×). Germany is supported. §12.1, §12.1b, §12.2 |
 | **Proactive notification** | Off-device / while-closed alerting still cannot come from the webapp — no background execution, no notification API (§3.2). That direction is still the daemon → `outbox/events/` path (2 s poll, atomic write, consume-before-send), JID trap and all. §4.3, §3.3. **Narrower, while-open case shipped 2026-08-20:** `glasses/app.js` now runs a bounded 60s poll ONLY while the page is visible (started on foreground, stopped on hide — same "start on demand, stop when hidden" rule as §6.4's performance guideline), diffs `needs_you` ids against the last fetch, and surfaces a fresh one as a badge on "Needs you" (persists until opened) plus a glance-safe count-only banner (never a task name). This does not contradict the background-execution finding — it only ever fires while the lens is already being looked at. |
 | **Voice reading** | SETTLED: server-side edge-tts → ogg/opus mono 32k → `[[voice:…]]` over WhatsApp. Not device TTS — the toolkit has none, and the SDK path would drag in the HFP audio downgrade. Independent of SDK access. §4 |
 | **Companion app** | Only if something needs the glasses' *mic* or a *native lens push*. It is a sensing layer, never a renderer: *"the native app never draws a pixel on the glasses"* (`native-companion-plan.md:57`). If built: backend-driven config, `safe {}` everywhere, full FGS type set, and the Android-14 typed-FGS decision written down. §2.4, §3.4 |
@@ -1010,6 +1016,11 @@ caught it with one question: *"but isn't it already installed when I build
 companion app for glasses?"* Two independent errors, both now checked on this
 machine rather than reasoned about:
 
+⚠ **CLAIM 1 BELOW IS NO LONGER TRUE — re-measured 2026-08-21, see §12.1.** The
+`com.meta.wearable` Gradle cache is GONE from this box, so a `read:packages` PAT
+is now required before ANY DAT artifact resolves, at any version. Claim 2 (the
+microphone is not a DAT API) was re-verified against 0.9.0 and **still holds**.
+
 **1. The SDK is already here.** `glass-crud-harness/android/app/build.gradle.kts`
 declares `mwdat-core:0.8.0` and `mwdat-camera:0.8.0`, and both are sitting in
 this box's Gradle cache from that build:
@@ -1176,3 +1187,377 @@ being permanently installed.**
 **Do not repeat the mistake.** "Publishing is partner-only" is true and
 irrelevant to a webapp on the owner's own glasses. Check which of the two you
 mean before writing No-Go.
+
+---
+
+## 12. RE-VERIFICATION 2026-08-21 — the SDK moved and the cache is GONE
+
+Owner: *"Both and check their source the dat got updated multiple times."* He was
+right on both counts, and one of the checks invalidates a load-bearing claim this
+document has been making since §11.7. §9 says to re-verify §5/§6 against the
+source before betting a card on them; this is that pass, and it is the reason the
+rule exists.
+
+### 12.1 ⚠ THE GRADLE CACHE IS GONE — §11.7's "no PAT needed" is now FALSE
+
+§11.7 states the 0.8.0 AARs "are sitting in this box's Gradle cache … Gradle
+resolves those offline. No token is needed for 0.8.0." **Measured today, that is
+no longer true.** `~/.gradle/caches/modules-2/files-2.1/` holds **199 groups and
+`com.meta.wearable` is not among them** — a filter for `meta|wearable` returns
+nothing. Corroborated from two more directions: `glass-crud-harness/android/`'s
+`local.properties` and `gradle.properties` both exist and contain **zero**
+token/github lines, and `GITHUB_TOKEN` is **not set** in the environment.
+
+**Consequence:** there is now no *offline* path to any DAT artifact.
+`implementation("com.meta.wearable:mwdat-core:…")` would fail at
+*dependency-resolution* time without credentials — the exact failure
+`glass-crud-harness` commit `8d6bea7` recorded ("APK build blocked on the Meta
+DAT `read:packages` token"). So credentials are **required before a single line
+of DAT code can compile**, not merely to fetch a newer version. §5, §7 row 1,
+§10.4 step 3 and §11.7 all say otherwise and are **superseded by this section**.
+
+### 12.1b …but the credential ALREADY EXISTS — measured, not assumed
+
+Before filing "the owner must mint a PAT", the existing credential was tested.
+`DEPLOY.md:405` records the owner's `gh` token scopes, and `gh auth status`
+confirms them live: **`admin:public_key, gist, read:org, read:packages, repo`** —
+`read:packages` is already there.
+
+**It works.** An authenticated GET against the real registry returned **HTTP 200**
+with a 3353-byte POM:
+
+```
+https://maven.pkg.github.com/facebook/meta-wearables-dat-android/
+    com/meta/wearable/mwdat-core/0.9.0/mwdat-core-0.9.0.pom
+```
+
+and a HEAD on all four 0.9.0 AARs — `mwdat-core`, `mwdat-camera`,
+`mwdat-display`, `mwdat-mockdevice` — returned **200** each. (The token was used
+in memory only; it is not printed, stored or committed anywhere.)
+
+⚠ **This contradicts Meta's own documentation in a useful direction.** Their
+integration page insists on *"a personal access token (classic)"*, but the token
+that works here is a **`gho_` OAuth token minted by the `gh` CLI**, not a `ghp_`
+classic PAT. So the "classic" requirement is not enforced by the registry for
+read access. Do not spend time minting a new classic PAT on the strength of that
+sentence — **test the existing `gh` token first**.
+
+**How to wire it at build time** (never commit it):
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"     # or: github_token=… in local.properties
+```
+
+So the camera/display half is **NOT blocked on the owner obtaining anything**. It
+is blocked only on the APK build itself, which cannot run from a card worktree
+(`DEPLOY.md` §2, NDK path length) and must run from a short real path such as
+`C:\hd\app`.
+
+### 12.2 The version moved again — 0.8.0 → 0.9.0, three releases in three months
+
+| Version | Announced | Note |
+|---|---|---|
+| v0.7 | 2026-05-14 | "out today with **Display**" |
+| v0.8 | 2026-06-26 | video moves to WiFi — **iOS only** (see §12.4) |
+| **v0.9** | **2026-08-04** | current; what the docs and README pin |
+
+The repo publishes **no GitHub Releases or tags** — versions are announced in
+Discussions only, so "check the releases page" returns nothing and reads as "no
+SDK". Read the Discussions list instead. `libs.versions.toml` verbatim:
+
+```toml
+[versions]
+mwdat = "0.9.0"
+```
+
+Repository block (note the empty username — it really is documented that way):
+
+```kotlin
+maven {
+    url = uri("https://maven.pkg.github.com/facebook/meta-wearables-dat-android")
+    credentials {
+        username = "" // not needed
+        password = System.getenv("GITHUB_TOKEN") ?: localProperties.getProperty("github_token")
+    }
+}
+```
+
+### 12.3 Still FOUR artifacts, still NO audio module — §11.7's core finding HOLDS
+
+At 0.9.0 the published set is exactly `mwdat-core`, `mwdat-camera`,
+`mwdat-display`, `mwdat-mockdevice`. **There is no audio artifact**, one release
+train later. §11.7's central correction — *the microphone is not a DAT API* —
+survives re-verification and should be treated as settled.
+
+**What is NEW:** Meta now ships an official page for it,
+`wearables.developer.meta.com/docs/develop/dat/microphones-and-speakers/`, which
+documents the mic/speaker path as **standard platform APIs, not an SDK module**:
+`AudioManager.setCommunicationDevice()` on Android 12+, `AVAudioSession` with
+`.playAndRecord` + `.allowBluetoothHFP` on iOS, and OS-level mic permission
+rather than a DAT permission. It also states the HFP/A2DP rule in Meta's own
+words — A2DP *"High quality (44.1/48 kHz stereo)"*, HFP *"8 kHz mono"* and
+*"Bidirectional"*, the two *"mutually exclusive: activating HFP switches the
+glasses away from A2DP, and audio output quality drops to 8 kHz mono"*, with
+*"the wearable's microphones use beamforming to isolate the wearer's voice"*.
+
+That is a direct official endorsement of the shape `GlassVoiceService.kt`
+already implements (route → listen → **release** → speak). Nothing about the mic
+half needs a PAT, a Meta approval, or a DAT module.
+
+### 12.4 ⚠ THE FINDING THAT DECIDES "BOTH" — mic + camera CONCURRENTLY is a hardware lottery on Android
+
+This is new information and it constrains the owner's "both" directly. It is not
+a reason to refuse either capability — it is a reason not to run them *at the
+same time*.
+
+- **Official ordering constraint** (same Meta page): *"When using HFP with a DAT
+  camera stream, the HFP microphone must be fully configured before the stream
+  starts."*
+- **Why**, from Meta collaborator `@sourabh-nanoti` in
+  `meta-wearables-dat-android` **Discussion #130** ("SESSION_ENDED_BY_DEVICE when
+  HFP/SCO mic is active alongside camera stream", 2026-07-01, 11 comments):
+  *"the camera feed runs over a Bluetooth data link. When you activate the
+  glasses mic for STT, HFP/SCO opens a second link … SCO reserves fixed, periodic
+  time slots on the radio, which reduces the throughput available to the video
+  data link."* The glasses then end the session themselves.
+- **It is handset-dependent, wildly**: the same code gave a stable ~5.5-minute
+  session on a Galaxy A25 and a **200 ms** session death on a Redmi 10 — the
+  thread attributes it to how each SoC vendor time-slices Bluetooth. So it is not
+  something our code can be "correct enough" to fix.
+- **Android does not get the escape hatch.** v0.8+ moved video to WiFi **on iOS
+  only**; Android still carries video over Bluetooth, so the contention is fully
+  live for HelmDeck's Android-first phone app.
+- Workarounds the thread converges on, if concurrency is ever attempted: pin the
+  SCO route **once** per session (never repeated `startBluetoothSco()`, each call
+  reads as a new session to the firmware), tear SCO down **before**
+  `createSession()`/`addStream()`, and drop to `VideoQuality.LOW` at ~15 fps.
+
+**Design consequence for HelmDeck:** treat mic and camera as **mutually exclusive
+modes**, one at a time, exactly as `GlassVoiceService`'s existing
+listen → release → speak discipline already does for HFP/A2DP. A simultaneous
+"see what I see while I talk to Henry" feature is not shippable on Android today
+and must not be promised.
+
+### 12.5 Where the mic half actually stands — written, wired, and DEAD
+
+Measured in this worktree, not assumed:
+
+- `app/plugins/glassvoice/GlassVoiceService.kt` is **complete**: `routeToGlasses()`
+  (setCommunicationDevice + MODE_IN_COMMUNICATION, with the pre-API-31 fallback),
+  `releaseMic()` that genuinely tears the route down, `listen → release → speak`,
+  a `POST /glance/talk` call and `MediaPlayer` playback of the returned clip,
+  `safe{}` around every peripheral call, and a narrow `microphone` FGS type
+  guarded by a `RECORD_AUDIO` check so Android 14 cannot crash it.
+- `app/plugins/withGlassVoice.js` **is registered in `app.json`** (line 79), so
+  the permissions, the `<service>` and the `<queries>` entry for the recogniser
+  all ship on both the prebuild and hand-managed paths.
+- **Nothing starts it.** A search of `app/src` for `GlassVoiceService`,
+  `ACTION_LISTEN`, `glass_voice` or `helmdeck.voice` returns **zero matches**,
+  and nothing writes the `base_url` / `glance_token` SharedPreferences the
+  service reads (`PREFS`/`KEY_BASE`/`KEY_TOKEN`). §11.6's "never started by
+  anything" is still exactly true.
+
+So the remaining mic work is small and needs **no PAT**: a JS→native seam that
+starts the service with `ACTION_LISTEN` (glasses mic) or `ACTION_LISTEN_PHONE_MIC`
+(phone mic, A2DP preserved — §3.1), plus writing those two prefs at pairing time.
+It is still a **native** change, so it needs an APK rebuild from a short real
+path such as `C:\hd\app` (`DEPLOY.md` §2 — an APK cannot be built from a card
+worktree), and a matching OTA.
+
+### 12.7 What was BUILT on 2026-08-21, and what it is worth
+
+Owner chose "write source here" knowing an APK cannot be built from a card
+worktree. So this is source, deliberately, and the honesty about which half is
+proven matters more than the volume:
+
+**Verified here (54 assertions, `tests/test_meta_dat_plugin.js`, no network):**
+- `app/plugins/withMetaDat.js` — the Gradle wiring. Adds the GitHub Packages
+  repo to `settings.gradle` (correct Groovy *vs* KTS credential syntax — the
+  dialect is PASSED IN, never sniffed, because the wrong one fails on the build
+  machine rather than at parse time), pins `mwdat-core` + `mwdat-camera` at
+  0.9.0, declares the camera service in the manifest with the narrow
+  `connectedDevice` FGS type, and installs the Kotlin. Idempotent on every path,
+  in memory and on disk. Asserted: **no literal token is ever written into a
+  Gradle file**, and the phone `CAMERA` permission is never widened.
+- The service name in the manifest, the Kotlin class, and the package path it
+  installs to all agree — a mismatch there is a runtime
+  `ClassNotFoundException` a manifest cannot warn about.
+
+**Measured, not guessed — the DAT 0.9.0 API.** Every symbol used was read out of
+the real AARs with `javap` after fetching them from GitHub Packages:
+
+```
+Wearables.initialize(ctx) / .createSession(DeviceSelector) -> DatResult<DeviceSession, DeviceSessionError>
+session.start() / .stop() / .state: StateFlow<DeviceSessionState>
+session.addCamera(StreamConfiguration) -> DatResult<Camera, …>   // EXTENSION fn
+camera.stream.start() -> DatResult<Unit, StreamError>
+stream.capturePhoto() -> DatResult<PhotoData, CaptureError>       // suspend
+PhotoData is SEALED: PhotoData.Bitmap(bitmap) | PhotoData.HEIC(data: ByteBuffer)
+StreamConfiguration(VideoQuality.LOW|MEDIUM|HIGH, frameRate: Int, compressVideo: Boolean)
+DeviceSessionError.SESSION_ENDED_BY_DEVICE | NO_ELIGIBLE_DEVICE | THERMAL_* | …
+```
+
+**NOT verified — uncompiled, and registered as debt `glasses-native-uncompiled`:**
+`GlassCameraService.kt`, `GlassesRadio.kt`, and the `GlassVoiceService.kt` edits
+have never been through kotlinc. Two known gaps beyond that: the daemon endpoint
+the camera POSTs to (`/glance/photo`) **does not exist yet**, and **nothing in
+`app/src` starts either service** — so this is not reachable from the UI and must
+not be described as shipped.
+
+**The one design decision worth carrying forward:** §12.4 is enforced in *code*,
+not in a comment. `GlassesRadio` is a process-wide arbiter that hands the
+Bluetooth radio to `MIC` or `CAMERA` and refuses the second caller. It is
+deliberately NARROW — only the *glasses* mic contends, because only it opens an
+HFP/SCO link; `ACTION_LISTEN_PHONE_MIC` stays in `MODE_NORMAL` and is never
+blocked, since gating it would cost a working feature to prevent a conflict that
+cannot occur. And the camera captures a **photo**, not a video stream: one frame
+is what a board assistant needs, and sustained video is where every failure in
+Discussion #130 lives.
+
+### 12.8 BOTH product shapes — display and non-display
+
+Owner 2026-08-21: *"Ship for both display and non display version."* The two are
+not "supported vs unsupported"; they are **different surfaces**, and the SDK
+itself draws the line.
+
+`DeviceType` in DAT 0.9.0 (read from the AAR, not guessed) has seven values —
+`UNKNOWN`, `RAYBAN_META`, `OAKLEY_META_HSTN`, `OAKLEY_META_VANGUARD`,
+`META_RAYBAN_DISPLAY`, `RAYBAN_META_OPTICS`, `META_GLASSES` — and both
+`DeviceType` and `Device` expose **`isDisplayCapable()`**. So the split is a
+question we ASK the runtime, never a hardcoded model list that rots the next
+time Meta ships a frame (`app/plugins/metadat/GlassesDevice.kt`).
+
+| Capability | Non-display (Ray-Ban Meta, Oakley, Optics) | Display (Meta Ray-Ban Display) |
+|---|---|---|
+| **Spoken blockers** (`/notify/speak` → phone audio) | ✅ the whole product | ✅ |
+| **Talk to Henry** (glasses mic → `/glance/talk` → spoken reply) | ✅ | ✅ |
+| **Camera photo** (DAT `capturePhoto`) | ✅ *(they all have cameras)* | ✅ |
+| **GLASS MODE lens webapp** (`glasses/`, blocker list, tappable options) | ❌ **no screen exists** | ✅ |
+
+The important consequence, and it reframes the original audio-only card: **three
+of the four capabilities are already device-agnostic.** Audio, mic and camera
+are ordinary Bluetooth and DAT; none of them needs a lens. Only the webapp is
+display-only. So "ship for both" is mostly a matter of *not offering the lens
+surface where there is no lens* — which is what `GlassesDevice.hasLens()` is
+for — rather than a second implementation.
+
+`current()` returns **null** for "cannot know" (SDK absent, nothing paired) and
+that is deliberately distinct from `displayCapable = false`. Treating null as
+"no display" would be the same silent dead end this document keeps recording:
+routing to a surface that is not there and never finding out.
+
+### 12.9 ⚠ DAT REQUIRES minSdk 29 — and three other things only a build could say
+
+The owner granted access to a buildable path on 2026-08-21 specifically so this
+Kotlin could meet a compiler. It immediately paid for itself four times. None of
+these were predictable from the docs; all are now measured.
+
+**1. Both DAT artifacts require `minSdkVersion 29`.** Not just the camera —
+`mwdat-core`'s AAR manifest declares it too, though Android's error names only
+whichever it hits first:
+
+```
+uses-sdk:minSdkVersion 24 cannot be smaller than version 29 declared in
+library [com.meta.wearable:mwdat-camera:0.9.0]
+```
+
+HelmDeck ships **minSdk 24**. Overriding only the artifact named in the error
+would have failed again on the next one.
+
+The decision, and it is a product decision rather than a technical one: raising
+the app to 29 is one line and **drops every Android 7.0/7.1/8.0/8.1/9 device
+from the entire product** for a feature most users will never touch.
+glass-crud-harness could raise it freely — it was glasses-only and already
+shipped `minSdk = 29`. HelmDeck is a board app that *also* talks to glasses. So
+`withMetaDat.js` emits `tools:overrideLibrary` for **both** artifacts and
+nobody loses the app.
+
+⚠ **The override is only half of it.** Android's suggestion text warns it *"may
+lead to runtime failures"*, and that is exactly right if you then call the
+library on an old device. ART resolves a class on **first use**, so the
+override is safe *only* while every entry point checks the API level before
+referencing a DAT symbol. `GlassesDevice.supported()` is that check; it must be
+called before anything else, and the camera service checks it **before**
+claiming the radio arbiter (checking after would let a refused old device take,
+and possibly leak, the radio). A new DAT entry point that skips it re-opens the
+failure the override was warned about.
+
+**2. `ALREADY_INITIALIZED` is a FAILURE result.** `WearablesError` has exactly
+two values — `NOT_INITIALIZED` and `ALREADY_INITIALIZED` — so
+`Wearables.initialize()` returns `isFailure` on **every call after the first**.
+Treating that as fatal (the obvious reading) means the camera works once per
+process, or never once anything else initialises first. One owner now:
+`GlassesDevice.ensureInitialized()`.
+
+**3. The repository does not go in `settings.gradle` here.** This app's
+`settings.gradle` has no `dependencyResolutionManagement` at all — it is
+`pluginManagement` + `expoAutolinking`, and repositories live in the ROOT
+`build.gradle` under `allprojects {}`. A plugin that only knew the newer shape
+reported *"settings.gradle already ok"* and added the repository **nowhere**.
+
+**4. `deploy/build_apk.sh` must apply the plugin.** `app/android` is git-ignored
+and hand-managed, so a plugin listed in `app.json` but not invoked by
+`build_apk.sh` contributes nothing — gradle then builds an APK with the whole
+feature absent and **exits zero**. There is now a generic test asserting every
+local plugin in `app.json` is applied.
+
+**What DID work first time**, worth recording so nobody re-litigates it: the
+GitHub Packages repository, the `gh` OAuth token, and the 0.9.0 dependency pins.
+The artifacts resolved, downloaded and transformed on the first run — §12.1b's
+credential finding is now proven by a build, not just by an HTTP 200.
+
+### 12.10 THE APK EXISTS — verified, and what it is NOT
+
+`assembleRelease` → **BUILD SUCCESSFUL**, `app-release.apk`, 162 MB, zero
+warnings. Verified against the ARTIFACT rather than trusting the green build,
+which is DEPLOY.md §2's explicit rule:
+
+| Check | Result |
+|---|---|
+| `minSdkVersion` | **24** — the `overrideLibrary` worked; no Android 7/8/9 user is dropped |
+| `GlassVoiceService` in merged manifest | ✅ FGS type `0x80` = `microphone` |
+| `GlassCameraService` in merged manifest | ✅ FGS type `0x10` = `connectedDevice` |
+| DAT classes linked into the dex | ✅ `Wearables`, `Camera`, `Stream`, **`SessionCameraExtensionsKt`** |
+| Our classes in the dex | ✅ `GlassCameraService`, `GlassesDevice`, `GlassesRadio` |
+| Signature | v2/v3 (no v1 block — normal for a modern build) |
+
+`SessionCameraExtensionsKt` being present matters specifically: it is the class
+that carries the `addCamera`/`removeCamera` **extension functions**, so its
+presence proves the extension imports resolved and linked, which was the single
+most likely compile failure predicted for this code.
+
+⚠ **This is a BUILD-VERIFICATION artifact, not a shippable one**, and the reason
+is the trap DEPLOY.md §2 already documents — walked into deliberately-but-not,
+and caught only because that section says to verify:
+
+```
+APK:      versionCode 44 / versionName 1.0.8
+app.json: version 1.0.11 / versionCode 50
+```
+
+Running `gradlew assembleRelease` **by hand skips `build_apk.sh`'s version-sync
+step**, so the APK carries whatever the hand-managed `android/app/build.gradle`
+last held. That is exactly the documented incident where a 52-minute build
+produced a stale-stamped APK. A wrong stamp is not cosmetic: `runtimeVersion`
+is derived from the version, so a mis-stamped APK either rejects the matching
+OTA bundle or accepts one it should not.
+
+**So the shippable APK still comes from the accept path**, which bumps the
+version, syncs all three places, smoke-tests on the emulator and distributes —
+none of which a hand-run gradle does. What this build proves is narrower and
+was the point: **the code compiles, links, and lands in the artifact.**
+
+Still true, and not changed by a green build: `/glance/photo` does not exist on
+the daemon, nothing in `app/src` starts either service, and none of this has
+run on actual glasses.
+
+### 12.6 What a future card should NOT re-buy
+
+- Do not check the Releases/Tags page for the DAT version — it is empty by
+  design. Discussions carry the announcements.
+- Do not assume anything is in the Gradle cache. It was, and it is not.
+  **Check** (`~/.gradle/caches/modules-2/files-2.1/com.meta.wearable`) before
+  claiming an offline build is possible.
+- Do not design a feature that needs the glasses' mic and the glasses' camera at
+  once on Android. §12.4.
+- Do not re-add a ticket registry (§11.1). One device, one `glance_token`.
