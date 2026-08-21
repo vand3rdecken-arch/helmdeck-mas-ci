@@ -29,7 +29,9 @@
         </div>
       </div>
       <nav class="nav-bar">
-        <button class="nav-item focusable primary" data-action="open-needs">Needs you</button>
+        <button class="nav-item focusable primary" data-action="open-needs">Needs you
+          <span class="badge-dot hidden" id="needs-badge" aria-hidden="true"></span>
+        </button>
         <button class="nav-item focusable" data-action="talk-start">Ask</button>
         <button class="nav-item focusable" data-action="open-sow">SoW</button>
         <button class="nav-item focusable" data-action="open-settings">⚙</button>
@@ -128,6 +130,11 @@
 
     <!-- transient status line -->
     <div id="toast" class="toast hidden"></div>
+
+    <!-- proactive notification: a NEW needs_you blocker landed while the
+         owner was looking at something else. Count only, no card content -
+         glance-safe for a bystander (see app.js notifyBanner). -->
+    <div id="notify-banner" class="notify-banner hidden" aria-hidden="true"></div>
   </div>
   <script src="app.js"></script>
 </body>

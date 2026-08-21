@@ -90,13 +90,18 @@ the PM will get to it, so it is queued, not blocked.
 
 ## Staleness
 
-The payload carries `ts` (epoch seconds) — when it was true. The webapp runs **no
-idle timers** (battery, per the platform guidance), so it refreshes on the events
-that mean you are actually looking: coming back to the foreground, and opening
-the needs list. The home screen prints the age next to the count, and a failed
-fetch keeps the last data but drops the connection dot to red rather than
-implying it is current. A stale "all clear" is the one thing this display must
-never show.
+The payload carries `ts` (epoch seconds) — when it was true. The webapp refreshes
+on the events that mean you are actually looking (coming back to the foreground,
+opening the needs list) **and** on a bounded 60s poll while the page is visible —
+started on foreground, stopped the instant it hides, never a fast poll (battery,
+per the platform guidance). The poll exists so a new blocker lands proactively:
+each refresh diffs `needs_you` against the ids it already knew about, and a
+freshly-appeared card lights a badge on "Needs you" (clears when you open the
+list) plus a short glance-safe banner — a count only, never a task name, so a
+bystander glancing at the lens learns nothing. The home screen prints the age
+next to the count, and a failed fetch keeps the last data but drops the
+connection dot to red rather than implying it is current. A stale "all clear" is
+the one thing this display must never show.
 
 ## Desktop smoke test
 

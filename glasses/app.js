@@ -1,6 +1,11 @@
 // HelmDeck Glance — Meta Ray-Ban Display webapp.
 // Read-only glance at the HelmDeck daemon's /glance endpoint (token-gated).
-// D-pad / EMG navigation, no touch. No idle intervals.
+// D-pad / EMG navigation, no touch. Polling is bounded and foreground-only
+// (see startPoll/stopPoll) - "start timers on demand, stop them when not
+// visible" (performance-guidelines.md) and never a FAST poll (glass-crud-
+// harness's own factory rule, default 60s) - the lens still has no
+// background execution (measured, docs/glasses-reference.md §3.2), so this
+// can only ever notice something new while the owner is actually looking.
 (function () {
   'use strict';
 
@@ -9,6 +14,10 @@
   var data = { needs_you: [], yours: [], econ: {}, sows: [] };
   var screenStack = ['home'];
   var fetchedAt = 0;          // ms, local clock: when THIS build last got data
+  // diff detection for proactive notification. null = not yet baselined (no
+  // notification on the very first load - every card would look "new").
+  var knownIds = null;
+  var unseenNew = 0;          // new needs_you cards since the owner last opened the list
 
   // ---- config (daemon URL + read-only token) --------------------------------
   function loadCfg() {
@@ -72,8 +81,26 @@
     fetch(url, { cache: 'no-store', headers: glanceHeaders() })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) {
+        // diff BEFORE overwriting `data` - new = present now, absent from the
+        // ids this build already knew about. Only ids, never task text: a
+        // proactive surface must stay glance-safe even before the owner has
+        // looked (§4.4/§11.3 - a bystander glancing at the lens learns nothing).
+        var prevIds = knownIds;
+        var ids = {};
+        (d.needs_you || []).forEach(function (c) { ids[c.id] = true; });
+        var fresh = prevIds
+          ? (d.needs_you || []).filter(function (c) { return !prevIds[c.id]; })
+          : [];
+        knownIds = ids;
         data = d; fetchedAt = Date.now();
         dot.className = 'ok'; renderHome(); renderNeeds(); renderSow();
+        if (fresh.length) {
+          unseenNew += fresh.length;
+          updateBadge();
+          // never mid-decision: a decide screen is an active input flow, and a
+          // banner there would be pure distraction, not help.
+          if (screenStack[screenStack.length - 1] !== 'decide') notifyBanner(unseenNew);
+        }
       })
       .catch(function (e) {
         // keep showing the last data, but STOP claiming it is current: a stale
@@ -82,16 +109,33 @@
       });
   }
 
-  // Freshness without a timer. The platform guidance is "no idle intervals"
-  // (battery on a head-worn display), so refresh on the events that mean the
-  // owner is actually LOOKING: the app coming back to the foreground, and
-  // opening the needs list. A glance that silently shows hours-old state is
-  // worse than one that admits it is offline.
+  // Freshness on the events that mean the owner is actually LOOKING: the app
+  // coming back to the foreground, and opening the needs list. A glance that
+  // silently shows hours-old state is worse than one that admits it is offline.
   function refreshIfStale(maxAgeMs) {
     if (!fetchedAt || Date.now() - fetchedAt > (maxAgeMs || 30000)) refresh();
   }
+
+  // Proactive poll, ONLY while the lens is actually visible: a card newly
+  // blocking while the owner sits on another screen would otherwise stay
+  // invisible until his next navigation. Bounded (60s, matching the cited
+  // factory default) and stopped the instant the page hides - the lens has no
+  // background execution to fall back on, so an unbounded timer here would
+  // just drain the battery for a screen nobody is looking at.
+  var POLL_MS = 60000;
+  var pollTimer = null;
+  function startPoll() {
+    if (pollTimer) return;
+    pollTimer = setInterval(function () {
+      if (!document.hidden && connected()) refresh();
+    }, POLL_MS);
+  }
+  function stopPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) refreshIfStale(10000);
+    if (!document.hidden) { refreshIfStale(10000); startPoll(); }
+    else stopPoll();
   });
 
   function ageText() {
@@ -474,7 +518,11 @@
     switch (a) {
       case 'back': goBack(); break;
       case 'refresh': refresh(); toast('Refreshing…'); break;
-      case 'open-needs': refreshIfStale(15000); showScreen('needs'); break;
+      case 'open-needs':
+        refreshIfStale(15000);
+        unseenNew = 0; updateBadge();     // the owner looked - the badge's job is done
+        showScreen('needs');
+        break;
       case 'open-sow': showScreen('sow'); break;
       case 'open-settings': fillSettings(); showScreen('settings'); break;
       case 'open-detail': renderDetail(btn.getAttribute('data-id')); showScreen('detail'); break;
@@ -518,10 +566,38 @@
     toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 1800);
   }
 
+  // the small dot on "Needs you": persists (unlike the banner) until the
+  // owner actually opens the list, so a missed banner is never the only shot.
+  function updateBadge() {
+    var b = document.getElementById('needs-badge');
+    if (!b) return;
+    b.classList.toggle('hidden', unseenNew <= 0);
+  }
+
+  // The proactive notification itself. Deliberately NOT the toast() function:
+  // "toasts are for feedback only" (display-guidelines.md), and this is an
+  // unprompted alert, not a response to something the owner did. Count only,
+  // never a task name - a bystander glancing at the lens must read nothing
+  // sensitive (§4.4/§11.3 glance-safe rule, applied to the display as well as
+  // voice).
+  var bannerTimer = null;
+  function notifyBanner(n) {
+    var el = document.getElementById('notify-banner');
+    if (!el) return;
+    var msg = n + ' new · needs you';
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    if (bannerTimer) clearTimeout(bannerTimer);
+    // display-guidelines.md toast timing: 3.5s + 300ms/word, capped at 8s.
+    var words = msg.split(/\s+/).length;
+    var dur = Math.min(8000, 3500 + words * 300);
+    bannerTimer = setTimeout(function () { el.classList.add('hidden'); }, dur);
+  }
+
   // ---- boot -----------------------------------------------------------------
   // The registered URL may carry the token, in which case the glasses go
   // straight to the board and the Connect screen is never seen.
   adoptUrlToken();
   if (!connected()) { fillSettings(); showScreen('settings', true); }
-  else { showScreen('home', true); refresh(); }
+  else { showScreen('home', true); refresh(); if (!document.hidden) startPoll(); }
 })();

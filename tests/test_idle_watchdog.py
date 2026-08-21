@@ -61,7 +61,11 @@ except RuntimeError as e:
     raised = str(e)
 dur = time.time() - t0
 check("stalled" in raised and "no output" in raised, "wedged turn killed as stalled (%r)" % raised[:60])
-check(2.0 <= dur < 8.0, "killed near the idle window, not a 30-min wall-clock wait (%.1fs)" % dur)
+# upper bound 30s, not "near 2s": the extra time is the process-tree kill +
+# join, which on a loaded Windows box measured 8-10s (gate run 2026-08-20) -
+# the check's job is only to prove SILENCE bounds the turn, not a 30-min
+# wall-clock, and 30s is still 60x below the old 1800s cap it pins against.
+check(2.0 <= dur < 30.0, "killed near the idle window, not a 30-min wall-clock wait (%.1fs)" % dur)
 s2.kill()
 
 print()
