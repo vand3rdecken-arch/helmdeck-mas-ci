@@ -159,7 +159,17 @@ class GlassCameraService : Service() {
     // ---- the capture ------------------------------------------------------
 
     private suspend fun capture() {
-        // THE RADIO LAW FIRST - before a single SDK call, so a refusal costs
+        // API FLOOR FIRST, before even the radio: DAT needs API 29 and the
+        // manifest merger is overridden to allow this app's minSdk 24 (see
+        // GlassesDevice.MIN_SDK). Touching any com.meta.wearable class below 29
+        // is exactly the "runtime failure" that override is warned about, so
+        // this check comes before anything that could load one.
+        if (!GlassesDevice.supported()) {
+            say("Brillen-Kamera braucht Android 10")
+            stopSelf()
+            return
+        }
+        // THE RADIO LAW SECOND - before a single SDK call, so a refusal costs
         // nothing and cannot half-open a session.
         if (!GlassesRadio.acquire(GlassesRadio.Mode.CAMERA)) {
             say("Mikrofon aktiv - Kamera nicht möglich")
