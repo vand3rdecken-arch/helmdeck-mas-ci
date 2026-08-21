@@ -190,9 +190,13 @@ def _decide(esc):
         + ("\n== KARTE (actionlog, juengste zuerst unten) ==\n" + card_log + "\n" if card_log else "")
         + "\n== SYSTEM ==\n" + _snapshot()
         + "\n\nDu darfst vor der Antwort selbst handeln (Dateien, Kommandos). "
+          "Fertige Arbeit SCHIEBST du durch: action \"move\" mit lane review "
+          "(prueft das Gate) bzw. done (nimmt ab, merged, deployed) - nicht "
+          "parken und auf den Owner warten. "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|rerun_deploy|steer|notify_owner|ignore",\n'
+          '{"action": "did|move|rerun_deploy|steer|notify_owner|ignore",\n'
           ' "card": "karten-id oder leer",\n'
+          ' "lane": "bei move: review|done",\n'
           ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "why": "ein satz begruendung"}')
     try:
@@ -202,18 +206,34 @@ def _decide(esc):
         return False
     action = (d.get("action") or "").strip()
     card = (d.get("card") or esc.get("card") or "").strip()
+    lane = (d.get("lane") or "").strip()
     text = (d.get("text") or "").strip()
     why = (d.get("why") or "").strip()
-    if not _execute(action, card, text, esc):
+    if not _execute(action, card, lane, text, esc):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why)
     _audit(card, "HENRY entschieden (%s): %s - %s" % (
         esc["kind"], action,
         (text[:200] + (" | " + why if why else "")) if action == "did" else (why or text[:120])))
+    # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
+    # is done he doesn't report back") - notify_owner/give-up already push; the
+    # quiet successes (did/move/rerun/steer) were invisible until now.
+    if action in ("did", "move", "rerun_deploy", "steer"):
+        _notify_owner("Henry (%s): %s%s - %s" % (
+            esc["kind"], action, (" -> " + lane) if action == "move" else "",
+            (text or why)[:180]), None if action == "did" else _find_track(card))
     return True
 
 
-def _execute(action, card, text, esc):
+def _find_track(card):
+    try:
+        from daemon.spine.storage.trackstore import _load, _find
+        return _find(_load(), card) if card else None
+    except Exception:
+        return None
+
+
+def _execute(action, card, lane, text, esc):
     from daemon.spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
     if action == "ignore":
@@ -222,6 +242,16 @@ def _execute(action, card, text, esc):
         # Henry already acted with his own hands inside the judgement turn
         # (owner decree 2026-08-21) - the work is done, this verb just closes
         # the escalation; `text` (what he did) lands in the audit note.
+        return True
+    if action == "move" and t and lane in ("review", "done"):
+        # Push finished work THROUGH the rails, not around them: move_lane runs
+        # the full gate on review and the accept/merge/deploy machinery on done
+        # (owner decree 2026-08-21: "he doesn't push the card through the
+        # gates"). backlog/working moves stay out of the verb - regressing a
+        # card is steering, not landing.
+        from daemon.cells.engineer import sessions
+        threading.Thread(target=sessions.move_lane, args=(t["id"], lane),
+                         kwargs={"actor": "henry"}, daemon=True).start()
         return True
     if action == "steer" and t and text:
         from daemon.cells.engineer import sessions
