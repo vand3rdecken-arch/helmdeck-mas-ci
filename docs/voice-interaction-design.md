@@ -421,14 +421,14 @@ Drei Entwurfsentscheidungen, die der Bau erzwungen hat:
    Modul tatsächlich auf. Ein OTA-Bundle, das auf einem älteren APK landet,
    meldet dann `speak:false` und fällt auf Text zurück — statt am fehlenden
    Native-Modul weiß aufzuschlagen.
-2. **`expo-speech-recognition` wurde NICHT als Abhängigkeit aufgenommen.** Es
-   gibt keinen SDK-57-Build (npm `latest` = 56.0.1), und seine Peer-Deps sind
-   Wildcards — es würde sich also stillschweigend installieren und erst beim
-   Native-Build brechen. Der Adapter ist trotzdem geschrieben und getippt; der
-   `require` ist lazy. Gemessen: Metro (`allowOptionalDependencies`) übersetzt
-   einen `require` im try/catch in einen werfenden Stub, statt den Build zu
-   fällen — Web- UND Android-Bundle wurden damit erfolgreich gebaut. Als Schuld
-   `voice-native-stt` registriert.
+2. ~~**`expo-speech-recognition` wurde NICHT als Abhängigkeit aufgenommen.**~~
+   **ÜBERHOLT durch §8c — und der Irrtum ist die eigentliche Lektion.** Der
+   Satz „es würde erst beim Native-Build brechen" war *geschlossen*, nie
+   *gemessen*. Er stimmt nicht. Was bleibt: der Adapter ist lazy und getippt,
+   und Metro (`allowOptionalDependencies`) übersetzt einen `require` im
+   try/catch in einen werfenden Stub — beides trägt weiter, jetzt als
+   Absicherung gegen ein OTA-Bundle auf einem älteren APK statt als Ersatz für
+   ein fehlendes Paket.
 3. **Die „kein Ton"-Meldung ist KLEBRIG.** Erste Fassung setzte sie pro Turn —
    und der nächste `startListening()` löschte sie Millisekunden später wieder.
    Bei fehlendem edge-tts wäre der Sprachmodus damit dauerhaft stumm gewesen,
@@ -454,6 +454,80 @@ Drei Entwurfsentscheidungen, die der Bau erzwungen hat:
 Web/Desktop können beides, Native spricht nur), und weiterhin kein echtes
 Barge-in (§4.5, unverändert die richtige Entscheidung).
 
+> Der erste Halbsatz ist seit §8c falsch: **das Telefon hört.** Der zweite gilt.
+
+---
+
+### 8c. Das Telefon hört (2026-08-21) — die Prämisse war falsch
+
+Owner-Einwand: „was soll ich mit einer App, die sprechen, aber nicht hören
+kann". Berechtigt — Sprachmodus ohne Ohr ist ein Bildschirm ohne Eingang.
+
+**Der Befund, der alles kippt.** „Kein SDK-57-Build" ist eine Aussage darüber,
+was der Upstream *getestet* hat — nicht darüber, was *läuft*. Expo-Autolinking
+übersetzt Community-Module **aus dem Quelltext** gegen das `expo-modules-core`
+der App selbst; es gibt also gar kein vorkompiliertes ABI, das nicht passen
+könnte. Also gemessen statt geschlossen:
+
+```
+./gradlew :expo-speech-recognition:compileReleaseKotlin
+  → BUILD SUCCESSFUL, 0 Warnungen
+  (gegen SDK 57 / RN 0.86 / Kotlin 2.1.20 dieser App)
+```
+
+Damit ist `expo-speech-recognition` eine Abhängigkeit — **exakt** auf `56.0.1`
+gepinnt, ohne Caret: gepinnt wird die Version, die übersetzt wurde, nicht die,
+die morgen erscheint.
+
+**Drei Fallen, die auf dem Weg dorthin lagen:**
+
+1. **Android-Paketsichtbarkeit.** Seit API 30 ist ein fremdes Paket unsichtbar,
+   und `SpeechRecognizer` *ist* ein fremdes Paket. Ohne `<queries>` baut das APK
+   sauber, `RECORD_AUDIO` ist erteilt — und `isRecognitionAvailable()` liefert
+   für immer `false`. Korrekter Code, korrekte Berechtigung, totes Mikrofon, nur
+   auf dem Gerät sichtbar. Der Eintrag liegt jetzt in `withGlassVoice.js`, das
+   beide Pfade besitzt (Prebuild *und* das handgepflegte `app/android`).
+2. **Das Vendor-Plugin wurde bewusst NICHT registriert.** Es kann nur Prebuild —
+   für `app/android` (DEPLOY.md: handgepflegt, regeneriert aus nichts) hat es
+   keine Hälfte, die beiden Build-Wege wären auseinandergelaufen. Und es setzt
+   `NSMicrophoneUsageDescription`/`NSSpeechRecognitionUsageDescription` *vor*
+   unserem `withInfoPlist`-Mod auf englische Apple-Floskeln — dessen
+   `if (!vorhanden)`-Wächter hätte die deutschen Sätze am Berechtigungsdialog
+   still verworfen.
+3. **`<queries>` darf es nur EINMAL geben,** und diese App hat bereits eines
+   (https-VIEW). Der erste Entwurf hängte ein zweites an. Beim Test gegen das
+   echte Manifest aufgefallen, nicht beim Lesen; jetzt wird in das vorhandene
+   hineingemischt — idempotent, in beiden Pfaden geprüft.
+
+**Und die Fähigkeit wird schärfer erfragt.** `caps()` fragt nicht mehr „ist das
+Modul da", sondern `isRecognitionAvailable()` — denn auf einem Play-losen Gerät
+lädt das Modul einwandfrei und *jeder* `start()` scheitert. Dazu verlangt
+`voiceUsable()` jetzt ein **Ohr**: „nur sprechen" war ein Bildschirm ohne
+Eingang, weil jeder Orb-Zustand über `startListening` läuft. Kein Ohr → kein
+Mikrofonknopf → der Composer lügt nicht.
+
+**Verifiziert, nicht behauptet:**
+- Kotlin-Übersetzung gegen SDK 57 (oben), danach **vollständiges Release-APK**
+  mit verlinktem Modul.
+- Emulator (Android 35, google_apis): `cmd package query-services -a
+  android.speech.RecognitionService` findet **zwei** Implementierungen
+  (`com.google.android.as`, `com.google.android.tts`) — aber *nicht*
+  `googlequicksearchbox`. Genau deshalb steht im `<queries>` neben dem
+  benannten Paket auch die **Intent-Form**; nur sie deckt diese beiden ab.
+- Manifest-Patch gegen das echte Manifest geprüft: genau ein `<queries>`,
+  idempotent, in *beiden* Pfaden (XML-CLI *und* Prebuild-Mod, letzterer mit dem
+  echten `expo/config-plugins` gefahren) — inklusive der Gegenprobe, dass die
+  iOS-Schlüssel deutsch bleiben.
+- `tsc --noEmit` sauber, `i18n_lint` PASS, `run_gate` PASS,
+  `e2e_voice_loop.py` **8/8**.
+
+**Was weiterhin offen ist:** die **iOS**-Hälfte ist hier nicht übersetzbar (sie
+ist Swift und braucht macOS/Xcode). Das ist eine andere Oberfläche als die
+bewiesene Kotlin-Hälfte, und der erste EAS-Build ist der einzige Compiler, der
+sie beantworten kann. Als Schuld `voice-stt-sdk-lag` registriert — mitsamt der
+Warnung, den Pin nicht auf eine bloße Versionsnummer hin hochzuziehen und damit
+den Beweis wegzuwerfen, der ihn rechtfertigt.
+
 ---
 
 ## 9. Nicht verifiziert — Risiken, die ein Bau erst schließt
@@ -474,7 +548,13 @@ Barge-in (§4.5, unverändert die richtige Entscheidung).
 7. `GlassVoiceService` ist `exported=false` und war **nie auf einem Gerät** —
    die gesamte Mikro-Route ist konstruktiv verteidigt, nicht getestet
    (`:104-108`).
-8. **Kein Claude-Realtime-Äquivalent geprüft über einen einzelnen Recherchelauf
+8. **Die iOS-Hälfte von `expo-speech-recognition` ist hier nicht übersetzbar**
+   (§8c). Die Android-Hälfte ist gegen SDK 57 bewiesen; die iOS-Hälfte ist Swift
+   gegen die Swift-API von `expo-modules-core` — eine andere Oberfläche, und
+   dieser Rechner ist kein Mac. Der erste EAS-iOS-Build ist der einzige
+   Compiler, der antworten kann; er antwortet in ~20 Minuten. Schuld
+   `voice-stt-sdk-lag`.
+9. **Kein Claude-Realtime-Äquivalent geprüft über einen einzelnen Recherchelauf
    hinaus** (§7.2) — Anthropic bewegt sich in diesem Themenfeld selbst schnell
    (eigener Voice Mode erst Juli 2026 aktualisiert); vor einer Stufe-3-Karte
    erneut prüfen, ob sich das geändert hat.
@@ -503,5 +583,5 @@ introducing-gpt-realtime, developers.openai.com/api/docs/guides/realtime-
 conversations, ai.google.dev/gemini-api/docs/live-api/{capabilities,
 get-started-websocket}, support.google.com/gemini/answer/15274899. Der Befund
 „kein Claude-Realtime-Äquivalent" ist eine Abwesenheitsprüfung (keine
-öffentliche API gefunden), keine Anthropic-eigene Aussage — siehe Punkt 8
+öffentliche API gefunden), keine Anthropic-eigene Aussage — siehe Punkt 9
 oben.

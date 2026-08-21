@@ -29,13 +29,21 @@ import { Platform } from "react-native";
  *    URI path is implemented on all three platforms, but iOS matches the prefix
  *    literally as `data:audio/` - so the mime must stay `audio/mpeg`, which is
  *    exactly what voice.render_b64 emits.
- *  - `expo-speech-recognition` has NO SDK 57 BUILD (npm `latest` is 56.0.1, and
- *    its peer deps are wildcards, so it would install happily and only fail at
- *    native build time). It is therefore NOT a dependency of this app. The hear
- *    half resolves it lazily anyway, so the day a 57.x ships, adding the package
- *    is the ONLY change needed here. Until then native reports `hear:false` and
- *    the UI offers speak-only voice mode rather than a dead microphone button.
- *    Registered as debt `voice-native-stt` (daemon/debt.py).
+ *  - `expo-speech-recognition` publishes no SDK 57 release (npm `latest` is
+ *    56.0.1, and upstream's own repo still pins expo ~56.0.12). That is a
+ *    STATEMENT ABOUT TESTING, not about compatibility, and the difference was
+ *    settled by measuring rather than by reading: expo autolinking builds
+ *    community modules FROM SOURCE against the app's own expo-modules-core, so
+ *    there is no prebuilt ABI to mismatch. `:expo-speech-recognition:
+ *    compileReleaseKotlin` against this app's SDK 57 / RN 0.86 / Kotlin 2.1.20
+ *    tree is BUILD SUCCESSFUL with zero warnings, so it is a dependency, pinned
+ *    EXACTLY to the version that was compiled (see app/package.json).
+ *  - The Android half of that package needs a `<queries>` entry to see the
+ *    recogniser at all (API 30+ package visibility). That is native config, so
+ *    it belongs to app/plugins/withGlassVoice.js, which owns both the prebuild
+ *    and the hand-managed-android paths. Without it everything below still runs
+ *    and the microphone is simply deaf - which is why `caps()` asks
+ *    `isRecognitionAvailable()` rather than settling for "the module loaded".
  *  - Web needs no package for either half: `HTMLAudioElement` plays the clip and
  *    `webkitSpeechRecognition` hears. Both are used directly here.
  */
@@ -49,8 +57,14 @@ export interface VoiceClip { id: string; mime: string; b64: string }
 export interface VoiceCaps {
   speak: boolean;
   hear: boolean;
-  /** Why `hear` is false, for a UI that must never be a silent dead end. */
-  hearReason?: "unsupported" | "no-module";
+  /** Why `hear` is false, for a UI that must never be a silent dead end.
+   *  - `unsupported`  the browser has no Web Speech API (Firefox, Chrome-on-iOS)
+   *  - `no-module`    this native binary predates the STT module (an OTA bundle
+   *                   can legitimately outrun the APK it lands on)
+   *  - `unavailable`  the module is there, but the OS exposes no recogniser:
+   *                   a Play-less/AOSP device, or a manifest missing the
+   *                   `<queries>` entry (withGlassVoice.js) */
+  hearReason?: "unsupported" | "no-module" | "unavailable";
 }
 
 export interface Listener {
@@ -110,12 +124,20 @@ function expoAudio(): AudioModule | null {
   return audioMod;
 }
 
+/** The slice of expo-speech-recognition 56.0.1 used here, declared locally for
+ *  the same reason as AudioPlayerLike above: an OTA bundle may land on an APK
+ *  built before this module existed, so "absent" has to be a runtime answer
+ *  rather than a compile error. Verified against the package's own
+ *  `build/ExpoSpeechRecognitionModule.types.d.ts`. */
 interface SttModule {
   ExpoSpeechRecognitionModule: {
     start(o: Record<string, unknown>): void;
     stop(): void;
     abort(): void;
     requestPermissionsAsync(): Promise<{ granted: boolean }>;
+    /** Does the OS actually expose a recogniser right now? False on a Play-less
+     *  device, and false when the manifest lacks the `<queries>` entry. */
+    isRecognitionAvailable(): boolean;
     addListener(ev: string, fn: (e: unknown) => void): { remove(): void };
   };
 }
@@ -123,8 +145,8 @@ let sttMod: SttModule | null | undefined;
 function expoStt(): SttModule | null {
   if (sttMod !== undefined) return sttMod;
   try {
-    // Not a dependency today (no SDK 57 build) — this resolves the moment one is
-    // added, with no other change in this file. See the header note.
+    // Lazy and wrapped on purpose — see the header. Importing it at module scope
+    // would turn "this APK is older than this bundle" into a white screen.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     sttMod = require("expo-speech-recognition") as SttModule;
   } catch {
@@ -170,7 +192,19 @@ export function caps(): VoiceCaps {
     };
   }
   const stt = expoStt();
-  return { speak: !!expoAudio(), hear: !!stt, hearReason: stt ? undefined : "no-module" };
+  const speak = !!expoAudio();
+  if (!stt) return { speak, hear: false, hearReason: "no-module" };
+  // ASK THE OS, don't infer from the import. A linked module proves the binary
+  // shipped the code; it does not prove this device has a recogniser to talk to.
+  // Android hands recognition to another app (normally Google's), so on an
+  // AOSP/Play-less build — or with a manifest missing the <queries> entry — the
+  // module loads perfectly and every start() would fail with
+  // `service-not-allowed`. Reporting hear:true there would put a live microphone
+  // button on a screen that can never hear, which is the exact dead end this
+  // whole capability probe exists to prevent.
+  let live = false;
+  try { live = stt.ExpoSpeechRecognitionModule.isRecognitionAvailable(); } catch { live = false; }
+  return { speak, hear: live, hearReason: live ? undefined : "unavailable" };
 }
 
 // -- speaking ----------------------------------------------------------------
@@ -311,14 +345,23 @@ function listenNative(o: ListenOpts): Listener | null {
   if (!M) { o.onError("failed", "no speech module in this build"); return null; }
   const R = M.ExpoSpeechRecognitionModule;
   let settled = false;
-  let best = "";
+  // Kept apart, not collapsed into one `best`. The recogniser emits a stream of
+  // interim guesses and then a final one, and the final is not necessarily an
+  // extension of the last interim — it is a re-decode with the whole utterance
+  // in hand ("wie steht das bot" -> "wie steht das board"). Overwriting a final
+  // with a later interim, or sending the newest string whatever it was, would
+  // ask Henry the question the owner nearly said.
+  let finalTxt = "";
+  let interimTxt = "";
   const subs: { remove(): void }[] = [];
   const cleanup = () => { subs.forEach((s) => { try { s.remove(); } catch { /* gone */ } }); subs.length = 0; };
   try {
     subs.push(R.addListener("result", (e: unknown) => {
       const r = e as { results?: { transcript?: string }[]; isFinal?: boolean };
       const txt = (r.results?.[0]?.transcript ?? "").trim();
-      if (txt) { best = txt; o.onPartial(txt); }
+      if (!txt) return;
+      if (r.isFinal) finalTxt = txt; else interimTxt = txt;
+      o.onPartial(txt);
     }));
     subs.push(R.addListener("volumechange", (e: unknown) => {
       const v = (e as { value?: number }).value;
@@ -339,7 +382,10 @@ function listenNative(o: ListenOpts): Listener | null {
       if (settled) return;
       settled = true;
       cleanup();
-      const t = best.trim();
+      // The final if there was one; otherwise the best interim, because a
+      // recogniser that ends without a final still heard something and throwing
+      // it away would read as "it ignored me".
+      const t = (finalTxt || interimTxt).trim();
       if (t) o.onFinal(t); else o.onError("nospeech");
     }));
   } catch {

@@ -2238,7 +2238,7 @@ DEBT = [
     {
         "id": "voice-native-stt",
         "title": "Voice mode HEARS on web/desktop only - native has no speech-recognition module",
-        "status": "open",
+        "status": "paid",
         "what": "Voice mode (app/src/ui/voice_mode.tsx) ships both halves of a "
                 "spoken turn, but only web/desktop can currently do both. "
                 "SPEAKING works everywhere the daemon reaches: the reply is "
@@ -2253,7 +2253,11 @@ DEBT = [
                 "app and only fail at native build time - which is why it was "
                 "deliberately NOT added as a dependency. On native, "
                 "data/voice.ts caps() therefore reports hear:false and the UI "
-                "opens in speak-only mode.",
+                "opens in speak-only mode. "
+                "[CORRECTION, see fix] That last inference was wrong, and the "
+                "wrongness is the lesson: 'fails at native build time' was "
+                "REASONED from the missing release, never measured. It was "
+                "then measured, and it builds.",
         "why_it_bites": "The owner asked for ChatGPT/Gemini-parity voice mode, "
                         "and on the phone - the surface that matters most for "
                         "hands-busy use - half of it is a read-only "
@@ -2266,18 +2270,68 @@ DEBT = [
                         "microphone button.",
         "trigger": "expo-speech-recognition publishes a 57.x; OR the owner "
                    "asks why the phone will not listen when the desktop does",
-        "fix": "When a 57.x ships: `npx expo install "
-               "expo-speech-recognition`, add its config plugin to app.json "
-               "(microphonePermission + speechRecognitionPermission + "
-               "androidSpeechServicePackages), rebuild the APK - and change "
-               "NOTHING in data/voice.ts, whose lazy require and local "
-               "interface were written against that package's real API for "
-               "exactly this moment. Fallback if it stays dead: the repo "
-               "already owns a native Android SpeechRecognizer service "
-               "(app/plugins/glassvoice/GlassVoiceService.kt, currently "
-               "unstarted) that could be promoted into a small Expo module "
-               "instead of taking a third-party dependency.",
+        "fix": "PAID - by measuring the premise instead of trusting it. "
+               "'No SDK 57 build' turned out to be a statement about upstream "
+               "TESTING, not about compatibility: expo autolinking compiles "
+               "community modules FROM SOURCE against the app's own "
+               "expo-modules-core, so there is no prebuilt ABI that could "
+               "mismatch. Proof: `:expo-speech-recognition:"
+               "compileReleaseKotlin` against this app's real SDK 57 / "
+               "RN 0.86 / Kotlin 2.1.20 tree is BUILD SUCCESSFUL, zero "
+               "warnings. So (1) 56.0.1 is a dependency, pinned EXACTLY to "
+               "the version that was compiled - no caret, because a future "
+               "upstream release is exactly the thing that has not been "
+               "verified; (2) the Android <queries> package-visibility entry "
+               "the recogniser needs went into app/plugins/withGlassVoice.js "
+               "rather than by registering the vendor's own config plugin - "
+               "that plugin has no hand-managed-android half (DEPLOY.md), so "
+               "the two build paths would have disagreed, and it would have "
+               "overwritten the German iOS permission strings with English "
+               "Apple boilerplate; (3) caps() now asks "
+               "isRecognitionAvailable() rather than settling for 'the module "
+               "loaded', because on a Play-less device the module loads fine "
+               "and every start() fails; (4) voiceUsable() now requires an "
+               "EAR, since speak-only voice mode was a screen with no way in. "
+               "Residual risk moved to [voice-stt-sdk-lag].",
         "order": 39,
+    },
+    {
+        "id": "voice-stt-sdk-lag",
+        "title": "Speech recognition runs on an SDK-56 package pinned into an SDK-57 app",
+        "status": "open",
+        "what": "app/package.json pins expo-speech-recognition to EXACTLY "
+                "56.0.1 - upstream's newest release, published for Expo SDK "
+                "56. Its Android half was compile-verified against this app's "
+                "SDK 57 toolchain before adoption (see [voice-native-stt]) "
+                "and the whole APK links and runs. The iOS half was NOT "
+                "compile-verified here, because that needs a macOS/Xcode "
+                "host, which this machine is not: it is Swift against "
+                "expo-modules-core's Swift API, which is a different surface "
+                "from the Kotlin one that was proven.",
+        "why_it_bites": "Two distinct ways this bites, and neither shows up "
+                        "on Windows. (a) The first iOS/EAS build after this "
+                        "lands is where an SDK 56->57 Swift API change would "
+                        "surface - as a pod compile error in a cloud build, "
+                        "far from this commit. (b) `npx expo install --check` "
+                        "will keep flagging the pin as off-SDK forever, and "
+                        "the tempting one-word fix (bump to whatever is "
+                        "newest) silently discards the compile evidence this "
+                        "pin represents.",
+        "trigger": "the next iOS/EAS build; OR expo-speech-recognition "
+                   "publishes a 57.x; OR `expo install --check` flags it",
+        "fix": "When a 57.x ships, `npx expo install "
+               "expo-speech-recognition` and re-run the same proof that "
+               "bought the current pin: `cd app/android && ./gradlew "
+               ":expo-speech-recognition:compileReleaseKotlin`, then a full "
+               "APK + emulator smoke. Do NOT bump on the version number "
+               "alone. For iOS, the honest close is one EAS build - it is "
+               "the only compiler that can answer, and it answers in ~20 "
+               "minutes. If that build fails, the fallback is unchanged and "
+               "still stands: the repo already owns a native Android "
+               "SpeechRecognizer (app/plugins/glassvoice/"
+               "GlassVoiceService.kt) that could be promoted into a local "
+               "Expo module, and iOS SFSpeechRecognizer written beside it.",
+        "order": 40,
     },
 ]
 
