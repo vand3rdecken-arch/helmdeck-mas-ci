@@ -375,6 +375,17 @@ def main():
         status, body = req("POST", "/chat", {}, cookie=sid, expect=400)
         ok(isinstance(body, dict) and body.get("error"), "/chat POST rejects missing text (never reaches copilot.chat)")
 
+        # Success path (real edge-tts render) deliberately NOT exercised here -
+        # same reason /chat and /glance/talk stop at the role/validation gates:
+        # it is a real network call (cost, non-determinism, and it can hang
+        # this sandboxed test hard when the box has no route to Microsoft's
+        # TTS service, which is exactly what happened the first time this was
+        # tried - measured, not assumed).
+        status, body = req("POST", "/notify/speak", {"text": "hi"}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/notify/speak refuses a client")
+        status, body = req("POST", "/notify/speak", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/notify/speak rejects missing text")
+
         # -- projects group (routes_projects.py) ---------------------------------
         status, body = req("GET", "/projects", cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/projects GET refuses a client")
