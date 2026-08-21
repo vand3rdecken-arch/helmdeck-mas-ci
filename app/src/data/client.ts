@@ -478,6 +478,8 @@ export const api = {
     return m;
   }),
   loopMap: () => req<LoopMap>("GET", "/loop/map"),
+  escalations: () => req<{ id: string; ts: string; kind: string; card?: string; detail?: string;
+    attempts: number; closed: boolean; action?: string; why?: string }[]>("GET", "/escalations"),
   harness: () => req<HarnessDocument>("GET", "/harness"),
   /** Write a brief or a settings layer, or roll one back with `restore`.
    *  The daemon validates BEFORE writing and returns the fresh document, so the

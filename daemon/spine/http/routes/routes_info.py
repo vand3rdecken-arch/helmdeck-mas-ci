@@ -125,6 +125,16 @@ def harness_schema_get(self, user):
     }, ensure_ascii=False))
 
 
+def escalations_get(self, user):
+    # Henry's escalation log (spine bus, judged by the copilot cell) - the
+    # owner reads WHAT was escalated and HOW Henry decided. Not for clients:
+    # entries name repos, processes and failure detail from this machine.
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "not for clients"}))
+    from daemon.spine.registry import escalations
+    return self._send(200, json.dumps(escalations.list_all(), ensure_ascii=False))
+
+
 GET_ROUTES = {
     "/debt": debt_get,
     "/charter": charter_get,
@@ -132,4 +142,5 @@ GET_ROUTES = {
     "/models": models_get,
     "/harness": harness_get,
     "/harness/schema": harness_schema_get,
+    "/escalations": escalations_get,
 }

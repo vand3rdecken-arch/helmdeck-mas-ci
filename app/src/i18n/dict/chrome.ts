@@ -18,6 +18,12 @@ export const chrome: Dict = {
   "nav.settings": { de: "Einstellungen", en: "Settings" },
   "nav.modules": { de: "Module", en: "Modules" },
   "nav.chat": { de: "Chat", en: "Chat" },
+  "nav.escalations": { de: "Eskalationen", en: "Escalations" },
+  "esc.sub": { de: "Was Henry entschieden hat - und was noch offen ist.", en: "What Henry decided - and what is still open." },
+  "esc.empty": { de: "Keine Eskalationen - der Harness kam allein zurecht.", en: "No escalations - the harness coped on its own." },
+  "esc.open": { de: "offen · Versuch {n}/2", en: "open · attempt {n}/2" },
+  "esc.decided": { de: "entschieden: {action}", en: "decided: {action}" },
+  "esc.demoWhy": { de: "Deploy starb mit dem Daemon-Neustart", en: "Deploy died with the daemon restart" },
   "nav.feedback": { de: "Feedback geben", en: "Give feedback" },
 
   // lanes (defaults; policy.lane_labels still overrides per workspace)

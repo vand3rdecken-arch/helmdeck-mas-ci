@@ -639,8 +639,12 @@ def _auto_resolve_conflict(t, log, reason):
     tries = int(t.get("ft_resolve_tries") or 0)
     if tries >= 2:
         log.log("note", "FAST-TRACK: Konflikt auch nach %d automatischen "
-                "Aufloesungs-Versuchen offen (%s) - jetzt brauchst DU es: "
-                "sag dem Worker, welche Seite gewinnen soll." % (tries, reason))
+                "Aufloesungs-Versuchen offen (%s) - Henry uebernimmt die "
+                "Entscheidung." % (tries, reason))
+        from daemon.spine.registry import escalations
+        escalations.emit("conflict-unresolved", card=t["id"],
+                         detail="%s nach %d Auto-Versuchen; Branch %s"
+                                % (reason, tries, t.get("branch")))
         return
     _mutate(t["id"], lambda tt: tt.__setitem__("ft_resolve_tries", tries + 1))
     from daemon.cells.engineer import lanemachine as _lm
@@ -820,7 +824,10 @@ def _try_auto_fix_deploy(t, lg):
     _mutate(tid, lambda tt: tt.__setitem__("deploy_fail_streak", streak))
     if streak > _DEPLOY_FIX_CAP:
         lg.log("note", "FAST-TRACK: Deploy-Hook %dx in Folge rot - kein automatischer "
-               "Reparaturversuch mehr, wartet auf dich." % (streak - 1))
+               "Reparaturversuch mehr, Henry uebernimmt." % (streak - 1))
+        from daemon.spine.registry import escalations
+        escalations.emit("deploy-red", card=t["id"],
+                         detail=((t.get("deploy_hook") or {}).get("tail") or "")[:600])
         return
     tail = ((t.get("deploy_hook") or {}).get("tail") or "")[:1200]
     instr = ("FAST-TRACK deploy hook FAILED after your last change was already merged "
