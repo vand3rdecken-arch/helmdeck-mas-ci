@@ -85,6 +85,7 @@ export const composer: Dict = {
                        en: "Keeps going. Tap to interrupt Henry." },
   "voice.hintPush": { de: "Tippen zum Sprechen, nochmal tippen zum Senden.",
                       en: "Tap to speak, tap again to send." },
+  "voice.greeting": { de: "Ja? Ich höre.", en: "Yes? I'm listening." },
   // Failure copy: each says what is still possible, never only what broke.
   "voice.denied": { de: "Kein Mikrofonzugriff — in den Systemeinstellungen erlauben.",
                     en: "No microphone access — allow it in system settings." },
