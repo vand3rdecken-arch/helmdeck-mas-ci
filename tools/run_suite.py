@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""The FULL test suite - the old per-card gate, demoted to a BASE health
-monitor (owner decree 2026-08-21, debt [gate-light]). Run it against the
-trunk checkout on a schedule or after a night-shift batch - NEVER per card:
-per-card it cost ~8 minutes, redded on base breakage a card never touched,
-and redded on box load (a Gradle build starved a timing assertion).
-
-Green = silence. Red = base health incident: fix the trunk (or file the card),
-do not bounce anyone's work over it.
+"""The FULL unit suite - MANUAL tool, nothing schedules or gates on this
+(owner decree 2026-08-21 v2, debt [gate-light]). A fix's test runs ONCE at
+the fix's own verification, then retires here as replayable documentation.
+Run this deliberately when reworking a subsystem and you want the old pins
+replayed against your change - never per card, never on a schedule: per-card
+it cost ~8 minutes, redded on base breakage a card never touched, and redded
+on box load. Recurring verification of the SYSTEM is e2e before builds/ships
+(live daemon + web + Playwright), not this file.
 
 Runs every self-sandboxed tests/test_*.py and daemon/test_*.py sequentially
 (the live-server e2e_* tests still need :3300 and are skipped).

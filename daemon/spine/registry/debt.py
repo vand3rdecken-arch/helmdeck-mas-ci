@@ -2221,12 +2221,18 @@ DEBT = [
                         "enforced runner - if nothing schedules it, it rots "
                         "into the same nobody-runs-it state daemon/test_*.py "
                         "was rescued from.",
-        "trigger": "a merged card breaks behavior the suite pins; run_suite "
-                   "red sits unnoticed; nobody schedules the base monitor",
-        "fix": "Schedule run_suite.py against the trunk (nightshift hook or "
-               "cron) and have a red auto-file a base-health card naming the "
-               "suspect merges since the last green. Keep the gate light - "
-               "the fix is wiring the monitor, not re-fattening the gate.",
+        "trigger": "a merged card breaks behavior an old pin covered; a build "
+                   "ships without any assembled-system verification",
+        "fix": "Decree v2 (owner, 2026-08-21): NO recurring unit-suite run at "
+               "all - a fix's test runs ONCE at the fix's own verification, "
+               "then retires as replayable documentation (run_suite.py stays "
+               "manual, for when someone deliberately reworks a subsystem). "
+               "The only recurring verification is E2E at the integration "
+               "points: wire the e2e_* tests + Playwright smoke (live daemon "
+               ":8140 + web :3300) as the pre-build/pre-ship step in "
+               "build_apk.sh/ship.sh. Real-system checks before real "
+               "releases; never re-fatten the gate and never schedule the "
+               "unit suite.",
         "order": 38,
     },
 ]
