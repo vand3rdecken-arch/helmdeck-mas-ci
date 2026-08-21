@@ -303,7 +303,7 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   if (path === "/escalations") return [
     { id: "aborted-by-restart-1", ts: "2026-08-21T04:19:07", kind: "aborted-by-restart",
       card: "20260816-193639-proc-20260816-s3", detail: "apk build (npm ci + gradle)",
-      attempts: 1, closed: true, action: "rerun_deploy", why: "Deploy starb mit dem Daemon-Neustart" },
+      attempts: 1, closed: true, action: "rerun_deploy", why: t("esc.demoWhy") },
     { id: "conflict-unresolved-2", ts: "2026-08-21T04:05:05", kind: "conflict-unresolved",
       card: "20260816-193639-proc-20260816-s3", detail: "tests/test_driver_session.py",
       attempts: 1, closed: false },

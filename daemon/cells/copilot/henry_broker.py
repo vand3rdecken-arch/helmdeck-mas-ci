@@ -221,7 +221,8 @@ def _audit(card, note):
 def _notify_owner(text, t):
     try:
         from daemon.spine.comms import notify
-        notify.push_fcm("Henry", text[:230])
+        from daemon.spine.registry import i18n as _i18n
+        notify.push_fcm(_i18n.t("push.henry"), text[:230])
     except Exception:
         pass
     if t:
