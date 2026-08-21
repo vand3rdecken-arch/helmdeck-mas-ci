@@ -9,6 +9,31 @@
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 
+# SHIP SINGLETON (2026-08-21): one ship per repo, join-or-wait, never stack.
+# Measured incident: two accepts minutes apart each fired this hook - two
+# `npm ci` + two Gradle builds in the SAME app/ tree shredded each other
+# (EPERM/EBUSY on node_modules), and a daemon restart earlier orphaned a
+# Gradle tree that then held locks against the next build. The lock is a
+# LIVE-PID observation, not a stored flag: a lock whose pid is dead is stale
+# and taken over (the Paseo rule - derive state from the runtime's own
+# signals). A waiting ship simply proceeds when the holder exits; the
+# fingerprint check right below then makes it a no-op if the holder already
+# shipped this exact tree.
+LOCK="$ROOT/.loop/ship.lock"
+mkdir -p "$ROOT/.loop"
+while ! mkdir "$LOCK" 2>/dev/null; do
+  HOLDER="$(cat "$LOCK/pid" 2>/dev/null)"
+  if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then
+    echo "[ship] another ship is running (pid $HOLDER) - waiting to join"
+    sleep 15
+  else
+    echo "[ship] stale ship lock (pid ${HOLDER:-?} dead) - taking over"
+    rm -rf "$LOCK"
+  fi
+done
+echo $$ > "$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
+
 native_fp() {
   # Fingerprint the ANDROID-relevant native config only. EXCLUDE the version
   # fields that bump_version + build_apk.sh change (app.json version/

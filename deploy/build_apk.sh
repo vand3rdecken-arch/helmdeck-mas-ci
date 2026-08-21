@@ -18,6 +18,12 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 # the new package ("Unable to resolve module ..."). `npm ci` is only in the
 # NATIVE path (~10 min build anyway) so the plain JS-only OTA fast path stays
 # seconds, unaffected.
+# A leftover Gradle daemon holds jars INSIDE node_modules (expo-* android
+# builds cache there) and npm ci then dies on EPERM/EBUSY unlink - hit twice
+# on 2026-08-20/21, both times after a prior build was killed (daemon
+# restart / stopped task) and its daemon lingered. Ask it to stop first;
+# best-effort, a missing wrapper or no daemon is fine.
+( cd app/android 2>/dev/null && ./gradlew --stop >/dev/null 2>&1 ) || true
 echo "HOOK-NOTE: npm ci (node_modules sync with the just-merged lockfile, can take a few min)"
 echo "[build_apk] npm ci (sync node_modules with the just-merged lockfile)"
 ( cd app && npm ci ) || { echo "[build_apk] npm ci FAILED"; exit 1; }
