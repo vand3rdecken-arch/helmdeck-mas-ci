@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { caps, listen, speak, stopSpeaking, type Listener, type VoiceClip } from "@/data/voice";
+import { caps, listen, openSpeech, stopSpeaking, type Listener, type SpeechQueue, type VoiceClip } from "@/data/voice";
 import { getLang, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Empty } from "@/ui/kit";
@@ -42,9 +42,16 @@ export type VoiceState = "idle" | "listening" | "thinking" | "speaking" | "error
 
 export interface VoiceTurn { role: "user" | "henry"; text: string }
 
-/** The caller answers a spoken question: run the turn, return prose + the clip
- *  the daemon rendered (`POST /chat {voice:true}` -> `out.voice`). */
-export type AskFn = (text: string) => Promise<{ reply: string; clip?: VoiceClip | null }>;
+/** The caller answers a spoken question.
+ *
+ *  `onClip` is how speech arrives NOW: the daemon renders Henry's answer
+ *  sentence by sentence while he is still writing it, and the caller (which owns
+ *  the transport — this component deliberately does not) hands each chunk over
+ *  as it lands. The returned `clip` is the older one-shot path, kept because a
+ *  daemon that predates streaming still answers that way and going silent
+ *  against an older daemon would be a worse bug than speaking late. */
+export type AskFn = (text: string, onClip?: (c: VoiceClip) => void)
+  => Promise<{ reply: string; clip?: VoiceClip | null }>;
 
 // -- the orb -----------------------------------------------------------------
 
@@ -173,6 +180,10 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
   const [hands, setHands] = useState(true);
 
   const listener = useRef<Listener | null>(null);
+  // The turn's speech queue, so an interrupt can drop what is still QUEUED and
+  // not merely cut the clip that happens to be playing — with streaming there
+  // are usually two or three more sentences waiting behind it.
+  const speechRef = useRef<SpeechQueue | null>(null);
   const alive = useRef(false);
   const ability = useRef(caps()).current;
   const handsRef = useRef(hands);
@@ -207,32 +218,51 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     setTurns((v) => [...v, { role: "user", text: said }]);
     setCaption("");
     setState("thinking");
+    // Opened BEFORE the turn starts, because the first chunk can arrive while
+    // the model is still writing — that is the whole point of streaming, and a
+    // queue created after the await would miss it.
+    const speech = openSpeech();
+    speechRef.current = speech;
+    let heard = false;
     let reply = "";
     let clip: VoiceClip | null | undefined;
     try {
-      const r = await onAsk(said);
+      const r = await onAsk(said, (c) => {
+        if (!alive.current || !c?.b64) return;
+        heard = true;
+        setSilent(false);
+        // The first chunk is the moment the wait visibly ends.
+        setState((s) => (s === "thinking" ? "speaking" : s));
+        speech.push(c);
+      });
       reply = r.reply || "";
       clip = r.clip;
     } catch (e) {
+      speech.stop();
+      speechRef.current = null;
       if (!alive.current) return;
       setProblem(String((e as Error).message || tr("voice.failed")));
       setState("error");
       return;
     }
-    if (!alive.current) return;
+    if (!alive.current) { speech.stop(); speechRef.current = null; return; }
     setTurns((v) => [...v, { role: "henry", text: reply || tr("chat.noReply") }]);
     setCaption(reply);
-    if (clip?.b64) {
+    if (!heard && clip?.b64) {
+      // Older daemon: no chunks, one clip at the end. Same queue, one item.
       setState("speaking");
-      setSilent(false);      // speech came back — drop the notice
-      await speak(clip);
-    } else {
-      // No clip: the daemon renders speech through edge-tts, which fails soft
+      setSilent(false);
+      speech.push(clip);
+    } else if (!heard) {
+      // Nothing at all: the daemon renders through edge-tts, which fails soft
       // when it is offline or unavailable (voice.py). The answer is not lost —
       // it is on screen and in the transcript — so say so and keep going rather
       // than pretending the turn failed.
       setSilent(true);
     }
+    speech.close();
+    await speech.done();
+    speechRef.current = null;
     if (!alive.current) return;
     if (handsRef.current) startRef.current();
     else setState("idle");
@@ -241,6 +271,8 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
   const startListening = useCallback(() => {
     if (!alive.current) return;
     if (!ability.hear) { setState("idle"); return; }
+    speechRef.current?.stop();      // drops the queue, not just the current clip
+    speechRef.current = null;
     stopSpeaking();
     stopListening();
     setProblem("");
@@ -284,6 +316,8 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     return () => {
       alive.current = false;
       stopListening();
+      speechRef.current?.stop();
+      speechRef.current = null;
       stopSpeaking();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -297,7 +331,7 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
    *  speaking, submit while listening, start while idle. Never a dead tap. */
   function tapOrb() {
     if (busy) return;
-    if (state === "speaking") { stopSpeaking(); startListening(); return; }
+    if (state === "speaking") { startListening(); return; }   // startListening drops the queue
     if (state === "listening") { listener.current?.stop(); return; }   // finish the phrase
     if (state === "thinking") return;
     startListening();

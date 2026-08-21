@@ -2333,6 +2333,45 @@ DEBT = [
                "Expo module, and iOS SFSpeechRecognizer written beside it.",
         "order": 40,
     },
+    {
+        "id": "voice-stream-cost",
+        "title": "Streaming speech costs one edge-tts round trip PER SENTENCE, and the client's tail wait is bounded",
+        "status": "open",
+        "what": "voice_stream.py renders Henry's reply sentence by sentence so "
+                "voice mode starts talking about a second into a turn instead "
+                "of after it (docs/voice-interaction-design.md SS8d). Two "
+                "load-bearing shortcuts come with that. (a) A turn that used "
+                "to be ONE edge-tts render is now typically 2-4, so the "
+                "unmeasured quota question in SS9.5 got sharper rather than "
+                "softer - and edge-tts is an unofficial client of a Microsoft "
+                "service with no published limit. (b) chat.tsx's post-turn "
+                "drain waits at most 40x250ms = 10s for chunks still "
+                "rendering; past that the last sentence is silently dropped.",
+        "why_it_bites": "Both fail in the same shape: quietly, and only under "
+                        "load or a slow network - the two conditions under "
+                        "which nobody is watching a test. A rate-limit would "
+                        "show up as voice mode going mute mid-answer (the "
+                        "render fails soft, so there is no error to see), and "
+                        "the drain cap shows up as replies that lose their "
+                        "final sentence only sometimes. Neither is visible "
+                        "from the code, and neither is caught by "
+                        "e2e_voice_stream.py, whose render is stubbed by "
+                        "design.",
+        "trigger": "voice mode goes silent partway through answers; OR a reply "
+                   "reproducibly loses its last sentence; OR the first real "
+                   "day of heavy voice use",
+        "fix": "Measure before tuning. Count renders per turn and log "
+               "edge-tts failures in voice.py (today a failure returns None "
+               "and vanishes) - a soft failure that leaves no trace is the "
+               "actual bug here. Then: raise BATCH_CHARS if the count is the "
+               "problem, and reuse the existing content-hash cache harder "
+               "(short sentences like 'Soll ich anfangen?' repeat across "
+               "turns and should never re-render). For the drain, replace the "
+               "fixed cap with a wait keyed on voice_pending going false, "
+               "with the cap only as a backstop, and say so on screen when it "
+               "is hit rather than dropping the sentence in silence.",
+        "order": 41,
+    },
 ]
 
 def list_debt():

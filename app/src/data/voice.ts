@@ -289,6 +289,63 @@ async function speakNative(uri: string): Promise<void> {
   });
 }
 
+/** A turn's speech, arriving in pieces.
+ *
+ *  The daemon now renders Henry's answer sentence by sentence while he is still
+ *  writing it (daemon/spine/media/voice_stream.py), so the client no longer gets
+ *  ONE clip at the end - it gets a series, and has to play them back to back
+ *  without gaps, in order, and be able to throw the rest away mid-sentence when
+ *  the owner interrupts. That is a queue, not a function call. */
+export interface SpeechQueue {
+  /** Another rendered chunk arrived. Plays immediately if nothing else is. */
+  push(clip: VoiceClip): void;
+  /** No further chunks will arrive (the turn is over and nothing is rendering). */
+  close(): void;
+  /** Resolves once everything pushed has been played - or the moment `stop()`
+   *  is called. This is what "Henry finished speaking" means now. */
+  done(): Promise<void>;
+  /** Interrupt: drop what is queued and cut the clip that is playing. */
+  stop(): void;
+}
+
+export function openSpeech(): SpeechQueue {
+  const q: VoiceClip[] = [];
+  let closed = false, stopped = false, running = false;
+  let settleDone: (() => void) | null = null;
+  const finished = new Promise<void>((r) => { settleDone = r; });
+  const settle = () => { const r = settleDone; settleDone = null; r?.(); };
+
+  const pump = async () => {
+    if (running || stopped) return;
+    running = true;
+    for (;;) {
+      const next = q.shift();
+      if (!next) {
+        running = false;
+        // Empty but not closed: the model is still writing. Stop the loop and
+        // let the next push() restart it, rather than spinning on a timer.
+        if (closed || stopped) settle();
+        return;
+      }
+      await speak(next);
+      if (stopped) { running = false; return; }   // stop() already settled
+    }
+  };
+
+  return {
+    push(clip) { if (!stopped && !closed) { q.push(clip); void pump(); } },
+    close() { closed = true; if (!running) { q.length ? void pump() : settle(); } },
+    done: () => finished,
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      q.length = 0;
+      stopSpeaking();
+      settle();
+    },
+  };
+}
+
 // -- hearing -----------------------------------------------------------------
 
 /** Start recognition. Returns a handle, or null when this runtime cannot hear

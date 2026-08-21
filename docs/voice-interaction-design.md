@@ -530,6 +530,69 @@ den Beweis wegzuwerfen, der ihn rechtfertigt.
 
 ---
 
+### 8d. Henry spricht ab dem ersten Satz (2026-08-21)
+
+Owner schickte huggingface/speech-to-speech (Apache-2.0, 12,7k ⭐) mit „schau ob
+du hier was lernen kannst". Eine Sache ist es wert, und zwar genau eine.
+
+**Was dort steht.** Deren Pipeline ist dieselbe Kaskade wie unsere — VAD → STT →
+LLM → TTS — aber sie *wartet nie auf das Modell*. `LLM/language_model.py`
+zerlegt den STREAMENDEN Output in Sätze und gibt Batches weiter, sobald sie
+fertig sind (`stream_batch_sentences`, Default 3). HelmDeck machte das
+Gegenteil: ganzen Turn abwarten, dann eine mp3, dann abspielen — der
+Sprachmodus schwieg durch den gesamten Turn, also genau durch den Teil, der
+wehtut (`copilot.py` nennt selbst „dead 40s wait").
+
+**Der Befund, der den Bau billig machte: die Rohre lagen schon.** `copilot.py`
+pumpt Claudes `text_delta`-Events fortlaufend in `live_partial.txt`,
+`GET /chat/live` liefert diesen Teiltext, `client.ts` hat `chatLive()`, und
+`chat.tsx` *pollt es bereits während des Turns* — über den Relay. Damit fällt
+auch der Einwand, den man aus dem Gedächtnis erhoben hätte („der E2EE-Relay
+versiegelt EINEN Request, also kein Streaming"): es wird nichts gestreamt. Der
+Daemon rendert *ganze kleine Clips*, der Client *sammelt* sie, ein versiegelter
+Request nach dem anderen. Gleicher Transport, gleiche Auth, kein neuer Kanal.
+
+**Was NICHT übernommen wurde,** und warum: ihre lokalen Modelle
+(Parakeet/Kokoro/Qwen3-TTS) sind Gigabyte an Gewichten als Ersatz für ein
+edge-tts, das nichts kostet, und ein Platform-STT, das seit §8c läuft. Ihr
+WebRTC-/Realtime-Server kauft Talk-over-the-model-Barge-in — genau das, was
+HFP/A2DP auf der Brille ohnehin verbietet (§4.5).
+
+**Wie es hier aussieht** (`daemon/spine/media/voice_stream.py`):
+Satzgrenze = Terminator **plus folgender Whitespace** — bei Token-Deltas ist das
+Leerzeichen der *Beweis*, dass der Satz zu ist, statt einer Vermutung. Chunk 1
+geht raus, sobald *ein* Satz existiert; spätere Chunks werden größer (140/260
+Zeichen), weil dann schon Ton läuft und Größe nur noch Round-Trips kostet. Ein
+Render-Worker, nicht mehr — Reihenfolge schlägt Tempo, denn Sprache, die
+*falsch sortiert* ankommt, ist schlimmer als Sprache, die spät ankommt.
+Der Client hält nur einen **Lese-Cursor** (`?voice_from=`), der Daemon die eine
+Wahrheit.
+
+**Drei Mängel, die der Test fand und Lesen nicht gefunden hätte:**
+
+1. Der erste Chunk sammelte auf 40 Zeichen und klebte damit einen kurzen
+   Eröffnungssatz an den langen danach — erster Ton erst bei Zeichen **104 von
+   170**. Jetzt bei **26**. Das war das Feature, und der erste Entwurf hatte es
+   verfehlt.
+2. Der ```actions-Block konnte in einen Clip geraten, wenn ein Aufrufer den
+   rohen Reply übergibt. Jetzt schneidet `voice_stream` selbst an der ersten
+   Fence ab — als Boden, nicht als zweiter Action-Parser.
+3. Eine LEERE Warteschlange muss trotzdem auflösen. Ohne das säße der
+   Sprachmodus bei fehlendem edge-tts für immer in `thinking` und hörte nie
+   wieder zu — ein stiller, dauerhafter Hänger, den kein Typecheck sieht.
+   Als Browser-Check festgenagelt.
+
+**Verifiziert:** `tools/e2e_voice_stream.py` **13/13** — füttert den Reply
+Zeichen für Zeichen wie die Pump und prüft Reihenfolge, Vollständigkeit,
+Cursor-Semantik, Abbruch und den Flush des letzten Satzes.
+`tools/e2e_voice_loop.py` **12/12** inkl. des Leer-Queue-Falls.
+
+**Preis, offen gesagt:** pro Satz ein Round-Trip zu Microsoft statt einem pro
+Turn — die edge-tts-Kontingentfrage (§9.5) wird dadurch schärfer, nicht
+milder. Als Schuld `voice-stream-cost` registriert.
+
+---
+
 ## 9. Nicht verifiziert — Risiken, die ein Bau erst schließt
 
 1. Ob Apples 1-Minuten- und Tageslimits **auch on-device** gelten. Apple
