@@ -1,0 +1,328 @@
+// Self-sandboxing test for app/plugins/withMetaDat.js — the Gradle wiring that
+// puts the Meta DAT camera SDK into the build.
+//
+// WHY THIS TEST EXISTS AND WHAT IT CANNOT DO. The Kotlin that uses the SDK
+// cannot be compiled from a card worktree (DEPLOY.md §2: an APK builds only
+// from a short real path such as C:\hd\app), so none of the camera runtime is
+// exercised anywhere. What IS mechanically checkable is the part that decides
+// whether the build can resolve the dependency at all — pure string→string
+// functions over Gradle files. That is what this covers: idempotency, dialect
+// correctness, and refusing to write into a file it does not understand.
+//
+// No network, no filesystem writes outside a temp dir, no gradle. Run:
+//     node tests/test_meta_dat_plugin.js
+
+const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+const P = require("../app/plugins/withMetaDat.js");
+
+let fails = 0;
+function ok(cond, msg) {
+  console.log((cond ? "  ok   - " : "  FAIL - ") + msg);
+  if (!cond) fails++;
+}
+
+// --- fixtures modelled on the real Expo template ---------------------------
+
+const SETTINGS_GROOVY = `
+pluginManagement { includeBuild(new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../expo-gradle-plugin").toString()) }
+plugins { id("com.facebook.react.settings") }
+dependencyResolutionManagement {
+    versionCatalogs { }
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'HelmDeck'
+include ':app'
+`;
+
+const SETTINGS_KTS = `
+pluginManagement { }
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "HelmDeck"
+include(":app")
+`;
+
+const APP_GRADLE = `
+apply plugin: "com.android.application"
+android {
+    namespace 'app.helmdeck'
+    defaultConfig { minSdk 24 }
+}
+// note: dependencies are managed by expo autolinking where possible
+dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("androidx.core:core-ktx:1.13.1")
+}
+`;
+
+// --- settings.gradle -------------------------------------------------------
+
+console.log("settings.gradle:");
+{
+  const out = P.patchSettingsGradle(SETTINGS_GROOVY, false);
+  ok(out !== SETTINGS_GROOVY, "groovy settings.gradle is modified");
+  ok(out.includes(P.MAVEN_URL), "the GitHub Packages URL is written in");
+  ok(out.includes(P.MARKER), "the idempotency marker is written in");
+  ok(
+    out.indexOf(P.MAVEN_URL) > out.indexOf("dependencyResolutionManagement"),
+    "the maven block lands INSIDE dependencyResolutionManagement, not above it"
+  );
+  ok(
+    out.indexOf(P.MAVEN_URL) < out.indexOf("google()"),
+    "the maven block is spliced at the top of the repositories block"
+  );
+  ok(
+    !out.includes('extra.properties["github_token"]'),
+    "groovy dialect does NOT get the Kotlin extra.properties accessor"
+  );
+  ok(
+    out.includes("project.hasProperty('github_token')"),
+    "groovy dialect gets the groovy property accessor"
+  );
+  // The credential must never be baked in.
+  ok(
+    !/gh[pous]_[A-Za-z0-9]/.test(out),
+    "no literal token is ever written into the gradle file"
+  );
+  ok(out.includes("GITHUB_TOKEN"), "the token is read from the environment");
+
+  const twice = P.patchSettingsGradle(out, false);
+  ok(twice === out, "IDEMPOTENT: patching an already-patched file is a no-op");
+}
+
+{
+  const out = P.patchSettingsGradle(SETTINGS_KTS, true);
+  ok(
+    out.includes('extra.properties["github_token"]'),
+    "kts dialect gets the Kotlin extra.properties accessor"
+  );
+  ok(
+    !out.includes("project.hasProperty("),
+    "kts dialect does NOT get the groovy property accessor"
+  );
+  ok(out.includes('url = uri("'), "kts uses the assignment form of url");
+}
+
+{
+  // A file with no dependencyResolutionManagement is left ALONE rather than
+  // guessed at — a repositories block written in the wrong scope fails on the
+  // build machine, far from here.
+  const weird = "rootProject.name = 'x'\ninclude ':app'\n";
+  ok(
+    P.patchSettingsGradle(weird, false) === weird,
+    "a settings file with no dependencyResolutionManagement is left untouched"
+  );
+  ok(P.patchSettingsGradle("", false) === "", "empty input is returned as-is");
+  ok(
+    P.patchSettingsGradle(undefined, false) === undefined,
+    "undefined input does not throw"
+  );
+}
+
+// --- app/build.gradle ------------------------------------------------------
+
+console.log("app/build.gradle:");
+{
+  const out = P.patchAppGradle(APP_GRADLE);
+  ok(out !== APP_GRADLE, "app build.gradle is modified");
+  for (const a of P.MWDAT_ARTIFACTS) {
+    ok(
+      out.includes(`com.meta.wearable:${a}:${P.MWDAT_VERSION}`),
+      `${a} is pinned at ${P.MWDAT_VERSION}`
+    );
+  }
+  ok(
+    !out.includes("mwdat-display") && !out.includes("mwdat-mockdevice"),
+    "display/mockdevice are deliberately NOT added"
+  );
+  // The word "dependencies" appears in a COMMENT above the real block; the
+  // implementation lines must not land there.
+  const commentIdx = out.indexOf("// note: dependencies are managed");
+  const implIdx = out.indexOf("mwdat-core");
+  ok(
+    implIdx > commentIdx,
+    "anchors on the dependencies BLOCK, not the word in the comment"
+  );
+  ok(
+    out.indexOf("dependencies {") < implIdx,
+    "the implementation lines land inside the dependencies block"
+  );
+
+  const twice = P.patchAppGradle(out);
+  ok(twice === out, "IDEMPOTENT: patching an already-patched file is a no-op");
+
+  const weird = "android { }\n";
+  ok(
+    P.patchAppGradle(weird) === weird,
+    "a build.gradle with no dependencies block is left untouched"
+  );
+}
+
+// --- AndroidManifest.xml ---------------------------------------------------
+
+const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:name=".MainApplication">
+        <activity android:name=".MainActivity" />
+    </application>
+</manifest>
+`;
+
+console.log("AndroidManifest.xml:");
+{
+  const out = P.patchManifestXml(MANIFEST);
+  ok(out.includes(P.CAMERA_SERVICE), "the camera service is declared");
+  ok(
+    out.includes(`android:foregroundServiceType="${P.CAMERA_FGS_TYPE}"`),
+    `FGS type is the narrow "${P.CAMERA_FGS_TYPE}"`
+  );
+  ok(
+    !out.includes('android:foregroundServiceType="camera"'),
+    'FGS type is NOT "camera" - the phone camera is never opened'
+  );
+  ok(
+    out.includes('android:exported="false"'),
+    "the service is not exported - no other app may start it"
+  );
+  for (const p of P.CAMERA_PERMISSIONS) {
+    ok(out.includes(p), `permission declared: ${p}`);
+  }
+  ok(
+    !out.includes('android:name="android.permission.CAMERA"'),
+    "does NOT add the phone CAMERA permission"
+  );
+  ok(
+    out.indexOf(P.CAMERA_SERVICE) < out.indexOf("</application>"),
+    "the service lands inside <application>"
+  );
+  const twice = P.patchManifestXml(out);
+  ok(twice === out, "IDEMPOTENT: patching an already-patched manifest is a no-op");
+}
+
+// --- the CLI half, against a temp tree -------------------------------------
+
+console.log("applyToAndroidDir (hand-managed path):");
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "metadat-"));
+  const mainDir = path.join(dir, "app", "src", "main");
+  fs.mkdirSync(mainDir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "settings.gradle"), SETTINGS_GROOVY);
+  fs.writeFileSync(path.join(dir, "app", "build.gradle"), APP_GRADLE);
+  fs.writeFileSync(path.join(mainDir, "AndroidManifest.xml"), MANIFEST);
+
+  const r1 = P.applyToAndroidDir(dir);
+  ok(
+    r1.settings === true && r1.app === true && r1.manifest === true,
+    "first run patches settings, app gradle and manifest"
+  );
+  ok(r1.kotlin === true, "first run installs the camera service source");
+  const s = fs.readFileSync(path.join(dir, "settings.gradle"), "utf8");
+  const a = fs.readFileSync(path.join(dir, "app", "build.gradle"), "utf8");
+  ok(s.includes(P.MAVEN_URL), "settings.gradle really written to disk");
+  ok(a.includes("mwdat-camera"), "app/build.gradle really written to disk");
+
+  // The .kt must land on the package path the manifest names, or the class is
+  // simply absent at runtime and the service fails to start with a
+  // ClassNotFoundException the manifest cannot warn about.
+  const kt = path.join(dir, "app", "src", "main", "java", "app", "helmdeck",
+                       "glasses", "GlassCameraService.kt");
+  ok(fs.existsSync(kt), "GlassCameraService.kt installed on its package path");
+  const ktSrc = fs.readFileSync(kt, "utf8");
+  ok(
+    ktSrc.includes("package app.helmdeck.glasses"),
+    "the installed source declares the package the manifest references"
+  );
+  ok(
+    P.CAMERA_SERVICE === "app.helmdeck.glasses.GlassCameraService" &&
+      ktSrc.includes("class GlassCameraService"),
+    "manifest service name and the Kotlin class agree"
+  );
+  ok(
+    ktSrc.includes("GlassesRadio.acquire"),
+    "the camera takes the radio arbiter before touching the SDK"
+  );
+
+  const r2 = P.applyToAndroidDir(dir);
+  ok(
+    r2.settings === false && r2.app === false && r2.manifest === false &&
+      r2.kotlin === false,
+    "second run reports no change (idempotent on disk too)"
+  );
+
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// --- the SHARED arbiter, installed by the VOICE plugin ---------------------
+//
+// GlassesRadio.kt is what keeps the mic and the camera off the Bluetooth radio
+// at the same time (§12.4). It is installed by withGlassVoice.js and merely
+// USED by withMetaDat.js - one owner per file. That split is only safe if the
+// voice plugin really does install it, so it is checked here rather than
+// assumed, next to the camera half that depends on it.
+
+console.log("withGlassVoice installs the shared arbiter:");
+{
+  const V = require("../app/plugins/withGlassVoice.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glassvoice-"));
+  const main = path.join(dir, "app", "src", "main");
+  fs.mkdirSync(main, { recursive: true });
+  fs.writeFileSync(
+    path.join(main, "AndroidManifest.xml"),
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n' +
+      "    <application>\n    </application>\n</manifest>\n"
+  );
+
+  const r1 = V.applyToAndroidDir(dir);
+  ok(r1.wroteKotlin === true, "first run installs kotlin sources");
+
+  const svc = path.join(main, "java", "app", "helmdeck", "voice", "GlassVoiceService.kt");
+  const radio = path.join(main, "java", "app", "helmdeck", "glasses", "GlassesRadio.kt");
+  ok(fs.existsSync(svc), "GlassVoiceService.kt installed");
+  ok(fs.existsSync(radio), "GlassesRadio.kt installed (the shared arbiter)");
+
+  const svcSrc = fs.readFileSync(svc, "utf8");
+  const radioSrc = fs.readFileSync(radio, "utf8");
+  ok(
+    radioSrc.includes("package app.helmdeck.glasses"),
+    "arbiter declares the package both services import"
+  );
+  ok(
+    svcSrc.includes("import app.helmdeck.glasses.GlassesRadio"),
+    "the voice service imports the arbiter"
+  );
+  ok(
+    svcSrc.includes("GlassesRadio.acquire(GlassesRadio.Mode.MIC)"),
+    "the voice service CLAIMS the radio for the glasses mic"
+  );
+  ok(
+    svcSrc.includes("GlassesRadio.release(GlassesRadio.Mode.MIC)"),
+    "the voice service RELEASES the radio"
+  );
+  // The narrowness of the guard is the point: a phone-mic listen opens no SCO
+  // link, so it must not be gated behind the arbiter.
+  ok(
+    svcSrc.includes("ACTION_LISTEN_PHONE_MIC"),
+    "the phone-mic action still exists (never blocked by the arbiter)"
+  );
+
+  const r2 = V.applyToAndroidDir(dir);
+  ok(r2.wroteKotlin === false, "second run rewrites nothing (idempotent)");
+
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILURE(S)`);
+process.exit(fails === 0 ? 0 : 1);

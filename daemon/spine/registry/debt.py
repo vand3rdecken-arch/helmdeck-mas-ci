@@ -2433,6 +2433,56 @@ DEBT = [
                "for iOS no primary Apple source on LE Audio exists at all.",
         "order": 42,
     },
+    {
+        "id": "glasses-native-uncompiled",
+        "title": "The glasses MIC seam and the DAT CAMERA service ship as source "
+                 "that has never been compiled",
+        "status": "open",
+        "what": "Owner decision 2026-08-21 ('write source here'), taken knowingly: "
+                "an APK cannot be built from a card worktree (DEPLOY.md 2, NDK "
+                "path length), so the native half of the Meta companion work was "
+                "written here to be built later from C:\\hd\\app. What is "
+                "UNCOMPILED: app/plugins/metadat/GlassCameraService.kt (the DAT "
+                "0.9.0 camera session + capturePhoto), app/plugins/glassvoice/"
+                "GlassesRadio.kt (the mic/camera mutual-exclusion arbiter), and "
+                "the GlassVoiceService.kt edits that claim and release it. What "
+                "IS verified: the Gradle/manifest wiring in "
+                "app/plugins/withMetaDat.js, covered by 54 assertions in "
+                "tests/test_meta_dat_plugin.js (dialect correctness, "
+                "idempotency, the service/class name agreeing with the package "
+                "path, no literal token ever written). The DAT API itself was "
+                "NOT guessed - every symbol was read out of the real 0.9.0 AARs "
+                "with javap after fetching them from GitHub Packages, so the "
+                "signatures are measured even though the code is unbuilt.",
+        "why_it_bites": "Three separate ways this can be wrong and no test on "
+                        "this box can tell: (1) kotlinc has never seen these "
+                        "files, so a type error, a wrong import "
+                        "(SessionCameraExtensionsKt's addCamera/removeCamera are "
+                        "EXTENSIONS and must resolve) or a sealed-when "
+                        "exhaustiveness complaint is possible; (2) the daemon "
+                        "endpoint GlassCameraService POSTs to, /glance/photo, "
+                        "DOES NOT EXIST yet - the contract is named in the "
+                        "Kotlin but nothing serves it, so a successful capture "
+                        "currently ends in a 404; (3) nothing in app/src starts "
+                        "either service - the JS->native seam is still absent, "
+                        "so both remain unreachable from the UI exactly as "
+                        "GlassVoiceService already was.",
+        "trigger": "the first APK build from C:\\hd\\app that includes these "
+                   "plugins - which is also the first time any of it is "
+                   "type-checked",
+        "fix": "In a card that can BUILD: (a) run the build and fix whatever "
+               "kotlinc says, starting with the DAT extension imports; (b) add "
+               "POST /glance/photo to the daemon (token-gated exactly like "
+               "/glance/talk, one glance_token, NO ticket registry - "
+               "glasses-reference 11.1) and attach the frame to a card; (c) add "
+               "the JS->native seam that starts both services and writes their "
+               "base_url/glance_token prefs at pairing time; (d) verify the "
+               "radio arbiter on real hardware - the mic and the camera must "
+               "refuse each other, which is the one behaviour that cannot be "
+               "checked without glasses. Until (c) lands, this feature is "
+               "invisible to the owner and must not be described as shipped.",
+        "order": 43,
+    },
 ]
 
 def list_debt():
