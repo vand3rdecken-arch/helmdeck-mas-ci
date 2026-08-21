@@ -117,3 +117,4 @@ glasses/worker/dev.err
 *.dev.vars
 .dev.vars
 daemon/policy_live.json
+daemon/escalations.jsonl
