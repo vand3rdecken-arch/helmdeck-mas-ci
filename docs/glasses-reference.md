@@ -1446,6 +1446,66 @@ that is deliberately distinct from `displayCapable = false`. Treating null as
 "no display" would be the same silent dead end this document keeps recording:
 routing to a surface that is not there and never finding out.
 
+### 12.9 ⚠ DAT REQUIRES minSdk 29 — and three other things only a build could say
+
+The owner granted access to a buildable path on 2026-08-21 specifically so this
+Kotlin could meet a compiler. It immediately paid for itself four times. None of
+these were predictable from the docs; all are now measured.
+
+**1. Both DAT artifacts require `minSdkVersion 29`.** Not just the camera —
+`mwdat-core`'s AAR manifest declares it too, though Android's error names only
+whichever it hits first:
+
+```
+uses-sdk:minSdkVersion 24 cannot be smaller than version 29 declared in
+library [com.meta.wearable:mwdat-camera:0.9.0]
+```
+
+HelmDeck ships **minSdk 24**. Overriding only the artifact named in the error
+would have failed again on the next one.
+
+The decision, and it is a product decision rather than a technical one: raising
+the app to 29 is one line and **drops every Android 7.0/7.1/8.0/8.1/9 device
+from the entire product** for a feature most users will never touch.
+glass-crud-harness could raise it freely — it was glasses-only and already
+shipped `minSdk = 29`. HelmDeck is a board app that *also* talks to glasses. So
+`withMetaDat.js` emits `tools:overrideLibrary` for **both** artifacts and
+nobody loses the app.
+
+⚠ **The override is only half of it.** Android's suggestion text warns it *"may
+lead to runtime failures"*, and that is exactly right if you then call the
+library on an old device. ART resolves a class on **first use**, so the
+override is safe *only* while every entry point checks the API level before
+referencing a DAT symbol. `GlassesDevice.supported()` is that check; it must be
+called before anything else, and the camera service checks it **before**
+claiming the radio arbiter (checking after would let a refused old device take,
+and possibly leak, the radio). A new DAT entry point that skips it re-opens the
+failure the override was warned about.
+
+**2. `ALREADY_INITIALIZED` is a FAILURE result.** `WearablesError` has exactly
+two values — `NOT_INITIALIZED` and `ALREADY_INITIALIZED` — so
+`Wearables.initialize()` returns `isFailure` on **every call after the first**.
+Treating that as fatal (the obvious reading) means the camera works once per
+process, or never once anything else initialises first. One owner now:
+`GlassesDevice.ensureInitialized()`.
+
+**3. The repository does not go in `settings.gradle` here.** This app's
+`settings.gradle` has no `dependencyResolutionManagement` at all — it is
+`pluginManagement` + `expoAutolinking`, and repositories live in the ROOT
+`build.gradle` under `allprojects {}`. A plugin that only knew the newer shape
+reported *"settings.gradle already ok"* and added the repository **nowhere**.
+
+**4. `deploy/build_apk.sh` must apply the plugin.** `app/android` is git-ignored
+and hand-managed, so a plugin listed in `app.json` but not invoked by
+`build_apk.sh` contributes nothing — gradle then builds an APK with the whole
+feature absent and **exits zero**. There is now a generic test asserting every
+local plugin in `app.json` is applied.
+
+**What DID work first time**, worth recording so nobody re-litigates it: the
+GitHub Packages repository, the `gh` OAuth token, and the 0.9.0 dependency pins.
+The artifacts resolved, downloaded and transformed on the first run — §12.1b's
+credential finding is now proven by a build, not just by an HTTP 200.
+
 ### 12.6 What a future card should NOT re-buy
 
 - Do not check the Releases/Tags page for the DAT version — it is empty by
