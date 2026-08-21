@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
@@ -103,7 +103,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const insets = useSafeAreaInsets();
   const colMax = wide ? 860 : undefined;
   const [busy, setBusy] = useState(false);
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  // Optimistic turns layered OVER the server transcript, never merged into one
+  // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced
+  // the busy->false edge: a refetch that hadn't persisted the just-sent turn
+  // yet would clobber the echo and the reply until the next 8s poll - the
+  // "my message vanished" bug. Same reconcile discipline as the card chat
+  // (card/[id].tsx pending+baseline): a turn is only dropped once the server
+  // transcript actually carries its user text PAST the baseline count, so a
+  // repeated message ("continue" twice) can't be stripped by its older twin.
+  const [pending, setPending] = useState<{ id: number; key: string; baseline: number; msgs: ChatMsg[] }[]>([]);
   // the board agent's live streaming prose while a turn runs - polled from
   // /chat/live so the board chat STREAMS like a card (one shared surface).
   const [stream, setStream] = useState("");
@@ -162,7 +170,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   // poll the transcript so the PM's proactive messages appear LIVE (the chat
-  // moves on its own); don't clobber optimistic messages mid-turn (busy).
+  // moves on its own); optimistic turns live in `pending`, layered on top.
   const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory, enabled: me?.role !== "client", refetchInterval: 8000 });
   const { data: models } = useModels(me?.role !== "client");
   // PM-session economics (card parity): context fill + spend, folded by the
@@ -170,7 +178,24 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const stats = data?.stats;
   const flat = useAiFlat();
 
-  useEffect(() => { if (data?.messages && !busy) setMsgs(data.messages); }, [data, busy]);
+  // A pending turn dies only when the server history has caught up with it:
+  // the daemon persists a turn as a unit (user msg + reply folded together),
+  // so once the user text's occurrence count exceeds this turn's baseline the
+  // whole optimistic pair is redundant and the persisted version takes over.
+  const server = data?.messages;
+  useEffect(() => {
+    if (!server || !pending.length) return;
+    const counts = new Map<string, number>();
+    for (const m of server) {
+      if (m.cls !== "user" && m.cls !== "you") continue;
+      const key = (m.text ?? "").trim();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    setPending((p) => p.filter((tn) => (counts.get(tn.key) ?? 0) <= tn.baseline));
+  }, [server]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const msgs = useMemo<ChatMsg[]>(
+    () => [...(server ?? []), ...pending.flatMap((tn) => tn.msgs)],
+    [server, pending]);
 
   // auto-pin to newest (incl. the PM's proactive messages) when already near the
   // bottom - same pattern as the card chat, so opening lands you at the latest.
@@ -182,23 +207,33 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     setAtBottom(contentSize.height - contentOffset.y - layoutMeasurement.height < 60);
   };
 
+  // baseline = this occurrence's rank among same-text user messages already
+  // visible (server + pending) at queue time - see the reconcile effect above.
+  function queueTurn(id: number, q: string) {
+    const baseline = (server ?? []).filter((m) => (m.cls === "user" || m.cls === "you") && (m.text ?? "").trim() === q).length
+      + pending.filter((tn) => tn.key === q).length;
+    setPending((p) => [...p, { id, key: q, baseline, msgs: [{ cls: "user", text: q }] }]);
+  }
+  const appendReply = (id: number, msg: ChatMsg) =>
+    setPending((p) => p.map((tn) => tn.id === id ? { ...tn, msgs: [...tn.msgs, msg] } : tn));
+
   async function send(raw: string, opts: SteerOpts) {
     const q = raw.trim();
     if (!q) return;
-    setMsgs((m) => [...m, { cls: "user", text: q }]);
     setBusy(true);
     const id = ++turn.current;
+    queueTurn(id, q);
     try {
       const r = await api.chat(q, opts);
       if (turn.current !== id) return;   // cancelled/superseded — drop this reply
       const actions = (r.actions ?? []).map((a) => a.detail || a.tool).filter(Boolean).join("\n");
-      setMsgs((m) => [...m, { cls: r.error ? "error" : "bot",
-        text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || tr("chat.noReply")].filter(Boolean).join("\n\n") }]);
+      appendReply(id, { cls: r.error ? "error" : "bot",
+        text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || tr("chat.noReply")].filter(Boolean).join("\n\n") });
       qc.invalidateQueries({ queryKey: ["tracks"] });
       qc.invalidateQueries({ queryKey: ["chatHistory"] });   // pull the persisted turn (+ any PM msgs)
     } catch (e) {
       if (turn.current !== id) return;
-      setMsgs((m) => [...m, { cls: "error", text: String((e as Error).message) }]);
+      appendReply(id, { cls: "error", text: String((e as Error).message) });
     } finally {
       if (turn.current === id) { setBusy(false); setTimeout(() => scroll.current?.scrollToEnd(), 50); }
     }
@@ -217,9 +252,9 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // and typing mid-conversation loses nothing. Two send paths would have been
   // two chats one refresh apart.
   async function ask(text: string, onClip?: (c: VoiceClip) => void) {
-    setMsgs((m) => [...m, { cls: "user", text }]);
     setBusy(true);
     const id = ++turn.current;
+    queueTurn(id, text.trim());
     // Registering the sink is what switches the daemon from "one clip at the
     // end" to "a sentence at a time" — the two must be decided together, or the
     // owner gets a turn that renders speech nobody collects.
@@ -229,7 +264,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       const r = await api.chat(text, { voice: onClip ? "stream" : undefined });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
       const said = r.reply || r.error || tr("chat.noReply");
-      setMsgs((m) => [...m, { cls: r.error ? "error" : "bot", text: said }]);
+      appendReply(id, { cls: r.error ? "error" : "bot", text: said });
       qc.invalidateQueries({ queryKey: ["tracks"] });
       qc.invalidateQueries({ queryKey: ["chatHistory"] });
       // DRAIN. The POST returns when the MODEL is done, which is not when the
