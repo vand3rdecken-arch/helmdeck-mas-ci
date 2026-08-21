@@ -35,12 +35,70 @@ VOICE_STYLE = (
     "'should I A or B' - pick the sensible default, act, say what you did.\n"
     "- Talk like a colleague across the room, in the owner's language: "
     "contractions, natural rhythm, no 'Status im Ueberblick', no preamble.\n"
+    "- SIMPLE words only - everyday vocabulary a tired listener catches on "
+    "the first pass. No jargon, no anglicisms in German ('bereitgestellt', "
+    "nicht 'deployed'), no nested sentences. One thought per sentence.\n"
     "- ANSWER FROM WHAT YOU ALREADY HAVE (the board snapshot, the "
     "conversation). Do NOT read files or run commands for a spoken question - "
     "every tool call is silent seconds in the owner's ear. Use tools only "
     "when the owner explicitly asked you to DO something this turn.\n"
     "- Depth on request only: offer it in five words or less ('Details am "
     "Bildschirm.'), never inline.")
+
+
+# -- persistent chat process (voice-speed, owner decree 2026-08-21) ----------
+# MEASURED: a fresh `claude -p` spawn costs 8-12s BEFORE the model writes a
+# token (node cold start + init) - the dominant share of a 12s voice turn.
+# The cards already solved this (drivers._ClaudeSession, Paseo's model): keep
+# the process alive on the stream-json port and a turn costs model time only.
+# This is that port for the board chat, deliberately small: ONE process per
+# user, keyed by (model, permission mode) - a model switch (typed sonnet <->
+# voice haiku) respawns via --resume, so context survives and only the
+# switching turn pays the spawn. Two live processes on ONE session id would
+# fork the conversation, hence never more than one per user.
+_persist = {}            # user -> {"p": Popen, "key": (model, pmode)}
+_persist_lock = threading.Lock()
+
+
+def _persist_drop(user):
+    """Kill + forget the user's warm process. Next turn respawns with
+    --resume, so nothing is lost but the warmth."""
+    with _persist_lock:
+        ent = _persist.pop(user, None)
+    if ent:
+        try:
+            ent["p"].kill()
+        except Exception:
+            pass
+
+
+def _persist_get(user, cli_model, sid, system):
+    """(proc, fresh). Reuse the warm process when model+mode match, else
+    spawn one on the stream-json port. The system brief rides the SPAWN
+    (constant across turns); per-turn overlays travel inside the turn text."""
+    from daemon.spine.agent import drivers
+    from daemon.spine.registry import harness
+    key = (cli_model or "", henry_pmode())
+    with _persist_lock:
+        ent = _persist.get(user)
+        if ent and ent["key"] == key and ent["p"].poll() is None:
+            return ent["p"], False
+    _persist_drop(user)
+    argv = [CLAUDE, "-p", "--output-format", "stream-json", "--input-format", "stream-json",
+            "--include-partial-messages", "--verbose", "--permission-mode", henry_pmode()]
+    if cli_model:
+        argv += ["--model", cli_model]
+    if sid:
+        argv += ["--resume", sid]
+    argv += ["--append-system-prompt", system]
+    argv += harness.cli_args("board-copilot")
+    from daemon.spine.agent.drivers import _cmd_line
+    p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                         text=True, encoding="utf-8", errors="replace", bufsize=1)
+    with _persist_lock:
+        _persist[user] = {"p": p, "key": key}
+    return p, True
 
 
 def henry_pmode():
@@ -318,6 +376,10 @@ def _maybe_compact(user):
     window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
     if ctx < 0.8 * window or not sid:
         return None
+    # the external /compact turn resumes the SAME session id - a live warm
+    # process on it would fork the conversation. Drop it first; the next chat
+    # turn respawns on the compacted tip.
+    _persist_drop(user)
     pct = min(100, round(ctx / window * 100))
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--include-partial-messages",
             "--verbose", "--permission-mode", "plan", "--resume", sid]
@@ -515,6 +577,9 @@ def cancel(user):
             p.terminate()
         except Exception:
             pass
+    # a terminated process is no longer reusable - forget the warm handle so
+    # the next turn respawns clean (--resume keeps the conversation)
+    _persist_drop(user)
     return bool(p)
 
 
@@ -630,25 +695,69 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # silently mangles quoted arguments (it ate the card workers' --resume - see
     # drivers._real_claude_exe).
     from daemon.spine.agent import drivers
-    argv, role_in_turn = build_argv(cli_model, sid, system)
-    prompt = (system + "\n\n" + turn) if role_in_turn else turn
-    cmd = drivers._cmd_line(argv)
-    # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
-    # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
     _cancelled.discard(user)
-    # stderr -> DEVNULL: we read stdout line-by-line (the pump), so an undrained
-    # stderr pipe could fill and DEADLOCK the process mid-turn.
-    p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+    # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
+    # reuse the warm stream-json process - the 8-12s spawn is paid once, not
+    # per turn (voice-speed decree). The cmd.exe-degraded box keeps the old
+    # one-shot spawn; its problem is quoting, not latency.
+    persistable = drivers.argv_form_safe(CLAUDE)
+    if persistable:
+        # base brief only at spawn (constant); per-turn overlays (VOICE_STYLE
+        # et al) ride inside the turn text so voice<->typed does not respawn.
+        base_system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
+        p, _fresh = _persist_get(user, cli_model, sid, base_system)
+        prompt = (extra_system + "\n\n" + turn) if extra_system else turn
+    else:
+        argv, _role = build_argv(cli_model, sid, system)
+        prompt = system + "\n\n" + turn
+        # encoding="utf-8" is REQUIRED: without it Windows decodes claude's UTF-8
+        # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
+        # stderr -> DEVNULL: we read stdout line-by-line (the pump), so an undrained
+        # stderr pipe could fill and DEADLOCK the process mid-turn.
+        p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             text=True, encoding="utf-8", errors="replace")
     _running[user] = p
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     resume_echo, ctx_first = False, {}
+    # SILENCE watchdog (persist only): a one-shot process ends the read loop by
+    # exiting; a persistent one that stops answering would hang the pump forever.
+    # 600s of NO events -> kill (the read then sees EOF); same silence-not-wall
+    # clock rule as everywhere else in the harness.
+    _beat = {"t": time.time(), "done": False}
+    if persistable:
+        def _watchdog():
+            while not _beat["done"]:
+                if time.time() - _beat["t"] > 600:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+                    return
+                time.sleep(5)
+        threading.Thread(target=_watchdog, daemon=True).start()
     try:
-        p.stdin.write(prompt); p.stdin.close()
+        if persistable:
+            try:
+                p.stdin.write(json.dumps({"type": "user",
+                                          "message": {"role": "user", "content": prompt}}) + "\n")
+                p.stdin.flush()
+            except Exception:
+                # warm process died since the health check - respawn ONCE fresh
+                _persist_drop(user)
+                base_system = harness.brief("board-copilot", default=SYSTEM) or SYSTEM
+                p, _fresh = _persist_get(user, cli_model, sid, base_system)
+                _running[user] = p
+                p.stdin.write(json.dumps({"type": "user",
+                                          "message": {"role": "user", "content": prompt}}) + "\n")
+                p.stdin.flush()
+        else:
+            p.stdin.write(prompt); p.stdin.close()
         for line in p.stdout:                       # the pump (like drivers._pump)
             if user in _cancelled:
                 break
             line = line.strip()
+            _beat["t"] = time.time()
             if not line:
                 continue
             try:
@@ -695,12 +804,20 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         _cwrite(think_path, "".join(think)[-600:])
             elif typ == "result":
                 result = ev
-        try:
-            p.wait(timeout=8)
-        except Exception:
-            pass
+                if persistable:
+                    break        # the process LIVES ON - this turn is complete
+        if not persistable:
+            try:
+                p.wait(timeout=8)
+            except Exception:
+                pass
     finally:
+        _beat["done"] = True
         _running.pop(user, None)
+        if persistable and (user in _cancelled or p.poll() is not None):
+            # a cancelled or dead process must not be reused - next turn
+            # respawns via --resume and loses nothing but the warmth
+            _persist_drop(user)
         if voice_stream:
             # Flush BEFORE the live file is cleared: the last sentence of a reply
             # usually has no trailing whitespace, so the turn ending is the only
