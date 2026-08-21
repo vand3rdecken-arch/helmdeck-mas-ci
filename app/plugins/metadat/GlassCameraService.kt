@@ -167,9 +167,11 @@ class GlassCameraService : Service() {
             return
         }
         try {
-            val init = Wearables.initialize(applicationContext)
-            if (init.isFailure) {
-                fail("SDK-Init fehlgeschlagen: ${init.errorOrNull()?.description ?: "?"}")
+            // NOT `if (initialize().isFailure)` - ALREADY_INITIALIZED is one of
+            // only two WearablesError values, so the second call in a process
+            // legitimately "fails". See GlassesDevice.ensureInitialized.
+            if (!GlassesDevice.ensureInitialized(applicationContext)) {
+                fail("SDK-Init fehlgeschlagen")
                 return
             }
             // AutoDeviceSelector picks the eligible paired device. NO_ELIGIBLE_DEVICE

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.meta.wearable.dat.core.Wearables
 import com.meta.wearable.dat.core.types.LinkState
+import com.meta.wearable.dat.core.types.WearablesError
 
 /**
  * WHICH glasses are on the owner's face, and what they can do.
@@ -64,14 +65,35 @@ object GlassesDevice {
      * ever changes, this returns a list and the callers grow a picker; until
      * then a list would be a fiction with one element.
      */
+    /**
+     * Bring the SDK up, tolerating the case that it already is.
+     *
+     * ⚠ THE TRAP, and it is not obvious from the call site. `Wearables.initialize()`
+     * returns a DatResult, and `WearablesError` has exactly TWO values:
+     * NOT_INITIALIZED and **ALREADY_INITIALIZED**. So the second call in a
+     * process - which is the NORMAL case the moment two entry points exist, as
+     * they now do (this object and GlassCameraService) - comes back as a
+     * FAILURE. Treating `isFailure` as fatal would mean the camera works
+     * exactly once per process and then silently refuses, or never works at all
+     * if something asked about the device first. Read from the real 0.9.0
+     * enum, not assumed.
+     *
+     * So the only true failure here is a *different* error, or a throw.
+     */
+    fun ensureInitialized(context: Context): Boolean = try {
+        val r = Wearables.initialize(context.applicationContext)
+        r.isSuccess || r.errorOrNull() == WearablesError.ALREADY_INITIALIZED
+    } catch (t: Throwable) {
+        Log.d(TAG, "initialize: ${t.javaClass.simpleName}: ${t.message}")
+        false
+    }
+
     fun current(context: Context): Info? {
         return try {
-            // initialize() is idempotent and cheap once done; calling it here
-            // means a caller that only wants to ASK does not have to know the
-            // SDK's lifecycle. A failure to initialise is "cannot know".
-            val init = Wearables.initialize(context.applicationContext)
-            if (init.isFailure) {
-                Log.d(TAG, "SDK not available: ${init.errorOrNull()?.description}")
+            // Calling this here means a caller that only wants to ASK does not
+            // have to know the SDK's lifecycle.
+            if (!ensureInitialized(context)) {
+                Log.d(TAG, "SDK not available")
                 return null
             }
             val meta = Wearables.devicesMetadata
