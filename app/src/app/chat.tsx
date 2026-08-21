@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, type ChatMsg, type SteerOpts } from "@/data/client";
+import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -107,19 +108,37 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // /chat/live so the board chat STREAMS like a card (one shared surface).
   const [stream, setStream] = useState("");
   const [think, setThink] = useState("");
+  // Voice mode rides THIS poll rather than opening its own. /chat/live is the one
+  // place a running turn is observable, and a second poller would mean a second
+  // cursor over the same chunks — two owners of one truth — plus double the relay
+  // round trips. So voice mode registers a sink and this loop hands clips over as
+  // they land; the cursor lives here, beside the poll that moves it.
+  const voiceSink = useRef<((c: VoiceClip) => void) | null>(null);
+  const voiceSeq = useRef(0);
+  const takeClips = useCallback((r: { voice?: (VoiceClip & { seq: number })[] } | null) => {
+    const sink = voiceSink.current;
+    if (!sink || !r?.voice) return;
+    for (const c of r.voice) {
+      // Monotonic guard, not an assumption: the drain in ask() can overlap one
+      // poll, and delivering a chunk twice would say the same sentence twice.
+      if (c.seq <= voiceSeq.current) continue;
+      voiceSeq.current = c.seq;
+      sink(c);
+    }
+  }, []);
   useEffect(() => {
     if (!busy) { setStream(""); setThink(""); return; }
     let alive = true, to: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const r = await api.chatLive();
-        if (alive && r) { setStream(r.text || ""); setThink(r.thinking || ""); }
+        const r = await api.chatLive(voiceSink.current ? voiceSeq.current : undefined);
+        if (alive && r) { setStream(r.text || ""); setThink(r.thinking || ""); takeClips(r); }
       } catch { /* keep polling */ }
       if (alive) to = setTimeout(poll, 500);
     };
     poll();
     return () => { alive = false; clearTimeout(to); };
-  }, [busy]);
+  }, [busy, takeClips]);
   const qc = useQueryClient();
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -197,23 +216,41 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // spoken turn lands in the text transcript too, and switching between talking
   // and typing mid-conversation loses nothing. Two send paths would have been
   // two chats one refresh apart.
-  async function ask(text: string) {
+  async function ask(text: string, onClip?: (c: VoiceClip) => void) {
     setMsgs((m) => [...m, { cls: "user", text }]);
     setBusy(true);
     const id = ++turn.current;
+    // Registering the sink is what switches the daemon from "one clip at the
+    // end" to "a sentence at a time" — the two must be decided together, or the
+    // owner gets a turn that renders speech nobody collects.
+    voiceSink.current = onClip ?? null;
+    voiceSeq.current = 0;
     try {
-      const r = await api.chat(text, { voice: true });
+      const r = await api.chat(text, { voice: onClip ? "stream" : undefined });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
       const said = r.reply || r.error || tr("chat.noReply");
       setMsgs((m) => [...m, { cls: r.error ? "error" : "bot", text: said }]);
       qc.invalidateQueries({ queryKey: ["tracks"] });
       qc.invalidateQueries({ queryKey: ["chatHistory"] });
+      // DRAIN. The POST returns when the MODEL is done, which is not when the
+      // SPEECH is: the last sentence is usually still rendering. The live poller
+      // stops with `busy` a moment from now, so the tail has to be collected
+      // here — without this the answer reliably loses its final sentence, and
+      // only on slow renders, which is the worst way to find a bug.
+      if (onClip) {
+        for (let i = 0; i < 40; i++) {
+          const live = await api.chatLive(voiceSeq.current).catch(() => null);
+          takeClips(live);
+          if (!live?.voice_pending) break;
+          await new Promise((res) => setTimeout(res, 250));
+        }
+      }
       // Speak the PROSE only. The daemon already strips the ```actions block and
       // any <helmdeck-ask> markup before rendering, so what is heard and what is
       // read are the same sentence — never machine syntax read aloud.
       return { reply: said, clip: r.voice ?? null };
     } finally {
-      if (turn.current === id) setBusy(false);
+      if (turn.current === id) { setBusy(false); voiceSink.current = null; }
     }
   }
 

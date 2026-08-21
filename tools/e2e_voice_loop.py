@@ -132,6 +132,19 @@ with sync_playwright() as p:
     check("silent" in body.lower() or "ohne Ton" in body,
           "the no-audio notice is shown instead of failing the turn")
 
+    print("4b. an EMPTY speech queue still settles - the loop must not hang")
+    # The streaming rewrite made "Henry finished speaking" mean "the queue
+    # drained" (data/voice.ts openSpeech). A queue that is closed while empty -
+    # which is exactly this case, no daemon so no chunks - has to resolve
+    # `done()` anyway. If it did not, voice mode would sit in `thinking`
+    # forever and never listen again: a silent, permanent hang that no
+    # typecheck can see. Auto-continue is on, so being back in LISTENING is the
+    # proof that the promise settled and the loop came round.
+    page.wait_for_timeout(2500)
+    back = page.get_by_text("Listening…").or_(page.get_by_text("Ich höre zu…"))
+    check(back.count() > 0,
+          "the turn ended and the microphone re-armed, with nothing ever played")
+
     print("5. state readout survives with the transcript open")
     check(page.get_by_text("Listening…").or_(page.get_by_text("Ich höre zu…"))
           .or_(page.get_by_text("Henry is answering")).or_(page.get_by_text("Henry antwortet"))

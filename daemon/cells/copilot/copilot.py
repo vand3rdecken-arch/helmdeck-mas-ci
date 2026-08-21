@@ -448,6 +448,11 @@ def live(user):
 def cancel(user):
     """Stop this user's in-flight copilot turn (the chat Stop button)."""
     _cancelled.add(user)
+    # Drop queued speech in the same breath. Audio that outlives the turn it
+    # belongs to would talk over the next question - the interrupt has to reach
+    # the ear, not just the model.
+    from daemon.spine.media import voice_stream as _vstream
+    _vstream.drop(user)
     p = _running.get(user)
     if p:
         try:
@@ -500,7 +505,7 @@ def build_argv(cli_model, sid, system):
 
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
-         card=None, allow_actions=True, extra_system=""):
+         card=None, allow_actions=True, extra_system="", voice_stream=False):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -514,7 +519,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
 
     extra_system is appended to the resolved system brief, for a surface with a
     hard shape requirement (the lens: short prose, always end in tappable
-    options) that the shared board brief should not have to carry."""
+    options) that the shared board brief should not have to carry.
+
+    voice_stream=True renders the prose to speech SENTENCE BY SENTENCE as it is
+    generated, into the per-user chunk list `/chat/live` serves - so voice mode
+    starts talking a second into the turn instead of after it. Opt-in per
+    request, not a server setting: a client that does not poll for the chunks
+    must keep getting the one-shot `voice:true` clip instead, or an app that is
+    one OTA behind would go silent (see daemon/spine/media/voice_stream.py)."""
     from daemon.spine.agent import turnopts
     sess = _sessions()
     sid = sess.get(user)
@@ -551,6 +563,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     think_path = os.path.join(run_dir, "live_thinking.txt")
     sid_path = os.path.join(run_dir, "live_session.txt")
     _crm(live_path); _crm(think_path); _crm(sid_path)
+    # Speech rides the SAME prose stream as the live text - one source, folded in
+    # at event time below, never re-derived from the finished reply.
+    from daemon.spine.media import voice_stream as _vstream
+    if voice_stream:
+        _vstream.begin(user)
+    else:
+        _vstream.drop(user)     # a non-voice turn must not leave last turn's audio collectable
     # drivers._cmd_line, NOT ["cmd","/c",...]: routing claude.cmd through cmd.exe
     # silently mangles quoted arguments (it ate the card workers' --resume - see
     # drivers._real_claude_exe).
@@ -608,7 +627,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     dl = e.get("delta") or {}
                     if dl.get("type") == "text_delta":
                         parts.append(dl.get("text", ""))
-                        _cwrite(live_path, _strip_actions_live("".join(parts)))
+                        _live_prose = _strip_actions_live("".join(parts))
+                        _cwrite(live_path, _live_prose)
+                        if voice_stream:
+                            _vstream.feed(user, _live_prose)
                     elif dl.get("type") == "thinking_delta":
                         # stream the REASONING too - it starts ~9s before the
                         # prose, so the chat shows live progress instead of a
@@ -623,6 +645,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             pass
     finally:
         _running.pop(user, None)
+        if voice_stream:
+            # Flush BEFORE the live file is cleared: the last sentence of a reply
+            # usually has no trailing whitespace, so the turn ending is the only
+            # proof that it closed.
+            if user in _cancelled:
+                _vstream.drop(user)
+            else:
+                _vstream.finish(user, _strip_actions_live("".join(parts)))
         _crm(live_path); _crm(think_path)           # done streaming - clear the live preview
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
