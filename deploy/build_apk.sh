@@ -47,6 +47,26 @@ node app/plugins/withLanCleartext.js app/android \
 node app/plugins/withGlassVoice.js app/android \
   || { echo "[build_apk] glass-voice manifest apply FAILED"; exit 1; }
 
+# Same rule, third time: the Meta DAT (glasses camera) gradle wiring + the
+# camera/device sources. WITHOUT THIS LINE THE BUILD IS SILENTLY WRONG in the
+# worst way available - app/android is git-ignored and hand-managed, so nothing
+# else ever puts the GitHub Packages repository, the mwdat-* dependencies, the
+# <service> declaration or GlassCameraService.kt / GlassesDevice.kt into the
+# tree. Gradle then compiles an APK with no camera code at all and EXITS ZERO,
+# because there is nothing to fail - the feature is simply absent. That is the
+# exact class DEPLOY.md 2 records ("the skips are SILENT: the build goes green
+# and the artifact is wrong"), and the reason the two lines above exist.
+#
+# It is also the only plugin here that can fail for an EXTERNAL reason, so it
+# gets its own note: resolving com.meta.wearable needs a GitHub token with
+# read:packages AT GRADLE TIME. The owner's ordinary `gh` token already carries
+# it (measured 2026-08-21: HTTP 200 on all four 0.9.0 artifacts), so if the
+# gradle step later dies on an unauthorized com.meta.wearable lookup, export it
+# and re-run - it is not a code failure:
+#     export GITHUB_TOKEN="$(gh auth token)"
+node app/plugins/withMetaDat.js app/android \
+  || { echo "[build_apk] meta-dat wiring apply FAILED"; exit 1; }
+
 # Same rule once more: the OTA update URL + /pair deep-link host from
 # app.json. This was the one nobody wrote: the relay cutover changed app.json
 # but the stale manifest kept the dead Oracle VM, so builds 48 + the first 49
