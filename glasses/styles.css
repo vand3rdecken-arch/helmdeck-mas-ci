@@ -124,6 +124,7 @@ html, body {
   flex-shrink: 0; display: flex; gap: 8px; padding-top: 8px;
 }
 .nav-item {
+  position: relative;
   flex: 1; height: 88px; min-height: 88px;
   background: #1C1E21; border: 2px solid transparent; border-radius: 16px;
   color: #fff; font-size: 18px; font-weight: 600; opacity: 0.8;
@@ -131,6 +132,15 @@ html, body {
 }
 .nav-item.primary { background: #2A6DF4; }
 .nav-item.danger { color: #FF5A5F; }
+
+/* a new needs_you blocker landed since the owner last opened the list - same
+   red as every other "bad news" signal in this app (li-margin.neg, #conn-dot
+   err), so it reads as urgency without a second color to learn. */
+.badge-dot {
+  position: absolute; top: 10px; right: 10px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #FF5A5F; border: 2px solid #1C1E21;
+}
 
 /* focus state: scale up slightly, full opacity, white ring */
 .focusable:focus {
@@ -144,6 +154,16 @@ html, body {
   position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%);
   background: #1C1E21; color: #fff; font-size: 14px; padding: 8px 16px;
   border-radius: 999px; border: 1px solid #3A3B3C; white-space: nowrap;
+}
+
+/* proactive notification banner - deliberately distinct from .toast (which is
+   feedback-only, bottom-anchored). Positioned per the platform's own toast
+   spec: 24dp from top, centered, max-width 536dp, radius 24. */
+.notify-banner {
+  position: absolute; left: 50%; top: 24px; transform: translateX(-50%);
+  max-width: 536px; background: #1C1E21; color: #fff; font-size: 14px;
+  font-weight: 600; padding: 10px 20px; border-radius: 24px;
+  border: 1px solid #3A3B3C; white-space: nowrap; text-align: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
