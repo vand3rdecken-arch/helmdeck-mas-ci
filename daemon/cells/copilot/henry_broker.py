@@ -57,7 +57,12 @@ def _ask(prompt, model=""):
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace")
-    stdout, stderr = p.communicate(input=prompt, timeout=300)
+    try:
+        stdout, stderr = p.communicate(input=prompt, timeout=300)
+    except subprocess.TimeoutExpired:
+        p.kill()          # a timed-out judgement must not linger as a zombie
+        p.communicate()
+        raise
     if not (stdout or "").strip():
         raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
     txt = json.loads(stdout).get("result", "")
@@ -137,15 +142,39 @@ def check_stale_ship_lock():
                                 "vorigen Daemon; Tree-Stand ggf. ungeshippt." % pid)
 
 
+def _card_log_tail(card, n=35):
+    """The card's own recent history (gate/merge/deploy notes, steers, hook
+    output) - read live from its actionlog. Henry's first conflict decision
+    (2026-08-21 05:15) had to answer 'kein Kontext (Diff/Historie) verfuegbar'
+    because the prompt carried only the board snapshot: full-context judgement
+    was judging blind on the one card it was about."""
+    if not card:
+        return ""
+    try:
+        from daemon.spine.storage.trackstore import _load, _find
+        t = _find(_load(), card)
+        if not t:
+            return ""
+        path = os.path.join(t["run_dir"], "actions.jsonl")
+        with open(path, encoding="utf-8") as f:
+            recs = [json.loads(x) for x in f.read().splitlines()[-n:] if x.strip()]
+        return "\n".join("%s %s: %s" % (r.get("ts", "?"), r.get("kind", "?"),
+                                        str(r.get("detail", ""))[:220]) for r in recs)
+    except Exception as e:
+        return "(actionlog unreadable: %s)" % e
+
+
 def _decide(esc):
     """One judgement round. Returns True if the escalation was closed."""
     from daemon.spine.storage import events
     policy = (events.settings().get("henry_policy") or "").strip() or DEFAULT_POLICY
     escalations.record_attempt(esc["id"])
+    card_log = _card_log_tail(esc.get("card"))
     prompt = (
         policy
         + "\n\n== ESKALATION ==\nkind: %s\ncard: %s\ndetail:\n%s\n" % (
             esc["kind"], esc.get("card") or "-", esc.get("detail") or "")
+        + ("\n== KARTE (actionlog, juengste zuerst unten) ==\n" + card_log + "\n" if card_log else "")
         + "\n== SYSTEM ==\n" + _snapshot()
         + "\n\nAntworte NUR mit diesem JSON:\n"
           '{"action": "rerun_deploy|steer|notify_owner|ignore",\n'
@@ -237,8 +266,10 @@ def _loop():
                     _give_up(esc)
                     continue
                 _decide(esc)
-        except Exception:
-            pass
+        except Exception as e:
+            # never die, but never be SILENT either - an invisible broken broker
+            # is exactly the class of failure Henry exists to end.
+            print("henry: loop error:", str(e)[:200])
         time.sleep(_INTERVAL_S)
 
 
