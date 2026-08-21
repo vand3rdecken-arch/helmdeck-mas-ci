@@ -60,6 +60,30 @@ class GlassVoiceService : Service() {
         private const val NOTIF_ID = 4711
         const val ACTION_LISTEN = "app.helmdeck.voice.LISTEN"
         const val ACTION_STOP = "app.helmdeck.voice.STOP"
+        /**
+         * Listen on the PHONE's microphone and leave the glasses on A2DP, so the
+         * answer comes back in music quality instead of telephone quality.
+         *
+         * WHY THIS EXISTS - the correction, 2026-08-21. The rule we wrote down as
+         * "HFP and A2DP are mutually exclusive, so listening degrades speaking"
+         * is true, but it was recorded with a scope it never had. AOSP says
+         * exactly when it applies: audiopolicy `Engine.cpp`, STRATEGY_PHONE,
+         * `// Do not use A2DP devices when in call` - and it then REMOVES the
+         * A2DP outputs. What counts as "in call" is MODE_IN_COMMUNICATION.
+         *
+         * Which is a mode this very service asks for, in routeToGlasses(), to
+         * reach the GLASSES microphone over SCO. So the quality collapse is the
+         * documented consequence of a routing choice we make - not a property of
+         * wanting to listen. Ask for neither and both stay: the recogniser takes
+         * the built-in mic, and A2DP is never torn down.
+         *
+         * The trade is real and is the owner's to make, which is why this is a
+         * second action rather than a silent change of behaviour: the glasses'
+         * 5-mic beamforming array is better than a phone in a pocket. Use this
+         * when the phone is in hand or on a desk; use ACTION_LISTEN when it is
+         * not.
+         */
+        const val ACTION_LISTEN_PHONE_MIC = "app.helmdeck.voice.LISTEN_PHONE_MIC"
         /** Written by the RN app (data/config) so the service needs no rebuild to retarget. */
         const val PREFS = "helmdeck_glass_voice"
         const val KEY_BASE = "base_url"
@@ -69,6 +93,9 @@ class GlassVoiceService : Service() {
     private var recognizer: SpeechRecognizer? = null
     private var player: MediaPlayer? = null
     private var savedMode = AudioManager.MODE_NORMAL
+    /** Which microphone the LAST start actually got - derived from the routing
+     *  call's own answer, shown to the owner, never guessed from the request. */
+    private var micInUse = "Telefon"
     private val main = Handler(Looper.getMainLooper())
 
     private val audio: AudioManager
@@ -130,7 +157,8 @@ class GlassVoiceService : Service() {
         if (!hasMicPermission()) { stopSelf(); return START_NOT_STICKY }
         when (intent?.action) {
             ACTION_STOP -> { safe("stop") { releaseMic(); stopSelf() } }
-            else -> safe("listen") { startListening() }
+            ACTION_LISTEN_PHONE_MIC -> safe("listen-phone") { startListening(useGlassMic = false) }
+            else -> safe("listen") { startListening(useGlassMic = true) }
         }
         // START_STICKY: the point of a foreground service is surviving the moment
         // the owner looks at the lens instead of the phone.
@@ -207,6 +235,12 @@ class GlassVoiceService : Service() {
      */
     private fun releaseMic() {
         safe("rec-cancel") { recognizer?.cancel() }
+        // Only undo a route we actually made. clearCommunicationDevice() and a
+        // mode write are GLOBAL: calling them after a phone-mic turn would yank
+        // the audio route out from under whatever else on the device happens to
+        // be in a call, to undo something we never did.
+        if (micInUse != "Brille") return
+        micInUse = "Telefon"
         safe("unroute") {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 audio.clearCommunicationDevice()
@@ -220,12 +254,20 @@ class GlassVoiceService : Service() {
 
     // ---- listen -----------------------------------------------------------
 
-    private fun startListening() {
+    private fun startListening(useGlassMic: Boolean) {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             say("Spracherkennung nicht verfügbar")
             return
         }
-        routeToGlasses()          // best-effort: the phone mic is a usable fallback
+        // OBSERVED, not assumed (the Paseo rule). routeToGlasses() returned a
+        // boolean nobody read, so a silent failure to reach the SCO device was
+        // indistinguishable from success - the owner would simply have been
+        // recorded by the phone while believing the glasses were listening.
+        // Now the notification says which microphone is actually live, which is
+        // also the only way this can be checked on a device the developer does
+        // not have.
+        val onGlasses = if (useGlassMic) routeToGlasses() else false
+        micInUse = if (onGlasses) "Brille" else "Telefon"
         safe("recognizer") {
             recognizer?.destroy()
             recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
@@ -237,7 +279,7 @@ class GlassVoiceService : Service() {
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             recognizer?.startListening(i)
-            say("Hört zu…")
+            say("Hört zu… (Mikro: $micInUse)")
         }
     }
 

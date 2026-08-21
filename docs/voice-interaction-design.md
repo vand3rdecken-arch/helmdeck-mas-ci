@@ -593,6 +593,67 @@ milder. Als Schuld `voice-stream-cost` registriert.
 
 ---
 
+### 8e. Barge-in — die Regel war zu weit gefasst, die Messung sagt trotzdem Nein
+
+Owner: „wie löst man das". Antwort in drei Teilen, einer davon eine Korrektur an
+uns selbst.
+
+**1. Die Regel stimmt, ihr Geltungsbereich nicht.** „HFP und A2DP schließen
+einander aus" gilt für das **Brillenmikrofon über Bluetooth Classic** — nicht
+für „Zuhören". AOSP benennt den Auslöser wörtlich: Audiopolicy `Engine.cpp`,
+STRATEGY_PHONE, `// Do not use A2DP devices when in call`, und entfernt dann die
+A2DP-Ausgänge. „In call" heißt **`MODE_IN_COMMUNICATION`** — ein Modus, den
+`GlassVoiceService.routeToGlasses()` *selbst anfordert*, um an das SCO-Mikro zu
+kommen. Der Qualitätseinbruch ist also die dokumentierte Folge **unserer eigenen
+Routing-Entscheidung**. Gebaut: `ACTION_LISTEN_PHONE_MIC` — auf dem *Telefon*
+hören, A2DP zur Brille stehen lassen. Der Preis (Beamforming-Array vs. Telefon
+in der Tasche) ist eine Owner-Entscheidung, deshalb eine zweite Aktion statt
+stiller Verhaltensänderung. **Unverifiziert — ohne echte Brille nicht testbar;**
+die Benachrichtigung meldet jetzt, welches Mikro tatsächlich offen ist, damit
+die Antwort auf dem Gerät ablesbar ist statt geraten.
+
+**2. Desktop: der dokumentierte Weg existiert im Laufzeitsystem nicht.** Chrome
+135 nahm `recognition.start(MediaStreamTrack)` auf, Chrome 141
+`echoCancellationMode: "all"` — zusammen der einzige belegte Volldu­plex-Pfad,
+denn Chromium öffnet für die Web Speech API eine **rohe** Aufnahme ohne jede
+Echo-Referenz (`speech_recognizer_impl.cc`). Also gemessen statt geglaubt:
+
+```
+Electron 43.4.1 -> Chromium 150.0.7871.224
+  getUserMedia .................. true
+  echoCancellation .............. true
+  echoCancellationMode .......... FALSE   (nicht in getSupportedConstraints,
+                                           und nicht in track.getSettings(),
+                                           auch wenn man sie explizit anfordert)
+```
+
+Damit ist der Weg in der neuesten Shell, die es gibt, **nicht vorhanden** — und
+ein Electron-Bump hätte dafür nichts gekauft. `tools/probe_duplex.js` hält die
+Messung wiederholbar fest. `caps().duplex` fragt zur Laufzeit dieselbe Frage und
+meldet heute überall `false`; **einen Duplex-Codepfad gibt es bewusst nicht**,
+denn er wäre von keinem Test dieser Welt ausführbar. Kippt die Sonde, wird er
+gebaut — gegen einen Browser, der ihn wirklich hat.
+
+> Falle, hier bezahlt: die erste Fassung der Sonde lud `about:blank` — ein
+> **opaker Origin**, also kein Secure Context, also gar kein
+> `navigator.mediaDevices`. Sie meldete fröhlich „kein getUserMedia" auf einem
+> Chromium, das beides hat. Medien-APIs nie auf `about:blank` prüfen.
+
+**3. Telefon: eine Bibliothekslücke, keine OS-Grenze.** Android hat beides —
+`AcousticEchoCanceler` und die als AEC-behaftet dokumentierte Quelle
+`VOICE_COMMUNICATION`. `expo-speech-recognition` erreicht keins davon:
+`ExpoAudioRecorder.kt` verdrahtet `MediaRecorder.AudioSource.VOICE_RECOGNITION`
+fest, und die Option `audioSource` nimmt eine **Datei-URI**, kein Eingabegerät.
+Das Telefon würde also seine eigene Antwort mitschreiben. Messbar nur mit echter
+akustischer Schleife — kein Emulator hat eine.
+
+Alles drei als Schuld `voice-barge-in` registriert, mit dem Auslöser je Fläche.
+Und ehrlichkeitshalber: mein früherer Vorschlag, „einfach herausfiltern, was wir
+gerade selbst sagen", sowie VAD-Gating haben **keine Primärquelle**. Folklore,
+meine eingeschlossen.
+
+---
+
 ## 9. Nicht verifiziert — Risiken, die ein Bau erst schließt
 
 1. Ob Apples 1-Minuten- und Tageslimits **auch on-device** gelten. Apple
