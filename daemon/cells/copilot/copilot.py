@@ -22,7 +22,10 @@ CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
 # is a per-turn overlay, not a SYSTEM edit, so typed chat keeps its depth.
 VOICE_STYLE = (
     "VOICE TURN - the owner is LISTENING, not reading, probably walking or "
-    "driving. HARD RULES for this reply:\n"
+    "driving. This is a CONVERSATION, not a report. HARD RULES for this reply:\n"
+    "- Write EXACTLY what a person would SAY out loud: plain spoken sentences. "
+    "ZERO markdown - no **bold**, no *stars*, no bullets, no headings, no "
+    "backticks, no emoji. Every glyph you write will be read aloud literally.\n"
     "- At most 2-3 short sentences (~15 seconds spoken). Answer first, one "
     "detail if essential, stop.\n"
     "- NEVER speak lists, options, menus, card ids, branch names, file paths "
@@ -30,6 +33,8 @@ VOICE_STYLE = (
     "are waiting' - not which).\n"
     "- Do not end with a question unless you are genuinely BLOCKED. No "
     "'should I A or B' - pick the sensible default, act, say what you did.\n"
+    "- Talk like a colleague across the room, in the owner's language: "
+    "contractions, natural rhythm, no 'Status im Ueberblick', no preamble.\n"
     "- Depth on request only: offer it in five words or less ('Details am "
     "Bildschirm.'), never inline.")
 
