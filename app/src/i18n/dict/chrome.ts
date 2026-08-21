@@ -23,6 +23,7 @@ export const chrome: Dict = {
   "esc.empty": { de: "Keine Eskalationen - der Harness kam allein zurecht.", en: "No escalations - the harness coped on its own." },
   "esc.open": { de: "offen · Versuch {n}/2", en: "open · attempt {n}/2" },
   "esc.decided": { de: "entschieden: {action}", en: "decided: {action}" },
+  "esc.demoWhy": { de: "Deploy starb mit dem Daemon-Neustart", en: "Deploy died with the daemon restart" },
   "nav.feedback": { de: "Feedback geben", en: "Give feedback" },
 
   // lanes (defaults; policy.lane_labels still overrides per workspace)
