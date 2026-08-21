@@ -545,7 +545,12 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if t.get("direct"):
         _maybe_fast_track_ship_direct(t, log)
     else:
-        _maybe_fast_track_ship(t, log)
+        # worktree fast-track card: CONVERT to the live-tree rails at turn end
+        # (2026-08-21) - lands the branch (no gate), reclaims the worktree,
+        # repoints direct; a conflict auto-steers the worker and this hook
+        # closes the loop on that turn's end. The old gated ship
+        # (_maybe_fast_track_ship) is retired from this path.
+        _maybe_fast_track_convert(t, log)
     return t
 
 
@@ -623,6 +628,56 @@ def _maybe_fast_track_ship(t, log):
     _threading.Thread(target=_ship, daemon=True).start()
 
 
+def _auto_resolve_conflict(t, log, reason):
+    """Self-healing half of the fast-track conversion: instead of parking a
+    conflict for the owner, steer the card's OWN worker to merge the markers
+    by plain editing (the same edit-only dispatch_conflict_resolution the
+    chat/PM use). The turn-end hook re-attempts the conversion afterwards, so
+    resolve -> land needs nobody. Bounded: 2 automatic tries (matches the PM
+    RESOLVE ladder), then a loud escalation note - an agent that cannot merge
+    the same hunk twice needs a human judgement, not a third identical try."""
+    tries = int(t.get("ft_resolve_tries") or 0)
+    if tries >= 2:
+        log.log("note", "FAST-TRACK: Konflikt auch nach %d automatischen "
+                "Aufloesungs-Versuchen offen (%s) - jetzt brauchst DU es: "
+                "sag dem Worker, welche Seite gewinnen soll." % (tries, reason))
+        return
+    _mutate(t["id"], lambda tt: tt.__setitem__("ft_resolve_tries", tries + 1))
+    from daemon.cells.engineer import lanemachine as _lm
+    msg = _lm.dispatch_conflict_resolution(t["id"], actor="fast-track",
+                                           background=True)
+    log.log("note", "FAST-TRACK: %s - der Worker loest die Markierungen "
+            "AUTOMATISCH (Versuch %d/2); danach wird die Konvertierung erneut "
+            "versucht, du musst nichts tun. %s"
+            % (reason, tries + 1, (msg or "")[:200]))
+
+
+def _maybe_fast_track_convert(t, log):
+    """Turn-end hook for a fast_track card still on the WORKTREE rails: since
+    the flip-on conversion exists (2026-08-20), a finished turn on such a card
+    attempts the same conversion - land the branch, reclaim, repoint direct -
+    instead of the old gated ship. This is also what closes the auto-resolve
+    loop: the conflict-resolution turn ends, this hook runs, the conversion
+    retries and lands. Same guards as the ship: only at rest, never with a
+    pending question, only when there is something to land."""
+    if not (t.get("fast_track") and not t.get("machine") and not t.get("direct")
+            and t.get("status") == "needs_you" and not t.get("question")):
+        return
+    wt = t.get("worktree") or ""
+    if not os.path.isdir(wt):
+        return
+    rc, dirty, _ = _git_try(wt, "status", "--porcelain")
+    ahead = False
+    integ = _current_branch(t.get("repo") or "")
+    if integ and t.get("branch"):
+        ahead = _git_try(t["repo"], "merge-base", "--is-ancestor",
+                         t["branch"], integ)[0] != 0
+    merging = _git_try(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] == 0
+    if not ((rc == 0 and dirty) or ahead or merging):
+        return                          # chat-only turn - nothing to land
+    _convert_fast_track_live(t, log)
+
+
 def _convert_fast_track_live(t, log):
     """Fast-track ON for a card that STARTED worktree-isolated: move it onto
     the live-tree rails instead of leaving it gated for its lifetime. The old
@@ -635,24 +690,31 @@ def _convert_fast_track_live(t, log):
     base (autocommit + the same _merge_to_main the accept path uses - the gate
     skip IS what fast-track means, debt fast-track-no-gate), reclaim the
     worktree, repoint the card onto the live tree, drop the idle session so
-    the next spawn is cwd-keyed to the live tree. Any refusal (conflict
-    markers, merge conflict) leaves the card EXACTLY as it was - isolated and
-    gated - with the reason in chat; nothing is half-converted. Returns the
-    updated track, or None if refused."""
+    the next spawn is cwd-keyed to the live tree. A CONFLICT (markers or a
+    merge refusal) no longer parks for the owner - chat must never dead-end
+    (2026-08-21, the Display-Glasses card wedged at 4am on exactly this): the
+    card's OWN worker is auto-steered to merge the markers by editing
+    (dispatch_conflict_resolution, edit-only), and the turn-end hook
+    re-attempts the conversion when that turn finishes. Bounded to 2
+    automatic tries (RESOLVE ladder), then it escalates to the owner.
+    Returns the updated track, or None if not (yet) converted."""
     tid = t["id"]
     if _autocommit(t) == "markers":
-        log.log("note", "FAST-TRACK an: offene Konfliktmarkierungen im Worktree "
-                "- Karte bleibt worktree-isoliert (Gate+Merge+Deploy). Konflikt "
-                "aufloesen, dann Fast-Track erneut einschalten.")
+        _auto_resolve_conflict(t, log, "offene Konfliktmarkierungen im Worktree")
         return None
     ok, kind, msg = _merge_to_main(t)
     from daemon.spine.storage import events
     events.emit("merge", tid, ok=bool(ok), outcome=kind,
                 detail="fast-track-convert: " + (msg or "")[:200])
     if not ok:
-        log.log("note", "FAST-TRACK an: Branch nicht auf die Basis mergebar (%s) "
-                "- Karte bleibt worktree-isoliert. %s" % (kind, (msg or "")[:300]))
+        if kind == "conflict":
+            _auto_resolve_conflict(t, log, "Merge-Konflikt mit der Basis")
+        else:
+            log.log("note", "FAST-TRACK an: Branch nicht auf die Basis mergebar "
+                    "(%s) - Karte bleibt worktree-isoliert. %s"
+                    % (kind, (msg or "")[:300]))
         return None
+    _mutate(tid, lambda tt: tt.pop("ft_resolve_tries", None))
     from daemon.spine.git.worktrees import reclaim_worktree
     reclaim_worktree(t, log)
     def _mark(tt):

@@ -24,6 +24,7 @@ from daemon.cells.engineer import sessions
 from daemon.spine.storage import trackstore
 from daemon.spine.agent import drivers
 from daemon.spine.git import worktrees
+from daemon.cells.engineer import lanemachine
 
 
 class FakeDB:
@@ -67,7 +68,7 @@ def main():
     saved = (trackstore._db, events.emit, events.settings, sessions._threading,
              os.path.isdir, sessions._autocommit, sessions._merge_to_main,
              sessions._repo_hook, drivers.turn_active, drivers.drop_session,
-             worktrees.reclaim_worktree)
+             worktrees.reclaim_worktree, lanemachine.dispatch_conflict_resolution)
     tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
     try:
         fake = FakeDB()
@@ -79,7 +80,9 @@ def main():
         sessions._threading = FakeThreading
         os.path.isdir = lambda p: True
 
-        merged, reclaimed, dropped, deployed = [], [], [], []
+        merged, reclaimed, dropped, deployed, resolved = [], [], [], [], []
+        lanemachine.dispatch_conflict_resolution = (
+            lambda tid, actor=None, background=True: resolved.append(tid) or "steered")
         sessions._autocommit = lambda t: True
         sessions._merge_to_main = lambda t: merged.append(t["id"]) or (True, "merged", "")
         sessions._repo_hook = lambda t, kind: deployed.append((t["id"], kind)) or True
@@ -116,22 +119,39 @@ def main():
         print("PASS convert: mid-turn flip raises, card untouched")
         drivers.turn_active = lambda tid: False
 
-        # -- conflict markers refuse the conversion; card stays isolated ----
+        # -- conflict markers: NOT converted yet, but the worker is AUTO-
+        #    steered to resolve (chat must never dead-end) -------------------
         fake.track_put(_card("t-mark", run_dir))
         sessions._autocommit = lambda t: "markers"
         got = sessions.update_track("t-mark", {"fast_track": True}, actor="owner")
         assert got["fast_track"] is True and not got.get("direct") and not merged, \
-            "markers must refuse conversion, card stays isolated: %r" % got
-        print("PASS convert: conflict markers refuse, card stays isolated+gated")
+            "markers must defer conversion, card stays isolated: %r" % got
+        assert resolved == ["t-mark"], \
+            "markers must auto-dispatch conflict resolution: %r" % resolved
+        assert fake.track_get("t-mark").get("ft_resolve_tries") == 1
+        print("PASS convert: markers -> worker auto-steered (try 1), card isolated")
         sessions._autocommit = lambda t: True
 
-        # -- merge conflict refuses; card stays isolated, nothing reclaimed --
+        # -- merge conflict: same self-healing, nothing reclaimed ------------
+        resolved.clear()
         fake.track_put(_card("t-conf", run_dir))
         sessions._merge_to_main = lambda t: (False, "conflict", "app.py")
         got = sessions.update_track("t-conf", {"fast_track": True}, actor="owner")
         assert not got.get("direct") and not reclaimed and not dropped, \
             "merge conflict must leave the card isolated: %r" % got
-        print("PASS convert: merge conflict refuses, worktree/session kept")
+        assert resolved == ["t-conf"], \
+            "merge conflict must auto-dispatch resolution: %r" % resolved
+        print("PASS convert: merge conflict -> worker auto-steered, worktree kept")
+
+        # -- bounded: after 2 automatic tries it escalates, no third steer ---
+        resolved.clear()
+        fake.track_put(_card("t-cap", run_dir, ft_resolve_tries=2))
+        sessions._autocommit = lambda t: "markers"
+        sessions.update_track("t-cap", {"fast_track": True}, actor="owner")
+        assert resolved == [], "3rd auto-resolve must NOT fire (RESOLVE ladder cap): %r" % resolved
+        print("PASS convert: resolve ladder capped at 2, escalates to owner")
+        sessions._autocommit = lambda t: True
+        sessions._merge_to_main = lambda t: merged.append(t["id"]) or (True, "merged", "")
 
         # -- nothing-to-land card (already_merged) converts without a deploy --
         deployed.clear()
@@ -148,7 +168,7 @@ def main():
         (trackstore._db, events.emit, events.settings, sessions._threading,
          os.path.isdir, sessions._autocommit, sessions._merge_to_main,
          sessions._repo_hook, drivers.turn_active, drivers.drop_session,
-         worktrees.reclaim_worktree) = saved
+         worktrees.reclaim_worktree, lanemachine.dispatch_conflict_resolution) = saved
 
 
 if __name__ == "__main__":
