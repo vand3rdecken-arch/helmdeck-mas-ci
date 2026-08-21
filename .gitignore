@@ -11,6 +11,12 @@ push.env
 
 # built APK is committed as a release artifact at repo root; ignore build intermediates
 apk/gradle/wrapper/dists/
+
+# Local expo modules ARE tracked (app/modules/glasses is real source), but a
+# native build drops gradle output inside them - first seen 2026-08-21, when
+# assembleRelease left app/modules/glasses/android/build/ as ~700 untracked
+# files. Ignore the output, keep the source.
+app/modules/*/android/build/
 daemon/tracks.json
 daemon/settings.json
 daemon/plane_links.json
