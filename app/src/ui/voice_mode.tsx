@@ -199,6 +199,21 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
   // render below, so `run` always re-enters the CURRENT listener rather than the
   // one that happened to exist when it was memoised.
   const startRef = useRef<() => void>(() => {});
+  // Transient-failure budget for hands-free. Measured 2026-08-21: an STT
+  // "aborted" and a relay restart (push_relay ships + bounces the relay mid
+  // deploy) each parked the orb on a red error while "Läuft weiter" promised
+  // the opposite - a hands-free loop that dead-ends on a hiccup isn't hands
+  // free. Bounded (3) so a genuinely down relay ends in an honest error, not
+  // an infinite silent retry; reset by any successful listen or answer.
+  const retries = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retrySoon = useCallback((ms: number) => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = setTimeout(() => {
+      retryTimer.current = null;
+      if (alive.current) startRef.current();
+    }, ms);
+  }, []);
 
   const scroll = useRef<ScrollView>(null);
 
@@ -248,8 +263,13 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
       if (!alive.current) return;
       setProblem(String((e as Error).message || tr("voice.failed")));
       setState("error");
+      // hands-free: a failed ASK (relay restart, network blip) goes back to
+      // LISTENING after a beat - never re-sends the question on its own, the
+      // owner just says it again. Push-to-talk keeps the tap-to-retry.
+      if (handsRef.current && retries.current < 3) { retries.current += 1; retrySoon(2500); }
       return;
     }
+    retries.current = 0;
     if (!alive.current) { speech.stop(); speechRef.current = null; return; }
     setTurns((v) => [...v, { role: "henry", text: reply || tr("chat.noReply") }]);
     setCaption(reply);
@@ -304,6 +324,12 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
         }
         setProblem(kind === "denied" ? tr("voice.denied") : (detail || tr("voice.failed")));
         setState("error");
+        // recognizer hiccup ("aborted", service restart): in hands-free mode
+        // reopen the mic after a beat instead of parking red. Permission
+        // denial is NOT transient - never retried.
+        if (kind !== "denied" && handsRef.current && retries.current < 3) {
+          retries.current += 1; retrySoon(1500);
+        }
       },
     });
     if (!listener.current) setState("idle");
@@ -334,6 +360,8 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     }
     return () => {
       alive.current = false;
+      if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+      retries.current = 0;
       stopListening();
       speechRef.current?.stop();
       speechRef.current = null;
