@@ -22,7 +22,8 @@ import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
 import { usePresenceHeartbeat } from "@/data/presence";
-import { decryptPush, presentDecrypted, registerForPush } from "@/data/push";
+import { useBlockerVoice } from "@/data/blocker_voice";
+import { announceDecrypted, decryptPush, presentDecrypted, registerForPush } from "@/data/push";
 import { t as i18nT } from "@/i18n/core";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
@@ -114,6 +115,7 @@ function usePushWiring() {
     (async () => {
       await useConfig.getState().hydrate();
       await useDemo.getState().hydrate();   // demo survives a restart, like pairing
+      useBlockerVoice.getState().hydrate();   // proactive-voice toggle (More -> Voice), off by default
       // hydrate() flips `active` AFTER the first queries may have fetched real
       // (empty/401) data - refetch so a returning demo session actually shows the
       // sample board instead of the stale pre-hydrate payload.
@@ -123,7 +125,7 @@ function usePushWiring() {
     // foreground: decrypt sealed data pushes and present them locally
     const recv = Notifications.addNotificationReceivedListener((n) => {
       const data = n.request.content.data as Record<string, string>;
-      if (data?.cipher) presentDecrypted(data);
+      if (data?.cipher) { presentDecrypted(data); announceDecrypted(data); }
     });
     // tap: deep-link to the card (or the PM chat if the push has no card). The
     // track is sealed in the cipher (zero-knowledge), so decrypt on tap to route.

@@ -308,4 +308,15 @@ export const settings: Dict = {
     de: "Anonyme Ereignisse (App-Start, Karten-Aktionen, Login) via PostHog, EU-Cloud. Keine Inhalte, keine Namen, keine Karten-Titel.",
     en: "Anonymous events (app open, card actions, login) via PostHog, EU cloud. No content, no names, no card titles.",
   },
+
+  // ---- proactive blocker voice (device-local, More tab) ----
+  "settings.voice.section": { de: "Sprache", en: "voice" },
+  "settings.voice.speakBlockers": {
+    de: "Blockierte Karten laut ansagen",
+    en: "Announce blocked cards out loud",
+  },
+  "settings.voice.hint": {
+    de: "Wenn eine Karte deine Entscheidung braucht, liest das Handy die Meldung vor - normale Audiowiedergabe, läuft also auch über eine per Bluetooth verbundene Brille. Nur solange die App läuft.",
+    en: "When a card needs your call, the phone reads the notification aloud - ordinary audio playback, so it also plays through Bluetooth-connected glasses. Only while the app is running.",
+  },
 };

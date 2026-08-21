@@ -12,7 +12,7 @@
 //
 // THE PROPERTY THIS FILE EXISTS TO HOLD:
 //
-//     The worker proxies FOUR paths to the daemon and nothing else, ever.
+//     The worker proxies FIVE paths to the daemon and nothing else, ever.
 //
 // The daemon behind it serves cards, settings, chat and driver commands. A
 // generic pass-through would publish all of it behind one query-string token.
@@ -29,11 +29,39 @@ export const PROXY_ROUTES = {
   "/glance": "GET",
   "/glance/answer": "POST",
   "/glance/talk": "POST",
+  // Added 2026-08-21 for the DAT camera. Deliberately, and with the two
+  // mitigations that make it defensible: the daemon side is OFF unless
+  // settings.glance_photo is set (its own switch, not glance_token's), and it
+  // REFUSES without a card id, so this path cannot be used to dump arbitrary
+  // files at the machine - only to attach an image to a card that already
+  // exists.
+  "/glance/photo": "POST",
 };
 
 // Upstream bodies are small by construction (a spoken sentence, or a chosen
 // option id). Anything larger is not a glance.
 export const MAX_BODY = 64 * 1024;
+
+// ...EXCEPT a photo, which is the one legitimately large body here. Kept as a
+// per-route override rather than by raising MAX_BODY, because raising the
+// global would let a 12 MB body be posted to /glance/talk - straight into an
+// agent prompt - and to /glance/answer. The wide cap belongs to exactly the
+// one route that needs it.
+//
+// 12 MB mirrors the daemon's own pre-decode cap (routes_glance.glance_photo
+// refuses b64 longer than 12_000_000), so the edge and the origin agree and a
+// payload is never accepted here only to be refused there. A glasses frame is
+// ~100 KB-2 MB, so this is generous headroom, not a target.
+export const MAX_BODY_BY_ROUTE = {
+  "/glance/photo": 12 * 1024 * 1024,
+};
+
+/** The body cap for a resolved upstream path. Default unless overridden. */
+export function maxBodyFor(pathname) {
+  return Object.prototype.hasOwnProperty.call(MAX_BODY_BY_ROUTE, pathname)
+    ? MAX_BODY_BY_ROUTE[pathname]
+    : MAX_BODY;
+}
 
 /**
  * Returns the canonical upstream path, or null meaning "not ours - serve the

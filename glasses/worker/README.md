@@ -21,14 +21,29 @@ This is the first thing in HelmDeck that puts a door to the owner's daemon on
 the open internet, and the daemon behind it serves cards, settings, chat and
 driver commands.
 
-**The Worker proxies four paths and nothing else, ever.**
+**The Worker proxies five paths and nothing else, ever.**
 
 | Path | Method |
 |---|---|
 | `/glance` | GET |
 | `/glance/answer` | POST |
 | `/glance/talk` | POST |
+| `/glance/photo` | POST (the DAT camera — see the body cap below) |
 | `/glance/voice/<id>.mp3` | GET (`id` = alnum, ≤32 — mirrors `daemon/voice.py:63-69`) |
+
+**Body caps are PER ROUTE.** Everything defaults to 64 KB, because a glance
+body is a spoken sentence or a chosen option id. `/glance/photo` is the one
+exception at 12 MB, and it is an override rather than a raised global on
+purpose: raising `MAX_BODY` would also let a 12 MB body be posted to
+`/glance/talk` — straight into an agent prompt. `tests/test_glance_worker.py`
+asserts that `/glance/talk` keeps the small cap, that an unlisted path falls
+back to it, and that a `constructor` lookup cannot inherit one from
+`Object.prototype`.
+
+The photo path is safe to expose for two reasons that live on the daemon, not
+here: it is OFF unless `settings.glance_photo` is set (its own switch, not
+`glance_token`'s), and it refuses without a card id — so it can only attach an
+image to a card that already exists, never drop files at the machine.
 
 Anything unmatched is served from static assets or 404s; it never falls through
 to the daemon. `Cookie` and `Authorization` are stripped going up — the daemon

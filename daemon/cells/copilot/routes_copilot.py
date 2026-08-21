@@ -3,8 +3,9 @@
 (see routes_auth.py for the pattern/rationale). GET /chat/history, GET
 /chat/live (streaming prose while a turn runs), POST /chat/cancel, POST
 /chat (the real model turn - owner/operator only, with optional voice
-rendering of the prose half). Bodies are byte-identical to the inline
-blocks they replace.
+rendering of the prose half), POST /notify/speak (render text the phone
+already holds, for the proactive-blocker voice path - see below). Bodies
+are byte-identical to the inline blocks they replace.
 """
 import json
 from urllib.parse import parse_qs, urlparse
@@ -93,6 +94,29 @@ def chat_post(self, user, body):
         return self._send(500, json.dumps({"error": str(e)[:300]}))
 
 
+def notify_speak_post(self, user, body):
+    # Speak text the phone ALREADY holds - the proactive-blocker half of phone
+    # voice (app/src/data/push.ts). A push arrives sealed (notify.card_event
+    # authored the title/body once, server-side); the phone decrypts it
+    # locally and, if the owner turned the toggle on, hands that exact text
+    # back here to be rendered as speech and played through whatever audio
+    # route the phone is on right now - ordinary Bluetooth media playback
+    # when paired with the glasses. No DAT, no companion project: this reuses
+    # the SAME daemon-renders/client-plays split as /chat's voice:true and
+    # glance_banner_voice (docs/glasses-reference.md SS4/SS11.6).
+    #
+    # Owner/operator only, same gate as /chat - a client role has no
+    # board-wide notification stream to speak from. Bounded to a short
+    # phrase: this speaks an announcement, never a document.
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    text = (body.get("text") or "").strip()[:300]
+    if not text:
+        return self._send(400, json.dumps({"error": "text required"}))
+    from daemon.spine.media import voice
+    return self._send(200, json.dumps({"clip": voice.render_b64(text)}))
+
+
 GET_ROUTES = {
     "/chat/history": chat_history_get,
     "/chat/live": chat_live_get,
@@ -100,4 +124,5 @@ GET_ROUTES = {
 POST_ROUTES = {
     "/chat/cancel": chat_cancel_post,
     "/chat": chat_post,
+    "/notify/speak": notify_speak_post,
 }

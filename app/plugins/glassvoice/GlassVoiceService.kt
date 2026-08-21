@@ -19,6 +19,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import app.helmdeck.glasses.GlassesRadio
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -250,6 +251,10 @@ class GlassVoiceService : Service() {
             }
             audio.mode = savedMode
         }
+        // OUTSIDE the safe{} above, deliberately: if tearing the audio route
+        // down throws, the radio must STILL come back, or one bad unroute
+        // locks the camera out for the rest of the process's life.
+        GlassesRadio.release(GlassesRadio.Mode.MIC)
     }
 
     // ---- listen -----------------------------------------------------------
@@ -266,7 +271,28 @@ class GlassVoiceService : Service() {
         // Now the notification says which microphone is actually live, which is
         // also the only way this can be checked on a device the developer does
         // not have.
-        val onGlasses = if (useGlassMic) routeToGlasses() else false
+        // THE RADIO LAW (GlassesRadio / glasses-reference 12.4), and note how
+        // NARROW it is on purpose: only the GLASSES mic contends with the
+        // camera, because only it opens an HFP/SCO link on the glasses' radio.
+        // ACTION_LISTEN_PHONE_MIC stays in MODE_NORMAL and never calls
+        // setCommunicationDevice, so it touches nothing the camera is using and
+        // must NOT be refused - blocking it would be a guard that costs the
+        // owner a working feature to prevent a conflict that cannot occur.
+        var onGlasses = false
+        if (useGlassMic) {
+            if (!GlassesRadio.acquire(GlassesRadio.Mode.MIC)) {
+                say("Kamera aktiv - Brillen-Mikro nicht möglich")
+                return
+            }
+            onGlasses = routeToGlasses()
+            if (!onGlasses) {
+                // Claimed the radio but never got the route: give it straight
+                // back. releaseMic() below cannot do it for us - it keys off
+                // micInUse, which is about to say "Telefon" - so without this
+                // the radio would be held by a mic that is not on the glasses.
+                GlassesRadio.release(GlassesRadio.Mode.MIC)
+            }
+        }
         micInUse = if (onGlasses) "Brille" else "Telefon"
         safe("recognizer") {
             recognizer?.destroy()

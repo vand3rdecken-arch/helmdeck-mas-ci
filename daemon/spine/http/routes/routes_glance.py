@@ -7,9 +7,10 @@ board-state read, via glances.glance_payload), GET /glance/voice/<id>.mp3 (the
 agent's answer as speech), GET /glance/banner (a fresh-blocker count as
 speech, for the on-lens mute/repeat controls - see glance_banner_voice), POST
 /glance/talk (ADVISORY chat with the board copilot - allow_actions=False,
-never touches the board), POST /glance/answer (the lens's ONLY write - picks
-among options the worker itself offered). Bodies are byte-identical to the
-inline blocks they replace. `_glance_question` comes from glances.py (already
+never touches the board), POST /glance/answer (picks among options the worker
+itself offered), POST /glance/photo (a DAT camera frame attached to a named
+card - its own switch, see there). Bodies are byte-identical to the inline
+blocks they replace. `_glance_question` comes from glances.py (already
 a real module); `_bg` (background-job runner) stays in server.py since it
 shares _ctl_lock/_ctl state with many other routes - reached via a lazy
 `import server` (no cycle: resolved at call time).
@@ -192,6 +193,72 @@ def glance_talk(self, user, body):
                  if vid else None}))
 
 
+def glance_photo(self, user, body):
+    # THE GLASSES CAMERA's landing point - the daemon half of
+    # app/plugins/metadat/GlassCameraService.kt, which captures one frame over
+    # DAT and POSTs it here as base64. Until this existed the Kotlin's contract
+    # was named but unserved, so a successful capture ended in a 404.
+    #
+    # ITS OWN SWITCH, default OFF, and this is the least negotiable one in the
+    # file. glance_token gates READING the board; glance_talk gates SPENDING
+    # QUOTA; this gates A CAMERA ON THE OWNER'S FACE uploading what he is
+    # looking at. Reusing an existing switch would mean a token minted to read
+    # a blocker list silently became one that can pull frames from a room. It
+    # is a different thing to consent to, so it is a different flag.
+    #
+    # THE CARD ID IS REQUIRED, not guessed. The tempting default - "attach it
+    # to whatever the owner is focused on" - is exactly the assumed,
+    # reconstructed state CLAUDE.md's no-monkey-patches law forbids: presence
+    # is a heuristic, and silently attaching a photo of the owner's room to the
+    # WRONG card is unrecoverable in a way a 400 is not. The lens knows which
+    # card is on screen; it says so.
+    from daemon.spine.storage import events
+    from daemon.cells.engineer import sessions
+    s = events.settings()
+    tok = s.get("glance_token") or ""
+    given = (body.get("token") or "").strip() or \
+        (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps(
+            {"error": "glance disabled or bad token"}))
+    if not s.get("glance_photo"):
+        return self._send(403, json.dumps(
+            {"error": "sending photos from the glasses is off "
+                      "(set settings.glance_photo)"}))
+    # REQUEST SHAPE FIRST, STORAGE SECOND. Every check below is a string test
+    # on data already in hand; the card lookup touches the track store. Doing
+    # the cheap ones first means a malformed or oversized upload is rejected
+    # without a read, and - the reason that matters - a 12 MB payload never
+    # gets as far as a lookup it was always going to fail.
+    tid = (body.get("id") or "").strip()
+    if not tid:
+        return self._send(400, json.dumps({"error": "card id required"}))
+    b64 = (body.get("b64") or "").strip()
+    if not b64:
+        return self._send(400, json.dumps({"error": "b64 required"}))
+    # Cheap pre-check on the ENCODED length before decoding: base64 is 4/3 of
+    # the payload, and refusing early means a runaway upload never becomes a
+    # decoded blob in memory. save_attachments caps the decoded size too.
+    if len(b64) > 12_000_000:
+        return self._send(413, json.dumps({"error": "photo too large"}))
+    t = sessions.get_track(tid)
+    if not t:
+        return self._send(409, json.dumps({"error": "no such card"}))
+    mime = (body.get("mime") or "image/jpeg").strip().lower()
+    ext = "heic" if "heic" in mime else "jpg"
+    # A capture is identified by WHEN it was taken, which is the only thing the
+    # owner can correlate it to later. Sub-second so a burst cannot collide.
+    import time as _t
+    name = _t.strftime("glasses-%Y%m%d-%H%M%S", _t.localtime()) + ".%s" % ext
+    try:
+        from daemon.cells.engineer import cardadmin
+        cardadmin.add_attachments(
+            tid, [{"name": name, "data": b64, "mime": mime}], actor="glasses")
+    except Exception as e:                       # noqa: BLE001
+        return self._send(500, json.dumps({"error": str(e)[:200]}))
+    return self._send(200, json.dumps({"attached": name, "id": tid}))
+
+
 def glance_answer(self, user, body):
     # GLASS MODE's ONLY write. The lens taps one of the options the
     # worker itself offered and the card's session continues - the
@@ -260,4 +327,5 @@ GET_ROUTES = {
 POST_ROUTES = {
     "/glance/talk": glance_talk,
     "/glance/answer": glance_answer,
+    "/glance/photo": glance_photo,
 }

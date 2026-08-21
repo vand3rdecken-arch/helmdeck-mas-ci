@@ -247,6 +247,9 @@ def main():
         status, body = req("POST", "/glance/answer", {"id": "x"}, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/glance/answer with no token configured: refused")
 
+        status, body = req("POST", "/glance/photo", {"id": "x", "b64": "AA=="}, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance/photo with no token configured: refused")
+
         # set a real glance_token, then exercise the token-checked (not the
         # feature-flag-checked) half of each route - proves the dispatch-table
         # move preserved the token comparison exactly.
@@ -262,6 +265,42 @@ def main():
         status, body = req("POST", "/glance/answer", {"token": "test-tok-123", "id": "x"}, expect=403)
         ok(body.get("error", "").startswith("deciding from the glasses"),
            "/glance/answer with correct token but glance_decide unset: feature-flag refusal")
+
+        # -- /glance/photo (the DAT camera's landing point) ---------------------
+        # A CAMERA on the owner's face is its own consent, so it has its own
+        # switch and must NOT ride glance_token/glance_talk/glance_decide.
+        status, body = req("POST", "/glance/photo",
+                           {"token": "test-tok-123", "id": "x", "b64": "AA=="}, expect=403)
+        ok(body.get("error", "").startswith("sending photos from the glasses"),
+           "/glance/photo: correct token but glance_photo unset -> feature-flag refusal")
+        # Turning on the OTHER two switches must not turn this one on.
+        req("POST", "/settings", {"glance_talk": True, "glance_decide": True},
+            cookie=sid, expect=200)
+        status, body = req("POST", "/glance/photo",
+                           {"token": "test-tok-123", "id": "x", "b64": "AA=="}, expect=403)
+        ok(body.get("error", "").startswith("sending photos from the glasses"),
+           "/glance/photo stays OFF when glance_talk/glance_decide are on (separate consent)")
+        # Now enable it and exercise the validation ladder.
+        req("POST", "/settings", {"glance_photo": True}, cookie=sid, expect=200)
+        status, body = req("POST", "/glance/photo", {"token": "wrong", "id": "x", "b64": "AA=="}, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/glance/photo with wrong token: refused")
+        status, body = req("POST", "/glance/photo", {"token": "test-tok-123", "b64": "AA=="}, expect=400)
+        ok(body.get("error", "") == "card id required",
+           "/glance/photo REFUSES without a card id (never guesses a target)")
+        status, body = req("POST", "/glance/photo",
+                           {"token": "test-tok-123", "id": "no-such-card", "b64": "AA=="}, expect=409)
+        ok(body.get("error", "") == "no such card",
+           "/glance/photo with an unknown card: 409, not a silent write")
+        status, body = req("POST", "/glance/photo", {"token": "test-tok-123", "id": "x"}, expect=400)
+        ok(body.get("error", "") == "b64 required", "/glance/photo rejects a missing image")
+        status, body = req("POST", "/glance/photo",
+                           {"token": "test-tok-123", "id": "x", "b64": "A" * 12_000_001}, expect=413)
+        ok(body.get("error", "") == "photo too large",
+           "/glance/photo caps the payload BEFORE decoding it")
+        # leave the switches as we found them, so later assertions are unaffected
+        req("POST", "/settings",
+            {"glance_photo": False, "glance_talk": False, "glance_decide": False},
+            cookie=sid, expect=200)
 
         # rejected relay url (plain http, not localhost) - real validation path
         status, body = req("POST", "/settings", {"relay": {"url": "http://evil.example.com"}},
@@ -374,6 +413,17 @@ def main():
         ok(isinstance(body, dict) and body.get("error"), "/chat refuses a client")
         status, body = req("POST", "/chat", {}, cookie=sid, expect=400)
         ok(isinstance(body, dict) and body.get("error"), "/chat POST rejects missing text (never reaches copilot.chat)")
+
+        # Success path (real edge-tts render) deliberately NOT exercised here -
+        # same reason /chat and /glance/talk stop at the role/validation gates:
+        # it is a real network call (cost, non-determinism, and it can hang
+        # this sandboxed test hard when the box has no route to Microsoft's
+        # TTS service, which is exactly what happened the first time this was
+        # tried - measured, not assumed).
+        status, body = req("POST", "/notify/speak", {"text": "hi"}, cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/notify/speak refuses a client")
+        status, body = req("POST", "/notify/speak", {}, cookie=sid, expect=400)
+        ok(isinstance(body, dict) and body.get("error"), "/notify/speak rejects missing text")
 
         # -- projects group (routes_projects.py) ---------------------------------
         status, body = req("GET", "/projects", cookie=csid, expect=403)

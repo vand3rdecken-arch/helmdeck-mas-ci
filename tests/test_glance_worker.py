@@ -100,6 +100,12 @@ CASES = [
     ("/", "GET", None),
     ("/relay/pair", "POST", None),
 
+    # the camera's landing point (added 2026-08-21) - POST only
+    ("/glance/photo", "POST", "/glance/photo"),
+    ("/glance/photo", "GET", None),
+    ("/glance/photoX", "POST", None),
+    ("/glance/photo/", "POST", None),
+
     # prefix confusion
     ("/glanceX", "GET", None),
     ("/glance/", "GET", None),
@@ -135,6 +141,10 @@ else:
         "  out,\n"
         "  routes: Object.keys(mod.PROXY_ROUTES),\n"
         "  maxBody: mod.MAX_BODY,\n"
+        "  photoCap: mod.maxBodyFor('/glance/photo'),\n"
+        "  talkCap: mod.maxBodyFor('/glance/talk'),\n"
+        "  unknownCap: mod.maxBodyFor('/glance/nope'),\n"
+        "  protoCap: mod.maxBodyFor('constructor'),\n"
         "  normalised: new URL('https://x/glance/../api/cards').pathname,\n"
         "}));\n"
     ) % (
@@ -162,9 +172,26 @@ else:
             # The allowlist itself must stay inside /glance.
             check(all(k.startswith("/glance") for k in got["routes"]),
                   "every allowlisted route is under /glance")
-            check(len(got["routes"]) == 3,
-                  "exactly 3 exact-match routes (+1 regex for audio)")
-            check(got["maxBody"] <= 128 * 1024, "POST body cap is small")
+            check(len(got["routes"]) == 4,
+                  "exactly 4 exact-match routes (+1 regex for audio)")
+            check(got["maxBody"] <= 128 * 1024, "default POST body cap is small")
+
+            # THE PER-ROUTE CAP. /glance/photo carries an image, so it needs a
+            # wide cap - but raising the GLOBAL one would let a 12 MB body be
+            # posted to /glance/talk, straight into an agent prompt. The wide
+            # cap must belong to exactly one route.
+            check(got["photoCap"] == 12 * 1024 * 1024,
+                  "/glance/photo cap is 12 MB (mirrors the daemon's pre-decode cap)")
+            check(got["talkCap"] == got["maxBody"],
+                  "/glance/talk keeps the SMALL default cap (not widened)")
+            check(got["unknownCap"] == got["maxBody"],
+                  "an unlisted path falls back to the small default")
+            # hasOwnProperty guard: a bare `?? MAX_BODY` on a plain object would
+            # let 'constructor' resolve to Object.prototype.constructor - a
+            # truthy non-number - and a byteLength comparison against it is
+            # always false, i.e. NO cap at all.
+            check(got["protoCap"] == got["maxBody"],
+                  "'constructor' does not inherit a cap from Object.prototype")
 
             # This is WHY the raw-traversal cases above are belt-and-braces:
             # the fetch handler matches on a parsed URL, which has already
