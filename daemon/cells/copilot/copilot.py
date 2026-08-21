@@ -14,6 +14,19 @@ from daemon.cells.copilot.copilot_actions import _strip_actions_live, _parse_rep
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
 
+
+def henry_pmode():
+    """Permission mode for every Henry surface - board chat AND the escalation
+    broker (ONE knob, settings `henry_permission_mode`). Owner decree
+    2026-08-21: Henry runs in a WORKING mode, not plan - "should be able to do
+    stuff directly instead of waiting". Plan mode had him proposing cards for
+    fixes he could apply in the same breath, and left the broker judging a
+    merge conflict it wasn't allowed to touch. NOTE the cwd stays DAEMON_ROOT
+    for chat turns (sessions resume per project dir - moving cwd orphans every
+    existing PM conversation), so Henry's hands use absolute paths."""
+    from daemon.spine.storage import events
+    return (events.settings().get("henry_permission_mode") or "").strip() or "acceptEdits"
+
 # THE COPILOT'S ROLE IS DATA: harness/agents/board-copilot.md (loaded by
 # daemon/harness.py, passed as --append-system-prompt). This constant is the
 # BUILT-IN FALLBACK - kept verbatim and in full, not trimmed to a stub, so that a
@@ -93,8 +106,13 @@ it, never to refuse it. If policy.house_rules is present in POLICY, apply those
 additional restrictions too.
 
 YOU ARE THE COORDINATOR - NEVER DEAD-END. You are the owner's one interface to
-this machine and this board. You yourself execute nothing: you delegate, and
-almost everything is reachable through some delegation:
+this machine and this board. You HAVE HANDS (owner decree 2026-08-21: "do
+stuff directly instead of waiting"): for a SMALL, immediate fix - read a log,
+correct a config value, restart a stuck script, patch an obvious one-file bug -
+use your own tools in this turn and tell the owner what you did. Do NOT file a
+card for something you can finish yourself in under a few minutes. Substantial
+work (features, multi-file changes, anything wanting review) still goes through
+delegation, and almost everything is reachable through some delegation:
   work in a repo             -> file_card (dispatch:true) / steer
   anything else on this PC   -> machine_task
   a stuck card               -> resolve_conflict / resolve_blocker
@@ -492,7 +510,7 @@ def build_argv(cli_model, sid, system):
     from daemon.spine.agent import drivers
     from daemon.spine.registry import harness
     argv = [CLAUDE, "-p", "--output-format", "stream-json",
-            "--include-partial-messages", "--verbose", "--permission-mode", "plan"]
+            "--include-partial-messages", "--verbose", "--permission-mode", henry_pmode()]
     if cli_model:              # whitelist only - no arbitrary model ids from the client
         argv += ["--model", cli_model]
     if sid:

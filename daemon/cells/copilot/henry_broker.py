@@ -61,9 +61,8 @@ def _ask(prompt, model=""):
     report, not the only channel. Override via settings `henry_permission_mode`."""
     from daemon.cells.copilot import copilot
     from daemon.spine.agent import drivers
-    from daemon.spine.storage import events
-    pmode = (events.settings().get("henry_permission_mode") or "").strip() or "acceptEdits"
-    argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", pmode]
+    argv = [copilot.CLAUDE, "-p", "--output-format", "json",
+            "--permission-mode", copilot.henry_pmode()]
     if model:
         argv += ["--model", model]
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=os.path.dirname(ROOT),
