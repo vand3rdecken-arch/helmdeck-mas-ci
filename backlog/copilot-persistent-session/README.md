@@ -1,5 +1,10 @@
 # Copilot auf den persistenten Session-Port (Voice-Latenz)
 
+**GEBAUT 2026-08-21 direkt im Live-Tree (Owner-Decree), Commit 2783c10.**
+Gemessen: Turn warm 1.6s (vorher 12s). Abnahme < 5s ERFUELLT. Karte bleibt
+als Doku; offen nur noch: Langzeit-Beobachtung (Idle-Prozesse, Rotation
+unter Kompaktierung).
+
 ## Warum (gemessen 2026-08-21)
 Ein Sprach-Turn braucht ~12s, davon ~8s reiner CLI-Spawn-Overhead:
 `claude -p --model haiku` mit trivialem Prompt = 7.8-19.7s gemessen, bevor
