@@ -60,6 +60,15 @@ _DEFAULT_CARD = (
     "'Ready for Review - move the card to Review; accepting it deploys.' "
     "If something truly blocks you, name the exact blocker and what the owner "
     "must change (a setting, a secret, a decision)."
+    "\n\n"
+    "Background tasks you launch (a background shell, a build, an export, an "
+    "emulator) are YOUR work in flight. While ANY of them is still running, the "
+    "card is NOT done: never write a DELIVERED summary, never say 'Ready for "
+    "Review', never claim completion. If you end a turn while background tasks "
+    "run, say exactly that instead - which tasks you are waiting on and what "
+    "you will do with their results; the harness wakes you when they report. "
+    "Deliver only after every background task has reported AND you have read "
+    "its output and judged it good."
 )
 
 _DEFAULT_MACHINE = (
@@ -86,6 +95,16 @@ _DEFAULT_MACHINE = (
     "a desktop card, holds the single screen/keyboard lock and starves every "
     "other machine card). Launch it detached, then poll for readiness (a port "
     "check, `Get-CimInstance`, an HTTP request) to confirm it came up."
+    "\n\n"
+    "Background tasks you launch (a background shell, a build, an install, a "
+    "long copy) are YOUR work in flight. While ANY of them is still running, "
+    "the task is NOT done: never write a DELIVERED summary, never claim "
+    "completion. If you end a turn while background tasks run, say exactly "
+    "that instead - which tasks you are waiting on and what you will do with "
+    "their results; the harness wakes you when they report. Deliver only after "
+    "every background task has reported AND you have read its output and "
+    "judged it good. (A detached dev server the owner asked you to leave "
+    "running is not a background task in this sense - it is a deliverable.)"
 )
 
 # name -> (body, frontmatter). ask_protocol is on for the two worker surfaces,
