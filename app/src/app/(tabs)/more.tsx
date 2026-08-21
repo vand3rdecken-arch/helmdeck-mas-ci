@@ -23,6 +23,7 @@ const LINKS = [
   ["processes", "nav.processes", "git-network-outline"],
   ["connectors", "nav.connectors", "sync-outline"],
   ["history", "nav.history", "time-outline"],
+  ["escalations", "nav.escalations", "alert-circle-outline"],
   ["sessions", "nav.sessions", "chatbubbles-outline"],
   ["recordings", "nav.recordings", "videocam-outline"],
   ["settings", "nav.settings", "settings-outline"],
