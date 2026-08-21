@@ -205,10 +205,15 @@ CELLS = [
         id="copilot", enabled_key="copilotEnabled",
         prefixes=("/chat",),
         role="board-copilot.md", surface="surfaces.chat",
-        logic_files=("copilot.py", "copilot_stats.py", "copilot_actions.py"),
-        storage="copilot_sessions.json, copilot_log.json",
+        logic_files=("copilot.py", "copilot_stats.py", "copilot_actions.py",
+                     "henry_broker.py"),
+        storage="copilot_sessions.json, copilot_log.json, escalations.jsonl (shared bus)",
         harness_file="harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
         route_modules=("routes_copilot",),
+        # Henry's judgement half of the escalation channel (spine/registry/
+        # escalations.py is the bus; engineer emits; THIS cell decides) -
+        # copilotEnabled off = no broker, per the cell-lifecycle contract.
+        start=("henry_broker", "start_broker"),
         ui_files=("src/plugins/surfaces/copilot.tsx", "src/app/chat.tsx"),
     ),
     Cell(

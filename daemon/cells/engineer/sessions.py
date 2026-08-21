@@ -933,8 +933,6 @@ def start_engineer_lifecycle():
     would spawn a second sweep thread if invoked twice."""
     start_zombie_reconciler()
     start_background_watcher()
-    from daemon.spine.registry import escalations
-    escalations.start_broker()
 
 
 def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):
