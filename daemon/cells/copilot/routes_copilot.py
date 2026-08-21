@@ -70,10 +70,23 @@ def chat_post(self, user, body):
     # one OTA behind still sends True and must still be answered out loud.
     want_voice = body.get("voice")
     streaming = want_voice == "stream"
+    # Spoken turns ride a FAST model (settings `voice_model`, default haiku,
+    # empty string = keep the chip's choice): the wait is worn as silence in
+    # the owner's ear, and a spoken answer is 2-3 sentences (VOICE_STYLE) -
+    # exactly the shape a small model answers well and fast. The model id
+    # still walks turnopts.resolve_model's whitelist like every client value.
+    model = body.get("model", "")
+    if want_voice:
+        from daemon.spine.storage import events
+        vm = events.settings().get("voice_model")
+        model = (vm if vm is not None else "haiku") or model
     try:
         out = copilot.chat(
-            user["name"], text, role=user["role"], model=body.get("model", ""),
-            thinking=body.get("thinking", ""), attachments=body.get("attachments"),
+            user["name"], text, role=user["role"], model=model,
+            # thinking off while spoken: it buys quality the 3-sentence answer
+            # can't spend, and every thinking second is dead air in the ear
+            thinking="" if want_voice else body.get("thinking", ""),
+            attachments=body.get("attachments"),
             card=body.get("card"), voice_stream=streaming,
             # spoken turns get the hard brevity overlay - a minute of options
             # read aloud is not an answer (owner report 2026-08-21)
