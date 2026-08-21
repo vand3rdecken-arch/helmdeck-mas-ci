@@ -1,0 +1,33 @@
+// LOCAL Expo module - the JS -> native bridge for the glasses services.
+//
+// Deliberately tiny. expo-module-gradle-plugin supplies the compileSdk, the
+// Kotlin setup and the expo-modules-core dependency, so everything this file
+// would otherwise have to state (and drift on) comes from the same source as
+// every other expo module in the tree. Shape copied from node_modules/
+// expo-clipboard/android/build.gradle rather than invented.
+//
+// NOTE the minSdk is NOT set here. It inherits the app's 24, which is correct:
+// this module never touches a DAT class (it starts services by explicit
+// ComponentName, see GlassesBridgeModule), so it has no reason to demand 29
+// the way mwdat-core/camera do.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.helmdeck'
+version = '0.1.0'
+
+android {
+  namespace "app.helmdeck.glassesbridge"
+  // REQUIRED, not boilerplate. expo-module-gradle-plugin publishes each module
+  // as a maven component and fails configuration outright without them:
+  //   > A problem occurred configuring project ':glasses'.
+  //     > 'android.defaultConfig.versionName' is not defined
+  // Trimming this block as noise is what produced that error - every shipped
+  // expo module (expo-clipboard et al) carries it for the same reason.
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
