@@ -2191,6 +2191,44 @@ DEBT = [
                "session's established practice).",
         "order": 37,
     },
+    {
+        "id": "gate-light",
+        "title": "Per-card gate is CODE+FUNCTION only - the full suite is a base monitor, not a blocker",
+        "status": "open",
+        "what": "Owner-decreed 2026-08-21 after a day that made the cost "
+                "measurable: the old gate ran every test_*.py per card - 66 "
+                "files, ~8min, +3-7 files/day, 504s under load, red on base "
+                "breakage a card never touched (i18n_lint), red on box load "
+                "(a Gradle build starved test_driver_session's timing "
+                "assertion), and a starved worker double-started it. "
+                "tools/run_gate.py is now the LIGHT gate: py_compile over all "
+                "daemon packages + design/i18n lints (code check) + `import "
+                "daemon.swarm` (function check - the daemon wires up), "
+                "seconds total. The full suite moved verbatim to "
+                "tools/run_suite.py as a BASE health monitor: run it against "
+                "the trunk on a schedule or after a batch; red = fix the "
+                "trunk, never bounce a card. This is the Paseo lesson "
+                "adopted deliberately: behavior verification is the owner "
+                "testing the deploy (fast-track), machine judgment guards "
+                "hygiene only.",
+        "why_it_bites": "A card can now pass the gate with a real behavioral "
+                        "regression the suite would have caught - it lands on "
+                        "base and deploys (fast-track) before run_suite.py "
+                        "notices, hours later at best. Night-shift batches "
+                        "compound this: several merges can stack before the "
+                        "monitor runs, and bisecting which one broke the "
+                        "suite is manual. The suite itself now has no "
+                        "enforced runner - if nothing schedules it, it rots "
+                        "into the same nobody-runs-it state daemon/test_*.py "
+                        "was rescued from.",
+        "trigger": "a merged card breaks behavior the suite pins; run_suite "
+                   "red sits unnoticed; nobody schedules the base monitor",
+        "fix": "Schedule run_suite.py against the trunk (nightshift hook or "
+               "cron) and have a red auto-file a base-health card naming the "
+               "suspect merges since the last green. Keep the gate light - "
+               "the fix is wiring the monitor, not re-fattening the gate.",
+        "order": 38,
+    },
 ]
 
 def list_debt():
