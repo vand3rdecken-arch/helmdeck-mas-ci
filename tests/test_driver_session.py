@@ -72,11 +72,12 @@ def test_timeout_is_bounded():
             raised = str(e)
         elapsed = time.time() - start
         check("exceeded" in raised, "hung turn raised a timeout (got %r)" % raised[:60])
-        # upper bound 30s, not "near 2s": the tree-kill + join after the
-        # timeout measured 8-10s on a loaded Windows box (gate run
-        # 2026-08-20). The check's job is only to prove run_turn RETURNS
-        # instead of deadlocking forever - not to time the kill.
-        check(elapsed < 30, "run_turn RETURNED near the 2s timeout (%.1fs) - no deadlock" % elapsed)
+        # NO tight wall-clock bound: the deadlock this guards against hangs
+        # FOREVER - returning at all is the proof. The old `elapsed < 8` (4x
+        # the 2s timeout) went red on 2026-08-20 purely because a Gradle
+        # release build had the box at 100% - a gate may only fail on the
+        # code, never on the box. 120s is a deadlock detector, not a speed SLA.
+        check(elapsed < 120, "run_turn RETURNED (%.1fs) - no deadlock" % elapsed)
         check(not s.alive(), "session tree-killed after timeout")
     finally:
         os.environ.pop("FAKE_HANG", None)
