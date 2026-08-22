@@ -131,8 +131,25 @@ function usePushWiring() {
     // track is sealed in the cipher (zero-knowledge), so decrypt on tap to route.
     const resp = Notifications.addNotificationResponseReceivedListener((r) => {
       const data = r.notification.request.content.data as Record<string, string>;
-      let track: string | undefined = data?.track;      // local notif already carries it
-      if (!track && data?.cipher) track = decryptPush(data)?.track;   // system notif: decrypt
+      // local notif carries the fields plainly; system-tray notif needs the
+      // sealed cipher decrypted on tap (zero-knowledge routing).
+      let track: string | undefined = data?.track;
+      let kind: string | undefined = data?.kind;
+      let body: string | undefined = data?.body;
+      if (!track && data?.cipher) {
+        const m = decryptPush(data);
+        track = m?.track; kind = m?.kind; body = m?.body;
+      }
+      // A finished task speaks (owner 2026-08-22): tap on a DONE push opens
+      // the voice mode and Henry says the result aloud - no reading, no
+      // navigating into the card. Everything else keeps the card deep-link.
+      if (kind === "done" && track) {
+        const task = (body || "").replace(/\s*\[[^[\]]*\]\s*$/, "").trim();
+        router.push({ pathname: "/chat", params: {
+          vq: task ? `Die Aufgabe „${task.slice(0, 90)}“ ist fertig – sag mir kurz das Ergebnis.`
+                   : "Die gerade fertige Aufgabe – sag mir kurz das Ergebnis." } } as never);
+        return;
+      }
       if (track) router.push(`/card/${track}`);
       else router.push("/(tabs)" as never);   // PM status w/o a card -> the PM summary/overview (dashboard IS the index tab since 2026-08-17)
     });

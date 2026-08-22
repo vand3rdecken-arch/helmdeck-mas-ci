@@ -67,7 +67,7 @@ def _quiet_now(s):
     return (now >= a or now < b) if a > b else (a <= now < b)
 
 
-def push_fcm(title, body, track_id="", urgent=False):
+def push_fcm(title, body, track_id="", urgent=False, kind=""):
     """Sealed data message to the paired phone. Best-effort like push()."""
     from daemon.spine.storage import events
     from daemon.spine.comms import e2ee
@@ -88,7 +88,8 @@ def push_fcm(title, body, track_id="", urgent=False):
     try:
         sa = _json.load(open(_SA, encoding="utf-8"))
         cipher = e2ee.seal_b64(
-            _json.dumps({"title": title, "body": body, "track": track_id}).encode("utf-8"),
+            _json.dumps({"title": title, "body": body, "track": track_id,
+                         "kind": kind}).encode("utf-8"),
             e2ee.import_sec(rel["sk"]), e2ee.import_pub(rel["phone_pub"]))
         # A GENERIC notification block so Android displays the push automatically
         # even when the app is backgrounded/killed (a data-only message needs an
@@ -211,5 +212,8 @@ def card_event(track, status):
         if q:
             body = "%s\n%s" % (q[:120], track.get("task", "")[:60])
     # an URGENT-priority card's ask may pierce quiet hours; the rest waits.
+    # `kind` rides in the sealed payload so a tap on a DONE push can open the
+    # voice mode and have Henry SPEAK the result (owner 2026-08-22) instead of
+    # deep-linking into the card.
     push_fcm(i18n.t(keys[status]), body, track.get("id", ""),
-             urgent=(track.get("priority") == "urgent"))
+             urgent=(track.get("priority") == "urgent"), kind=status)
