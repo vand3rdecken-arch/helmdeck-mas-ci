@@ -113,6 +113,21 @@ DEFAULTS = {
         # which roles may RECONFIGURE the workspace from the copilot chat
         # (actions/steering stay available to owner+operator regardless)
         "chat_configure_roles": ["owner"],
+        # LOAD-AWARE ADMISSION (backlog/load-aware-admission, the desktop-lock
+        # pattern generalized to CPU): a heavy op (gate run, deploy/preview
+        # hook - APK/Gradle build + emulator boot) admits immediately when
+        # OBSERVED CPU load (daemon.spine.ops.resources, sampled on demand -
+        # never a stored flag) is under cpu_max_pct; over it, the op QUEUES
+        # with a visible named-holder note in the card's chat and re-samples
+        # every poll_s. wait_s bounds the queue - past it the op starts ANYWAY,
+        # because this is ADMISSION (defer the start of a heavy op), never
+        # cgroup enforcement or a permanent refusal.
+        "load_admission": {
+            "enabled": True,
+            "cpu_max_pct": 85,
+            "wait_s": 1800,
+            "poll_s": 5,
+        },
     },
     # Jira Cloud data flow (Settings > Data flows). api_token = Atlassian API token.
     "jira": {"base": "", "email": "", "api_token": "", "default_jql": ""},
