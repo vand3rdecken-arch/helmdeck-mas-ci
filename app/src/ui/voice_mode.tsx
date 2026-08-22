@@ -154,13 +154,16 @@ function Orb({ state, level }: { state: VoiceState; level: number }) {
 // so one /notify/speak round trip covers every later open (instant greeting).
 let greetCache: VoiceClip | null = null;
 
-export function VoiceMode({ visible, onClose, onAsk, busy }: {
+export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
   visible: boolean;
   onClose: () => void;
   onAsk: AskFn;
   /** True while the caller's own turn is running (the text chat and voice mode
    *  share one agent, so voice must not start a second turn on top of one). */
   busy?: boolean;
+  /** Ask this the moment the sheet opens (a DONE-push tap: Henry speaks the
+   *  result instead of greeting), then fall into the normal listen loop. */
+  initialAsk?: string;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -199,6 +202,9 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
   // render below, so `run` always re-enters the CURRENT listener rather than the
   // one that happened to exist when it was memoised.
   const startRef = useRef<() => void>(() => {});
+  // Same indirection for run(): the open-effect fires an initialAsk turn and
+  // must reach the CURRENT run, not the one from the mount render.
+  const runRef = useRef<(said: string) => void>(() => {});
   // Transient-failure budget for hands-free. Measured 2026-08-21: an STT
   // "aborted" and a relay restart (push_relay ships + bounces the relay mid
   // deploy) each parked the orb on a red error while "Läuft weiter" promised
@@ -361,6 +367,7 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     if (!listener.current) setState("idle");
   }, [ability.hear, run, stopListening, tr]);
   startRef.current = startListening;
+  runRef.current = run;
 
   // open / close lifecycle
   useEffect(() => {
@@ -375,7 +382,11 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
     // duplex - his own ear must not transcribe his own greeting), cached
     // after the first open so later opens greet instantly. Best-effort: if
     // the render fails, the mic still starts - listening beats greeting.
-    if (ability.hear) {
+    // A DONE-push tap skips the greeting: the first thing Henry says IS the
+    // result. run() then falls into the normal hands-free loop.
+    if (initialAsk) {
+      runRef.current(initialAsk);
+    } else if (ability.hear) {
       (async () => {
         try {
           // ALWAYS fire the request - the daemon uses it as the "voice mode
@@ -491,11 +502,14 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
           </ScrollView>
           </>
         ) : (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 26 }}>
-            <Pressable onPress={tapOrb} accessibilityLabel={tr("voice.orb")}
-              accessibilityRole="button" accessibilityState={{ busy: state === "thinking" }}>
-              <Orb state={problem ? "error" : state} level={level} />
-            </Pressable>
+          /* The WHOLE free surface taps like the orb (owner 2026-08-22: had to
+             aim for the button repeatedly to cut Henry off - interrupting must
+             be a slap, not a target). Same semantics as tapOrb: interrupt while
+             speaking, submit while listening, start while idle. */
+          <Pressable onPress={tapOrb} accessibilityLabel={tr("voice.orb")}
+            accessibilityRole="button" accessibilityState={{ busy: state === "thinking" }}
+            style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 26 }}>
+            <Orb state={problem ? "error" : state} level={level} />
             <View style={{ alignItems: "center", gap: 10, minHeight: 96 }}>
               <Text style={{ color: problem ? t.danger : t.txtSecondary, fontSize: 14, fontWeight: "600" }}>
                 {label}
@@ -511,7 +525,7 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
                 </Text>
               ) : null}
             </View>
-          </View>
+          </Pressable>
         )}
 
         {/* controls: hands-free toggle · end · re-listen. Three, because a voice

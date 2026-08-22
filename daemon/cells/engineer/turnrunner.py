@@ -399,7 +399,36 @@ def _finish_turn(tid, sid, result, meta, log):
     # the turn's lifecycle as its OWN typed event (Paseo turn_completed/
     # turn_failed/turn_canceled + usage), woven into the card feed by `ta`.
     _log_turn_end(log, meta, box.get("cost"))
+    _emit_delivered_parked(t, box.get("reason", "needs_you"), cleaned)
     return t, box.get("reason", "needs_you")
+
+
+def _emit_delivered_parked(t, reason, cleaned):
+    """A worker that says DELIVERED and then PARKS on needs_you is finished
+    work nobody drives (owner 2026-08-22: the research card delivered at 08:50
+    and sat in working). Henry owns FINISH-WHAT-YOU-START (verb move ->
+    review/done, full rails) but only hears the escalation CHANNEL - so the
+    engineer cell reports the FACT here and Henry judges whether to land it.
+    Facts only, event-time: the DELIVERED marker is the worker's own closing
+    signal (harness convention, same anchor outcomes.py keys off). Fast-track
+    and direct cards are excluded - their own pipelines already land/deploy."""
+    try:
+        if reason != "needs_you" or not t or t.get("lane") != "working":
+            return
+        if t.get("fast_track") or t.get("direct"):
+            return
+        from daemon.spine.turn.outcomes import _DELIVERED_RE
+        if not _DELIVERED_RE.search((cleaned or "")[:200]):
+            return
+        from daemon.spine.registry import escalations
+        if any(e.get("kind") == "delivered-parked" and e.get("card") == t["id"]
+               for e in escalations.list_open()):
+            return                      # already reported, Henry hasn't judged yet
+        escalations.emit("delivered-parked", card=t["id"],
+                         detail="Worker meldet DELIVERED, Karte parkt in working: %s"
+                                % (t.get("task") or "")[:140])
+    except Exception:
+        pass                            # a cue is never worth failing a turn
 
 
 
