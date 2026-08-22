@@ -154,10 +154,13 @@ function Orb({ state, level }: { state: VoiceState; level: number }) {
 // so one /notify/speak round trip covers every later open (instant greeting).
 let greetCache: VoiceClip | null = null;
 
-export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
+export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk }: {
   visible: boolean;
   onClose: () => void;
   onAsk: AskFn;
+  /** Abort the in-flight turn (client token bump + server-side /chat/cancel).
+   *  Lets a tap interrupt Henry mid-THINKING, not only mid-speech. */
+  onCancel?: () => void;
   /** True while the caller's own turn is running (the text chat and voice mode
    *  share one agent, so voice must not start a second turn on top of one). */
   busy?: boolean;
@@ -205,6 +208,10 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
   // Same indirection for run(): the open-effect fires an initialAsk turn and
   // must reach the CURRENT run, not the one from the mount render.
   const runRef = useRef<(said: string) => void>(() => {});
+  // Turn epoch: a tap during THINKING cancels the in-flight turn; the epoch
+  // bump makes every continuation of the cancelled run() a no-op, so its late
+  // reply/error can never overwrite the fresh listening state.
+  const epoch = useRef(0);
   // Transient-failure budget for hands-free. Measured 2026-08-21: an STT
   // "aborted" and a relay restart (push_relay ships + bounces the relay mid
   // deploy) each parked the orb on a red error while "Läuft weiter" promised
@@ -248,6 +255,8 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
 
   const run = useCallback(async (said: string) => {
     if (!alive.current) return;
+    const my = ++epoch.current;
+    const gone = () => !alive.current || epoch.current !== my;
     setTurns((v) => [...v, { role: "user", text: said }]);
     setCaption("");
     setState("thinking");
@@ -261,7 +270,7 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
     let clip: VoiceClip | null | undefined;
     try {
       const r = await onAsk(said, (c) => {
-        if (!alive.current || !c?.b64) return;
+        if (gone() || !c?.b64) return;
         heard = true;
         setSilent(false);
         // The first chunk is the moment the wait visibly ends.
@@ -272,8 +281,8 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
       clip = r.clip;
     } catch (e) {
       speech.stop();
+      if (gone()) return;   // cancelled by a tap - listening already took over
       speechRef.current = null;
-      if (!alive.current) return;
       setProblem(String((e as Error).message || tr("voice.failed")));
       setState("error");
       // hands-free: a failed ASK (relay restart, network blip) goes back to
@@ -283,7 +292,7 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
       return;
     }
     retries.current = 0;
-    if (!alive.current) { speech.stop(); speechRef.current = null; return; }
+    if (gone()) { speech.stop(); return; }
     setTurns((v) => [...v, { role: "henry", text: reply || tr("chat.noReply") }]);
     setCaption(reply);
     if (!heard && clip?.b64) {
@@ -300,8 +309,8 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
     }
     speech.close();
     await speech.done();
+    if (gone()) return;
     speechRef.current = null;
-    if (!alive.current) return;
     if (handsRef.current) startRef.current();
     else setState("idle");
   }, [onAsk, tr]);
@@ -423,10 +432,19 @@ export function VoiceMode({ visible, onClose, onAsk, busy, initialAsk }: {
   /** The orb is one button whose meaning follows the state — interrupt while
    *  speaking, submit while listening, start while idle. Never a dead tap. */
   function tapOrb() {
-    if (busy) return;
     if (state === "speaking") { startListening(); return; }   // startListening drops the queue
     if (state === "listening") { listener.current?.stop(); return; }   // finish the phrase
-    if (state === "thinking") return;
+    if (state === "thinking") {
+      // Interrupt mid-THINKING (owner 2026-08-22: "lässt sich nicht
+      // unterbrechen wenn er denkt"): invalidate the in-flight run() via the
+      // epoch, cancel server-side, open the mic. The bottom hint has promised
+      // "Tippen unterbricht Henry" all along - now it is true here too.
+      epoch.current++;
+      onCancel?.();
+      startListening();
+      return;
+    }
+    if (busy) return;
     startListening();
   }
 

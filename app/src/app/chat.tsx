@@ -376,7 +376,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
       <VoiceMode visible={voiceOpen} onClose={() => { setVoiceOpen(false); setVoiceAsk(undefined); }}
-        onAsk={ask} busy={busy} initialAsk={voiceAsk} />
+        onAsk={ask} onCancel={stop} busy={busy} initialAsk={voiceAsk} />
     </View>
   );
 }
