@@ -491,11 +491,14 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
           </ScrollView>
           </>
         ) : (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 26 }}>
-            <Pressable onPress={tapOrb} accessibilityLabel={tr("voice.orb")}
-              accessibilityRole="button" accessibilityState={{ busy: state === "thinking" }}>
-              <Orb state={problem ? "error" : state} level={level} />
-            </Pressable>
+          /* The WHOLE free surface taps like the orb (owner 2026-08-22: had to
+             aim for the button repeatedly to cut Henry off - interrupting must
+             be a slap, not a target). Same semantics as tapOrb: interrupt while
+             speaking, submit while listening, start while idle. */
+          <Pressable onPress={tapOrb} accessibilityLabel={tr("voice.orb")}
+            accessibilityRole="button" accessibilityState={{ busy: state === "thinking" }}
+            style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 26 }}>
+            <Orb state={problem ? "error" : state} level={level} />
             <View style={{ alignItems: "center", gap: 10, minHeight: 96 }}>
               <Text style={{ color: problem ? t.danger : t.txtSecondary, fontSize: 14, fontWeight: "600" }}>
                 {label}
@@ -511,7 +514,7 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
                 </Text>
               ) : null}
             </View>
-          </View>
+          </Pressable>
         )}
 
         {/* controls: hands-free toggle · end · re-listen. Three, because a voice
