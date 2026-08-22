@@ -349,6 +349,11 @@ def brief(goal=None, model=""):
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
     prompt = (_role()
+              + "\n\nDATE RULE: never write calendar dates into milestone names/notes - "
+                "code derives each target date from your est_turns and the measured pace. "
+                "A fixed EXTERNAL wait (a review period, a trial window) is its own "
+                "milestone noted as wait time, never effort you can compress; if its "
+                "length is unknown, say unknown instead of guessing a date."
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
@@ -365,17 +370,53 @@ def brief(goal=None, model=""):
     from datetime import datetime, timedelta
     today = datetime.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")
     pace = _pace(econ)
-    cum = 0
-    for ms in out.get("milestones", []):
-        tt = int(ms.get("est_turns") or 0) if str(ms.get("status")) != "done" else 0
-        cum += tt
-        ms["est_turns"] = tt
-        ms["eta_days"] = _days(tt, pace)
-        ms["cumulative_eta_days"] = _days(cum, pace)
-        # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
-        # the milestone reads "by Thu" not just "~3d".
-        ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
-    est_turns = cum
+
+    def _date_milestones(o):
+        cum = 0
+        for ms in o.get("milestones", []):
+            tt = int(ms.get("est_turns") or 0) if str(ms.get("status")) != "done" else 0
+            cum += tt
+            ms["est_turns"] = tt
+            ms["eta_days"] = _days(tt, pace)
+            ms["cumulative_eta_days"] = _days(cum, pace)
+            # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
+            # the milestone reads "by Thu" not just "~3d".
+            ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
+        return cum
+
+    est_turns = _date_milestones(out)
+    # GATE with SELF-REPAIR first (owner decree 2026-08-22: "Agent setzt die
+    # Timeline selbst fest und meckert dann, dass sie nicht passt"): findings
+    # the PLANNER itself caused - invented calendar dates, milestones that
+    # contradict the plan's own prose, a long-pole not put first - are the
+    # planner's to FIX, not the owner's to hear about. One repair round: feed
+    # the verifier's issues back, re-plan, re-verify. Only what still fails
+    # (or genuinely needs an owner decision via must_ask) reaches the gate.
+    ver = _verify_plan(out, econ, quota)
+    if not ver.get("ready", True) and ver.get("issues"):
+        keep = {k: out.get(k) for k in ("goal", "summary", "milestones", "feasibility",
+                                        "assumptions", "open_questions", "budget")}
+        repair = (prompt
+                  + "\n\nYOUR PREVIOUS DRAFT:\n" + json.dumps(keep, ensure_ascii=False)
+                  + "\n\nSKEPTICAL REVIEWER FINDINGS on that draft - these are YOUR OWN "
+                    "inconsistencies; REPAIR them yourself, do NOT bounce them to the owner:\n"
+                  + json.dumps({"issues": ver.get("issues"), "gate": ver.get("gate")}, ensure_ascii=False)
+                  + "\n\nRepair rules: never write calendar dates into milestone names/notes - "
+                    "code derives target dates from est_turns; a fixed external wait (a review "
+                    "period, a trial window) is its own milestone with the wait as est note, not "
+                    "effort; a not-yet-started human long-pole goes FIRST; only a question the "
+                    "OWNER alone can answer belongs in open_questions.")
+        try:
+            out2 = _ask(repair, cli_model)
+            if out2.get("milestones"):
+                # carry over what the repair pass doesn't restate
+                for k in ("goal", "summary"):
+                    out2.setdefault(k, out.get(k))
+                out = out2
+                est_turns = _date_milestones(out)
+                ver = _verify_plan(out, econ, quota)
+        except Exception as e:
+            ver.setdefault("issues", []).append("self-repair failed: %s" % str(e)[:120])
     out["economics"] = econ
     # carry forward any owner-run corner reconciliations so the evidence persists
     # across re-plans (and stays visible to the NEXT brief's _reconcile_block).
@@ -384,8 +425,8 @@ def brief(goal=None, model=""):
     out["goal"] = goal
     out["model"] = cli_model or "default"
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    # GATE: an independent verifier can only DOWNGRADE readiness, never upgrade it.
-    ver = _verify_plan(out, econ, quota)
+    # GATE: an independent verifier can only DOWNGRADE readiness, never upgrade
+    # it - `ver` is the verdict on the FINAL (possibly repaired) plan above.
     out["verify"] = ver
     if not ver.get("ready", True):
         out["plan_status"] = "blocked"
