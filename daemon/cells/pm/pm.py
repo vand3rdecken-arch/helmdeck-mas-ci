@@ -794,8 +794,9 @@ def _needs_from_owner(st):
     st["asked_questions"] = key
     _save_loopstate(st)
     body = "\n".join("• " + q for q in qs[:5])
-    msg = ("Bevor ich weiterplane, fehlt mir Info — kannst du kurz klären?\n" + body
-           + "\n(Ich plane derweil bestmöglich mit Annahmen weiter; siehe Plan.)")
+    msg = ("Mir fehlt Schlüssel-Info — kannst du kurz klären?\n" + body
+           + "\n(Ohne die Antworten starte ich nichts Neues auf Annahmen; "
+             "antworte einfach hier im Chat, dann plane ich sofort neu.)")
     _say(msg)
 
 
@@ -1009,6 +1010,15 @@ def _state():
     if get_goal() and not _triage_green(latest_plan()):
         return ("TRIAGE", "Gate rot: Budget/Timeline/Scope nicht gruen - kein Dispatch, ich kläre/frage.") \
             if acting else ("WAIT", "Plan-Gate rot, aber du bist da.")
+    # HARD GATE 2 (owner decree 2026-08-22: "ohne die Haupt-Info sollte er
+    # nicht arbeiten"): the plan still carries OPEN QUESTIONS to the owner ->
+    # no new dispatch on assumptions. Answering in chat (clarify_goal) folds
+    # the answer in and re-plans immediately, which clears this hold.
+    if get_goal() and any(isinstance(q, str) and q.strip()
+                          for q in ((latest_plan() or {}).get("open_questions") or [])):
+        return ("ASK", "Offene Schlüsselfragen an dich - kein Dispatch auf Annahmen, "
+                       "bitte kurz im Chat beantworten.") \
+            if acting else ("WAIT", "Fragen an dich offen, aber du bist da.")
     paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
     if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
         return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
