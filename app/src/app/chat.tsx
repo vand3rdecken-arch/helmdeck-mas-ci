@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -159,6 +159,19 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // probing the runtime (data/voice.ts caps()), which must not run on every
   // keystroke. A build with no audio module simply has no microphone button.
   const canVoice = useRef(voiceUsable()).current;
+  // A DONE-push tap arrives as ?vq=<question>: open voice mode and have Henry
+  // SPEAK the result (owner 2026-08-22) instead of parking the news as text.
+  // Consumed once per value so a re-render doesn't re-fire the turn.
+  const { vq } = useLocalSearchParams<{ vq?: string }>();
+  const [voiceAsk, setVoiceAsk] = useState<string | undefined>(undefined);
+  const vqDone = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const q = typeof vq === "string" ? vq : undefined;
+    if (!q || !canVoice || vqDone.current === q) return;
+    vqDone.current = q;
+    setVoiceAsk(q);
+    setVoiceOpen(true);
+  }, [vq, canVoice]);
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
     const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
@@ -362,7 +375,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         </View>
         {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
-      <VoiceMode visible={voiceOpen} onClose={() => setVoiceOpen(false)} onAsk={ask} busy={busy} />
+      <VoiceMode visible={voiceOpen} onClose={() => { setVoiceOpen(false); setVoiceAsk(undefined); }}
+        onAsk={ask} busy={busy} initialAsk={voiceAsk} />
     </View>
   );
 }

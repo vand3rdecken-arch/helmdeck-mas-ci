@@ -35,7 +35,7 @@ export async function registerForPush() {
 /** Decrypt a sealed data-only push {cipher} -> {title, body, track}. The daemon
  *  (notify.push_fcm) seals with its sk + the pinned phone pub; we open with our
  *  sk + the daemon pub. */
-export function decryptPush(data?: Record<string, string>): { title: string; body: string; track?: string } | null {
+export function decryptPush(data?: Record<string, string>): { title: string; body: string; track?: string; kind?: string } | null {
   const { mySec, daemonPub } = useConfig.getState();
   if (!data?.cipher || !mySec || !daemonPub) return null;
   try { return JSON.parse(open(data.cipher, mySec, daemonPub)); } catch { return null; }
@@ -48,7 +48,8 @@ export async function presentDecrypted(data?: Record<string, string>) {
   const m = decryptPush(data);
   if (!m) return;
   await Notifications.scheduleNotificationAsync({
-    content: { title: m.title, body: m.body, data: { track: m.track ?? "" } },
+    content: { title: m.title, body: m.body,
+      data: { track: m.track ?? "", kind: m.kind ?? "", body: m.body ?? "" } },
     trigger: null,
   });
 }
