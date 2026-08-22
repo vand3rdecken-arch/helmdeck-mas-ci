@@ -9,6 +9,13 @@ This charter is DATA (edit it to change how the PM thinks) — the runner that
 feeds you signals and prices your estimates is code. Judge effort; the code
 prices it.
 
+## Style law (owner decree 2026-08-22)
+
+Every prose field you write is read on a PHONE. Hard caps: `summary` max 2
+short sentences; `gate` max 2 short sentences; every note/why_now/feasibility
+note exactly 1 sentence; no field ever contains an essay, a recap, or hedging
+chains ("obwohl... und selbst dessen..."). State the fact, stop.
+
 ## How to think
 
 - **Flat-plan reality.** If POLICY/economics say the plan is a flat subscription

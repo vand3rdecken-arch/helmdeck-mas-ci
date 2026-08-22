@@ -251,9 +251,9 @@ Check specifically:
 
 Reply with ONLY this JSON:
 {"ready": true|false,
- "gate": "if not ready: the ONE binding reason, in plain owner language",
- "issues": ["short, concrete problems found"],
- "must_ask": ["owner decisions/questions that must be answered before firm estimates"]}
+ "gate": "if not ready: the ONE binding reason - MAX 2 short sentences, plain owner language, no essay",
+ "issues": ["each a single short sentence (max ~12 words), max 4 items"],
+ "must_ask": ["owner decisions/questions that must be answered before firm estimates - each ONE short question"]}
 If the plan genuinely holds, ready=true with empty arrays."""
 
 
@@ -427,6 +427,13 @@ def brief(goal=None, model=""):
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     # GATE: an independent verifier can only DOWNGRADE readiness, never upgrade
     # it - `ver` is the verdict on the FINAL (possibly repaired) plan above.
+    # Style law: clip LLM prose at the SOURCE so every surface (board box,
+    # chat notice, push) inherits the cap.
+    ver["gate"] = _clip_prose((ver.get("gate") or "").strip(), 240)
+    ver["issues"] = [_clip_prose(i.strip(), 140) for i in (ver.get("issues") or [])
+                     if isinstance(i, str) and i.strip()][:4]
+    out["gate"] = _clip_prose((out.get("gate") or "").strip(), 240)
+    out["summary"] = _clip_prose((out.get("summary") or "").strip(), 300)
     out["verify"] = ver
     if not ver.get("ready", True):
         out["plan_status"] = "blocked"
@@ -744,6 +751,21 @@ def _usage_checkin(st):
     _escalate(_usage_flag_text(flag), title=_i18n.t("push.pmQuota"))
 
 
+def _clip_prose(text, n):
+    """Length NET under the style law (owner decree 2026-08-22 "sehr langer
+    Text immer"): LLM-authored prose surfaced to the phone gets clipped at the
+    last sentence boundary within n chars - the prompt asks for brevity, this
+    guarantees it even when the model rambles."""
+    if len(text) <= n:
+        return text
+    cut = text[:n]
+    for stop in (". ", "! ", "? "):
+        i = cut.rfind(stop)
+        if i > n * 0.3:
+            return cut[:i + 1]
+    return cut.rsplit(" ", 1)[0] + " …"
+
+
 def _plan_gate_notice(st):
     """The planning GATE speaks: when the plan isn't 'ready' - a decision, a spike, or a
     prerequisite blocks a confident estimate - the PM says so plainly and holds, instead of
@@ -753,9 +775,10 @@ def _plan_gate_notice(st):
         return
     tri = plan.get("triage") or {}
     red = [k for k in ("budget", "timeline", "scope") if tri.get(k) == "blocked"]
-    gate = (plan.get("gate") or "").strip()
+    gate = _clip_prose((plan.get("gate") or "").strip(), 240)
     ver = plan.get("verify") or {}
-    issues = [i for i in (ver.get("issues") or []) if isinstance(i, str) and i.strip()]
+    issues = [_clip_prose(i.strip(), 140) for i in (ver.get("issues") or [])
+              if isinstance(i, str) and i.strip()]
     import hashlib
     key = hashlib.sha1(("|".join(red) + "|" + gate + "|" + "\n".join(issues)).encode("utf-8")).hexdigest()[:12]
     if st.get("plan_gate_key") == key:
