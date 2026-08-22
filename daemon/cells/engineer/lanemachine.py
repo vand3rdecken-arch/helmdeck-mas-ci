@@ -25,6 +25,119 @@ from daemon.spine.git.worktrees import reclaim_worktree
 
 _GATE_PASS_RE = re.compile(r"gate: (PASS \(\d+ checks\)|nothing to run on this branch - PASS)")
 
+
+def _run_streamed(cmd, cwd, env, idle, hard, note_cb=None, tail_n=400):
+    """Run `cmd` bounded by SILENCE, not wall-clock - the shared execution
+    shape behind both _gate's own command and _repo_hook (which discovered
+    this the hard way: a fixed 1800s cap killed a healthy deploy build mid-
+    run - see the _repo_hook docstring). ANY output line resets the clock;
+    only total silence for `idle` seconds (or, if `hard` is set, wall time
+    past it) kills the process TREE (taskkill /T - a shell parent alone would
+    orphan gradle/java/node still holding file locks). note_cb(line), if
+    given, is called for every raw line AS IT ARRIVES (repo hooks narrate
+    their own long phases through HOOK-NOTE: lines this way).
+
+    Returns (returncode, tail_text, why): why is "" on a normal exit, else
+    the kill reason ("no output for Ns" / "exceeded hard cap Ns"); returncode
+    is None when killed or when the process never started."""
+    import collections, threading
+    lines = collections.deque(maxlen=tail_n)
+    last = [time.time()]
+    proc, why, rc = None, "", None
+    try:
+        proc = subprocess.Popen(cmd, cwd=cwd or ".", shell=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace",
+                                bufsize=1, env=env)
+
+        def _pump():
+            try:
+                for line in proc.stdout:
+                    stripped = line.rstrip("\n")
+                    lines.append(stripped)
+                    last[0] = time.time()      # ANY output = still alive
+                    if note_cb:
+                        note_cb(stripped)
+            except Exception:
+                pass
+        pump = threading.Thread(target=_pump, daemon=True)
+        pump.start()
+        start = time.time()
+        poll = min(5.0, max(0.5, idle / 4.0))
+        while True:
+            try:
+                proc.wait(timeout=poll)
+                break                        # exited on its own
+            except subprocess.TimeoutExpired:
+                pass
+            now = time.time()
+            if now - last[0] > idle:
+                why = "no output for %ds" % int(idle)
+                break
+            if hard and now - start > hard:
+                why = "exceeded hard cap %ss" % int(hard)
+                break
+        if why:
+            _hook_kill_tree(proc)
+        else:
+            pump.join(timeout=5)
+            rc = proc.returncode
+    except Exception as e:
+        _hook_kill_tree(proc)               # never leak the tree on an error path
+        lines.append(str(e))
+        why = why or "exception"
+    return rc, "\n".join(lines).strip(), why
+
+
+def _admit_heavy(t, kind, log=None):
+    """LOAD-AWARE ADMISSION (backlog/load-aware-admission) - the desktop
+    lock's pattern generalized from mutual EXCLUSION to mutual AWARENESS: a
+    heavy op (gate run / build+emulator deploy hook / preview hook) admits
+    immediately while OBSERVED CPU load stays under policy.load_admission's
+    threshold, sampled fresh here (daemon.spine.ops.resources), never a
+    stored "busy" flag. Over threshold it QUEUES - polling, with a visible
+    NAMED-holder note in the card's own chat the first time it waits, exactly
+    like the desktop lock's wait note - up to wait_s, then ADMITS ANYWAY:
+    this defers the start of a heavy op, it does not throttle a running one
+    and must never brick a card by refusing forever.
+
+    Registers itself as a named holder for the CALLER to release (via
+    locks._release_heavy) once its op finishes, so a card queued behind THIS
+    one can say what it is waiting for. Returns the release token."""
+    from daemon.spine.storage import events
+    from daemon.spine.ops import resources
+    from daemon.spine.git.locks import _register_heavy, _heavy_holder_desc
+    pol = (events.settings().get("policy") or {}).get("load_admission") or {}
+    if pol.get("enabled", True):
+        cpu_max = float(pol.get("cpu_max_pct") or 85)
+        wait_cap = float(pol.get("wait_s") or 1800)
+        poll_s = max(1.0, float(pol.get("poll_s") or 5))
+        start = time.time()
+        noted = False
+        while True:
+            cpu = resources.cpu_percent(interval=0.2)
+            if cpu is None or cpu < cpu_max:
+                break
+            if time.time() - start > wait_cap:
+                if log:
+                    log.log("note", "Box weiterhin ausgelastet (CPU %.0f%%) - starte "
+                                    "trotzdem nach %ds Wartezeit" % (cpu, int(wait_cap)))
+                events.emit("load_wait", t.get("id"), kind=kind, cpu_pct=cpu,
+                            wait_s=wait_cap, gave_up=True)
+                break
+            if not noted:
+                who = _heavy_holder_desc()
+                if log:
+                    log.log("note", "wartet: Box ausgelastet durch %s (CPU %.0f%%) - "
+                                    "warte bis zu %ds" % (who, cpu, int(wait_cap)))
+                events.emit("load_wait", t.get("id"), kind=kind, cpu_pct=cpu, wait_s=wait_cap)
+                noted = True
+            time.sleep(poll_s)
+    token = "%s:%s:%f" % (t.get("id"), kind, time.time())
+    _register_heavy(token, kind, t.get("id"))
+    return token
+
+
 def _gate(t):
     """Quality gate run when a card is submitted for review. Checks: (1) the
     worktree exists and its work is committed; (2) if the repo declares its own
@@ -63,12 +176,45 @@ def _gate(t):
         with open(gate_file, encoding="utf-8") as f:
             cmd = f.read().strip()
         if cmd:
-            # Run in the worktree (cwd = the code under test), but expose the MAIN
-            # checkout as %HELMDECK_REPO% so the gate can invoke the CURRENT gate
-            # script from main - old branches don't carry tools/run_gate.py.
-            genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
-            r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True,
-                               text=True, timeout=600, env=genv)
+            from daemon.spine.storage import events
+            from daemon.spine.git.locks import _gate_lock_for, _release_heavy
+            from daemon.spine.ops.actionlog import ActionLog
+            # run_dir is absent on a few synthetic test fixtures (no real card
+            # was dispatched) - the admission wait note is a courtesy, not a
+            # contract, so degrade to no log rather than KeyError on those.
+            log = ActionLog(t["run_dir"]) if t.get("run_dir") else None
+            st = events.settings()
+            # SILENCE-bounded, not the old fixed 600s wall-clock cap: the LIGHT
+            # gate (tools/run_gate.py, debt gate-light) normally finishes in
+            # seconds, but under box contention it can legitimately run 3-5x
+            # slower (measured, backlog/load-aware-admission) - a wall-clock cap
+            # then reds a gate that never actually stalled. gate_idle_s is total
+            # OUTPUT silence (same shape as _repo_hook's hook_idle_s); an
+            # optional gate_hard_s stays available for a runaway custom gate.
+            def _num(key, default):
+                try:
+                    return float(st.get(key) or 0) or default
+                except Exception:
+                    return default
+            idle = _num("gate_idle_s", 300.0)
+            hard = _num("gate_hard_s", 0.0)
+            # GATE SINGLETON (measured 2026-08-20, Display-Glasses card, debt
+            # item in backlog/load-aware-admission): a second gate on the SAME
+            # tree blocks here instead of racing the first for the box's CPU.
+            with _gate_lock_for(wt):
+                # Run in the worktree (cwd = the code under test), but expose the
+                # MAIN checkout as %HELMDECK_REPO% so the gate can invoke the
+                # CURRENT gate script from main - old branches don't carry
+                # tools/run_gate.py.
+                genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
+                token = _admit_heavy(t, "gate", log)
+                try:
+                    rc, out, why = _run_streamed(cmd, wt, genv, idle, hard)
+                finally:
+                    _release_heavy(token)
+            if why:
+                problems.append("gate killed (%s):\n%s\n\n(gate command: %s)"
+                                % (why, out[-1200:], cmd[:120]))
             # Observed on the live board (card 20260812-164257): a `py -3.12`
             # gate run via shell=True on Windows can come back with a nonzero
             # r.returncode while its OWN stdout is a clean tools/run_gate.py
@@ -80,17 +226,16 @@ def _gate(t):
             # line is a REAL signal (the process that printed it did finish
             # its checks), so prefer it over a returncode that contradicts it;
             # still hard-fail whenever the verdict itself is missing or red.
-            out = (r.stdout + "\n" + r.stderr).strip()
-            if r.returncode != 0 and (_GATE_PASS_RE.search(out) and "=== GATE FAILED (" not in out):
-                print("GATE: returncode %d disagreed with the script's own PASS verdict for %s "
+            elif rc != 0 and (_GATE_PASS_RE.search(out) and "=== GATE FAILED (" not in out):
+                print("GATE: returncode %s disagreed with the script's own PASS verdict for %s "
                       "- trusting the verdict (see debt gate-exit-code-vs-stdout-verdict)"
-                      % (r.returncode, t.get("id")))
-            elif r.returncode != 0:
+                      % (rc, t.get("id")))
+            elif rc != 0:
                 # Lead with the ACTUAL error, not the command - the command alone
                 # (truncated on mobile) is the "ominous, unresolvable" message. An
                 # empty output means the command couldn't even start (missing
                 # interpreter/tool); say so with the exit code instead of nothing.
-                detail = out[-1200:] if out else "(no output - command could not run; exit %d)" % r.returncode
+                detail = out[-1200:] if out else "(no output - command could not run; exit %s)" % rc
                 problems.append("gate FAILED:\n%s\n\n(gate command: %s)" % (detail, cmd[:120]))
     return (not problems), problems
 
@@ -468,10 +613,15 @@ def _repo_hook(t, kind):
     actionlog THE MOMENT it's read (ship.sh/build_apk.sh narrate their own
     long phases through it - "npm ci starting", "gradle running, ~10-15
     min", "APK built") - without this a healthy 15-20 min build looked from
-    the owner's phone identical to a genuinely stuck card."""
-    import collections, subprocess, threading
+    the owner's phone identical to a genuinely stuck card.
+
+    LOAD-AWARE ADMISSION (backlog/load-aware-admission): before starting, this
+    waits for OBSERVED CPU load to clear policy.load_admission's threshold -
+    the deploy hook IS the APK/Gradle build + emulator boot, so gating its
+    start is what keeps a build from launching straight into a box already at
+    100% from a gate or another build. See _admit_heavy."""
     from daemon.spine.storage import events
-    import time as _t
+    from daemon.spine.git.locks import _release_heavy
     st = events.settings()
     hooks = (st.get("repo_hooks") or {}).get(t.get("repo") or "", {})
     cmd = (hooks or {}).get(kind, "").strip()
@@ -488,56 +638,22 @@ def _repo_hook(t, kind):
     from daemon.spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     log.log("note", "%s HOOK: %s" % (kind.upper(), cmd))
-    proc, why = None, ""
-    # bounded tail: a chatty gradle build must not accumulate in memory (the old
-    # capture_output buffered the ENTIRE build log just to slice 1500 chars off it)
-    lines = collections.deque(maxlen=400)
-    last = [_t.time()]
-    try:
-        proc = subprocess.Popen(cmd, cwd=cwd or ".", shell=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf-8", errors="replace", bufsize=1)
 
-        def _pump():
-            try:
-                for line in proc.stdout:
-                    stripped = line.rstrip("\n")
-                    lines.append(stripped)
-                    last[0] = _t.time()      # ANY output = still alive
-                    # live progress narration: a hook script can announce its own
-                    # long phases instead of the owner watching dead silence
-                    if stripped.strip().startswith("HOOK-NOTE:"):
-                        log.log("note", stripped.strip()[len("HOOK-NOTE:"):].strip())
-            except Exception:
-                pass
-        pump = threading.Thread(target=_pump, daemon=True)
-        pump.start()
-        start = _t.time()
-        poll = min(5.0, max(0.5, idle / 4.0))
-        while True:
-            try:
-                proc.wait(timeout=poll)
-                break                        # exited on its own
-            except subprocess.TimeoutExpired:
-                pass
-            now = _t.time()
-            if now - last[0] > idle:
-                why = "no output for %ds" % int(idle)
-                break
-            if hard and now - start > hard:
-                why = "exceeded hard cap %ss" % int(hard)
-                break
-        if why:
-            _hook_kill_tree(proc)
-            lines.append("[hook killed: %s]" % why)
-            ok = False
-        else:
-            pump.join(timeout=5)
-            ok = proc.returncode == 0
-        out = "\n".join(lines).strip()
-    except Exception as e:
-        _hook_kill_tree(proc)               # never leak the tree on an error path
-        out, ok = str(e), False
+    def _note(line):
+        # live progress narration: a hook script can announce its own long
+        # phases instead of the owner watching dead silence
+        s = line.strip()
+        if s.startswith("HOOK-NOTE:"):
+            log.log("note", s[len("HOOK-NOTE:"):].strip())
+
+    token = _admit_heavy(t, "build" if kind == "deploy" else "preview", log)
+    try:
+        rc, out, why = _run_streamed(cmd, cwd, dict(os.environ), idle, hard, note_cb=_note)
+    finally:
+        _release_heavy(token)
+    if why:
+        out = (out + "\n[hook killed: %s]" % why).strip()
+    ok = (rc == 0) and not why
     log.log("note", "%s HOOK %s: %s" % (kind.upper(), "OK" if ok else "FAILED", out[-800:]))
     t[kind + "_hook"] = {"ok": ok, "tail": out[-1500:]}
     return ok

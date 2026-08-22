@@ -2543,6 +2543,71 @@ DEBT = [
                "invisible to the owner and must not be described as shipped.",
         "order": 43,
     },
+    {
+        "id": "load-admission-scope",
+        "title": "Load-aware admission covers gate/build starts and the box's "
+                 "TOTAL CPU only - not a running worker turn, not per-process "
+                 "attribution",
+        "status": "open",
+        "what": "backlog/load-aware-admission shipped: daemon.spine.ops.resources "
+                "samples whole-box CPU (ctypes GetSystemTimes delta, no psutil - "
+                "not vendored for the daemon's actual py -3.12 interpreter, "
+                "measured) and free RAM; lanemachine._admit_heavy defers the "
+                "START of a heavy op (gate run / preview or deploy hook - the "
+                "deploy hook IS the APK/Gradle build + emulator boot, run as one "
+                "opaque shell command, so admission cannot see 'gradle' vs "
+                "'emulator' as separate phases and both are labelled 'build') "
+                "while policy.load_admission.cpu_max_pct is exceeded, queuing "
+                "with a NAMED holder note (daemon.spine.git.locks._heavy_holders) "
+                "and admitting anyway past wait_s. _gate() also gained a per-tree "
+                "singleton lock (locks._gate_lock_for) and moved from a fixed "
+                "600s wall-clock subprocess.run timeout to the same SILENCE-"
+                "bounded Popen+pump _repo_hook already used (now shared as "
+                "lanemachine._run_streamed).",
+        "why_it_bites": "Three edges, each real but out of this card's measured "
+                        "scope. (1) A LIVE WORKER TURN's own 900s CLI idle_timeout "
+                        "(drivers.py) is UNCHANGED - if a concurrently admitted "
+                        "gate/build genuinely starves a running worker's CLI "
+                        "output for >900s, that turn can still kill itself as "
+                        "'stalled', mis-blaming the worker for load it didn't "
+                        "cause (the exact failure class named in the backlog "
+                        "README's 'why this is a real class' section, half-closed: "
+                        "the gate/build side is fixed, the worker-turn side is "
+                        "not). (2) The gate singleton SERIALIZES (a second gate "
+                        "on the same tree blocks, then runs its own fresh check) "
+                        "rather than JOINING the first's result the way Paseo's "
+                        "replaceAgentRun shares one outcome - correct enough to "
+                        "kill the measured double-gate-starvation bug, but a "
+                        "queued second gate still re-runs the full suite instead "
+                        "of reading the first's verdict. (3) The holder registry "
+                        "only knows HelmDeck's OWN heavy ops - real load from "
+                        "rustdesk, a hand-run gradle build, or any process this "
+                        "daemon didn't start is named 'unbekannt/extern', which "
+                        "is honest but not actionable; and a synchronous 0.2s "
+                        "delta CPU read can itself be skewed by severe scheduler "
+                        "contention on the same box it is measuring.",
+        "trigger": "a worker turn timing out mid-build with nothing but silence "
+                   "in its own log while a gate/deploy hook was concurrently "
+                   "admitted; a second gate queued behind a slow first one "
+                   "wanting to reuse rather than repeat the wait; an owner asking "
+                   "why the wait note says 'unbekannt/extern' while rustdesk is "
+                   "visibly pegging the CPU",
+        "fix": "(1) Thread admission state into drivers.py's idle-watchdog: while "
+               "policy.load_admission holders are non-empty, extend (never "
+               "shrink) a live turn's idle deadline by the contention window - "
+               "same 'bound by silence, not by someone else's noise' reasoning "
+               "already applied to the hook/gate side. (2) Give the gate "
+               "singleton a shareable future (store the running gate's (ok, "
+               "problems) keyed by tree + a content hash of helmdeck.gate + "
+               "HEAD, and have a second concurrent request AWAIT that result "
+               "instead of re-running) - real 'join', not just no-stacking. "
+               "(3) If the box is measurably loaded with an EMPTY holder "
+               "registry more than incidentally, consider a coarser per-process "
+               "CPU breakdown (EnumProcesses + GetProcessTimes) to name the top "
+               "consumer instead of 'unbekannt/extern' - only worth it if that "
+               "case turns out to be common in practice.",
+        "order": 44,
+    },
 ]
 
 def list_debt():
