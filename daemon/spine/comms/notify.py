@@ -54,11 +54,27 @@ def fcm_ready():
             and bool((events.settings().get("push") or {}).get("fcm_token")))
 
 
-def push_fcm(title, body, track_id=""):
+def _quiet_now(s):
+    """Quiet hours (owner 2026-08-22): at night only URGENT pushes buzz the
+    phone - everything else stays an in-app chat line until morning. Policy is
+    data: settings push.quiet = {"from":"22:00","to":"07:00"} (defaults) or
+    {"off": true} to disable."""
+    q = (s.get("push") or {}).get("quiet") or {}
+    if q.get("off"):
+        return False
+    a, b = str(q.get("from") or "22:00"), str(q.get("to") or "07:00")
+    now = _time.strftime("%H:%M")
+    return (now >= a or now < b) if a > b else (a <= now < b)
+
+
+def push_fcm(title, body, track_id="", urgent=False):
     """Sealed data message to the paired phone. Best-effort like push()."""
     from daemon.spine.storage import events
     from daemon.spine.comms import e2ee
     s = events.settings()
+    if not urgent and _quiet_now(s):
+        print("notify: fcm held (quiet hours) -", title)
+        return False
     device = (s.get("push") or {}).get("fcm_token", "")
     rel = s.get("relay") or {}
     if not (device and os.path.exists(_SA) and rel.get("sk") and rel.get("phone_pub")):
@@ -194,4 +210,6 @@ def card_event(track, status):
         q = ask.summary(track.get("question"))
         if q:
             body = "%s\n%s" % (q[:120], track.get("task", "")[:60])
-    push_fcm(i18n.t(keys[status]), body, track.get("id", ""))
+    # an URGENT-priority card's ask may pierce quiet hours; the rest waits.
+    push_fcm(i18n.t(keys[status]), body, track.get("id", ""),
+             urgent=(track.get("priority") == "urgent"))

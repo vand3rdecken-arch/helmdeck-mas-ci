@@ -206,6 +206,13 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
   // free. Bounded (3) so a genuinely down relay ends in an honest error, not
   // an infinite silent retry; reset by any successful listen or answer.
   const retries = useRef(0);
+  // Quiet-cycle budget for hands-free (owner 2026-08-22: "hört mir nicht zu" /
+  // "Geräusch bricht ab"): the engine is single-shot, so its endpointing fires
+  // an end after every pause - previously ONE quiet cycle (or a cough the
+  // engine "recognized") dropped the loop to idle and the conversation was
+  // over. Now silence and noise re-open the mic for up to 5 cycles (~half a
+  // minute of open conversation) before resting; any real phrase resets it.
+  const silences = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retrySoon = useCallback((ms: number) => {
     if (retryTimer.current) clearTimeout(retryTimer.current);
@@ -310,15 +317,34 @@ export function VoiceMode({ visible, onClose, onAsk, busy }: {
       onFinal: (txt) => {
         listener.current = null;
         setLevel(0);
-        if (alive.current) run(txt);
+        if (!alive.current) return;
+        const said = (txt || "").trim();
+        // NOISE GUARD: an engine "final" without linguistic content (a cough,
+        // a door, a hum transcribed as punctuation) must never become a turn
+        // to Henry - treat it exactly like silence and keep listening.
+        if (!/[a-zA-ZÀ-ſ]{2,}/.test(said)) {
+          if (handsRef.current && silences.current < 5) {
+            silences.current += 1; retrySoon(250); return;
+          }
+          silences.current = 0;
+          setState("idle");
+          return;
+        }
+        silences.current = 0;
+        run(said);
       },
       onError: (kind, detail) => {
         listener.current = null;
         setLevel(0);
         if (!alive.current) return;
         if (kind === "nospeech") {
-          // Silence is not a failure — it is the owner not talking yet. Drop
-          // back to idle so the orb is a button again, never an error wall.
+          // Silence is the owner thinking, not a failure. Hands-free keeps
+          // the conversation OPEN: re-listen for up to 5 quiet cycles before
+          // resting; push-to-talk drops straight back to the orb button.
+          if (handsRef.current && silences.current < 5) {
+            silences.current += 1; retrySoon(250); return;
+          }
+          silences.current = 0;
           setState("idle");
           return;
         }

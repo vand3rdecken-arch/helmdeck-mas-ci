@@ -766,12 +766,36 @@ def _clip_prose(text, n):
     return cut.rsplit(" ", 1)[0] + " …"
 
 
+_NOTICE_COOLDOWN_S = 24 * 3600
+
+
+def _notice_due(st, name, key):
+    """Anti-repeat gate for proactive notices (owner 2026-08-22 "wiederkehrende
+    Nachrichten" + NN/g state-change-only law): speak when the SEMANTIC state
+    changes (stable key, never LLM wording - a re-plan that rewords the same
+    problem stays silent) or as a once-a-day heartbeat while it persists.
+    key=None clears the episode so the NEXT occurrence speaks immediately."""
+    slot = st.get("notice_" + name) or {}
+    if key is None:
+        if slot:
+            st.pop("notice_" + name, None)
+            _save_loopstate(st)
+        return False
+    if slot.get("key") == key and time.time() - (slot.get("at") or 0) < _NOTICE_COOLDOWN_S:
+        return False
+    st["notice_" + name] = {"key": key, "at": time.time()}
+    _save_loopstate(st)
+    return True
+
+
 def _plan_gate_notice(st):
     """The planning GATE speaks: when the plan isn't 'ready' - a decision, a spike, or a
     prerequisite blocks a confident estimate - the PM says so plainly and holds, instead of
-    pretending with a shallow schedule. Once per distinct gate (content-deduped)."""
+    pretending with a shallow schedule. Deduped on the STABLE state (which corners are
+    red), not the wording - a re-plan that re-describes the same red stays silent."""
     plan = latest_plan() or {}
     if not get_goal() or _triage_green(plan):     # gate is GREEN (or no goal) -> nothing to say
+        _notice_due(st, "plan_gate", None)
         return
     tri = plan.get("triage") or {}
     red = [k for k in ("budget", "timeline", "scope") if tri.get(k) == "blocked"]
@@ -779,12 +803,8 @@ def _plan_gate_notice(st):
     ver = plan.get("verify") or {}
     issues = [_clip_prose(i.strip(), 140) for i in (ver.get("issues") or [])
               if isinstance(i, str) and i.strip()]
-    import hashlib
-    key = hashlib.sha1(("|".join(red) + "|" + gate + "|" + "\n".join(issues)).encode("utf-8")).hexdigest()[:12]
-    if st.get("plan_gate_key") == key:
+    if not _notice_due(st, "plan_gate", "|".join(sorted(red)) or "noestimate"):
         return
-    st["plan_gate_key"] = key
-    _save_loopstate(st)
     corner = {"budget": "Budget", "timeline": "Timeline", "scope": "Scope"}
     head = ("Ziel-Plan-Gate ROT — die Triage hält (%s). Kein Dispatch, bis das grün ist."
             % ", ".join(corner[c] for c in red) if red else
@@ -808,14 +828,10 @@ def _needs_from_owner(st):
     the plan has none."""
     plan = latest_plan() or {}
     qs = [q.strip() for q in (plan.get("open_questions") or []) if isinstance(q, str) and q.strip()]
-    if not qs:
+    # STABLE key: goal + how many questions - a re-plan that merely REWORDS the
+    # same asks stays silent; a genuinely new question (count grows) speaks.
+    if not _notice_due(st, "questions", ("%s|%d" % (get_goal(), len(qs))) if qs else None):
         return
-    import hashlib
-    key = hashlib.sha1("\n".join(qs).encode("utf-8")).hexdigest()[:12]
-    if st.get("asked_questions") == key:
-        return
-    st["asked_questions"] = key
-    _save_loopstate(st)
     body = "\n".join("• " + q for q in qs[:5])
     msg = ("Mir fehlt Schlüssel-Info — kannst du kurz klären?\n" + body
            + "\n(Ohne die Antworten starte ich nichts Neues auf Annahmen; "
@@ -860,17 +876,11 @@ def _triangle_watch(st):
             elif len(steps) > base.get("n", len(steps)):
                 corners.append("Scope: %d neue Schritt(e) seit Baseline (%d → %d)"
                                % (len(steps) - base["n"], base["n"], len(steps)))
-    if not corners:
-        if st.get("triangle_key"):
-            st.pop("triangle_key", None)
-            _save_loopstate(st)
+    # STABLE key: WHICH corners tilt (the prefix before ':'), never the numbers
+    # in the text - a projection drifting 108%->111% is the same escalation.
+    kinds = "|".join(sorted(c.split(":", 1)[0] for c in corners)) if corners else None
+    if not _notice_due(st, "triangle", kinds):
         return
-    import hashlib
-    key = hashlib.sha1("|".join(corners).encode("utf-8")).hexdigest()[:12]
-    if st.get("triangle_key") == key:
-        return
-    st["triangle_key"] = key
-    _save_loopstate(st)
     msg = ("⚠ Dreieck schief — Abweichung von der Tages-Baseline:\n" + "\n".join("• " + c for c in corners)
            + "\nWelche Ecke ist dir heilig (Zeit/Budget/Scope)? Dann steuere ich gegen; sonst entscheidest du.")
     _escalate(msg, title=_i18n.t("push.pmTriangle"))
