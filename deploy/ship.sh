@@ -22,7 +22,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 LOCK="$ROOT/.loop/ship.lock"
 mkdir -p "$ROOT/.loop"
 while ! mkdir "$LOCK" 2>/dev/null; do
-  HOLDER="$(cat "$LOCK/pid" 2>/dev/null)"
+  HOLDER="$(head -n1 "$LOCK/pid" 2>/dev/null)"
   if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then
     echo "[ship] another ship is running (pid $HOLDER) - waiting to join"
     sleep 15
@@ -31,7 +31,13 @@ while ! mkdir "$LOCK" 2>/dev/null; do
     rm -rf "$LOCK"
   fi
 done
+# Line 1 = $$ (MSYS pid - what THIS script's own kill -0 check above needs).
+# Line 2 = the real Windows PID (what the daemon's Python-side os.kill(pid, 0)
+# health check needs - measured 2026-08-23: a live 40min gradle build was
+# reported "dead" because only the MSYS pid was ever recorded, and Windows'
+# process table has no such pid).
 echo $$ > "$LOCK/pid"
+cat /proc/$$/winpid 2>/dev/null >> "$LOCK/pid" || echo $$ >> "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
 native_fp() {
