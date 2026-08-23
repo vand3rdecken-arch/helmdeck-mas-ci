@@ -8,6 +8,89 @@ Stand: 2026-08-23. Alle Zeilenangaben gegen den Stand von `8c8cbfe` verifiziert.
 
 ---
 
+# Klartext
+
+Wer nur wissen will, was gebaut wird und wie es sich anfühlt, liest diese Seite
+und hört danach auf. Der Rest ist Bauanleitung für den, der es tippt.
+
+**Das Problem.** Heute kann eine Karte fertig werden, sich selbst abnehmen,
+nach main mergen und deployen — ohne dass ein Mensch etwas tut. Henry macht
+das, Fast-Track macht das, die Auto-Abnahme macht das. Für einen Pharma-Kunden
+ist genau das der eine Punkt, an dem alles andere hängt: es muss beweisbar
+sein, dass ein Mensch jede Auslieferung freigegeben hat.
+
+**Die Lösung in einem Satz.** Im GxP-Modus kommt keine Karte nach main, solange
+kein Mensch mit Passwort unterschrieben hat.
+
+**Warum das erstaunlich wenig Arbeit ist.** Alle Wege, auf denen eine Karte
+abgenommen wird — Board-Tap, Henry, Chat, PM, Fast-Track, Auto-Abnahme —
+laufen durch eine einzige Funktion. Eine Prüfung dort schließt alle
+gleichzeitig. Henry scheitert dabei von selbst: er hat kein Passwort.
+
+**Wie es sich anfühlt.** Die Karte liegt in Review. Du tippst „Freigeben". Ein
+Fenster zeigt dir: was nach main gemerged wird, was deployt wird, was das Gate
+sagt, welche Dateien sich ändern. Du wählst *Freigegeben* oder *Abgelehnt*,
+tippst dein Passwort, fertig. Mehrere Karten gehen auch auf einmal — einmal
+Passwort, drei Freigaben.
+
+**Der einzige Trick, der Erklärung braucht.** Beim Öffnen des Fensters rechnet
+der Server eine Prüfsumme über das, was du gerade siehst. Die wird
+mitunterschrieben und vor dem Mergen nochmal geprüft. Hat sich in der
+Zwischenzeit etwas geändert, ist die Unterschrift ungültig und die Karte bleibt
+liegen. Heißt: **du hast unterschrieben, was du gesehen hast** — nicht etwas,
+das der Agent danach noch umgebaut hat.
+
+**Was ein Nutzer ohne GxP-Modus davon merkt:** nichts. Der Modus ist aus, das
+Board bleibt wie es ist.
+
+---
+
+## Zwei naheliegende Abkürzungen
+
+Beide Fragen kommen sofort. Eine funktioniert, die andere nicht.
+
+### „Alle Karten gleich beim Review abzeichnen" — ja, so ist es gedacht
+
+Es gibt genau **einen** menschlichen Moment, und der liegt in Review. Die Karte
+wartet dort, du unterschreibst, und daraufhin passiert alles Weitere: mergen,
+deployen, nach `done` legen. `done` ist danach nur noch das Etikett für das
+Ergebnis, kein zweiter Arbeitsschritt.
+
+Stapelweise ist ausdrücklich vorgesehen: drei Karten auswählen, ein Fenster,
+ein Passwort, drei Unterschriften. Details in §3.3.
+
+### „Den Code schon bei Review nach main mergen" — nein
+
+**Der Grund ist einfach: main ist das, was deployt wird.** Liegt ungeprüfter
+Code in main, schiebt ihn die nächste beliebige andere Karte mit raus, sobald
+die ihren Deploy auslöst. Dann ist ausgeliefert, was niemand unterschrieben
+hat, und niemand merkt es. Das ist nicht nur regulatorisch tödlich, das will
+man auch ohne Pharma nicht.
+
+**Aber der Instinkt dahinter stimmt** — beim Freigeben soll man den *echten*
+Merge sehen, keine Vorhersage. Und das ist fast geschenkt, weil der echte Merge
+heute schon läuft. `_classify_merge` (`lanemachine.py`) macht bei jedem
+Review-Schritt:
+
+```
+git merge --no-commit --no-ff <branch>     # echter Merge
+git diff --name-only --diff-filter=U       # Konflikte einsammeln
+git merge --abort                          # und wieder verwerfen
+```
+
+Git merged also wirklich und wirft das Ergebnis danach weg. Man muss den Diff
+nur **vor** dem `--abort` mitnehmen und im Freigabefenster zeigen. Ein paar
+Zeilen, kein Umbau. Ergebnis: du siehst den integrierten Stand, main bleibt bis
+zur Unterschrift unberührt.
+
+Wenn später echte Umgebungstrennung dazukommt (GXP-V6, Stufe 2), ist der
+saubere Platz für einen frühen Merge ein **Integrations-Branch** — nicht main.
+Dann prüft man auf integriertem Code, und die Unterschrift befördert von der
+Integration nach main. Das ist eine spätere Ausbaustufe, kein Teil dieses
+Entwurfs.
+
+---
+
 ## 0. Das Prinzip in drei Sätzen
 
 1. **Die Signatur ist keine Dialogbox vor dem Abnehmen — sie ist eine
@@ -153,7 +236,14 @@ Zusätzlich sperrt `gxp.aktiv()` an genau drei weiteren Stellen:
 | Maschinenkarten-Abnahme | `lanemachine.py:661-663` → `dispatch.py:525-570` | eigener Abnahmepfad |
 | Henrys Verben `move`/`did`/`rerun_deploy` | `henry_broker.py:258-273` | Agent als Akteur |
 
-### 2.4 Die Signier-Session — der UX-Hebel, den die Regulierung schenkt
+### 2.4 Die Signier-Session — NICHT in v1
+
+> **Gestrichen für die erste Ausbaustufe.** Der Abschnitt bleibt als
+> Begründung stehen, warum: der Gewinn ist ein eingespartes Textfeld, die
+> Kosten sind ein serverseitiger Sitzungsspeicher mit zwei Ablauffristen und
+> Token-Bindung. Das Verhältnis stimmt nicht. In v1 wird bei **jeder**
+> Signatur Benutzername (fest angezeigt) + Passwort verlangt. Der echte
+> UX-Hebel ist die Stapelfreigabe in §2.5, nicht dieser hier.
 
 Hier liegt der Unterschied zwischen einem benutzbaren und einem gehassten
 System, und er steht wörtlich in der Vorschrift.
@@ -200,14 +290,21 @@ Signaturdatensätze.
 
 ### 2.6 Vier-Augen
 
-`dispatch.py:62-81` hält heute **nicht** fest, wer eine Karte beauftragt hat.
-Nötig ist ein Feld `dispatched_by` (gesetzt in `new_track` und bei jedem Move
-nach `working`). Dann:
+**Ein Schalter, standardmäßig AUS.** Vier-Augen ist keine Voraussetzung dafür,
+dass ein Mensch unterschreibt — es ist die Zusatzforderung, dass es ein
+*anderer* Mensch ist. Ein Ein-Personen-Betrieb kann sie nicht erfüllen, und
+sie zur Pflicht zu machen würde den Modus dort unbenutzbar machen. Also:
+`four_eyes: false` im Auslieferungszustand, einschaltbar, wenn ein Kunde es
+verlangt.
+
+Eingeschaltet braucht es ein Feld, das es heute nicht gibt: `dispatch.py:62-81`
+hält **nicht** fest, wer eine Karte beauftragt hat (`client` ist der Kunde,
+nicht der Auftraggeber). Nötig ist `dispatched_by`, gesetzt in `new_track` und
+bei jedem Move nach `working`. Dann gilt:
 
 - `signature.actor != task.dispatched_by` für `meaning = approved`.
-- Bei nur einem Benutzer im System ist Vier-Augen technisch unmöglich. Der
-  Modus muss das beim Aktivieren **sagen**, nicht still durchlassen: „Vier-Augen
-  ist aktiv, aber es existiert nur ein Konto — lege einen zweiten Prüfer an."
+- Beim Einschalten mit nur einem Konto: sofortige Warnung, kein stilles
+  Durchlassen — „Vier-Augen ist aktiv, aber es existiert nur ein Konto."
 
 Die Bedeutung `reviewed` bekommt hier ihren Zweck: A prüft (`reviewed`), B gibt
 frei (`approved`). Zwei Signaturen, zwei Personen, ein Kartendatensatz.
@@ -227,7 +324,7 @@ auseinanderlaufen kann:
   "signature": "sha256:…",
   "disable": ["fast_track", "machine", "direct_task", "auto_accept_green",
               "henry_move", "henry_did", "agent_may_swap"],
-  "four_eyes": true, "gate_profile": "full" }
+  "four_eyes": false, "gate_profile": "full" }
 ```
 
 - **Einschalten:** Owner-Aktion, selbst signiert, in der Ereignissenke.
@@ -390,9 +487,9 @@ bekannter Verstoß, kein Vorbild.
 | `daemon/gxp.py` | **neu.** `aktiv()`, `sperren()`, `vier_augen()` — Lock-Datei bei jedem Aufruf frisch lesen |
 | `daemon/spine/auth/signatures.py` | **neu.** `subject_hash(t)`, `create(...)`, `gueltige_offene(t)`, `consume(...)`, Kettenhash |
 | `daemon/spine/auth/auth.py` | `verify_password(name, pw) -> bool` ergänzen — existiert nicht; `_check_pw` (`:42-48`) ist privat, und `login()` (`:131-140`) taugt nicht als Re-Auth, weil es bei jedem Aufruf eine Session **und** über die Route (`routes_auth.py:87`) ein Dauertoken mintet |
-| `daemon/spine/auth/sign_session.py` | **neu.** In-Memory-Signierkontext, an Auth-Token gebunden |
-| `daemon/spine/http/routes/routes_sign.py` | **neu.** `POST /sign/session`, `POST /sign`, `GET /sign/subject/<tid>` |
+| `daemon/spine/http/routes/routes_sign.py` | **neu.** `POST /sign`, `GET /sign/subject/<tid>` |
 | `daemon/cells/engineer/lanemachine.py` | Guard bei `:611`, Drift-Prüfung vor `:808`, Fast-Track-Sperre bei `:785`, `actor` auf das `done`-Ereignis bei `:843-845` |
+| `daemon/cells/engineer/lanemachine.py` | `_classify_merge`: den echten Diff **vor** `merge --abort` mitnehmen, statt ihn zu verwerfen — liefert dem Freigabefenster den integrierten Stand statt einer Vorhersage (s. „Zwei naheliegende Abkürzungen") |
 | `daemon/cells/engineer/dispatch.py` | `dispatched_by` in `new_track` (`:62-81`); Maschinen-Abnahme-Sperre (`:525-570`) |
 | `daemon/cells/copilot/henry_broker.py` | `move`/`did` im GxP-Modus verweigern (`:258-273`) |
 
@@ -442,10 +539,14 @@ Grobschätzung, keine Zusage.
 | Block | Schätzung |
 |---|---|
 | Stufe 0 (Voraussetzung) | 1–2 Tage |
-| Daemon: Modus, Signaturen, Re-Auth, Routen, Guard | 2–3 Tage |
+| Daemon: Modus, Signaturen, Re-Auth, Routen, Guard | 2 Tage |
 | App: Maske, Stapel, Board-Umleitungen, i18n | 3–4 Tage |
 | Audit-Härtung (UTC, Auth-Ereignisse, Review-Route) | 2–3 Tage |
-| **Summe bis „ein Mensch signiert nachweisbar jede Auslieferung"** | **8–12 Tage** |
+| **Summe bis „ein Mensch signiert nachweisbar jede Auslieferung"** | **8–11 Tage** |
+
+Nicht in v1 und daher nicht eingerechnet: Signier-Session (§2.4, gestrichen),
+Vier-Augen (§2.6, Schalter — ca. ein halber Tag, wenn ein Kunde ihn will),
+Integrations-Branch statt main (Stufe 2).
 
 Das ist die Strecke bis zu einer Aussage, die in einer Lieferantenprüfung
 trägt. Die volle CSV-Strecke (Stufe 2) ist ein Vielfaches davon und
