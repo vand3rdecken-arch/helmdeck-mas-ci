@@ -42,21 +42,54 @@ def available():
         return False
 
 
+#: benchmarked 2026-08-23 (tools/stt_bench.py, 36 German utterances, clean16k
+#: + hfp8k telephone-band): parakeet-tdt-0.6b-v3 int8 beat every whisper tier
+#: on BOTH axes - WER 8.3%/8.7% at 0.90s median vs faster-whisper base's
+#: 19.7%/24.6% at 1.6s - and its 8k robustness is what makes the glasses mic
+#: viable. "parakeet" is therefore the default; any other value is a
+#: faster-whisper size for dictation-style fallback.
+_PARAKEET_DIR = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+
+
+def _pick(d, sub):
+    files = [f for f in os.listdir(d) if sub in f and f.endswith(".onnx")]
+    files.sort(key=lambda f: ("int8" not in f, f))
+    return os.path.join(d, files[0])
+
+
 def _model():
     global _MODEL, _MODEL_NAME
     from daemon.spine.storage import events
     from daemon.paths import DAEMON_ROOT
-    name = (events.settings().get("voice_stt_model") or "base").strip() or "base"
+    name = (events.settings().get("voice_stt_model") or "parakeet").strip() or "parakeet"
     with _LOCK:
         if _MODEL is not None and _MODEL_NAME == name:
             return _MODEL
-        from faster_whisper import WhisperModel
-        # int8 on CPU: ~4x smaller, negligible WER cost for command-length
-        # utterances; download_root keeps the weights beside the daemon's other
-        # caches instead of a surprise directory in %USERPROFILE%.
-        _MODEL = WhisperModel(name, device="cpu", compute_type="int8",
-                              cpu_threads=4,
-                              download_root=os.path.join(DAEMON_ROOT, "models_stt"))
+        root = os.path.join(DAEMON_ROOT, "models_stt")
+        if name == "parakeet":
+            try:
+                import sherpa_onnx
+            except ImportError:
+                raise RuntimeError(
+                    "sherpa-onnx fehlt: py -3.12 -m pip install sherpa-onnx")
+            d = os.path.join(root, _PARAKEET_DIR)
+            if not os.path.isdir(d):
+                raise RuntimeError(
+                    "Parakeet-Modell fehlt: gh release download asr-models "
+                    "-R k2-fsa/sherpa-onnx -p %s.tar.bz2 (nach daemon/models_stt "
+                    "entpacken) - oder settings.voice_stt_model auf 'base' stellen"
+                    % _PARAKEET_DIR)
+            _MODEL = sherpa_onnx.OfflineRecognizer.from_transducer(
+                encoder=_pick(d, "encoder"), decoder=_pick(d, "decoder"),
+                joiner=_pick(d, "joiner"), tokens=os.path.join(d, "tokens.txt"),
+                model_type="nemo_transducer", num_threads=4)
+        else:
+            from faster_whisper import WhisperModel
+            # int8 on CPU: ~4x smaller, negligible WER cost for command-length
+            # utterances; download_root keeps the weights beside the daemon's
+            # other caches instead of a surprise dir in %USERPROFILE%.
+            _MODEL = WhisperModel(name, device="cpu", compute_type="int8",
+                                  cpu_threads=4, download_root=root)
         _MODEL_NAME = name
         return _MODEL
 
@@ -70,6 +103,17 @@ def transcribe(wav_bytes, lang=None):
     if not wav_bytes or len(wav_bytes) > MAX_WAV_BYTES:
         raise RuntimeError("audio missing or too large")
     m = _model()
+    if _MODEL_NAME == "parakeet":
+        # sherpa eats float PCM; PyAV (ships with faster-whisper) decodes
+        # whatever container the caller sent (the phone sends plain WAV).
+        from faster_whisper.audio import decode_audio
+        x = decode_audio(io.BytesIO(wav_bytes), sampling_rate=16000)
+        s = m.create_stream()
+        s.accept_waveform(16000, x)
+        m.decode_stream(s)
+        text = (s.result.text or "").strip()
+        return text, {"lang": lang or "auto", "p": None,
+                      "dur": round(len(x) / 16000.0, 2)}
     segments, info = m.transcribe(
         io.BytesIO(wav_bytes),
         language=(lang or None),

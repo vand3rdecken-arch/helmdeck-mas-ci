@@ -1,42 +1,39 @@
 import LiveMic from "../../modules/livemic";
 
-/** On-device STT (sherpa-onnx whisper-tiny int8) — the "Gerät" half of the
- *  owner's A/B against the PC's faster-whisper (data/client.ts transcribe).
+/** On-device STT — the "Gerät" half of the owner's A/B against the PC ear
+ *  (data/client.ts transcribe -> daemon parakeet).
  *
- *  The model (~104 MB, three files) is NOT in the APK: it downloads over the
- *  phone's own internet straight from Hugging Face on first enable, into
- *  filesDir/stt-whisper-tiny/. The native module does the fetching
- *  (HttpURLConnection) so no expo-file-system dependency is added; files
- *  already present are skipped, so this is cheap after the first run.
+ *  Benchmarked 2026-08-23 (tools/stt_bench.py, 36 German utterances, clean +
+ *  8 kHz telephone band): the German kroko streaming zipformer is the device
+ *  winner - WER 11.4%/12.9% at 0.33s median on the PC, vs whisper-tiny's
+ *  29.9%/44.7% at 0.65s. Smaller too (~71 MB vs ~104 MB), and its 8 kHz
+ *  robustness keeps the glasses-mic door open.
  *
- *  tiny, not base, deliberately: on a phone CPU whisper-base is multiple
- *  seconds per utterance - the entire point of on-device is beating the
- *  PC round trip, and only tiny has a chance at that. Quality vs the PC's
- *  base/1.4s is exactly what the A/B is meant to measure. */
+ *  The model is NOT in the APK: it downloads over the phone's own internet
+ *  straight from Hugging Face on first enable, into filesDir/stt-kroko-de/.
+ *  The native module does the fetching (HttpURLConnection) so no
+ *  expo-file-system dependency; files already present are skipped. */
 
-const REPO = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main";
-const FILES = ["tiny-encoder.int8.onnx", "tiny-decoder.int8.onnx", "tiny-tokens.txt"];
-const DIR = "stt-whisper-tiny";
+const REPO = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main";
+const FILES = ["encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt"];
+const DIR = "stt-kroko-de";
 
 let ready = false;
 
 export function localSttSupported(): boolean {
-  return LiveMic != null && typeof LiveMic.initLocalStt === "function";
+  return LiveMic != null && typeof LiveMic.initLocalTransducer === "function";
 }
 
 /** Download (first time) + init. Throws with a human-readable reason. */
-export async function ensureLocalStt(lang: string): Promise<void> {
+export async function ensureLocalStt(_lang: string): Promise<void> {
   if (ready) return;
   const mic = LiveMic;
-  if (!mic || typeof mic.initLocalStt !== "function") {
+  if (!mic || typeof mic.initLocalTransducer !== "function") {
     throw new Error("Dieses APK hat kein Geräte-STT (Update nötig).");
   }
   const dir = await mic.downloadFiles(FILES.map((f) => `${REPO}/${f}`), DIR);
-  const ok = mic.initLocalStt(
-    `${dir}/tiny-encoder.int8.onnx`,
-    `${dir}/tiny-decoder.int8.onnx`,
-    `${dir}/tiny-tokens.txt`,
-    lang,
+  const ok = mic.initLocalTransducer(
+    `${dir}/encoder.onnx`, `${dir}/decoder.onnx`, `${dir}/joiner.onnx`, `${dir}/tokens.txt`,
   );
   if (!ok) throw new Error("Geräte-STT-Init fehlgeschlagen (sherpa-onnx fehlt im Build?)");
   ready = true;
