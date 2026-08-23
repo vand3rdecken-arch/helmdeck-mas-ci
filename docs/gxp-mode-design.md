@@ -33,12 +33,18 @@ sagt, welche Dateien sich ändern. Du wählst *Freigegeben* oder *Abgelehnt*,
 tippst dein Passwort, fertig. Mehrere Karten gehen auch auf einmal — einmal
 Passwort, drei Freigaben.
 
-**Der einzige Trick, der Erklärung braucht.** Beim Öffnen des Fensters rechnet
-der Server eine Prüfsumme über das, was du gerade siehst. Die wird
-mitunterschrieben und vor dem Mergen nochmal geprüft. Hat sich in der
-Zwischenzeit etwas geändert, ist die Unterschrift ungültig und die Karte bleibt
-liegen. Heißt: **du hast unterschrieben, was du gesehen hast** — nicht etwas,
-das der Agent danach noch umgebaut hat.
+**Der einzige Trick, der Erklärung braucht.** Deine Unterschrift hängt an der
+Commit-Nummer, die du gerade vor dir hast. Vor dem Mergen wird nachgesehen, ob
+sie noch stimmt. Hat der Agent inzwischen weitergearbeitet, ist die Unterschrift
+ungültig und die Karte bleibt liegen. Heißt: **du hast unterschrieben, was du
+gesehen hast** — nicht etwas, das danach noch umgebaut wurde.
+
+**Und das läuft über git.** Die Unterschrift ist ein signiertes git-Tag. Ein
+Prüfer kontrolliert sie mit `git verify-tag`, also mit Standardwerkzeug, ohne
+uns glauben zu müssen. Git liefert Prüfsumme, Kette und Bindung fertig mit;
+selbst bauen müssen wir davon nichts. Details in §2.0 — inklusive der Stelle,
+an der git heute **falsche** Angaben macht: Agenten-Commits laufen unter deinem
+Namen.
 
 **Was ein Nutzer ohne GxP-Modus davon merkt:** nichts. Der Modus ist aus, das
 Board bleibt wie es ist.
@@ -138,6 +144,71 @@ gespeicherten Flag geschlossen.
 
 ## 2. Mechanik
 
+### 2.0 Git als Audit-Trail — was es kann, was nicht
+
+Die naheliegende Frage, und sie macht den Entwurf schlanker. Vier Dinge, die
+v1 dieses Dokuments von Hand bauen wollte, liefert git fertig:
+
+| Anforderung | handgebaut (v1) | git |
+|---|---|---|
+| Prüfsumme über den signierten Inhalt | `subject_hash` über kanonisches JSON | **Commit-SHA** |
+| Manipulationssichere Kette | `prev`-Feld | **Parent-Kette** |
+| Signatur an den Inhalt gebunden (§11.70) | Datensatz + Hash | **signiertes Tag** |
+| Prüfwerkzeug für den Auditor | müssten wir bauen | **`git verify-tag`** |
+
+Die letzte Zeile wiegt am schwersten: ein Prüfer verifiziert mit
+Standard-Werkzeug, **ohne HelmDeck vertrauen zu müssen**. Selbstgebaute
+Kryptografie muss man ihm erst erklären und dann auch noch validieren.
+
+**Heute ist git allerdings schlechter als kein Audit-Trail.** Gemessen am
+Arbeitsbaum:
+
+```
+f671273 | author=Tien Duy Vo <vo_duy_tien@yahoo.de> | sig=N
+87e5e03 | author=Tien Duy Vo <vo_duy_tien@yahoo.de> | sig=N
+```
+
+Beides sind Agenten-Commits. `_autocommit` (`lanemachine.py:188-211`) committet
+Agentenarbeit unter der Git-Identität des Hosts, unsigniert. Der Verlauf
+**behauptet einen menschlichen Autor für Maschinenarbeit**. Das ist falsche
+Attribution, kein fehlender Nachweis — der schlechtere von beiden Zuständen.
+Erste Maßnahme, unabhängig von allem anderen: Agenten-Commits bekommen eine
+eigene Identität (`HelmDeck Agent <agent@helmdeck.local>`), der Mensch bleibt
+dem Signatur-Tag vorbehalten.
+
+**Was git nicht abdecken kann:** Logins, Rollenwechsel, Token-Ausgabe,
+Policy-Änderungen, Kartenlebenszyklus, Kosten, Fehlversuche. Das sind keine
+Code-Änderungen. Wer sie trotzdem in git zwingt, baut einen Event-Store auf
+git — dann lieber gleich den Event-Store.
+
+**Die tragende Struktur ist die Kreuzbezeugung.** Git bezeugt den Code, die
+Ereignissenke alles andere, und **jede notiert den Anker der anderen**: die
+Senke speichert Merge-SHA und Tag-Objekt-SHA, das Tag nennt Karten-ID und
+Ereignis-ID. Ein Force-Push widerspricht danach der Senke, eine manipulierte
+Senke widerspricht git. Keines von beiden lässt sich still umschreiben. Das ist
+belastbarer als jede der beiden Hälften allein — und es entschärft nebenbei
+`tools/reset.py:61-77`, das heute den Audit-Trail löscht: git überlebt das.
+
+**Welcher Schlüssel signiert** — die eine offene Entscheidung.
+
+*Option A (Empfehlung): Schlüssel serverseitig, vom Passwort entsperrt.* Pro
+Benutzer ein Ed25519-Schlüssel, verschlüsselt mit einem aus dem Passwort
+abgeleiteten Schlüssel — **getrennte Ableitung** von der Passwortprüfung, das
+PBKDF2 dafür existiert bereits (`auth.py:37-40`). Signieren heißt dann: das
+Passwort entschlüsselt den Signierschlüssel. Damit ist das Passwort nicht bloß
+gegen einen Hash geprüft, sondern kryptografisch notwendig — eine Signatur
+lässt sich **nicht** dadurch fälschen, dass jemand die Passwortprüfung
+patcht. Git kann das ohne GPG: `gpg.format = ssh` plus `user.signingkey`.
+Ehrlicher Preis: der Server hält den verschlüsselten Schlüssel. Wird der Daemon
+genau im Moment des Signierens kompromittiert, liegt der Schlüssel offen. Das
+ist der Preis dafür, vom Telefon aus signieren zu können, und gehört so in die
+Risikobewertung.
+
+*Option B: Schlüssel auf dem Gerät.* Kryptografisch sauberer, auf dem Telefon
+kaum benutzbar, und die Wiederherstellung bei Geräteverlust ist ein eigenes
+Projekt. Für einen Betrieb, der ausschließlich am Desktop freigibt, eine echte
+Alternative.
+
 ### 2.1 Der Signaturdatensatz
 
 Ein Signaturdatensatz ist unveränderlich und wird an **zwei** Orte geschrieben:
@@ -154,15 +225,17 @@ keine Migration.
   "meaning": "approved",              // §11.50(a)(3) approved|reviewed|rejected
   "reason": "Regression gruen, Diff geprueft",
   "signed_at": "2026-08-23T14:02:11Z",// §11.50(a)(2) UTC, Zeitpunkt des Klicks
-  "subject_hash": "sha256:9f2c…",     // §11.70 Bindung, s. 2.2
   "subject": {                        // was der Mensch gesehen hat
     "card": "t-91", "branch": "feat/x",
-    "head": "a1b2c3d", "base": "e4f5g6h",
+    "head": "a1b2c3d", "base": "e4f5g6h",   // §11.70 Bindung, s. 2.2
     "gate": "pass", "files": 7, "ins": 240, "del": 12
   },
-  "auth": { "method": "password", "components": ["userid","password"],
-            "session_first": true },
-  "prev": "sha256:0000…",             // Hash-Kette ueber alle Signaturen
+  "auth": { "method": "password-unlocked-key", "components": ["userid","password"] },
+  "git": {                            // die Kreuzbezeugung aus 2.0
+    "tag": "approve/t-91",
+    "tag_sha": "b7d3…",               // git verify-tag prueft das
+    "merge_sha": null                 // nachgetragen, wenn der Merge landet
+  },
   "consumed_by": null                 // wird beim Landen gesetzt
 }]
 ```
@@ -171,10 +244,10 @@ Zwei Details, die leicht untergehen:
 
 - **`signatures` ist eine Liste, kein Feld.** Eine Karte kann abgelehnt,
   überarbeitet und erneut signiert werden. Die Historie bleibt vollständig.
-- **`prev` verkettet die Signaturen.** Damit ist eine nachträglich entfernte
-  Signatur erkennbar, ohne dass die gesamte Ereignissenke eine Hash-Kette
-  bekommen muss (das wäre Stufe 1 aus der Analyse, GXP-A9, und hier nicht
-  Voraussetzung).
+- **Kein selbstgebauter `prev`-Kettenhash mehr** (§2.0). Die Verkettung leistet
+  git: das Signatur-Tag hängt am Commit, der Commit an seinem Parent. Eine
+  nachträglich entfernte Signatur fällt auf, weil `git.tag_sha` in der
+  Ereignissenke dann ins Leere zeigt — und umgekehrt.
 
 Der Datensatz ist **englisch und technisch**, nicht übersetzt — konsistent mit
 der ausdrücklichen Regel in `app/src/i18n/index.ts:1-11`, dass der Audit-Trail
@@ -187,14 +260,19 @@ Oberfläche.
 nicht herauslösbar oder auf einen anderen Datensatz übertragbar ist. Die
 Umsetzung ist zugleich die Lösung für ein rein technisches Problem.
 
+**Seit §2.0 braucht es dafür keine eigene Prüfsumme mehr.** Der signierte
+Gegenstand ist das Paar aus zwei Commit-SHAs, die git ohnehin führt:
+
 ```
-subject_hash = sha256(canonical_json({
-    card_id, branch, head_sha, base_sha,
-    gate_ok, gate_problems, diff_stat, task_text
-}))
+subject = (head_sha des Karten-Branch, base_sha von main)
 ```
 
-Berechnet **beim Öffnen der Freigabemaske**, mitsigniert, und **erneut geprüft**
+Der `head_sha` deckt den gesamten Inhaltszustand ab — das ist die Eigenschaft,
+für die git gebaut ist. Der `base_sha` hält fest, gegen welchen Stand von main
+integriert wurde. Beides steht später wörtlich im Signatur-Tag und ist mit
+`git verify-tag` prüfbar.
+
+Erfasst **beim Öffnen der Freigabemaske**, mitsigniert, und **erneut geprüft**
 unmittelbar vor dem Merge in `_move_lane`. Drift → Signatur ist automatisch
 ungültig, die Karte bleibt in `review`, `events.emit("signature", tid,
 outcome="void", reason="subject drift")`.
@@ -485,7 +563,9 @@ bekannter Verstoß, kein Vorbild.
 | Datei | Änderung |
 |---|---|
 | `daemon/gxp.py` | **neu.** `aktiv()`, `sperren()`, `vier_augen()` — Lock-Datei bei jedem Aufruf frisch lesen |
-| `daemon/spine/auth/signatures.py` | **neu.** `subject_hash(t)`, `create(...)`, `gueltige_offene(t)`, `consume(...)`, Kettenhash |
+| `daemon/spine/auth/signatures.py` | **neu.** `subject(t)` (head/base-SHA), `create(...)` inkl. signiertem Tag, `gueltige_offene(t)`, `consume(...)` |
+| `daemon/spine/auth/signkeys.py` | **neu.** Ed25519 pro Benutzer, passwortentsperrt (§2.0 Option A); `gpg.format=ssh` |
+| `daemon/cells/engineer/lanemachine.py` | `_autocommit:188-211`: Agenten-Commits unter Agenten-Identität, nicht unter der des Hosts |
 | `daemon/spine/auth/auth.py` | `verify_password(name, pw) -> bool` ergänzen — existiert nicht; `_check_pw` (`:42-48`) ist privat, und `login()` (`:131-140`) taugt nicht als Re-Auth, weil es bei jedem Aufruf eine Session **und** über die Route (`routes_auth.py:87`) ein Dauertoken mintet |
 | `daemon/spine/http/routes/routes_sign.py` | **neu.** `POST /sign`, `GET /sign/subject/<tid>` |
 | `daemon/cells/engineer/lanemachine.py` | Guard bei `:611`, Drift-Prüfung vor `:808`, Fast-Track-Sperre bei `:785`, `actor` auf das `done`-Ereignis bei `:843-845` |
