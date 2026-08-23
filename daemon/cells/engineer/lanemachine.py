@@ -17,7 +17,7 @@ import subprocess
 import time
 
 from daemon.spine.storage.trackstore import _find, _load, _mutate, _slug
-from daemon.spine.git.gitutil import _git, _git_try, is_git_repo
+from daemon.spine.git.gitutil import _git, _git_try, is_git_repo, AGENT_IDENT
 from daemon.spine.turn.blockers import blocker
 from daemon.spine.turn.outcomes import _record_outcome
 from daemon.spine.git.worktrees import reclaim_worktree
@@ -206,7 +206,8 @@ def _autocommit(t):
                          capture_output=True, text=True)
     if "conflict marker" in (chk.stdout or "").lower():
         return "markers"
-    if _git_try(wt, "commit", "-m", "HelmDeck: finalize %s" % t.get("id", ""))[0] != 0:
+    if _git_try(wt, *AGENT_IDENT, "commit",
+                "-m", "HelmDeck: finalize %s" % t.get("id", ""))[0] != 0:
         return False
     return True
 
@@ -972,7 +973,7 @@ def park_and_retry_merge(tid, actor="owner"):
         wip = "wip-%s-%s" % (_slug(cur), time.strftime("%Y%m%d-%H%M%S"))
         _git(repo, "checkout", "-b", wip)
         _git(repo, "add", "-A")
-        _git(repo, "commit", "-m",
+        _git(repo, *AGENT_IDENT, "commit", "-m",
              "wip: park uncommitted %s work so card %s could merge (by %s)" % (cur, t["branch"], actor))
         _git(repo, "checkout", cur)     # back on the original branch, now clean
         parked = wip
