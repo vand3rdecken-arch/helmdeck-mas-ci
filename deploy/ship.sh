@@ -148,8 +148,13 @@ else
   # manifest inherits the new runtimeVersion from the bumped app.json.
   bash deploy/push_update.sh || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
   git add app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
-  # record the POST-bump fingerprint so the next unchanged ship is seen as JS-only
-  native_fp > deploy/.native_fp
+  # Record the fingerprint CAPTURED AT START ($CUR), never a fresh recompute:
+  # measured 2026-08-23 - a module created while gradle ran landed in the
+  # end-of-ship recompute, so the recorded hash claimed an APK content the
+  # build never had, and the NEXT ship judged the new module "already shipped"
+  # (JS-only). The version fields the bump changed are excluded from the hash
+  # by construction, so $CUR is still valid post-bump.
+  printf '%s\n' "$CUR" > deploy/.native_fp
 fi
 echo "HOOK-NOTE: ship done - $([ -n "$LAST" ] && [ "$CUR" = "$LAST" ] && echo "OTA live" || echo "APK + matching OTA live")"
 echo "[ship] done"
