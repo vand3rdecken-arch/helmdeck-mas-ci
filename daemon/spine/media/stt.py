@@ -53,6 +53,7 @@ def _model():
         # utterances; download_root keeps the weights beside the daemon's other
         # caches instead of a surprise directory in %USERPROFILE%.
         _MODEL = WhisperModel(name, device="cpu", compute_type="int8",
+                              cpu_threads=4,
                               download_root=os.path.join(DAEMON_ROOT, "models_stt"))
         _MODEL_NAME = name
         return _MODEL
@@ -70,7 +71,10 @@ def transcribe(wav_bytes, lang=None):
     segments, info = m.transcribe(
         io.BytesIO(wav_bytes),
         language=(lang or None),
-        beam_size=5,
+        # greedy, not beam: an utterance is a spoken command, not an audiobook -
+        # beam_size=5 cost ~3-4x latency for no measurable gain on short German
+        # phrases (both transcribed word-exact in the 2026-08-23 smoke).
+        beam_size=1,
         vad_filter=False,          # the phone's VAD already cut the utterance
         condition_on_previous_text=False)
     text = " ".join(s.text.strip() for s in segments).strip()
