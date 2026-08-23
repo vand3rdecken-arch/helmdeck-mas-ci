@@ -1,0 +1,455 @@
+# GxP-Modus — technischer Entwurf und UX
+
+Folgedokument zu `docs/gxp-conformity-analysis.md` (Befundregister dort, §8).
+Dieses Dokument beantwortet die Frage „wie löst man das technisch und gut über
+UX", nicht „was fehlt". Es ist eine Bauanleitung, kein Code.
+
+Stand: 2026-08-23. Alle Zeilenangaben gegen den Stand von `8c8cbfe` verifiziert.
+
+---
+
+## 0. Das Prinzip in drei Sätzen
+
+1. **Die Signatur ist keine Dialogbox vor dem Abnehmen — sie ist eine
+   Vorbedingung des Spurwechsels.** Nicht „beim Klick frage ich nach", sondern
+   „eine Karte kann `review` ohne gültige, unverbrauchte Signatur nicht
+   verlassen". Das ist der Unterschied zwischen einer Höflichkeitsabfrage und
+   einer Kontrolle.
+2. **Es gibt genau einen Ort, an dem das geprüft wird**, weil es genau einen
+   Ort gibt, an dem Karten abgenommen werden.
+3. **Der Modus ist Code, nicht Policy.** Ein Bool in `policy_live.json` wäre
+   wertlos: `policy.swap` schützt nur über einen aufruferseitigen Actor-String
+   (`policy.py:99-104`), und der ist keine Authentifizierung.
+
+Alles Weitere ist Ausarbeitung.
+
+---
+
+## 1. Der Fund, der den Entwurf einfach macht
+
+Die Analyse hat vier reviewfreie Produktionspfade als strukturellen Blocker
+benannt. Der Reflex wäre, jeden einzeln zu sperren. Das ist nicht nötig:
+
+| Pfad | Aufrufer | landet bei |
+|---|---|---|
+| Board-Tap / Drag / Kartendetail | `routes_track_actions.py:145` | `sessions.move_lane` |
+| Henry (Exception-Broker, autonom) | `henry_broker.py:271-272` | `sessions.move_lane` |
+| Policy-Auto-Abnahme (`auto_accept_green`) | `processes.py:293` | `sessions.move_lane` |
+| Chat-Verb „move" | `copilot_actions.py:210` | `sessions.move_lane` |
+| PM-Zelle | `pm_resolve.py:326` | `sessions.move_lane` |
+| Fast-Track | — | *innerhalb* `_move_lane:785-786` |
+| Maschinenkarten | — | *innerhalb* `_move_lane:661-663` |
+
+`move_lane` (`lanemachine.py:585`) ist ein reiner Reentrancy-Wrapper um
+`_move_lane` (`lanemachine.py:608`). **Ein Guard am Kopf von `_move_lane`
+schließt die gesamte Tabelle.** Henry braucht keine Sonderbehandlung: er kann
+schlicht keine Signatur erzeugen, weil er kein Passwort hat. Fast-Track ebenso.
+Die Auto-Abnahme ebenso.
+
+Das ist auch der Grund, warum dieser Entwurf mit dem Kartenhaus-Gesetz des
+Repos vereinbar ist: die Kontrolle sitzt beim **einen Eigentümer** des
+Zustandsübergangs und wird **zur Ereigniszeit** verifiziert, nicht aus einem
+gespeicherten Flag geschlossen.
+
+---
+
+## 2. Mechanik
+
+### 2.1 Der Signaturdatensatz
+
+Ein Signaturdatensatz ist unveränderlich und wird an **zwei** Orte geschrieben:
+auf den Kartendatensatz (damit er mit dem Record reist) und in die
+Ereignissenke (damit er im Audit-Trail auftaucht). `db.track_put` serialisiert
+den ganzen Task-Dict als JSON-Blob (`db.py:171-174`) — neue Schlüssel brauchen
+keine Migration.
+
+```jsonc
+"signatures": [{
+  "seq": 1,
+  "actor": "duy",                     // §11.50(a)(1) printed name
+  "actor_role": "owner",
+  "meaning": "approved",              // §11.50(a)(3) approved|reviewed|rejected
+  "reason": "Regression gruen, Diff geprueft",
+  "signed_at": "2026-08-23T14:02:11Z",// §11.50(a)(2) UTC, Zeitpunkt des Klicks
+  "subject_hash": "sha256:9f2c…",     // §11.70 Bindung, s. 2.2
+  "subject": {                        // was der Mensch gesehen hat
+    "card": "t-91", "branch": "feat/x",
+    "head": "a1b2c3d", "base": "e4f5g6h",
+    "gate": "pass", "files": 7, "ins": 240, "del": 12
+  },
+  "auth": { "method": "password", "components": ["userid","password"],
+            "session_first": true },
+  "prev": "sha256:0000…",             // Hash-Kette ueber alle Signaturen
+  "consumed_by": null                 // wird beim Landen gesetzt
+}]
+```
+
+Zwei Details, die leicht untergehen:
+
+- **`signatures` ist eine Liste, kein Feld.** Eine Karte kann abgelehnt,
+  überarbeitet und erneut signiert werden. Die Historie bleibt vollständig.
+- **`prev` verkettet die Signaturen.** Damit ist eine nachträglich entfernte
+  Signatur erkennbar, ohne dass die gesamte Ereignissenke eine Hash-Kette
+  bekommen muss (das wäre Stufe 1 aus der Analyse, GXP-A9, und hier nicht
+  Voraussetzung).
+
+Der Datensatz ist **englisch und technisch**, nicht übersetzt — konsistent mit
+der ausdrücklichen Regel in `app/src/i18n/index.ts:1-11`, dass der Audit-Trail
+in jedem Workspace identisch und greppbar lesen muss. Übersetzt wird nur die
+Oberfläche.
+
+### 2.2 Die Bindung: `subject_hash`
+
+§11.70 verlangt, dass die Signatur so an den Datensatz gebunden ist, dass sie
+nicht herauslösbar oder auf einen anderen Datensatz übertragbar ist. Die
+Umsetzung ist zugleich die Lösung für ein rein technisches Problem.
+
+```
+subject_hash = sha256(canonical_json({
+    card_id, branch, head_sha, base_sha,
+    gate_ok, gate_problems, diff_stat, task_text
+}))
+```
+
+Berechnet **beim Öffnen der Freigabemaske**, mitsigniert, und **erneut geprüft**
+unmittelbar vor dem Merge in `_move_lane`. Drift → Signatur ist automatisch
+ungültig, die Karte bleibt in `review`, `events.emit("signature", tid,
+outcome="void", reason="subject drift")`.
+
+Das leistet drei Dinge gleichzeitig:
+
+- **§11.70 ist erfüllt.** Die Signatur passt auf genau einen Inhaltszustand.
+- **Der Race ist zu.** Die HTTP-Route antwortet sofort mit `{started, gating:
+  true}` und merged erst später im Hintergrundthread
+  (`routes_track_actions.py:144-146`). Wenn zwischen Signatur und Merge ein
+  weiterer Turn läuft oder der Branch sich bewegt, wird nicht das Signierte
+  gemerged. Ohne Hash wäre das ein stiller Fehler.
+- **„Du hast unterschrieben, was du gesehen hast."** Das ist der Satz, mit dem
+  man die Kontrolle einem Auditor in einem Satz erklärt.
+
+### 2.3 Der eine Enforcement-Punkt
+
+Am Kopf von `_move_lane` (`lanemachine.py:608`, nach `_find` bei `:611-616`,
+**vor** dem Idempotenz-Kurzschluss bei `:654-660`):
+
+```
+wenn gxp.aktiv() und lane == "done":
+    sig = signatures.gueltige_offene(t)     # meaning=approved, hash passt, unverbraucht
+    wenn keine:      -> bleib in review, emit("signature", outcome="missing"), return
+    wenn vier_augen_verletzt(sig, t): -> bleib, outcome="self_approval"
+    ...spaeter, unmittelbar vor _merge_to_main (:808):
+    wenn subject_hash != neu_berechnet(t): -> bounce, outcome="void"
+```
+
+Zwei Prüfungen, nicht eine: einmal am Eingang (schnell scheitern, nichts
+anfassen) und einmal direkt vor dem Merge (Drift während Gate und `_sync_base`
+abfangen — dazwischen liegen bis zu 600 s Gate-Laufzeit, `lanemachine.py:743`).
+
+Zusätzlich sperrt `gxp.aktiv()` an genau drei weiteren Stellen:
+
+| Sperre | Stelle | Grund |
+|---|---|---|
+| Fast-Track-Durchfall | `lanemachine.py:785-786` | landet sonst ohne Mensch |
+| Maschinenkarten-Abnahme | `lanemachine.py:661-663` → `dispatch.py:525-570` | eigener Abnahmepfad |
+| Henrys Verben `move`/`did`/`rerun_deploy` | `henry_broker.py:258-273` | Agent als Akteur |
+
+### 2.4 Die Signier-Session — der UX-Hebel, den die Regulierung schenkt
+
+Hier liegt der Unterschied zwischen einem benutzbaren und einem gehassten
+System, und er steht wörtlich in der Vorschrift.
+
+§11.200(a)(1)(i)(A): *bei einer Serie von Signaturen innerhalb einer „single,
+continuous period of controlled system access"* braucht **nur die erste**
+Signatur alle Komponenten; jede weitere braucht mindestens eine Komponente,
+die nur die Person ausführen kann.
+
+Ein 30-Tage-Bearer-Token auf dem Telefon (`auth.py:17`) ist keine solche
+Periode — deshalb galt in der Analyse: volle Komponenten bei jeder Abnahme.
+Die Lösung ist, die Periode **explizit herzustellen**:
+
+- `POST /sign/session {name, password}` legt einen **Signier-Kontext** an:
+  serverseitig, nur im Speicher, an den Auth-Token gebunden, 15 min
+  Leerlauf-Ablauf / 60 min absolut, stirbt beim Daemon-Neustart.
+- Erste Signatur = Anlage des Kontexts = Benutzerkennung + Passwort. Volle
+  Komponenten.
+- Jede weitere Signatur im Kontext: **Passwort allein**, keine Kennung.
+- Kontext an den Token gebunden heißt: ein gestohlener Token ohne Passwort
+  kann nicht signieren. Das schließt den Weg, den GXP-U3 heute offen lässt.
+
+Der Gewinn ist ehrlich betrachtet klein (man spart das Tippen des
+Benutzernamens). Der große Hebel ist der nächste Punkt.
+
+### 2.5 Stapelfreigabe
+
+Prüfer nehmen selten eine Karte ab, sondern drei. §11.200 spricht ausdrücklich
+von einer *Serie* von Signaturen; in regulierten Dokumenten- und
+LIMS-Systemen ist eine Stapelfreigabe mit einmaliger Credential-Eingabe
+etablierte Praxis, solange **jeder** Datensatz seine eigene Manifestation
+(Name, Zeit, Bedeutung) bekommt und der Unterzeichner **jeden** Posten zum
+Zeitpunkt der Signatur sieht.
+
+Das ist der eigentliche UX-Hebel: drei Karten, ein Ritual, drei
+Signaturdatensätze.
+
+> **Vor dem Bau mit QA/Regulatory abklären.** Ich halte die Stapelfreigabe für
+> vertretbar und üblich, aber es ist der einzige Punkt in diesem Entwurf, bei
+> dem die Auslegung Spielraum hat. Ein konservativer Prüfer kann pro Datensatz
+> eine eigene Passworteingabe verlangen. Das Design bleibt gültig — es wird nur
+> unbequemer. Die Entscheidung sollte dokumentiert und begründet sein
+> (das ist selbst schon ein GxP-Artefakt), nicht implizit im Code liegen.
+
+### 2.6 Vier-Augen
+
+`dispatch.py:62-81` hält heute **nicht** fest, wer eine Karte beauftragt hat.
+Nötig ist ein Feld `dispatched_by` (gesetzt in `new_track` und bei jedem Move
+nach `working`). Dann:
+
+- `signature.actor != task.dispatched_by` für `meaning = approved`.
+- Bei nur einem Benutzer im System ist Vier-Augen technisch unmöglich. Der
+  Modus muss das beim Aktivieren **sagen**, nicht still durchlassen: „Vier-Augen
+  ist aktiv, aber es existiert nur ein Konto — lege einen zweiten Prüfer an."
+
+Die Bedeutung `reviewed` bekommt hier ihren Zweck: A prüft (`reviewed`), B gibt
+frei (`approved`). Zwei Signaturen, zwei Personen, ein Kartendatensatz.
+
+### 2.7 Modus-Aktivierung — und das Restrisiko, offen benannt
+
+```
+daemon/gxp.py   ->  liest DAEMON_ROOT/gxp.lock bei JEDEM Aufruf frisch
+                    (kein Cache, kein Modul-Global -> kein veraltetes Flag)
+```
+
+Die Lock-Datei trägt den Modus **und** die Feature-Sperren, damit beides nicht
+auseinanderlaufen kann:
+
+```jsonc
+{ "enabled": true, "activated_at": "…", "activated_by": "duy",
+  "signature": "sha256:…",
+  "disable": ["fast_track", "machine", "direct_task", "auto_accept_green",
+              "henry_move", "henry_did", "agent_may_swap"],
+  "four_eyes": true, "gate_profile": "full" }
+```
+
+- **Einschalten:** Owner-Aktion, selbst signiert, in der Ereignissenke.
+- **Ausschalten:** braucht Dateisystemzugriff auf dem Host **und** einen
+  Daemon-Neustart. Nicht über den Chat, nicht über einen Policy-Swap, nicht aus
+  einem Worktree heraus.
+
+**Das Restrisiko, das ein Auditor mit Sicherheit anspricht:** eine
+Maschinenkarte oder ein Direct Task läuft mit Shell-Zugriff auf dem Host und
+könnte die Datei löschen. Deshalb schaltet die Lock-Datei genau diese Pfade ab
+— aber das schließt das Loch nur für Agenten, die *nach* der Aktivierung
+starten. Die ehrliche Antwort lautet: **der Modus wird bei der Inbetriebnahme
+aktiviert, bevor ein Agent läuft, und die Aktivierung ist Teil der
+qualifizierten Installation (IQ).** Diesen Satz sollte man vorbereitet haben,
+statt ihn im Audit zu erfinden. Kein reines Software-Mittel kann einen Agenten
+aufhalten, der bereits eine Shell hat; das ist keine Schwäche dieses Entwurfs,
+sondern eine Eigenschaft des Bedrohungsmodells und gehört so in die
+Risikobewertung.
+
+---
+
+## 3. UX
+
+### 3.1 Prinzipien
+
+1. **Wer nicht im GxP-Modus ist, merkt exakt nichts.** Keine neue Schaltfläche,
+   kein Hinweis, kein zusätzlicher Tap. Das ist die Bedingung dafür, dass
+   HelmDeck HelmDeck bleibt.
+2. **Auswählen sendet nie.** Hausdoktrin, wörtlich begründet in
+   `card_question.tsx:116-119`: Auto-Submit bei Tap machte einen Fehlgriff
+   unumkehrbar. Bei einer Signatur wiegt das ungleich schwerer.
+3. **Nie `Alert.alert`.** Auf react-native-web ein No-Op — dreimal im Code
+   dokumentiert (`new.tsx:52-55`, `card/[id].tsx:740-742`). Fehler erscheinen
+   inline, wie im Login (`login_screen.tsx:105`).
+4. **Die Signatur ist ein menschlicher Akt und sieht auch so aus.** Der Token
+   `t.human` (`#9B87E8`, `tokens.ts:62`) existiert bereits und wird sonst
+   nirgends als Primärfarbe geführt. Die Freigabemaske ist der eine Ort, an dem
+   er das ist. Das trennt sie visuell von jeder Maschinenaktion.
+5. **Zeigen, was passiert.** Heute merged und deployt ein Tap auf ein
+   13 px hohes Geisterpille (`board.tsx:280-285`) ohne jede Rückfrage. Die
+   Freigabemaske ist nicht nur Compliance — sie ist das erste Mal, dass das
+   System sagt, was es gleich tut.
+
+### 3.2 Der Ablauf
+
+**Schritt 1 — Auslöser.** Im GxP-Modus wird aus „erledigt" ein Knopf
+`Freigeben` mit Stift-Icon in `t.human`. Die Drag-and-Drop-Geste auf die
+`done`-Spalte (`board.tsx:414-430`) wird **nicht** gesperrt, sondern
+umgeleitet: sie öffnet dieselbe Maske. Eine Geste zu verbieten, die es gestern
+noch gab, ist schlechtere UX als sie zu übersetzen.
+
+**Schritt 2 — Die Freigabemaske.** Ein echtes Modal (kein Action-Sheet, kein
+`Alert`), Struktur nach dem Vorbild von `prompt_host.tsx:44-77`, aber
+bildschirmfüllend statt zentriert, weil es scrollbaren Inhalt trägt:
+
+```
+┌─ FREIGABE ──────────────────────────── (Stift-Icon, t.human) ─┐
+│  t-91  Relay-Reconnect härten                                 │
+│                                                               │
+│  WAS PASSIERT                                                 │
+│   → merge feat/relay-retry nach main                          │
+│   → deploy (deploy/push_update.sh)          ← heute unsichtbar│
+│                                                               │
+│  PRÜFSTAND                                                    │
+│   Gate      ✓ bestanden                                       │
+│   Änderung  7 Dateien   +240 −12          [Diff ansehen ▾]    │
+│   Basis     e4f5g6h → a1b2c3d                                 │
+│   Gebaut    claude-opus-5 · 4 Turns · beauftragt von: pm      │
+│                                                               │
+│  BEDEUTUNG                     (auswählen — sendet noch nicht)│
+│   ( ) Freigegeben    landet und deployt            [t.ok]     │
+│   ( ) Geprüft        bleibt in Review für Zweitfreigabe [t.human]│
+│   ( ) Abgelehnt      zurück nach Working           [t.danger] │
+│                                                               │
+│  BEGRÜNDUNG                                                   │
+│   [___________________________________]  Pflicht bei Ablehnung│
+│                                                               │
+│  UNTERSCHRIFT                                                 │
+│   Unterzeichner  duy (owner)                        (fix)     │
+│   Passwort       [•••••••••]                                  │
+│   ⓘ Mit dem Signieren bestätigst du die oben gewählte         │
+│     Bedeutung. Zeitstempel UTC, Eintrag ist unveränderlich.   │
+│                                                               │
+│                          [ Abbrechen ]  [ Signieren ]         │
+└───────────────────────────────────────────────────────────────┘
+```
+
+Der Signieren-Knopf ist `disabled` bis Bedeutung gewählt, Passwort nicht leer
+und — bei Ablehnung — eine Begründung vorhanden. Muster und Opazität wie der
+Login-CTA (`login_screen.tsx:107-114`). Weiße Schrift auf `t.human`-Füllung,
+**nicht** `t.accentTxt` — die dokumentierte Falle aus
+`card_question.tsx:254-257`, wo eine Beschriftung genau daran verschwand.
+
+**Schritt 3 — Nach dem Signieren.** Der Toast bleibt wie heute
+(`board.tsx:528-532`), aber mit dem Signaturvermerk statt „Abgenommen":
+`Freigegeben von duy · 14:02 UTC · landet…`. Auf der Karte erscheint dauerhaft
+ein Signaturabzeichen, antippbar, das die vollständige Manifestation zeigt.
+
+### 3.3 Stapelfreigabe
+
+Aus der Review-Spalte: Langdruck aktiviert einen Auswahlmodus (Checkboxen),
+Kopfzeile zeigt `Freigeben (3)`. Die Maske listet die drei Karten je mit
+eigener Bedeutungswahl und eigenem, eingeklapptem Prüfstand — aufklappbar, aber
+standardmäßig zu, sonst scrollt niemand bis zum Passwortfeld. Eine
+Passworteingabe, drei Signaturdatensätze, drei `subject_hash`.
+
+Fällt eine Karte durch die Hash-Prüfung, werden die anderen trotzdem
+verarbeitet; das Ergebnis ist eine Liste, kein Alles-oder-nichts.
+
+### 3.4 Ablehnung
+
+`Abgelehnt` ist gleichwertig neben `Freigegeben`, nicht als Nebenausgang
+versteckt. Begründung ist Pflicht, die Karte geht nach `working`, und die
+Begründung landet als Steer-Nachricht beim Agenten — die Ablehnung wird damit
+zur Arbeitsanweisung statt zu einer Sackgasse. Das ist der Punkt, an dem
+Compliance und Produktivität ausnahmsweise dasselbe wollen.
+
+### 3.5 Was sich sonst am Board ändert
+
+| Ort | heute | im GxP-Modus |
+|---|---|---|
+| NextUp-Pille (`board.tsx:280-285`) | „erledigt", ein Tap | „Freigeben", öffnet Maske |
+| Drag auf `done` (`board.tsx:414-430`) | verschiebt sofort | öffnet Maske |
+| Move-Sheet (`board.tsx:563-577`) | Eintrag „done" | Eintrag öffnet Maske |
+| Kartendetail (`card/[id].tsx:707-725`) | `moveTo("done")` | öffnet Maske |
+| Kopfzeile | — | dezenter `GxP`-Chip in `t.human` |
+| Erledigte Karte | Status-Pille | zusätzlich Signaturabzeichen |
+
+Ein Detail, das heute schon ein Defekt ist und hier mitfällt: der
+Abnahme-Handler setzt kein `setBusy` (`board.tsx:593-598`, im Gegensatz zu
+`onMove` bei `:570-573`), der Knopf ist also doppelt antippbar. In der neuen
+Maske ist das nicht mehr möglich.
+
+### 3.6 Fehler- und Randfälle
+
+| Fall | Verhalten |
+|---|---|
+| Falsches Passwort | Inline-Fehler in `t.danger`, Maske bleibt offen, Zähler für Lockout (GXP-S4) |
+| Inhalt driftete seit Öffnen | „Die Karte hat sich geändert, seit du sie geöffnet hast." Prüfstand neu laden, erneut signieren |
+| Signatur gültig, Merge scheitert | **Signatur bleibt gültig und protokolliert.** Karte bounct nach `review`, `consumed_by` bleibt `null`. Der Mensch hat freigegeben; die Maschine ist gescheitert. Diese beiden Dinge zu vermischen wäre falsch protokolliert |
+| Vier-Augen verletzt | Bedeutung `Freigegeben` ist ausgegraut mit Begründung; `Geprüft` bleibt wählbar |
+| Daemon nicht erreichbar | Kein Offline-Signieren. Eine Signatur, die der Server nicht verifiziert hat, ist keine |
+| Nur ein Benutzerkonto | Warnung beim Aktivieren des Modus, nicht erst beim ersten Signieren |
+
+### 3.7 i18n
+
+Neue Zeichenketten gehören nach `app/src/i18n/dict/` und brauchen **beide**
+Sprachen (`core.ts:71-73`). Der Signatur*datensatz* wird nicht übersetzt (§2.1).
+Nicht das `"Abbrechen"` aus `action_sheet.tsx:46` nachahmen — das ist ein
+bekannter Verstoß, kein Vorbild.
+
+---
+
+## 4. Bauanleitung
+
+### Daemon
+
+| Datei | Änderung |
+|---|---|
+| `daemon/gxp.py` | **neu.** `aktiv()`, `sperren()`, `vier_augen()` — Lock-Datei bei jedem Aufruf frisch lesen |
+| `daemon/spine/auth/signatures.py` | **neu.** `subject_hash(t)`, `create(...)`, `gueltige_offene(t)`, `consume(...)`, Kettenhash |
+| `daemon/spine/auth/auth.py` | `verify_password(name, pw) -> bool` ergänzen — existiert nicht; `_check_pw` (`:42-48`) ist privat, und `login()` (`:131-140`) taugt nicht als Re-Auth, weil es bei jedem Aufruf eine Session **und** über die Route (`routes_auth.py:87`) ein Dauertoken mintet |
+| `daemon/spine/auth/sign_session.py` | **neu.** In-Memory-Signierkontext, an Auth-Token gebunden |
+| `daemon/spine/http/routes/routes_sign.py` | **neu.** `POST /sign/session`, `POST /sign`, `GET /sign/subject/<tid>` |
+| `daemon/cells/engineer/lanemachine.py` | Guard bei `:611`, Drift-Prüfung vor `:808`, Fast-Track-Sperre bei `:785`, `actor` auf das `done`-Ereignis bei `:843-845` |
+| `daemon/cells/engineer/dispatch.py` | `dispatched_by` in `new_track` (`:62-81`); Maschinen-Abnahme-Sperre (`:525-570`) |
+| `daemon/cells/copilot/henry_broker.py` | `move`/`did` im GxP-Modus verweigern (`:258-273`) |
+
+### App
+
+| Datei | Änderung |
+|---|---|
+| `app/src/ui/sign_off.tsx` | **neu.** Die Maske. Vorbild `card_question.tsx` (Stepper, a11y, Select-then-confirm), Rahmen `prompt_host.tsx:44-77` |
+| `app/src/data/client.ts` | `signSubject`, `signSession`, `sign` — Muster `answer()` (`:426-430`, Request-ID-Echo). `skipAuthGate=true` bei der Passwortprüfung, sonst wirft ein 401 den Benutzer zum Login (`:104-113`) |
+| `app/src/ui/board.tsx` | Auslöser `:280-285`, `:414-430`, `:563-577`, `:593-598`; Auswahlmodus |
+| `app/src/app/card/[id].tsx` | `moveTo` (`:707-725`); Signaturabzeichen |
+| `app/src/i18n/dict/` | de + en |
+
+Kein neuer Token nötig — `t.human`, `t.ok`, `t.danger`, `t.surface1`,
+`t.backdrop` decken alles ab.
+
+---
+
+## 5. Was dieser Entwurf nicht löst
+
+Damit die Erwartung stimmt. Der Entwurf schließt den **strukturellen** Blocker
+(kein Mensch in der Freigabe) und liefert §11.50, §11.70, §11.200 sowie
+Vier-Augen. Offen bleiben aus dem Register:
+
+- **Stufe 0** — die vier Punkte, die unabhängig von GxP echte Mängel sind
+  (Datenschutzerklärung vs. PostHog/Loops, Checkpoint-Diff-Leak, Desktop-Login
+  ohne Credential, Ereignis-Duplizierung). Der Desktop-Punkt ist sogar
+  **Voraussetzung**: eine Signatur ist wertlos, wenn die Hauptoberfläche ohne
+  Credential als Owner startet.
+- **Audit-Trail-Härtung** — UTC durchgängig (`events.py:176`),
+  Audit-Ereignisse für Benutzer- und Rollenoperationen (`auth.py` importiert
+  `events` nicht), Hash-Kette über die Ereignissenke, Review-Route mit Filter
+  und Export, `tools/reset.py:61-77` als Audit-Löscher entschärfen.
+- **Stufe 2 / CSV** — Validierungsplan, URS/FS/DS, RTM, IQ/OQ/PQ, Gate mit
+  echtem Regressionstest, Umgebungstrennung, OTA-Code-Signing. Davon berührt
+  dieser Entwurf nichts.
+
+Reihenfolge: **Stufe 0 zuerst.** Eine Signaturzeremonie über einer Oberfläche,
+die sich ohne Passwort als Owner anmeldet, ist Theater.
+
+---
+
+## 6. Aufwand
+
+Grobschätzung, keine Zusage.
+
+| Block | Schätzung |
+|---|---|
+| Stufe 0 (Voraussetzung) | 1–2 Tage |
+| Daemon: Modus, Signaturen, Re-Auth, Routen, Guard | 2–3 Tage |
+| App: Maske, Stapel, Board-Umleitungen, i18n | 3–4 Tage |
+| Audit-Härtung (UTC, Auth-Ereignisse, Review-Route) | 2–3 Tage |
+| **Summe bis „ein Mensch signiert nachweisbar jede Auslieferung"** | **8–12 Tage** |
+
+Das ist die Strecke bis zu einer Aussage, die in einer Lieferantenprüfung
+trägt. Die volle CSV-Strecke (Stufe 2) ist ein Vielfaches davon und
+größtenteils Dokumentation, nicht Code.
+
+Wenn beim Bau eine tragende Abkürzung entsteht, gehört sie nach
+`daemon/spine/registry/debt.py` — im selben Commit.
