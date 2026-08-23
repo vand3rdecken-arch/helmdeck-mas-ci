@@ -40,7 +40,7 @@ echo $$ > "$LOCK/pid"
 cat /proc/$$/winpid 2>/dev/null >> "$LOCK/pid" || echo $$ >> "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-native_fp() {
+cfg_fp() {
   # Fingerprint the ANDROID-relevant native config only. EXCLUDE the version
   # fields that bump_version + build_apk.sh change (app.json version/
   # versionCode, the manifest's EXPO_RUNTIME_VERSION): including them made
@@ -81,23 +81,40 @@ try:
     blob += "\n".join(l for l in manifest.splitlines() if "EXPO_RUNTIME_VERSION" not in l)
 except FileNotFoundError:
     pass
+print(hashlib.sha256(blob.encode("utf-8")).hexdigest())
+PY
+}
+
 # NATIVE SOURCE the plugins install into the android tree (measured gap
 # 2026-08-23: a GlassVoiceService.kt change shipped as "JS-only" - exactly the
-# false negative the comment above says this must never produce). Every
+# false negative native_fp's comment says it must never produce). Every
 # .kt/.java under app/plugins and app/modules is compiled into the APK, so
-# they are native config exactly like the manifest.
-import glob
+# they are native config exactly like the manifest. A SEPARATE hash on purpose:
+# the config half must be recorded from the END of a ship (build_apk stamps
+# versionCode into the hand-managed manifest mid-run), but the source half
+# must be recorded from the START (a module created while gradle ran is NOT in
+# the APK, and the end-recompute claimed it was - that is how livemic almost
+# never shipped). native_fp() combines both, so a stored combined hash of
+# (end-config + start-sources) compares correctly against any later fresh one.
+kt_fp() {
+  py -3.12 - <<'PY'
+import glob, hashlib
+blob = ""
 for src in sorted(glob.glob("app/plugins/**/*.kt", recursive=True)
                   + glob.glob("app/plugins/**/*.java", recursive=True)
                   + glob.glob("app/modules/**/*.kt", recursive=True)
                   + glob.glob("app/modules/**/*.java", recursive=True)):
     try:
-        blob += open(src, encoding="utf-8").read()
+        blob += src + "\n" + open(src, encoding="utf-8").read()
     except OSError:
         pass
 print(hashlib.sha256(blob.encode("utf-8")).hexdigest())
 PY
 }
+
+# combined fingerprint: sha256("<cfg> <kt>"). Always compare/record THIS shape.
+combine_fp() { printf '%s %s' "$1" "$2" | py -3.12 -c "import sys,hashlib;print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())"; }
+native_fp() { combine_fp "$(cfg_fp)" "$(kt_fp)"; }
 
 # Bump expo.version (patch) + android.versionCode in app/app.json. runtimeVersion
 # policy is "appVersion", so bumping the version bumps the runtimeVersion too: an
@@ -122,7 +139,8 @@ print(e["version"], e["android"]["versionCode"])
 PY
 }
 
-CUR="$(native_fp)"
+KT_START="$(kt_fp)"
+CUR="$(combine_fp "$(cfg_fp)" "$KT_START")"
 LAST="$(cat deploy/.native_fp 2>/dev/null || true)"
 
 if [ -n "$LAST" ] && [ "$CUR" = "$LAST" ]; then
@@ -148,13 +166,11 @@ else
   # manifest inherits the new runtimeVersion from the bumped app.json.
   bash deploy/push_update.sh || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
   git add app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
-  # Record the fingerprint CAPTURED AT START ($CUR), never a fresh recompute:
-  # measured 2026-08-23 - a module created while gradle ran landed in the
-  # end-of-ship recompute, so the recorded hash claimed an APK content the
-  # build never had, and the NEXT ship judged the new module "already shipped"
-  # (JS-only). The version fields the bump changed are excluded from the hash
-  # by construction, so $CUR is still valid post-bump.
-  printf '%s\n' "$CUR" > deploy/.native_fp
+  # Record end-of-run CONFIG (build_apk stamped the manifest mid-run - that
+  # mutation is this build's own deterministic output) + START-time SOURCES
+  # (a module created while gradle ran is NOT in this APK - measured
+  # 2026-08-23, the livemic near-miss). See kt_fp's header.
+  combine_fp "$(cfg_fp)" "$KT_START" > deploy/.native_fp
 fi
 echo "HOOK-NOTE: ship done - $([ -n "$LAST" ] && [ "$CUR" = "$LAST" ] && echo "OTA live" || echo "APK + matching OTA live")"
 echo "[ship] done"
