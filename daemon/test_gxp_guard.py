@@ -7,18 +7,30 @@ chat verb, machine cards. Every one of those calls sessions.move_lane, so one
 check at the top of _move_lane closes all of them, and agents need no special
 case because they are not accounts.
 
+Scope is per REPO (owner call): a global kill switch that took fast-track away
+everywhere would be switched back off within a fortnight, because most work is
+not regulated. But it cannot be per CARD either - two cards in one repo share a
+main and a deploy hook, so an unsigned card would land in the validated product
+next to a signed one. The card flag therefore only ADDS scope, never removes it.
+
 What this pins down:
   1. mode OFF changes nothing - every actor still gets through
-  2. mode ON refuses every autonomous actor by name: henry, policy, pm, chain,
-     board-Agent (auto), and an empty actor
-  3. mode ON still lets a REAL account through (the mode is not a freeze)
-  4. the refusal is audited and the card does not move
-  5. the refusal sits BEFORE the idempotency short-circuit, so an already
+  2. SCOPE: only the listed repo is affected; another repo keeps every
+     autonomous actor AND fast-track exactly as before
+  3. the card flag pulls a card in, and gxp:false cannot pull one out
+  4. no repos list at all means the whole workspace is in scope
+  5. in scope, every autonomous actor is refused by name: henry, policy, pm,
+     chain, board-Agent (auto), and an empty actor
+  6. in scope, a REAL account still lands cards (the mode is not a freeze)
+  7. the refusal is audited and the card does not move
+  8. the refusal sits BEFORE the idempotency short-circuit, so an already
      'accepted' card cannot be walked through either
-  6. is_human is derived from the user registry, not a blocklist: a newly
+  9. is_human is derived from the user registry, not a blocklist: a newly
      created account passes immediately, with no code change
-  7. fails CLOSED - an unreadable user registry refuses rather than allows
-  8. a malformed or enabled:false lock file means mode OFF
+ 10. fails CLOSED - an unreadable user registry refuses rather than allows
+ 11. a malformed or enabled:false lock file means mode OFF
+ 12. the card flag is one-way at the write path too (cardadmin refuses to
+     clear it, loudly, rather than ignoring the attempt)
 
 Deliberately NOT covered here: the real merge/deploy machinery. This tests the
 gate, not the landing - _move_lane's later half needs a git repo and a worktree
@@ -74,37 +86,68 @@ def main():
         if os.path.exists(gxp.LOCK):
             os.remove(gxp.LOCK)
 
+    REG = {"repo": os.path.join(tmp, "pharma-product")}      # in scope
+    OTHER = {"repo": os.path.join(tmp, "internal-tooling")}   # not in scope
+
+    def mode_scoped(**extra):
+        mode_on(repos=[REG["repo"]], **extra)
+
     # ------------------------------------------------------------------ 1 ---
     print("\nmode OFF - nothing is blocked")
     mode_off()
     ok(not gxp.active(), "no lock file -> mode off")
-    ok(all(gxp.accept_block_reason(a) is None for a in AGENTS + ["duy"]),
+    ok(all(gxp.accept_block_reason(a, REG) is None for a in AGENTS + ["duy"]),
        "every actor passes, agents included")
-    ok(not gxp.disabled("fast_track"), "fast_track not disabled while off")
+    ok(not gxp.in_scope(REG), "nothing is in scope while off")
+
+    # --------------------------------------------------------------- scope ---
+    print("\nSCOPE - only the regulated repo is affected")
+    mode_scoped()
+    ok(gxp.in_scope(REG), "the listed repo is in scope")
+    ok(not gxp.in_scope(OTHER), "another repo is NOT")
+    ok(not gxp.in_scope({}), "a card with no repo is not dragged in")
+    ok(gxp.in_scope({"repo": REG["repo"].replace("\\", "/").upper()}),
+       "path comparison survives case and slash differences")
+
+    print("\nSCOPE - the other repo keeps working exactly as before")
+    for a in AGENTS:
+        ok(gxp.accept_block_reason(a, OTHER) is None,
+           "out of scope, %r still lands cards" % (a,))
+    ok(not (gxp.in_scope(OTHER) and gxp.disabled("fast_track")),
+       "fast-track is untouched out of scope")
+
+    print("\nSCOPE - the card flag ADDS, and only adds")
+    ok(gxp.in_scope(dict(OTHER, gxp=True)), "a flagged card is pulled into scope")
+    ok(gxp.in_scope(dict(REG, gxp=False)),
+       "gxp:false CANNOT walk a card out of a regulated repo")
+
+    print("\nSCOPE - no repos list means the whole workspace")
+    mode_on()
+    ok(gxp.in_scope(OTHER) and gxp.in_scope(REG), "everything in scope")
+    mode_scoped()
 
     # ------------------------------------------------------------------ 2 ---
-    print("\nmode ON - every autonomous actor is refused")
-    mode_on()
+    print("\nin scope - every autonomous actor is refused")
     ok(gxp.active(), "lock file -> mode on")
     for a in AGENTS:
-        ok(gxp.accept_block_reason(a) is not None, "refused: %r" % (a,))
+        ok(gxp.accept_block_reason(a, REG) is not None, "refused: %r" % (a,))
 
     # ------------------------------------------------------------------ 3 ---
-    print("\nmode ON - a real account still lands cards")
-    ok(gxp.accept_block_reason("duy") is None, "the owner is not blocked")
+    print("\nin scope - a real account still lands cards")
+    ok(gxp.accept_block_reason("duy", REG) is None, "the owner is not blocked")
 
     # ------------------------------------------------------------------ 6 ---
     print("\nis_human is derived, not a blocklist")
-    ok(gxp.accept_block_reason("newhire") is not None, "unknown name refused")
+    ok(gxp.accept_block_reason("newhire", REG) is not None, "unknown name refused")
     auth.create_user("newhire", "another-password", "operator", actor="duy")
-    ok(gxp.accept_block_reason("newhire") is None,
+    ok(gxp.accept_block_reason("newhire", REG) is None,
        "the SAME name passes once the account exists - no code change")
 
     # ------------------------------------------------------------------ 7 ---
     print("\nfails closed")
     saved = auth.USERS
     auth.USERS = os.path.join(tmp, "does-not-exist", "users.json")
-    ok(gxp.accept_block_reason("duy") is not None,
+    ok(gxp.accept_block_reason("duy", REG) is not None,
        "unreadable registry refuses rather than allows")
     auth.USERS = saved
 
@@ -130,10 +173,26 @@ def main():
     ok(gxp.four_eyes(), "four_eyes switchable on")
 
     print("\nnothing is cached - the switch takes effect on the next call")
-    mode_on()
-    ok(gxp.accept_block_reason("henry") is not None, "on: henry refused")
+    mode_scoped()
+    ok(gxp.accept_block_reason("henry", REG) is not None, "on: henry refused")
     mode_off()
-    ok(gxp.accept_block_reason("henry") is None, "off again in the same process")
+    ok(gxp.accept_block_reason("henry", REG) is None, "off again in the same process")
+
+    print("\nthe card flag is one-way")
+    from daemon.spine.storage import db as _db
+    _db.init()
+    _db.track_put({"id": "t-oneway", "lane": "backlog", "status": "queued",
+                   "task": "x", "gxp": True})
+    from daemon.cells.engineer import cardadmin
+    try:
+        cardadmin.update_track("t-oneway", {"gxp": False}, actor="duy")
+        ok(False, "clearing gxp should have been refused")
+    except ValueError as e:
+        ok("only ever grows" in str(e), "clearing gxp is refused, loudly")
+    _db.track_put({"id": "t-add", "lane": "backlog", "status": "queued",
+                   "task": "x", "run_dir": tmp})
+    cardadmin.update_track("t-add", {"gxp": True}, actor="duy")
+    ok(_db.track_get("t-add").get("gxp") is True, "...but setting it works")
 
     # ------------------------------------------------------------- 4 and 5 ---
     print("\nthe lane machine itself refuses, and does not move the card")
@@ -144,8 +203,8 @@ def main():
                           ("accepted", "an ALREADY ACCEPTED card")):
         tid = "t-" + status
         db.track_put({"id": tid, "lane": "review", "status": status,
-                      "task": "x", "repo": None, "branch": None})
-        mode_on()
+                      "task": "x", "repo": REG["repo"], "branch": None})
+        mode_scoped()
         before = trackstore._find(trackstore._load(), tid)["lane"]
         r = lanemachine.move_lane(tid, "done", actor="henry")
         after = trackstore._find(trackstore._load(), tid)["lane"]
@@ -168,7 +227,7 @@ def main():
     # gate/merge/deploy machinery, which needs a git repo, a worktree and a
     # run_dir - so "got past" is proved by the refusal being absent and
     # execution reaching that machinery, not by a landing.
-    mode_on()
+    mode_scoped()
     tid = "t-submitted"
     for actor, expect_refusal in (("henry", True), ("duy", False)):
         try:

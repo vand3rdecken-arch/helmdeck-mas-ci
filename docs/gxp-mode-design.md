@@ -387,6 +387,49 @@ bei jedem Move nach `working`. Dann gilt:
 Die Bedeutung `reviewed` bekommt hier ihren Zweck: A prüft (`reviewed`), B gibt
 frei (`approved`). Zwei Signaturen, zwei Personen, ein Kartendatensatz.
 
+### 2.6b Geltungsbereich: pro Repo, nicht global — Owner-Entscheidung
+
+Der erste Entwurf schaltete Fast-Track **global** ab, sobald der Modus lief.
+Der Owner hat widersprochen, und zu Recht: eine Kontrolle, die dem ganzen
+Betrieb die Geschwindigkeit nimmt, obwohl nur ein Teil der Arbeit reguliert
+ist, wird nach zwei Wochen wieder ausgeschaltet. Fast-Track ist kein Mangel,
+sondern das Produkt.
+
+Sein Vorschlag war ein Kartenflag. Das trifft die richtige Form — `fast_track`
+ist bereits genau das —, hat aber wörtlich genommen ein Loch:
+
+> Karte X ist GxP und wird unterschrieben. Karte Y liegt im selben Repo, ist
+> nicht GxP, fährt Fast-Track und deployt. Beide mergen in dasselbe `main`, und
+> der Deploy-Hook läuft auf `main`. Im validierten Produkt steckt danach Code,
+> den niemand unterschrieben hat — und die Unterschrift auf X sagt nichts mehr
+> darüber aus, was ausgeliefert wurde.
+
+Der Geltungsbereich ist also keine Eigenschaft der **Karte**, sondern des
+**Artefakts**. In HelmDeck ist die Artefaktgrenze das Repo: ein `main`, ein
+Deploy-Hook. Deshalb:
+
+- **`repos: [...]` in der Lock-Datei** — jede Karte, die dorthin zielt, braucht
+  eine Unterschrift.
+- **`repos` fehlt** — der ganze Workspace ist im Geltungsbereich (die strenge
+  Aufstellung für eine Instanz, die nur reguliert arbeitet).
+- **Kartenflag `gxp: true`** — holt eine einzelne Karte zusätzlich herein, auch
+  aus einem anderen Repo.
+- **Nie abwählbar.** `gxp: false` kann keine Karte aus einem regulierten Repo
+  herausholen, und `cardadmin` verweigert das Löschen des Flags mit einem
+  Fehler statt es stillschweigend zu ignorieren. Andernfalls könnte alles, was
+  eine Karte bearbeiten darf, sie aus dem validierten System herausspazieren.
+- **Jedes andere Repo bleibt vollständig unberührt** — Fast-Track, Henry,
+  Auto-Abnahme, alles wie bisher.
+
+Der Satz für den Prüfer ist damit einzeilig: *„Dieses Repository hält das
+regulierte Produkt; alles was dort landet, ist unterschrieben."*
+
+Grenze, die bewusst offen bleibt: liegen reguliertes Produkt und interne
+Werkzeuge im **selben** Repo, reicht Repo-Granularität nicht. Dann braucht es
+Pfad-Ebene — mehr Komplexität, und erst zu bauen, wenn jemand diesen Fall
+wirklich hat. Machinenkarten ohne `repo` sind aus demselben Grund nur über das
+Kartenflag erreichbar.
+
 ### 2.7 Modus-Aktivierung — und das Restrisiko, offen benannt
 
 ```
@@ -399,11 +442,13 @@ auseinanderlaufen kann:
 
 ```jsonc
 { "enabled": true, "activated_at": "…", "activated_by": "duy",
-  "signature": "sha256:…",
+  "repos": ["C:/work/pharma-product"],   // Geltungsbereich, s. 2.6b
   "disable": ["fast_track", "machine", "direct_task", "auto_accept_green",
               "henry_move", "henry_did", "agent_may_swap"],
   "four_eyes": false, "gate_profile": "full" }
 ```
+
+`repos` weglassen heißt: der ganze Workspace ist im Geltungsbereich.
 
 - **Einschalten:** Owner-Aktion, selbst signiert, in der Ereignissenke.
 - **Ausschalten:** braucht Dateisystemzugriff auf dem Host **und** einen
