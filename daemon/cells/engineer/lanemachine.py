@@ -622,11 +622,14 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
     # `move`, the policy auto-accept, the chat verb, the PM - and fast-track and
     # machine cards branch off further down, still inside this function. So one
     # question asked once closes all of them, and no agent needs a special case:
-    # they simply are not accounts (daemon/gxp.py is_human). See
-    # docs/gxp-mode-design.md 1. Placed BEFORE the idempotency short-circuit
-    # below, so an already-'accepted' card cannot be walked through either.
+    # they simply are not accounts (daemon/gxp.py is_human).
+    #
+    # Scoped per card, not globally: only cards aimed at a regulated repo (or
+    # flagged into scope) are affected, everything else keeps working exactly as
+    # before. Placed BEFORE the idempotency short-circuit below, so an already
+    # -'accepted' card cannot be walked through either.
     if lane == "done":
-        _blocked = gxp.accept_block_reason(actor)
+        _blocked = gxp.accept_block_reason(actor, t)
         if _blocked:
             events.emit("gxp", tid, outcome="accept_refused", actor=actor,
                         lane_from=prev, reason=_blocked)
@@ -807,8 +810,12 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             # without a second call, so the chokepoint at the top of this
             # function never sees it as a 'done'. Refused here instead, by
             # demoting it to an ordinary review - the card then rests for a human
-            # like every other card, which is the whole point of the mode.
-            if _fast and gxp.disabled("fast_track"):
+            # like every other card.
+            #
+            # ONLY for a card in the regulated scope. Fast-track is not a flaw to
+            # be removed, it is the product working; it stays fully alive on
+            # every card that is not aimed at a validated artefact.
+            if _fast and gxp.in_scope(t) and gxp.disabled("fast_track"):
                 events.emit("gxp", tid, outcome="fast_track_refused", actor=actor)
                 log.log("note", "GxP: Fast-Track ist abgeschaltet - die Karte wartet auf Freigabe.")
                 _fast = False
