@@ -15,6 +15,15 @@ export interface LiveMicModule {
   /** should_listen gate: mute capture while Henry speaks, so the phone never
    *  transcribes its own speaker. */
   setMuted(m: boolean): boolean;
+  /** Fetch model files into filesDir/<dir>/ (skips existing); resolves with
+   *  the absolute directory path. Native HttpURLConnection - no expo-file-
+   *  system dependency. */
+  downloadFiles(urls: string[], dir: string): Promise<string>;
+  /** Build the on-device sherpa-onnx recognizer from files on disk. False =
+   *  this build has no sherpa AAR (old APK / iOS) or the files are bad. */
+  initLocalStt(encoder: string, decoder: string, tokens: string, lang: string): boolean;
+  /** One VAD segment (this module's own WAV shape) -> text, on-device. */
+  transcribeLocal(b64: string): Promise<string>;
   addListener(event: "onSegment" | "onState", cb: (e: any) => void): { remove(): void };
 }
 
