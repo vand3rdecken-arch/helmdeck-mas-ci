@@ -1,5 +1,23 @@
 # Arbeitsplan Phase A — die Mängel, die heute zählen
 
+> **Status 2026-08-23: alle fünf gebaut und verifiziert.**
+> A2 `8d7cdb2` · A0 `b78eff0` · A4 `aba748d` · A5 `ab7975b` · A1 `e3c9ddd`
+>
+> Jede Karte hat ihre Verifikation aus diesem Dokument tatsächlich durchlaufen;
+> A4 und A1 zusätzlich mit Gegenprobe am alten Code, damit der Test nicht
+> ungeprüft grün leuchtet. Neue Tests: `daemon/test_events_no_reimport.py`,
+> `daemon/test_auth_audit.py`, `app/test_config_hydrate.js`.
+>
+> Zwei Dinge sind beim Bauen aufgetaucht, die unten im Plan noch fehlen:
+> A1 hatte eine **zweite** Tür (das Onboarding mintete ebenfalls einen
+> Owner-Token) und brauchte zusätzlich eine Änderung an `config.ts hydrate`,
+> ohne die der Fix bei jedem Start einen Login erzwungen hätte. A4 hat einen
+> Folgeposten im Schuldenregister hinterlassen
+> (`events-two-stores-unreconciled`).
+>
+> Offen bleibt: A3 (deine Entscheidung), der gepackte Drei-Start-Durchlauf der
+> Desktop-App auf einem echten Rechner, und Phase B/C/D.
+
 Fünf Karten. Jede ist ohne die anderen baubar und ohne GxP begründbar. Alles
 unten ist am Arbeitsbaum nachgelesen, Stand `838985c` — keine Schätzung aus dem
 Gedächtnis.
