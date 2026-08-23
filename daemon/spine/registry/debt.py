@@ -10,6 +10,32 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "events-two-stores-unreconciled",
+        "title": "events.jsonl and the events table can drift, with no way to tell",
+        "status": "open",
+        "what": "events.emit() appends to events.jsonl and separately write-through "
+                "inserts the same row into the db (events.py:175-191). The db write "
+                "is best-effort inside a bare `except: pass`, and the comment there "
+                "claims the jsonl is 'the durable record regardless of db state'. "
+                "Rows carry no id, so the two stores share no key. Until A4 "
+                "(db.py _migrate) the file was re-imported on every boot, which "
+                "accidentally re-synced drift while duplicating everything else; "
+                "that re-import is now correctly limited to a first-start "
+                "migration, so a dropped db write stays dropped and silent.",
+        "why_it_bites": "A failed write-through loses the event from every "
+                        "dashboard, metric and audit query while it still sits in "
+                        "the file - the two answers to 'what happened' disagree and "
+                        "nothing detects it. For a GxP audit trail that is fatal: "
+                        "the record has to be provably complete, not probably.",
+        "trigger": "any db write failure during emit (disk full, lock timeout, "
+                   "WAL trouble) - silent today",
+        "fix": "Give every event a stable id at emit time (ULID or ts+counter), "
+               "make the db column UNIQUE, and re-import with INSERT OR IGNORE. "
+               "Then a boot-time reconcile is both safe and cheap, and the two "
+               "stores can be diffed on demand. Phase D of docs/gxp-plan.md.",
+        "order": 0,
+    },
+    {
         "id": "henry-direct-hands",
         "title": "Henry acts on the live tree with no gate/isolation",
         "status": "open",
