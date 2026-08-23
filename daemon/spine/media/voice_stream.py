@@ -36,6 +36,7 @@ FAILS SOFT like voice.py, for the same reason: `render_b64` returns None when
 edge-tts is unreachable, and a chunk that will not render is simply never
 emitted. The answer is on screen either way; speech may not take it away.
 """
+import itertools
 import queue
 import re
 import threading
@@ -99,11 +100,21 @@ def cut(text):
     return out, text[start:]
 
 
+# Turn identity, monotonically increasing for the daemon's lifetime. Every clip
+# carries its stream's turn number, so a client can tell "chunk 1 of the answer
+# I am waiting for" from "chunk 1 of an answer I already interrupted". A bare
+# seq cannot: it restarts at 1 every turn, and the huggingface/speech-to-speech
+# lesson (docs/voice-interaction-design.md SS8d) - like the Realtime APIs' -
+# is that audio must be addressed as (turn, seq), never seq alone.
+_TURN = itertools.count(1)
+
+
 class _Stream(object):
     """One turn's worth of spoken chunks."""
 
-    def __init__(self):
-        self.clips = []                 # [{seq, text, id, mime, b64}]
+    def __init__(self, turn):
+        self.turn = turn
+        self.clips = []                 # [{turn, seq, text, id, mime, b64}]
         self.seq = 0
         self.cursor = 0                 # chars of prose already turned into chunks
         self.buf = []                   # complete sentences not yet long enough
@@ -132,6 +143,7 @@ class _Stream(object):
             with self.lock:
                 if self.alive and clip:
                     c = dict(clip)
+                    c["turn"] = self.turn
                     c["seq"] = seq
                     c["text"] = text
                     self.clips.append(c)
@@ -199,7 +211,7 @@ def begin(user):
         old = _STREAMS.pop(user, None)
         if old:
             old.kill()
-        _STREAMS[user] = _Stream()
+        _STREAMS[user] = _Stream(next(_TURN))
 
 
 def feed(user, prose):
@@ -230,17 +242,27 @@ def drop(user):
         s.kill()
 
 
-def take(user, after_seq):
+def take(user, after_seq, turn=None):
     """Clips with seq > after_seq, plus whether more may still arrive.
 
     `pending` is what lets the client know the difference between "the turn is
     over and that was all" and "the turn is over but chunk 4 is still
     rendering" - without it the last sentence would be cut off whenever the
     render lagged the model, which is exactly when it matters.
+
+    `turn` is the turn the client's cursor BELONGS to. A cursor is only ever
+    meaningful against the stream that produced it: after a steer, the client
+    may still hold last turn's high seq while this stream's clips start at 1
+    again, and honouring that stale cursor would silently swallow the whole
+    new answer. A caller that names a different (or no longer current) turn
+    gets everything. `None` = an old client that cannot say - keep the exact
+    pre-turn-id semantics it was built against.
     """
     s = _STREAMS.get(user)
     if not s:
         return [], False
+    if turn is not None and turn != s.turn:
+        after_seq = 0
     with s.lock:
         out = [c for c in s.clips if c["seq"] > after_seq]
         pending = s.inflight > 0
