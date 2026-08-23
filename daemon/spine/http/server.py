@@ -192,10 +192,15 @@ class H(BaseHTTPRequestHandler):
                 from daemon.spine.auth import auth
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
+                # `id` + `tail`, never the token itself. This used to ship every
+                # device token in full to the panel on every load, while the UI
+                # only ever displayed the last six characters - the other 186
+                # bits were on the wire for nothing. Revoke goes by id now.
                 return self._send(200, json.dumps([
                     {"name": u["name"], "role": u["role"], "created": u.get("created"),
-                     "tokens": [{"label": t["label"], "token": t["token"],
-                                 "created": t.get("created")} for t in u.get("tokens", [])]}
+                     "tokens": [{"label": t.get("label"), "id": t.get("id"),
+                                 "tail": t.get("tail", ""), "created": t.get("created")}
+                                for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
             if p in routes_runs.GET_ROUTES:
                 return routes_runs.GET_ROUTES[p](self, user)

@@ -9,13 +9,65 @@ per-user API TOKENS issued and revoked from the Users panel - a token
 authenticates AS that user with that user's role. First run: no users ->
 the app shows a create-owner setup screen (POST /auth/setup, only works while
 the user table is empty)."""
-import hashlib, hmac, json, os, secrets, time
+import hashlib, hmac, json, os, secrets, threading, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 USERS = os.path.join(ROOT, "users.json")
 SESS = os.path.join(ROOT, "sessions.json")
 SESSION_TTL = 30 * 86400
 ROLES = ("owner", "operator", "client")
+
+# -- brute-force lockout ---------------------------------------------------
+# There was no limit of ANY kind on password attempts: the relay exposes the
+# login to the internet and a guesser could run flat out forever. The audit
+# events added alongside this are what make a limit possible at all - before
+# them a failed attempt left no trace to count.
+#
+# State is in memory on purpose. Counting failures into users.json would write
+# to a secrets file on every wrong password, which is both a disk-thrash and an
+# invitation to corrupt it; a daemon restart clearing the counters is
+# acceptable, because restarting the daemon is not something an attacker can do
+# from outside.
+#
+# The trade-off, stated rather than hidden: a lockout is keyed on the USERNAME,
+# so someone who knows the owner's name can lock him out for LOCK_FOR seconds
+# by failing five times. That is the standard shape of this control and the
+# reason the window is minutes and not hours. The alternative - keying on IP -
+# is worthless here, because everything arrives through the relay wearing the
+# same address.
+LOCK_AFTER = 5           # failures within LOCK_WINDOW before the door shuts
+LOCK_WINDOW = 15 * 60    # sliding window the failures are counted in
+LOCK_FOR = 15 * 60       # how long it stays shut after that
+_fails = {}              # name -> [monotonic timestamps of recent failures]
+_fails_lock = threading.Lock()
+
+
+def _locked_until(name):
+    """Seconds remaining on this name's lockout, or 0. Prunes as it goes."""
+    now = time.monotonic()
+    with _fails_lock:
+        hits = [t for t in _fails.get(name, []) if now - t < LOCK_WINDOW]
+        if hits:
+            _fails[name] = hits
+        else:
+            _fails.pop(name, None)
+        if len(hits) < LOCK_AFTER:
+            return 0
+        return max(0, int(LOCK_FOR - (now - hits[-1])))
+
+
+def _note_failure(name):
+    with _fails_lock:
+        now = time.monotonic()
+        hits = [t for t in _fails.get(name, []) if now - t < LOCK_WINDOW]
+        hits.append(now)
+        _fails[name] = hits
+        return len(hits)
+
+
+def _clear_failures(name):
+    with _fails_lock:
+        _fails.pop(name, None)
 
 def _load(path):
     if not os.path.exists(path):
@@ -71,6 +123,49 @@ def _tail(token):
     """A token reduced to something identifiable but unusable."""
     return ("..." + token[-4:]) if token and len(token) > 4 else "?"
 
+# -- device tokens at rest -------------------------------------------------
+# Tokens used to sit in users.json in the CLEAR, and GET /users shipped them in
+# full to the owner panel on every load. Anyone who could read the file - or
+# capture one of those responses - held every device's access.
+#
+# They are hashed now. SHA-256 and deliberately NOT pbkdf2: this is not a
+# password. A token is 24 bytes from secrets.token_urlsafe, so there is no
+# low-entropy guess to slow down, and resolve() runs on EVERY authenticated
+# request - 200k rounds per candidate token there would be a self-inflicted
+# denial of service.
+#
+# Stored per token: `th` (the hash, what auth compares against), `id` (a short
+# stable handle so the panel can revoke without ever holding the secret) and
+# `tail` (the last 6 characters, purely so a human can tell two devices apart).
+# 36 bits of a 192-bit token is not a credential.
+
+def _token_hash(token):
+    return hashlib.sha256((token or "").encode()).hexdigest()
+
+
+def _token_record(token, label):
+    th = _token_hash(token)
+    return {"label": label or "device", "th": th, "id": th[:12],
+            "tail": token[-6:], "created": time.strftime("%Y-%m-%d %H:%M:%S")}
+
+
+def _migrate_tokens(users):
+    """Fold any surviving plaintext token into its hash, once, in place.
+
+    Self-healing on read rather than a boot step: a tool process that never
+    runs the daemon's startup path still must not resurrect the cleartext.
+    Returns True when something changed and the file needs writing."""
+    touched = False
+    for u in users:
+        for t in u.get("tokens", []):
+            if "token" in t and "th" not in t:
+                raw = t.pop("token")
+                t["th"] = _token_hash(raw)
+                t["id"] = t["th"][:12]
+                t.setdefault("tail", raw[-6:])
+                touched = True
+    return touched
+
 # -- passwords -----------------------------------------------------------
 
 def _hash_pw(password, salt=None, iters=200_000):
@@ -89,7 +184,12 @@ def _check_pw(password, stored):
 # -- users ---------------------------------------------------------------
 
 def list_users():
-    return _load(USERS)
+    users = _load(USERS)
+    if _migrate_tokens(users):
+        _save(USERS, users)
+        _audit("token.migrate", "system", "-",
+               note="plaintext device tokens folded into hashes")
+    return users
 
 def get_user(name):
     for u in list_users():
@@ -157,34 +257,55 @@ def set_role(name, role, actor=None):
 # -- device/API tokens ---------------------------------------------------
 
 def issue_token(name, label, actor=None):
+    """Mint a device token. The plaintext is returned HERE AND NOWHERE ELSE -
+    only its hash is kept, so a lost token is re-issued, never recovered."""
     users = list_users()
     for u in users:
         if u["name"] == name:
             tok = "sdk_" + secrets.token_urlsafe(24)
-            u.setdefault("tokens", []).append(
-                {"label": label or "device", "token": tok,
-                 "created": time.strftime("%Y-%m-%d %H:%M:%S")})
+            rec = _token_record(tok, label)
+            u.setdefault("tokens", []).append(rec)
             _save(USERS, users)
             _audit("token.issue", actor, name,
-                   label=label or "device", tail=_tail(tok))
+                   label=rec["label"], tail=_tail(tok), token_id=rec["id"])
             return tok
     raise ValueError("no such user")
 
-def revoke_token(name, token, actor=None):
+def revoke_token(name, ident, actor=None):
+    """Revoke by token id (what the owner panel has) or by the full token
+    (what a script that still holds one has). Never needs the cleartext."""
     users = list_users()
+    th = _token_hash(ident)
     for u in users:
         if u["name"] == name:
-            before = len(u.get("tokens", []))
-            u["tokens"] = [t for t in u.get("tokens", []) if t["token"] != token]
+            held = u.get("tokens", [])
+            gone = [t for t in held if t.get("id") == ident or t.get("th") == th]
+            keep = [t for t in held if t not in gone]
+            u["tokens"] = keep
             _save(USERS, users)
-            _audit("token.revoke", actor, name, tail=_tail(token),
-                   removed=before - len(u["tokens"]))
+            # log the MATCHED RECORD's id, never `ident` - a caller may pass the
+            # full token here (a script that still holds one), and echoing that
+            # into the append-only audit would write the secret down forever.
+            # Caught by test_auth_audit's "no secret in the log" assertion.
+            _audit("token.revoke", actor, name, removed=len(gone),
+                   token_id=(gone[0].get("id") if gone else None),
+                   by=("id" if any(t.get("id") == ident for t in gone) else "token"))
             return
 
 # -- sessions ------------------------------------------------------------
 
 def login(name, password):
-    """name+password -> session id for the cookie, or None."""
+    """name+password -> session id for the cookie, or None.
+
+    Returns None for every kind of refusal - unknown user, wrong password and
+    locked out are indistinguishable to the caller ON PURPOSE. Telling a
+    guesser "that account exists but you are locked out" hands them a working
+    account-enumeration oracle. The audit trail keeps them apart; the wire
+    does not."""
+    left = _locked_until(name)
+    if left:
+        _audit("login.blocked", name, name, locked_for_s=left)
+        return None
     u = get_user(name)
     if not u:
         # Both misses are recorded, and they are recorded DIFFERENTLY. "no such
@@ -192,11 +313,16 @@ def login(name, password):
         # "bad password" repeated against one name is someone guessing it. A
         # single generic failure line cannot tell those apart. The response to
         # the caller stays identical either way - only the log distinguishes.
-        _audit("login.failed", name, name, reason="no_such_user")
+        n = _note_failure(name)
+        _audit("login.failed", name, name, reason="no_such_user",
+               fails=n, locks_out=(n >= LOCK_AFTER))
         return None
     if not _check_pw(password, u.get("pw", "")):
-        _audit("login.failed", name, name, reason="bad_password", role=u["role"])
+        n = _note_failure(name)
+        _audit("login.failed", name, name, reason="bad_password", role=u["role"],
+               fails=n, locks_out=(n >= LOCK_AFTER))
         return None
+    _clear_failures(name)
     sid = secrets.token_urlsafe(32)
     sess = [s for s in _load(SESS) if s["expires"] > time.time()]
     sess.append({"sid": sid, "user": name, "expires": time.time() + SESSION_TTL})
@@ -220,9 +346,10 @@ def resolve(sid=None, token=None):
                 name = s["user"]
                 break
     if not name and token:
+        th = _token_hash(token)
         for u in list_users():
             for t in u.get("tokens", []):
-                if hmac.compare_digest(t["token"], token):
+                if hmac.compare_digest(t.get("th", ""), th):
                     name = u["name"]
     if not name:
         return None
@@ -238,8 +365,7 @@ def migrate_legacy(settings_users):
     for su in settings_users:
         users.append({"name": su["name"], "pw": _hash_pw(secrets.token_urlsafe(18)),
                       "role": su.get("role", "operator"),
-                      "tokens": [{"label": "migrated", "token": su["token"],
-                                  "created": time.strftime("%Y-%m-%d %H:%M:%S")}],
+                      "tokens": [_token_record(su["token"], "migrated")],
                       "created": time.strftime("%Y-%m-%d %H:%M:%S")})
     _save(USERS, users)
     return True
