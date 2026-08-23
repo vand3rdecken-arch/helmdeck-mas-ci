@@ -32,7 +32,6 @@ const nonce = crypto.randomBytes(16).toString("hex");
 const log = [];          // progress lines the screen renders
 let running = false;     // provisioning in flight
 let done = false;
-let lastToken = "";      // owner device token minted after the instance came up
 
 function say(line, kind = "info") {
   log.push({ ts: Date.now(), kind, line: String(line) });
@@ -209,9 +208,15 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
 // ------------------------------------------------------------------ server ---
 
 /**
- * @param ctx {{ resourcesDir, daemonDir, daemonPort, startDaemon, mintToken }}
+ * @param ctx {{ resourcesDir, daemonDir, daemonPort, startDaemon }}
  *   startDaemon(py) -> void   (main.js owns the child process + teardown)
- *   mintToken(py)   -> string (owner device token for the local UI)
+ *
+ * There is deliberately no mintToken any more. Provisioning used to finish by
+ * minting an owner device token and handing it to the SPA - the same
+ * credential-free owner login the shell itself used to perform, through a second
+ * door. Provisioning installs an INSTANCE; WHO may drive it is settled by
+ * logging in. On a genuinely fresh machine no owner account exists yet, so the
+ * SPA shows its create-owner screen, which is the only correct answer there.
  */
 function startSetupServer(ctx) {
   // Probe results are CACHED once positive: /setup/state is polled every few
@@ -230,9 +235,6 @@ function startSetupServer(ctx) {
       claude: !!claude, claudeVersion: claude ? claude.version : "",
       daemon: await daemonUp(ctx.daemonPort),
       running, done,
-      // the SPA adopts this so it can call the daemon right after provisioning,
-      // instead of waiting for a window reload to pick up a fresh #cfg
-      token: lastToken || undefined,
     };
   };
 
@@ -293,9 +295,8 @@ function startSetupServer(ctx) {
       if (!(await daemonUp(ctx.daemonPort))) { say("Instanz konnte nicht gestartet werden.", "err"); return; }
       say("Instanz läuft auf :" + ctx.daemonPort, "ok");
 
-      try { lastToken = ctx.mintToken(py) || ""; } catch { /* UI falls back to the connect screen */ }
       done = true;
-      say("Fertig — jetzt koppeln.", "ok");
+      say("Fertig — jetzt anmelden.", "ok");
     } finally {
       running = false;
     }
