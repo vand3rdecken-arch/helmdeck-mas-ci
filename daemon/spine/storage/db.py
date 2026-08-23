@@ -92,6 +92,24 @@ def _devalue_persisted_running():
     except Exception as e:
         print("db: boot devaluation failed:", e)
 
+def _archive(path):
+    """Retire an imported legacy file WITHOUT destroying an older archive.
+
+    The original code did a bare os.replace(p, p + ".imported"), which silently
+    overwrote the archive from a previous run - so the docstring's promise
+    ("originals preserved, per the safeguard rule") stopped holding on the second
+    boot. Nothing is allowed to eat a backup here, so a taken name gets a
+    numbered sibling instead."""
+    dest = path + ".imported"
+    if os.path.exists(dest):
+        n = 2
+        while os.path.exists("%s.%d" % (dest, n)):
+            n += 1
+        dest = "%s.%d" % (dest, n)
+    os.replace(path, dest)
+    return dest
+
+
 def _migrate():
     c = conn()
     tj = os.path.join(ROOT, "tracks.json")
@@ -103,12 +121,25 @@ def _migrate():
                 for t in tracks:
                     c.execute("INSERT OR REPLACE INTO tracks(id,data) VALUES(?,?)",
                               (t["id"], json.dumps(t)))
-            os.replace(tj, tj + ".imported")
+            _archive(tj)
             print("db: imported %d tracks from tracks.json" % len(tracks))
         except Exception as e:
             print("db: tracks import failed:", e)
+    # events.jsonl is the ONE legacy file that comes back: events.emit() appends
+    # to it on every event while ALSO write-through inserting the same row here
+    # (events.py:175-191). The other three files are written once and stay gone.
+    #
+    # So this block used to duplicate the whole previous session on every boot:
+    # import (plain INSERT, no key to dedupe on) -> rename -> emit recreates the
+    # file -> next boot imports it all again. Every count over `events` was
+    # inflated, which is why the dashboard's cost figures read too high.
+    #
+    # Import is therefore what the docstring always said it was - a FIRST-START
+    # migration - and it only runs against an empty table. A populated table also
+    # means the file must stay put: it is the durable append-only record, not a
+    # leftover to be retired.
     ej = os.path.join(ROOT, "events.jsonl")
-    if os.path.exists(ej):
+    if os.path.exists(ej) and c.execute("SELECT 1 FROM events LIMIT 1").fetchone() is None:
         try:
             n = 0
             with open(ej, encoding="utf-8") as f, c:
@@ -122,7 +153,7 @@ def _migrate():
                                json.dumps({k: v for k, v in r.items()
                                            if k not in ("ts", "kind", "track")})))
                     n += 1
-            os.replace(ej, ej + ".imported")
+            _archive(ej)
             print("db: imported %d events from events.jsonl" % n)
         except Exception as e:
             print("db: events import failed:", e)
@@ -135,7 +166,7 @@ def _migrate():
                 for p in procs:
                     c.execute("INSERT OR REPLACE INTO processes(id,data) VALUES(?,?)",
                               (p["id"], json.dumps(p)))
-            os.replace(pj, pj + ".imported")
+            _archive(pj)
             print("db: imported %d processes from processes.json" % len(procs))
         except Exception as e:
             print("db: processes import failed:", e)
@@ -153,7 +184,7 @@ def _migrate():
             with c:
                 c.execute("INSERT OR REPLACE INTO connector_state(id,data) VALUES(?,?)",
                           ("state", json.dumps(cstate)))
-            os.replace(csj, csj + ".imported")
+            _archive(csj)
             print("db: imported connector state (%d connectors) from connectors/_state.json" % len(cstate))
         except Exception as e:
             print("db: connector state import failed:", e)
