@@ -19,6 +19,13 @@ def checkpoints_list_get(self, user):
 
 
 def checkpoints_diff_get(self, user, cid):
+    # OWNER ONLY, same as restore below. The diff carries settings before->after
+    # VALUES, so it hands out relay.sk, glance_token and registration.invite_code
+    # to anyone who is merely logged in - the generic 401 in server.py lets an
+    # operator or a client through. Fail closed rather than redact: a redaction
+    # list has to enumerate every secret key and silently leaks the one it forgot.
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
     from daemon.spine.ops import checkpoints
     try:
         return self._send(200, json.dumps(checkpoints.diff(cid)))
