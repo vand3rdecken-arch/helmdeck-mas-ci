@@ -122,15 +122,25 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // round trips. So voice mode registers a sink and this loop hands clips over as
   // they land; the cursor lives here, beside the poll that moves it.
   const voiceSink = useRef<((c: VoiceClip) => void) | null>(null);
-  const voiceSeq = useRef(0);
-  const takeClips = useCallback((r: { voice?: (VoiceClip & { seq: number })[] } | null) => {
+  // The cursor is (turn, seq), never seq alone: the daemon restarts seq at 1
+  // every turn, so after a steer the old turn's high seq would make every clip
+  // of the NEW answer look like a duplicate — text on screen, speech silently
+  // dropped (measured 2026-08-23). Same addressing the Realtime APIs use:
+  // audio belongs to a response id, and a chunk from another turn is judged by
+  // its turn, not by a shared counter.
+  const voiceCur = useRef({ turn: 0, seq: 0 });
+  const takeClips = useCallback((r: { voice?: (VoiceClip & { turn?: number; seq: number })[] } | null) => {
     const sink = voiceSink.current;
     if (!sink || !r?.voice) return;
+    const cur = voiceCur.current;
     for (const c of r.voice) {
+      const ct = c.turn ?? 0;            // old daemon: no turn ids, one shared line
+      if (ct < cur.turn) continue;       // an interrupted answer's leftovers
+      if (ct > cur.turn) { cur.turn = ct; cur.seq = 0; }
       // Monotonic guard, not an assumption: the drain in ask() can overlap one
       // poll, and delivering a chunk twice would say the same sentence twice.
-      if (c.seq <= voiceSeq.current) continue;
-      voiceSeq.current = c.seq;
+      if (c.seq <= cur.seq) continue;
+      cur.seq = c.seq;
       sink(c);
     }
   }, []);
@@ -139,7 +149,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     let alive = true, to: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const r = await api.chatLive(voiceSink.current ? voiceSeq.current : undefined);
+        const r = await api.chatLive(voiceSink.current ? voiceCur.current.seq : undefined,
+          voiceSink.current ? voiceCur.current.turn : undefined);
         if (alive && r) { setStream(r.text || ""); setThink(r.thinking || ""); takeClips(r); }
       } catch { /* keep polling */ }
       if (alive) to = setTimeout(poll, 500);
@@ -272,7 +283,9 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     // end" to "a sentence at a time" — the two must be decided together, or the
     // owner gets a turn that renders speech nobody collects.
     voiceSink.current = onClip ?? null;
-    voiceSeq.current = 0;
+    // Reset only the seq half: the turn half may only move FORWARD (takeClips),
+    // or a superseded drain could re-adopt the interrupted turn's clips.
+    voiceCur.current.seq = 0;
     try {
       const r = await api.chat(text, { voice: onClip ? "stream" : undefined });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
@@ -287,7 +300,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       // only on slow renders, which is the worst way to find a bug.
       if (onClip) {
         for (let i = 0; i < 40; i++) {
-          const live = await api.chatLive(voiceSeq.current).catch(() => null);
+          // A superseded turn's drain must DIE, not keep collecting: it shares
+          // the cursor with the turn that replaced it, and measured 2026-08-23
+          // it re-raised the seq the new ask() had just reset — every clip of
+          // the new answer then judged "already played" and dropped.
+          if (turn.current !== id) break;
+          const live = await api.chatLive(voiceCur.current.seq, voiceCur.current.turn).catch(() => null);
           takeClips(live);
           if (!live?.voice_pending) break;
           await new Promise((res) => setTimeout(res, 250));

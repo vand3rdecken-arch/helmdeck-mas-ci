@@ -464,11 +464,15 @@ export const api = {
    *  no use for them. `voice_pending` is why the loop cannot simply stop when
    *  `running` goes false: the turn can be over while the last sentence is
    *  still rendering. */
-  chatLive: (voiceFrom?: number) => req<{
+  chatLive: (voiceFrom?: number, voiceTurn?: number) => req<{
     text: string; thinking?: string; running: boolean;
-    voice?: (VoiceClip & { seq: number; text?: string })[];
+    voice?: (VoiceClip & { turn?: number; seq: number; text?: string })[];
     voice_pending?: boolean;
-  }>("GET", voiceFrom === undefined ? "/chat/live" : `/chat/live?voice_from=${voiceFrom}`),
+  }>("GET", voiceFrom === undefined ? "/chat/live"
+    // `voice_turn` names the turn the cursor counts in — seq restarts at 1
+    // every turn, so after a steer a bare seq would silently swallow the new
+    // answer's clips (voice_stream.take). An old daemon ignores the param.
+    : `/chat/live?voice_from=${voiceFrom}${voiceTurn ? `&voice_turn=${voiceTurn}` : ""}`),
 
   // Render text the phone already holds (a decrypted push's title/body) as
   // speech - the proactive-blocker half of phone voice (data/push.ts). Same
