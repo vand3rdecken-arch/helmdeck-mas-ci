@@ -15,8 +15,10 @@ FAILS SOFT, but LOUDLY TYPED: a missing faster-whisper is a 501 with the exact
 install command, never a silent empty transcript - a voice mode that "hears
 nothing" without saying why is the worst failure shape this layer knows.
 
-Model choice is a SETTING (voice_stt_model, default "small" - fine for German
-commands on CPU), the first call pays the model download + load once; the
+Model choice is a SETTING (voice_stt_model, default "base" - measured 2026-08-23
+on the owner box: base=1.4s warm vs small=4.8s for a 4s German phrase, base's
+only slip one soft word ending; conversation needs the 1.4s. Set "small" for
+dictation accuracy), the first call pays the model download + load once; the
 loaded model is cached for the daemon's lifetime, one owner (_MODEL).
 """
 import io
@@ -44,7 +46,7 @@ def _model():
     global _MODEL, _MODEL_NAME
     from daemon.spine.storage import events
     from daemon.paths import DAEMON_ROOT
-    name = (events.settings().get("voice_stt_model") or "small").strip() or "small"
+    name = (events.settings().get("voice_stt_model") or "base").strip() or "base"
     with _LOCK:
         if _MODEL is not None and _MODEL_NAME == name:
             return _MODEL
