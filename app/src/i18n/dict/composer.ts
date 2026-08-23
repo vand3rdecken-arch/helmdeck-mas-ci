@@ -56,6 +56,11 @@ export const composer: Dict = {
   "chat.teamOnly": { de: "Henry ist nur für das Team.", en: "Henry is for the team only." },
   "chat.thinking": { de: "denkt nach", en: "thinking" },
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
+  "chat.glassesTalk": { de: "Mit Henry über die Brille sprechen", en: "Talk to Henry through the glasses" },
+  "chat.glassesUnconfigured": {
+    de: "Brillen-Modus nicht eingerichtet: glance_origin + glance_token in den Daemon-Einstellungen setzen (Glance-Worker deployen: deploy/push_glance.sh).",
+    en: "Glasses mode not set up: set glance_origin + glance_token in daemon settings (deploy the glance worker: deploy/push_glance.sh).",
+  },
   "chat.latest": { de: "Neueste", en: "Latest" },
   "chat.close": { de: "Chat schließen", en: "Close chat" },
   // {cost} arrives pre-rendered: planLabel() on the flat plan ("KI ~x % vom
