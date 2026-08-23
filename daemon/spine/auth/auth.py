@@ -32,6 +32,45 @@ def _save(path, data):
         json.dump(data, f, indent=2)
     os.replace(tmp, path)
 
+# -- audit ---------------------------------------------------------------
+
+def _audit(op, actor, subject, **extra):
+    """Append an identity event to the append-only sink.
+
+    This module imported `events` NOWHERE before: creating and deleting users,
+    changing a password or a role, issuing and revoking device tokens, and
+    every single login - successful or not - left no trace at all. The failed
+    login is the one that hurts most: it was a silent `return None`, so there
+    was no record to rate-limit or lock out on, and no way to see an attempt.
+
+    Deliberately NOT recorded: passwords, password hashes, session ids and full
+    token values. A token shows up as its label plus the last four characters -
+    enough to point at one row in the Users panel, useless as a credential.
+
+    `at_utc` rides ALONGSIDE the local-time `ts` that events.emit() stamps
+    (events.py:176). An audit timestamp that depends on the host timezone
+    cannot be correlated across machines and goes ambiguous twice a year at the
+    DST fold. Migrating `ts` itself touches every consumer and is phase D; the
+    identity events - the ones an auditor reads first - get a real one now.
+
+    Best-effort, like policy._mirror: auditing must not be the reason a login
+    fails. That is the right trade today and the WRONG one under GxP, where a
+    lost audit record has to fail the operation. Phase B territory, noted here
+    so it is a decision and not an oversight.
+    """
+    try:
+        from daemon.spine.storage import events
+        events.emit("auth", "-", op=op, actor=actor or subject, subject=subject,
+                    at_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    **extra)
+    except Exception:
+        pass
+
+
+def _tail(token):
+    """A token reduced to something identifiable but unusable."""
+    return ("..." + token[-4:]) if token and len(token) > 4 else "?"
+
 # -- passwords -----------------------------------------------------------
 
 def _hash_pw(password, salt=None, iters=200_000):
@@ -58,7 +97,7 @@ def get_user(name):
             return u
     return None
 
-def create_user(name, password, role):
+def create_user(name, password, role, actor=None):
     if role not in ROLES:
         raise ValueError("bad role")
     if not name or not name.replace("-", "").replace("_", "").isalnum():
@@ -71,18 +110,26 @@ def create_user(name, password, role):
     users.append({"name": name, "pw": _hash_pw(password), "role": role,
                   "tokens": [], "created": time.strftime("%Y-%m-%d %H:%M:%S")})
     _save(USERS, users)
+    _audit("user.create", actor, name, role=role, first_user=(len(users) == 1))
     return {"name": name, "role": role}
 
-def delete_user(name):
+def delete_user(name, actor=None):
     users = list_users()
     if len([u for u in users if u["role"] == "owner"]) == 1 \
        and any(u["name"] == name and u["role"] == "owner" for u in users):
         raise ValueError("cannot delete the last owner")
+    gone = next((u for u in users if u["name"] == name), None)
     _save(USERS, [u for u in users if u["name"] != name])
     # kill their sessions
-    _save(SESS, [s for s in _load(SESS) if s["user"] != name])
+    sess = _load(SESS)
+    _save(SESS, [s for s in sess if s["user"] != name])
+    _audit("user.delete", actor, name,
+           role=(gone or {}).get("role"),
+           tokens_killed=len((gone or {}).get("tokens") or []),
+           sessions_killed=len([s for s in sess if s["user"] == name]),
+           existed=gone is not None)
 
-def set_password(name, password):
+def set_password(name, password, actor=None):
     if len(password) < 8:
         raise ValueError("password: 8 chars minimum")
     users = list_users()
@@ -90,23 +137,26 @@ def set_password(name, password):
         if u["name"] == name:
             u["pw"] = _hash_pw(password)
             _save(USERS, users)
+            _audit("user.password", actor, name, self_service=(actor == name))
             return
     raise ValueError("no such user")
 
-def set_role(name, role):
+def set_role(name, role, actor=None):
     if role not in ROLES:
         raise ValueError("bad role")
     users = list_users()
     for u in users:
         if u["name"] == name:
-            u["role"] = role
-            _save(USERS, users)
+            was = u["role"]                 # BEFORE value: an audit trail that
+            u["role"] = role                # only records the new one cannot
+            _save(USERS, users)             # answer "what was changed"
+            _audit("user.role", actor, name, frm=was, to=role)
             return
     raise ValueError("no such user")
 
 # -- device/API tokens ---------------------------------------------------
 
-def issue_token(name, label):
+def issue_token(name, label, actor=None):
     users = list_users()
     for u in users:
         if u["name"] == name:
@@ -115,15 +165,20 @@ def issue_token(name, label):
                 {"label": label or "device", "token": tok,
                  "created": time.strftime("%Y-%m-%d %H:%M:%S")})
             _save(USERS, users)
+            _audit("token.issue", actor, name,
+                   label=label or "device", tail=_tail(tok))
             return tok
     raise ValueError("no such user")
 
-def revoke_token(name, token):
+def revoke_token(name, token, actor=None):
     users = list_users()
     for u in users:
         if u["name"] == name:
+            before = len(u.get("tokens", []))
             u["tokens"] = [t for t in u.get("tokens", []) if t["token"] != token]
             _save(USERS, users)
+            _audit("token.revoke", actor, name, tail=_tail(token),
+                   removed=before - len(u["tokens"]))
             return
 
 # -- sessions ------------------------------------------------------------
@@ -131,16 +186,29 @@ def revoke_token(name, token):
 def login(name, password):
     """name+password -> session id for the cookie, or None."""
     u = get_user(name)
-    if not u or not _check_pw(password, u.get("pw", "")):
+    if not u:
+        # Both misses are recorded, and they are recorded DIFFERENTLY. "no such
+        # user" repeated across many names is someone enumerating accounts;
+        # "bad password" repeated against one name is someone guessing it. A
+        # single generic failure line cannot tell those apart. The response to
+        # the caller stays identical either way - only the log distinguishes.
+        _audit("login.failed", name, name, reason="no_such_user")
+        return None
+    if not _check_pw(password, u.get("pw", "")):
+        _audit("login.failed", name, name, reason="bad_password", role=u["role"])
         return None
     sid = secrets.token_urlsafe(32)
     sess = [s for s in _load(SESS) if s["expires"] > time.time()]
     sess.append({"sid": sid, "user": name, "expires": time.time() + SESSION_TTL})
     _save(SESS, sess)
+    _audit("login", name, name, role=u["role"])
     return sid
 
 def logout(sid):
-    _save(SESS, [s for s in _load(SESS) if s["sid"] != sid])
+    sess = _load(SESS)
+    who = next((s["user"] for s in sess if s["sid"] == sid), None)
+    _save(SESS, [s for s in sess if s["sid"] != sid])
+    _audit("logout", who, who, matched=who is not None)
 
 def resolve(sid=None, token=None):
     """Session cookie or bearer token -> the user dict (public part) or None."""

@@ -31,7 +31,10 @@ def main():
                         return
     except (OSError, ValueError):
         pass
-    sys.stdout.write(auth.issue_token(name, label))     # mint fresh
+    # actor="cli:mint_token" and not the user: nobody authenticated here. This
+    # runs from a shell (desktop/main.js calls it at every launch), so the audit
+    # line must not read as if <name> logged in and asked for a token.
+    sys.stdout.write(auth.issue_token(name, label, actor="cli:mint_token"))
 
 
 if __name__ == "__main__":
