@@ -1,0 +1,18 @@
+// LOCAL Expo module - raw-microphone capture + VAD for the LIVE voice mode.
+// Same deliberately-tiny shape as modules/glasses/android/build.gradle (see
+// there for why defaultConfig must stay and minSdk is inherited).
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.helmdeck'
+version = '0.1.0'
+
+android {
+  namespace "app.helmdeck.livemic"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}

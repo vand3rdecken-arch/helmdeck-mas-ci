@@ -6,6 +6,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import { caps, listen, openSpeech, speak, stopSpeaking, type Listener, type SpeechQueue, type VoiceClip } from "@/data/voice";
+// The OWN pipeline (speech-to-speech shape): raw mic + on-device VAD cut
+// utterances, the daemon transcribes them (faster-whisper). Optional native
+// module — null on builds that predate it, and live mode simply isn't offered.
+import LiveMic, { type MicSegment } from "../../modules/livemic";
 import { getLang, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Empty } from "@/ui/kit";
@@ -189,6 +193,15 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
   // loop ChatGPT/Gemini default to. Turned off by the mute button, which then
   // makes the orb a push-to-talk button instead.
   const [hands, setHands] = useState(true);
+  // LIVE pipeline: raw mic + own VAD instead of the platform recognizer. The
+  // open mic survives across turns (no per-utterance engine restart), the
+  // endpointing is ours, and STT runs on the PC (whisper) — the speech-to-
+  // speech cascade on HelmDeck's transport. Off by default: the platform
+  // path is the proven baseline and LIVE needs the daemon-side STT stage.
+  const [live, setLive] = useState(false);
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const liveAvail = LiveMic != null;
 
   const listener = useRef<Listener | null>(null);
   // The turn's speech queue, so an interrupt can drop what is still QUEUED and
@@ -317,6 +330,22 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
 
   const startListening = useCallback(() => {
     if (!alive.current) return;
+    // LIVE branch: the mic is already open (the module holds it for the whole
+    // session) — "listen" is just the should_listen gate opening. Everything
+    // that must die when listening takes over (queued speech, the current
+    // clip) dies exactly like the platform branch.
+    if (liveRef.current && LiveMic) {
+      speechRef.current?.stop();
+      speechRef.current = null;
+      stopSpeaking();
+      stopListening();
+      setProblem("");
+      setCaption("");
+      setState("listening");
+      LiveMic.start(true);
+      LiveMic.setMuted(false);
+      return;
+    }
     if (!ability.hear) { setState("idle"); return; }
     speechRef.current?.stop();      // drops the queue, not just the current clip
     speechRef.current = null;
@@ -421,9 +450,49 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
       speechRef.current?.stop();
       speechRef.current = null;
       stopSpeaking();
+      try { LiveMic?.stop(); } catch { /* absent on old builds */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // LIVE pipeline: segments arrive from the native VAD; each one becomes a
+  // turn. The mic is MUTED the moment a segment is accepted (should_listen:
+  // Henry must never transcribe his own speaker) and re-opens via the normal
+  // startListening() when his answer finishes — one loop, both branches.
+  useEffect(() => {
+    const mic = LiveMic;
+    if (!visible || !live || !mic) return;
+    mic.start(true);
+    const seg = mic.addListener("onSegment", async (e: MicSegment) => {
+      if (!alive.current || !liveRef.current) return;
+      mic.setMuted(true);
+      setState("thinking");
+      try {
+        const r = await api.transcribe(e.b64, getLang() === "de" ? "de" : "en");
+        const said = (r.text || "").trim();
+        // same noise guard as the platform branch: no linguistic content ->
+        // back to listening, never a turn to Henry
+        if (!/[a-zA-ZÀ-ſ]{2,}/.test(said)) {
+          if (alive.current) startRef.current();
+          return;
+        }
+        setCaption(said);
+        runRef.current(said);
+      } catch (err) {
+        // 501 = daemon lacks faster-whisper: a structural reason, tell it once
+        if (alive.current) {
+          setProblem(String((err as Error).message || tr("voice.failed")));
+          setState("error");
+          startRef.current();
+        }
+      }
+    });
+    const st = mic.addListener("onState", (e: { state: string }) => {
+      if (alive.current) setLevel(e.state === "speech" ? 0.8 : 0);
+    });
+    return () => { seg.remove(); st.remove(); try { mic.stop(); } catch { /* gone */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, live]);
 
   useEffect(() => {
     if (showTranscript) setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 40);
@@ -563,6 +632,12 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
             <Ionicons name={state === "speaking" ? "stop" : "mic"} size={22}
               color={state === "listening" ? t.accent : t.txtSecondary} />
           </Pressable>
+          {liveAvail ? (
+            <Pressable onPress={() => { const v = !live; setLive(v); liveRef.current = v; startRef.current(); }}
+              style={ctl(live)} accessibilityLabel={tr(live ? "voice.liveOn" : "voice.liveOff")}>
+              <Ionicons name="pulse" size={22} color={live ? t.accent : t.txtSecondary} />
+            </Pressable>
+          ) : null}
         </View>
         <Text style={{ color: silent ? t.warn : t.txtTertiary, fontSize: 11, textAlign: "center", paddingBottom: 10, paddingHorizontal: 24 }}>
           {silent ? tr("voice.noAudio") : hands ? tr("voice.hintHands") : tr("voice.hintPush")}
