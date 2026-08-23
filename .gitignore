@@ -125,3 +125,4 @@ glasses/worker/dev.err
 daemon/policy_live.json
 daemon/escalations.jsonl
 daemon/settings.json.tmp
+daemon/models_stt/
