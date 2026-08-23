@@ -126,9 +126,17 @@ def _ship_lock_line():
 def _ship_lock_pid():
     lock = os.path.join(os.path.dirname(ROOT), ".loop", "ship.lock", "pid")
     try:
-        return open(lock).read().strip()
+        lines = open(lock).read().splitlines()
     except OSError:
         return None
+    # Line 2 is the real Windows PID; line 1 is bash's $$, an MSYS-space pid
+    # os.kill() cannot see (measured 2026-08-23: a live 40min gradle build
+    # read as "dead" because only the MSYS pid was checked). Fall back to
+    # line 1 for a lock written before ship.sh started recording line 2.
+    lines = [l.strip() for l in lines if l.strip()]
+    if not lines:
+        return None
+    return lines[1] if len(lines) > 1 else lines[0]
 
 
 def _pid_alive(pid):
