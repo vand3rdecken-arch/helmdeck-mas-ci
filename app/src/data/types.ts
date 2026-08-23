@@ -143,7 +143,11 @@ export interface HistoryRow { kind: string; detail: string; ts?: string; t?: num
 export interface Run { id: string; title: string; kind: string; status: string; steps?: number }
 export interface UserRow {
   name: string; role: string; created?: string;
-  tokens: { label: string; token: string; created?: string }[];
+  // No `token`: the daemon hashes device tokens at rest and never hands the
+  // plaintext back. `id` is the revoke handle, `tail` the last six characters
+  // so a human can tell two devices apart. The full value exists exactly once,
+  // in the response to issueToken.
+  tokens: { label: string; id: string; tail: string; created?: string }[];
 }
 
 // Claude subscription usage (from /usage) - the 5h + weekly rate-limit windows.
