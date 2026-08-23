@@ -873,6 +873,25 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         _NOTE = {"merged": "MERGED -> main", "already_merged": "REDUNDANT (bereits in main) - geschlossen",
                  "redundant_uncommitted": "REDUNDANT (bereits in main; uncommittete Aenderungen ignoriert) - geschlossen"}
         log.log("note", "%s: %s" % (_NOTE.get(kind, "ACCEPTED"), mergemsg[:280]))
+        # GxP: burn the signature that authorised THIS landing. A record left
+        # open would still read as "approved" against a merged card and could
+        # authorise a second landing after the branch moved on. Records the
+        # merge it was spent on, so the audit joins signature -> commit.
+        if gxp.in_scope(t):
+            from daemon.spine.auth import signatures as _sigs
+            _spent = _sigs.valid_open(t)
+            if _spent:
+                _merge_sha = _git_try(t.get("repo") or ".", "rev-parse", "HEAD")[1]
+
+                def _burn(tt):
+                    for s in tt.get("signatures") or []:
+                        if s.get("seq") == _spent.get("seq"):
+                            s["consumed_by"] = {"lane": "done", "at": time.strftime(
+                                "%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+                            s.setdefault("git", {})["merge_sha"] = _merge_sha
+                t = _mutate(tid, _burn) or t
+                events.emit("signature", tid, op="consumed", seq=_spent.get("seq"),
+                            actor=_spent.get("actor"), merge_sha=_merge_sha)
         events.emit("touch", tid, touch="review", actor=actor)
         te = [e for e in events.read_events() if e.get("track") == tid]
         mode = events._completion_mode(te, t.get("turns"))

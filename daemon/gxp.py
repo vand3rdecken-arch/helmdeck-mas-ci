@@ -165,14 +165,38 @@ def is_human(actor):
 def accept_block_reason(actor, track=None):
     """Why this actor may not land THIS card, or None if it may.
 
-    The one question the lane machine asks. For a card in scope an accept has
-    to be attributable to a real account; everything autonomous fails right
-    here, without the lane machine needing to know which agents exist. A card
-    out of scope is not this function's business and never blocked.
+    The one question the lane machine asks, answered in one place. Three tests,
+    in the order that fails cheapest first:
+
+      1. is the card even in scope (out of scope: never blocked, ever)
+      2. is the actor a real account - this is what closes every autonomous
+         path at once, since no agent is one
+      3. is there a valid, unconsumed, un-drifted APPROVED signature
+
+    Test 3 is what makes this a signature control rather than a "a human
+    clicked it" control. It is re-derived from git every time; nothing here
+    trusts a stored 'approved' flag.
     """
     if not in_scope(track):
         return None
     if not is_human(actor):
         return ("GxP mode: landing a card in the regulated scope needs a human "
                 "account - '%s' is not one" % (actor or "<none>"))
+
+    from daemon.spine.auth import signatures
+    sig = signatures.valid_open(track or {})
+    if not sig:
+        # Say WHICH of the two it is - "no signature" and "your signature no
+        # longer matches the code" need completely different responses from the
+        # person reading it.
+        for prior in reversed((track or {}).get("signatures") or []):
+            if prior.get("meaning") == "approved" and not prior.get("consumed_by"):
+                why = signatures.drift(track, prior)
+                if why:
+                    return "GxP: the signature is void - %s. Review and sign again." % why
+        return "GxP: this card has no approval signature yet"
+    if four_eyes():
+        bad = signatures.four_eyes_violation(track, sig)
+        if bad:
+            return "GxP: " + bad
     return None

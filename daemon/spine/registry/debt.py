@@ -10,30 +10,34 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
-        "id": "gxp-mode-has-no-signature-yet",
-        "title": "GxP mode blocks the agents but does not yet take a signature",
+        "id": "gxp-signature-not-independently-verifiable",
+        "title": "GxP signatures are recorded, but only WE can vouch for them",
         "status": "open",
-        "what": "daemon/gxp.py plus the chokepoint in lanemachine._move_lane "
-                "close every autonomous accept path: an accept must name a real "
-                "account or it is refused. That is the STRUCTURAL half. The "
-                "record half - 21 CFR 11.50 (printed name, UTC time, and the "
-                "MEANING of the signature), 11.70 (the signature bound to the "
-                "exact commit it approved) and re-authentication at the moment "
-                "of signing - is designed in docs/gxp-mode-design.md and not "
-                "built. Today a human accept is an ordinary lane move by "
-                "someone who was logged in at some point in the last 30 days.",
-        "why_it_bites": "The mode's name promises more than it delivers. It is "
-                        "honest to say 'no agent can deploy without a person'; "
-                        "it is NOT yet honest to say 'every release carries an "
-                        "electronic signature'. Saying the second in a supplier "
-                        "audit on the strength of this code would be a finding.",
-        "trigger": "the first customer who asks for Part 11 evidence rather "
-                   "than for autonomous deployment to be switchable off",
-        "fix": "Phase B of docs/gxp-plan.md: signatures.py (subject = the "
-               "head/base commit pair git already has), a password-unlocked "
-               "Ed25519 key per user, the signature as a signed git tag so "
-               "`git verify-tag` proves it without trusting us, and the "
-               "chokepoint checking for one instead of only for a human.",
+        "what": "The signature itself is built and enforced: re-authentication "
+                "at signing (auth.verify_password, no session or token minted), "
+                "printed name + UTC + MEANING + reason (21 CFR 11.50), bound to "
+                "the head/base commit pair with drift voiding it, consumed on "
+                "landing, four-eyes available. What is MISSING is the last step "
+                "of 11.70's intent: the record lives in helmdeck.db and "
+                "events.jsonl, both of which we own. There is no signed git tag, "
+                "so an auditor cannot verify a signature with stock `git "
+                "verify-tag` - they have to trust our storage. The owner "
+                "deliberately deferred the signing-key decision (server-held "
+                "password-unlocked Ed25519 vs. on-device), which is what that "
+                "step needs.",
+        "why_it_bites": "'A human signed this, and here is the commit they "
+                        "signed' is true and defensible. 'Here is cryptographic "
+                        "proof you can check yourself' is not yet available - "
+                        "and an auditor who asks how we know the record was not "
+                        "edited gets the answer 'the append-only log', which is "
+                        "a convention, not a proof.",
+        "trigger": "a supplier audit that asks to independently verify a "
+                   "signature, or any dispute about a specific release",
+        "fix": "Pick the signing key, then emit a signed git tag per approval "
+               "(gpg.format=ssh, so no GPG install), record tag + tag_sha in "
+               "the signature's `git` block (already reserved), and cross-"
+               "witness: the sink holds the tag sha, the tag names the card. "
+               "docs/gxp-mode-design.md 2.0.",
         "order": 0,
     },
     {
