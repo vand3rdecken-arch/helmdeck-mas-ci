@@ -63,6 +63,7 @@ from daemon.spine.http.routes import routes_control
 from daemon.spine.http.routes import routes_relay
 from daemon.cells.connectors import routes_connectors
 from daemon.spine.http.routes import routes_checkpoints
+from daemon.spine.http.routes import routes_sign
 from daemon.spine.http.routes import routes_projects
 from daemon.cells.copilot import routes_copilot
 from daemon.cells.engineer import routes_tracks
@@ -261,6 +262,9 @@ class H(BaseHTTPRequestHandler):
                 return routes_pm.GET_ROUTES[p](self, user)
             if len(parts) == 4 and parts[0] == "harness" and parts[1] == "version":
                 return routes_system.harness_version_get(self, user, parts[2], parts[3])
+            if p.startswith("/sign/subject/"):
+                return routes_sign.sign_subject_get(
+                    self, user, p[len("/sign/subject/"):])
             if p in routes_checkpoints.GET_ROUTES:
                 return routes_checkpoints.GET_ROUTES[p](self, user)
             if p.startswith("/checkpoints/") and p.endswith("/diff"):
@@ -374,6 +378,8 @@ class H(BaseHTTPRequestHandler):
                         actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if p == "/sign":
+                return routes_sign.sign_post(self, user, body)
             if p in routes_pm.POST_ROUTES:
                 return routes_pm.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")

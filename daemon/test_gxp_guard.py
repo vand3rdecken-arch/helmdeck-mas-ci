@@ -21,7 +21,9 @@ What this pins down:
   4. no repos list at all means the whole workspace is in scope
   5. in scope, every autonomous actor is refused by name: henry, policy, pm,
      chain, board-Agent (auto), and an empty actor
-  6. in scope, a REAL account still lands cards (the mode is not a freeze)
+  6. the guard is LAYERED and says which layer stopped you: an agent is told it
+     is not an account, a human is told there is no signature. The signature
+     half is exercised against a real git repo in test_gxp_signature.py
   7. the refusal is audited and the card does not move
   8. the refusal sits BEFORE the idempotency short-circuit, so an already
      'accepted' card cannot be walked through either
@@ -133,22 +135,32 @@ def main():
         ok(gxp.accept_block_reason(a, REG) is not None, "refused: %r" % (a,))
 
     # ------------------------------------------------------------------ 3 ---
-    print("\nin scope - a real account still lands cards")
-    ok(gxp.accept_block_reason("duy", REG) is None, "the owner is not blocked")
+    # The guard is LAYERED: an agent fails on not being an account, a human
+    # fails on not having signed. Different messages on purpose - the two need
+    # completely different responses from whoever reads them. The signature
+    # half itself is exercised in test_gxp_signature.py, against a real repo.
+    print("\nin scope - a real account gets a DIFFERENT refusal")
+    r = gxp.accept_block_reason("duy", REG)
+    ok(r and "signature" in r,
+       "the owner is past the human check and stopped by the signature")
+    ok("not one" not in r, "...and is not told he is an agent")
 
     # ------------------------------------------------------------------ 6 ---
     print("\nis_human is derived, not a blocklist")
-    ok(gxp.accept_block_reason("newhire", REG) is not None, "unknown name refused")
+    r = gxp.accept_block_reason("newhire", REG)
+    ok(r and "not one" in r, "unknown name refused AS A NON-ACCOUNT")
     auth.create_user("newhire", "another-password", "operator", actor="duy")
-    ok(gxp.accept_block_reason("newhire", REG) is None,
-       "the SAME name passes once the account exists - no code change")
+    r = gxp.accept_block_reason("newhire", REG)
+    ok(r and "signature" in r,
+       "the SAME name clears the human check once the account exists")
 
     # ------------------------------------------------------------------ 7 ---
     print("\nfails closed")
     saved = auth.USERS
     auth.USERS = os.path.join(tmp, "does-not-exist", "users.json")
-    ok(gxp.accept_block_reason("duy", REG) is not None,
-       "unreadable registry refuses rather than allows")
+    r = gxp.accept_block_reason("duy", REG)
+    ok(r and "not one" in r,
+       "unreadable registry refuses AS a non-account rather than allowing")
     auth.USERS = saved
 
     # ------------------------------------------------------------------ 8 ---
@@ -229,15 +241,10 @@ def main():
     # execution reaching that machinery, not by a landing.
     mode_scoped()
     tid = "t-submitted"
-    for actor, expect_refusal in (("henry", True), ("duy", False)):
-        try:
-            r = lanemachine.move_lane(tid, "done", actor=actor)
-            refused = bool(r.get("gxp_refused"))
-        except Exception:
-            refused = False       # blew up further in - therefore past the guard
-        ok(refused == expect_refusal,
-           "%s: %s" % (actor, "refused at the guard" if expect_refusal
-                       else "reached the machinery beyond the guard"))
+    for actor, want in (("henry", "not one"), ("duy", "signature")):
+        r = lanemachine.move_lane(tid, "done", actor=actor)
+        ok(want in (r.get("gxp_refused") or ""),
+           "%s: refused, and told why (%s)" % (actor, want))
 
     print()
     if _fails:

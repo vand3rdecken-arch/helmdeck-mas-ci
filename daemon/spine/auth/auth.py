@@ -330,6 +330,35 @@ def login(name, password):
     _audit("login", name, name, role=u["role"])
     return sid
 
+def verify_password(name, password):
+    """Prove it is still this person, WITHOUT minting anything.
+
+    Re-authentication at a signing step needs exactly this and nothing else.
+    login() is the wrong primitive for it: it creates a session, and through
+    routes_auth it also mints a permanent device token on every call - so using
+    it as a password check would pile up credentials every time someone signs.
+
+    The lockout applies here too. A signing endpoint that skipped it would be a
+    brute-force oracle with a nicer name, and would be the obvious way in once
+    login is rate-limited.
+    """
+    if _locked_until(name):
+        _audit("verify.blocked", name, name)
+        return False
+    u = get_user(name)
+    if not u:
+        _note_failure(name)
+        _audit("verify.failed", name, name, reason="no_such_user")
+        return False
+    if not _check_pw(password, u.get("pw", "")):
+        n = _note_failure(name)
+        _audit("verify.failed", name, name, reason="bad_password",
+               fails=n, locks_out=(n >= LOCK_AFTER))
+        return False
+    _clear_failures(name)
+    return True
+
+
 def logout(sid):
     sess = _load(SESS)
     who = next((s["user"] for s in sess if s["sid"] == sid), None)
