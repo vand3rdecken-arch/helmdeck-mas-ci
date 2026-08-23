@@ -15,8 +15,22 @@
 > Folgeposten im Schuldenregister hinterlassen
 > (`events-two-stores-unreconciled`).
 >
-> Offen bleibt: A3 (deine Entscheidung), der gepackte Drei-Start-Durchlauf der
-> Desktop-App auf einem echten Rechner, und Phase B/C/D.
+> **Nachtrag: der im Plan vergessene sechste Stufe-0-Punkt ist auch gebaut.**
+> S4 (Lockout) + S1 (Tokens gehasht at rest) in `a78a233`. S1 war größer als
+> gedacht — `GET /users` lieferte jeden Token im Klartext an die Oberfläche.
+> Der A5-Test hat dabei einen Fehler gefangen, den ich frisch eingebaut hatte:
+> `revoke_token` schrieb seinen Eingabewert ins Audit, und ein Skript darf da
+> den Volltoken übergeben.
+>
+> **Phase B, strukturelle Hälfte: gebaut** (`1049b6e`). `daemon/gxp.py` plus der
+> eine Guard in `_move_lane`. „Kein Agent kann ohne Menschen deployen" stimmt
+> jetzt. „Jede Auslieferung trägt eine elektronische Unterschrift" stimmt
+> **noch nicht** — als Schuldenposten `gxp-mode-has-no-signature-yet` eingetragen,
+> damit das niemand verwechselt.
+>
+> Offen: A3 (deine Entscheidung) · die Signaturhälfte von Phase B (braucht deine
+> Entscheidung zum Signierschlüssel) · Phase C (App-Oberfläche) · Phase D ·
+> der gepackte Drei-Start-Durchlauf der Desktop-App.
 
 Fünf Karten. Jede ist ohne die anderen baubar und ohne GxP begründbar. Alles
 unten ist am Arbeitsbaum nachgelesen, Stand `838985c` — keine Schätzung aus dem
