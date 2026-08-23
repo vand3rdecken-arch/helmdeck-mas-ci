@@ -17,6 +17,7 @@ import { Transcript, type TStep } from "@/ui/card_transcript";
 import { ContextMeter } from "@/ui/context_meter";
 import { Empty } from "@/ui/kit";
 import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
+import * as glassVoice from "@/data/glasses";
 
 // Desktop copilot is an IN-PAGE overlay (not a route), so the board stays mounted
 // and visible-behind-dimmed — a route/transparentModal leaves a black void on web
@@ -320,10 +321,47 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     }
   }
 
+  // GLASSES CONVERSATION — hands-free loop through GlassVoiceService (native,
+  // Android only, owner only). The button is an AFFORDANCE, not a status: the
+  // service's own foreground notification is the truth surface for "listening/
+  // speaking" (its state lives outside React and survives this screen). Config
+  // is fetched lazily at start — glance_origin + glance_token come from daemon
+  // settings, and passing the RELAY url instead would fail silently off-LAN
+  // (data/glasses.ts explains which URL is the right one).
+  const glassAvail = useMemo(() => glassVoice.caps().available, []);
+  const [glassOn, setGlassOn] = useState(false);
+  const [glassBusy, setGlassBusy] = useState(false);
+  async function toggleGlasses() {
+    if (glassBusy) return;
+    if (glassOn) { glassVoice.stopListening(); setGlassOn(false); return; }
+    setGlassBusy(true);
+    try {
+      const s = await api.settings().catch(() => null);
+      const origin = (s?.glance_origin || "").trim();
+      const token = (s?.glance_token || "").trim();
+      if (!origin || !token || !glassVoice.configure(origin, token)) {
+        appendReply(++turn.current, {
+          cls: "error",
+          text: tr("chat.glassesUnconfigured"),
+        });
+        return;
+      }
+      if (glassVoice.listen(true)) setGlassOn(true);
+    } finally {
+      setGlassBusy(false);
+    }
+  }
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
+      {glassAvail && me?.role === "owner" ? (
+        <Pressable onPress={toggleGlasses} hitSlop={10} style={{ marginLeft: "auto" }}
+                   accessibilityLabel={tr("chat.glassesTalk")}>
+          <Ionicons name="glasses-outline" size={24}
+                    color={glassOn ? t.accent : t.txtSecondary} />
+        </Pressable>
+      ) : null}
     </View>
   );
 

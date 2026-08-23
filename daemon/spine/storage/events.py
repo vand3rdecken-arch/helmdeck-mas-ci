@@ -45,6 +45,13 @@ DEFAULTS = {
     # would burn budget. The turn is advisory - board actions are dropped, never
     # executed (copilot.chat allow_actions=False).
     "glance_talk": False,
+    # The PUBLIC glance origin - the Cloudflare Worker (glasses/worker,
+    # deploy/push_glance.sh) that proxies /glance* to this daemon. The phone
+    # app's GlassVoiceService is a plain HttpURLConnection client OUTSIDE the
+    # E2EE relay, so it needs this origin + glance_token to reach Henry
+    # (app/src/data/glasses.ts explains why the relay URL cannot serve).
+    # Empty = glasses voice stays unconfigured; the app degrades, never errors.
+    "glance_origin": "",
     # Un-versioned files copied into every new worktree. A worktree holds only
     # TRACKED files, so git-ignored local toolchain config (SDK paths, local
     # env) would be missing and builds that work by hand fail inside a card.
