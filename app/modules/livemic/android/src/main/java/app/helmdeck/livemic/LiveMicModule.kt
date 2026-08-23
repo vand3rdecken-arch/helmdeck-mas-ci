@@ -6,9 +6,13 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Base64
 import android.util.Log
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.sqrt
@@ -85,10 +89,92 @@ class LiveMicModule : Module() {
       true
     }
 
+    // ---- ON-DEVICE STT (sherpa-onnx, owner A/B option 2026-08-23) ---------
+    // Every sherpa reference lives INSIDE these methods and behind
+    // catch(Throwable): the AAR is wired by app/plugins/withSherpaOnnx.js at
+    // APK-build time, and a build without it (EAS/iOS, an old APK) must
+    // degrade to "device STT unavailable" - never a class-load crash.
+
+    /** Download files into filesDir/<dir>/. Skips files already present.
+     *  Runs off the JS thread; resolves with the absolute directory path. */
+    AsyncFunction("downloadFiles") { urls: List<String>, dir: String, promise: Promise ->
+      Thread {
+        try {
+          val base = File(appContext.reactContext!!.filesDir, dir)
+          base.mkdirs()
+          for (u in urls) {
+            val name = u.substringAfterLast('/')
+            val dst = File(base, name)
+            if (dst.exists() && dst.length() > 0) continue
+            val tmp = File(base, "$name.part")
+            val c = URL(u).openConnection() as HttpURLConnection
+            c.connectTimeout = 20000
+            c.readTimeout = 600000
+            c.instanceFollowRedirects = true
+            c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
+            if (!tmp.renameTo(dst)) throw RuntimeException("rename failed: $name")
+          }
+          promise.resolve(base.absolutePath)
+        } catch (t: Throwable) {
+          promise.reject("DOWNLOAD", t.message ?: "download failed", t)
+        }
+      }.start()
+    }
+
+    /** Build the offline recognizer from model files on disk. */
+    Function("initLocalStt") { encoder: String, decoder: String, tokens: String, lang: String ->
+      try {
+        val cfg = com.k2fsa.sherpa.onnx.OfflineRecognizerConfig(
+          modelConfig = com.k2fsa.sherpa.onnx.OfflineModelConfig(
+            whisper = com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig(
+              encoder = encoder, decoder = decoder,
+              language = lang, task = "transcribe"),
+            tokens = tokens, modelType = "whisper",
+            numThreads = 2, debug = false))
+        localRec = com.k2fsa.sherpa.onnx.OfflineRecognizer(null, cfg)
+        true
+      } catch (t: Throwable) {
+        Log.w(TAG, "initLocalStt: ${t.javaClass.simpleName}: ${t.message}")
+        false
+      }
+    }
+
+    /** One VAD segment (the module's own WAV shape) -> text, on-device. */
+    AsyncFunction("transcribeLocal") { b64: String, promise: Promise ->
+      Thread {
+        try {
+          val rec = localRec as? com.k2fsa.sherpa.onnx.OfflineRecognizer
+            ?: throw RuntimeException("initLocalStt first")
+          val wav = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+          val n = (wav.size - 44) / 2
+          val f = FloatArray(maxOf(n, 0))
+          for (i in 0 until n) {
+            val lo = wav[44 + 2 * i].toInt() and 0xff
+            val hi = wav[45 + 2 * i].toInt()
+            f[i] = ((hi shl 8) or lo) / 32768f
+          }
+          val s = rec.createStream()
+          s.acceptWaveform(f, SR)
+          rec.decode(s)
+          val text = rec.getResult(s).text
+          s.release()
+          promise.resolve(text)
+        } catch (t: Throwable) {
+          promise.reject("STT", "${t.javaClass.simpleName}: ${t.message}", t)
+        }
+      }.start()
+    }
+
     OnDestroy {
       running = false
+      try { (localRec as? com.k2fsa.sherpa.onnx.OfflineRecognizer)?.release() } catch (t: Throwable) { /* absent */ }
+      localRec = null
     }
   }
+
+  /** The sherpa recognizer, typed Any so this class loads on builds without
+   *  the AAR (references stay inside method bodies - lazy verification). */
+  @Volatile private var localRec: Any? = null
 
   @SuppressLint("MissingPermission")   // RECORD_AUDIO is requested by the JS before start()
   private fun startCapture(voiceComm: Boolean): Boolean {

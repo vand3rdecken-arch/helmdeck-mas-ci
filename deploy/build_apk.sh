@@ -67,6 +67,12 @@ node app/plugins/withGlassVoice.js app/android \
 node app/plugins/withMetaDat.js app/android \
   || { echo "[build_apk] meta-dat wiring apply FAILED"; exit 1; }
 
+# Fourth re-apply, same silent-wrong-artifact class: the sherpa-onnx AAR for
+# the on-device STT option. Without it the build goes green and initLocalStt
+# throws NoClassDefFoundError at runtime (see app/plugins/withSherpaOnnx.js).
+node app/plugins/withSherpaOnnx.js app/android \
+  || { echo "[build_apk] sherpa-onnx wiring apply FAILED"; exit 1; }
+
 # THE CREDENTIAL, and WHY IT IS DERIVED HERE rather than assumed to be present.
 # Resolving com.meta.wearable needs a read:packages token at GRADLE time. Every
 # build so far supplied it by hand from an interactive shell - but this script's

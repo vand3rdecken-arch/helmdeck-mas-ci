@@ -10,6 +10,7 @@ import { caps, listen, openSpeech, speak, stopSpeaking, type Listener, type Spee
 // utterances, the daemon transcribes them (faster-whisper). Optional native
 // module — null on builds that predate it, and live mode simply isn't offered.
 import LiveMic, { type MicSegment } from "../../modules/livemic";
+import { ensureLocalStt, localSttSupported, transcribeLocal } from "@/data/stt_local";
 import { getLang, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Empty } from "@/ui/kit";
@@ -202,6 +203,14 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
   const liveRef = useRef(live);
   liveRef.current = live;
   const liveAvail = LiveMic != null;
+  // The A/B the owner asked for (2026-08-23): WHERE does the segment get
+  // transcribed - "pc" = daemon faster-whisper over the relay, "device" =
+  // sherpa-onnx whisper-tiny on the phone itself. A ref-mirrored state like
+  // `live`, because the segment handler runs outside React's render clock.
+  const [sttDev, setSttDev] = useState(false);
+  const sttDevRef = useRef(sttDev);
+  sttDevRef.current = sttDev;
+  const [sttNote, setSttNote] = useState("");
 
   const listener = useRef<Listener | null>(null);
   // The turn's speech queue, so an interrupt can drop what is still QUEUED and
@@ -468,8 +477,13 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
       mic.setMuted(true);
       setState("thinking");
       try {
-        const r = await api.transcribe(e.b64, getLang() === "de" ? "de" : "en");
-        const said = (r.text || "").trim();
+        // the A/B fork: same segment, two ears - phone (sherpa) or PC (whisper)
+        const t0 = Date.now();
+        const raw = sttDevRef.current
+          ? await transcribeLocal(e.b64)
+          : (await api.transcribe(e.b64, getLang() === "de" ? "de" : "en")).text;
+        setSttNote(`${sttDevRef.current ? "Gerät" : "PC"} ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        const said = (raw || "").trim();
         // same noise guard as the platform branch: no linguistic content ->
         // back to listening, never a turn to Henry
         if (!/[a-zA-ZÀ-ſ]{2,}/.test(said)) {
@@ -638,7 +652,28 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
               <Ionicons name="pulse" size={22} color={live ? t.accent : t.txtSecondary} />
             </Pressable>
           ) : null}
+          {live && localSttSupported() ? (
+            <Pressable
+              onPress={async () => {
+                if (sttDev) { setSttDev(false); sttDevRef.current = false; setSttNote(""); return; }
+                // first enable downloads ~104 MB from Hugging Face - say so
+                setSttNote(tr("voice.sttLoading"));
+                try {
+                  await ensureLocalStt(getLang() === "de" ? "de" : "en");
+                  setSttDev(true); sttDevRef.current = true;
+                  setSttNote(tr("voice.sttDevice"));
+                } catch (e) {
+                  setSttNote(String((e as Error).message));
+                }
+              }}
+              style={ctl(sttDev)} accessibilityLabel={tr(sttDev ? "voice.sttDevice" : "voice.sttPc")}>
+              <Ionicons name="hardware-chip-outline" size={22} color={sttDev ? t.accent : t.txtSecondary} />
+            </Pressable>
+          ) : null}
         </View>
+        {live && sttNote ? (
+          <Text style={{ color: t.txtTertiary, fontSize: 11, textAlign: "center" }}>{sttNote}</Text>
+        ) : null}
         <Text style={{ color: silent ? t.warn : t.txtTertiary, fontSize: 11, textAlign: "center", paddingBottom: 10, paddingHorizontal: 24 }}>
           {silent ? tr("voice.noAudio") : hands ? tr("voice.hintHands") : tr("voice.hintPush")}
         </Text>
