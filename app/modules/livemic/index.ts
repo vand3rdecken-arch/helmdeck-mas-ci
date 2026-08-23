@@ -22,6 +22,9 @@ export interface LiveMicModule {
   /** Build the on-device sherpa-onnx recognizer from files on disk. False =
    *  this build has no sherpa AAR (old APK / iOS) or the files are bad. */
   initLocalStt(encoder: string, decoder: string, tokens: string, lang: string): boolean;
+  /** Streaming-transducer variant (zipformer/kroko) - the benchmark winner
+   *  for German on-device (tools/stt_bench.py 2026-08-23). */
+  initLocalTransducer(encoder: string, decoder: string, joiner: string, tokens: string): boolean;
   /** One VAD segment (this module's own WAV shape) -> text, on-device. */
   transcribeLocal(b64: string): Promise<string>;
   addListener(event: "onSegment" | "onState", cb: (e: any) => void): { remove(): void };

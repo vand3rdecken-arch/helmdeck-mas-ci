@@ -121,6 +121,25 @@ class LiveMicModule : Module() {
       }.start()
     }
 
+    /** Build a STREAMING transducer recognizer (zipformer et al) from files on
+     *  disk. Benchmarked 2026-08-23 (tools/stt_bench.py): the German kroko
+     *  zipformer hits WER 11.4% at a third of whisper-tiny's latency, and it
+     *  is 8 kHz-robust - the device ear of choice. */
+    Function("initLocalTransducer") { encoder: String, decoder: String, joiner: String, tokens: String ->
+      try {
+        val cfg = com.k2fsa.sherpa.onnx.OnlineRecognizerConfig(
+          modelConfig = com.k2fsa.sherpa.onnx.OnlineModelConfig(
+            transducer = com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig(
+              encoder = encoder, decoder = decoder, joiner = joiner),
+            tokens = tokens, modelType = "zipformer", numThreads = 2))
+        localRec = com.k2fsa.sherpa.onnx.OnlineRecognizer(null, cfg)
+        true
+      } catch (t: Throwable) {
+        Log.w(TAG, "initLocalTransducer: ${t.javaClass.simpleName}: ${t.message}")
+        false
+      }
+    }
+
     /** Build the offline recognizer from model files on disk. */
     Function("initLocalStt") { encoder: String, decoder: String, tokens: String, lang: String ->
       try {
@@ -139,12 +158,12 @@ class LiveMicModule : Module() {
       }
     }
 
-    /** One VAD segment (the module's own WAV shape) -> text, on-device. */
+    /** One VAD segment (the module's own WAV shape) -> text, on-device.
+     *  Works with whichever recognizer initLocal* built - streaming transducer
+     *  (kroko) or offline whisper. */
     AsyncFunction("transcribeLocal") { b64: String, promise: Promise ->
       Thread {
         try {
-          val rec = localRec as? com.k2fsa.sherpa.onnx.OfflineRecognizer
-            ?: throw RuntimeException("initLocalStt first")
           val wav = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
           val n = (wav.size - 44) / 2
           val f = FloatArray(maxOf(n, 0))
@@ -153,11 +172,29 @@ class LiveMicModule : Module() {
             val hi = wav[45 + 2 * i].toInt()
             f[i] = ((hi shl 8) or lo) / 32768f
           }
-          val s = rec.createStream()
-          s.acceptWaveform(f, SR)
-          rec.decode(s)
-          val text = rec.getResult(s).text
-          s.release()
+          val text = when (val rec = localRec) {
+            is com.k2fsa.sherpa.onnx.OnlineRecognizer -> {
+              val s = rec.createStream()
+              s.acceptWaveform(f, SR)
+              // half a second of tail silence, then close: a streaming model
+              // only commits its last tokens once the audio provably ended
+              s.acceptWaveform(FloatArray(SR / 2), SR)
+              s.inputFinished()
+              while (rec.isReady(s)) rec.decode(s)
+              val out = rec.getResult(s).text
+              s.release()
+              out
+            }
+            is com.k2fsa.sherpa.onnx.OfflineRecognizer -> {
+              val s = rec.createStream()
+              s.acceptWaveform(f, SR)
+              rec.decode(s)
+              val out = rec.getResult(s).text
+              s.release()
+              out
+            }
+            else -> throw RuntimeException("initLocalStt/initLocalTransducer first")
+          }
           promise.resolve(text)
         } catch (t: Throwable) {
           promise.reject("STT", "${t.javaClass.simpleName}: ${t.message}", t)
