@@ -456,6 +456,12 @@ export const api = {
     return req<ChatReply>("POST", "/chat", { text, ...o });
   },
   chatCancel: () => req("POST", "/chat/cancel", {}),
+  /** LIVE voice pipeline STT: one VAD-cut utterance (WAV, base64) -> text.
+   *  Server-side faster-whisper (daemon/spine/media/stt.py); 501 with the
+   *  install hint when the daemon lacks the package - surfaced, never mute. */
+  transcribe: (audioB64: string, lang?: string) =>
+    req<{ text: string; info?: { lang?: string; p?: number; dur?: number } }>(
+      "POST", "/voice/transcribe", { audio: audioB64, lang }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
   /** The live turn. `voiceFrom` is a READ CURSOR (the highest chunk seq already
    *  taken): pass it to also collect the speech the daemon has rendered so far,

@@ -51,10 +51,34 @@ def processes_new_post(self, user, body):
         req, client=client, due=body.get("due", ""), actor=user["name"])))
 
 
+def voice_transcribe_post(self, user, body):
+    # STT stage of the LIVE voice pipeline (daemon/spine/media/stt.py): the
+    # phone's LiveMic module cut one utterance with its own VAD and sends it
+    # here as a WAV blob over the sealed relay. Team-only, same gate as /chat -
+    # a transcript's whole purpose is to become a chat turn.
+    if user["role"] not in ("owner", "operator"):
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    import base64
+    from daemon.spine.media import stt
+    b64 = body.get("audio") or ""
+    try:
+        wav = base64.b64decode(b64, validate=True) if b64 else b""
+    except Exception:
+        return self._send(400, json.dumps({"error": "audio must be base64"}))
+    try:
+        text, info = stt.transcribe(wav, lang=(body.get("lang") or "").strip() or None)
+    except RuntimeError as e:
+        # 501: the capability is absent (package/model), not the request wrong -
+        # the app surfaces the reason instead of pretending it heard silence.
+        return self._send(501, json.dumps({"error": str(e)[:200]}))
+    return self._send(200, json.dumps({"text": text, "info": info}))
+
+
 GET_ROUTES = {
     "/processes": processes_get,
     "/me": me_get,
 }
 POST_ROUTES = {
     "/processes/new": processes_new_post,
+    "/voice/transcribe": voice_transcribe_post,
 }
