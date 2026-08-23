@@ -17,6 +17,7 @@ import subprocess
 import time
 
 from daemon.spine.storage.trackstore import _find, _load, _mutate, _slug
+from daemon import gxp
 from daemon.spine.git.gitutil import _git, _git_try, is_git_repo, AGENT_IDENT
 from daemon.spine.turn.blockers import blocker
 from daemon.spine.turn.outcomes import _record_outcome
@@ -616,6 +617,23 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
     if not t:
         raise RuntimeError("no such track: " + tid)
     prev = t.get("lane")
+    # ---- GxP: THE chokepoint -------------------------------------------
+    # Every accept path in the daemon arrives here - the board route, Henry's
+    # `move`, the policy auto-accept, the chat verb, the PM - and fast-track and
+    # machine cards branch off further down, still inside this function. So one
+    # question asked once closes all of them, and no agent needs a special case:
+    # they simply are not accounts (daemon/gxp.py is_human). See
+    # docs/gxp-mode-design.md 1. Placed BEFORE the idempotency short-circuit
+    # below, so an already-'accepted' card cannot be walked through either.
+    if lane == "done":
+        _blocked = gxp.accept_block_reason(actor)
+        if _blocked:
+            events.emit("gxp", tid, outcome="accept_refused", actor=actor,
+                        lane_from=prev, reason=_blocked)
+            if t.get("run_dir"):
+                from daemon.spine.ops.actionlog import ActionLog as _AL
+                _AL(t["run_dir"]).log("note", "GxP: Abnahme abgelehnt - " + _blocked)
+            return dict(t, gxp_refused=_blocked)
     # record the human's board move in the card's own feed (chat), so a drag to
     # Review/Done/Working/Backlog reads alongside the agent's work, not just in the
     # global event log. The lane-specific handlers below add the outcome detail.
@@ -784,7 +802,17 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             # card rests on Review for your accept. The gate still guards (a red
             # gate already bounced above), so this is auto-accept, not skip-gate.
             _clean = kind in ("mergeable", "already_merged", "redundant_uncommitted")
-            if not (t.get("fast_track") and _clean):
+            _fast = bool(t.get("fast_track")) and _clean
+            # GxP: fast-track is the one path that turns a Review INTO a landing
+            # without a second call, so the chokepoint at the top of this
+            # function never sees it as a 'done'. Refused here instead, by
+            # demoting it to an ordinary review - the card then rests for a human
+            # like every other card, which is the whole point of the mode.
+            if _fast and gxp.disabled("fast_track"):
+                events.emit("gxp", tid, outcome="fast_track_refused", actor=actor)
+                log.log("note", "GxP: Fast-Track ist abgeschaltet - die Karte wartet auf Freigabe.")
+                _fast = False
+            if not _fast:
                 log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
 
                 def _submit(tt):
