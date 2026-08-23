@@ -75,6 +75,20 @@ try:
     blob += "\n".join(l for l in manifest.splitlines() if "EXPO_RUNTIME_VERSION" not in l)
 except FileNotFoundError:
     pass
+# NATIVE SOURCE the plugins install into the android tree (measured gap
+# 2026-08-23: a GlassVoiceService.kt change shipped as "JS-only" - exactly the
+# false negative the comment above says this must never produce). Every
+# .kt/.java under app/plugins and app/modules is compiled into the APK, so
+# they are native config exactly like the manifest.
+import glob
+for src in sorted(glob.glob("app/plugins/**/*.kt", recursive=True)
+                  + glob.glob("app/plugins/**/*.java", recursive=True)
+                  + glob.glob("app/modules/**/*.kt", recursive=True)
+                  + glob.glob("app/modules/**/*.java", recursive=True)):
+    try:
+        blob += open(src, encoding="utf-8").read()
+    except OSError:
+        pass
 print(hashlib.sha256(blob.encode("utf-8")).hexdigest())
 PY
 }
