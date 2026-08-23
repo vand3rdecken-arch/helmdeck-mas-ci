@@ -28,9 +28,18 @@
 > **noch nicht** — als Schuldenposten `gxp-mode-has-no-signature-yet` eingetragen,
 > damit das niemand verwechselt.
 >
-> Offen: A3 (deine Entscheidung) · die Signaturhälfte von Phase B (braucht deine
-> Entscheidung zum Signierschlüssel) · Phase C (App-Oberfläche) · Phase D ·
-> der gepackte Drei-Start-Durchlauf der Desktop-App.
+> **Phase B, Signaturhälfte: gebaut** (`63c68ab`), ohne das git-Tag wie
+> entschieden. Re-Authentifizierung, Bedeutung, Begründung, Bindung an das
+> Commit-Paar, Drift-Prüfung, Verbrauch beim Landen, Vier-Augen.
+>
+> **Wichtig für die Nutzung:** Unterschreiben geht heute nur über die API
+> (`POST /sign`). Im Board gibt es dafür noch keinen Knopf — das ist Phase C.
+> Wer den Modus einschaltet, ohne C zu bauen, kann Karten im Geltungsbereich
+> nicht mehr abnehmen.
+>
+> Offen: A3 (deine Entscheidung) · **Phase C, das Freigabefenster** · das
+> signierte git-Tag (braucht die Schlüsselentscheidung) · Phase D · der
+> gepackte Drei-Start-Durchlauf der Desktop-App.
 
 Fünf Karten. Jede ist ohne die anderen baubar und ohne GxP begründbar. Alles
 unten ist am Arbeitsbaum nachgelesen, Stand `838985c` — keine Schätzung aus dem
