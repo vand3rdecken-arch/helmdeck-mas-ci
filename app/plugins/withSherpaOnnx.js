@@ -47,8 +47,10 @@ async function applyToAndroidDir(androidDir) {
   const before = fs.readFileSync(gradlePath, "utf8");
   let after = before;
   if (!after.includes(DEP_MARK)) {
-    // same insertion point as withMetaDat: right after `dependencies {`
-    after = after.replace(/dependencies\s*\{\n/, (m) => m + DEP_LINE);
+    // same insertion point as withMetaDat: right after `dependencies {`.
+    // \r?\n, not \n: the hand-managed tree is CRLF on this box, and the
+    // strict form silently failed to match (measured 2026-08-23).
+    after = after.replace(/dependencies\s*\{\r?\n/, (m) => m + DEP_LINE);
     if (!after.includes(DEP_MARK)) {
       throw new Error("[withSherpaOnnx] could not find dependencies block in app/build.gradle");
     }

@@ -23,7 +23,19 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 # on 2026-08-20/21, both times after a prior build was killed (daemon
 # restart / stopped task) and its daemon lingered. Ask it to stop first;
 # best-effort, a missing wrapper or no daemon is fine.
-( cd app/android 2>/dev/null && ./gradlew --stop >/dev/null 2>&1 ) || true
+# --stop is a REQUEST, not a wait: it returns while the daemon is still
+# exiting and Windows releases its jar handles a beat later - measured twice
+# on 2026-08-23 (ship 3 + ship 5 both died on EBUSY seconds after a clean
+# --stop would have "succeeded"). Poll --status until no daemon reports
+# IDLE/BUSY, then one settle beat for the handle release.
+( cd app/android 2>/dev/null && {
+    ./gradlew --stop >/dev/null 2>&1
+    for _i in 1 2 3 4 5 6 7 8; do
+      ./gradlew --status 2>/dev/null | grep -qiE "IDLE|BUSY" || break
+      sleep 5
+    done
+    sleep 3
+  } ) || true
 echo "HOOK-NOTE: npm ci (node_modules sync with the just-merged lockfile, can take a few min)"
 echo "[build_apk] npm ci (sync node_modules with the just-merged lockfile)"
 ( cd app && npm ci ) || { echo "[build_apk] npm ci FAILED"; exit 1; }
