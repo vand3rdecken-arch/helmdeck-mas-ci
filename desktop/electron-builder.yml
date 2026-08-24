@@ -20,27 +20,26 @@ publish:
   owner: Tienduyvo
   repo: helmdeck
 extraResources:
-  # the Python daemon source (the brain + runner). Secrets and per-user data are
-  # NEVER bundled - they are created fresh on the user's machine at first run.
+  # the Python daemon SOURCE (the brain + runner). Secrets and per-user data
+  # are NEVER bundled - they are created fresh on the user's machine at first
+  # run. ALLOWLIST, not a denylist: a live daemon directory accumulates state
+  # files (dbs, session tokens, service-account keys, sqlite backups, cached
+  # STT models) interleaved with source in the SAME directories, and a
+  # by-name exclude list silently falls behind - proven live (2026-08-24) when
+  # fcm_service_account.json (a real Firebase private key), sessions.json
+  # (live owner session tokens) and daemon/backups/*.db (a full sqlite backup,
+  # the exclude was "!*.db" which is NOT recursive so a nested backups/*.db
+  # slipped past it) all shipped in a public installer because nobody had
+  # added them to the list. Only source/doc extensions can ever leave the
+  # `daemon/` tree this way, structurally, regardless of what new runtime
+  # file a future feature drops next to its .py.
   - from: ../daemon
     to: daemon
     filter:
-      - "**/*"
-      - "!**/__pycache__/**"
-      - "!*.db"
-      - "!*.db-*"
-      - "!settings.json"
-      - "!users.json"
-      - "!tracks.json"
-      - "!events.jsonl"
-      - "!processes.json"
-      - "!copilot_log.json"
-      - "!copilot_sessions.json"
-      - "!plane_links.json"
-      - "!recordings/**"
-      - "!checkpoints/**"
-      - "!.attachments/**"
-      - "!.copilot_attachments/**"
+      - "!**/*"
+      - "**/*.py"
+      - "**/*.md"
+      - "requirements.txt"
   # the single Expo web export (static SPA) that main.js serves locally - one
   # codebase for phone/web/desktop, replacing the old Next.js standalone server.
   - from: ../app/dist
