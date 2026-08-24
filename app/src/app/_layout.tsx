@@ -142,11 +142,24 @@ function usePushWiring() {
       let track: string | undefined = data?.track;
       let kind: string | undefined = data?.kind;
       let body: string | undefined = data?.body;
+      // Tri-state, not boolean: a local notif with plain fields is "resolved"
+      // immediately; a system-tray notif needs the cipher decrypted, and THAT
+      // can genuinely fail (stale keys) or simply have nothing to decrypt at
+      // all - Android bundles same-titled notifications (every push shares
+      // the generic "HelmDeck" title) into a stack, and tapping the stack's
+      // OWN summary line delivers a response with empty `data`. Only a
+      // successful decrypt that legitimately carries no track (a goal-level
+      // PM escalation) means "go to the dashboard" - "we couldn't read this
+      // tap" must never force-navigate anywhere (bug: was landing on the
+      // dashboard even when a real card push had just opened, measured
+      // 2026-08-24).
+      let resolved = !!track;
       if (!track && data?.cipher) {
         await hydration;
         const m = decryptPush(data);
-        track = m?.track; kind = m?.kind; body = m?.body;
+        if (m) { resolved = true; track = m.track; kind = m.kind; body = m.body; }
       }
+      if (!resolved) return;
       // A finished task speaks (owner 2026-08-22): tap on a DONE push opens
       // the voice mode and Henry says the result aloud - no reading, no
       // navigating into the card. Everything else keeps the card deep-link.
@@ -157,7 +170,10 @@ function usePushWiring() {
                    : "Die gerade fertige Aufgabe – sag mir kurz das Ergebnis." } } as never);
         return;
       }
-      if (track) router.push(`/card/${track}`);
+      // A question/needs_you/bounced push is news IN THE CHAT, so land there
+      // directly instead of the overview tab the owner would have to switch
+      // past every time.
+      if (track) router.push({ pathname: "/card/[id]", params: { id: track, tab: "chat" } } as never);
       else router.push("/(tabs)" as never);   // PM status w/o a card -> the PM summary/overview (dashboard IS the index tab since 2026-08-17)
     });
     return () => { recv.remove(); resp.remove(); };
