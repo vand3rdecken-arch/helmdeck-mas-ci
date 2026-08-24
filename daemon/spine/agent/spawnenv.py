@@ -2,8 +2,9 @@
 """Spawn environment - the EXTERNAL env an agent shell inherits, extracted
 from drivers.py. _card_env is the per-card overlay (dev port / worktree),
 _env layers the driver's settings.json env + Bash/MCP tool timeouts over a
-sanitized copy of the daemon os.environ (control/TLS keys stripped). Pure
-(os + dicts); drivers.py re-imports _card_env/_env. Not monkeypatched.
+sanitized copy of the daemon os.environ (control/TLS keys AND parent-Claude-
+session keys stripped). Pure (os + dicts); drivers.py re-imports
+_card_env/_env. Not monkeypatched.
 """
 import os
 
@@ -15,6 +16,21 @@ import os
 # (Paseo strips it in createStringCommandShellEnv for the same reason).
 _CONTROL_ENV_KEYS = ("HELMDECK_TLS_CERT", "HELMDECK_TLS_KEY", "HELMDECK_TLS_PORT",
                      "HELMDECK_CLAUDE", "BASH_ENV")
+
+# PARENT-SESSION LEAKAGE: when the daemon itself runs inside a Claude Code
+# session (a machine/direct card driving the live tree with a Claude Code
+# window as its host, or plain dev-from-inside-Claude), these vars are already
+# in the daemon's own os.environ and would otherwise pass straight through to
+# every spawned card - which the child CLI reads as "I am already nested
+# inside another session" and refuses to start. probe_harness_settings.py hit
+# this and hand-strips CLAUDE*/CLAUDECODE for its own subprocess (see its
+# _probe docstring, "THE ENV IS SCRUBBED OF CLAUDE*") - that was a probe-only
+# workaround; production spawns had no such guard. Same lesson Paseo names
+# explicitly (PARENT_SESSION_ENV_VARS, provider-launch-config.ts): scrub it
+# once, here, for every driver, not per-caller.
+_PARENT_SESSION_ENV_KEYS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+                           "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_SESSION_ID",
+                           "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_AGENT_SDK_VERSION")
 
 
 def _card_env(t):
@@ -57,6 +73,8 @@ def _env(cfg, card=None):
     """
     env = dict(os.environ)
     for k in _CONTROL_ENV_KEYS:
+        env.pop(k, None)
+    for k in _PARENT_SESSION_ENV_KEYS:
         env.pop(k, None)
     # Bash tool timeouts (Paseo-parity: bound the TOOL, not the turn). Without
     # these a single runaway command - a stuck `adb`, an endless poll - hung the

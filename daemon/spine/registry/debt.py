@@ -2677,6 +2677,50 @@ DEBT = [
                "coarse process picture proves insufficient in practice.",
         "order": 44,
     },
+    {
+        "id": "card-feed-is-claude-private-jsonl",
+        "title": "The card feed is a re-parse of Claude Code's own private session file",
+        "status": "open",
+        "what": "claude_sessions.py (~660 lines) + claude_transcript_fmt.py build "
+                "every card's chat feed by globbing and parsing "
+                "~/.claude/projects/<cwd>/<uuid>.jsonl - a file Claude Code owns "
+                "and writes for ITS OWN purposes (record schema, envelope "
+                "sniffing for strings like '<task-notification>', "
+                "'[Request interrupted by user', tool-name whitelists). "
+                "transcript_version()'s long-poll change token is literally the "
+                "byte count of that foreign file.",
+        "why_it_bites": "This is a heuristic reconstruction of first-class state "
+                        "from another program's artifacts, at the OPPOSITE end "
+                        "of the spectrum from the law CLAUDE.md states for this "
+                        "repo (NO MONKEY PATCHES: derived and verified from the "
+                        "runtime's own signals, folded in at event time - never "
+                        "reconstructed by re-scanning artifacts). It has held "
+                        "only because there has been exactly one engine, ever. "
+                        "A second card driver (OpenCode/Codex/any ACP agent) "
+                        "produces no such file, so it produces NO CARD FEED AT "
+                        "ALL - not a degraded one, an absent one.",
+        "trigger": "docs/multi-engine-support.md (2026-08-24 analysis) + "
+                   "docs/multi-engine-build-plan.md Card 2 (E3, sized L/3-5d): "
+                   "the pump that already runs every claude turn "
+                   "(drivers.py _ClaudeSession._pump/_on_event) folds each "
+                   "normalized event into a persisted per-card timeline store "
+                   "at EVENT TIME - the same fold discipline already proven by "
+                   "_scan_bg (drivers.py:634-680). /transcript reads THAT. "
+                   "Dual-write against the old reader first, cut over only "
+                   "after N clean live turns diff empty; the old reader stays "
+                   "for adopting foreign claude sessions and pre-cutover "
+                   "session_chain history. Worth doing even if multi-engine "
+                   "support is never built further - it is closing a live law "
+                   "violation, not just an enabler.",
+        "fix": "OPEN. Card 1 of the build plan (registry seam + CLAUDE constant "
+               "dedup + parent-session env scrub, spine/agent/{agentcli,"
+               "drivers,spawnenv}.py) landed without touching this - it is "
+               "explicitly Card 2's job, kept separate because it is the "
+               "largest, riskiest single item (the thing every owner reads "
+               "every turn) and deserves its own dual-write/compare worktree "
+               "card rather than being rushed alongside the seam refactor.",
+        "order": 45,
+    },
 ]
 
 def list_debt():
