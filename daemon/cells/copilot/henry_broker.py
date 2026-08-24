@@ -252,10 +252,25 @@ def _find_track(card):
 
 
 def _execute(action, card, lane, text, esc):
+    from daemon import gxp
     from daemon.spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
     if action == "ignore":
         return True
+    # GxP: Henry's two HANDS verbs are off for a card in the regulated scope.
+    # `move` would also be stopped by the lane machine's chokepoint (he is not
+    # an account), but it is refused here too so the escalation stays open and
+    # visibly waiting for a person, instead of being closed against a landing
+    # that never happened. `did` has no chokepoint at all - it is Henry editing
+    # the live tree - so this is the only place it can be stopped.
+    #
+    # Out of scope he keeps both hands: the mode narrows what is regulated, it
+    # does not turn the exception broker off.
+    if action in ("did", "move") and gxp.in_scope(t) and gxp.disabled("henry_" + action):
+        from daemon.spine.storage import events
+        events.emit("gxp", card or "-", outcome="henry_refused", action=action,
+                    reason="GxP mode: this needs a person")
+        return False
     if action == "did":
         # Henry already acted with his own hands inside the judgement turn
         # (owner decree 2026-08-21) - the work is done, this verb just closes

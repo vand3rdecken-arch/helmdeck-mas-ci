@@ -3,10 +3,16 @@ import PostHog from "posthog-react-native";
 import { create } from "zustand";
 
 // Product analytics (PostHog, EU cloud). ONE owner for the whole app: every
-// event goes through track() below, so the opt-out toggle and the no-PII rule
+// event goes through track() below, so the opt-IN toggle and the no-PII rule
 // hold everywhere by construction. Events carry ONLY coarse action names and
 // enum-ish props (a lane, a mode) - never card ids, titles, chat text, tokens
 // or user names.
+//
+// OPT-IN, not opt-out (fixed 2026-08-23, GXP-S11 / A3): the privacy policy
+// (relay/relay.py) says HelmDeck ships no analytics/tracking SDK, and this
+// shipped enabled by default regardless - a real gap between the promise and
+// the code, not a hypothetical one. Nothing fires until the user turns it on
+// in More -> Datenschutz.
 //
 // The key is PostHog's *project token*: write-only, made to ship inside public
 // client bundles (it cannot read data), so it lives in source like any other
@@ -28,6 +34,14 @@ function posthog(): PostHog {
       // Lifecycle autocapture needs native wiring we don't ship; app_open is
       // tracked explicitly in the root layout instead.
       captureAppLifecycleEvents: false,
+      // The SDK's OWN opt-in switch, not just the `enabled` gate in track()
+      // below. Before this, a freshly constructed client defaulted to opted
+      // IN, so anything the SDK does at construction time (session start,
+      // feature-flag fetch) could run before hydrate()'s async optOut() ever
+      // reached it. A client is inert from the instant it exists now;
+      // hydrate()/setEnabled() call optIn() explicitly when the user has
+      // actually turned analytics on.
+      defaultOptIn: false,
     });
   }
   return client;
@@ -40,18 +54,20 @@ interface AnalyticsState {
   setEnabled: (v: boolean) => void;
 }
 
-// Opt-out model (anonymous events, no profiles): ON until the owner flips the
-// toggle in More -> Datenschutz. The choice persists per device.
+// Opt-IN model (anonymous events, no profiles): OFF until the user turns it on
+// in More -> Datenschutz. The choice persists per device. Defaulting to false
+// here (not just relying on the async hydrate() below) means an install that
+// somehow never reaches hydrate() stays silent, not silently tracking.
 export const useAnalytics = create<AnalyticsState>((set, get) => ({
-  enabled: true,
+  enabled: false,
   hydrated: false,
   hydrate: async () => {
     try {
       const raw = await AsyncStorage.getItem(PREF_KEY);
       if (raw !== null) set({ enabled: raw === "1" });
-    } catch { /* unavailable -> keep default */ }
+    } catch { /* unavailable -> keep default (off) */ }
     set({ hydrated: true });
-    if (!get().enabled) posthog().optOut();
+    if (get().enabled) posthog().optIn();
   },
   setEnabled: (v) => {
     set({ enabled: v });
