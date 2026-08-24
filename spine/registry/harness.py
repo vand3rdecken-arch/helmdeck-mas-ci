@@ -116,13 +116,21 @@ _DEFAULTS = {
     "machine-worker": (_DEFAULT_MACHINE,
                        {"name": "machine-worker", "settings": "card",
                         "setting_sources": "project", "ask_protocol": True}),
-    # The copilot's default is EMPTY on purpose. Its prompt is 10 KB of board
-    # vocabulary (every action type, the capability charter, planning
-    # discipline); a truncated copy here would rot out of sync with the real
-    # file and be worse than nothing. copilot.py keeps its own constant as the
-    # fallback and passes it in via `default=`.
-    "board-copilot": ("", {"name": "board-copilot", "settings": "copilot",
-                           "setting_sources": "", "ask_protocol": False}),
+    # The copilot's floor is a SHORT degraded-mode stub, not a copy of the real
+    # 17 KB role: a full copy rots out of sync with the file (measured - the
+    # copy that lived in copilot.py drifted ~1.9k chars behind), and the real
+    # file now ships with EVERY install (git checkout; the desktop bundle
+    # carries ops/harness as an extraResource). If this stub ever speaks, the
+    # installation is broken and says so - errors() carries the missing path.
+    "board-copilot": (
+        "You are HENRY, HelmDeck's board agent. Your full role file "
+        "(ops/harness/agents/board-copilot.md) is MISSING from this "
+        "installation - you are running in degraded mode. Answer questions "
+        "briefly, take no board actions, and tell the owner in your first "
+        "sentence that the installation is broken (harness role file missing) "
+        "and needs repair.",
+        {"name": "board-copilot", "settings": "copilot",
+         "setting_sources": "", "ask_protocol": False}),
 }
 
 ASK_MARKER = "{{ask_protocol}}"

@@ -55,6 +55,20 @@ extraResources:
       - "!**/*"
       - "**/*.py"
       - "**/*.md"
+  # ops/harness = the agent briefs + settings layers (POLICY AS DATA). Shipping
+  # it is what lets the code hold NO copy of any role text (the 17 KB
+  # board-copilot constant rotted ~1.9k chars behind the file before this): a
+  # packaged install resolves the same files a git checkout does, and the
+  # in-code floors are true emergency stubs. Only current *.md/*.json ship -
+  # .versions/ (machine-local undo history) stays out via the allowlist shape.
+  - from: ../../ops/harness
+    to: ops/harness
+    filter:
+      - "!**/*"
+      - "!.versions/**"
+      - "agents/*.md"
+      - "settings/*.json"
+      - "schema/*.json"
   # the single Expo web export (static SPA) that main.js serves locally - one
   # codebase for phone/web/desktop, replacing the old Next.js standalone server.
   - from: ../app/dist

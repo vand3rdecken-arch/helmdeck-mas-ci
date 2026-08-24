@@ -51,8 +51,9 @@ def test_no_drift():
     check(harness.brief("machine-worker") == harness._resolve(
         harness._DEFAULT_MACHINE, harness._DEFAULTS["machine-worker"][1]),
         "ops/harness/agents/machine-worker.md == the built-in machine fallback")
-    check(harness.brief("board-copilot", default=copilot.SYSTEM) == copilot.SYSTEM,
-        "ops/harness/agents/board-copilot.md == copilot.SYSTEM (the 10 KB role)")
+    henry = harness.brief("board-copilot")
+    check(len(henry) > 10000 and "degraded mode" not in henry,
+        "board-copilot.md resolves as THE role (policy is data, no code copy)")
     # the surfaces a track can resolve to
     check(drivers._agent_for({"machine": True}) == "machine-worker" and
           drivers._agent_for({}) == "card-worker", "a track resolves to its surface")
