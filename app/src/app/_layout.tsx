@@ -112,7 +112,12 @@ function useAnalyticsBoot() {
 function usePushWiring() {
   const router = useRouter();
   useEffect(() => {
-    (async () => {
+    // Shared with the tap handler below: a cold start launched BY tapping a
+    // system-tray notification can fire the response listener before this
+    // hydration resolves, and decryptPush reads mySec/daemonPub synchronously
+    // off the store - so an unhydrated tap silently failed to decrypt, lost
+    // its `track`, and fell through to the dashboard (measured 2026-08-24).
+    const hydration = (async () => {
       await useConfig.getState().hydrate();
       await useDemo.getState().hydrate();   // demo survives a restart, like pairing
       useBlockerVoice.getState().hydrate();   // proactive-voice toggle (More -> Voice), off by default
@@ -129,14 +134,16 @@ function usePushWiring() {
     });
     // tap: deep-link to the card (or the PM chat if the push has no card). The
     // track is sealed in the cipher (zero-knowledge), so decrypt on tap to route.
-    const resp = Notifications.addNotificationResponseReceivedListener((r) => {
+    const resp = Notifications.addNotificationResponseReceivedListener(async (r) => {
       const data = r.notification.request.content.data as Record<string, string>;
       // local notif carries the fields plainly; system-tray notif needs the
-      // sealed cipher decrypted on tap (zero-knowledge routing).
+      // sealed cipher decrypted on tap (zero-knowledge routing) - which needs
+      // the config store hydrated first (see comment above).
       let track: string | undefined = data?.track;
       let kind: string | undefined = data?.kind;
       let body: string | undefined = data?.body;
       if (!track && data?.cipher) {
+        await hydration;
         const m = decryptPush(data);
         track = m?.track; kind = m?.kind; body = m?.body;
       }

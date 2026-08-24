@@ -92,10 +92,17 @@ def _live(now=None):
 
 def plan(card_id, now=None):
     """What to do about an event on `card_id`: "silent" | "inapp" | "push"."""
-    live = _live(now)
+    # A backgrounded client is not a place the owner can SEE an in-app cue -
+    # only clients with the app actually visible can absorb "inapp" or
+    # "silent". Without this filter, a client backgrounded up to FRESH_S ago
+    # still counted as "live" and downgraded a push to "inapp", which then
+    # showed nowhere: not on the phone (no push sent) and not in-app (nothing
+    # open to show it). Measured 2026-08-24: a card kept asking questions
+    # overnight and none of them buzzed the phone.
+    live = [c for c in _live(now) if c["visible"]]
     if not live:
         return "push"
-    if card_id and any(c["visible"] and c["focused"] == card_id for c in live):
+    if card_id and any(c["focused"] == card_id for c in live):
         return "silent"
     return "inapp"
 
