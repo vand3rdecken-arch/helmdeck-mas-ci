@@ -2,7 +2,7 @@
 # available (this card): runs on a REAL macos-14 runner - actual Apple
 # hardware, actual Gatekeeper/notarization enforcement, not a simulation -
 # against the ACTUAL published release DMG plus the REAL pairing/OTA daemon
-# code (same modules deploy/push_update.sh and the packaged app use).
+# code (same modules ops/deploy/push_update.sh and the packaged app use).
 #
 # What this covers:
 #   1. Gatekeeper-free launch of the exact notarized artifact a user
@@ -11,11 +11,11 @@
 #      STAPLED so first launch needs no Apple network call, then actually
 #      open the app and confirm the process comes up).
 #   2. Pairing lifecycle (daemon/relay_client.py) end-to-end, sandboxed.
-#   3. OTA relay endpoints (relay/relay.py) end-to-end, sandboxed.
+#   3. OTA relay endpoints (surfaces/relay/relay.py) end-to-end, sandboxed.
 #   4. Desktop OTA n -> n+1: fresh install, apply, re-publish, re-apply,
 #      tamper rejection, busy-shell defer/quit-apply - both the python
-#      engine (desktop/desktop_update.py) and the Electron engine
-#      (desktop/updater.js via node), sandboxed.
+#      engine (surfaces/desktop/desktop_update.py) and the Electron engine
+#      (surfaces/desktop/updater.js via node), sandboxed.
 #
 # What this does NOT cover: a second physical device (a phone) completing a
 # live QR/deep-link pairing handshake against the real production relay -
@@ -48,7 +48,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install python deps for the sandboxed relay/pairing/OTA tests
+      - name: Install python deps for the sandboxed surfaces/relay/pairing/OTA tests
         run: pip install pynacl
 
       - name: Download the released, notarized DMG (arm64 - native to this runner)
@@ -102,10 +102,10 @@ jobs:
           echo "GATEKEEPER-FREE LAUNCH: PASS (spctl accepted + ticket stapled)"
 
       - name: Pairing lifecycle (real daemon/relay_client.py, sandboxed settings)
-        run: python3 tests/test_pairing_lifecycle.py
+        run: python3 ops/tests/test_pairing_lifecycle.py
 
-      - name: Relay OTA endpoints (real relay/relay.py, ephemeral local server)
-        run: python3 tests/test_ota_relay.py
+      - name: Relay OTA endpoints (real surfaces/relay/relay.py, ephemeral local server)
+        run: python3 ops/tests/test_ota_relay.py
 
       - name: Desktop OTA n -> n+1 (real desktop_update.py + updater.js engines)
-        run: python3 tests/test_desktop_update.py
+        run: python3 ops/tests/test_desktop_update.py

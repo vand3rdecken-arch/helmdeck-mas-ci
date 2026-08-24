@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Print a NEW device token for <user> with <label>.
 
-Operator tool. desktop/main.js used to call this at every launch and inject the
+Operator tool. surfaces/desktop/main.js used to call this at every launch and inject the
 result into the UI, which made opening the desktop app an owner login with no
 credential; it does not any more. What remains is a legitimate way to provision
 a device by hand.

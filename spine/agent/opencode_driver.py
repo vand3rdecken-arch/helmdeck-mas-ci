@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""OpenCode native driver, DEDICATED-server mode (docs/multi-engine-support.md
+"""OpenCode native driver, DEDICATED-server mode (ops/docs/multi-engine-support.md
 §6.6.2, build plan Card 7). ONE private `opencode serve` process per card -
 not Paseo's shared-by-default pool, which would break HelmDeck's per-card
 tree-kill isolation law (see this module's own history in the analysis doc

@@ -38,7 +38,7 @@ DEBT = [
                "ssh signing landed in 2.34 - same auditor story, different key "
                "format. STRICT: an approval whose tag cannot be created is "
                "refused outright, never stored unanchored. Proven end to end "
-               "in tests/test_gxp_tag.py against real gpg and real git.",
+               "in ops/tests/test_gxp_tag.py against real gpg and real git.",
         "order": 0,
     },
     {
@@ -58,7 +58,7 @@ DEBT = [
                         "the record has to be provably complete, not probably.",
         "trigger": "any db write failure during emit (disk full, lock timeout, "
                    "WAL trouble) - was silent, now healed on the next boot",
-        "fix": "PAID (phase D3, docs/gxp-plan.md): events.emit() stamps a stable "
+        "fix": "PAID (phase D3, ops/docs/gxp-plan.md): events.emit() stamps a stable "
                "secrets.token_hex id on every row; the events table got a UNIQUE "
                "index on it (ALTER TABLE migration for existing installs, NULLs "
                "allowed for pre-id-era rows so they never collide); "
@@ -67,7 +67,7 @@ DEBT = [
                "scans events.jsonl from a byte-offset checkpoint (only what was "
                "appended since the last boot, not the whole history) and folds in "
                "anything the write-through missed. Verified against a genuinely "
-               "dropped write (tests/test_events_reconcile.py) - healed on the "
+               "dropped write (ops/tests/test_events_reconcile.py) - healed on the "
                "next reconcile, a repeat reconcile does not duplicate it, and the "
                "checkpoint advances so a clean boot rescans nothing.",
         "order": 0,
@@ -94,13 +94,13 @@ DEBT = [
     },
     {
         "id": "expo-cutover-pipeline",
-        "title": "Old frontends archived, but build/deploy/loop still point at them",
+        "title": "Old frontends archived, but build/ops/deploy/loop still point at them",
         "status": "paid",
         "what": "web/ (Next.js) and apk/ (Kotlin) were moved to archive/ when the "
                 "single Expo app in app/ took over as the frontend for phone, web "
-                "and desktop. But deploy/push_relay.sh still builds+ships the "
-                "Kotlin APK, tools/loop_state.py's TEST/BUILD states + artifact "
-                "map reference web/ and apk/, tools/design_lint*.py and "
+                "and desktop. But ops/deploy/push_relay.sh still builds+ships the "
+                "Kotlin APK, ops/tools/loop_state.py's TEST/BUILD states + artifact "
+                "map reference web/ and apk/, ops/tools/design_lint*.py and "
                 "gen_tokens.py read web/app/globals.css (now archive/web/...), and "
                 "there is no EAS cloud-build / OTA wired.",
         "why_it_bites": "The deploy script errors (missing apk path), the build "
@@ -110,7 +110,7 @@ DEBT = [
         "trigger": "next relay push, next loop_state run, next design gate",
         "fix": "PAID in two passes. 3114f6d: loop_state.py ARTIFACT_SRC repointed "
                "to the signed Expo APK (native-only sources; JS ships via OTA "
-               "deploy/push_update.sh), BUILD action -> release.sh/push_update.sh. "
+               "ops/deploy/push_update.sh), BUILD action -> release.sh/push_update.sh. "
                "This commit: design_lint + selftest retargeted to app/ (theme "
                "tokens via useTheme(), webstyles.tsx carries the web-shell "
                "color-scheme rule); gen_tokens.py declared the CANONICAL palette "
@@ -183,7 +183,7 @@ DEBT = [
                "for the API. This card closed the LAN + enforcement gaps: "
                "(1) server.serve() grows a native https listener - cert/key "
                "via HELMDECK_TLS_CERT/KEY, settings.tls, or auto-detected "
-               "daemon/certs/ (minted by tools/make_tls_cert.py; trusted "
+               "daemon/certs/ (minted by ops/tools/make_tls_cert.py; trusted "
                "certs via `tailscale cert`) - and with TLS on, plain http "
                "binds LOOPBACK-ONLY (local tooling keeps working, nothing "
                "cleartext leaves the machine; a broken TLS config also stays "
@@ -306,7 +306,7 @@ DEBT = [
                 "work on a release build: targetSdk>=28 blocks cleartext HTTP by "
                 "default, so every http:// daemon URL failed with 'Desktop nicht "
                 "erreichbar'. Fixed by adding android:usesCleartextTraffic=\"true\" "
-                "to app/android/app/src/main/AndroidManifest.xml - but that file is "
+                "to surfaces/app/android/app/src/main/AndroidManifest.xml - but that file is "
                 "gitignored/hand-managed (not driven by app.json), so the flag is "
                 "invisible to git and a future `expo prebuild` would silently drop "
                 "it (along with the hand-added expo-updates meta-data).",
@@ -323,7 +323,7 @@ DEBT = [
                "list; a real phone's direct-LAN mode needs the PC's IP added "
                "there + an APK rebuild). One file drives BOTH build paths: expo "
                "config plugin for a future prebuild, and a bare-node CLI that "
-               "deploy/build_apk.sh runs against the hand-managed app/android "
+               "ops/deploy/build_apk.sh runs against the hand-managed surfaces/app/android "
                "before every gradle build, replacing the invisible global flag. "
                "expo-updates is now an explicit app.json plugin, so its "
                "meta-data survives a prebuild too. "
@@ -334,7 +334,7 @@ DEBT = [
         "id": "pair-token-no-ttl",
         "title": "Pairing device-token outlives the 15-min pairing window",
         "status": "open",
-        "what": "Each /relay/pair click mints a device bearer token with no "
+        "what": "Each /surfaces/relay/pair click mints a device bearer token with no "
                 "expiry. The single-use PAIR_TTL window (relay_client._admit) "
                 "gates the E2EE pin - the relay path of an unused code dies "
                 "with the window - but the token inside the code stays a live "
@@ -455,7 +455,7 @@ DEBT = [
                         "that looks like a question.",
         "trigger": "a CLI/model upgrade changing instruction-following, or the repair "
                    "turn showing up as a noticeable share of spend on the turn events",
-        "fix": "Re-run tests/probe_cli_askuser.py against the new CLI: once it exposes "
+        "fix": "Re-run ops/tests/probe_cli_askuser.py against the new CLI: once it exposes "
                "AskUserQuestion (or sends control_request/can_use_tool to a "
                "stream-json client), replace the taught protocol with a real "
                "interception + park/respond, which needs no compliance and no repair "
@@ -593,7 +593,7 @@ DEBT = [
         "status": "open",
         "what": "Card 20260812-164257 (chat-fix--sessions-extract-ou) bounced with "
                 "gate_report = 'gate FAILED:' wrapping a body of 34 straight 'ok' "
-                "lines ending in tools/run_gate.py's own 'gate: PASS (34 checks)' - "
+                "lines ending in ops/tools/run_gate.py's own 'gate: PASS (34 checks)' - "
                 "i.e. r.returncode was nonzero even though the script ran every "
                 "check green and reached its own sys.exit(0). Replaying the exact "
                 "daemon invocation by hand (same HELMDECK_REPO, same cwd, same "
@@ -658,9 +658,9 @@ DEBT = [
         "id": "mac-build-never-executed",
         "title": "The macOS build target is configured but has never actually run",
         "status": "paid",
-        "what": "desktop/electron-builder.yml now carries a full mac target "
+        "what": "surfaces/desktop/electron-builder.yml now carries a full mac target "
                 "(dmg + zip, arm64 + x64, hardened runtime, entitlements, gated "
-                "notarization), desktop/build-mac.sh drives it and "
+                "notarization), surfaces/desktop/build-mac.sh drives it and "
                 ".github/workflows/desktop-mac.yml runs it on macos-14. NONE of "
                 "it has been executed on macOS. The evidence behind it is: the "
                 "config validates against electron-builder's own scheme.json "
@@ -674,7 +674,7 @@ DEBT = [
                 "assets - the source had never been pushed, so no runner had "
                 "anything to check out. That half is now DECIDED (owner, "
                 "2026-08-14: one repo - the source goes into the same public "
-                "repo as the builds) and tooled: deploy/publish_source.sh "
+                "repo as the builds) and tooled: ops/deploy/publish_source.sh "
                 "audits history for secrets and oversized blobs and pushes "
                 "main. Still nobody has run it, and no runner has run.",
         "why_it_bites": "A green-looking config is not a green build. What a "
@@ -687,8 +687,8 @@ DEBT = [
                         "and whether Squirrel.Mac accepts the zip feed. Each is "
                         "a separate way the first real run can red, and none is "
                         "visible until someone runs it.",
-        "trigger": "the first `bash deploy/publish_source.sh`, or the first "
-                   "`bash desktop/build-mac.sh` on any Mac",
+        "trigger": "the first `bash ops/deploy/publish_source.sh`, or the first "
+                   "`bash surfaces/desktop/build-mac.sh` on any Mac",
         "fix": "PAID 2026-08-15 - run 31877006863 on macos-14, 32m10s, ALL "
                "STEPS GREEN. Every question this item said only a real run "
                "could answer is now answered by that run's log: expo export "
@@ -711,7 +711,7 @@ DEBT = [
                "config keeps notarize:false so an unsigned build can succeed); "
                "the warning is only about where the team id is read from, and "
                "notarization demonstrably worked. Getting there first needed: "
-               "1) bash deploy/publish_source.sh (audit + push over SSH - the "
+               "1) bash ops/deploy/publish_source.sh (audit + push over SSH - the "
                "gh token has no `workflow` scope, so HTTPS is rejected). "
                "2) The push to the remote DEFAULT branch auto-triggers the "
                "workflow (push: branches: [main]); otherwise Actions -> "
@@ -796,13 +796,13 @@ DEBT = [
         "id": "site-deploy-outside-hook",
         "title": "helmdeck.de ships by hand - accepting a card never deploys it",
         "status": "open",
-        "what": "The public site is a Cloudflare Worker (deploy/waitlist/, "
+        "what": "The public site is a Cloudflare Worker (ops/deploy/waitlist/, "
                 "worker 'helmdeck-waitlist', custom domain helmdeck.de). Every "
                 "other shipping surface rides the repo deploy hook that "
                 "sessions._repo_hook fires post-merge on accept; this one does "
                 "not. Nothing in the accept path runs `wrangler deploy`, so a "
                 "site commit is merged, gated, accepted and still not live. "
-                "deploy/push_site.sh now makes the step one canonical command "
+                "ops/deploy/push_site.sh now makes the step one canonical command "
                 "that self-verifies against the origin, but RUNNING it is still "
                 "a human remembering to.",
         "why_it_bites": "It already bit, silently, for two days. Card "
@@ -816,17 +816,17 @@ DEBT = [
                         "dev` instead of the origin. Worse, it is the marketing "
                         "surface - the one place where being stale costs "
                         "signups rather than developer time.",
-        "trigger": "any future card that edits deploy/waitlist/src/index.js and "
+        "trigger": "any future card that edits ops/deploy/waitlist/src/index.js and "
                    "is accepted without someone separately running "
-                   "deploy/push_site.sh",
-        "fix": "Add `bash deploy/push_site.sh` to repo_hooks.<repo>.deploy in "
+                   "ops/deploy/push_site.sh",
+        "fix": "Add `bash ops/deploy/push_site.sh` to repo_hooks.<repo>.deploy in "
                "settings.json so accept ships the site like it ships everything "
                "else (owner-side edit - settings.json is git-ignored, an agent "
                "cannot make it). Better still, derive it instead of hardcoding: "
                "have the deploy hook ship the site only when the merged diff "
-               "touched deploy/waitlist/, which is the Paseo-style 'observe the "
+               "touched ops/deploy/waitlist/, which is the Paseo-style 'observe the "
                "runtime signal' version of the same thing. Until then the "
-               "origin check `bash deploy/push_site.sh --check` is the backstop "
+               "origin check `bash ops/deploy/push_site.sh --check` is the backstop "
                "- it exits 1 when live != source and is cheap enough to run "
                "from the loop.",
         "order": 24,
@@ -839,14 +839,14 @@ DEBT = [
         # closing the entry then would have retired a blind spot that was still
         # there. Both halves are closed now - see "fix" below.
         "status": "paid",
-        "what": "tools/loop_state.py's build_stale() gates on touches_native(touched), "
+        "what": "ops/tools/loop_state.py's build_stale() gates on touches_native(touched), "
                 "and `touched` comes from `git status --porcelain` (dirty_files()). "
-                "app/android/ is entirely git-ignored (app/.gitignore: `/android`), so "
-                "a native source edit under app/android/app/src/main can NEVER appear "
+                "surfaces/app/android/ is entirely git-ignored (app/.gitignore: `/android`), so "
+                "a native source edit under surfaces/app/android/app/src/main can NEVER appear "
                 "in `touched` - the reachable trigger set is really just app/app.json "
-                "and app/package.json (ARTIFACT_TRIGGERS), a narrower net than the "
+                "and surfaces/app/package.json (ARTIFACT_TRIGGERS), a narrower net than the "
                 "ARTIFACT_SRC inputs ship.sh's own fingerprint hashes.",
-        "why_it_bites": "A change made ONLY inside app/android/ (a manual native tweak, "
+        "why_it_bites": "A change made ONLY inside surfaces/app/android/ (a manual native tweak, "
                         "a Gradle edit) would not flag BUILD stale even though it really "
                         "did move the native fingerprint - the same class of blind spot "
                         "the fix here just closed for the false-positive direction "
@@ -854,21 +854,21 @@ DEBT = [
                         "possess). This is the false-negative shadow of that same gap: "
                         "git-visibility, not the fingerprint itself, decides whether the "
                         "nudge can fire at all.",
-        "trigger": "a native-only edit made directly under the ignored app/android/ tree "
+        "trigger": "a native-only edit made directly under the ignored surfaces/app/android/ tree "
                    "(outside app.json/package.json) on the box that actually builds the "
                    "APK, with nothing else touched",
-        "fix": "PAID (tools/loop_state.py, 2026-08-16) by REORDERING the two signals "
+        "fix": "PAID (ops/tools/loop_state.py, 2026-08-16) by REORDERING the two signals "
                "rather than by widening the heuristic. The 2026-08-15 step made "
                "build_stale() take `touched` and return early unless "
                "touches_native(touched) - which killed the false-positive nag on every "
                "quiet card, but left the git-visibility heuristic as a VETO in front of "
                "the authoritative check, which is what this entry's title names. "
-               "build_stale() now asks the fingerprint FIRST: when deploy/.native_fp "
+               "build_stale() now asks the fingerprint FIRST: when ops/deploy/.native_fp "
                "exists and _native_fp() computes, it compares them and returns, full "
                "stop. That answer is derived from the real native inputs (it hashes the "
                "AndroidManifest under the git-ignored tree too), so git-visibility no "
                "longer decides whether the nudge can fire - the false negative is gone "
-               "at its root, without the `git -C app/android status` probe this entry "
+               "at its root, without the `git -C surfaces/app/android status` probe this entry "
                "once proposed (a second reconstructed signal was the wrong shape; the "
                "fingerprint was already the derived one). `touched` still gates the "
                "DEGRADED branches - no marker (never shipped from this checkout) or no "
@@ -876,7 +876,7 @@ DEBT = [
                "belongs, and is exactly the branch a card worktree lands in, so the "
                "false-positive fix holds for a better reason than before: not 'cards "
                "are excluded' but 'we have no authoritative answer here, so do not "
-               "invent one'. Covered by tests/test_harness_layer.py (both directions).",
+               "invent one'. Covered by ops/tests/test_harness_layer.py (both directions).",
         "order": 25,
     },
     {
@@ -907,7 +907,7 @@ DEBT = [
                 "'not a git repository (or any of the parent directories)' - there is no "
                 ".git anywhere in the operator's ~/.claude tree, so a card's write there "
                 "had no revert path.",
-        "why_it_bites": "harness/ exists to stop the operator's personal ~/.claude layer "
+        "why_it_bites": "ops/harness/ exists to stop the operator's personal ~/.claude layer "
                         "reaching a sandboxed worker. It closed the SETTINGS half of that "
                         "leak (hooks, the model pin, skillOverrides) and this half was "
                         "never noticed, because nothing rendered it: /harness's provenance "
@@ -926,7 +926,7 @@ DEBT = [
         "fix": "SHARE BUT READ-ONLY (option b of the three originally proposed), verified "
                "against the real CLI in both directions before shipping - the same "
                "'measured, not assumed' standard as probe_harness_settings.py. "
-               "harness/settings/card.json and harness/settings/copilot.json now deny "
+               "ops/harness/settings/card.json and ops/harness/settings/copilot.json now deny "
                "`Write(~/.claude/projects/**)` and `Edit(~/.claude/projects/**)`, the SAME "
                "Read/Write/Edit tool-pattern mechanism that already protects "
                "daemon/settings.json two lines above it - no new mechanism introduced. "
@@ -941,7 +941,7 @@ DEBT = [
                "`_memory_isolation()` reads each surface's OWN settings file at preview "
                "time and reports whether its deny list actually covers this - so a future "
                "edit that removes the line is visible in /harness the same way a "
-               "disappearing hook is, rendered in app/src/ui/harness_section.tsx as a "
+               "disappearing hook is, rendered in surfaces/app/src/ui/harness_section.tsx as a "
                "write-protected/WRITABLE row. Deliberately NOT computed: the exact value "
                "of memory_paths.auto (option c's literal ask). The CLI derives that slug "
                "from a project identity that measurably is not just \"this cwd\" - every "
@@ -958,15 +958,15 @@ DEBT = [
                "NEXT session before any revert). What git adds is what the deny "
                "structurally cannot - recoverability for the OPERATOR's own interactive "
                "sessions, which the deny never gated and which are now the only writers. "
-               "Shipped as tools/memory_autocommit.py, a Stop hook deployed to "
-               "~/.claude/hooks/ by tools/install_memory_hook.py and wired into "
+               "Shipped as ops/tools/memory_autocommit.py, a Stop hook deployed to "
+               "~/.claude/hooks/ by ops/tools/install_memory_hook.py and wired into "
                "~/.claude/settings.json. It sweeps EVERY ~/.claude/projects/*/memory/, "
                "git-inits any that holds notes without a repo, and commits what changed - "
                "so a project created next month is covered with no action taken (the owner's "
                "explicit ask: 'establish system so each project in the future gets proper "
                "tracking'). Commits carry the session_id from the hook payload, which is "
                "what makes a later revert decidable. Local only: it never adds a remote and "
-               "never pushes, asserted in tests/test_memory_autocommit.py by scanning its "
+               "never pushes, asserted in ops/tests/test_memory_autocommit.py by scanning its "
                "own source. Its ONE law is daemon/harness.py's law - it can never break a "
                "turn: a Stop hook exiting 2 BLOCKS the turn, so main() returns 0 "
                "unconditionally, every git call is timeout-bounded, and the test drives a "
@@ -981,7 +981,7 @@ DEBT = [
     },
     {
         "id": "null-result-test-races-under-load",
-        "title": "tests/test_null_result.py races on subprocess frames and can red "
+        "title": "ops/tests/test_null_result.py races on subprocess frames and can red "
                  "an innocent card when the box is busy",
         "status": "open",
         "what": "Observed 2026-08-16 during the /glance card: a full gate run "
@@ -1007,7 +1007,7 @@ DEBT = [
                         "than a plain flake because the gate is the harness's "
                         "one objective signal - a gate that is sometimes wrong "
                         "quietly teaches the owner to re-run instead of read.",
-        "trigger": "any card whose gate reds ONLY on tests/test_null_result.py, "
+        "trigger": "any card whose gate reds ONLY on ops/tests/test_null_result.py, "
                    "especially while other work is running on the box; or the "
                    "same shape appearing in another test that spawns "
                    "fake_claude and asserts frame ordering",
@@ -1124,7 +1124,7 @@ DEBT = [
                     "(tabs)/ route files still render their own imports, not the "
                     "registry's Surface components.\n"
                     "2026-08-18 (cell-registry-daemon-plugin-kernel, order 33): the "
-                    "'app' profile (app/profiles/app.json) now ALSO loads the 5 "
+                    "'app' profile (surfaces/app/profiles/app.json) now ALSO loads the 5 "
                     "cell Surface plugins (surfaces.board/pm/processes/connectors/"
                     "chat, built during the Cell sweep) alongside nav.tabs. This is "
                     "a real, narrow step: those Surface objects are now actually "
@@ -1149,7 +1149,7 @@ DEBT = [
                     "2026-08-19: the actual CUTOVER, corrected against a stale "
                     "premise found while executing it - the plan assumed 4 "
                     "tab-bearing cell surfaces (board/processes/connectors/"
-                    "copilot); reading app/src/plugins/surfaces/tabs.ts directly "
+                    "copilot); reading surfaces/app/src/plugins/surfaces/tabs.ts directly "
                     "showed copilot has NO tab entry at all (its entry point is a "
                     "floating chat FAB + overlay, matching PM's precedent of no "
                     "tab) - only 3 cells are genuinely tab-bearing. Also found: "
@@ -1188,13 +1188,13 @@ DEBT = [
                     "correct for the merged surfaces (their own `.id` is "
                     "'surfaces.<x>', `.route` is the bare name, matching what "
                     "useDisabledCellSurfaces indexes on both keys for).",
-        "what": "app/src/kernel/ (Phase 1) + app/src/boot/ (Phase 2) introduce a "
+        "what": "surfaces/app/src/kernel/ (Phase 1) + surfaces/app/src/boot/ (Phase 2) introduce a "
                 "plugin-first composition: profiles pick swappable plugins, "
                 "surfaces register into KEYS.SURFACES, a registry-driven host "
                 "renders them. But production navigation still runs through the "
-                "hard-coded expo-router app/src/app/(tabs) list. The only surface "
+                "hard-coded expo-router surfaces/app/src/app/(tabs) list. The only surface "
                 "actually wired through the kernel is a dev route "
-                "(app/src/app/kernel-demo.tsx) rendering the board from the "
+                "(surfaces/app/src/app/kernel-demo.tsx) rendering the board from the "
                 "registry; the real (tabs) screens are unchanged. Engines are "
                 "half-migrated too: engines.claude wraps the daemon api behind the "
                 "Engine contract, but the ~11 scattered `import copilot` / "
@@ -1208,7 +1208,7 @@ DEBT = [
         "trigger": "adding/removing a screen; shipping a store build expecting the "
                    "store.json profile to exclude machine-control (it doesn't gate "
                    "production nav yet); adding the deepseek engine",
-        "fix": "Phase 2 cutover card: make app/src/app/(tabs)/_layout render tabs "
+        "fix": "Phase 2 cutover card: make surfaces/app/src/app/(tabs)/_layout render tabs "
                "from useSurfaces() (KEYS.SURFACES) instead of the static list, "
                "migrate each (tabs) screen into a surfaces/* plugin, and delete "
                "the hard-coded list in the same commit that adds its plugin. "
@@ -1226,7 +1226,7 @@ DEBT = [
         "what": "Owner decree (2026-08-17): move to the DeepSeek 'everything is a "
                 "plugin' model, but (1) everything must be TRACKABLE and (2) the "
                 "old rules are not deleted, they are SEEDED as defaults. The app "
-                "kernel (app/src/kernel) implements this: nothing is unswappable "
+                "kernel (surfaces/app/src/kernel) implements this: nothing is unswappable "
                 "(unload/swap allowed on seed governance too), but every "
                 "load/unload/swap appends a TrackEntry {op, pluginId, actor "
                 "(seed|profile|user|agent|system), replaced?, note} to an "
@@ -1258,7 +1258,7 @@ DEBT = [
                "actually changes enforcement; (3) expose an engine/policy control "
                "plane the user (UI) and super-agent call, every call recorded, "
                "every swap reversible; (4) CLAUDE.md/charter is itself a SEED "
-               "MODULE now (app/src/boot/charter.ts, seed.charter, KEYS.CHARTER) "
+               "MODULE now (surfaces/app/src/boot/charter.ts, seed.charter, KEYS.CHARTER) "
                "- changing it is a tracked, reversible swap of seed.charter that "
                "materializes as an edit to the CLAUDE.md file, NOT an out-of-band "
                "approval gate (that framing was the retired fixed-harness reflex; "
@@ -1295,7 +1295,7 @@ DEBT = [
                 "SERVICE - _load/_save/_mutate; the monkeypatched tests were "
                 "updated to fake trackstore._db instead of sessions._db, the "
                 "technique proving patched clusters ARE extractable), locks.py "
-                "(turn/desktop/direct locks + steer epoch), turnrunner.py + "
+                "(turn/surfaces/desktop/direct locks + steer epoch), turnrunner.py + "
                 "devport.py (turn execution: _turn/_finish_turn/_settle_reply), "
                 "lanemachine.py (the gate/merge crown jewel: move_lane/_gate/"
                 "_merge_to_main/_repo_hook - only 4 lazy back-refs, needed NO test "
@@ -1333,14 +1333,14 @@ DEBT = [
                 "mp3 [first PREFIX route - GET_PREFIX_ROUTES, an ordered list "
                 "checked before the exact-match dicts], /glance/talk, /glance/"
                 "answer), routes_info.py (6 read-only: /debt, /charter, /loop/"
-                "map, /models, /harness, /harness/schema - also exposed + "
+                "map, /models, /harness, /ops/harness/schema - also exposed + "
                 "removed a pre-existing DEAD duplicate /harness block further "
                 "down do_GET, unreachable since the dispatch check runs first), "
                 "routes_pm.py (6: /pm/economics, /pm/plan, /pm/config, /pm/"
                 "consolidate, /pm/report, /pm/reconcile), routes_misc.py (3: "
                 "/processes, /me, /processes/new), routes_control.py (5: "
                 "/control/state, /control/teach/start,stop, /control/distill, "
-                "/control/demo), routes_relay.py (2: /relay/pair,unpair), "
+                "/control/demo), routes_relay.py (2: /surfaces/relay/pair,unpair), "
                 "routes_connectors.py (3: /connectors list + /connectors/<name>/"
                 "rollback,run - the rollback/run guard is path-param [parts[0]/"
                 "parts[2]] and stays inline in server.py, only the body moved), "
@@ -1477,14 +1477,14 @@ DEBT = [
                 "would silently misattribute if the file moved.",
         "why_it_bites": "server.py is now 478 lines (from 2109) with 16 route "
                         "groups extracted (routes_auth/policy/settings/glance/"
-                        "info/pm/misc/control/relay/connectors/checkpoints/"
+                        "info/pm/misc/control/surfaces/relay/connectors/checkpoints/"
                         "projects/copilot/tracks/track_actions/runs/system.py). "
                         "The 2026-08-18 session's second pass converted the "
                         "final residual grab-bag: routes_runs.py (/runs list, "
                         "/live.jpg, and the /runs/<id>/{timeline,playbook,video,"
                         "videochunk} path-param sub-router) + routes_system.py "
                         "(/presence GET+POST, /push/register, /sessions/claude, "
-                        "/history, /harness[+/harness/version/<kind>/<name>], "
+                        "/history, /harness[+/ops/harness/version/<kind>/<name>], "
                         "/debt/<id>/fix, /import/jira,url, /nightshift/plan, and "
                         "the /processes/<id>/step path-param sub-router). Every "
                         "path-param route kept its parts[]-guard inline in "
@@ -1730,7 +1730,7 @@ DEBT = [
         "status": "paid",
         "what": "Owner decree: the unit of modularity is an agentic SYSTEM (a "
                 "'Cell' - a role like PM or Engineer), each bundling {logic, "
-                "storage, harness/role, API routes, UI surface, lifecycle, "
+                "storage, ops/harness/role, API routes, UI surface, lifecycle, "
                 "enable-flag}, plugged into a shared spine, addable/removable/"
                 "swappable without editing the spine. This is the daemon-side "
                 "realization the full-dynamism-decree (order 30) deferred ('no "
@@ -1745,11 +1745,11 @@ DEBT = [
                 "behavior change while all enabled (verified: 16-file suite green, "
                 "real files md5-identical). Phase 1 SHIPPED (Connectors, the "
                 "reference cell, conformed end-to-end): "
-                "app/src/plugins/surfaces/connectors.tsx (Surface+Plugin pair, id "
+                "surfaces/app/src/plugins/surfaces/connectors.tsx (Surface+Plugin pair, id "
                 "'surfaces.connectors', strangler-wraps the existing (tabs)/"
                 "connectors.tsx screen with zero logic moved) registered in "
-                "AVAILABLE_PLUGINS (app/src/boot/index.ts), filling the dead "
-                "owner.json reference; api.cells() added to app/src/data/client.ts "
+                "AVAILABLE_PLUGINS (surfaces/app/src/boot/index.ts), filling the dead "
+                "owner.json reference; api.cells() added to surfaces/app/src/data/client.ts "
                 "(typed CellInfo[], mirrors GET /cells); (tabs)/_layout.tsx gates "
                 "both the bottom-bar and desktop-sidebar tab lists generically off "
                 "the /cells manifest (useDisabledCellSurfaces + "
@@ -1761,7 +1761,7 @@ DEBT = [
                 "clean; /cells fetch failures fall back to an empty list "
                 "everywhere (never crashes Modules, never blocks nav). "
                 "Phase 2 SHIPPED (PM, Process, Copilot conformed, same "
-                "template): app/src/plugins/surfaces/{pm,processes,copilot}.tsx "
+                "template): surfaces/app/src/plugins/surfaces/{pm,processes,copilot}.tsx "
                 "(Surface+Plugin pairs, ids 'surfaces.pm'/'surfaces.processes'/"
                 "'surfaces.chat' matching cells.py's Cell.surface and the "
                 "owner.json/store.json profile references exactly) registered in "
@@ -1803,7 +1803,7 @@ DEBT = [
                 "events.jsonl/settings.json/users.json/helmdeck.db) md5-"
                 "identical before/after. tsc --noEmit clean. "
                 "Phase 3 SHIPPED (Engineer, the crown jewel, conformed last): "
-                "app/src/plugins/surfaces/board.tsx VERIFIED against the "
+                "surfaces/app/src/plugins/surfaces/board.tsx VERIFIED against the "
                 "Connectors template (id 'surfaces.board' matches "
                 "cells.py's Cell.surface exactly, already registered in "
                 "AVAILABLE_PLUGINS since Phase 0, no code changes needed) and "
@@ -1857,7 +1857,7 @@ DEBT = [
                 "surfaced): the Phase 1-3 claim that 'the app hides a "
                 "disabled cell's nav surface' for all five cells OVERSTATED "
                 "what was actually wired. Checked nav.tabs's real entry list "
-                "(app/src/plugins/surfaces/tabs.ts): only board/processes/"
+                "(surfaces/app/src/plugins/surfaces/tabs.ts): only board/processes/"
                 "connectors have a tab.* entry, so only THOSE THREE cells' "
                 "nav-hiding genuinely worked. PM and Copilot have NO tab to "
                 "hide - PM's UI is embedded inline (PMStatusPanel in the "
@@ -1865,7 +1865,7 @@ DEBT = [
                 "point is a floating chat button + overlay, not a route. "
                 "Toggling pmEnabled/copilotEnabled off hid nothing in "
                 "production; the routes 404'd but the UI stayed fully "
-                "visible and clickable. FIXED: app/src/data/cells.ts "
+                "visible and clickable. FIXED: surfaces/app/src/data/cells.ts "
                 "(useCellEnabled(id), a small shared hook, same 'cells' "
                 "query key as _layout.tsx's local one so react-query dedupes "
                 "the fetch) wired directly at the three render points - "
@@ -1876,7 +1876,7 @@ DEBT = [
                 "change). Also surfaced a SEPARATE, larger pre-existing gap "
                 "while tracing this (debt order 29, plugin-kernel-dual-nav, "
                 "already open, NOT re-litigated here): production boots the "
-                "'app' profile (app/profiles/app.json), which loads nav.tabs "
+                "'app' profile (surfaces/app/profiles/app.json), which loads nav.tabs "
                 "for tab METADATA but does NOT load the surfaces.board/pm/"
                 "processes/connectors/copilot Surface PLUGINS built in "
                 "Phase 1-3 - those are only loaded by the 'owner'/'store' "
@@ -1970,10 +1970,10 @@ DEBT = [
         "fix": "PAID. (1) daemon/routes_auth.py: auth_login/auth_setup/"
                "auth_register all now ALSO mint a real device token via the "
                "EXISTING auth.issue_token() (same primitive the owner-only "
-               "/users/<name>/tokens route and /relay/pair's QR flow already "
+               "/users/<name>/tokens route and /surfaces/relay/pair's QR flow already "
                "use - no new auth mechanism) and return it in the response "
                "body, alongside the unchanged cookie (backward compatible). "
-               "(2) app/src/data/authgate.ts (new): a small zustand store "
+               "(2) surfaces/app/src/data/authgate.ts (new): a small zustand store "
                "(same shape as data/health.ts's useHealth) - needsLogin, "
                "flipped by client.ts's existing 401 detection (the ONE place "
                "that already classifies AuthRequired) and by Settings' new "
@@ -2005,7 +2005,7 @@ DEBT = [
         "title": "The build loop registered as Cell #6 - real enable flag, "
                  "not cosmetic - fixed 2026-08-18",
         "status": "paid",
-        "what": "Owner pushback (correct): the build loop (tools/loop_state.py "
+        "what": "Owner pushback (correct): the build loop (ops/tools/loop_state.py "
                 "- ALIGN>ANALYZE>EXECUTE>TEST>CLEAN>BUILD>COMMIT, enforced by "
                 "the Stop/SessionStart hooks in .claude/settings.json) has the "
                 "same shape as every other Cell - its own harness (CLAUDE.md), "
@@ -2015,13 +2015,13 @@ DEBT = [
                 "kernel, order 32) purely because it isn't daemon-hosted. "
                 "STRUCTURAL DIFFERENCE, stated plainly rather than papered "
                 "over: the Stop hook is enforced entirely OUTSIDE the daemon "
-                "- .claude/settings.json calls `py -3.12 tools/loop_state.py "
+                "- .claude/settings.json calls `py -3.12 ops/tools/loop_state.py "
                 "--stop-hook` as a local script, no HTTP round-trip. The "
                 "daemon's /loop/map (routes_info.py's _loop_machine) is a "
                 "READ-ONLY MIRROR of the same module for display, not the "
                 "actual enforcement path. Registering this as Cell #6 only "
                 "means something if the enable flag is REAL: "
-                "tools/loop_state.py gained _build_loop_enabled(), which "
+                "ops/tools/loop_state.py gained _build_loop_enabled(), which "
                 "reads daemon/policy_live.json directly (falling back to "
                 "policy_seed.json, mirroring policy.py's own seed-then-live "
                 "semantics) with NO daemon round-trip (the tool must work "
@@ -2036,16 +2036,16 @@ DEBT = [
                 "such equivalent by design, so session_start is the one "
                 "place a disabled build loop is visibly announced). "
                 "cells.py: Cell gained a repo_files=() field (files at "
-                "repo ROOT, not under daemon/ or app/ - tools/loop_state.py "
+                "repo ROOT, not under daemon/ or app/ - ops/tools/loop_state.py "
                 "is repo-root); allowed_files()/where()/manifest() extended "
                 "to fold repo_files into the same 'logicFiles' the app "
                 "already renders. New buildloop Cell registered: enabled_key "
-                "'buildLoopEnabled', repo_files=('tools/loop_state.py',), "
+                "'buildLoopEnabled', repo_files=('ops/tools/loop_state.py',), "
                 "harness_file='CLAUDE.md', ui_files=('src/app/loopmap.tsx',) "
                 "shared with engineer (noted in role, not double-claimed), "
                 "route_modules deliberately EMPTY - it has no HTTP surface, "
                 "self-governing not delegated. daemon/policy_seed.json + "
-                "app/src/kernel/keys.ts PolicySet + app/src/boot/policies.ts "
+                "surfaces/app/src/kernel/keys.ts PolicySet + surfaces/app/src/boot/policies.ts "
                 "CHARTER_DEFAULTS all gained buildLoopEnabled:true, matching "
                 "every other cell flag's seeding pattern exactly. SAFETY: "
                 "this touches the exact mechanism governing the current "
@@ -2064,7 +2064,7 @@ DEBT = [
                 "as every other flag, it already inherits the existing "
                 "agentMaySwap=false protection (an agent cannot flip it "
                 "without a human confirm) - no new safety mechanism needed.",
-        "fix": "PAID. tests/test_loop_state_policy.py (new, sandboxed): "
+        "fix": "PAID. ops/tests/test_loop_state_policy.py (new, sandboxed): "
                "8 assertions - fail-open on no file, seed-only True, "
                "live-missing-key defaults True, live=false really returns "
                "False, corrupt-live falls through to seed, stop_hook() "
@@ -2117,14 +2117,14 @@ DEBT = [
                 "__init__.py for all 5 cells; _subpaths.py -> paths.py "
                 "(keeps REPO_ROOT/DAEMON_ROOT, drops the sys.path mutation "
                 "entirely); every flat `import X`/`from X import Y` across "
-                "~90 files (spine/cells/routes/tests/tools) rewritten to "
+                "~90 files (spine/cells/routes/ops/tests/tools) rewritten to "
                 "absolute `from spine import X` / "
                 "`from cells.<id> import X` (mechanical, via a "
                 "one-off script, not hand-edited file by file). Entry point "
                 "invocation changed: `cd daemon && py -3.12 swarm.py serve` "
                 "-> `py -3.12 -m daemon.swarm serve` from the REPO ROOT "
                 "(swarm.py/mint_token.py themselves stay physically flat in "
-                "daemon/ - they're spawned by desktop/tray.py/desktop/"
+                "daemon/ - they're spawned by surfaces/desktop/tray.py/surfaces/desktop/"
                 "main.js via a relative script path, changing THAT is a "
                 "separate, larger blast radius not worth taking here).\n"
                 "\n"
@@ -2204,7 +2204,7 @@ DEBT = [
                "owned route modules (process's routes_misc.py); "
                "cells.engineer.sessions (the crown jewel, heaviest "
                "cross-module fan-in) imports and its flow()/lane-graph "
-               "file:line citations resolve correctly. tools/loop_state.py's "
+               "file:line citations resolve correctly. ops/tools/loop_state.py's "
                "checks_red() (daemon-wiring subprocess check) and "
                "hygiene_problems() (debt register import) both updated to "
                "the real package form and verified against the real repo. "
@@ -2296,11 +2296,11 @@ DEBT = [
                 "breakage a card never touched (i18n_lint), red on box load "
                 "(a Gradle build starved test_driver_session's timing "
                 "assertion), and a starved worker double-started it. "
-                "tools/run_gate.py is now the LIGHT gate: py_compile over all "
+                "ops/tools/run_gate.py is now the LIGHT gate: py_compile over all "
                 "daemon packages + design/i18n lints (code check) + `import "
                 "daemon.swarm` (function check - the daemon wires up), "
                 "seconds total. The full suite moved verbatim to "
-                "tools/run_suite.py as a BASE health monitor: run it against "
+                "ops/tools/run_suite.py as a BASE health monitor: run it against "
                 "the trunk on a schedule or after a batch; red = fix the "
                 "trunk, never bounce a card. This is the Paseo lesson "
                 "adopted deliberately: behavior verification is the owner "
@@ -2314,7 +2314,7 @@ DEBT = [
                         "monitor runs, and bisecting which one broke the "
                         "suite is manual. The suite itself now has no "
                         "enforced runner - if nothing schedules it, it rots "
-                        "into the same nobody-runs-it state tests/test_*.py "
+                        "into the same nobody-runs-it state ops/tests/test_*.py "
                         "was rescued from.",
         "trigger": "a merged card breaks behavior an old pin covered; a build "
                    "ships without any assembled-system verification",
@@ -2334,7 +2334,7 @@ DEBT = [
         "id": "voice-native-stt",
         "title": "Voice mode HEARS on web/desktop only - native has no speech-recognition module",
         "status": "paid",
-        "what": "Voice mode (app/src/ui/voice_mode.tsx) ships both halves of a "
+        "what": "Voice mode (surfaces/app/src/ui/voice_mode.tsx) ships both halves of a "
                 "spoken turn, but only web/desktop can currently do both. "
                 "SPEAKING works everywhere the daemon reaches: the reply is "
                 "rendered server-side by voice.py and played via expo-audio "
@@ -2394,7 +2394,7 @@ DEBT = [
         "id": "voice-stt-sdk-lag",
         "title": "Speech recognition runs on an SDK-56 package pinned into an SDK-57 app",
         "status": "open",
-        "what": "app/package.json pins expo-speech-recognition to EXACTLY "
+        "what": "surfaces/app/package.json pins expo-speech-recognition to EXACTLY "
                 "56.0.1 - upstream's newest release, published for Expo SDK "
                 "56. Its Android half was compile-verified against this app's "
                 "SDK 57 toolchain before adoption (see [voice-native-stt]) "
@@ -2416,7 +2416,7 @@ DEBT = [
                    "publishes a 57.x; OR `expo install --check` flags it",
         "fix": "When a 57.x ships, `npx expo install "
                "expo-speech-recognition` and re-run the same proof that "
-               "bought the current pin: `cd app/android && ./gradlew "
+               "bought the current pin: `cd surfaces/app/android && ./gradlew "
                ":expo-speech-recognition:compileReleaseKotlin`, then a full "
                "APK + emulator smoke. Do NOT bump on the version number "
                "alone. For iOS, the honest close is one EAS build - it is "
@@ -2434,7 +2434,7 @@ DEBT = [
         "status": "open",
         "what": "voice_stream.py renders Henry's reply sentence by sentence so "
                 "voice mode starts talking about a second into a turn instead "
-                "of after it (docs/voice-interaction-design.md SS8d). Two "
+                "of after it (ops/docs/voice-interaction-design.md SS8d). Two "
                 "load-bearing shortcuts come with that. (a) A turn that used "
                 "to be ONE edge-tts render is now typically 2-4, so the "
                 "unmeasured quota question in SS9.5 got sharper rather than "
@@ -2476,7 +2476,7 @@ DEBT = [
                 "true but was read far too broadly - it is about the GLASSES' "
                 "microphone over Bluetooth Classic, and AOSP names the "
                 "trigger as MODE_IN_COMMUNICATION, a mode GlassVoiceService "
-                "asks for itself (docs/glasses-reference.md SS3.1, corrected). "
+                "asks for itself (ops/docs/glasses-reference.md SS3.1, corrected). "
                 "With that scope fixed, three surfaces have three different "
                 "blockers. GLASSES: solved this commit - "
                 "ACTION_LISTEN_PHONE_MIC listens on the phone and leaves A2DP "
@@ -2504,12 +2504,12 @@ DEBT = [
                         "a runtime we could ship, whatever the Chrome 141 "
                         "release note says. Bumping Electron for this would "
                         "have bought nothing.",
-        "trigger": "`py -3.12 tools/probe_duplex.js` (via electron) reports "
+        "trigger": "`py -3.12 ops/tools/probe_duplex.js` (via electron) reports "
                    "DUPLEX AVAILABLE; OR expo-speech-recognition exposes an "
                    "input-device / audio-source option; OR the glasses turn "
                    "out to speak LE Audio",
         "fix": "Per surface, cheapest first. DESKTOP: re-run "
-               "tools/probe_duplex.js after any Electron bump; when "
+               "ops/tools/probe_duplex.js after any Electron bump; when "
                "echoCancellationMode comes back true, add the duplex branch "
                "to listenWeb (getUserMedia({echoCancellationMode:'all'}) -> "
                "recognition.start(track)) and flip caps().duplex's consumer "
@@ -2543,7 +2543,7 @@ DEBT = [
                 "the GlassVoiceService.kt edits that claim and release it. What "
                 "IS verified: the Gradle/manifest wiring in "
                 "app/plugins/withMetaDat.js, covered by 54 assertions in "
-                "tests/test_meta_dat_plugin.js (dialect correctness, "
+                "ops/tests/test_meta_dat_plugin.js (dialect correctness, "
                 "idempotency, the service/class name agreeing with the package "
                 "path, no literal token ever written). The DAT API itself was "
                 "NOT guessed - every symbol was read out of the real 0.9.0 AARs "
@@ -2572,7 +2572,7 @@ DEBT = [
                         "that starts both services by explicit ComponentName "
                         "and writes their base_url/glance_token prefs - "
                         "autolinking finds it and it COMPILES (364 tasks vs "
-                        "350). app/src/data/glasses.ts is the typed seam, "
+                        "350). surfaces/app/src/data/glasses.ts is the typed seam, "
                         "capability-probed like data/voice.ts so an OTA bundle "
                         "landing on an older APK degrades instead of white-"
                         "screening. WHAT IS STILL NOT DONE, and it is the "
@@ -2585,10 +2585,10 @@ DEBT = [
                         "address is meaningless off the LAN); (ii) none of it "
                         "has run on glasses. So the code is PROVEN TO BUILD and "
                         "is NOT yet proven to work.",
-        "trigger": "ACCEPTING THIS CARD. deploy/ship.sh fingerprints app.json's "
+        "trigger": "ACCEPTING THIS CARD. ops/deploy/ship.sh fingerprints app.json's "
                    "expo block, and adding ./plugins/withMetaDat moved it "
                    "(verified: 28dff14 -> dd88362), so the accept takes the "
-                   "NATIVE branch - bump runtimeVersion, deploy/build_apk.sh "
+                   "NATIVE branch - bump runtimeVersion, ops/deploy/build_apk.sh "
                    "(npm ci + gradle assembleRelease + emulator smoke + relay "
                    "distribute), then a matching OTA. That build runs from the "
                    "live repo root, which is a short path, so the NDK "
@@ -2596,13 +2596,13 @@ DEBT = [
                    "apply. It is ALSO the first time any of this Kotlin is "
                    "type-checked, so expect the first accept to be where the "
                    "compile errors surface.",
-        "fix": "PARTLY WIRED 2026-08-21: deploy/build_apk.sh now applies "
+        "fix": "PARTLY WIRED 2026-08-21: ops/deploy/build_apk.sh now applies "
                "withMetaDat.js alongside the other three plugins. It did NOT, "
                "and that was the highest-consequence gap in this whole feature "
-               "- app/android is git-ignored and hand-managed, so an unapplied "
+               "- surfaces/app/android is git-ignored and hand-managed, so an unapplied "
                "plugin contributes nothing, and gradle would have produced a "
                "green APK with the entire camera feature absent and exit 0. "
-               "tests/test_meta_dat_plugin.js now asserts generically that "
+               "ops/tests/test_meta_dat_plugin.js now asserts generically that "
                "EVERY local plugin in app.json is applied by build_apk.sh, so "
                "the next plugin cannot repeat it. REMAINING: (a) run the build "
                "and fix whatever kotlinc says, starting with the DAT extension "
@@ -2624,7 +2624,7 @@ DEBT = [
                  "TOTAL CPU only - not a running worker turn, not per-process "
                  "attribution",
         "status": "open",
-        "what": "docs/backlog/load-aware-admission shipped: spine.ops.resources "
+        "what": "ops/docs/backlog/load-aware-admission shipped: spine.ops.resources "
                 "samples whole-box CPU (ctypes GetSystemTimes delta, no psutil - "
                 "not vendored for the daemon's actual py -3.12 interpreter, "
                 "measured) and free RAM; lanemachine._admit_heavy defers the "
@@ -2711,8 +2711,8 @@ DEBT = [
                         "A second card driver (OpenCode/Codex/any ACP agent) "
                         "produces no such file, so it produces NO CARD FEED AT "
                         "ALL - not a degraded one, an absent one.",
-        "trigger": "docs/multi-engine-support.md (2026-08-24 analysis) + "
-                   "docs/multi-engine-build-plan.md Card 2 (E3, sized L/3-5d): "
+        "trigger": "ops/docs/multi-engine-support.md (2026-08-24 analysis) + "
+                   "ops/docs/multi-engine-build-plan.md Card 2 (E3, sized L/3-5d): "
                    "the pump that already runs every claude turn "
                    "(drivers.py _ClaudeSession._pump/_on_event) folds each "
                    "normalized event into a persisted per-card timeline store "
@@ -2738,7 +2738,7 @@ DEBT = [
                "or rotated-away foreign sessions) and the in-progress "
                "live_partial.txt streaming block, exactly as the build plan's "
                "own design called for. Dual-write verified before cutover with "
-               "tools/compare_timeline.py against real dispatched turns "
+               "ops/tools/compare_timeline.py against real dispatched turns "
                "(text, tool calls through all 4 states, todos, usage, a "
                "harness-injected question note, and a real mid-turn Stop/"
                "cancel) - PASS on every category. Two real bugs surfaced and "
@@ -2755,7 +2755,7 @@ DEBT = [
                "only usage field econ.py's context meter reads, is unaffected "
                "and proven identical live vs. file). Not yet screenshotted in "
                "the app: zero frontend code changed (the TStep wire contract "
-               "is byte-identical) and this worktree has no app/node_modules "
+               "is byte-identical) and this worktree has no surfaces/app/node_modules "
                "set up - the owner should still spot-check a real card's feed "
                "once after accepting.",
         "order": 45,
@@ -2770,7 +2770,7 @@ DEBT = [
                 "That resolved id is then handed to WHATEVER driver the card uses, "
                 "unchanged - for the native omp driver it lands in build_argv's "
                 "--model flag verbatim.",
-        "why_it_bites": "Measured live 2026-08-24 (docs/multi-engine-build-plan.md "
+        "why_it_bites": "Measured live 2026-08-24 (ops/docs/multi-engine-build-plan.md "
                         "Card 8): a card with driver=omp and no explicit model got "
                         "auto-routed to the literal string 'claude-sonnet-5', which "
                         "omp's own --model fuzzy-matcher happened to resolve to a real "
@@ -2826,7 +2826,7 @@ DEBT = [
                         "read from source at all - the one part of that module "
                         "most likely to need correction, not just confirmation.",
         "trigger": "an owner account for codex, opencode, or pi. Each card's own "
-                   "'Verify (STILL OPEN)' line in docs/multi-engine-build-plan.md "
+                   "'Verify (STILL OPEN)' line in ops/docs/multi-engine-build-plan.md "
                    "is the concrete checklist - run it the same way omp's Card 8 "
                    "verify ran (real dispatched turns through the live daemon and "
                    "the actual /tracks/.../transcript HTTP route, not just the "

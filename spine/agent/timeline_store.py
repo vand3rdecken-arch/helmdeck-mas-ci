@@ -9,15 +9,15 @@ drivers.py's _scan_bg/_bg_open (background-task registry) and
 sessions.record_bg: derived from the runtime's own signal, one owner, never
 reconstructed by re-scanning an artifact afterward.
 
-DUAL-WRITE STAGE (docs/multi-engine-build-plan.md Card 2): drivers.py calls
+DUAL-WRITE STAGE (ops/docs/multi-engine-build-plan.md Card 2): drivers.py calls
 append() from _ClaudeSession._on_event/_fold_timeline; nothing reads this
 store in production yet. /transcript still serves claude_sessions.
-read_transcript_live(). Cutover happens only after tools/compare_timeline.py
+read_transcript_live(). Cutover happens only after ops/tools/compare_timeline.py
 shows N clean live turns with an empty diff.
 
 FORMAT: append-only JSONL, one line per write - `{"_id": step_id, **patch}`.
 A step's FIRST write carries its full TStep-shaped fields (the SAME shape
-claude_sessions.read_transcript already produces; app/src/ui/card_transcript.
+claude_sessions.read_transcript already produces; surfaces/app/src/ui/card_transcript.
 tsx's TStep interface is the unchanged contract). A LATER write with the SAME
 _id is a PARTIAL PATCH (e.g. a running tool call receiving its result) -
 read() folds every line sharing an _id via dict.update, in file order, so a

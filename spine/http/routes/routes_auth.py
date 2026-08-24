@@ -81,7 +81,7 @@ def auth_login(self, user, body):
     # that cookie alone would never actually authenticate the app's fetches
     # (different mechanism, cross-origin in dev besides). Mint a real device
     # token for the just-authenticated user too, via the SAME auth.issue_token
-    # the owner-only /users/<name>/tokens route and /relay/pair's QR flow
+    # the owner-only /users/<name>/tokens route and /surfaces/relay/pair's QR flow
     # already use - no new auth primitive. Backward compatible: the cookie is
     # still set for anything that reads it, `token` is just an added field.
     tok = auth.issue_token(name, "web-login")

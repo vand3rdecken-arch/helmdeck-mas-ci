@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Henry's judgement half of the escalation channel (owner decree 2026-08-21,
-docs/backlog/henry-exception-broker; cell placement corrected same day on owner
+ops/docs/backlog/henry-exception-broker; cell placement corrected same day on owner
 pushback: "respect the cell structure - communication between cells").
 
 The split across the architecture:

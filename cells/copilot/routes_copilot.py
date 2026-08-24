@@ -121,14 +121,14 @@ def chat_post(self, user, body):
 
 def notify_speak_post(self, user, body):
     # Speak text the phone ALREADY holds - the proactive-blocker half of phone
-    # voice (app/src/data/push.ts). A push arrives sealed (notify.card_event
+    # voice (surfaces/app/src/data/push.ts). A push arrives sealed (notify.card_event
     # authored the title/body once, server-side); the phone decrypts it
     # locally and, if the owner turned the toggle on, hands that exact text
     # back here to be rendered as speech and played through whatever audio
     # route the phone is on right now - ordinary Bluetooth media playback
     # when paired with the glasses. No DAT, no companion project: this reuses
     # the SAME daemon-renders/client-plays split as /chat's voice:true and
-    # glance_banner_voice (docs/glasses-reference.md SS4/SS11.6).
+    # glance_banner_voice (ops/docs/glasses-reference.md SS4/SS11.6).
     #
     # Owner/operator only, same gate as /chat - a client role has no
     # board-wide notification stream to speak from. Bounded to a short

@@ -119,7 +119,7 @@ def _drain_steer_texts(tid):
         return _steer_pending.pop(tid, [])
 
 
-# LOAD-AWARE ADMISSION holder registry (docs/backlog/load-aware-admission): the
+# LOAD-AWARE ADMISSION holder registry (ops/docs/backlog/load-aware-admission): the
 # desktop lock's pattern generalized from mutual EXCLUSION (only one card may
 # drive the cursor) to mutual AWARENESS (several heavy ops may run at once if
 # the box has headroom - lanemachine._admit_heavy decides that from OBSERVED

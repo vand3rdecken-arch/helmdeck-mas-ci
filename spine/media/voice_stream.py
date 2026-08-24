@@ -51,7 +51,7 @@ from spine.media import voice
 # opening sentence onto the long one after it and pushed first audio out to
 # char 104 of 170. Later chunks get longer on purpose: by then audio is already
 # playing, so the only thing size still costs is round trips to Microsoft's
-# voice service (voice.py; quota risk in docs/voice-interaction-design.md SS9.5).
+# voice service (voice.py; quota risk in ops/docs/voice-interaction-design.md SS9.5).
 BATCH_CHARS = (0, 140, 260)
 
 # Never render a two-word fragment on its own: an abbreviation the splitter
@@ -104,7 +104,7 @@ def cut(text):
 # carries its stream's turn number, so a client can tell "chunk 1 of the answer
 # I am waiting for" from "chunk 1 of an answer I already interrupted". A bare
 # seq cannot: it restarts at 1 every turn, and the huggingface/speech-to-speech
-# lesson (docs/voice-interaction-design.md SS8d) - like the Realtime APIs' -
+# lesson (ops/docs/voice-interaction-design.md SS8d) - like the Realtime APIs' -
 # is that audio must be addressed as (turn, seq), never seq alone.
 _TURN = itertools.count(1)
 

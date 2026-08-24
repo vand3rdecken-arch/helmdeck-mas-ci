@@ -59,7 +59,7 @@ def _text_of(content):
 
 
 from spine.ops import ask  # the typed question channel taught to every worker (Phase 2.4)
-from spine.registry import harness  # briefs + settings layers as data (harness/), never raises
+from spine.registry import harness  # briefs + settings layers as data (ops/harness/), never raises
 
 # CLAUDE comes from agentcli.py now (the single source - see its module
 # docstring); still a real name in THIS module's namespace via the import
@@ -346,7 +346,7 @@ def run(cfg, t, prompt):
     if kind == "cmd":
         return _cmd(cfg, t, prompt)
     if kind == "omp":
-        # Native OMP driver (docs/multi-engine-build-plan.md Card 8) - its
+        # Native OMP driver (ops/docs/multi-engine-build-plan.md Card 8) - its
         # own persistent-session module, same shape as _ClaudeSession but a
         # different wire protocol (JSONL-RPC, not stream-json). LIVE-VERIFIED
         # against a real account. Lazy import: no reason to load for a
@@ -377,7 +377,7 @@ def run(cfg, t, prompt):
         return pi_driver.run(cfg, t, prompt)
     raise RuntimeError("unknown driver type: " + kind)
 
-# THE BRIEFS ARE DATA NOW - harness/agents/*.md, loaded by daemon/harness.py.
+# THE BRIEFS ARE DATA NOW - ops/harness/agents/*.md, loaded by daemon/harness.py.
 #
 # Every card agent gets the same standing orientation: what it CAN do, what the
 # BOARD does, and how to hand off - so hitting a boundary produces a pointer to
@@ -386,7 +386,7 @@ def run(cfg, t, prompt):
 # on the owner's PC), and the card brief would make such an agent refuse.
 #
 # Both texts used to be string constants here. They are policy, not harness -
-# the owner may reword them - so they moved to harness/agents/{card,machine}-worker.md.
+# the owner may reword them - so they moved to ops/harness/agents/{card,machine}-worker.md.
 # harness.py keeps the identical text as its built-in fallback and never raises,
 # so a mangled file costs the wording, never the spawn. The <helmdeck-ask>
 # protocol is still owned by ask.py and spliced in by harness.py: it is coupled
@@ -430,7 +430,7 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     load-bearing state is derived, mutated at exactly ONE owner). So the preview
     calls this, and the preview is correct by construction.
 
-    THE SETTINGS LAYER (harness/agents/<agent>.md -> setting_sources + settings).
+    THE SETTINGS LAYER (ops/harness/agents/<agent>.md -> setting_sources + settings).
     Without it a card loads the OPERATOR'S PERSONAL ~/.claude/settings.json,
     because cwd is his machine: an `rtk hook claude` PreToolUse hook on every
     Bash call (296 observed failures inside card transcripts), a pinned
@@ -439,7 +439,7 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     of it. `--setting-sources project` drops that layer while KEEPING the repo's
     own .claude/settings.json build-loop hooks, which the card does want.
     Measured, not assumed - daemon/probe_harness_settings.py against the real
-    CLI 2.1.207 (--help text is not proof). Empty list when harness/ is absent,
+    CLI 2.1.207 (--help text is not proof). Empty list when ops/harness/ is absent,
     which is exactly the old inherit-everything behaviour.
     """
     argv = [exe or CLAUDE, "-p",
@@ -479,7 +479,7 @@ class _ClaudeSession:
         self.cfg = cfg
         self.worktree = t.get("worktree") or "."
         self.card_env = _card_env(t)     # HELMDECK_DEV_PORT etc., fixed at spawn
-        self.agent = _agent_for(t)       # which harness/agents/*.md speaks to it
+        self.agent = _agent_for(t)       # which ops/harness/agents/*.md speaks to it
         self.brief = harness.brief(self.agent)
         self.sig = _opts_sig(cfg, t)
         self.session_id = t.get("session_id")
@@ -545,7 +545,7 @@ class _ClaudeSession:
                         pass
         # Re-read the brief HERE, not once in __init__: a respawn (restart after a
         # timeout, an options change) is the natural moment to pick up an edited
-        # harness/agents/*.md, and it costs one stat() when nothing changed.
+        # ops/harness/agents/*.md, and it costs one stat() when nothing changed.
         self.brief = harness.brief(self.agent)
         # ONE builder, shared with /harness's spawn preview - see build_argv.
         argv = build_argv(self.agent, self.cfg, self.brief,
@@ -778,7 +778,7 @@ class _ClaudeSession:
         SAME TStep shape claude_sessions.read_transcript already produces from
         a re-parsed .jsonl - but derived here from the LIVE stream, at the
         moment each block completes. DUAL-WRITE ONLY: nothing reads this store
-        in production yet (docs/multi-engine-build-plan.md Card 2). Best-
+        in production yet (ops/docs/multi-engine-build-plan.md Card 2). Best-
         effort, same discipline as _scan_bg - a feed write must never disturb
         a turn.
 
@@ -795,7 +795,7 @@ class _ClaudeSession:
         cut, not a silent gap): plain role=user text is folded as a bare text
         step without read_transcript's envelope re-attribution (command-label
         rewriting, harness-tag notes, notification labels, compaction dedup).
-        tools/compare_timeline.py knows about this and reports those as
+        ops/tools/compare_timeline.py knows about this and reports those as
         accepted differences, not failures.
 
         MEASURED LIMIT (not a bug to fix - there is no live signal that carries
@@ -809,7 +809,7 @@ class _ClaudeSession:
         which is input+cache only) are unaffected - proven identical live vs.
         file on the same turns - and ctx is the ONLY usage field econ.py's
         context meter actually reads (econ._record_econ never touches
-        output_tokens). tools/compare_timeline.py excludes tokOut from its
+        output_tokens). ops/tools/compare_timeline.py excludes tokOut from its
         usage comparison for exactly this reason."""
         m = ev.get("message") or {}
         role = m.get("role") or ev.get("type")
@@ -1170,7 +1170,7 @@ class _ClaudeSession:
             # derives (from the '[Request interrupted by user...]' sentinel
             # string) - folded here instead from the PROGRAMMATIC signal, which
             # is the more precise source the same way ACP's stopReason beats
-            # string-sniffing a result frame (docs/multi-engine-support.md §4.3).
+            # string-sniffing a result frame (ops/docs/multi-engine-support.md §4.3).
             try:
                 timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
                     {"kind": "turn", "event": "canceled",

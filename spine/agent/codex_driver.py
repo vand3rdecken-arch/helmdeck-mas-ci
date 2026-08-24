@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Codex native driver (docs/multi-engine-support.md §6.6.1, build plan
+"""Codex native driver (ops/docs/multi-engine-support.md §6.6.1, build plan
 Card 6). One persistent `codex app-server` process per card, same isolation
 shape as drivers.py's _ClaudeSession (tree-kill, PID registration, one turn
 at a time) - Codex's own process model has no shared-server conflict the

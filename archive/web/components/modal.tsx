@@ -12,7 +12,7 @@ const EXAMPLES = [
   { icon: IconSparkle, label: "feature", task: "Add a CSV export button to the dashboard work table (all columns, current filters applied).", driver: "claude" },
   { icon: IconMonitor, label: "desktop task", task: "Open the invoice tool, export June as PDF into Downloads, and verify the file exists.", driver: "claude-desktop" },
   { icon: IconGlobe, label: "browser task", task: "Go to the supplier portal, download the latest price list, and summarize what changed vs the file in data/prices.csv.", driver: "claude-desktop" },
-  { icon: IconSearch, label: "research", task: "Read the three competitor changelogs linked in docs/watchlist.md and write a one-page summary of what shipped this month.", driver: "claude" },
+  { icon: IconSearch, label: "research", task: "Read the three competitor changelogs linked in ops/docs/watchlist.md and write a one-page summary of what shipped this month.", driver: "claude" },
 ];
 
 export default function NewRequestModal({ onClose }: { onClose: () => void }) {

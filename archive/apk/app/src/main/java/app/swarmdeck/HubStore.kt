@@ -59,7 +59,7 @@ object HubStore {
         get() = prefs.getString("pairSecret", "") ?: ""
         set(v) { prefs.edit().putString("pairSecret", v).apply() }
 
-    /** Relay reverse-tunnel + E2EE (relay/relay.py, e2ee.py). When set, every
+    /** Relay reverse-tunnel + E2EE (surfaces/relay/relay.py, e2ee.py). When set, every
      *  request is NaCl-box sealed and POSTed to relayUrl "/relay?room=<room>";
      *  the relay only sees ciphertext. Empty relayUrl = direct LAN. */
     var relayUrl: String

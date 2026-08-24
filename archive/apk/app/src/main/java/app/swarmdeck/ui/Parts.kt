@@ -168,7 +168,7 @@ fun StepRow(s: Step) {
             }
         }
         "thinking" -> ThinkingRow(s)
-        "system" -> {   // lifecycle event woven into the feed (dispatched/gate/merge/deploy/bounce)
+        "system" -> {   // lifecycle event woven into the feed (dispatched/gate/merge/ops/deploy/bounce)
             val txt = s.text ?: ""
             val bad = Regex("FAIL|BOUNC|KONFLIKT|conflict", RegexOption.IGNORE_CASE).containsMatchIn(txt)
             val good = Regex("MERGED|ACCEPTED|GATE PASSED|DISPATCHED|COMMITTED|CONNECTOR|REDUNDANT",

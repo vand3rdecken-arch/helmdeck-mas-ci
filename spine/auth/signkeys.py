@@ -13,7 +13,7 @@ stock git:
 
 No HelmDeck code in that loop - which is the entire point.
 
-WHY GPG AND NOT SSH SIGNING (measured, not preferred): the design (docs/
+WHY GPG AND NOT SSH SIGNING (measured, not preferred): the design (ops/docs/
 gxp-mode-design.md 2.0) suggested gpg.format=ssh, but that landed in git 2.34
 and this host runs git 2.27. GPG tag verification has worked in git for a
 decade and gpg 2.2 ships inside Git for Windows, so the auditor story is

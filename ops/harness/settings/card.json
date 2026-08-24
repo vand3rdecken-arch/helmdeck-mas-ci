@@ -1,0 +1,66 @@
+{
+  "$schema": "../schema/settings.schema.json",
+
+  "//": [
+    "HelmDeck's OWN settings layer for a card worker. Passed to the CLI as",
+    "`--settings ops/harness/settings/card.json`, on top of `--setting-sources project`.",
+    "",
+    "WHAT THAT COMBINATION BUYS (probed against CLI 2.1.207, not assumed):",
+    "  user layer    OFF - the operator's personal ~/.claude never reaches a card.",
+    "                That layer carries an `rtk hook claude` PreToolUse hook on EVERY",
+    "                Bash call (296 observed failures leaking into card transcripts),",
+    "                a pinned `model: claude-fable-5[1m]` that silently overrode the",
+    "                card's own model pick, ~150 skillOverrides and personal plugins.",
+    "                None of it is the card's business, and the card cannot fix it.",
+    "  project layer ON  - the repo's .claude/settings.json still applies, so a card",
+    "                keeps the build-loop hooks it is SUPPOSED to have: the Stop hook",
+    "                (ops/tools/loop_state.py --stop-hook), SessionStart re-orientation,",
+    "                and the design PostToolUse hook.",
+    "  this file     ON  - anything HelmDeck wants true for every card and nothing else.",
+    "",
+    "NEVER put a secret in here: this file is tracked in git, which is exactly why it",
+    "is safe to hand to a sandboxed worker.",
+    "",
+    "MEMORY IS READ-ONLY (2026-08-16, debt: card-shares-the-operators-auto-memory).",
+    "Every surface's memory_paths.auto resolves to ONE directory - the operator's",
+    "personal ~/.claude/projects/<slug>/memory/ - and --setting-sources does not move",
+    "it. Unlike everything else this file isolates, that directory carries NO git",
+    "history: `git -C ~/.claude status` is 'not a git repository', so a card write",
+    "there is not reversible the way a tracked-file edit is. Measured against the real",
+    "CLI (drivers.build_argv + the real card settings, not a synthetic stand-in): a",
+    "card COULD write and edit files there before this entry existed, and the",
+    "Write()/Edit() deny below - the SAME mechanism that already protects",
+    "daemon/settings.json above - blocks it cleanly while leaving Read open, so a",
+    "card still benefits from accumulated notes without being able to corrupt them."
+  ],
+
+  "env": {
+    "HELMDECK_SURFACE": "card"
+  },
+
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git branch*)",
+      "Bash(python ops/tools/loop_state.py*)",
+      "Bash(py -3.12 ops/tools/loop_state.py*)",
+      "Bash(npx tsc --noEmit*)"
+    ],
+    "deny": [
+      "Read(./daemon/settings.json)",
+      "Read(./daemon/users.json)",
+      "Read(./daemon/helmdeck.db)",
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.keystore)",
+      "Write(~/.claude/projects/**)",
+      "Edit(~/.claude/projects/**)"
+    ]
+  }
+}

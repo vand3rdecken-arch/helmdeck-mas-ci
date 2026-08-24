@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """The daemon's half of "one language, sharply".
 
-The app translates its screens (app/src/i18n); this translates the prose the
+The app translates its screens (surfaces/app/src/i18n); this translates the prose the
 daemon SPEAKS to the owner - board-chat messages, push notifications, unblock
 proposals. Both read the same policy key (settings.policy.lang), so the whole
 product switches together instead of the app being German and the chat English.

@@ -9,7 +9,7 @@
     {
      "title": "Unblock the build loop: design_lint false positive on QR black/white literals in settings.tsx",
      "priority": "high",
-     "description": "tools/loop_state.py reports EXECUTE red on 'hardcoded color #000000' in web/components/settings.tsx - but the QR fg/bg MUST stay literal black/white to scan. Add a narrow allow marker (e.g. /* lint:hex-ok */) to tools/design_lint.py and annotate the QR line. Verify: python tools/loop_state.py no longer red on that item; design_lint clean."
+     "description": "ops/tools/loop_state.py reports EXECUTE red on 'hardcoded color #000000' in web/components/settings.tsx - but the QR fg/bg MUST stay literal black/white to scan. Add a narrow allow marker (e.g. /* lint:hex-ok */) to ops/tools/design_lint.py and annotate the QR line. Verify: python ops/tools/loop_state.py no longer red on that item; design_lint clean."
     },
     {
      "title": "Pay debt nightshift-limit-sniff: structured limit signal from the driver",
@@ -19,12 +19,12 @@
     {
      "title": "Add headless unit tests for drivers/nightshift/debt",
      "priority": "medium",
-     "description": "tests/unit with pytest, stdlib-only: debt schema well-formedness, nightshift ranking+claiming+limit gate, drivers stream-json meta extraction from fixture events. Verify: py -3.12 -m pytest tests/unit -q green."
+     "description": "ops/tests/unit with pytest, stdlib-only: debt schema well-formedness, nightshift ranking+claiming+limit gate, drivers stream-json meta extraction from fixture events. Verify: py -3.12 -m pytest ops/tests/unit -q green."
     },
     {
      "title": "One-command check script mirroring the loop (compile+tsc+lint+unit)",
      "priority": "medium",
-     "description": "tools/check_all.sh runs py_compile daemon/*.py, npx tsc --noEmit, design_lint, unit tests; nonzero exit on any failure. Verify locally exit 0."
+     "description": "ops/tools/check_all.sh runs py_compile daemon/*.py, npx tsc --noEmit, design_lint, unit tests; nonzero exit on any failure. Verify locally exit 0."
     },
     {
      "title": "Confirm legacy :8140 fallback UI is a pure redirect",
@@ -89,7 +89,7 @@
     {
      "title": "Cache/corpus staleness audit script",
      "priority": "low",
-     "description": "tools/cache_audit.py: age+entry-count per JSON cache (some from Oct 2025!), flag stale tickers, infoText lead-date check. Read-only. Verify: runs, exits 0."
+     "description": "ops/tools/cache_audit.py: age+entry-count per JSON cache (some from Oct 2025!), flag stale tickers, infoText lead-date check. Read-only. Verify: runs, exits 0."
     }
    ]
   }

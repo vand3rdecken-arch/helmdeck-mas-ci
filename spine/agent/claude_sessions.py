@@ -313,13 +313,13 @@ def read_transcript_live(track, limit=400):
 
 
 def read_transcript_store(track, limit=400):
-    """Card 2 CUTOVER (docs/multi-engine-build-plan.md): the event-time
+    """Card 2 CUTOVER (ops/docs/multi-engine-build-plan.md): the event-time
     timeline_store is now the PRIMARY source for a card's feed - folded live
     by the driver's own pump (drivers.py's _fold_timeline) as each block
     completes, not re-parsed from Claude Code's private ~/.claude/projects/
     **.jsonl the way read_transcript_live is. Verified against
     read_transcript_live on real dispatched turns (text, tool 4-state, todos,
-    usage, a harness question, a cancel) with tools/compare_timeline.py before
+    usage, a harness question, a cancel) with ops/tools/compare_timeline.py before
     this landed - see spine/registry/debt.py's
     card-feed-is-claude-private-jsonl entry for the debt this pays.
 

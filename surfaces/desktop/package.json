@@ -1,0 +1,22 @@
+{
+  "name": "helmdeck-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "HelmDeck desktop app (Electron wrapper) - runs the daemon + UI as one program (Windows, macOS)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:web": "npm --prefix ../app run export:web",
+    "dist": "npm run build:web && electron-builder --config electron-builder.yml",
+    "dist:win": "npm run build:web && electron-builder --win --config electron-builder.yml",
+    "dist:mac": "bash build-mac.sh",
+    "release": "bash ../ops/deploy/release_desktop.sh"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

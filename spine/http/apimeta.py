@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Declarative app-contract data the API serves - extracted from server.py.
 The lane/gate graph (_lane_flow via sessions.flow), the build-loop machine
-(_loop_machine via tools/loop_state.py), and _config_schema: the SINGLE
+(_loop_machine via ops/tools/loop_state.py), and _config_schema: the SINGLE
 source of truth for every editable knob ("policy is data"), a contract with
 app automation.tsx. Module-level so it is importable + checkable. server.py
 re-imports the names. Not monkeypatched.
@@ -12,9 +12,9 @@ from daemon.paths import REPO_ROOT as _REPO_ROOT
 
 
 def _loop_state_mod():
-    """tools/loop_state.py, imported from the daemon."""
+    """ops/tools/loop_state.py, imported from the daemon."""
     import sys as _sys
-    tools = os.path.join(_REPO_ROOT, "tools")
+    tools = os.path.join(_REPO_ROOT, "ops", "tools")
     if tools not in _sys.path:
         _sys.path.insert(0, tools)
     import loop_state
@@ -50,13 +50,13 @@ def _config_schema(s):
     """The declarative config schema: the SINGLE source of truth for every
     editable knob ("policy is data"). The app renders each control generically
     and writes it back with saveSettings(nest(path, value)), so a new knob is one
-    entry HERE, not hand-wiring in two screens. The fixed harness/laws are NOT in
+    entry HERE, not hand-wiring in two screens. The fixed ops/harness/laws are NOT in
     this table - they live read-only in /loop/map.
 
     Module level, not inline in the /automation handler, for the same reason
     _lane_flow and _loop_machine are: the shape it produces is a contract with
-    app/src/app/(tabs)/automation.tsx, and a contract nothing can import is a
-    contract nothing can check. tests/test_harness_layer.py reads it from here
+    surfaces/app/src/app/(tabs)/automation.tsx, and a contract nothing can import is a
+    contract nothing can check. ops/tests/test_harness_layer.py reads it from here
     and holds every `control` to the union the app actually renders and every
     `labelKey` to a two-language entry - a knob with a control the app has no
     branch for renders as NOTHING, silently, on an owner-only screen.

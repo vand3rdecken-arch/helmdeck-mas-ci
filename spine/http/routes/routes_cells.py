@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Cell source-read route - path-param, guard stays inline in server.py per
 the routes_checkpoints.py precedent. GET /cells/<id>/source?file=<name>
-serves ONE file's real text for the code-map UI (app/src/ui/cell_diagram.tsx),
+serves ONE file's real text for the code-map UI (surfaces/app/src/ui/cell_diagram.tsx),
 strictly allowlisted to that cell's own declared metadata (see
 cells.py's Cell.allowed_files()/read_source() - the actual security
 boundary lives there, not here)."""

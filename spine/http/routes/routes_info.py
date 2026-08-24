@@ -15,7 +15,7 @@ from spine.http.apimeta import _lane_flow, _loop_machine, _config_schema
 
 def _harness_state():
     """Which brief/settings layer each agent surface actually resolved to, and
-    any harness file that failed to load. Without this a broken harness/agents
+    any harness file that failed to load. Without this a broken ops/harness/agents
     file is invisible: harness.py deliberately falls back to its built-in default
     rather than breaking a spawn, so nothing would otherwise SAY that an edit is
     being ignored."""

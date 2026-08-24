@@ -172,7 +172,7 @@ def sweep_zombies(min_idle_s=0):
                     pass
                 # Judgement about WHAT to do with the aborted work (re-run the
                 # deploy? obsolete?) is Henry's, not code's - report, don't decide
-                # (owner decree 2026-08-21, docs/backlog/henry-exception-broker).
+                # (owner decree 2026-08-21, ops/docs/backlog/henry-exception-broker).
                 try:
                     from spine.registry import escalations
                     escalations.emit("aborted-by-restart", card=t["id"], detail=names)

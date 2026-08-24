@@ -330,7 +330,7 @@ The first variant has no `display: none` (visible by default). All others do. If
 
 The browser's MutationObserver accepts either delivery shape. On the transactional progressive path it shows arrived variants and pending dots immediately; Accept and Discard are available as soon as one variant exists. Accepting an arrived variant fences the worker before the browser releases the picker, so later publications are rejected.
 
-For `styleMode: "scoped"`, author every `:scope` rule with a descendant combinator. The `@scope` boundary is the **variant wrapper `<div data-impeccable-variant="N">`**, not the element you're designing. A bare `:scope { background: cream; }` styles the wrapper, not the inner replacement, so the cream lands on a `display: contents` shell while the actual element keeps page defaults. Always step in: `:scope > .card`, `:scope > section`, `:scope .hero-title`, etc. The fake test agent's CSS in `tests/live-e2e/agent.mjs` is a faithful template; every scoped rule starts `:scope > ...`.
+For `styleMode: "scoped"`, author every `:scope` rule with a descendant combinator. The `@scope` boundary is the **variant wrapper `<div data-impeccable-variant="N">`**, not the element you're designing. A bare `:scope { background: cream; }` styles the wrapper, not the inner replacement, so the cream lands on a `display: contents` shell while the actual element keeps page defaults. Always step in: `:scope > .card`, `:scope > section`, `:scope .hero-title`, etc. The fake test agent's CSS in `ops/tests/live-e2e/agent.mjs` is a faithful template; every scoped rule starts `:scope > ...`.
 
 **JSX / TSX target files.** Wrap `<style>` content in a template literal so the CSS `{` / `}` aren't parsed as JSX expressions, and use `className=` / `style={{…}}` on every variant element. Keep `data-impeccable-*` attributes as-is; they're plain strings:
 
@@ -693,8 +693,8 @@ const __impeccableLiveDev =
 - **Nuxt + nuxt-security**: edit `nuxt.config.*`, appending to `security.headers.contentSecurityPolicy['script-src']` and `['connect-src']`.
 
 Reference outputs:
-- `tests/framework-fixtures/nextjs-turborepo/expected-after-patch.ts` (Next.js)
-- `tests/framework-fixtures/sveltekit-csp/expected-after-patch.js` (SvelteKit)
+- `ops/tests/framework-fixtures/nextjs-turborepo/expected-after-patch.ts` (Next.js)
+- `ops/tests/framework-fixtures/sveltekit-csp/expected-after-patch.js` (SvelteKit)
 
 Idempotency: if `__impeccableLiveDev` already exists in the file, the patch is already applied; skip asking and just mark `cspChecked: true`.
 
@@ -719,8 +719,8 @@ Per-framework specifics:
 - **Nuxt `routeRules`**: edit `nuxt.config.*`, splicing into the CSP in `routeRules['/**'].headers['Content-Security-Policy']`.
 
 Reference outputs:
-- `tests/framework-fixtures/nextjs-inline-csp/expected-after-patch.js` (Next.js)
-- `tests/framework-fixtures/nuxt-csp/expected-after-patch.ts` (Nuxt)
+- `ops/tests/framework-fixtures/nextjs-inline-csp/expected-after-patch.js` (Next.js)
+- `ops/tests/framework-fixtures/nuxt-csp/expected-after-patch.ts` (Nuxt)
 
 ### Troubleshooting
 

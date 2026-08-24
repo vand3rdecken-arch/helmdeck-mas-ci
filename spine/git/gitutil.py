@@ -17,7 +17,7 @@ WORKTREE_DIRNAME = "helmdeck-worktrees"
 # inherits the host's user.name/user.email, so agent work lands in the history
 # authored by whoever owns the machine - the log then asserts a HUMAN author for
 # MACHINE work. That is false attribution, which is worse than none, and it is
-# what disqualifies git as an audit trail (docs/gxp-mode-design.md 2.0).
+# what disqualifies git as an audit trail (ops/docs/gxp-mode-design.md 2.0).
 #
 # Passed per call as `-c` options (git accepts them after -C, before the
 # subcommand) rather than set globally or through the daemon's env: either of

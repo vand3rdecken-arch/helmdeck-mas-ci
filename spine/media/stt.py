@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Server-side speech-to-text - the STT stage of the LIVE voice pipeline.
 
-The phone's LiveMic module (app/modules/livemic) cuts utterances with its own
+The phone's LiveMic module (surfaces/app/modules/livemic) cuts utterances with its own
 VAD and sends each one as a small WAV blob over the sealed relay - the same
 whole-small-blobs transport voice_stream.py uses for TTS, in reverse. This
 module turns one blob into text.
@@ -42,7 +42,7 @@ def available():
         return False
 
 
-#: benchmarked 2026-08-23 (tools/stt_bench.py, 36 German utterances, clean16k
+#: benchmarked 2026-08-23 (ops/tools/stt_bench.py, 36 German utterances, clean16k
 #: + hfp8k telephone-band): parakeet-tdt-0.6b-v3 int8 beat every whisper tier
 #: on BOTH axes - WER 8.3%/8.7% at 0.90s median vs faster-whisper base's
 #: 19.7%/24.6% at 1.6s - and its 8k robustness is what makes the glasses mic

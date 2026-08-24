@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""The harness loader - agent briefs and settings layers as DATA (`harness/`).
+"""The harness loader - agent briefs and settings layers as DATA (`ops/harness/`).
 
 ARCHITECTURE.md: the harness is code, policy is data. The briefs were the
 exception - what a card worker is told about itself was a string constant in
 drivers.py, and the board copilot's 10 KB system prompt was a constant in
 copilot.py. Both are policy: the owner may reword them without touching the
-daemon. They live in harness/agents/*.md now, with harness/settings/*.json as
+daemon. They live in ops/harness/agents/*.md now, with ops/harness/settings/*.json as
 the settings layer each surface runs under.
 
 THE ONE LAW OF THIS MODULE: **it can never break a spawn.**
 A card is the owner's work in flight. A typo in a markdown file must not be able
 to strand it. So every public function is total - it returns the built-in
 default rather than raising - and the built-in defaults below are the exact text
-that used to be hardcoded, so "harness/ is missing entirely" degrades to
+that used to be hardcoded, so "ops/harness/ is missing entirely" degrades to
 precisely the old behaviour. Failures are not swallowed silently either: they
 accumulate in errors(), which /loop/map surfaces, so a broken file is visible
 instead of mysteriously ineffective.
@@ -34,7 +34,7 @@ edit a brief, next turn uses it, no daemon restart.
 import json, os, threading
 
 from daemon.paths import REPO_ROOT as ROOT
-HARNESS = os.path.join(ROOT, "harness")
+HARNESS = os.path.join(ROOT, "ops", "harness")
 AGENTS = os.path.join(HARNESS, "agents")
 SETTINGS = os.path.join(HARNESS, "settings")
 
@@ -44,12 +44,12 @@ _errors = {}         # path -> message   (cleared for a path once it loads clean
 
 # ---------------------------------------------------------------------------
 # BUILT-IN DEFAULTS - the exact constants that used to live in drivers.py /
-# copilot.py. These are the floor: if harness/ is deleted, mangled, or shipped
+# copilot.py. These are the floor: if ops/harness/ is deleted, mangled, or shipped
 # without, every surface still gets the brief it had before this module existed.
 # ---------------------------------------------------------------------------
 _DEFAULT_CARD = (
     "You are working ONE HelmDeck card in an isolated git worktree. "
-    "You CAN: edit files, run commands/tests/builds, and commit on THIS branch. "
+    "You CAN: edit files, run commands/ops/tests/builds, and commit on THIS branch. "
     "If you start a dev server, bind the port reserved for THIS card in "
     "$HELMDECK_DEV_PORT (when set) - not the project default - so parallel "
     "cards never fight over a port. "
@@ -236,7 +236,7 @@ def _resolve(body, fm):
 # ---------------------------------------------------------------------------
 def brief(name, default=None):
     """The full system prompt for a surface: the editable body from
-    harness/agents/<name>.md with the fixed ask protocol spliced in.
+    ops/harness/agents/<name>.md with the fixed ask protocol spliced in.
 
     Falls back to the built-in default (or `default`) whenever the file is
     missing, unreadable, has no body, or fails to parse - so a bad edit costs
@@ -316,7 +316,7 @@ def describe():
         path = os.path.join(AGENTS, "%s.md" % name)
         out.append({
             "name": name,
-            "source": "harness/agents/%s.md" % name if os.path.exists(path) else "built-in default",
+            "source": "ops/harness/agents/%s.md" % name if os.path.exists(path) else "built-in default",
             "settings": (os.path.relpath(settings_file(name), ROOT).replace("\\", "/")
                          if settings_file(name) else ""),
             "setting_sources": m.get("setting_sources"),
@@ -345,7 +345,7 @@ SURFACES = [
      "builder": "drivers.build_argv", "cwd": "<worktree der Karte>"},
     {"key": "machine", "agent": "machine-worker", "label": "Maschine (Task auf dem PC)",
      "builder": "drivers.build_argv", "cwd": "<Arbeitsordner des Tasks>"},
-    # `agent` is the FILE key (harness/agents/board-copilot.md) and deliberately
+    # `agent` is the FILE key (ops/harness/agents/board-copilot.md) and deliberately
     # keeps its old name: renaming the file would break every brief lookup and
     # the settings mapping for a cosmetic win. The LABEL is what the owner reads.
     {"key": "pm", "agent": "board-copilot", "label": "PM / Henry",
@@ -439,7 +439,7 @@ def validate(obj, which):
     means two different things here and the owner should see which he got."""
     schema = load_schema(which)
     if not schema:
-        return (["Schema harness/schema/%s.schema.json nicht lesbar" % which], "none")
+        return (["Schema ops/harness/schema/%s.schema.json nicht lesbar" % which], "none")
     try:
         import jsonschema
         v = jsonschema.Draft7Validator(schema)
@@ -564,7 +564,7 @@ def settings_keys():
 
 
 def agent_doc(name):
-    """The raw markdown of harness/agents/<name>.md plus what it resolves to.
+    """The raw markdown of ops/harness/agents/<name>.md plus what it resolves to.
     `text` is "" when the file does not exist - the surface is then running on
     the built-in default, and writing creates the file."""
     path = os.path.join(AGENTS, "%s.md" % name)
@@ -581,7 +581,7 @@ def agent_doc(name):
 
 
 def settings_doc(key):
-    """The raw JSON of harness/settings/<key>.json."""
+    """The raw JSON of ops/harness/settings/<key>.json."""
     path = os.path.join(SETTINGS, "%s.json" % key)
     raw = _read_text(path)
     return {
@@ -592,9 +592,9 @@ def settings_doc(key):
 
 
 def write_agent(name, text, actor="owner"):
-    """Replace harness/agents/<name>.md. Raises ValueError on a rejected edit.
+    """Replace ops/harness/agents/<name>.md. Raises ValueError on a rejected edit.
 
-    Validated BEFORE the write, against harness/schema/agent.schema.json. The
+    Validated BEFORE the write, against ops/harness/schema/agent.schema.json. The
     body is free prose (it is the policy), but the frontmatter drives real spawn
     flags - a typo'd `setting_sources` would hand the worker the operator's
     personal config, which is the entire class of bug this harness exists to
@@ -617,7 +617,7 @@ def write_agent(name, text, actor="owner"):
         raise ValueError("Frontmatter verletzt das Schema (%s): %s" % (validator, "; ".join(errs[:5])))
     st = fm.get("settings")
     if st and not os.path.exists(os.path.join(SETTINGS, "%s.json" % st)):
-        raise ValueError("settings: %s zeigt auf harness/settings/%s.json - die es nicht gibt" % (st, st))
+        raise ValueError("settings: %s zeigt auf ops/harness/settings/%s.json - die es nicht gibt" % (st, st))
     path = os.path.join(AGENTS, "%s.md" % name)
     vid = _keep_version("agents", name, path, actor)
     _atomic_write(path, text if text.endswith("\n") else text + "\n")
@@ -626,7 +626,7 @@ def write_agent(name, text, actor="owner"):
 
 
 def write_settings(key, text, actor="owner"):
-    """Replace harness/settings/<key>.json. Raises ValueError on a rejected edit.
+    """Replace ops/harness/settings/<key>.json. Raises ValueError on a rejected edit.
 
     Two checks, and the second is the one that matters: `claude -p` SILENTLY
     IGNORES a settings file that fails ITS validation. A file that is valid JSON

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Daemon side of the ZERO-KNOWLEDGE relay (see relay/relay.py + e2ee.py). When
+"""Daemon side of the ZERO-KNOWLEDGE relay (see surfaces/relay/relay.py + e2ee.py). When
 paired (settings.relay = {url, room, sk, phone_pubs?}), this dials OUT to the
 relay, pulls end-to-end-ENCRYPTED phone frames, decrypts them, runs the inner
 request against the local daemon, and pushes an encrypted response. The relay
@@ -261,7 +261,7 @@ def pairing_payload():
         # payload becomes embeds a live device token in a plain-http URL.
         raise ValueError("relay url is plain http:// - the pairing link would "
                          "carry a live device token unencrypted. Use the HTTPS "
-                         "relay URL (deploy/README.md), or http://localhost "
+                         "relay URL (ops/deploy/README.md), or http://localhost "
                          "only for local testing.")
     if not rel.get("sk"):
         sk, _ = e2ee.generate_keypair()

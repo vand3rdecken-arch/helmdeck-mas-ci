@@ -2,9 +2,9 @@
 """Does claude CLI 2.1.207 actually give the harness a settings layer?
 
 Companion to the older ask.py probe (daemon/ask.py's own header): the design
-for harness/ ASSUMES `--settings`, `--setting-sources` and CLAUDE_CONFIG_DIR do
+for ops/harness/ ASSUMES `--settings`, `--setting-sources` and CLAUDE_CONFIG_DIR do
 what their --help says. Help text is not proof, so this measures each one
-against the real binary. See harness/README.md for the two traps it found.
+against the real binary. See ops/harness/README.md for the two traps it found.
 
 THE QUESTION
 ------------
@@ -16,11 +16,11 @@ that is the card's business. What we WANT is:
 
     user layer      OFF   (operator's personal config stays out of cards)
     project layer   ON    (repo .claude/settings.json = the build-loop hooks)
-    explicit layer  ON    (harness/settings/*.json = HelmDeck's own layer)
+    explicit layer  ON    (ops/harness/settings/*.json = HelmDeck's own layer)
 
 NOT A THROWAWAY - RE-RUN AFTER A CLI UPGRADE. A silently-changed flag would
 not error, it would just quietly hand every card back the operator's config.
-This is a permanent regression check, same shelf as tools/probe_driver_env.py.
+This is a permanent regression check, same shelf as ops/tools/probe_driver_env.py.
 
     python daemon/probe_harness_settings.py             # full sweep, ~20s
     python daemon/probe_harness_settings.py --validate   # fast: are the
@@ -113,7 +113,7 @@ def _mark_hook(tmp, mark, label):
 
 
 def validate():
-    """Fast check: does the CLI actually ACCEPT the files harness/settings/*.json
+    """Fast check: does the CLI actually ACCEPT the files ops/harness/settings/*.json
     ships? A settings file the CLI dislikes is discarded SILENTLY (--help: "Settings
     files that fail validation are silently ignored") - so this bolts an observer
     hook onto each shipped file's own content and asserts the hook FIRES, rather

@@ -1004,7 +1004,7 @@ def _build_overview(plan):
     return n
 
 
-# The proactive loop is now a STATE MACHINE - same idea as tools/loop_state.py:
+# The proactive loop is now a STATE MACHINE - same idea as ops/tools/loop_state.py:
 # the STATE is computed from REALITY (board + plan + config) each tick and drives
 # the next action. A new capability = a new STATE (e.g. OVERVIEW), not new code.
 def _state():

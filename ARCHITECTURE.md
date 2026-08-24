@@ -52,7 +52,7 @@ every swap must be reversible.
   agent may propose, it may never unlock its own sandbox.
 
 Two control planes carry this end to end:
-- **App** (`app/src/kernel/`): a Cordis/DeepSeek-style plugin kernel - Kernel
+- **App** (`surfaces/app/src/kernel/`): a Cordis/DeepSeek-style plugin kernel - Kernel
   (service registry + event bus + reversible-effect loader), `Registry<T>`
   for many-contributor services (engines, surfaces), profiles (`store`/
   `owner`/`demo`/`headless-companion`, resolve+extends+patch+dumpConfig).
@@ -68,7 +68,7 @@ Two control planes carry this end to end:
 
 **Cells (the agentic-system registry, 2026-08-18).** The unit of modularity is
 an agentic *system* - a "Cell" (a role like PM or Engineer), not a file or a
-screen. Each Cell bundles its own {orchestration logic, storage, harness/role,
+screen. Each Cell bundles its own {orchestration logic, storage, ops/harness/role,
 API connector routes, UI surface, lifecycle, enable-flag} and plugs INTO the
 spine above (which no Cell owns). `cells.py` is the registry: six cells
 today - **engineer** (cards/kanban), **pm**, **process** (n8n step-chains),
@@ -76,9 +76,9 @@ today - **engineer** (cards/kanban), **pm**, **process** (n8n step-chains),
 governs the current interactive agent's own build workflow). buildloop is
 structurally the odd one out: it is self-governing, not daemon-hosted - its
 enforcement is `.claude/settings.json`'s Stop/SessionStart hooks calling
-`tools/loop_state.py` directly, no HTTP round-trip, and `/loop/map` is only a
+`ops/tools/loop_state.py` directly, no HTTP round-trip, and `/loop/map` is only a
 read-only mirror of the same module. Its enable flag is still real though:
-`tools/loop_state.py` reads `buildLoopEnabled` from the same seeded policy
+`ops/tools/loop_state.py` reads `buildLoopEnabled` from the same seeded policy
 file every other cell uses (failing open to `true` on any missing key or read
 error), so the Stop hook genuinely no-ops when an owner disables it. Each
 cell has a `<cell>Enabled` seeded policy flag (all default true), so toggling
@@ -87,9 +87,9 @@ a whole system on/off is just a tracked `policy.swap`
 `cells.path_disabled` check, routes 404 cleanly), the boot loop only starts an
 enabled cell's poller, and the app hides a disabled cell's real UI entry point
 (a nav tab for board/process/connectors; a direct component-level gate via
-`useCellEnabled()` for PM/Copilot, which have no tab - see `app/src/data/
+`useCellEnabled()` for PM/Copilot, which have no tab - see `surfaces/app/src/data/
 cells.ts`). Note: the Surface *plugins* built for each cell
-(`app/src/plugins/surfaces/*.tsx`) exist and are registered, but production
+(`surfaces/app/src/plugins/surfaces/*.tsx`) exist and are registered, but production
 boots the `app` profile, which loads `nav.tabs` for tab metadata, not those
 Surface plugins - screens still render from plain `expo-router` files, not
 `Surface.component`. That's the pre-existing, still-open
@@ -99,7 +99,7 @@ depend on it, since the gate operates on what's actually rendered.
 real `logicFiles`/`storage`/`harnessFile`/`uiFiles` and a `routes` list
 DERIVED live from that cell's own route modules' dispatch dicts (never
 hand-duplicated). `/modules` renders this as a small architecture diagram per
-cell (`app/src/ui/cell_diagram.tsx`, react-native-svg) - tap a cell to see its
+cell (`surfaces/app/src/ui/cell_diagram.tsx`, react-native-svg) - tap a cell to see its
 Logic/Storage/Harness/API-Routes/UI-Surface, tap any file to read its real
 source via `GET /cells/<id>/source` (owner-only, allowlisted to EXACTLY that
 cell's own declared files - the manifest IS the allowlist, so nothing is
@@ -113,7 +113,7 @@ including Engineer (done last, as the gate/merge crown jewel) - its lifecycle
 (`sessions.start_engineer_lifecycle`, the zombie reconciler + background-task
 watcher) now launches through `cells.start_enabled()` like every other cell's
 poller, its `/tracks` routes are stress-tested under disable, and its board
-Surface (`app/src/plugins/surfaces/board.tsx`) was verified against the
+Surface (`surfaces/app/src/plugins/surfaces/board.tsx`) was verified against the
 Connectors template. Deliberately deferred, by design not omission:
 machine/direct stay MODES of Engineer (not peer cells, see above), and
 `sessions.new_track`/`lanemachine.move_lane` carry no cross-cell disable guard
@@ -144,7 +144,7 @@ entrypoint), so module names keep resolving unchanged regardless of physical
 location - the Python equivalent of a `.pth` file or a tsconfig `paths` map,
 not a runtime heuristic. Three files stay flat in `daemon/` deliberately:
 `_subpaths.py` itself, and `swarm.py`/`mint_token.py` (both spawned by
-`desktop/tray.py`/`desktop/main.js` via a relative script path with
+`surfaces/desktop/tray.py`/`surfaces/desktop/main.js` via a relative script path with
 `cwd=daemon/` - moving them would mean touching the Electron spawn code,
 out of scope for a folder-cleanliness pass). See `daemon/debt.py`
 `orphan-root-paths-events-jsonl-incident` fix (6) for the prerequisite that
@@ -219,7 +219,7 @@ server.py (H handler, ~478 lines, was 2109)
   ├─ routes_pm.py          the proactive daily-loop's API surface
   ├─ routes_misc.py        /processes, /me
   ├─ routes_control.py     /control/state, teach/start, teach/stop, distill, demo
-  ├─ routes_relay.py       /relay/pair, /relay/unpair
+  ├─ routes_relay.py       /surfaces/relay/pair, /surfaces/relay/unpair
   ├─ routes_connectors.py  /connectors list, /connectors/<name>/rollback,run
   ├─ routes_checkpoints.py /checkpoints list, /checkpoints/<id>/diff,restore
   ├─ routes_projects.py    /projects CRUD
@@ -251,7 +251,7 @@ server.py (H handler, ~478 lines, was 2109)
 
 sessions.py (the orchestrator, ~1050 lines, was 3927) sits on top of SERVICES:
   ├─ trackstore.py   the data layer: _load/_save/_mutate (THE one legal write path)
-  ├─ locks.py        turn/desktop/direct locks + steer epoch
+  ├─ locks.py        turn/surfaces/desktop/direct locks + steer epoch
   ├─ gitutil.py       git/worktree primitives
   ├─ worktrees.py     reclaim + sweep (the isolation law's reclaim half)
   ├─ turnrunner.py + devport.py   turn execution (spawn, settle, finish)

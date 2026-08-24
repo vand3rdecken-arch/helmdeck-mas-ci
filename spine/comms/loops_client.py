@@ -6,7 +6,7 @@ and never blocks or fails a signup if Loops is unreachable or
 LOOPS_API_KEY isn't set - card stays parked until the owner has a key.
 
 LOOPS_API_KEY lives in the repo-root .env (git-ignored, same file
-deploy/*.sh sources) - read directly here since the daemon process itself
+ops/deploy/*.sh sources) - read directly here since the daemon process itself
 doesn't source .env."""
 import json
 import os

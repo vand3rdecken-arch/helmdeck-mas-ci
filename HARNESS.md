@@ -6,15 +6,15 @@ that line actually falls, how a spawn resolves across it, and what you have to
 touch to move something from one side to the other.
 
 Read `ARCHITECTURE.md` for the *why* and `CLAUDE.md` for the Laws. This file is
-the *how*. `harness/README.md` is the short operator-facing version of the same
+the *how*. `ops/harness/README.md` is the short operator-facing version of the same
 material; when the two disagree, the code wins and both are wrong.
 
 ---
 
-## 1. What `harness/` contains
+## 1. What `ops/harness/` contains
 
 ```
-harness/
+ops/harness/
   agents/     one .md per surface - YAML frontmatter + the prompt as the body
     card-worker.md      an agent working ONE card in an isolated git worktree
     machine-worker.md   a task on the owner's own PC (no worktree, no branch)
@@ -39,13 +39,13 @@ A card is the owner's work in flight; a typo in a markdown file must not be able
 to strand it. So every function on the read path is **total** - it returns the
 built-in default instead of raising - and the built-in defaults in
 `daemon/harness.py:50-98` are the exact text that used to be hardcoded in
-`drivers.py` / `copilot.py`. Deleting `harness/` entirely degrades to precisely
+`drivers.py` / `copilot.py`. Deleting `ops/harness/` entirely degrades to precisely
 the pre-harness behaviour.
 
 Failures are not swallowed, though. They accumulate in `harness.errors()`, which
 `/loop/map` and `/harness` surface, so a broken file is *visible* rather than
 mysteriously ineffective. That split - **silent fallback, loud reporting** - is
-the design, and `tests/test_harness.py` pins both halves.
+the design, and `ops/tests/test_harness.py` pins both halves.
 
 The write path is the deliberate **mirror**: `write_agent()` / `write_settings()`
 *must* raise on a rejected edit, and must leave the file byte-identical when they
@@ -56,7 +56,7 @@ live when it is not.
 
 | | where | why |
 |---|---|---|
-| the role brief (what a worker can/cannot do, how to hand off) | **data**, `harness/agents/*.md` | policy - the owner may reword it |
+| the role brief (what a worker can/cannot do, how to hand off) | **data**, `ops/harness/agents/*.md` | policy - the owner may reword it |
 | the `<helmdeck-ask>` wire protocol | **code**, `daemon/ask.py` | it is parsed by `ask.parse()`'s regex. Prompt and parser must ship together, or an innocent reword silently breaks every question button the owner taps. `harness.py` splices it in at the `{{ask_protocol}}` marker |
 | the driver argv, auth, audit, gate, worktree isolation | **code** | fixed harness law - see §5 |
 
@@ -67,7 +67,7 @@ live when it is not.
 ### The resolution chain
 
 ```
-harness/agents/<name>.md
+ops/harness/agents/<name>.md
    │  _agent_file()      re-read when (mtime, size) changes - size is in there
    │                     because mtime granularity is ~1s on some filesystems
    │  _parse_agent()     frontmatter via PyYAML when importable, else the flat
@@ -206,7 +206,7 @@ One entry:
    always resolves it. The `or`-fallback you write into the schema entry is a
    *display* default and is not the same thing.
 2. `server._config_schema()` - one entry.
-3. `app/src/i18n/dict/screens.ts` - the `cfg.*` label, **both** languages.
+3. `surfaces/app/src/i18n/dict/screens.ts` - the `cfg.*` label, **both** languages.
 4. The consumer that actually reads it (usually `daemon/processes.py`).
 5. *Optional:* if a graph node should link to the knob, add the dotted path to
    that node's `settings: [...]` in `sessions.LANE_FLOW` or
@@ -216,7 +216,7 @@ Nothing else. Do **not** add a control to a screen - **unless** you need a
 control type that does not exist yet, in which case add the branch to the app's
 `Control` component *and* the name to `server.CONTROLS` in the same commit.
 
-The gate holds you to all of it (`tests/test_harness_layer.py`
+The gate holds you to all of it (`ops/tests/test_harness_layer.py`
 `test_policy_knob_contract`): every `control` the daemon emits must exist both in
 the app's `Ctl` union and as a real branch in `Control`; every `labelKey` must
 have a two-language dict entry; every path must be exactly two levels, because
@@ -244,9 +244,9 @@ is entirely a consequence of `--setting-sources`, and that is the point: skills
 are the CLI's mechanism, and the harness's job is to choose the right layer set,
 not to reimplement discovery.
 
-The only functional skill reference in the repo is `tools/loop_state.py`, which
+The only functional skill reference in the repo is `ops/tools/loop_state.py`, which
 appends a *prompt* nudge to apply `.claude/skills/impeccable` when a change
-touches `app/src/**.tsx` - a string, not a flag.
+touches `surfaces/app/src/**.tsx` - a string, not a flag.
 
 ### Why this needed measuring rather than reasoning
 
@@ -318,7 +318,7 @@ slug is the *main repo's* path, not the worktree's. So every card, every machine
 task, the copilot and the owner's own desktop sessions share one directory
 outside the worktree, and `--setting-sources` does not move it.
 
-`harness/` had closed the **settings** half of the personal-layer leak. This half
+`ops/harness/` had closed the **settings** half of the personal-layer leak. This half
 was not noticed at first, because nothing rendered it. When it surfaced, the
 first instinct was reasonable and worth checking rather than assuming: *isn't
 that directory tracked by git, so what's the issue with a card writing to it?*
@@ -331,7 +331,7 @@ file in that directory with no permission prompt, under `--permission-mode
 acceptEdits`.
 
 **Fixed** by denying the write, not by relocating the directory:
-`harness/settings/card.json` and `copilot.json` now carry
+`ops/harness/settings/card.json` and `copilot.json` now carry
 `Write(~/.claude/projects/**)` and `Edit(~/.claude/projects/**)` in
 `permissions.deny` - the identical Read/Write/Edit tool-pattern mechanism that
 already protects `daemon/settings.json` two lines above it. `Read` stays open, so
@@ -394,7 +394,7 @@ run even when the agent's permission mode gates commands.
 `sessions.flow()` and `loop_state.machine()` tag **every** node `kind: "fixed" |
 "policy"`, and every policy node names the `settings` key that governs it, so the
 UI can link a node straight to its knob. Fixed nodes additionally carry a
-`source` of the form `"tools/loop_state.py:<line>"`, **read out of the source
+`source` of the form `"ops/tools/loop_state.py:<line>"`, **read out of the source
 file at call time** by `_decl_lines()` - never written down, because a
 hand-maintained line number is wrong the first time anyone inserts a line above
 it, and a citation that rots is worse than none: it sends the reader to the wrong
@@ -416,10 +416,10 @@ entirely, and `/automation` still described `BUILD` as rebuilding
 "Installer / APK / glasses" long after `ARTIFACT_SRC` was cut to the signed APK
 alone. Both now render `loop_state.machine()` and `sessions.flow()`.
 
-There is one more copy, and it is not in Python: **`app/src/data/client.ts`
+There is one more copy, and it is not in Python: **`surfaces/app/src/data/client.ts`
 declares the wire shape the UI reads.** `tsc` never sees the daemon and the gate
 never saw the TypeScript, so a renamed field left both sides self-consistent and
-the UI rendering `undefined`. `tests/test_harness_layer.py` now parses those
+the UI rendering `undefined`. `ops/tests/test_harness_layer.py` now parses those
 interfaces and diffs them against real exported objects in **both** directions:
 
 - a required TS field missing from the export → the UI silently renders nothing;
@@ -444,7 +444,7 @@ adding a field forces a conscious choice rather than a silent one.
   The most recent worked example lives in `loop_state.build_stale()`: it had two
   signals for "is the APK stale" - a fingerprint derived from the real native
   inputs, and a `git status`-derived guess about which files changed. Ordering
-  the *guess* first let its blind spot (all of `app/android/` is git-ignored)
+  the *guess* first let its blind spot (all of `surfaces/app/android/` is git-ignored)
   veto the authoritative answer. The fix was not a wider heuristic; it was
   asking the derived signal first and letting the guess gate only the branches
   where no derived answer exists.
@@ -456,14 +456,14 @@ adding a field forces a conscious choice rather than a silent one.
 The permission deny above stops a *card* writing to the shared memory directory.
 It does nothing for the operator's own interactive sessions, which write there
 constantly and are the only writers left - and the directory still had no
-history of its own. `tools/memory_autocommit.py` closes that:
+history of its own. `ops/tools/memory_autocommit.py` closes that:
 
 | | |
 |---|---|
-| canonical | `tools/memory_autocommit.py` (versioned, gated by `tests/test_memory_autocommit.py`) |
+| canonical | `ops/tools/memory_autocommit.py` (versioned, gated by `ops/tests/test_memory_autocommit.py`) |
 | deployed | `~/.claude/hooks/memory_autocommit.py` |
 | wired as | a **`Stop`** hook in `~/.claude/settings.json` |
-| installer | `py -3.12 tools/install_memory_hook.py` (`--check` for drift, `--uninstall`) |
+| installer | `py -3.12 ops/tools/install_memory_hook.py` (`--check` for drift, `--uninstall`) |
 
 It sweeps **every** `~/.claude/projects/*/memory/`, `git init`s any that holds
 notes but has no repo, and commits whatever changed - so a project created next
@@ -495,7 +495,7 @@ to commit.
 
 Measured the hard way while verifying the deny. A running session holds the
 settings file contents it was spawned with - editing
-`harness/settings/card.json` does **not** change the permissions of a card
+`ops/harness/settings/card.json` does **not** change the permissions of a card
 that is already mid-flight, only of the next spawn. Symptom: a Bash write that
 *should* be denied succeeds, and you conclude the deny is broken when it is
 merely younger than the process. Confirmed against a fresh spawn across five
@@ -514,13 +514,13 @@ python daemon/probe_harness_settings.py         # full sweep vs the real CLI (~2
 python daemon/probe_harness_settings.py --validate   # are the SHIPPED files accepted?
 python daemon/probe_harness_settings.py --skills     # per-surface skills + memory paths
 
-py -3.12 tests/test_harness.py                 # loader, write path, isolation
-py -3.12 tests/test_harness_layer.py            # no-drift, the loop, the app contract
-py -3.12 tests/test_memory_autocommit.py        # the Stop hook, incl. its never-wedge law
-py -3.12 tools/run_gate.py                      # everything the gate runs
+py -3.12 ops/tests/test_harness.py                 # loader, write path, isolation
+py -3.12 ops/tests/test_harness_layer.py            # no-drift, the loop, the app contract
+py -3.12 ops/tests/test_memory_autocommit.py        # the Stop hook, incl. its never-wedge law
+py -3.12 ops/tools/run_gate.py                      # everything the gate runs
 
-py -3.12 tools/install_memory_hook.py --check   # is the deployed hook current?
-py -3.12 tools/memory_autocommit.py --dry-run -v  # what would it commit right now?
+py -3.12 ops/tools/install_memory_hook.py --check   # is the deployed hook current?
+py -3.12 ops/tools/memory_autocommit.py --dry-run -v  # what would it commit right now?
 ```
 
 The `test_*` files are unit tests and never spawn an agent - the settings layer is

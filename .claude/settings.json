@@ -1,22 +1,22 @@
 {
   "hooks": {
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "py -3.12 tools/loop_state.py --stop-hook", "timeout": 60 } ] }
+      { "hooks": [ { "type": "command", "command": "py -3.12 ops/tools/loop_state.py --stop-hook", "timeout": 60 } ] }
     ],
     "SessionStart": [
       { "matcher": "startup|resume|compact",
-        "hooks": [ { "type": "command", "command": "py -3.12 tools/loop_state.py --session-start", "timeout": 60 } ] }
+        "hooks": [ { "type": "command", "command": "py -3.12 ops/tools/loop_state.py --session-start", "timeout": 60 } ] }
     ],
     "PostToolUse": [
       { "matcher": "Edit|Write|MultiEdit",
-        "hooks": [ { "type": "command", "command": "py -3.12 \"$CLAUDE_PROJECT_DIR/tools/design_hook.py\"", "timeout": 60 } ] }
+        "hooks": [ { "type": "command", "command": "py -3.12 \"$CLAUDE_PROJECT_DIR/ops/tools/design_hook.py\"", "timeout": 60 } ] }
     ]
   },
   "permissions": {
     "allow": [
-      "Bash(bash deploy/push_ntfy.sh*)",
-      "Bash(bash deploy/push_relay.sh*)",
-      "Bash(bash deploy/cloudflare_tunnel.sh*)",
+      "Bash(bash ops/deploy/push_ntfy.sh*)",
+      "Bash(bash ops/deploy/push_relay.sh*)",
+      "Bash(bash ops/deploy/cloudflare_tunnel.sh*)",
       "WebSearch",
       "WebFetch"
     ]
