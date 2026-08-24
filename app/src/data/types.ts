@@ -1,6 +1,43 @@
 // Daemon data shapes — ported verbatim from web/lib/api.ts (the Python daemon
 // serves the same JSON to every client). Keep in sync with daemon/events.py.
 
+// ---- GxP sign-off -----------------------------------------------------------
+// 21 CFR 11.50(a)(3): a signature has to carry its MEANING. "reviewed" is what
+// makes a two-person flow possible (A reviews, B approves) without a second
+// mechanism.
+export type SignMeaning = "approved" | "reviewed" | "rejected";
+
+export interface Signature {
+  seq: number;
+  actor: string; actor_role: string;
+  meaning: SignMeaning; reason: string;
+  signed_at: string;                       // UTC, not host-local
+  subject: { card: string; branch: string; head: string; base: string;
+             commits: number; shortstat: string; files: string[] };
+  auth: { method: string; components: string[] };
+  git: { tag: string | null; tag_sha: string | null; merge_sha: string | null };
+  consumed_by: { lane: string; at?: string } | null;
+}
+
+/** GET /sign/subject/<id> - what signing this card would commit to.
+ *  `blocked` is set (and `subject` null) when the card cannot be signed at
+ *  all - most often uncommitted work, because a signature has to name a commit
+ *  that exists. */
+export interface SignSubject {
+  card: string;
+  in_scope: boolean; four_eyes: boolean;
+  dispatched_by?: string | null;
+  signer: { name: string; role: string };
+  subject: Signature["subject"] | null;
+  blocked: string | null;
+  signatures: Signature[];
+}
+
+export interface SignBatchItem { card: string; meaning: SignMeaning; reason: string }
+/** One card's outcome in a batch. A card that drifted fails on its own without
+ *  taking the others down - the result is a list, not all-or-nothing. */
+export interface SignBatchResult { card: string; ok: boolean; error?: string; signature?: Signature }
+
 export interface Track {
   id: string; repo: string; branch: string; worktree: string; task: string;
   description?: string; attachments?: string[];
@@ -20,6 +57,13 @@ export interface Track {
   merge_failed?: boolean; merge_kind?: string; merge_report?: string;
   review_preview?: boolean; review_report?: string;
   archived?: boolean; autopilot?: boolean; fast_track?: boolean;
+  // GxP, DERIVED server-side per read (lifecycle._present_gxp), never stored.
+  // Absent entirely for a card outside the regulated scope, so `gxp_scope` is
+  // the one flag the board branches on. `gxp_signed` is the cheap question
+  // ("an unconsumed approved signature exists") - whether it still matches git
+  // is checked when the dialog opens and again before the merge, because that
+  // costs git calls the board's polling must not pay.
+  gxp?: boolean; gxp_scope?: boolean; gxp_signed?: boolean; dispatched_by?: string;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
   question?: PendingQuestion;
   waiting_on?: "you" | "background";
