@@ -15,8 +15,18 @@
 > daemon/connectors/ deliberately STAYS: it is the connectors cell's runtime
 > INSTALL target (connectors.py CDIR), data-home state like pm.role.md and
 > policy_seed.json. Daemon restarted onto the new layout, :8140 HTTP 200.
-> OPEN: phase 3 (frontend units into cells/<id>/ui, blocked by
-> plugin-kernel-dual-nav), phase 4 (optional surface grooming).
+> PHASE 3 SHIPPED 2026-08-24 (c2545c1, owner "direkt hier"): the five cell
+> Surface plugins live at cells/<id>/ui/surface.tsx, wired into the ONE Expo
+> app via metro.config.js (watchFolders + @cells + nodeModulesPaths) and
+> tsconfig @cells paths. TRAP (measured): Metro reads tsconfig.json `paths`
+> at runtime - the bare-module tsc fallback the out-of-tree files need lives
+> QUARANTINED in tsconfig.typecheck.json (loop_state + CLAUDE.md typecheck
+> with -p). kernel-demo deleted; cell manifest surface entries moved
+> ui_files -> repo_files. Verified: tsc 0, expo export web 0, gate PASS.
+> The dual-nav debt itself stays OPEN for its last item: per-screen
+> COMPONENTS (route files still render their own imports, not the registry).
+> OPEN: phase 4 (optional surface grooming) - and worker/ turned out to be a
+> doc, not a surface (moved to docs/relay-durable-object-sketch.md).
 
 **Owner decree 2026-08-24.** The architecture is spine + cells, but the folder
 tree doesn't say so at the root: ~19 top-level dirs mixing products, ops and
