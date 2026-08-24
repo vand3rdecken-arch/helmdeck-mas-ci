@@ -690,11 +690,15 @@ Datei und Tabelle können nicht mehr unbemerkt auseinanderlaufen
 aktivem Modus statt Beweise zu löschen, und `GET /audit` liefert Filter plus
 CSV-Export. Offen bleiben:
 
-- **Das signierte git-Tag** — der Datensatz existiert und wird durchgesetzt,
-  liegt aber in Speicher, den HelmDeck selbst besitzt. Ohne Tag kann ein
-  Prüfer ihn nicht mit `git verify-tag` selbst nachrechnen, er muss uns
-  glauben. Braucht die Schlüsselentscheidung aus §2 (Server vs. Gerät),
-  bewusst vertagt. Debt: `gxp-signature-not-independently-verifiable`.
+- ~~Das signierte git-Tag~~ — **gebaut** (`spine/auth/signkeys.py`, Schuld
+  bezahlt). Jede Freigabe landet als GPG-signiertes Tag
+  `gxp/approve/<karte>-<seq>`; ein Prüfer verifiziert mit Stock-git plus
+  exportiertem Public Key. Abweichung vom Entwurf, gemessen statt gewünscht:
+  GPG statt `gpg.format=ssh`, weil das git dieses Hosts (2.27) SSH-Tags nicht
+  kann — gleiche Auditor-Geschichte, anderes Schlüsselformat. Zwei Funde beim
+  Bauen: der MSYS-gpg braucht für alle Agent-Operationen Gits eigene bash,
+  und der gpg-agent-Passphrase-Cache musste hart abgeschaltet werden, weil
+  sonst nach einer Signatur ~10 Minuten lang **jedes** Passwort signierte.
 - **Rohkommando bei Sprache** (§2.1b) — designed, nicht gebaut. Für Rolle B
   (dieser Entwurf) ein Nice-to-have am Begründungsfeld. Für einen möglichen
   Rolle-A-Zweig (KI trägt Messwerte/Anweisungen in ein fremdes reguliertes
