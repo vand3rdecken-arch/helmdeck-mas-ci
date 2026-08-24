@@ -111,7 +111,9 @@ export interface BackgroundWait { n: number; names?: string[]; since?: number }
  *  ->working/review/done are backgrounded by the daemon (gate subprocess +
  *  merge + deploy hook) and answer {started, gating} right away. The card then
  *  carries status "gating" until the real verdict lands on it. */
-export type LaneMove = Partial<Track> & { started?: string; gating?: boolean };
+// gxp_refused: the daemon declined the landing (no signature, drifted, or
+// the actor is not a real account). Carries the reason, ready to show.
+export type LaneMove = Partial<Track> & { started?: string; gating?: boolean; gxp_refused?: string };
 export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;
   touches: number; value: number; mode: string | null; models: string[];
