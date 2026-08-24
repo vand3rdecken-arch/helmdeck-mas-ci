@@ -75,6 +75,9 @@ backups/
 ops/docs/**
 !ops/docs/backlog/
 !ops/docs/backlog/**
+# the re-include above overrides the global __pycache__/ rule for anything
+# under backlog (later pattern wins) - a card's judge script run drops caches
+ops/docs/backlog/**/__pycache__/
 
 # local credentials - never commit
 # App Store Connect API key. Apple serves the .p8 exactly ONCE - there is no
