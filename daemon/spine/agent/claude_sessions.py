@@ -312,6 +312,95 @@ def read_transcript_live(track, limit=400):
     return steps
 
 
+def read_transcript_store(track, limit=400):
+    """Card 2 CUTOVER (docs/multi-engine-build-plan.md): the event-time
+    timeline_store is now the PRIMARY source for a card's feed - folded live
+    by the driver's own pump (drivers.py's _fold_timeline) as each block
+    completes, not re-parsed from Claude Code's private ~/.claude/projects/
+    **.jsonl the way read_transcript_live is. Verified against
+    read_transcript_live on real dispatched turns (text, tool 4-state, todos,
+    usage, a harness question, a cancel) with tools/compare_timeline.py before
+    this landed - see daemon/spine/registry/debt.py's
+    card-feed-is-claude-private-jsonl entry for the debt this pays.
+
+    The store is keyed by run_dir (the CARD, for its whole life), not by a
+    session id - so unlike read_transcript_live it needs no live_session_id
+    reasoning for mid-turn session rotation; the fold already lands in the
+    right place regardless of which session is momentarily active.
+
+    What still legitimately comes from the OLD .jsonl-based reader, exactly
+    per the build plan's own design ("the old reader stays for adopting
+    foreign sessions and pre-cutover session_chain history"):
+      - session_chain history: conversation from BEFORE this card's store
+        started recording (a rotated-away or ADOPTED foreign session) lives
+        only in Claude Code's own file, never folded live.
+      - live_partial.txt: an in-progress, uncommitted streaming block - the
+        store only ever holds COMPLETED blocks by design (see
+        _fold_timeline's docstring), so the live-typing view is unchanged.
+
+    The abandoned-tool relabel (a resultless "running" step on an AT-REST
+    card means the turn was killed mid-tool, not that it is still running)
+    is reapplied here, same as read_transcript_live - the store's tool steps
+    only change on an explicit tool_result patch, which never arrives for a
+    killed turn."""
+    from daemon.spine.agent import timeline_store
+    run_dir = (track or {}).get("run_dir") or ""
+    steps = timeline_store.read(run_dir, limit)
+    chain = [s for s in ((track or {}).get("session_chain") or []) if s]
+    if chain:
+        prior = []
+        for old_sid in chain[-4:]:            # bounded: the last 4 prior sessions
+            cached = _chain_cache.get(old_sid)
+            if cached is None:
+                try:
+                    cached = read_transcript(old_sid, limit)
+                except Exception:
+                    cached = []
+                _chain_cache[old_sid] = cached
+                while len(_chain_cache) > 12:
+                    _chain_cache.pop(next(iter(_chain_cache)))
+            if cached:
+                prior += cached + [{"role": "system", "kind": "compaction",
+                                    "text": "", "prev": old_sid, "ts": ""}]
+        steps = (prior + steps)[-limit:]
+    if (track or {}).get("status") != "running":
+        for st in steps:
+            if st.get("running") or st.get("status") == "running":
+                st["running"] = False
+                st["abandoned"] = True
+                st["status"] = "canceled"
+                st["error"] = None
+    if run_dir:
+        try:
+            with open(os.path.join(run_dir, "live_partial.txt"), encoding="utf-8") as f:
+                partial = f.read()
+            from daemon.spine.ops import ask
+            partial = ask.strip_stream(partial)
+            if partial.strip():
+                steps.append({"role": "assistant", "kind": "text",
+                              "text": partial[:MAX_TEXT], "streaming": True, "ts": ""})
+        except OSError:
+            pass
+    return steps
+
+
+def transcript_store_version(track):
+    """The long-poll change token for read_transcript_store: bytes of
+    timeline.jsonl + live_partial.txt + actionlog's actions.jsonl (same three-
+    file composition as transcript_version, timeline.jsonl standing in for
+    the session .jsonl - see that function's docstring for why actions.jsonl
+    is in the token)."""
+    from daemon.spine.agent import timeline_store
+    run_dir = (track or {}).get("run_dir") or ""
+    tp = timeline_store._path(run_dir)
+    ts = os.path.getsize(tp) if tp and os.path.exists(tp) else 0
+    lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
+    ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
+    ap = os.path.join(run_dir, "actions.jsonl") if run_dir else None
+    as_ = os.path.getsize(ap) if ap and os.path.exists(ap) else 0
+    return ts + ls + as_
+
+
 def _is_steer(d):
     """True for a record that is the OWNER's message opening a turn - not a
     tool_result, not one of the envelopes Claude Code injects as role=user."""

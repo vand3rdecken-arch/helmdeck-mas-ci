@@ -7,15 +7,18 @@ at the file:line refs the plan names.
 
 Five cards, ~12–16 days total:
 
-| Card | What | Size | Depends on |
+| Card | What | Size | Status |
 |---|---|---|---|
-| 1 | Engine seam: registry + capability flags, exe resolution folded, parent-session env scrub, proctable images | M | — (dispatchable NOW) |
-| 2 | Event-time timeline store (pays the NO-MONKEY-PATCHES feed debt; worth it even engine-less) | L | — (parallel) |
-| 3 | ACP transport + Stage-0 spike + brief-adherence probe (GO/NO-GO) | L | 1 + owner step |
-| 4 | Full feed + cancel parity | M–L | 2, 3, probe GO |
-| 5 | Econ honesty ("n/a", never €0) + UI picker/badges | M | 4 |
+| 1 | Engine seam: CLAUDE constant dedup, parent-session env scrub (registry deferred — no 2nd engine to design it against yet) | M | ✅ SHIPPED 2026-08-24 |
+| 2 | Event-time timeline store (pays the NO-MONKEY-PATCHES feed debt; worth it even engine-less) | L | ✅ SHIPPED 2026-08-24 |
+| 3 | ACP transport + Stage-0 spike + brief-adherence probe (GO/NO-GO) | L | blocked on owner step below |
+| 4 | Full feed + cancel parity | M–L | needs 3 + probe GO |
+| 5 | Econ honesty ("n/a", never €0) + UI picker/badges | M | needs 4 |
 
-## The ONE owner step (before Card 3, not before Cards 1–2)
+See each card's section in `docs/multi-engine-build-plan.md` for what actually
+landed vs. what was scoped, and how it was verified.
+
+## The ONE owner step (before Card 3)
 
 Install and authenticate the probe engine — a browser login no headless card
 can do:

@@ -60,9 +60,19 @@ picking, so the plan picks and says so:
 
 ---
 
-## Card 1 — Engine seam (E1 + E2 + E14)
+## Card 1 — Engine seam (E1 + E2 + E14) — SHIPPED 2026-08-24
 
 Pure refactor; behaviour with claude must be bit-identical.
+
+**Landed narrower than scoped below, deliberately**: `daemon/spine/agent/
+engines.py` (a full capability-flag registry) was NOT built - no second engine
+is installed on this box, so there was nothing to validate a capability
+abstraction against, and building one anyway would have been exactly the
+speculative scaffolding this repo's own law forbids. What shipped: the CLAUDE
+constant dedup (`agentcli.py` is now the single source, all 6 call sites
+updated) and the parent-session env scrub (`spawnenv.py` - a real, live hazard
+today, not a multi-engine-only concern). The registry itself is still Card 3's
+job, once there is a real second engine to design it against.
 
 - `daemon/spine/agent/engines.py` (new): the engine registry —
   `{name: {run_fn, capabilities, resolve_exe, process_images}}`. `drivers.run`
@@ -89,26 +99,59 @@ Paseo reading: `provider-registry.ts:118-159` (factory table),
 byte-identical before/after; one live throwaway card turn on the running
 daemon behaves identically. Size **M (1.5–2d)**.
 
-## Card 2 — Event-time timeline store (E3) — can run parallel to Card 1
+## Card 2 — Event-time timeline store (E3) — SHIPPED 2026-08-24
 
 The card feed becomes first-class state the DRIVER writes, instead of a
-re-parse of Claude Code's private `~/.claude/projects/**.jsonl`.
+re-parse of Claude Code's private `~/.claude/projects/**.jsonl`. Pays
+`daemon/spine/registry/debt.py`'s `card-feed-is-claude-private-jsonl` entry
+(now `status: paid` — read it for the full account).
 
-- The `_ClaudeSession` pump folds each stream event into a persisted per-card
-  timeline (TStep records, `run_dir/timeline.jsonl` or a DB table — ONE owner:
-  the pump). Same fold discipline as `_scan_bg` (`drivers.py:634-680`).
-- `/transcript` + `/transcript/live` read the store; `transcript_version`'s
-  change token moves off the foreign file's byte count.
-- **Dual-write first**: `tools/compare_timeline.py` diffs store vs the old
-  reader on live turns; cutover only after N clean turns. The old reader
-  stays for: adopting foreign sessions (`/sessions/claude`) and rendering
-  pre-cutover `session_chain` history.
-- Any shortcut (e.g. chain-history still via old reader) → `daemon/debt.py`
-  in the same commit.
+- `daemon/spine/agent/timeline_store.py` (new): append-only JSONL,
+  `{"_id": step_id, **patch}` per line, `read()` folds every line sharing an
+  `_id` via `dict.update` in file order — a running tool receiving its result
+  is a PATCH line, not a rewrite, so it stays genuinely append-only.
+- `_ClaudeSession._fold_timeline` (`drivers.py`) folds every stream event at
+  the moment each block completes — same discipline as `_scan_bg`
+  (`drivers.py:634-680`), called from the exact same `if typ in
+  ("assistant","user")` gate.
+- `claude_sessions.read_transcript_store`/`transcript_store_version` are the
+  new primary readers; `/transcript`, `/transcript/live` and the SSE tick
+  (`routes_tracks.py`, `routes_track_actions.py`) all cut over. The old
+  `.jsonl` reader is kept for exactly what the plan called for: pre-cutover
+  `session_chain` history (adopted/rotated-away foreign sessions) and the
+  in-progress `live_partial.txt` streaming block (the store only ever holds
+  COMPLETED blocks).
+- Verified with `tools/compare_timeline.py` (new) against real dispatched
+  turns on a throwaway daemon (port 3915, isolated worktree data, a scratch
+  repo under a real Windows path — `/tmp/...` silently fails since the daemon
+  is a native Windows process) before cutover, per the plan's own discipline.
+
+**Two real bugs found and fixed during verification, not assumed away:**
+1. The human's own steer text NEVER arrives on the output stream — Claude
+   Code does not echo stdin back; `type:"user"` frames are only `tool_result`
+   echoes. Fixed by folding at the point the driver WRITES the prompt
+   (`_run_turn_locked`), where it's known with certainty. HelmDeck's own
+   harness-injected prompts (ask-repair) are re-attributed to a system note
+   there too, exactly like the old reader.
+2. A message's LIVE `usage.output_tokens` can read far below its own settled
+   value in the persisted file — measured: `2` live vs. `152` in the file,
+   same `message.id`, no later live frame ever corrects it. Documented as a
+   permanent, harmless approximation: `ctx` (input + cache), the only usage
+   field `econ.py`'s context meter reads, is proven identical live vs. file.
+   `compare_timeline.py` excludes `tokOut` from its usage comparison for this
+   reason, with the measurement in the code comment.
+
+**Not done**: no app screenshot — zero frontend code changed (the `TStep`
+wire contract is byte-identical, verified directly against the JSON) and
+`app/node_modules` isn't set up in this worktree. Recommend the owner spot-
+check a real card's feed once after accepting.
 
 **Verify**: side-by-side diff EMPTY on real turns covering text, thinking,
-tools (all 4 states), todos, usage, a `<helmdeck-ask>` question, a cancel;
-feed screenshot JUDGED against before. Size **L (3–5d)**.
+tools (all 4 states), todos, usage, a `<helmdeck-ask>` question, a cancel —
+DONE, all categories PASS (unit tests with synthetic events for the full
+matrix; 5 real dispatched-and-cancelled turns on a live throwaway daemon for
+end-to-end confirmation, including through the actual `/transcript` HTTP
+route post-cutover). Size **L (3–5d)**.
 
 ## Card 3 — ACP transport + Stage-0 spike + the E9 probe (E4 + E5 + E9)
 
@@ -189,13 +232,17 @@ UI hard). Size **M (2d)**.
 ## Order, totals, deferrals
 
 ```
-Card 1 ──→ Card 3 ──→ Card 4 ──→ Card 5
-Card 2 ──────────────↗   (parallel; needed by Card 4)
+Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5
+Card 2 ✅ ──────────────↗
 ```
 
-Total **~12–16 days** across 5 cards. After Card 3 the owner has a working
-second engine at `cmd`-driver-plus quality and a measured answer to the §6.3
-brief question; after Card 4 it is daily-usable; Card 5 makes it honest.
+Cards 1 and 2 SHIPPED 2026-08-24 (see each card's section above for what
+landed and how it was verified). Card 3 is next, blocked only on the owner's
+one prerequisite (Gemini CLI install + login — not doable from a headless
+card). Total **~12–16 days** across 5 cards, ~4–7 done. After Card 3 the
+owner has a working second engine at `cmd`-driver-plus quality and a measured
+answer to the §6.3 brief question; after Card 4 it is daily-usable; Card 5
+makes it honest.
 
 **Deferred, deliberately**: E11 (copilot/PM/Henry/processes/distill stay
 claude-only — they are HelmDeck's governance organs, not card work); OpenCode's

@@ -2680,7 +2680,7 @@ DEBT = [
     {
         "id": "card-feed-is-claude-private-jsonl",
         "title": "The card feed is a re-parse of Claude Code's own private session file",
-        "status": "open",
+        "status": "paid",
         "what": "claude_sessions.py (~660 lines) + claude_transcript_fmt.py build "
                 "every card's chat feed by globbing and parsing "
                 "~/.claude/projects/<cwd>/<uuid>.jsonl - a file Claude Code owns "
@@ -2712,13 +2712,40 @@ DEBT = [
                    "session_chain history. Worth doing even if multi-engine "
                    "support is never built further - it is closing a live law "
                    "violation, not just an enabler.",
-        "fix": "OPEN. Card 1 of the build plan (registry seam + CLAUDE constant "
-               "dedup + parent-session env scrub, spine/agent/{agentcli,"
-               "drivers,spawnenv}.py) landed without touching this - it is "
-               "explicitly Card 2's job, kept separate because it is the "
-               "largest, riskiest single item (the thing every owner reads "
-               "every turn) and deserves its own dual-write/compare worktree "
-               "card rather than being rushed alongside the seam refactor.",
+        "fix": "PAID (spine/agent/timeline_store.py, drivers.py's "
+               "_ClaudeSession._fold_timeline, claude_sessions."
+               "read_transcript_store/transcript_store_version): the driver's "
+               "own pump folds every stream event into a per-card append-only "
+               "JSONL store at the moment each block completes - the SAME "
+               "TStep shape read_transcript already produced, just derived "
+               "from the LIVE stream instead of a re-parsed .jsonl. /transcript, "
+               "/transcript/live and the SSE tick (routes_tracks.py, "
+               "routes_track_actions.py) now all read the store; the old "
+               ".jsonl reader is kept ONLY for what genuinely still needs it - "
+               "session_chain history from before the store existed (adopted "
+               "or rotated-away foreign sessions) and the in-progress "
+               "live_partial.txt streaming block, exactly as the build plan's "
+               "own design called for. Dual-write verified before cutover with "
+               "tools/compare_timeline.py against real dispatched turns "
+               "(text, tool calls through all 4 states, todos, usage, a "
+               "harness-injected question note, and a real mid-turn Stop/"
+               "cancel) - PASS on every category. Two real bugs surfaced and "
+               "fixed during that verification, not assumed away: (1) the "
+               "human's own steer text never arrives on the OUTPUT stream at "
+               "all (Claude Code does not echo stdin back) - now folded at "
+               "the moment the driver WRITES it, including re-attributing "
+               "HelmDeck's own harness-injected prompts to a system note "
+               "exactly like the old reader did; (2) a message's LIVE "
+               "usage.output_tokens can read far below its own settled value "
+               "in the persisted file (measured: 2 live vs. 152 in the file, "
+               "same message id, no later live frame ever corrects it) - "
+               "documented as a permanent, harmless approximation (ctx, the "
+               "only usage field econ.py's context meter reads, is unaffected "
+               "and proven identical live vs. file). Not yet screenshotted in "
+               "the app: zero frontend code changed (the TStep wire contract "
+               "is byte-identical) and this worktree has no app/node_modules "
+               "set up - the owner should still spot-check a real card's feed "
+               "once after accepting.",
         "order": 45,
     },
 ]
