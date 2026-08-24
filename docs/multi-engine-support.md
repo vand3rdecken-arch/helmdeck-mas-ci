@@ -4,6 +4,10 @@ How a SECOND agent runtime (OpenCode, Codex, Gemini CLI, …) docks as a card
 driver next to `claude`. Analysis only — **no production code was written for
 this document.** Effort estimates per building block are at the end.
 
+> **Build plan exists**: `docs/multi-engine-build-plan.md` turns this analysis
+> into five dispatchable cards and resolves the §7 open decisions with stated
+> defaults. Backlog filing: `backlog/multi-engine-acp/`.
+
 This is the deferred **Phase 5** of `docs/paseo-adoption-plan.md`
 ("provider seam / capability flags, opaque IDs, forge registry — not scoped").
 Phases 1–4 shipped; this is the piece that was left.
