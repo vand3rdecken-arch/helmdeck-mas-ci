@@ -202,7 +202,8 @@ def _run_action(a, actor, role="operator"):
         # only authorized roles may (policy.chat_admin_roles, default owner+operator).
         # steer stays open (clients steer their own cards).
         if kind in ("move", "delete", "archive"):
-            admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+            from spine.auth import auth
+            admin_roles = auth.chat_admin_roles()
             if role not in admin_roles:
                 return _denied(kind, role, admin_roles, "policy.chat_admin_roles",
                                "steuern (steer) darfst du die Karte aber jederzeit")
@@ -231,7 +232,8 @@ def _run_action(a, actor, role="operator"):
         # the shared repo checkout - a cross-cutting fix the sandboxed worker
         # can't do. Park the dirty work on a wip-* branch (nothing lost) + retry.
         # Structural + touches the shared checkout -> admin gate, like move.
-        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
         if role not in admin_roles:
             return _denied("resolve_blocker", role, admin_roles, "policy.chat_admin_roles")
         t = _find_card(a.get("card", ""))
@@ -243,7 +245,8 @@ def _run_action(a, actor, role="operator"):
         # worktree and STEER the card's agent to merge them by plain editing. The
         # chat never edits code, but it can dispatch the card's agent to. Admin-
         # gated like steer-that-changes-state.
-        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
         if role not in admin_roles:
             return _denied("resolve_conflict", role, admin_roles, "policy.chat_admin_roles")
         t = _find_card(a.get("card", ""))
@@ -254,7 +257,8 @@ def _run_action(a, actor, role="operator"):
         # Per-card FAST-TRACK: a flagged card with a green gate + clean merge lands
         # + deploys automatically (no human accept). Scoped to THIS card; every
         # other card stays human-gated. The gate still guards. Admin-gated.
-        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
         if role not in admin_roles:
             return _denied("fast_track", role, admin_roles, "policy.chat_admin_roles")
         t = _find_card(a.get("card", ""))
@@ -269,7 +273,8 @@ def _run_action(a, actor, role="operator"):
         # Capability grant (windows-mcp/GUI control), not a cosmetic setting -
         # admin-gated like fast_track, and update_track itself refuses an
         # unknown driver or a change mid-turn (sessions.update_track).
-        admin_roles = (events.settings().get("policy") or {}).get("chat_admin_roles", ["owner", "operator"])
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
         if role not in admin_roles:
             return _denied("set_driver", role, admin_roles, "policy.chat_admin_roles")
         t = _find_card(a.get("card", ""))

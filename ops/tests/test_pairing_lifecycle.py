@@ -128,7 +128,7 @@ check("old device refused after unpair", not ok, reason)
 
 # 10. Relay idle-room GC: hour-dead rooms are swept on growth, active/queued
 #     rooms survive.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "relay"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "surfaces", "relay"))
 import relay  # noqa: E402
 
 relay._rooms.clear()
