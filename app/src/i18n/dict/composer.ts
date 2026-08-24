@@ -56,6 +56,11 @@ export const composer: Dict = {
   "chat.teamOnly": { de: "Henry ist nur für das Team.", en: "Henry is for the team only." },
   "chat.thinking": { de: "denkt nach", en: "thinking" },
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
+  "chat.glassesTalk": { de: "Mit Henry über die Brille sprechen", en: "Talk to Henry through the glasses" },
+  "chat.glassesUnconfigured": {
+    de: "Brillen-Modus nicht eingerichtet: glance_origin + glance_token in den Daemon-Einstellungen setzen (Glance-Worker deployen: deploy/push_glance.sh).",
+    en: "Glasses mode not set up: set glance_origin + glance_token in daemon settings (deploy the glance worker: deploy/push_glance.sh).",
+  },
   "chat.latest": { de: "Neueste", en: "Latest" },
   "chat.close": { de: "Chat schließen", en: "Close chat" },
   // {cost} arrives pre-rendered: planLabel() on the flat plan ("KI ~x % vom
@@ -81,6 +86,16 @@ export const composer: Dict = {
   "voice.handsOn": { de: "Freihändig — Henry hört nach jeder Antwort weiter zu",
                      en: "Hands-free — Henry keeps listening after each answer" },
   "voice.handsOff": { de: "Zum Sprechen tippen", en: "Tap to speak" },
+  "voice.liveOn": { de: "Live-Pipeline — offenes Mikro, eigene Spracherkennung (Whisper am PC)",
+                    en: "Live pipeline — open mic, own speech recognition (Whisper on the PC)" },
+  "voice.liveOff": { de: "Live-Pipeline aus — Standard-Spracherkennung des Telefons",
+                     en: "Live pipeline off — the phone's standard speech recognition" },
+  "voice.sttDevice": { de: "Spracherkennung auf dem Gerät (sherpa-onnx)",
+                       en: "Speech recognition on the device (sherpa-onnx)" },
+  "voice.sttPc": { de: "Spracherkennung auf dem PC (Whisper)",
+                   en: "Speech recognition on the PC (Whisper)" },
+  "voice.sttLoading": { de: "Lade Sprachmodell (~71 MB, einmalig)…",
+                        en: "Downloading speech model (~71 MB, once)…" },
   "voice.hintHands": { de: "Läuft weiter. Tippen unterbricht Henry.",
                        en: "Keeps going. Tap to interrupt Henry." },
   "voice.hintPush": { de: "Tippen zum Sprechen, nochmal tippen zum Senden.",
@@ -119,6 +134,7 @@ export const composer: Dict = {
   "new.client": { de: "kunde", en: "customer" },
   "new.clientPlaceholder": { de: "Kunde", en: "Customer" },
   "new.driver": { de: "driver", en: "driver" },
+  "new.model": { de: "modell", en: "model" },
   "new.adopt": { de: "Übernehmen", en: "Adopt" },
 
   // example chips - the label AND the task text they seed into the input

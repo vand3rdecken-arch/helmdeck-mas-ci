@@ -112,7 +112,12 @@ function useAnalyticsBoot() {
 function usePushWiring() {
   const router = useRouter();
   useEffect(() => {
-    (async () => {
+    // Shared with the tap handler below: a cold start launched BY tapping a
+    // system-tray notification can fire the response listener before this
+    // hydration resolves, and decryptPush reads mySec/daemonPub synchronously
+    // off the store - so an unhydrated tap silently failed to decrypt, lost
+    // its `track`, and fell through to the dashboard (measured 2026-08-24).
+    const hydration = (async () => {
       await useConfig.getState().hydrate();
       await useDemo.getState().hydrate();   // demo survives a restart, like pairing
       useBlockerVoice.getState().hydrate();   // proactive-voice toggle (More -> Voice), off by default
@@ -129,17 +134,32 @@ function usePushWiring() {
     });
     // tap: deep-link to the card (or the PM chat if the push has no card). The
     // track is sealed in the cipher (zero-knowledge), so decrypt on tap to route.
-    const resp = Notifications.addNotificationResponseReceivedListener((r) => {
+    const resp = Notifications.addNotificationResponseReceivedListener(async (r) => {
       const data = r.notification.request.content.data as Record<string, string>;
       // local notif carries the fields plainly; system-tray notif needs the
-      // sealed cipher decrypted on tap (zero-knowledge routing).
+      // sealed cipher decrypted on tap (zero-knowledge routing) - which needs
+      // the config store hydrated first (see comment above).
       let track: string | undefined = data?.track;
       let kind: string | undefined = data?.kind;
       let body: string | undefined = data?.body;
+      // Tri-state, not boolean: a local notif with plain fields is "resolved"
+      // immediately; a system-tray notif needs the cipher decrypted, and THAT
+      // can genuinely fail (stale keys) or simply have nothing to decrypt at
+      // all - Android bundles same-titled notifications (every push shares
+      // the generic "HelmDeck" title) into a stack, and tapping the stack's
+      // OWN summary line delivers a response with empty `data`. Only a
+      // successful decrypt that legitimately carries no track (a goal-level
+      // PM escalation) means "go to the dashboard" - "we couldn't read this
+      // tap" must never force-navigate anywhere (bug: was landing on the
+      // dashboard even when a real card push had just opened, measured
+      // 2026-08-24).
+      let resolved = !!track;
       if (!track && data?.cipher) {
+        await hydration;
         const m = decryptPush(data);
-        track = m?.track; kind = m?.kind; body = m?.body;
+        if (m) { resolved = true; track = m.track; kind = m.kind; body = m.body; }
       }
+      if (!resolved) return;
       // A finished task speaks (owner 2026-08-22): tap on a DONE push opens
       // the voice mode and Henry says the result aloud - no reading, no
       // navigating into the card. Everything else keeps the card deep-link.
@@ -150,7 +170,10 @@ function usePushWiring() {
                    : "Die gerade fertige Aufgabe – sag mir kurz das Ergebnis." } } as never);
         return;
       }
-      if (track) router.push(`/card/${track}`);
+      // A question/needs_you/bounced push is news IN THE CHAT, so land there
+      // directly instead of the overview tab the owner would have to switch
+      // past every time.
+      if (track) router.push({ pathname: "/card/[id]", params: { id: track, tab: "chat" } } as never);
       else router.push("/(tabs)" as never);   // PM status w/o a card -> the PM summary/overview (dashboard IS the index tab since 2026-08-17)
     });
     return () => { recv.remove(); resp.remove(); };

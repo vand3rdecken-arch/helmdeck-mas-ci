@@ -62,7 +62,9 @@ from daemon.spine.http.routes import routes_misc
 from daemon.spine.http.routes import routes_control
 from daemon.spine.http.routes import routes_relay
 from daemon.cells.connectors import routes_connectors
+from daemon.spine.http.routes import routes_audit
 from daemon.spine.http.routes import routes_checkpoints
+from daemon.spine.http.routes import routes_sign
 from daemon.spine.http.routes import routes_projects
 from daemon.cells.copilot import routes_copilot
 from daemon.cells.engineer import routes_tracks
@@ -192,10 +194,15 @@ class H(BaseHTTPRequestHandler):
                 from daemon.spine.auth import auth
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
+                # `id` + `tail`, never the token itself. This used to ship every
+                # device token in full to the panel on every load, while the UI
+                # only ever displayed the last six characters - the other 186
+                # bits were on the wire for nothing. Revoke goes by id now.
                 return self._send(200, json.dumps([
                     {"name": u["name"], "role": u["role"], "created": u.get("created"),
-                     "tokens": [{"label": t["label"], "token": t["token"],
-                                 "created": t.get("created")} for t in u.get("tokens", [])]}
+                     "tokens": [{"label": t.get("label"), "id": t.get("id"),
+                                 "tail": t.get("tail", ""), "created": t.get("created")}
+                                for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
             if p in routes_runs.GET_ROUTES:
                 return routes_runs.GET_ROUTES[p](self, user)
@@ -256,6 +263,11 @@ class H(BaseHTTPRequestHandler):
                 return routes_pm.GET_ROUTES[p](self, user)
             if len(parts) == 4 and parts[0] == "harness" and parts[1] == "version":
                 return routes_system.harness_version_get(self, user, parts[2], parts[3])
+            if p.startswith("/sign/subject/"):
+                return routes_sign.sign_subject_get(
+                    self, user, p[len("/sign/subject/"):])
+            if p in routes_audit.GET_ROUTES:
+                return routes_audit.GET_ROUTES[p](self, user)
             if p in routes_checkpoints.GET_ROUTES:
                 return routes_checkpoints.GET_ROUTES[p](self, user)
             if p.startswith("/checkpoints/") and p.endswith("/diff"):
@@ -321,22 +333,25 @@ class H(BaseHTTPRequestHandler):
                 if user["role"] != "owner":
                     return self._send(403, json.dumps({"error": "owner only"}))
                 try:
+                    # actor= is what makes these auditable: auth.py records WHO
+                    # changed WHOSE account, and only this layer knows the caller.
                     if len(parts) == 1:
                         return self._send(200, json.dumps(auth.create_user(
                             body.get("name", ""), body.get("password", ""),
-                            body.get("role", "operator"))))
+                            body.get("role", "operator"), actor=user["name"])))
                     name, action = parts[1], parts[2] if len(parts) > 2 else ""
                     if action == "password":
-                        auth.set_password(name, body.get("password", ""))
+                        auth.set_password(name, body.get("password", ""), actor=user["name"])
                     elif action == "role":
-                        auth.set_role(name, body.get("role", ""))
+                        auth.set_role(name, body.get("role", ""), actor=user["name"])
                     elif action == "tokens":
                         return self._send(200, json.dumps(
-                            {"token": auth.issue_token(name, body.get("label", ""))}))
+                            {"token": auth.issue_token(name, body.get("label", ""),
+                                                       actor=user["name"])}))
                     elif action == "revoke":
-                        auth.revoke_token(name, body.get("token", ""))
+                        auth.revoke_token(name, body.get("token", ""), actor=user["name"])
                     elif action == "delete":
-                        auth.delete_user(name)
+                        auth.delete_user(name, actor=user["name"])
                     else:
                         return self._send(404, json.dumps({"error": "?"}))
                     return self._send(200, json.dumps({"ok": True}))
@@ -366,6 +381,10 @@ class H(BaseHTTPRequestHandler):
                         actor=user["name"])))
                 except (RuntimeError, ValueError) as e:
                     return self._send(400, json.dumps({"error": str(e)}))
+            if p == "/sign":
+                return routes_sign.sign_post(self, user, body)
+            if p == "/sign/batch":
+                return routes_sign.sign_batch_post(self, user, body)
             if p in routes_pm.POST_ROUTES:
                 return routes_pm.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")

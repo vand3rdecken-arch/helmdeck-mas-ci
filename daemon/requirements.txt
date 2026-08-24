@@ -7,3 +7,4 @@ pynput>=1.7
 # this still works. Needs network at render time (Microsoft neural voices);
 # clips are content-addressed and cached, so repeats cost nothing.
 edge-tts>=7.0
+faster-whisper

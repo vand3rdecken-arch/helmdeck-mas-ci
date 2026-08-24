@@ -67,13 +67,32 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts TEXT, kind TEXT, track TEXT, data TEXT)""")
+        id TEXT, ts TEXT, kind TEXT, track TEXT, data TEXT)""")
+    _ensure_events_id_column(c)
+    # UNIQUE, allowing many NULLs (SQLite treats each NULL as distinct in a
+    # unique index) - pre-id-era rows imported before this column existed all
+    # have id=NULL and none of them collide with each other or with anything
+    # new. This is what makes _reconcile_events() safe to run every boot
+    # instead of only once: INSERT OR IGNORE on a genuine id conflict is a
+    # no-op, not a duplicate.
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ev_id ON events(id)")
     c.execute("CREATE INDEX IF NOT EXISTS ev_kind ON events(kind)")
     c.execute("CREATE INDEX IF NOT EXISTS ev_track ON events(track)")
     c.commit()
     _migrate()
+    _reconcile_events()
     if role == "daemon":
         _devalue_persisted_running()
+
+
+def _ensure_events_id_column(c):
+    """Migrate an EXISTING events table predating the `id` column - CREATE
+    TABLE IF NOT EXISTS is a no-op once the table already exists, so an
+    installation from before this change never gets the column any other
+    way."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(events)")}
+    if "id" not in cols:
+        c.execute("ALTER TABLE events ADD COLUMN id TEXT")
 
 
 def _devalue_persisted_running():
@@ -92,6 +111,24 @@ def _devalue_persisted_running():
     except Exception as e:
         print("db: boot devaluation failed:", e)
 
+def _archive(path):
+    """Retire an imported legacy file WITHOUT destroying an older archive.
+
+    The original code did a bare os.replace(p, p + ".imported"), which silently
+    overwrote the archive from a previous run - so the docstring's promise
+    ("originals preserved, per the safeguard rule") stopped holding on the second
+    boot. Nothing is allowed to eat a backup here, so a taken name gets a
+    numbered sibling instead."""
+    dest = path + ".imported"
+    if os.path.exists(dest):
+        n = 2
+        while os.path.exists("%s.%d" % (dest, n)):
+            n += 1
+        dest = "%s.%d" % (dest, n)
+    os.replace(path, dest)
+    return dest
+
+
 def _migrate():
     c = conn()
     tj = os.path.join(ROOT, "tracks.json")
@@ -103,12 +140,25 @@ def _migrate():
                 for t in tracks:
                     c.execute("INSERT OR REPLACE INTO tracks(id,data) VALUES(?,?)",
                               (t["id"], json.dumps(t)))
-            os.replace(tj, tj + ".imported")
+            _archive(tj)
             print("db: imported %d tracks from tracks.json" % len(tracks))
         except Exception as e:
             print("db: tracks import failed:", e)
+    # events.jsonl is the ONE legacy file that comes back: events.emit() appends
+    # to it on every event while ALSO write-through inserting the same row here
+    # (events.py:175-191). The other three files are written once and stay gone.
+    #
+    # So this block used to duplicate the whole previous session on every boot:
+    # import (plain INSERT, no key to dedupe on) -> rename -> emit recreates the
+    # file -> next boot imports it all again. Every count over `events` was
+    # inflated, which is why the dashboard's cost figures read too high.
+    #
+    # Import is therefore what the docstring always said it was - a FIRST-START
+    # migration - and it only runs against an empty table. A populated table also
+    # means the file must stay put: it is the durable append-only record, not a
+    # leftover to be retired.
     ej = os.path.join(ROOT, "events.jsonl")
-    if os.path.exists(ej):
+    if os.path.exists(ej) and c.execute("SELECT 1 FROM events LIMIT 1").fetchone() is None:
         try:
             n = 0
             with open(ej, encoding="utf-8") as f, c:
@@ -122,7 +172,7 @@ def _migrate():
                                json.dumps({k: v for k, v in r.items()
                                            if k not in ("ts", "kind", "track")})))
                     n += 1
-            os.replace(ej, ej + ".imported")
+            _archive(ej)
             print("db: imported %d events from events.jsonl" % n)
         except Exception as e:
             print("db: events import failed:", e)
@@ -135,7 +185,7 @@ def _migrate():
                 for p in procs:
                     c.execute("INSERT OR REPLACE INTO processes(id,data) VALUES(?,?)",
                               (p["id"], json.dumps(p)))
-            os.replace(pj, pj + ".imported")
+            _archive(pj)
             print("db: imported %d processes from processes.json" % len(procs))
         except Exception as e:
             print("db: processes import failed:", e)
@@ -153,7 +203,7 @@ def _migrate():
             with c:
                 c.execute("INSERT OR REPLACE INTO connector_state(id,data) VALUES(?,?)",
                           ("state", json.dumps(cstate)))
-            os.replace(csj, csj + ".imported")
+            _archive(csj)
             print("db: imported connector state (%d connectors) from connectors/_state.json" % len(cstate))
         except Exception as e:
             print("db: connector state import failed:", e)
@@ -243,12 +293,75 @@ def connector_state_put(d):
 # -- events --------------------------------------------------------------
 
 def event_insert(row):
+    # `id` is deliberately left IN `extra` too (not excluded like ts/kind/track)
+    # so events_all()'s json.loads(data) round-trip still surfaces it on the
+    # reconstructed dict with no change to that function - it is stored twice
+    # on purpose, once as an indexed column for the UNIQUE constraint, once in
+    # the blob for read-back fidelity.
     extra = {k: v for k, v in row.items() if k not in ("ts", "kind", "track")}
     with conn() as c:
-        c.execute("INSERT INTO events(ts,kind,track,data) VALUES(?,?,?,?)",
-                  (row.get("ts"), row.get("kind"), row.get("track"),
+        # OR IGNORE: a genuine id conflict (this exact event already present -
+        # _reconcile_events re-inserting on a later boot, say) is a no-op, not
+        # a duplicate row. row.get("id") is None for anything that bypassed
+        # events.emit()'s id generation; SQLite treats every NULL in a UNIQUE
+        # index as distinct, so those never collide with each other either.
+        c.execute("INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
+                  (row.get("id"), row.get("ts"), row.get("kind"), row.get("track"),
                    json.dumps(extra)))
     bump()
+
+
+def _reconcile_events():
+    """Boot-time healer: fold into the db any event that made it into
+    events.jsonl but whose write-through (events.emit's best-effort
+    db.event_insert, wrapped in try/except) was dropped - a disk hiccup, a WAL
+    lock timeout. Before `id` existed this was impossible to do safely: the
+    file and the table shared no key, so a naive re-import could only either
+    skip everything (miss real drops, the bug this closes) or duplicate
+    everything (the bug A4 fixed). INSERT OR IGNORE on a UNIQUE id makes
+    re-scanning safe, so this can now run on every boot rather than once.
+
+    Cheap by construction: a checkpoint file remembers how many BYTES of
+    events.jsonl were already reconciled, so a boot only scans what was
+    appended since the last one, not the whole history every time. A file
+    that shrank (rotated, truncated) resets the checkpoint to 0 rather than
+    skipping the difference."""
+    ej = os.path.join(ROOT, "events.jsonl")
+    if not os.path.exists(ej):
+        return
+    ckpt = ej + ".synced"
+    start = 0
+    if os.path.exists(ckpt):
+        try:
+            start = int(open(ckpt, encoding="utf-8").read().strip() or "0")
+        except ValueError:
+            start = 0
+    if start > os.path.getsize(ej):
+        start = 0
+    c = conn()
+    healed = 0
+    with open(ej, encoding="utf-8") as f:
+        f.seek(start)
+        for line in f:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            rid = r.get("id")
+            if not rid:
+                continue   # pre-id-era row - nothing to reconcile it against
+            extra = {k: v for k, v in r.items() if k not in ("ts", "kind", "track")}
+            cur = c.execute(
+                "INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
+                (rid, r.get("ts"), r.get("kind"), r.get("track"), json.dumps(extra)))
+            if cur.rowcount:
+                healed += 1
+        end = f.tell()
+    c.commit()
+    with open(ckpt, "w", encoding="utf-8") as f:
+        f.write(str(end))
+    if healed:
+        print("db: reconciled %d event(s) the write-through had dropped" % healed)
 
 def events_all():
     rows = conn().execute(
