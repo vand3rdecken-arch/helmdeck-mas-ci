@@ -344,7 +344,25 @@ def _native_fp():
                     l for l in f.read().splitlines() if "EXPO_RUNTIME_VERSION" not in l)
         except OSError:
             pass
-        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        cfg = hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        # source half (ship.sh kt_fp, added 2026-08-23): every .kt/.java under
+        # app/plugins and app/modules is compiled into the APK. Combined as
+        # sha256("<cfg> <kt>") - exactly ship.sh's combine_fp shape.
+        import glob as _glob
+        kb = ""
+        for src in sorted(
+                _glob.glob(os.path.join(ROOT, "app", "plugins", "**", "*.kt"), recursive=True)
+                + _glob.glob(os.path.join(ROOT, "app", "plugins", "**", "*.java"), recursive=True)
+                + _glob.glob(os.path.join(ROOT, "app", "modules", "**", "*.kt"), recursive=True)
+                + _glob.glob(os.path.join(ROOT, "app", "modules", "**", "*.java"), recursive=True)):
+            try:
+                rel = os.path.relpath(src, ROOT).replace(os.sep, "/")
+                with open(src, encoding="utf-8") as f:
+                    kb += rel + "\n" + f.read()
+            except OSError:
+                pass
+        kt = hashlib.sha256(kb.encode("utf-8")).hexdigest()
+        return hashlib.sha256((cfg + " " + kt).encode("utf-8")).hexdigest()
     except (OSError, ValueError):
         return ""
 

@@ -433,6 +433,54 @@ def _append_log(user, entries):
 
 _autocompact_supported = None    # None=unprobed, True/False learned from first /compact
 
+# Replies that are etiquette, not answers - the exact strings (lowercased,
+# terminal punctuation stripped) the model uses to wave off system turns.
+# Deliberately narrow: "ok" is NOT here, it is the legitimate answer to the
+# harness's own systemcheck turns.
+_FILLER_REPLIES = {"no response requested"}
+
+_compacting = set()              # users with a background compaction in flight
+
+
+def _schedule_compact(user):
+    """Compact in the BACKGROUND, off the request thread. The
+    huggingface/speech-to-speech lesson (chat.py's single-flight compaction
+    worker, read 2026-08-23): history compaction is maintenance and must never
+    be a pause in the conversation. Before this, _maybe_compact ran inside the
+    POST /chat handler - at the context brim it held the reply hostage exactly
+    when the owner was mid-conversation (measured: two voice questions
+    swallowed around the 05:47 auto-compact). Single-flight per user; the
+    per-user turn lock serializes with real turns so the external /compact
+    cannot fork a session a concurrent question is advancing."""
+    try:
+        from daemon.cells.engineer import sessions
+        st = _stats().get(user) or {}
+        ctx = st.get("ctx_tokens") or 0
+        window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
+    except Exception:
+        return
+    if ctx < 0.8 * window or user in _compacting:
+        return
+    _compacting.add(user)
+
+    def _go():
+        try:
+            lk = _turn_lock(user)
+            lk.acquire()
+            try:
+                note = _maybe_compact(user)
+            finally:
+                lk.release()
+            if note:
+                _append_log(user, [{"cls": "error", "text": note,
+                                    "ts": time.strftime("%H:%M")}])
+        except Exception:
+            pass                 # best-effort, same contract as _maybe_compact
+        finally:
+            _compacting.discard(user)
+
+    threading.Thread(target=_go, daemon=True).start()
+
 
 def _maybe_compact(user):
     """Copilot counterpart of sessions._maybe_compact (card parity, re-enabled
@@ -706,7 +754,8 @@ def build_argv(cli_model, sid, system):
 
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
-         card=None, allow_actions=True, extra_system="", voice_stream=False):
+         card=None, allow_actions=True, extra_system="", voice_stream=False,
+         _retried=False):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -946,6 +995,22 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         sess[user] = sid_final
         _save_sessions(sess)
     reply_prose, acts_parsed = _parse_reply_actions(txt)
+    # FILLER GUARD (speech-to-speech's provisional-generation lesson, adapted).
+    # Measured 2026-08-23 on the owner's PM session: at ~94% context fill the
+    # fast voice model answered two real questions with the session's
+    # task-notification etiquette - literally "No response requested." A full
+    # history rollback is not something --resume sessions offer, so the cheap
+    # half: never DELIVER the filler. Re-submit the same question once with a
+    # corrective overlay; the retry's answer is what gets logged and spoken.
+    if (not _retried and not acts_parsed
+            and reply_prose.strip().rstrip(".!").lower() in _FILLER_REPLIES):
+        _fold_stats(user, result, ctx_usage)   # the wasted turn is still paid for
+        return chat(user, message, role=role, model=model, thinking=thinking,
+                    attachments=None, card=card, allow_actions=allow_actions,
+                    extra_system=(extra_system + "\n\nDeine letzte Antwort war eine "
+                                  "leere Floskel ohne Inhalt. Beantworte jetzt die "
+                                  "eigentliche Frage des Owners.").strip(),
+                    voice_stream=voice_stream, _retried=True)
     out = {"reply": reply_prose, "actions": acts_parsed}
     d = result                                       # for cost/usage below
     u = d.get("usage") or {}
@@ -966,9 +1031,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     if rotate_note:
         entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
     _append_log(user, entries)
-    compact_note = _maybe_compact(user)
-    if compact_note:
-        _append_log(user, [{"cls": "error", "text": compact_note, "ts": time.strftime("%H:%M")}])
+    _schedule_compact(user)      # background + single-flight, never blocks this reply
     refused = []
     if acts and not allow_actions:
         # ADVISORY CALLER (glass mode). The lens authenticates with a single

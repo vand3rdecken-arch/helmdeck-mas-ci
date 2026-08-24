@@ -32,7 +32,6 @@ const nonce = crypto.randomBytes(16).toString("hex");
 const log = [];          // progress lines the screen renders
 let running = false;     // provisioning in flight
 let done = false;
-let lastToken = "";      // owner device token minted after the instance came up
 
 function say(line, kind = "info") {
   log.push({ ts: Date.now(), kind, line: String(line) });
@@ -124,6 +123,50 @@ function findClaude() {
   return null;
 }
 
+/** Absolute path of a PATH-resolved command, or null. Needed because `claude`
+ *  found via runQ("claude", …) is a bare name - to see through the .cmd shim
+ *  (below) we need to know which directory it actually lives in. */
+function whichWin(cmd) {
+  const r = runQ("where", [cmd]);
+  if (r.status !== 0) return null;
+  return (r.stdout || "").split(/\r?\n/).map((s) => s.trim()).find(Boolean) || null;
+}
+
+/** The real executable behind an npm `claude.cmd` shim, or null.
+ *
+ * THE SILENT CONTEXT KILLER (daemon/spine/agent/agentcli.py::_real_claude_exe,
+ * fixed there in ea09780, never ported here): spawning claude.cmd via
+ * `cmd /s /c "<argv>"` - which is what { shell: win } does on Windows - is not
+ * quote-safe. cmd.exe's escaping plus the shim's own %* re-parse shifts
+ * argument boundaries on anything long/punctuation-heavy (parens, periods),
+ * and args get swallowed - reproduced live: a multi-sentence diagnose prompt
+ * arrived at Claude as just "The". Resolve what the shim points at (npm
+ * layout: <dir>\node_modules\@anthropic-ai\claude-code\bin\claude.exe, or
+ * cli.js + node.exe for older installs) and spawn THAT as a plain argv list -
+ * CreateProcess/CommandLineToArgvW quote it correctly, no shell involved. */
+function realClaudeExe(cmdPath) {
+  if (!cmdPath) return null;
+  const d = path.dirname(path.resolve(cmdPath));
+  const exe = path.join(d, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+  if (fs.existsSync(exe)) return [exe];
+  const js = path.join(d, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+  const node = path.join(d, "node.exe");
+  if (fs.existsSync(js) && fs.existsSync(node)) return [node, js];
+  return null;
+}
+
+/** Spawn form for `claude`: { cmd, prefixArgs, useShell }. Prefers the
+ *  resolved real executable (plain argv, no shell, quote-safe); falls back to
+ *  the shim through a shell only when we cannot see through it. */
+function resolveClaudeSpawn(claude) {
+  if (!win) return { cmd: claude.cmd, prefixArgs: [], useShell: false };
+  const abs = path.isAbsolute(claude.cmd) ? claude.cmd : whichWin(claude.cmd);
+  const isShim = abs && /\.(cmd|bat)$/i.test(abs);
+  const real = isShim ? realClaudeExe(abs) : null;
+  if (real) return { cmd: real[0], prefixArgs: real.slice(1), useShell: false };
+  return { cmd: claude.cmd, prefixArgs: [], useShell: win };
+}
+
 /** Authenticated == a trivial non-interactive prompt returns without an auth
  *  error. `claude -p` exits non-zero and says so when the user is logged out. */
 function claudeAuthed(claude) {
@@ -190,8 +233,9 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
     // `plan` is READ-ONLY: onboarding may diagnose freely, but it must never
     // silently rewrite the user's HelmDeck installation. Only the step that
     // genuinely has to change the machine (installing a runtime) gets more.
-    const p = spawn(claude.cmd, ["-p", prompt, "--permission-mode", mode],
-      { cwd, shell: win, windowsHide: true, env: hydratedEnv() });
+    const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
+    const p = spawn(cmd, [...prefixArgs, "-p", prompt, "--permission-mode", mode],
+      { cwd, shell: useShell, windowsHide: true, env: hydratedEnv() });
     let tail = "";
     const onData = (d) => {
       tail += d.toString();
@@ -209,9 +253,15 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
 // ------------------------------------------------------------------ server ---
 
 /**
- * @param ctx {{ resourcesDir, daemonDir, daemonPort, startDaemon, mintToken }}
+ * @param ctx {{ resourcesDir, daemonDir, daemonPort, startDaemon }}
  *   startDaemon(py) -> void   (main.js owns the child process + teardown)
- *   mintToken(py)   -> string (owner device token for the local UI)
+ *
+ * There is deliberately no mintToken any more. Provisioning used to finish by
+ * minting an owner device token and handing it to the SPA - the same
+ * credential-free owner login the shell itself used to perform, through a second
+ * door. Provisioning installs an INSTANCE; WHO may drive it is settled by
+ * logging in. On a genuinely fresh machine no owner account exists yet, so the
+ * SPA shows its create-owner screen, which is the only correct answer there.
  */
 function startSetupServer(ctx) {
   // Probe results are CACHED once positive: /setup/state is polled every few
@@ -230,9 +280,6 @@ function startSetupServer(ctx) {
       claude: !!claude, claudeVersion: claude ? claude.version : "",
       daemon: await daemonUp(ctx.daemonPort),
       running, done,
-      // the SPA adopts this so it can call the daemon right after provisioning,
-      // instead of waiting for a window reload to pick up a fresh #cfg
-      token: lastToken || undefined,
     };
   };
 
@@ -293,9 +340,8 @@ function startSetupServer(ctx) {
       if (!(await daemonUp(ctx.daemonPort))) { say("Instanz konnte nicht gestartet werden.", "err"); return; }
       say("Instanz läuft auf :" + ctx.daemonPort, "ok");
 
-      try { lastToken = ctx.mintToken(py) || ""; } catch { /* UI falls back to the connect screen */ }
       done = true;
-      say("Fertig — jetzt koppeln.", "ok");
+      say("Fertig — jetzt anmelden.", "ok");
     } finally {
       running = false;
     }

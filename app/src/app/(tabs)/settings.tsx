@@ -277,9 +277,11 @@ export default function Settings() {
       await refetchUsers();
     } catch (e) { fail(e); }
   }
-  async function revokeToken(u: UserRow, token: string) {
+  // by token id, not the token: the daemon hashes them at rest and the panel
+  // never receives the plaintext any more.
+  async function revokeToken(u: UserRow, tokenId: string) {
     if (!(await confirmAsync(tr("settings.users.revokeTitle"), tr("settings.users.revokeMsg")))) return;
-    try { await api.post(`/users/${u.name}/revoke`, { token }); await refetchUsers(); } catch (e) { fail(e); }
+    try { await api.post(`/users/${u.name}/revoke`, { token: tokenId }); await refetchUsers(); } catch (e) { fail(e); }
   }
   async function saveReg() {
     try { await api.saveSettings({ registration: { open: regOpen, invite_code: regCode.trim(), default_role: regRole } }); ok(tr("settings.saved.registration")); }
@@ -528,9 +530,9 @@ export default function Settings() {
                   {u.tokens?.length ? (
                     <View style={{ gap: 3 }}>
                       {u.tokens.map((tk) => (
-                        <View key={tk.token} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                          <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>{tk.label} · …{tk.token.slice(-6)}</Text>
-                          <Pressable onPress={() => revokeToken(u, tk.token)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
+                        <View key={tk.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>{tk.label} · …{tk.tail}</Text>
+                          <Pressable onPress={() => revokeToken(u, tk.id)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
                         </View>
                       ))}
                     </View>

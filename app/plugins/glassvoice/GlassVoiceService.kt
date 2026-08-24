@@ -97,6 +97,20 @@ class GlassVoiceService : Service() {
     /** Which microphone the LAST start actually got - derived from the routing
      *  call's own answer, shown to the owner, never guessed from the request. */
     private var micInUse = "Telefon"
+    /**
+     * CONVERSATION MODE (owner decree 2026-08-23: no tap per turn, least of all
+     * on the glasses). Non-null = we are in a hands-free loop and this is the
+     * mic choice to re-listen with after Henry finishes speaking; null = idle.
+     * The loop is the speech-to-speech `should_listen` gate mapped onto the
+     * strict listen -> release -> speak order this class already enforces:
+     * SCO is only ever open while the owner talks, so Henry still answers in
+     * A2DP quality. Ends on ACTION_STOP, on MAX_EMPTY consecutive turns where
+     * nothing was heard (the owner walked away, not a crash), or on a missing
+     * pairing config.
+     */
+    private var loopMic: Boolean? = null
+    private var emptyTurns = 0
+    private val MAX_EMPTY = 2
     private val main = Handler(Looper.getMainLooper())
 
     private val audio: AudioManager
@@ -157,9 +171,20 @@ class GlassVoiceService : Service() {
         // revoked the permission in Settings.
         if (!hasMicPermission()) { stopSelf(); return START_NOT_STICKY }
         when (intent?.action) {
-            ACTION_STOP -> { safe("stop") { releaseMic(); stopSelf() } }
-            ACTION_LISTEN_PHONE_MIC -> safe("listen-phone") { startListening(useGlassMic = false) }
-            else -> safe("listen") { startListening(useGlassMic = true) }
+            ACTION_STOP -> {
+                safe("stop") {
+                    loopMic = null           // end the conversation, not just this turn
+                    releaseMic()
+                    player?.release(); player = null
+                    stopSelf()
+                }
+            }
+            ACTION_LISTEN_PHONE_MIC -> safe("listen-phone") {
+                loopMic = false; emptyTurns = 0; startListening(useGlassMic = false)
+            }
+            else -> safe("listen") {
+                loopMic = true; emptyTurns = 0; startListening(useGlassMic = true)
+            }
         }
         // START_STICKY: the point of a foreground service is surviving the moment
         // the owner looks at the lens instead of the phone.
@@ -323,6 +348,7 @@ class GlassVoiceService : Service() {
             // otherwise a failed recognition leaves the glasses stuck in HFP.
             releaseMic()
             say("Nicht verstanden ($error)")
+            emptyTurn()
         }
 
         override fun onResults(results: Bundle?) {
@@ -332,10 +358,40 @@ class GlassVoiceService : Service() {
                 .orEmpty()
             // RELEASE BEFORE SPEAKING - the whole reason this class exists.
             releaseMic()
-            if (text.isBlank()) { say("Nichts gehört"); return }
+            if (text.isBlank()) { say("Nichts gehört"); emptyTurn(); return }
+            emptyTurns = 0
             say("…$text")
             Thread { ask(text) }.start()      // never network on the main thread
         }
+    }
+
+    // ---- the conversation loop -------------------------------------------
+
+    /**
+     * A turn where nothing usable was heard. In conversation mode one silence
+     * is normal (thinking, ambient noise cutting out) and re-arms the mic;
+     * MAX_EMPTY in a row means the owner is gone, and an open microphone with
+     * nobody there is a bug, not a feature - end the conversation.
+     */
+    private fun emptyTurn() {
+        val mic = loopMic ?: return
+        emptyTurns += 1
+        if (emptyTurns >= MAX_EMPTY) {
+            loopMic = null
+            say("Gespräch beendet (nichts gehört)")
+            stopSelf()
+            return
+        }
+        relisten(mic)
+    }
+
+    /** Re-arm the microphone for the next turn - main thread, tiny breather so
+     *  the audio route has settled (SCO teardown is asynchronous on some
+     *  handsets and an instant re-open can grab the phone mic instead). */
+    private fun relisten(mic: Boolean) {
+        main.postDelayed({
+            if (loopMic != null) safe("relisten") { startListening(useGlassMic = mic) }
+        }, 350)
     }
 
     // ---- ask Henry, then play his answer ---------------------------------
@@ -344,6 +400,7 @@ class GlassVoiceService : Service() {
         val base = prefs.getString(KEY_BASE, "").orEmpty().trimEnd('/')
         val token = prefs.getString(KEY_TOKEN, "").orEmpty()
         if (base.isEmpty() || token.isEmpty()) {
+            loopMic = null      // a loop that can never reach Henry must not re-arm
             main.post { say("Nicht verbunden - in HelmDeck koppeln") }
             return
         }
@@ -375,7 +432,17 @@ class GlassVoiceService : Service() {
         }
         main.post {
             say(if (reply.isBlank()) "Keine Antwort" else reply.take(60))
-            voiceUrl?.let { speak(base + it) }
+            val mic = loopMic
+            if (voiceUrl != null) {
+                // conversation mode: the moment Henry finishes talking is the
+                // moment to listen again - the same event, one owner (the
+                // player's completion), never a timer guessing at clip length.
+                speak(base + voiceUrl!!) { if (mic != null) relisten(mic) }
+            } else if (mic != null) {
+                // no audio this time (offline edge-tts etc.) - the answer is in
+                // the notification; re-arm anyway or the conversation dead-ends.
+                relisten(mic)
+            }
         }
     }
 
@@ -384,12 +451,21 @@ class GlassVoiceService : Service() {
      * the daemon renders the sentence and this just plays the clip - the same
      * split docs/glasses-reference 11.6 describes.
      */
-    private fun speak(url: String) = safe("play") {
+    private fun speak(url: String, onDone: () -> Unit = {}) = safe("play") {
         player?.release()
         player = MediaPlayer().apply {
             setDataSource(url)
-            setOnCompletionListener { safe("play-done") { it.release() }; player = null }
-            setOnErrorListener { mp, _, _ -> safe("play-err") { mp.release() }; player = null; true }
+            setOnCompletionListener {
+                safe("play-done") { it.release() }; player = null
+                safe("play-next") { onDone() }
+            }
+            setOnErrorListener { mp, _, _ ->
+                safe("play-err") { mp.release() }; player = null
+                // a failed playback still ends the speak phase - without this
+                // the conversation loop would die on one bad clip
+                safe("play-err-next") { onDone() }
+                true
+            }
             prepareAsync()
             setOnPreparedListener { it.start() }
         }

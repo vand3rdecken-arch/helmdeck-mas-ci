@@ -77,7 +77,16 @@ const daemonDir = resolveDaemonDir();
 // web), replacing the old Next.js server. Same static SPA that ships to the
 // phone/web; the desktop just serves it locally and points it at the daemon.
 const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__dirname, "..", "app", "dist");
-let desktopToken = "";
+
+// NO TOKEN IS MINTED HERE ANY MORE.
+//
+// This used to run `daemon.mint_token owner desktop` at every launch and inject
+// the result into the SPA's #cfg hash, which meant OPENING THE APP WAS AN OWNER
+// LOGIN WITH NO CREDENTIAL: anyone at an unlocked machine had full owner rights
+// without knowing anything. The shell now hands over the daemon URL only; the
+// SPA authenticates like every other client, through the login screen, and the
+// session it gets is persisted by the app (config.ts hydrate merges localStorage
+// under the hash, so this is one login - not one per launch).
 
 // Auto-update: TWO layers, because they cover different code.
 //  - updater.js (relay OTA, see that file): the UI bundle ONLY - fast,
@@ -285,25 +294,10 @@ function startDaemon(pyOverride) {
   });
 }
 
-// Mint a device token from the local daemon so the served Expo web UI can talk
-// to it with the same Bearer-token auth the phone uses (no daemon auth weakening,
-// no cookie coupling). Best-effort: the UI still loads if this fails (shows the
-// connect screen). Owner-scoped, same-machine only.
-function mintDesktopToken(pyOverride) {
-  const { spawnSync } = require("child_process");
-  const py = pyOverride || resolvePython();
-  try {
-    // a helper script (not `-c`) so Windows shell quoting can't mangle it;
-    // same shell-only-for-a-bare-name rule as the daemon spawn above. Run
-    // as a module from daemonDir's parent, same reasoning as the daemon
-    // spawn (daemon/ is a real package, mint_token.py stays put but needs
-    // -m from one level up).
-    const r = spawnSync(py.cmd, [...py.args, "-m", "daemon.mint_token", "owner", "desktop"],
-      { cwd: path.dirname(daemonDir), shell: process.platform === "win32" && !path.isAbsolute(py.cmd),
-        windowsHide: true, encoding: "utf8" });
-    if (r.status === 0 && r.stdout) desktopToken = r.stdout.trim();
-  } catch { /* leave empty */ }
-}
+// mintDesktopToken() lived here and is deliberately GONE (see the note at the
+// top). daemon/mint_token.py itself stays - it is still a legitimate operator
+// tool for provisioning a device token by hand - but nothing in the desktop
+// shell calls it any more, so no credential-free owner session is handed out.
 
 // Serve the exported SPA locally with index.html fallback for client-side routes.
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
@@ -360,12 +354,13 @@ function createWindow() {
       : { icon: path.join(__dirname, "assets", "icon.ico") }),
     autoHideMenuBar: true, webPreferences: { contextIsolation: true },
   });
-  // hand the Expo web app the daemon URL + a device token via the URL hash, so
-  // it connects with Bearer auth exactly like the phone (config.ts reads #cfg).
-  // `setup` hands the SPA the loopback control endpoint + its per-launch nonce,
-  // so the onboarding screen can provision the machine while the daemon is down.
+  // Hand the Expo web app the daemon URL via the URL hash (config.ts reads
+  // #cfg). NO token: the SPA logs in like any other client and keeps its own
+  // session. `setup` hands the SPA the loopback control endpoint + its
+  // per-launch nonce, so the onboarding screen can provision the machine while
+  // the daemon is down.
   const cfg = Buffer.from(JSON.stringify({
-    baseUrl: "http://localhost:" + DAEMON_PORT, token: desktopToken,
+    baseUrl: "http://localhost:" + DAEMON_PORT,
     setup: setupSrv ? { port: setupSrv.port, nonce: setupSrv.nonce } : undefined,
   })).toString("base64");
   // ?v=<launch time> busts any residual disk cache so a refreshed app-dist is
@@ -426,10 +421,8 @@ if (!app.requestSingleInstanceLock()) {
     setupSrv = startSetupServer({
       resourcesDir: root, daemonDir, daemonPort: DAEMON_PORT,
       startDaemon: (py) => startDaemon(py),
-      mintToken: (py) => { mintDesktopToken(py); return desktopToken; },
     });
     startDaemon();
-    mintDesktopToken();   // issue a device token for the served web UI
     // A verified staged bundle (own download, or one the tray staged while the
     // window was closed) lands BEFORE the web server starts, so this launch
     // already serves it - the launch half of the phone's expo-updates flow.

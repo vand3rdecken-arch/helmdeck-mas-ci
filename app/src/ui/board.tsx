@@ -20,6 +20,8 @@ import { GanttView } from "./board_gantt";
 import { LiveThumb } from "./board_live";
 import { Chip, Dot, Empty } from "./kit";
 import { useActionSheet } from "./action_sheet";
+import { SignOff } from "./sign_off";
+import { SignOffBatch } from "./sign_off_batch";
 
 const LANES = ["backlog", "working", "review", "done"] as const;
 const isWeb = Platform.OS === "web";
@@ -118,6 +120,10 @@ function laneVerdict(res: LaneMove, lane: string): string | null {
     return tt("board.verdict.review", { verdict });
   }
   if (lane === "done") {
+    // The daemon can still refuse a landing (GxP: no signature, drifted, or the
+    // actor is not an account). Without this the board showed "accepted" for a
+    // card that never moved.
+    if (res.gxp_refused) return res.gxp_refused;
     if (res.gate_failed) return tt("board.verdict.gateOpen", { why: heads() });
     if (res.merge_failed) {
       const why = (res.merge_report ?? "").split("\n")[0];
@@ -243,6 +249,13 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={prioLabel(tr, k.priority)} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
         {k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
+        {/* GxP: only rendered for a card in the regulated scope - t.human is the
+            "a person did this" token, so the badge reads as a human obligation
+            rather than another machine status. */}
+        {k.gxp_scope ? (
+          <Chip text={k.gxp_signed ? tr("sign.badgeSigned") : tr("sign.badgeNeeds")}
+                dot={k.gxp_signed ? t.ok : t.human} />
+        ) : null}
         {k.due ? <Chip text={tr("board.due", { d: k.due })} /> : null}
         {k.value > 0 ? <Chip text={`€${k.value}`} /> : null}
         {k.ai_cost > 0 ? <Chip text={flat
@@ -365,7 +378,7 @@ function DraggableCard({
 }
 
 function WideKanban({
-  tracks, label, qc, onError, onInfo, onMove,
+  tracks, label, qc, onError, onInfo, onMove, gateDone,
 }: {
   tracks: Track[];
   label: (l: string) => string;
@@ -373,6 +386,8 @@ function WideKanban({
   onError: (m: string) => void;
   onInfo: (m: string | null) => void;
   onMove: (k: Track) => void;
+  /** GxP: true when the drop was intercepted for a signature instead. */
+  gateDone: (k: Track, lane: string) => boolean;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -416,6 +431,10 @@ function WideKanban({
     const lane = laneAt(x);
     const card = tracks.find((k) => k.id === id);
     if (!lane || !card) return;
+    // The drag gesture is REDIRECTED, not forbidden. Taking away a gesture that
+    // worked yesterday is worse UX than translating it - the drop opens the
+    // sign-off dialog instead of moving the card.
+    if (gateDone(card, lane)) return;
     try {
       if ((card.lane || "working") !== lane) {
         const res = await api.moveLane(id, lane);
@@ -427,7 +446,7 @@ function WideKanban({
       }
       await qc.invalidateQueries({ queryKey: ["tracks"] });
     } catch (e) { onError(String((e as Error).message)); }
-  }, [tracks, byLane, indexAt, laneAt, qc, onError, onInfo]);
+  }, [tracks, byLane, indexAt, laneAt, qc, onError, onInfo, gateDone]);
 
   const Ins = () => <View style={{ height: 2, borderRadius: 2, backgroundColor: t.accent, marginVertical: 2 }} />;
 
@@ -533,6 +552,22 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
   const sheet = useActionSheet();
+  // GxP: a card in the regulated scope cannot just be moved to done - it needs
+  // a signature first. ONE gate for all four entry points below (pill, move
+  // sheet, drag, card detail has its own), so no path can forget it.
+  const [signing, setSigning] = useState<Track | null>(null);
+  // Batch sign-off: a selection mode over the cards that are IN SCOPE and
+  // still unsigned. Only offered when there is more than one - a "select" chip
+  // above a single card is noise.
+  const [picking, setPicking] = useState<Set<string> | null>(null);
+  const [batch, setBatch] = useState<Track[] | null>(null);
+  /** Returns true when the move was intercepted and a signature is being taken
+   *  instead. Callers do nothing further in that case. */
+  const gateDone = useCallback((k: Track, lane: string) => {
+    if (lane !== "done" || !k.gxp_scope) return false;
+    setSigning(k);
+    return true;
+  }, []);
 
   // Needs tab passes filter="needs_you" (flat list). The Board tab (no prop)
   // takes its filter from the sidebar store: all / archived / client:<name>.
@@ -567,9 +602,10 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       options: LANES.filter((l) => l !== k.lane).map((l) => ({
         label: "→ " + label(l),
         onPress: async () => {
+          if (gateDone(k, l)) return;
           setBusy(true);
           try { const res = await api.moveLane(k.id, l); showToast(laneVerdict(res, l)); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-          catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
+          catch (e) { showToast(String((e as Error).message)); }
           finally { setBusy(false); }
         },
       })),
@@ -580,6 +616,12 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     .filter((k) => k.lane !== "done" && !k.archived && (k.status === "needs_you" || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
+  // Cards a batch sign-off could cover: in the regulated scope, resting on
+  // review, not signed yet.
+  const signable = rows.filter((k) => k.gxp_scope && !k.gxp_signed
+    && k.lane === "review" && !k.archived);
+  const picked = signable.filter((k) => picking?.has(k.id));
+
   return (
     <>
     <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingTop: topInset + (wide ? 8 : 8),
@@ -589,11 +631,72 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || tr("ui.offline")}</Text> : null}
       {showDemoInvite ? <DemoInvite /> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
+      {/* Batch sign-off bar. Only when there is more than one card to sign -
+          a "select" affordance above a single card is noise. */}
+      {signable.length > 1 ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10,
+          borderWidth: 1, borderColor: t.human + "55", backgroundColor: t.human + "12",
+          borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12 }}>
+          <Ionicons name="shield-checkmark" size={15} color={t.human} />
+          <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1 }}>
+            {tr("sign.badgeNeeds")} · {signable.length}
+          </Text>
+          {picking ? (
+            <>
+              <Pressable onPress={() => setPicking(null)} hitSlop={6}>
+                <Text style={{ color: t.txtTertiary, fontSize: 12.5 }}>{tr("sign.batchCancel")}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { if (picked.length) setBatch(picked); }}
+                disabled={!picked.length} hitSlop={6}
+                style={{ backgroundColor: t.human, borderRadius: 8,
+                  paddingVertical: 6, paddingHorizontal: 12, opacity: picked.length ? 1 : 0.45 }}>
+                <Text style={{ color: "#fff", fontSize: 12.5, fontWeight: "700" }}>
+                  {tr("sign.ctaN", { n: String(picked.length) })}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable onPress={() => setPicking(new Set())} hitSlop={6}>
+              <Text style={{ color: t.human, fontSize: 12.5, fontWeight: "600" }}>
+                {tr("sign.batchSelect")}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      ) : null}
+      {/* While picking, the cards to choose from are listed flat - the kanban
+          columns would hide most of them behind a scroll. */}
+      {picking ? (
+        <View style={{ gap: 6 }}>
+          {signable.map((k) => {
+            const on = picking.has(k.id);
+            return (
+              <Pressable key={k.id}
+                onPress={() => setPicking((p) => {
+                  const n = new Set(p); if (on) n.delete(k.id); else n.add(k.id); return n;
+                })}
+                accessibilityRole="checkbox" accessibilityState={{ checked: on }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 10,
+                  borderWidth: 1, borderColor: on ? t.human : t.borderSubtle,
+                  backgroundColor: on ? t.human + "14" : t.surface1,
+                  borderRadius: 10, padding: 10 }}>
+                <Ionicons name={on ? "checkbox" : "square-outline"} size={18}
+                          color={on ? t.human : t.txtPlaceholder} />
+                <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>
+                  {k.id} · {k.task}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? (
         <NextUp items={nextUp} onDone={async (k) => {
+          if (gateDone(k, "done")) return;
           try { const res = await api.moveLane(k.id, "done"); showToast(laneVerdict(res, "done") ?? tr("board.stepDone")); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
-          catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
+          catch (e) { showToast(String((e as Error).message)); }
         }} />
       ) : null}
       {filter === "needs_you" ? (
@@ -605,7 +708,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: four column plates side by side, drag to move/reorder
-        <WideKanban tracks={shown} label={label} qc={qc} onError={(m) => Alert.alert(tr("ui.error"), m)} onInfo={showToast} onMove={onMove} />
+        <WideKanban tracks={shown} label={label} qc={qc} onError={showToast} onInfo={showToast} onMove={onMove} gateDone={gateDone} />
       ) : (
         LANES.map((lane) => {
           const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
@@ -633,6 +736,43 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       </View>
     ) : null}
     {sheet.node}
+    {batch ? (
+      <SignOffBatch
+        cards={batch}
+        onClose={() => { setBatch(null); setPicking(null); }}
+        onSigned={async (msg, landed) => {
+          showToast(msg);
+          // Signing authorises; the lane machine still verifies each card
+          // independently before merging. Sequential, not parallel: each of
+          // these runs a gate and a merge into the SAME main, and firing them
+          // at once would have them race for it.
+          for (const id of landed) {
+            try {
+              const res = await api.moveLane(id, "done");
+              if (res.gxp_refused) showToast(res.gxp_refused);
+            } catch (e) { showToast(String((e as Error).message)); }
+          }
+          await qc.invalidateQueries({ queryKey: ["tracks"] });
+        }}
+      />
+    ) : null}
+    {signing ? (
+      <SignOff
+        card={signing}
+        onClose={() => setSigning(null)}
+        onSigned={async (msg) => {
+          showToast(msg);
+          // The signature does NOT accept the card - it authorises the accept.
+          // Two steps on purpose (docs/gxp-mode-design.md 2.3): the human
+          // decides, the lane machine independently verifies before merging.
+          try {
+            const res = await api.moveLane(signing.id, "done");
+            showToast(laneVerdict(res, "done") ?? tr("board.stepDone"));
+          } catch (e) { showToast(String((e as Error).message)); }
+          await qc.invalidateQueries({ queryKey: ["tracks"] });
+        }}
+      />
+    ) : null}
     </>
   );
 }

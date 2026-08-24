@@ -201,12 +201,18 @@ export default function History() {
           </Panel>
         ) : null}
 
-        <Panel t={t} title={tr("history.checkpoints")}
-          sub={tr("history.checkpointsSub")}>
-          {cps.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-          {cps.data && cps.data.length === 0 ? <Empty text={tr("history.noCheckpoints")} /> : null}
-          {(cps.data ?? []).slice(0, 20).map((c) => <CheckpointRow key={c.id} t={t} c={c} isOwner={isOwner} />)}
-        </Panel>
+        {/* Owner only: the per-checkpoint diff returns settings VALUES (relay.sk,
+            glance_token, invite_code), so the daemon route is owner-gated like
+            restore. Showing the panel to an operator would leave an expander that
+            can only 403. */}
+        {isOwner ? (
+          <Panel t={t} title={tr("history.checkpoints")}
+            sub={tr("history.checkpointsSub")}>
+            {cps.isLoading ? <ActivityIndicator color={t.accent} /> : null}
+            {cps.data && cps.data.length === 0 ? <Empty text={tr("history.noCheckpoints")} /> : null}
+            {(cps.data ?? []).slice(0, 20).map((c) => <CheckpointRow key={c.id} t={t} c={c} isOwner={isOwner} />)}
+          </Panel>
+        ) : null}
 
         <Panel t={t} title={tr("history.debt")}
           sub={tr("history.debtSub")}>

@@ -14,6 +14,7 @@ import { net } from "./dict/net";
 import { onboard } from "./dict/onboard";
 import { screens } from "./dict/screens";
 import { settings } from "./dict/settings";
+import { sign } from "./dict/sign";
 
 export type Lang = "de" | "en";
 export const LANGS: { id: Lang; label: string }[] = [
@@ -27,6 +28,7 @@ export type Dict = Record<string, Entry>;
 
 export const DICT: Dict = {
   ...chrome, ...board, ...card, ...composer, ...demo, ...net, ...onboard, ...screens, ...settings,
+  ...sign,
 };
 
 /** The device's language, used ONLY as the fallback when the workspace hasn't

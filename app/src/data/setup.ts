@@ -13,7 +13,9 @@ export interface SetupState {
   claude: boolean; claudeVersion: string;
   daemon: boolean;
   running: boolean; done: boolean;
-  token?: string;
+  // No `token` field: provisioning used to end by minting an owner device token
+  // and handing it here, which logged the SPA in as owner with no credential.
+  // Provisioning installs an instance; who may drive it is settled by logging in.
 }
 export interface SetupLine { ts: number; kind: string; line: string }
 

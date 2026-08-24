@@ -89,12 +89,27 @@ export const useConfig = create<ConfigState>((set, get) => ({
   hydrate: async () => {
     try {
       if (isWeb) {
-        // Desktop (Electron) hands the daemon URL + a device token via the URL
-        // hash (#cfg=base64{baseUrl,token}) on first load; otherwise localStorage.
-        const hash = globalThis.location?.hash ?? "";
-        const m = /[#&]cfg=([^&]+)/.exec(hash);
-        if (m) get().set(JSON.parse(atob(decodeURIComponent(m[1]))));
-        else { const raw = globalThis.localStorage?.getItem(KEY); if (raw) set({ ...JSON.parse(raw) }); }
+        // Desktop (Electron) hands the daemon URL via the URL hash
+        // (#cfg=base64{baseUrl,setup}); otherwise localStorage.
+        //
+        // MERGE, do not replace. The hash used to WIN outright, so anything it
+        // omitted was silently dropped - harmless while desktop/main.js minted a
+        // fresh owner token into it at every launch. That mint is gone (it was a
+        // credential-free owner login), so the only session that exists is the
+        // one the user actually logged into, and it lives in localStorage.
+        // Replacing would throw it away and demand a login at every launch,
+        // which is the failure mode that gets a security fix reverted. Stored
+        // config is the base; the hash overlays only the fields it really has.
+        const raw = globalThis.localStorage?.getItem(KEY);
+        if (raw) set({ ...JSON.parse(raw) });
+        const m = /[#&]cfg=([^&]+)/.exec(globalThis.location?.hash ?? "");
+        if (m) {
+          const fromHash: Record<string, unknown> = JSON.parse(atob(decodeURIComponent(m[1])));
+          for (const k of Object.keys(fromHash)) {
+            if (fromHash[k] === "" || fromHash[k] == null) delete fromHash[k];
+          }
+          get().set(fromHash as Partial<Persisted>);
+        }
       } else {
         const raw = await SecureStore.getItemAsync(KEY);
         if (raw) set({ ...JSON.parse(raw) });

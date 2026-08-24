@@ -7,7 +7,8 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
-import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow } from "./types";
+import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow,
+  SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult } from "./types";
 import type { VoiceClip } from "./voice";
 
 export class AuthRequired extends Error {}
@@ -403,6 +404,27 @@ export const api = {
   // Card actions carry a coarse analytics event at the call site (the api layer
   // is their single owner) - action names + lane only, never ids or titles.
   moveLane: (id: string, lane: string) => { track("card_move", { lane }); return req<LaneMove>("POST", `/tracks/${id}/lane`, { lane }); },
+
+  // ---- GxP sign-off -------------------------------------------------------
+  // What signing this card would commit to. The subject (the head/base commit
+  // pair) is computed SERVER-side from git and only read here - a
+  // client-supplied commit id would let a signature name a state the signer
+  // never saw, which is the one thing the binding exists to prevent.
+  signSubject: (id: string) => req<SignSubject>("GET", `/sign/subject/${id}`),
+  // skipAuthGate: a wrong password answers 401, and without it the global auth
+  // gate would throw the user out to the login screen instead of saying
+  // "password not accepted" in the dialog they are standing in.
+  sign: (card: string, meaning: SignMeaning, reason: string, password: string) => {
+    track("card_sign", { meaning });
+    return req<{ ok: boolean; signature: Signature }>(
+      "POST", "/sign", { card, meaning, reason, password }, undefined, true);
+  },
+  signBatch: (cards: SignBatchItem[], password: string) => {
+    track("card_sign_batch", { n: cards.length });
+    return req<{ results: SignBatchResult[] }>(
+      "POST", "/sign/batch", { cards, password }, undefined, true);
+  },
+
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),
   newTrack: (b: Record<string, unknown>) => { track("card_new"); return req("POST", "/tracks/new", b); },
   update: (id: string, patch: Record<string, unknown>) => req("POST", `/tracks/${id}/update`, patch),
@@ -456,6 +478,12 @@ export const api = {
     return req<ChatReply>("POST", "/chat", { text, ...o });
   },
   chatCancel: () => req("POST", "/chat/cancel", {}),
+  /** LIVE voice pipeline STT: one VAD-cut utterance (WAV, base64) -> text.
+   *  Server-side faster-whisper (daemon/spine/media/stt.py); 501 with the
+   *  install hint when the daemon lacks the package - surfaced, never mute. */
+  transcribe: (audioB64: string, lang?: string) =>
+    req<{ text: string; info?: { lang?: string; p?: number; dur?: number } }>(
+      "POST", "/voice/transcribe", { audio: audioB64, lang }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
   /** The live turn. `voiceFrom` is a READ CURSOR (the highest chunk seq already
    *  taken): pass it to also collect the speech the daemon has rendered so far,
@@ -464,11 +492,15 @@ export const api = {
    *  no use for them. `voice_pending` is why the loop cannot simply stop when
    *  `running` goes false: the turn can be over while the last sentence is
    *  still rendering. */
-  chatLive: (voiceFrom?: number) => req<{
+  chatLive: (voiceFrom?: number, voiceTurn?: number) => req<{
     text: string; thinking?: string; running: boolean;
-    voice?: (VoiceClip & { seq: number; text?: string })[];
+    voice?: (VoiceClip & { turn?: number; seq: number; text?: string })[];
     voice_pending?: boolean;
-  }>("GET", voiceFrom === undefined ? "/chat/live" : `/chat/live?voice_from=${voiceFrom}`),
+  }>("GET", voiceFrom === undefined ? "/chat/live"
+    // `voice_turn` names the turn the cursor counts in — seq restarts at 1
+    // every turn, so after a steer a bare seq would silently swallow the new
+    // answer's clips (voice_stream.take). An old daemon ignores the param.
+    : `/chat/live?voice_from=${voiceFrom}${voiceTurn ? `&voice_turn=${voiceTurn}` : ""}`),
 
   // Render text the phone already holds (a decrypted push's title/body) as
   // speech - the proactive-blocker half of phone voice (data/push.ts). Same

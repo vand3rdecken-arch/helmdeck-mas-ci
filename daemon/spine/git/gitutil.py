@@ -13,6 +13,19 @@ import subprocess
 
 WORKTREE_DIRNAME = "helmdeck-worktrees"
 
+# Identity for commits the HARNESS makes on a model's behalf. Without it git
+# inherits the host's user.name/user.email, so agent work lands in the history
+# authored by whoever owns the machine - the log then asserts a HUMAN author for
+# MACHINE work. That is false attribution, which is worse than none, and it is
+# what disqualifies git as an audit trail (docs/gxp-mode-design.md 2.0).
+#
+# Passed per call as `-c` options (git accepts them after -C, before the
+# subcommand) rather than set globally or through the daemon's env: either of
+# those would also relabel commits a HUMAN triggers in the same checkout.
+# Who ASKED for the commit stays in the message; who MADE it is the author.
+AGENT_IDENT = ("-c", "user.name=HelmDeck Agent",
+               "-c", "user.email=agent@helmdeck.local")
+
 
 def _git(repo, *args):
     r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)

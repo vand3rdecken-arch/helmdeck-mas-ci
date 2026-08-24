@@ -10,6 +10,69 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "gxp-signature-not-independently-verifiable",
+        "title": "GxP signatures are recorded, but only WE can vouch for them",
+        "status": "paid",
+        "what": "The signature record was built and enforced, but it lived in "
+                "helmdeck.db and events.jsonl - storage HelmDeck owns. An "
+                "auditor asking 'how do I know this wasn't edited' got 'the "
+                "append-only log', a convention rather than a proof.",
+        "why_it_bites": "'A human signed this' was true and defensible; 'here "
+                        "is cryptographic proof you can check yourself' was "
+                        "not available.",
+        "trigger": "a supplier audit that asks to independently verify a "
+                   "signature, or any dispute about a specific release",
+        "fix": "PAID (spine/auth/signkeys.py): every APPROVED signature also "
+               "lands as a GPG-signed tag gxp/approve/<card>-<seq> on the "
+               "approved commit; an auditor verifies with stock `git "
+               "verify-tag` + the exported public key, no HelmDeck code in the "
+               "loop. Per-user Ed25519 key whose passphrase IS the user's "
+               "password (owner's Option A) - the password is cryptographically "
+               "required, not merely hash-checked; agent passphrase caching is "
+               "disabled (default/max-cache-ttl 0), because with the default "
+               "cache a signature succeeded with the WRONG passphrase for as "
+               "long as the agent remembered the right one. Password changes "
+               "rotate the key; every public key ever used is exported "
+               "append-only so old tags verify forever. GPG rather than the "
+               "design's gpg.format=ssh because this host's git is 2.27 and "
+               "ssh signing landed in 2.34 - same auditor story, different key "
+               "format. STRICT: an approval whose tag cannot be created is "
+               "refused outright, never stored unanchored. Proven end to end "
+               "in daemon/test_gxp_tag.py against real gpg and real git.",
+        "order": 0,
+    },
+    {
+        "id": "events-two-stores-unreconciled",
+        "title": "events.jsonl and the events table can drift, with no way to tell",
+        "status": "paid",
+        "what": "events.emit() appends to events.jsonl and separately write-through "
+                "inserts the same row into the db (events.py:175-191). The db write "
+                "is best-effort inside a bare `except: pass`. Rows carried no id, so "
+                "the two stores shared no key and a dropped db write stayed dropped "
+                "and silent forever - re-scanning to heal it could only either miss "
+                "real drops or duplicate everything (the bug A4 fixed).",
+        "why_it_bites": "A failed write-through loses the event from every "
+                        "dashboard, metric and audit query while it still sits in "
+                        "the file - the two answers to 'what happened' disagree and "
+                        "nothing detects it. For a GxP audit trail that is fatal: "
+                        "the record has to be provably complete, not probably.",
+        "trigger": "any db write failure during emit (disk full, lock timeout, "
+                   "WAL trouble) - was silent, now healed on the next boot",
+        "fix": "PAID (phase D3, docs/gxp-plan.md): events.emit() stamps a stable "
+               "secrets.token_hex id on every row; the events table got a UNIQUE "
+               "index on it (ALTER TABLE migration for existing installs, NULLs "
+               "allowed for pre-id-era rows so they never collide); "
+               "db.event_insert uses INSERT OR IGNORE keyed on it. "
+               "db._reconcile_events() runs on every boot, not just the first: it "
+               "scans events.jsonl from a byte-offset checkpoint (only what was "
+               "appended since the last boot, not the whole history) and folds in "
+               "anything the write-through missed. Verified against a genuinely "
+               "dropped write (daemon/test_events_reconcile.py) - healed on the "
+               "next reconcile, a repeat reconcile does not duplicate it, and the "
+               "checkpoint advances so a clean boot rescans nothing.",
+        "order": 0,
+    },
+    {
         "id": "henry-direct-hands",
         "title": "Henry acts on the live tree with no gate/isolation",
         "status": "open",
