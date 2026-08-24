@@ -2601,11 +2601,17 @@ DEBT = [
                "problems) keyed by tree + a content hash of helmdeck.gate + "
                "HEAD, and have a second concurrent request AWAIT that result "
                "instead of re-running) - real 'join', not just no-stacking. "
-               "(3) If the box is measurably loaded with an EMPTY holder "
-               "registry more than incidentally, consider a coarser per-process "
-               "CPU breakdown (EnumProcesses + GetProcessTimes) to name the top "
-               "consumer instead of 'unbekannt/extern' - only worth it if that "
-               "case turns out to be common in practice.",
+               "(3) PARTLY ADDRESSED via the Henry route (the Paseo "
+               "diagnostics pattern: measurement in the snapshot, judgement "
+               "in the reader): a give-up past wait_s now emits a deduped "
+               "'load-contention' escalation, and Henry's system snapshot "
+               "carries _box_load_line (the SAME resources seam the admission "
+               "decides by, plus the named holders) next to the tasklist "
+               "process counts that can name an external hog - so 'unbekannt/"
+               "extern' cases reach a judge who sees WHO instead of a code "
+               "path that cannot. A per-process CPU breakdown (EnumProcesses "
+               "+ GetProcessTimes) stays the escalation path only if Henry's "
+               "coarse process picture proves insufficient in practice.",
         "order": 44,
     },
 ]

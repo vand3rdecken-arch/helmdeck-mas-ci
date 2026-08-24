@@ -150,3 +150,10 @@ def _heavy_holder_desc():
     with _heavy_holders_guard:
         names = ["%s (%s)" % (h["kind"], h["card"]) for h in _heavy_holders.values()]
     return ", ".join(names) if names else "unbekannt/extern (nicht von HelmDeck verfolgt)"
+
+
+def list_heavy_holders():
+    """Snapshot of the registry for observers (Henry's system snapshot) -
+    copies, so a reader can never mutate a holder record."""
+    with _heavy_holders_guard:
+        return [dict(h) for h in _heavy_holders.values()]

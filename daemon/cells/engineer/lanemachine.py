@@ -124,6 +124,26 @@ def _admit_heavy(t, kind, log=None):
                                     "trotzdem nach %ds Wartezeit" % (cpu, int(wait_cap)))
                 events.emit("load_wait", t.get("id"), kind=kind, cpu_pct=cpu,
                             wait_s=wait_cap, gave_up=True)
+                # Load that outlasts the whole wait window is no longer a
+                # scheduling detail - it is an EXCEPTION, and judging it (is
+                # this an external hog worth telling the owner about, or our
+                # own build queue clearing itself?) is Henry's job, not a
+                # threshold's (the engineer cell reports facts, never
+                # decides). Deduped here because the channel does not: one
+                # open load-contention escalation at a time.
+                try:
+                    from daemon.spine.registry import escalations
+                    if not any(e.get("kind") == "load-contention"
+                               for e in escalations.list_open()):
+                        escalations.emit(
+                            "load-contention", card=t.get("id"),
+                            detail="Box ueber der Admissions-Schwelle (CPU %.0f%% > %.0f%%) "
+                                   "laenger als die Wartezeit (%ds) - %s fuer Karte %s startet "
+                                   "trotzdem. Bekannte HelmDeck-Holder: %s"
+                                   % (cpu, cpu_max, int(wait_cap), kind, t.get("id"),
+                                      _heavy_holder_desc()))
+                except Exception:
+                    pass          # the escalation is a courtesy, never a blocker
                 break
             if not noted:
                 who = _heavy_holder_desc()
