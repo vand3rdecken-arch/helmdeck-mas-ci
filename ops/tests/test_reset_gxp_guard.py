@@ -49,7 +49,7 @@ def main():
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     db.init()
 
-    import tools.reset as reset
+    import ops.tools.reset as reset
     reset.ROOT = tmp
     reset.DAEMON = tmp   # daemon/ files (users.json etc.) also sandboxed here
 
@@ -74,7 +74,7 @@ def main():
         json.dump({"enabled": True, "activated_by": "duy"}, f)
     rc = run(["--yes"])
     ok(rc != 0, "non-zero exit")
-    ok(not os.path.isdir(os.path.join(tmp, "backups")),
+    ok(not os.path.isdir(os.path.join(tmp, "daemon", "backups")),
        "no backups/ dir was created - refused BEFORE backup(), not after")
 
     # ------------------------------------------------------------------ 2 ---
@@ -92,11 +92,11 @@ def main():
     ok(not os.path.exists(events.EV), "events.jsonl actually removed")
     ok(db.conn().execute("SELECT count(*) FROM events").fetchone()[0] == 0,
        "events table actually cleared")
-    ok(os.path.isdir(os.path.join(tmp, "backups")), "a backup WAS made this time")
+    ok(os.path.isdir(os.path.join(tmp, "daemon", "backups")), "a backup WAS made this time")
 
     # ------------------------------------------------------------------ 4 ---
     print("\nthe reset itself is logged, in a file clear_events() cannot reach")
-    logf = os.path.join(tmp, "backups", "reset-log.jsonl")
+    logf = os.path.join(tmp, "daemon", "backups", "reset-log.jsonl")
     ok(os.path.exists(logf), "reset-log.jsonl exists")
     rows = [json.loads(l) for l in open(logf, encoding="utf-8") if l.strip()]
     ok(len(rows) == 1, "exactly one entry for the one completed reset (got %d)" % len(rows))

@@ -58,7 +58,7 @@ fi
 # is expo.version). The relay reads this marker to VALIDATE the client's
 # expo-runtime-version instead of echoing it back - without it the crash-loop
 # protection never fires (see relay.py _bundle_rtv). Packed with the export.
-RTV="$(py -3.12 -c "import json;print(json.load(open('app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)"
+RTV="$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)"
 [ -n "$RTV" ] && { printf '%s' "$RTV" > surfaces/app/dist-ota/runtimeVersion; echo "==> bundle runtimeVersion marker: $RTV"; }
 
 echo "==> pack + upload the export"
@@ -82,7 +82,7 @@ REMOTE
 echo "==> verify live manifest"
 # runtimeVersion policy is "appVersion", so the live rtv == expo.version. Derive
 # it (don't hardcode) or the verify HEAD mismatches after a native version bump.
-RTV="$(py -3.12 -c 'import json;print(json.load(open("app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)"
+RTV="$(py -3.12 -c 'import json;print(json.load(open("surfaces/app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)"
 # `|| true`: this is a COSMETIC preview for the human/log, not a functional
 # check - under `set -o pipefail`, curl legitimately gets SIGPIPE'd ("(23)
 # Failed writing body") the instant `head -c` closes the pipe after its byte

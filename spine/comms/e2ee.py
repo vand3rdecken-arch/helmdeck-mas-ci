@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """End-to-end encryption for the relay path - byte-for-byte compatible with
-Paseo's scheme (packages/surfaces/relay/src/crypto.ts) so the wire format is a known
+Paseo's scheme (packages/relay/src/crypto.ts) so the wire format is a known
 quantity:
 
   * key exchange : Curve25519  (NaCl crypto_box / box.before)

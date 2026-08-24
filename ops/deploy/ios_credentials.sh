@@ -127,7 +127,7 @@ esac
 # dies with "Failed to resolve plugin for module expo-router".
 [ -d surfaces/app/node_modules ] || fail "surfaces/app/node_modules missing - junction it first (see ops/docs/shots/link.py)"
 
-grep -q "\"$PROFILE\"" app/eas.json || fail "profile '$PROFILE' is not in app/eas.json"
+grep -q "\"$PROFILE\"" surfaces/app/eas.json || fail "profile '$PROFILE' is not in surfaces/app/eas.json"
 
 export EXPO_ASC_API_KEY_PATH="$KEY_ABS"
 export EXPO_ASC_KEY_ID="$KEY_ID"

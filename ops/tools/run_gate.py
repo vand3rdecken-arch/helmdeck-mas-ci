@@ -49,7 +49,7 @@ daemon_py = sorted(
     if "__pycache__" not in p
 )
 if daemon_py:
-    run("py_compile daemon/spine/cells **/*.py", [PY, "-m", "py_compile", *daemon_py])
+    run("py_compile daemon+spine+cells **/*.py", [PY, "-m", "py_compile", *daemon_py])
 
 # -- FUNCTION CHECK -----------------------------------------------------------
 # The daemon WIRES UP: importing the http server pulls the spine, routes and

@@ -29,7 +29,7 @@ except AttributeError:
     pass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-APP = os.path.join(ROOT, "app", "src")
+APP = os.path.join(ROOT, "surfaces", "app", "src")
 DICT_DIR = os.path.join(APP, "i18n", "dict")
 DAEMON = os.path.join(ROOT, "daemon")
 

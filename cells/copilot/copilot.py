@@ -168,12 +168,6 @@ def henry_pmode():
     from spine.storage import events
     return (events.settings().get("henry_permission_mode") or "").strip() or "acceptEdits"
 
-# THE COPILOT'S ROLE IS DATA: ops/harness/agents/board-copilot.md (loaded by
-# daemon/harness.py, passed as --append-system-prompt). This constant is the
-# BUILT-IN FALLBACK - kept verbatim and in full, not trimmed to a stub, so that a
-# missing or mangled harness file degrades to today's exact behaviour instead of
-# to a lobotomised copilot. Edit the .md; keep this in sync only when the board's
-# action vocabulary itself changes.
 # HENRY'S ROLE IS DATA, IN EXACTLY ONE PLACE: ops/harness/agents/board-copilot.md
 # (owner-editable, versioned via /harness, shipped with every install - the
 # desktop bundle carries ops/harness as an extraResource). The 17 KB copy that

@@ -29,7 +29,7 @@ import struct
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-DESK = os.path.join(ROOT, "desktop")
+DESK = os.path.join(ROOT, "surfaces", "desktop")
 
 _fails = []
 
@@ -156,7 +156,7 @@ if os.path.exists(wf_path):
 # The workflow can only run once the source is IN the public repo that already
 # hosts the releases. Two things about that push are silent regressions if
 # someone "tidies" them, so they are pinned here rather than discovered live.
-pub = os.path.join(ROOT, "deploy", "publish_source.sh")
+pub = os.path.join(ROOT, "ops", "deploy", "publish_source.sh")
 check(os.path.exists(pub), "ops/deploy/publish_source.sh exists - the audited push "
                            "that gives the macOS runner something to check out")
 if os.path.exists(pub):
@@ -172,7 +172,7 @@ readme = read(ROOT, "README.md")
 check("## Downloads" in readme,
       "the root README is the PUBLIC product page (Play links, SmartScreen "
       "note) - pushing the internal map here would replace a live page")
-check(os.path.exists(os.path.join(ROOT, "docs", "repo-map.md")),
+check(os.path.exists(os.path.join(ROOT, "ops", "docs", "repo-map.md")),
       "the internal repo map lives at ops/docs/repo-map.md")
 
 print("FAILURES: %d" % len(_fails))

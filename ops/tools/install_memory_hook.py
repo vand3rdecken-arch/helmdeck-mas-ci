@@ -46,7 +46,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SRC = os.path.join(ROOT, "tools", "memory_autocommit.py")
+SRC = os.path.join(ROOT, "ops", "tools", "memory_autocommit.py")
 
 HOME = os.path.expanduser("~")
 CLAUDE = os.path.join(HOME, ".claude")

@@ -24,9 +24,9 @@ import os
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-DESK = os.path.join(ROOT, "desktop", "assets")
-APPIMG = os.path.join(ROOT, "app", "assets", "images")
+ROOT = os.path.dirname(os.path.dirname(HERE))
+DESK = os.path.join(ROOT, "surfaces", "desktop", "assets")
+APPIMG = os.path.join(ROOT, "surfaces", "app", "assets", "images")
 
 SS = 4                       # supersample factor -> smooth edges
 S = 1024 * SS                # working canvas

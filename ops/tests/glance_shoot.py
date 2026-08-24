@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "daemon"))
 
 PORT = int(os.environ.get("HELMDECK_DEV_PORT") or 3404)
-SHOTS = os.path.join(ROOT, "shots")
+SHOTS = os.path.join(ROOT, "ops", "docs", "shots")
 TOKEN = "shoot-token"
 
 
@@ -97,7 +97,7 @@ def main():
           % (payload["econ"]["needs_you"], payload["econ"]["yours"]))
 
     httpd = ThreadingHTTPServer(
-        ("127.0.0.1", PORT), partial(H, directory=os.path.join(ROOT, "glasses")))
+        ("127.0.0.1", PORT), partial(H, directory=os.path.join(ROOT, "surfaces", "glasses")))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = "http://127.0.0.1:%d" % PORT
     print("serving %s" % base)

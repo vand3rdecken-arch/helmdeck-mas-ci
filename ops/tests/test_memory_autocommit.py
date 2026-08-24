@@ -170,7 +170,7 @@ def test_never_pushes():
         rc, remotes, _ = mac.git(d, "remote")
         check(rc == 0 and not remotes.strip(),
               "the created repo has NO remote - these are private notes")
-        src = open(os.path.join(ROOT, "tools", "memory_autocommit.py"),
+        src = open(os.path.join(ROOT, "ops", "tools", "memory_autocommit.py"),
                    encoding="utf-8").read()
         code = "\n".join(l for l in src.splitlines()
                          if not l.strip().startswith("#"))
@@ -242,7 +242,7 @@ def test_end_to_end_as_the_hook_runs_it():
         project(root, "proj-a", {"a.md": "a\n"})
         env = dict(os.environ)
         # point the module's real constant at the temp tree for the subprocess
-        script = os.path.join(ROOT, "tools", "memory_autocommit.py")
+        script = os.path.join(ROOT, "ops", "tools", "memory_autocommit.py")
         runner = (
             "import sys, json;"
             "sys.path.insert(0, %r);"

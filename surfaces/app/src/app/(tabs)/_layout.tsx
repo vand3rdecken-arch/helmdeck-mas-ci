@@ -19,13 +19,16 @@ type IconName = keyof typeof Ionicons.glyphMap;
 // the translator so the shell speaks the workspace language.
 type NavItem = { name: string; labelKey: string; icon: IconName; sectionKey?: string; teamOnly?: boolean };
 
-// Desktop left-sidebar nav (the old web shell): every view is first-class, in
-// sections. On phone only the first four are bottom-bar tabs; the rest live
-// under "More".
+// Desktop left-sidebar FALLBACK nav - used ONLY when the kernel registry is
+// empty (boot failed). Must mirror the registry (tabs.ts + the 3 cell
+// surfaces) 1:1, or a kernel failure silently changes the shell. This array
+// had drifted from before the index/board swap (its "index" was the board,
+// it carried a phantom "dashboard" route and lacked board + modules) -
+// caught and resynced in the 2026-08-24 duplicate audit.
 const NAV: NavItem[] = [
-  { name: "index", labelKey: "nav.board", icon: "grid-outline" },
+  { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
+  { name: "board", labelKey: "nav.board", icon: "grid-outline" },
   { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
-  { name: "dashboard", labelKey: "nav.dashboard", icon: "stats-chart-outline", teamOnly: true },
   { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", sectionKey: "nav.sectionWorkflow" },
   { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline" },
   { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", teamOnly: true },
@@ -33,6 +36,7 @@ const NAV: NavItem[] = [
   { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
   { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", teamOnly: true },
   { name: "settings", labelKey: "nav.settings", icon: "settings-outline", teamOnly: true },
+  { name: "modules", labelKey: "nav.modules", icon: "cube-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
 ];
 // Cell-enable nav gating (Phase 1 of the cell-registry decree, daemon/debt.py
 // order 33; the 3 tab-bearing surfaces got real route+nav in the
@@ -177,6 +181,7 @@ const TAB_FALLBACK: TabItem[] = [
   { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", desktopOnly: true },
   { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", desktopOnly: true },
   { name: "settings", labelKey: "nav.settings", icon: "settings-outline", desktopOnly: true },
+  { name: "modules", labelKey: "nav.modules", icon: "cube-outline", desktopOnly: true },
   { name: "more", labelKey: "nav.more", icon: "ellipsis-horizontal", phoneOnly: true },
 ];
 

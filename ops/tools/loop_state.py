@@ -210,7 +210,7 @@ def checks_red(touched):
         if r.returncode != 0:
             problems.append("daemon wiring: " + (r.stderr or "").strip().splitlines()[-1][:120])
     try:
-        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        sys.path.insert(0, os.path.join(ROOT, "ops", "tools"))
         import design_lint
         problems += ["design: " + v for v in design_lint.lint(touched)]
     except Exception:
@@ -326,7 +326,7 @@ def _native_fp():
     any read error, so the caller falls back to the mtime check rather than
     guessing."""
     try:
-        with open(os.path.join(ROOT, "app", "app.json"), encoding="utf-8") as f:
+        with open(os.path.join(ROOT, "surfaces", "app", "app.json"), encoding="utf-8") as f:
             d = json.load(f)
         e = {k: v for k, v in d.get("expo", {}).items() if k not in ("ios", "extra")}
         e.pop("version", None)
@@ -335,7 +335,7 @@ def _native_fp():
         e["android"] = android
         blob = json.dumps(e, sort_keys=True)
         try:
-            with open(os.path.join(ROOT, "app", "package.json"), encoding="utf-8") as f:
+            with open(os.path.join(ROOT, "surfaces", "app", "package.json"), encoding="utf-8") as f:
                 blob += f.read()
         except OSError:
             pass
@@ -354,10 +354,10 @@ def _native_fp():
         import glob as _glob
         kb = ""
         for src in sorted(
-                _glob.glob(os.path.join(ROOT, "app", "plugins", "**", "*.kt"), recursive=True)
-                + _glob.glob(os.path.join(ROOT, "app", "plugins", "**", "*.java"), recursive=True)
-                + _glob.glob(os.path.join(ROOT, "app", "modules", "**", "*.kt"), recursive=True)
-                + _glob.glob(os.path.join(ROOT, "app", "modules", "**", "*.java"), recursive=True)):
+                _glob.glob(os.path.join(ROOT, "surfaces", "app", "plugins", "**", "*.kt"), recursive=True)
+                + _glob.glob(os.path.join(ROOT, "surfaces", "app", "plugins", "**", "*.java"), recursive=True)
+                + _glob.glob(os.path.join(ROOT, "surfaces", "app", "modules", "**", "*.kt"), recursive=True)
+                + _glob.glob(os.path.join(ROOT, "surfaces", "app", "modules", "**", "*.java"), recursive=True)):
             try:
                 rel = os.path.relpath(src, ROOT).replace(os.sep, "/")
                 with open(src, encoding="utf-8") as f:
@@ -380,7 +380,7 @@ def _ship_marker():
 
     "" means this checkout has never shipped a native build (the marker is
     git-ignored, so a fresh clone and every card worktree start without one)."""
-    mp = os.path.join(ROOT, "deploy", ".native_fp")
+    mp = os.path.join(ROOT, "ops", "deploy", ".native_fp")
     try:
         with open(mp, encoding="utf-8") as f:
             return f.read().strip()

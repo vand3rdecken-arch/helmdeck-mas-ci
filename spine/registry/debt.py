@@ -334,7 +334,7 @@ DEBT = [
         "id": "pair-token-no-ttl",
         "title": "Pairing device-token outlives the 15-min pairing window",
         "status": "open",
-        "what": "Each /surfaces/relay/pair click mints a device bearer token with no "
+        "what": "Each /relay/pair click mints a device bearer token with no "
                 "expiry. The single-use PAIR_TTL window (relay_client._admit) "
                 "gates the E2EE pin - the relay path of an unused code dies "
                 "with the window - but the token inside the code stays a live "
@@ -1340,7 +1340,7 @@ DEBT = [
                 "consolidate, /pm/report, /pm/reconcile), routes_misc.py (3: "
                 "/processes, /me, /processes/new), routes_control.py (5: "
                 "/control/state, /control/teach/start,stop, /control/distill, "
-                "/control/demo), routes_relay.py (2: /surfaces/relay/pair,unpair), "
+                "/control/demo), routes_relay.py (2: /relay/pair,unpair), "
                 "routes_connectors.py (3: /connectors list + /connectors/<name>/"
                 "rollback,run - the rollback/run guard is path-param [parts[0]/"
                 "parts[2]] and stays inline in server.py, only the body moved), "
@@ -1970,7 +1970,7 @@ DEBT = [
         "fix": "PAID. (1) daemon/routes_auth.py: auth_login/auth_setup/"
                "auth_register all now ALSO mint a real device token via the "
                "EXISTING auth.issue_token() (same primitive the owner-only "
-               "/users/<name>/tokens route and /surfaces/relay/pair's QR flow already "
+               "/users/<name>/tokens route and /relay/pair's QR flow already "
                "use - no new auth mechanism) and return it in the response "
                "body, alongside the unchanged cookie (backward compatible). "
                "(2) surfaces/app/src/data/authgate.ts (new): a small zustand store "

@@ -23,7 +23,7 @@ make_update(PROD, "prod")
 make_update(PROD + "-beta", "beta")
 
 os.environ["HELMDECK_UPDATES_DIR"] = PROD
-sys.path.insert(0, os.path.join(ROOT, "relay"))
+sys.path.insert(0, os.path.join(ROOT, "surfaces", "relay"))
 import relay  # noqa: E402  (reads env at import)
 
 from http.server import ThreadingHTTPServer  # noqa: E402

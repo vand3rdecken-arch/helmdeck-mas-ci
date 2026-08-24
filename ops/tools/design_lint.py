@@ -19,7 +19,7 @@ Never crashes (returns [] on error) - it's a checker, not a gate itself."""
 import os, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-APP = os.path.join(ROOT, "app")
+APP = os.path.join(ROOT, "surfaces", "app")
 WEBSTYLES = os.path.join(APP, "src", "ui", "webstyles.tsx")
 # generated token map - hex IS the point there (see ops/tools/gen_tokens.py)
 GENERATED = ("surfaces/app/src/theme/tokens.ts",)

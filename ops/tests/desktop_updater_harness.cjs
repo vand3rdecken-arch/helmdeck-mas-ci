@@ -6,7 +6,7 @@
 // staged dir). Prints one JSON line the python side asserts on.
 const path = require("path");
 const fs = require("fs");
-const up = require(path.join(__dirname, "..", "desktop", "updater.js"));
+const up = require(path.join(__dirname, "..", "..", "surfaces", "desktop", "updater.js"));
 
 const [feedBase, appDist] = process.argv.slice(2);
 const pending = appDist + ".pending";

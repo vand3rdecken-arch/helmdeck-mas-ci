@@ -23,10 +23,10 @@ if [ -n "${SWARM_PW:-}" ]; then
   CJ=$(mktemp)
   if curl -s -m10 -c "$CJ" -X POST -H "Content-Type: application/json" \
         -d "{\"name\":\"$OWNER\",\"password\":\"$SWARM_PW\"}" "$API/auth/login" -o /dev/null; then
-    # /surfaces/relay/pair also clears any previously pinned device, so the emulator can
+    # /relay/pair also clears any previously pinned device, so the emulator can
     # claim the room cleanly on its first encrypted call
     CODE=$(curl -s -m10 -b "$CJ" -X POST -H "Content-Type: application/json" -d '{}' \
-             "$API/surfaces/relay/pair" | py -3.12 -c "
+             "$API/relay/pair" | py -3.12 -c "
 import sys, json, base64
 try:
     d = json.load(sys.stdin)

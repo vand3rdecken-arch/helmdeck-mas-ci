@@ -65,7 +65,7 @@ cfg_fp() {
   # native change as a bare OTA) is the one this must never get wrong.
   py -3.12 - <<'PY'
 import hashlib, json
-d = json.load(open("app/app.json", encoding="utf-8"))
+d = json.load(open("surfaces/app/app.json", encoding="utf-8"))
 e = {k: v for k, v in d.get("expo", {}).items() if k not in ("ios", "extra")}
 e.pop("version", None)
 android = dict(e.get("android") or {})
@@ -100,8 +100,8 @@ kt_fp() {
   py -3.12 - <<'PY'
 import glob, hashlib
 blob = ""
-for src in sorted(glob.glob("app/plugins/**/*.kt", recursive=True)
-                  + glob.glob("app/plugins/**/*.java", recursive=True)
+for src in sorted(glob.glob("surfaces/app/plugins/**/*.kt", recursive=True)
+                  + glob.glob("surfaces/app/plugins/**/*.java", recursive=True)
                   + glob.glob("surfaces/app/modules/**/*.kt", recursive=True)
                   + glob.glob("surfaces/app/modules/**/*.java", recursive=True)):
     try:
@@ -116,7 +116,7 @@ PY
 combine_fp() { printf '%s %s' "$1" "$2" | py -3.12 -c "import sys,hashlib;print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())"; }
 native_fp() { combine_fp "$(cfg_fp)" "$(kt_fp)"; }
 
-# Bump expo.version (patch) + android.versionCode in app/app.json. runtimeVersion
+# Bump expo.version (patch) + android.versionCode in surfaces/app/app.json. runtimeVersion
 # policy is "appVersion", so bumping the version bumps the runtimeVersion too: an
 # OLD APK (old version) then REJECTS this new JS (rtv mismatch) instead of loading
 # it and crashing on a native module it doesn't have (the ExpoDocumentPicker trap).
@@ -125,7 +125,7 @@ native_fp() { combine_fp "$(cfg_fp)" "$(kt_fp)"; }
 bump_version() {
   py -3.12 - <<'PY'
 import json
-p = "app/app.json"
+p = "surfaces/app/app.json"
 d = json.load(open(p, encoding="utf-8"))
 e = d["expo"]
 parts = (e.get("version", "1.0.0").split(".") + ["0", "0"])[:3]
@@ -157,7 +157,7 @@ else
   echo "[ship] version -> $BUMP (new runtimeVersion; old APKs will reject this JS instead of crashing)"
   if ! bash ops/deploy/build_apk.sh; then
     echo "[ship] APK path failed - reverting version bump, NOT recording fingerprint"
-    git checkout -- app/app.json 2>/dev/null || true
+    git checkout -- surfaces/app/app.json 2>/dev/null || true
     exit 1
   fi
   echo "HOOK-NOTE: APK distributed - pushing the matching OTA bundle"
@@ -165,7 +165,7 @@ else
   # the APK's JS on next launch - the source-of-truth trap in DEPLOY.md). The OTA
   # manifest inherits the new runtimeVersion from the bumped app.json.
   bash ops/deploy/push_update.sh || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
-  git add app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
+  git add surfaces/app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
   # Record end-of-run CONFIG (build_apk stamped the manifest mid-run - that
   # mutation is this build's own deterministic output) + START-time SOURCES
   # (a module created while gradle ran is NOT in this APK - measured
