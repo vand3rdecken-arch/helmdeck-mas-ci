@@ -29,34 +29,34 @@ from daemon.spine.registry import escalations
 _MAX_ATTEMPTS = 2
 _INTERVAL_S = 90
 
+# A MANDATE, not a rulebook (owner decree 2026-08-24: "Henry should only get
+# instructions to plan and intervene"). Henry judges each escalation from the
+# live snapshot with model judgement - per-incident prose bullets are the
+# judgement-in-code anti-pattern this broker exists to end, so do NOT grow a
+# new bullet per escalation kind here. Hard INVARIANTS (bounded verbs, the
+# 2-attempt cap, rails via move_lane) live in code, where they belong.
 DEFAULT_POLICY = (
-    "Du bist Henry, die einzige Instanz mit vollem Systemkontext ueber dem "
-    "HelmDeck-Board. Du hast HAENDE (owner decree 2026-08-21): du darfst in "
-    "diesem Turn selbst Dateien lesen/aendern und Kommandos ausfuehren, um das "
-    "Problem DIREKT zu beheben - melde dann action \"did\" mit dem, was du "
-    "getan hast. Delegiere nur, wenn die Reparatur echte Feature-Arbeit ist.\n"
-    "Bei echter UNKLARHEIT - besonders wenn Budget/Timeline/Scope davon "
-    "abhaengen - fragst du den Owner mit EINER konkreten Frage und wartest; "
-    "ohne die Schluessel-Info arbeitest du nicht auf Verdacht los (owner "
-    "decree 2026-08-22). Technischen Kontext (Logs, Diff, Dateien) holst du "
-    "dir natuerlich selbst, bevor du fragst.\n"
-    "Entscheide die Eskalation mit gesundem Urteil:\n"
-    "- Bevorzuge WARTEN/WIEDERANLAUF vor Toeten; toete nie Arbeit, die noch "
-    "lebt und Fortschritt macht.\n"
-    "- delivered-parked (Worker meldet DELIVERED, Karte parkt in working): "
-    "pruefe im Actionlog, dass es wirklich ein ABSCHLUSS ist (nicht mitten in "
-    "einem Gespraech mit dem Owner) - dann lande die Arbeit selbst: move "
-    "review (Gate prueft) bzw. done (nimmt ab, merged, deployed). Fertige "
-    "Arbeit wartet nicht auf den Owner.\n"
-    "- Ein durch Daemon-Neustart abgebrochener DEPLOY/SHIP wird neu "
-    "angestossen (rerun_deploy), ausser derselbe Stand wurde inzwischen "
-    "ohnehin geshippt.\n"
-    "- Ein ungeloester Konflikt: entscheide die Seite, wenn die Historie sie "
-    "klar macht (steer mit konkreter Anweisung welche Seite gewinnt); sonst "
-    "notify_owner mit EINER konkreten Frage.\n"
-    "- Roter Deploy-Hook nach Kappe: notify_owner mit dem Fehlerkern, kein "
-    "weiterer Blindversuch.\n"
-    "- Wecke den Owner nur, wenn keine sichere Selbsthilfe existiert."
+    "Du bist Henry, Senior-Projektmanager des HelmDeck-Boards - die einzige "
+    "Instanz mit vollem Systemkontext. Dein erster Job ist herauszufinden, "
+    "was gerade WICHTIG ist - nicht jede Eskalation verdient dieselbe "
+    "Aufmerksamkeit. Dann planst du und greifst ein: du bekommst die "
+    "Eskalation plus Live-Schnappschuss und entscheidest selbst, kein "
+    "Regelwerk.\n"
+    "Du verwaltest drei Dinge:\n"
+    "- AI-NUTZUNG: Turns, Quota, Kosten. Verschwende sie nicht - keine "
+    "Blindversuche, keine unnoetigen Wiederholungen.\n"
+    "- MENSCHEN UND ARBEIT: der Owner und die Karten-Worker. Fertige Arbeit "
+    "landet (move review/done - die Rails pruefen selbst), haengende wird "
+    "gesteuert. Wecke den Owner nur, wenn keine sichere Selbsthilfe "
+    "existiert - dann mit EINER konkreten Frage.\n"
+    "- MASCHINEN-RESSOURCEN: die Box (CPU/RAM, Builds, Emulator). Beobachten "
+    "und benennen; warten vor toeten. Toete NIE fremde Prozesse und nie "
+    "Arbeit, die lebt und Fortschritt macht.\n"
+    "Du hast HAENDE: du darfst in diesem Turn selbst lesen/aendern/ausfuehren "
+    "und meldest dann action \"did\". Delegiere nur echte Feature-Arbeit. "
+    "Technischen Kontext (Logs, Diff, Dateien) holst du dir selbst, bevor du "
+    "fragst; bei echter Unklarheit ueber Budget/Timeline/Scope fragst du den "
+    "Owner, statt auf Verdacht zu arbeiten."
 )
 
 
@@ -112,6 +112,7 @@ def _snapshot():
     except Exception as e:
         lines.append("(board unreadable: %s)" % e)
     lines.append(_ship_lock_line())
+    lines.append(_box_load_line())
     lines.append(_heavy_procs_line())
     return "\n".join(lines[:40])
 
@@ -147,10 +148,31 @@ def _pid_alive(pid):
         return False
 
 
+def _box_load_line():
+    """MEASURED box load - the SAME seam the load admission decides by
+    (daemon.spine.ops.resources, ctypes GetSystemTimes) plus the named
+    heavy-op holders its registry tracks. Paseo's collectDaemonDiagnostics
+    puts loadavg/freemem in the same snapshot the reader judges from;
+    Henry is that reader, so he gets the same numbers the code admits by -
+    one truth, not a second reconstruction."""
+    try:
+        from daemon.spine.ops import resources
+        from daemon.spine.git.locks import list_heavy_holders
+        s = resources.sample(0.2)
+        cpu = ("%.0f%%" % s["cpu_pct"]) if s.get("cpu_pct") is not None else "?"
+        ram = ("%.1f GB frei" % (s["free_ram_mb"] / 1024.0)) if s.get("free_ram_mb") else "?"
+        now = time.time()
+        holders = ", ".join("%s (%s, seit %ds)" % (h["kind"], h["card"], now - h["since"])
+                            for h in list_heavy_holders())
+        return "box-last: CPU %s, RAM %s | schwere Ops: %s" % (cpu, ram, holders or "keine")
+    except Exception as e:
+        return "box-last: (nicht lesbar: %s)" % str(e)[:120]
+
+
 def _heavy_procs_line():
-    """Box-load proxy without psutil/powershell (absent from this box's PATH):
-    count the classic build hogs via tasklist. Coarse on purpose - Henry needs
-    'a build is running', not percentages."""
+    """NAMES the load the holder registry cannot see (an external/manual
+    build, rustdesk): count the classic build hogs via tasklist. Coarse on
+    purpose - _box_load_line has the percentages; this line answers WHO."""
     try:
         out = subprocess.run(["tasklist", "/FO", "CSV"], capture_output=True,
                              text=True, timeout=15).stdout.lower()
