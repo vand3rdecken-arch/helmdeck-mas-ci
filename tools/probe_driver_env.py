@@ -11,7 +11,7 @@ confirm the agent really sees the toolchain:
 import json, os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from daemon.spine.agent import drivers  # noqa: E402
+from spine.agent import drivers  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS = os.path.join(HERE, "..", "daemon", "settings.json")

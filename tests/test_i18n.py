@@ -29,11 +29,11 @@ def check(cond, msg):
 
 # fake settings so no settings.json (a secret) is needed
 LANG = {"v": "de"}
-fake_events = types.ModuleType("daemon.spine.storage.events")
+fake_events = types.ModuleType("spine.storage.events")
 fake_events.settings = lambda: {"policy": {"lang": LANG["v"]}}
-sys.modules["daemon.spine.storage.events"] = fake_events
+sys.modules["spine.storage.events"] = fake_events
 
-from daemon.spine.registry import i18n
+from spine.registry import i18n
 
 print("i18n behaviour")
 
@@ -78,9 +78,9 @@ check(i18n.t("push.done") == i18n.MESSAGES["push.done"]["de"],
       "an unknown language falls back to German rather than failing")
 
 # -- 6. the policy default exists -----------------------------------------
-del sys.modules["daemon.spine.storage.events"]
+del sys.modules["spine.storage.events"]
 import importlib
-real_events = importlib.import_module("daemon.spine.storage.events")
+real_events = importlib.import_module("spine.storage.events")
 check((real_events.DEFAULTS.get("policy") or {}).get("lang") in i18n.LANGS,
       "policy.lang ships as a real default (%r)"
       % (real_events.DEFAULTS.get("policy") or {}).get("lang"))

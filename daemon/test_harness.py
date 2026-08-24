@@ -47,7 +47,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 
-from daemon.spine.registry import harness
+from spine.registry import harness
 
 _fails = []
 
@@ -398,7 +398,7 @@ def test_versions_round_trip():
 # ---------------------------------------------------------------------------
 def test_card_argv_excludes_the_operator_layer():
     print("7. a CARD spawn's resolved argv excludes the personal ~/.claude layer")
-    from daemon.spine.agent import drivers
+    from spine.agent import drivers
     argv = [str(a) for a in drivers.build_argv(
         "card-worker", {"type": "claude", "perm": "acceptEdits", "model": "claude-opus-4-8"},
         "<brief>", session_id="sess-1")]
@@ -433,7 +433,7 @@ def test_card_argv_excludes_the_operator_layer():
 
 def test_pm_argv_is_its_own_isolated_layer():
     print("8. a PM spawn gets its OWN layer and no ambient one")
-    from daemon.cells.copilot import copilot
+    from cells.copilot import copilot
     argv, role_in_turn = copilot.build_argv("claude-opus-4-8", "sess-2", "<role>")
     argv = [str(a) for a in argv]
     check("--setting-sources" in argv, "the copilot argv carries --setting-sources")
@@ -447,7 +447,7 @@ def test_pm_argv_is_its_own_isolated_layer():
     check(json.load(open(sf, encoding="utf-8")).get("env", {}).get("HELMDECK_SURFACE") == "copilot",
           "and that file really is the copilot surface's")
 
-    from daemon.spine.agent import drivers
+    from spine.agent import drivers
     card_sf = [str(a) for a in drivers.build_argv("card-worker", {"type": "claude"}, "<b>")]
     card_sf = card_sf[card_sf.index("--settings") + 1]
     check(os.path.abspath(sf) != os.path.abspath(card_sf),
@@ -462,7 +462,7 @@ def test_pm_argv_is_its_own_isolated_layer():
 
 def test_resolved_env():
     print("9. the resolved ENV: the card overlay is in, the control keys are out")
-    from daemon.spine.agent import drivers
+    from spine.agent import drivers
     card = drivers._card_env({"id": "c1", "worktree": r"C:\wt\c1",
                               "dev_port": 3706, "branch": "feat/x"})
     check(card.get("HELMDECK_WORKTREE") == r"C:\wt\c1",

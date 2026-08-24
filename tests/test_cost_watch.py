@@ -35,12 +35,12 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-from daemon.cells.pm import pm
-from daemon.cells.pm import pm_watchdog
-from daemon.cells.pm import pm_comm
-from daemon.spine.comms import notify
-from daemon.spine.comms import presence
-from daemon.spine.storage import events
+from cells.pm import pm
+from cells.pm import pm_watchdog
+from cells.pm import pm_comm
+from spine.comms import notify
+from spine.comms import presence
+from spine.storage import events
 
 FAILS = []
 

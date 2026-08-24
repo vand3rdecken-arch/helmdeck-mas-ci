@@ -7,7 +7,7 @@
 //
 // This fills the dead "surfaces.connectors" reference already present in
 // app/profiles/owner.json (AVAILABLE_PLUGINS had no entry for it before this).
-// It mirrors daemon/cells.py's connectors Cell.surface = "surfaces.connectors"
+// It mirrors cells.py's connectors Cell.surface = "surfaces.connectors"
 // exactly, so the nav-gate filter in (tabs)/_layout.tsx can match this id
 // against the /cells manifest generically.
 

@@ -21,13 +21,13 @@ import os, shutil, socket, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-from daemon.spine.storage import db
+from spine.storage import db
 db.init()
-from daemon.spine.storage import trackstore
-from daemon.cells.engineer import sessions
-from daemon.cells.engineer import devport
-from daemon.spine.agent import drivers
-from daemon.spine.storage import events
+from spine.storage import trackstore
+from cells.engineer import sessions
+from cells.engineer import devport
+from spine.agent import drivers
+from spine.storage import events
 
 _fails = []
 
@@ -229,7 +229,7 @@ del os.environ["HELMDECK_TLS_CERT"]; del os.environ["BASH_ENV"]
 
 # registry hydration: absent vars appear, present vars are NOT clobbered
 if os.name == "nt":
-    from daemon.spine.http import server
+    from spine.http import server
     os.environ["HELMDECK_P4_SENTINEL"] = "keep"
     before_path = os.environ.get("PATH", "")
     server._hydrate_registry_env()

@@ -11,16 +11,16 @@ DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-bg-")
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
-from daemon.spine.ops import runs
+from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs"); os.makedirs(runs.REC, exist_ok=True)
-from daemon.spine.agent import drivers, claude_sessions as cs
-from daemon.cells.engineer import sessions
+from spine.agent import drivers, claude_sessions as cs
+from cells.engineer import sessions
 sessions.REC = runs.REC
 
 _WRAP = os.path.join(tempfile.mkdtemp(), "fake_claude.cmd")

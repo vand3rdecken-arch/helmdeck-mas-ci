@@ -41,8 +41,8 @@ External protocol reference: <https://agentclientprotocol.com/protocol/overview>
 
 **HelmDeck already has a driver abstraction. It is not the problem.**
 `drivers.run(cfg, t, prompt) -> (session_id, reply, meta)` with
-`cfg["type"] in {claude, http, cmd}` (`daemon/spine/agent/drivers.py:277-285`)
-is a genuine seam, and `turnrunner._turn` (`daemon/cells/engineer/turnrunner.py:141`)
+`cfg["type"] in {claude, http, cmd}` (`spine/agent/drivers.py:277-285`)
+is a genuine seam, and `turnrunner._turn` (`cells/engineer/turnrunner.py:141`)
 is its single call site for card and machine turns.
 
 The problem is that **everything valuable lives on the claude side of the seam**,
@@ -50,11 +50,11 @@ and one whole subsystem bypasses the seam entirely:
 
 1. The chat/transcript the owner reads is not produced by the driver. It is
    re-parsed off Claude Code's private `~/.claude/projects/<cwd>/<uuid>.jsonl`
-   (`daemon/spine/agent/claude_sessions.py:11,139-143`). A second engine has no
+   (`spine/agent/claude_sessions.py:11,139-143`). A second engine has no
    such file, so a second engine has **no card feed at all**.
 2. `meta` is Claude's `result` event verbatim — `total_cost_usd`, `modelUsage`,
    `input_tokens`/`cache_creation_input_tokens`/… — and `econ.py` reads those
-   key names directly (`daemon/spine/turn/econ.py:26-28,38-39`).
+   key names directly (`spine/turn/econ.py:26-28,38-39`).
 3. Seven further spawn sites (copilot ×3, PM, Henry broker, process designer,
    distiller) hand-roll a `claude` argv and never touch `drivers.run` at all.
 
@@ -209,7 +209,7 @@ Selection at runtime is a plain map lookup plus an availability gate
 `AgentProviderSchema = z.string()` (`provider-manifest.ts:288`).
 
 **HelmDeck's equivalent already exists and is simpler**: `settings.json`
-→ `drivers.{name}.{type,...}` (`daemon/spine/storage/events.py:75-76`), with the
+→ `drivers.{name}.{type,...}` (`spine/storage/events.py:75-76`), with the
 card's `driver` field naming one. HelmDeck needs (2) — a type→implementation
 table richer than today's three-branch `if` — and capability flags. It does not
 need Paseo's three-way split.
@@ -261,10 +261,10 @@ piece of work.
 `CLAUDE = os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude") or …`.
 Plus an independent JavaScript reimplementation in `desktop/setup.js:110-167`
 (`findClaude`/`realClaudeExe`/`resolveClaudeSpawn`), and a bare literal
-`["claude", "-p", …]` in `daemon/spine/ops/distill.py:44`.
+`["claude", "-p", …]` in `spine/ops/distill.py:44`.
 
 **(3) The argv vocabulary.** `drivers.build_argv` (`drivers.py:329-374`) and
-`harness.cli_args` (`daemon/spine/registry/harness.py:286-300`) speak Claude CLI
+`harness.cli_args` (`spine/registry/harness.py:286-300`) speak Claude CLI
 flags: `--output-format stream-json`, `--input-format stream-json`,
 `--include-partial-messages`, `--permission-mode`, `--append-system-prompt`,
 `--allowedTools`, `--mcp-config`, `--setting-sources`, `--settings`, `--resume`,
@@ -289,13 +289,13 @@ consumers through `turn_active`/`has_session`/`drop_session`
    `copilot.py:850` (chat turn), `copilot.py:517` (compact/voice), `pm.py:222`,
    `henry_broker.py:78`, `processes.py:67`, `distill.py:44`. Only
    `drivers.py:473` is behind the seam.
-7. `proctable._is_agent_pid` (`daemon/spine/agent/proctable.py:216`) —
+7. `proctable._is_agent_pid` (`spine/agent/proctable.py:216`) —
    `any(n in img for n in ("claude","node","cmd"))`. A second engine's process
    image does not match ⇒ tree-kill and `reap_orphans` silently degrade and
    orphan trees leak.
 8. Model manifest (`turnopts.CLAUDE_MODELS:22-33`), live discovery against
    `api.anthropic.com/v1/models` (`turnopts.py:93-110`), price table, `[1m]` sniff.
-9. `daemon/spine/ops/usage.py` — entirely Anthropic OAuth
+9. `spine/ops/usage.py` — entirely Anthropic OAuth
    (`api.anthropic.com/api/oauth/usage`, `~/.claude/.credentials.json`,
    windows `five_hour`/`seven_day`/`seven_day_opus`). This feeds the owner's
    plan-share economics (`events.plan_effective`, `pm_budget.py:193`,
@@ -314,12 +314,12 @@ consumers through `turn_active`/`has_session`/`drop_session`
 
 ### Already portable — zero work
 
-- **Gate.** `lanemachine._gate` (`daemon/cells/engineer/lanemachine.py:162-261`)
+- **Gate.** `lanemachine._gate` (`cells/engineer/lanemachine.py:162-261`)
   requires only: worktree exists, `.git` present, `git status --porcelain` clean,
   and `helmdeck.gate` exits 0. `tools/run_gate.py` is `py_compile` + an import
   check. **No engine coupling whatsoever.** A gate failure re-enters the turn
   loop as prompt text via `_pending_context` — also engine-neutral.
-- **Ask protocol.** `daemon/spine/ops/ask.py` is prose-taught
+- **Ask protocol.** `spine/ops/ask.py` is prose-taught
   (`ask.BRIEF:62-82`) and regex-parsed
   (`_BLOCK = re.compile(r"<helmdeck-ask>\s*(.*?)\s*</helmdeck-ask>", re.S|re.I)`,
   `:58`). It never depended on `AskUserQuestion` interception — the file's own
@@ -818,9 +818,9 @@ These are policy, not engineering, and they gate the follow-up cards.
 
 Claims in this document were read from source, not recalled:
 
-- HelmDeck: `daemon/spine/agent/{drivers,agentcli,spawnenv,turnopts}.py`,
-  `daemon/cells/engineer/turnrunner.py`, `daemon/spine/turn/econ.py`,
-  `daemon/spine/ops/ask.py`, `daemon/spine/registry/harness.py`,
+- HelmDeck: `spine/agent/{drivers,agentcli,spawnenv,turnopts}.py`,
+  `cells/engineer/turnrunner.py`, `spine/turn/econ.py`,
+  `spine/ops/ask.py`, `spine/registry/harness.py`,
   `harness/schema/*.json`, `harness/settings/card.json`,
   `app/src/kernel/keys.ts`, `app/src/plugins/engines/claude.ts`.
 - Paseo: `agent-sdk-types.ts` (capability flags and the event union were read

@@ -34,18 +34,18 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-q-")
 
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.spine.ops import ask
-from daemon.spine.agent import claude_sessions
-from daemon.cells.engineer import sessions
-from daemon.cells.engineer import turnrunner
-from daemon.spine.ops.actionlog import ActionLog
+from spine.ops import ask
+from spine.agent import claude_sessions
+from cells.engineer import sessions
+from cells.engineer import turnrunner
+from spine.ops.actionlog import ActionLog
 
 _fails = []
 

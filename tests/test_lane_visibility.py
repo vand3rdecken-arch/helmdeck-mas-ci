@@ -25,12 +25,12 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-from daemon.spine.agent import claude_sessions
-from daemon.cells.copilot import copilot
-from daemon.spine.comms import notify
-from daemon.cells.engineer import sessions
-from daemon.cells.engineer import lanemachine
-from daemon.spine.storage import trackstore
+from spine.agent import claude_sessions
+from cells.copilot import copilot
+from spine.comms import notify
+from cells.engineer import sessions
+from cells.engineer import lanemachine
+from spine.storage import trackstore
 
 _fails = []
 
@@ -88,7 +88,7 @@ class FakeEvents:
         return "auto"
 
 
-sys.modules["daemon.spine.storage.events"] = FakeEvents
+sys.modules["spine.storage.events"] = FakeEvents
 
 
 def card(tid, **kw):
@@ -195,7 +195,7 @@ claude_sessions.live_session_id = lambda t: None      # no agent session at all
 track = {"id": "v", "run_dir": VRUN}
 
 before = claude_sessions.transcript_version(track)
-from daemon.spine.ops.actionlog import ActionLog
+from spine.ops.actionlog import ActionLog
 ActionLog(VRUN).log("note", "GATE FAILED - stays on Review")
 after = claude_sessions.transcript_version(track)
 

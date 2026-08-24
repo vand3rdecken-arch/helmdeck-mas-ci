@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
-from daemon.cells.engineer import sessions
+from cells.engineer import sessions
 
 
 class FakeDrivers:
@@ -53,7 +53,7 @@ class FakeDrivers:
         return tid in FakeDrivers.live
 
 
-sys.modules["daemon.spine.agent.drivers"] = FakeDrivers
+sys.modules["spine.agent.drivers"] = FakeDrivers
 
 _fails = []
 
@@ -197,8 +197,8 @@ METRICS = {"capacity": {"wip": 2, "wip_limit": 3, "headroom": 1},
 
 
 def test_glance_payload():
-    from daemon.spine.http import server
-    from daemon.spine.ops import glances
+    from spine.http import server
+    from spine.ops import glances
     print("server.glance_payload - what actually reaches the glasses:")
     pay = server.glance_payload([dict(t) for t in TRACKS], METRICS)
     got = {c["id"] for c in pay["needs_you"]}
@@ -250,7 +250,7 @@ def test_manual_backlog_is_its_own_bucket():
     unstarted work, not stuck work: folding them into needs_you would bury a red
     gate under a backlog, but dropping them is how they became invisible in
     EVERY surface at once - pm.activity's todo list excludes them too."""
-    from daemon.spine.http import server
+    from spine.http import server
     print("`yours` - work only the owner can begin:")
     pay = server.glance_payload([dict(t) for t in TRACKS], METRICS)
     yours = {c["id"] for c in pay["yours"]}
@@ -283,7 +283,7 @@ def test_freshness_is_on_the_wire():
     so the payload must say WHEN it was true. A stale 'all clear' is the exact
     failure this endpoint exists to prevent."""
     import time
-    from daemon.spine.http import server
+    from spine.http import server
     print("the payload stamps itself:")
     before = int(time.time())
     pay = server.glance_payload([dict(t) for t in TRACKS], METRICS)
@@ -304,7 +304,7 @@ def test_phantom_running_is_surfaced():
     """A card whose turn DIED still says `running` in the store until the
     reconciler heals it. present() derives the truth at read time - so the feed
     must show it, or the owner sees a spinner on the glasses forever."""
-    from daemon.spine.http import server
+    from spine.http import server
     print("liveness decides, not the stored status:")
     dead = {"id": "c-phantom", "task": "turn died", "status": "running", "lane": "working"}
     alive = {"id": "m-running", "task": "working now", "status": "running", "lane": "working"}
@@ -318,8 +318,8 @@ def test_phantom_running_is_surfaced():
 def test_surfaces_agree():
     """The bug was never one endpoint - it was three surfaces each deriving
     "blocked on you" from raw status on their own. Pin them together."""
-    from daemon.cells.pm import pm
-    from daemon.spine.http import server
+    from cells.pm import pm
+    from spine.http import server
     print("every surface names the same cards for the same board:")
 
     sessions.list_tracks = lambda: [dict(t) for t in TRACKS]

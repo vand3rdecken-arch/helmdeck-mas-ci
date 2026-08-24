@@ -112,11 +112,11 @@ entschieden liegen.
 
 ## A2 — Checkpoint-Diff ohne Rollenprüfung
 
-**Ist.** `daemon/spine/http/routes/routes_checkpoints.py:21-26`:
+**Ist.** `spine/http/routes/routes_checkpoints.py:21-26`:
 
 ```python
 def checkpoints_diff_get(self, user, cid):
-    from daemon.spine.ops import checkpoints
+    from spine.ops import checkpoints
     try:
         return self._send(200, json.dumps(checkpoints.diff(cid)))
 ```
@@ -157,7 +157,7 @@ Beides Commits eines Agenten. Zwei Stellen committen im Daemon:
 - `lanemachine.py:209` — `_autocommit`, schließt Kartenarbeit ab
 - `lanemachine.py:975` — parkt einen dreckigen Baum auf `wip-*`
 
-Beide gehen über `_git_try` / `_git` (`daemon/spine/git/gitutil.py:17-27`), und
+Beide gehen über `_git_try` / `_git` (`spine/git/gitutil.py:17-27`), und
 die rufen `subprocess.run(["git", "-C", repo, *args])` **ohne `env`** — also
 erbt git die Identität des Hosts.
 
@@ -192,7 +192,7 @@ weiter den Owner zeigen.
 
 ## A4 — Ereignisse verdoppeln sich bei jedem Start, das Archiv wird überschrieben
 
-**Ist.** `daemon/spine/storage/db.py:110-130`, aufgerufen aus `init()` bei
+**Ist.** `spine/storage/db.py:110-130`, aufgerufen aus `init()` bei
 `:74`, also bei jedem Daemon-Start:
 
 ```python
@@ -248,7 +248,7 @@ Weiterwachsen, sie repariert die Vergangenheit nicht.
 
 ## A5 — Benutzer-, Rollen- und Token-Änderungen erzeugen keinerlei Audit
 
-**Ist.** `daemon/spine/auth/auth.py` importiert `events` **gar nicht**;
+**Ist.** `spine/auth/auth.py` importiert `events` **gar nicht**;
 `grep -c emit` liefert `0`. Damit hinterlässt keine dieser Operationen eine
 Spur:
 
@@ -341,4 +341,4 @@ einem funktionierenden Rückweg (alte Version bleibt installierbar).
   gehört zu Phase D.
 
 Entsteht beim Bauen eine tragende Abkürzung, gehört sie im selben Commit nach
-`daemon/spine/registry/debt.py`.
+`spine/registry/debt.py`.

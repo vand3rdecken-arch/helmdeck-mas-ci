@@ -3,7 +3,7 @@
 // screen (default export ChatScreen - real api.chat()/api.chatHistory()/
 // api.chatLive() data-fetching, phone full-screen route vs desktop overlay
 // logic already inside the component) is re-seated as a Surface, no logic
-// moved. Mirrors daemon/cells.py's copilot Cell.surface = "surfaces.chat"
+// moved. Mirrors cells.py's copilot Cell.surface = "surfaces.chat"
 // exactly, and profiles/store.json's existing "surfaces.chat" reference.
 
 import ChatScreen from "@/app/chat";

@@ -40,7 +40,7 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-voicedb-test-")
 
-    from daemon.spine.media import voice
+    from spine.media import voice
     cache = os.path.join(tmp, "voice_cache")
     voice.CACHE = cache
     # do NOT create `cache` up front - path_for()/stats() must tolerate a

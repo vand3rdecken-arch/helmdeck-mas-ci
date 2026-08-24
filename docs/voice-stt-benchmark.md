@@ -19,7 +19,7 @@ der Owner-Box. Rohdaten: `tools/stt_bench_results.json`.
 
 ## Entscheidungen (umgesetzt)
 
-1. **PC-Ohr = Parakeet** (`daemon/spine/media/stt.py`, Setting
+1. **PC-Ohr = Parakeet** (`spine/media/stt.py`, Setting
    `voice_stt_model` Default `parakeet`; jeder andere Wert bleibt eine
    faster-whisper-Größe als Fallback). Gemessen im Daemon-Pfad: warm 1,3 s.
 2. **Geräte-Ohr = Kroko-Zipformer** (`LiveMic.initLocalTransducer`,

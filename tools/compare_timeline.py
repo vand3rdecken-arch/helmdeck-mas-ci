@@ -38,8 +38,8 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from daemon.spine.agent import claude_sessions, timeline_store  # noqa: E402
-from daemon.cells.engineer import sessions  # noqa: E402
+from spine.agent import claude_sessions, timeline_store  # noqa: E402
+from cells.engineer import sessions  # noqa: E402
 
 # Step kinds the NEW store does not yet produce for plain role=user text
 # (documented scope cut in drivers.py's _fold_timeline docstring). A "system"

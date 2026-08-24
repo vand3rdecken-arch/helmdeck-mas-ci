@@ -49,7 +49,7 @@ Conversion is only safe when the turn is idle, so:
       conversion above (idle-only), reuse `_drivers.drop_session`.
 - [ ] Conversion refuses while `turn_active` (invariant in update_track, not
       caller-dependent — same stance as the driver-flip guard).
-- [ ] Extend `fast-track-no-gate` debt note in `daemon/spine/registry/debt.py`
+- [ ] Extend `fast-track-no-gate` debt note in `spine/registry/debt.py`
       to cover the conversion merge.
 - [ ] Tests: idle worktree card converts (branch merged, worktree reclaimed,
       direct set, session dropped); active turn refuses; conflict markers

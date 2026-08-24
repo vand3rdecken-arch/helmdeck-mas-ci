@@ -1,8 +1,8 @@
 # Board-Move UX on device (archived card, not merged)
 
 Original card: `pm-board-move-ux-on-device-` (filed 2026-08-03, went stale at
-573 commits behind expo-migration by 2026-08-20 - predates the daemon/spine
-+ daemon/cells reorg, never got merged, worktree never reclaimed).
+573 commits behind expo-migration by 2026-08-20 - predates the spine
++ cells reorg, never got merged, worktree never reclaimed).
 
 Feature: on-device drag-and-drop for the phone board - long-press lifts a
 card, a full-screen overlay shows four lane bands (from

@@ -23,9 +23,9 @@ Run: py -3.12 daemon/test_desktop_lock_wait.py
 import os, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.storage import events
-from daemon.cells.engineer import sessions
-from daemon.spine.agent import drivers
+from spine.storage import events
+from cells.engineer import sessions
+from spine.agent import drivers
 
 
 # --- sandbox ---------------------------------------------------------------

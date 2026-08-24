@@ -652,15 +652,15 @@ bekannter Verstoß, kein Vorbild.
 | Datei | Änderung |
 |---|---|
 | `daemon/gxp.py` | **neu.** `aktiv()`, `sperren()`, `vier_augen()` — Lock-Datei bei jedem Aufruf frisch lesen |
-| `daemon/spine/auth/signatures.py` | **neu.** `subject(t)` (head/base-SHA), `create(...)` inkl. signiertem Tag, `gueltige_offene(t)`, `consume(...)` |
-| `daemon/spine/auth/signkeys.py` | **neu.** Ed25519 pro Benutzer, passwortentsperrt (§2.0 Option A); `gpg.format=ssh` |
-| `daemon/cells/engineer/lanemachine.py` | `_autocommit:188-211`: Agenten-Commits unter Agenten-Identität, nicht unter der des Hosts |
-| `daemon/spine/auth/auth.py` | `verify_password(name, pw) -> bool` ergänzen — existiert nicht; `_check_pw` (`:42-48`) ist privat, und `login()` (`:131-140`) taugt nicht als Re-Auth, weil es bei jedem Aufruf eine Session **und** über die Route (`routes_auth.py:87`) ein Dauertoken mintet |
-| `daemon/spine/http/routes/routes_sign.py` | **neu.** `POST /sign`, `GET /sign/subject/<tid>` |
-| `daemon/cells/engineer/lanemachine.py` | Guard bei `:611`, Drift-Prüfung vor `:808`, Fast-Track-Sperre bei `:785`, `actor` auf das `done`-Ereignis bei `:843-845` |
-| `daemon/cells/engineer/lanemachine.py` | `_classify_merge`: den echten Diff **vor** `merge --abort` mitnehmen, statt ihn zu verwerfen — liefert dem Freigabefenster den integrierten Stand statt einer Vorhersage (s. „Zwei naheliegende Abkürzungen") |
-| `daemon/cells/engineer/dispatch.py` | `dispatched_by` in `new_track` (`:62-81`); Maschinen-Abnahme-Sperre (`:525-570`) |
-| `daemon/cells/copilot/henry_broker.py` | `move`/`did` im GxP-Modus verweigern (`:258-273`) |
+| `spine/auth/signatures.py` | **neu.** `subject(t)` (head/base-SHA), `create(...)` inkl. signiertem Tag, `gueltige_offene(t)`, `consume(...)` |
+| `spine/auth/signkeys.py` | **neu.** Ed25519 pro Benutzer, passwortentsperrt (§2.0 Option A); `gpg.format=ssh` |
+| `cells/engineer/lanemachine.py` | `_autocommit:188-211`: Agenten-Commits unter Agenten-Identität, nicht unter der des Hosts |
+| `spine/auth/auth.py` | `verify_password(name, pw) -> bool` ergänzen — existiert nicht; `_check_pw` (`:42-48`) ist privat, und `login()` (`:131-140`) taugt nicht als Re-Auth, weil es bei jedem Aufruf eine Session **und** über die Route (`routes_auth.py:87`) ein Dauertoken mintet |
+| `spine/http/routes/routes_sign.py` | **neu.** `POST /sign`, `GET /sign/subject/<tid>` |
+| `cells/engineer/lanemachine.py` | Guard bei `:611`, Drift-Prüfung vor `:808`, Fast-Track-Sperre bei `:785`, `actor` auf das `done`-Ereignis bei `:843-845` |
+| `cells/engineer/lanemachine.py` | `_classify_merge`: den echten Diff **vor** `merge --abort` mitnehmen, statt ihn zu verwerfen — liefert dem Freigabefenster den integrierten Stand statt einer Vorhersage (s. „Zwei naheliegende Abkürzungen") |
+| `cells/engineer/dispatch.py` | `dispatched_by` in `new_track` (`:62-81`); Maschinen-Abnahme-Sperre (`:525-570`) |
+| `cells/copilot/henry_broker.py` | `move`/`did` im GxP-Modus verweigern (`:258-273`) |
 
 ### App
 
@@ -735,4 +735,4 @@ trägt. Die volle CSV-Strecke (Stufe 2) ist ein Vielfaches davon und
 größtenteils Dokumentation, nicht Code.
 
 Wenn beim Bau eine tragende Abkürzung entsteht, gehört sie nach
-`daemon/spine/registry/debt.py` — im selben Commit.
+`spine/registry/debt.py` — im selben Commit.

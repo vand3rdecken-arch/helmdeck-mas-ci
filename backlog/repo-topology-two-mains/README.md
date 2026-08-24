@@ -1,5 +1,19 @@
 # Repo topology: two mains at the ROOT - spine/ and cells/
 
+> **PHASES 1+2 SHIPPED 2026-08-24 (owner: "fixe direkt hier")**: `daemon/spine`
+> -> `spine/`, `daemon/cells` -> `cells/` via git mv + mechanical rewrite of
+> every qualified import/path reference (202 files). `daemon/` DELIBERATELY
+> remains as thin launcher (`python -m daemon.swarm`) + paths.py (decreed
+> never-moves anchor, DAEMON_ROOT = runtime-data home) + colocated tests - so
+> the desktop tray spawn, the live sqlite WAL and every data path survived
+> unchanged. run_gate.py compiles all three trees + wires spine.http.server
+> (daemon.swarm alone is thin now); electron-builder.yml ships spine/ + cells/
+> with the same allowlist discipline. web/ husk deleted, CLAUDE.md rewritten.
+> OPEN: phase 3 (frontend units into cells/<id>/ui, blocked by
+> plugin-kernel-dual-nav), phase 4 (optional surface grooming), and moving the
+> daemon-root strays (gxp.py, mint_token.py, connectors/hn_top.py, test files)
+> into spine/tests homes.
+
 **Owner decree 2026-08-24.** The architecture is spine + cells, but the folder
 tree doesn't say so at the root: ~19 top-level dirs mixing products, ops and
 artifacts. Target: the first thing anyone sees is the architecture itself -
@@ -7,38 +21,17 @@ artifacts. Target: the first thing anyone sees is the architecture itself -
 `cells/` (one folder per agentic system - engineer, pm, process, connectors,
 copilot/henry - each bundling its backend AND its frontend unit).
 
-## What already exists (do not redo)
-
-- The split IS physical since 2026-08-19, one level down: `daemon/spine/`
-  (auth, http, storage, registry, turn, ...) and `daemon/cells/<id>/`
-  (ARCHITECTURE.md "Physical Cell folders"). Imports survive via the
-  flat-module sys.path mechanism (`ensure_cell_paths()`), which makes a
-  physical promotion to root CHEAPER than it looks - modules find each other
-  by name, not by `daemon.` prefix.
-- Frontend modularity per cell exists LOGICALLY: plugin kernel
-  (`app/src/kernel/` + `app/src/plugins/<cell>`), and the cell manifest
-  already declares each cell's files across daemon and app
-  (`GET /cells/<id>/source` allowlist).
-
 ## Phases
 
-1. **Kill the husks (no restructure needed).** `web/` is a corpse - the real
-   frontend was archived in 6625edc, only two stale build artifacts remain
-   tracked - yet CLAUDE.md still tells every agent `cd web && npm run dev`.
-   Delete the two files + dir, fix the CLAUDE.md run block and the e2e-smoke
-   line. VERIFY THE PREMISE first (nightshift rule): grep tools/loop_state.py
-   for how the TYPES state locates the web tsc - it must point at app/, not
-   web/, before web/ dies.
-2. **Promote the two mains.** `daemon/spine/` -> `spine/`, `daemon/cells/` ->
-   `cells/`, daemon boot (`swarm.py` et al.) into `spine/`. Keep the
-   flat-module import mechanism. Known path-coupled touchpoints (grepped
-   2026-08-24, the actual list - re-grep before trusting):
-   deploy/publish_source.sh, tools/{i18n_lint,loop_state,make_tls_cert,
-   memory_autocommit,reset,run_gate,run_suite}.py, desktop/tray.py, the
-   `py -3.12 -m daemon.swarm` entrypoint, .gitignore `daemon/*` lines,
-   CLAUDE.md / HARNESS.md / ARCHITECTURE.md path references, and the
-   worktree/card harness (P4 path-shape ownership - re-verify spawn on a
-   moved tree).
+1. **DONE 2026-08-24. Kill the husks.** `web/` was a corpse - the real
+   frontend was archived in 6625edc, two stale build artifacts remained
+   tracked while CLAUDE.md still told every agent `cd web && npm run dev`.
+   Premise verified first (nightshift rule): loop_state.py already pointed
+   TYPES at app/.
+2. **DONE 2026-08-24. Promote the two mains.** Executed as described in the
+   banner above. Departure from the original sketch: daemon boot did NOT move
+   into spine/ - `daemon/` stays as launcher + data home ON PURPOSE (tray
+   compat, no live-DB migration, paths.py decree). Code does not go there.
 3. **Frontend into the cell folders.** `app/src/plugins/<cell>` ->
    `cells/<id>/ui/`, wired back into the ONE Expo app via metro
    `watchFolders` + tsconfig paths (the app stays a single buildable
@@ -76,8 +69,9 @@ one-bundle-per-runtimeVersion OTA). Consequences:
 - OTA/deploy: any file app.json or ship.sh fingerprints moving = native_fp
   churn; do phase 3 in a quiet window and emulator-verify.
 - If any phase keeps a compatibility shim (sys.path aliasing, re-export
-  stubs), that is a SHORTCUT -> register it in daemon/debt.py (or its moved
-  successor) in the same commit.
+  stubs), that is a SHORTCUT -> register it in spine/registry/debt.py in the
+  same commit. (Phases 1+2 shipped with NO shim - imports were rewritten for
+  real, and the daemon/ launcher is a real package, not an alias.)
 
 ## Verify
 

@@ -75,7 +75,7 @@ picking, so the plan picks and says so:
 
 Pure refactor; behaviour with claude must be bit-identical.
 
-**Landed narrower than scoped below, deliberately**: `daemon/spine/agent/
+**Landed narrower than scoped below, deliberately**: `spine/agent/
 engines.py` (a full capability-flag registry) was NOT built - no second engine
 is installed on this box, so there was nothing to validate a capability
 abstraction against, and building one anyway would have been exactly the
@@ -85,7 +85,7 @@ updated) and the parent-session env scrub (`spawnenv.py` - a real, live hazard
 today, not a multi-engine-only concern). The registry itself is still Card 3's
 job, once there is a real second engine to design it against.
 
-- `daemon/spine/agent/engines.py` (new): the engine registry —
+- `spine/agent/engines.py` (new): the engine registry —
   `{name: {run_fn, capabilities, resolve_exe, process_images}}`. `drivers.run`
   dispatches through it; today's `claude`/`http`/`cmd` branches become entries.
   Capabilities (validated key set): `supports_resume`, `supports_streaming`,
@@ -114,10 +114,10 @@ daemon behaves identically. Size **M (1.5–2d)**.
 
 The card feed becomes first-class state the DRIVER writes, instead of a
 re-parse of Claude Code's private `~/.claude/projects/**.jsonl`. Pays
-`daemon/spine/registry/debt.py`'s `card-feed-is-claude-private-jsonl` entry
+`spine/registry/debt.py`'s `card-feed-is-claude-private-jsonl` entry
 (now `status: paid` — read it for the full account).
 
-- `daemon/spine/agent/timeline_store.py` (new): append-only JSONL,
+- `spine/agent/timeline_store.py` (new): append-only JSONL,
   `{"_id": step_id, **patch}` per line, `read()` folds every line sharing an
   `_id` via `dict.update` in file order — a running tool receiving its result
   is a PATCH line, not a rewrite, so it stays genuinely append-only.
@@ -170,7 +170,7 @@ route post-cutover). Size **L (3–5d)**.
 — `npm i -g @google/gemini-cli`, run `gemini` once interactively, complete the
 Google login. Everything after is card work.
 
-- `daemon/spine/agent/acp.py`: NDJSON JSON-RPC 2.0 client over Popen pipes.
+- `spine/agent/acp.py`: NDJSON JSON-RPC 2.0 client over Popen pipes.
   Reuse the `_ClaudeSession` skeleton: pump thread, `_send_control`-style
   request/response correlation (`drivers.py:549-574` is already 80% of it),
   tree-kill teardown, PID registration.
@@ -241,7 +241,7 @@ UI hard). Size **M (2d)**.
 ## Card 6 — Codex native adapter (N1, analysis §6.6.1) — CODE SHIPPED 2026-08-24, NOT LIVE-VERIFIED
 
 **Owner decree 2026-08-24: "test accounts later" - build the implementation
-now, verify live once an account exists.** `daemon/spine/agent/codex_driver.py`
+now, verify live once an account exists.** `spine/agent/codex_driver.py`
 shipped: real JSON-RPC 2.0 bidirectional framing (Codex can send US inbound
 approval REQUESTS, not just notifications - a genuinely more complex
 protocol than omp's), every mechanic below read directly from Paseo's
@@ -262,7 +262,7 @@ once an account exists.
 interactively to complete login. Own step, separate from Card 3's Gemini
 login.
 
-- `daemon/spine/agent/codex.py`: JSON-RPC 2.0 over stdio, newline-delimited.
+- `spine/agent/codex.py`: JSON-RPC 2.0 over stdio, newline-delimited.
   Spawn `codex app-server` (`+ --enable goals` if `codex --version` clears
   `CODEX_GOALS_MIN_VERSION`); no cwd at spawn, it's a `thread/start` param.
   Handshake: `initialize` request → `initialized` notify with
@@ -298,7 +298,7 @@ exists (was 2-2.5d for code+verify together; code is done).
 ## Card 7 — OpenCode native adapter, dedicated-server mode (N2, analysis §6.6.2) — CODE SHIPPED 2026-08-24, NOT LIVE-VERIFIED
 
 **Owner decree 2026-08-24: "test accounts later".**
-`daemon/spine/agent/opencode_driver.py` shipped with the dedicated-server
+`spine/agent/opencode_driver.py` shipped with the dedicated-server
 isolation model this card exists to prove (§6.6.2's whole point - one
 private `opencode serve` per card, never Paseo's shared pool), spawn/
 ready-signal/dedup/cost-accumulation/cancel-sequence all read directly from
@@ -326,7 +326,7 @@ card's session object exactly like `_ClaudeSession.proc`. Do not build the
 shared-pool version; there is no HelmDeck use case that needs it, and it is
 the one thing analysis §6.5 explicitly says not to adopt.
 
-- `daemon/spine/agent/opencode.py`: allocate an ephemeral port (`net`
+- `spine/agent/opencode.py`: allocate an ephemeral port (`net`
   bind-to-0 trick or equivalent), spawn `opencode serve --port <p>` with cwd
   set to a NEUTRAL home dir (not the card's worktree — launching from the
   worktree makes OpenCode index it as the default workspace; the actual
@@ -401,7 +401,7 @@ after `abort`) as the true completion signal instead - a pinned regression
 test (`tests/test_omp_driver.py`, "MULTI-TURN tool loop") reproduces the
 exact failure this caused.
 
-**What shipped** (`daemon/spine/agent/omp_driver.py`, new; `drivers.py`
+**What shipped** (`spine/agent/omp_driver.py`, new; `drivers.py`
 `run()` dispatch + `cancel`/`has_session`/`turn_active`/`drop_session` now
 check omp's registry too; `proctable._is_agent_pid` knows the `omp` image):
 - Transport: JSONL-RPC over stdio, one persistent `omp --mode rpc-ui`
@@ -441,12 +441,12 @@ claude-shaped model ids and hands them to whatever driver is active
 unchanged - measured live, an auto-routed omp card got the literal string
 `"claude-sonnet-5"` fed to `--model`, which omp's OWN fuzzy-matcher happened
 to resolve correctly (the turn worked, cost more than an explicit `haiku`
-dispatch would have). Filed as `daemon/spine/registry/debt.py`'s
+dispatch would have). Filed as `spine/registry/debt.py`'s
 `auto-model-routing-is-claude-ids-only` (open) - the workaround (an explicit
 `model` on card creation bypasses the auto-resolve branch entirely) is
 proven, the real fix is out of this card's scope.
 
-**Pi shipped as code 2026-08-24** (`daemon/spine/agent/pi_driver.py`),
+**Pi shipped as code 2026-08-24** (`spine/agent/pi_driver.py`),
 after all — the owner's "do all like paseo, test accounts later" decision
 meant building it too rather than leaving it deferred. Deliberately modeled
 CLOSELY on omp_driver.py's PROVEN structure (same class shape, same

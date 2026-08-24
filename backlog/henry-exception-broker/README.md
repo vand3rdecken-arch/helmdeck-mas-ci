@@ -1,7 +1,7 @@
 # Dual architecture: Henry as the full-context layer over context-poor workers
 
 > **CORE SHIPPED 2026-08-21 (~05:30, owner: "baue direkt hier")**:
-> `daemon/spine/registry/escalations.py` - append-only store (state FOLDED,
+> `spine/registry/escalations.py` - append-only store (state FOLDED,
 > never flagged), emit seams at aborted-by-restart / conflict-unresolved /
 > deploy-red, broker loop via the pm._ask headless seam, bounded verbs
 > (rerun_deploy | steer | notify_owner | ignore), 2-attempt cap, policy =

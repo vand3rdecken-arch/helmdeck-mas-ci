@@ -28,7 +28,7 @@ export default function ModulesTab() {
   const [doc, setDoc] = useState<PolicyDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // Cell registry (daemon/cells.py GET /cells) - falls back to an empty list
+  // Cell registry (cells.py GET /cells) - falls back to an empty list
   // on any error (403 for a client role, daemon unreachable, etc.) so this
   // screen still renders the rest of Modules & Rules without crashing.
   const [cells, setCells] = useState<CellInfo[]>([]);

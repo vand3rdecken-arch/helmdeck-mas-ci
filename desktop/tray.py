@@ -107,8 +107,8 @@ def _open_daemon_log():
 def _spawn_daemon():
     out = _open_daemon_log()
     env = dict(os.environ, PYTHONUNBUFFERED="1")
-    # daemon/ is a real Python package now (absolute `daemon.spine`/
-    # `daemon.cells.<id>` imports, not a sys.path trick) - it must be
+    # daemon/ is a real Python package now (absolute `spine`/
+    # `cells.<id>` imports, not a sys.path trick) - it must be
     # launched as a module from the REPO ROOT, not as a bare script from
     # inside daemon/ (see daemon/debt.py sys-path-trick-to-real-package-
     # imports).

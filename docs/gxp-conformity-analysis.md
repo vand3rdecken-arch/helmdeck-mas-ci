@@ -15,7 +15,7 @@
 HelmDeck ist **heute nicht GxP-konform und in seiner aktuellen Betriebsart auch
 nicht GxP-konform machbar** — nicht wegen fehlender Features, sondern wegen
 eines Konstruktionsprinzips: *fertige Arbeit wartet nicht auf den Owner*
-(`daemon/cells/copilot/henry_broker.py:46-50`). Genau dieses Prinzip ist das,
+(`cells/copilot/henry_broker.py:46-50`). Genau dieses Prinzip ist das,
 was 21 CFR Part 11 und EU-GMP Annex 11 verbieten.
 
 Drei Sätze, die die Lage beschreiben:
@@ -31,14 +31,14 @@ Drei Sätze, die die Lage beschreiben:
 3. **Der Audit-Trail ist Konvention, nicht Mechanik.** Kein Hash-Chain, keine
    Signatur, kein Trigger; `tools/reset.py:64` enthält ein `DELETE FROM events`.
    Das gesamte Identitäts- und Rechtemanagement schreibt **null** Audit-Einträge
-   (`daemon/spine/auth/auth.py` importiert `events` nicht).
+   (`spine/auth/auth.py` importiert `events` nicht).
 
 Gleichzeitig — und das ist der eigentlich interessante Teil — hat HelmDeck
 **mehr regulierungsnahe Substanz als die meisten Systeme dieser Größe**:
 Append-only-Ereignissenke, Flight-Recorder pro Karte, Worktree-Isolation,
 Gate-vor-Review als Architekturprinzip, ein Checkpoint-/Rollback-Mechanismus
 und ein ungewöhnlich ehrliches Schuldenregister mit 25 offenen, selbst
-deklarierten Abkürzungen (`daemon/spine/registry/debt.py`). Die *Architektur*
+deklarierten Abkürzungen (`spine/registry/debt.py`). Die *Architektur*
 einer unabhängigen Prüfstufe ist vorhanden. Ausgehöhlt wurde ihr *Inhalt*.
 
 Die belastbare Schlussfolgerung: **Der Weg zu GxP führt nicht über hundert
@@ -94,7 +94,7 @@ Erschwerend: die Arbeitskraft ist ein **nichtdeterministisches LLM**. GAMP 5
 probabilistische Komponenten ausdrücklich zusätzliche Kontrollen
 (Datenintegrität des Trainings-/Prompt-Kontexts, Reproduzierbarkeit,
 Performance-Monitoring). HelmDeck erfüllt davon derzeit nichts: die Modell-IDs
-sind gleitende Aliase ohne Snapshot-Pinning (`daemon/spine/agent/turnopts.py:24-30`),
+sind gleitende Aliase ohne Snapshot-Pinning (`spine/agent/turnopts.py:24-30`),
 und die Prompts/Briefs, die das Verhalten bestimmen, werden **nirgends
 versioniert oder am Turn-Ereignis mitgeschrieben**.
 
@@ -117,16 +117,16 @@ Skala: 🟢 konform · 🟡 kleine Lücken · 🟠 wesentliche Lücken · 🔴 n
 
 ### 3.1 Was vorhanden ist (und funktioniert)
 
-Die Ereignissenke `daemon/spine/storage/events.py:175-191` schreibt jedes
+Die Ereignissenke `spine/storage/events.py:175-191` schreibt jedes
 Ereignis **doppelt**: als Zeile nach `daemon/events.jsonl` und per
 Write-through in die SQLite-Tabelle `events`
-(`daemon/spine/storage/db.py:68-72`). Rund 30 Ereignisarten sind instrumentiert:
+(`spine/storage/db.py:68-72`). Rund 30 Ereignisarten sind instrumentiert:
 `filed`, `edit`, `archive`, `delete`, `lane`, `gate`, `merge`, `done`, `touch`,
 `turn`, `reconfig`, `harness`, `checkpoint`, `connector`, `import`, `process`,
 `escalation`.
 
 Zusätzlich existiert pro Karte ein **Flight Recorder**
-(`daemon/spine/ops/actionlog.py`): `recordings/<id>/actions.jsonl`, plus bei
+(`spine/ops/actionlog.py`): `recordings/<id>/actions.jsonl`, plus bei
 Desktop-steuernden Treibern eine Bildschirmaufzeichnung (`screen.mp4`).
 
 Das ist deutlich mehr als üblich. Das Problem ist nicht die Menge, sondern die
@@ -140,12 +140,12 @@ Signatur, kein WORM-Medium. `db.conn()` (`db.py:28-35`) gibt eine
 uneingeschränkte SQLite-Verbindung heraus; jeder In-Process-Code kann
 `UPDATE events` oder `DELETE FROM events` ausführen. Und genau das ist
 mitgeliefert: `tools/reset.py:61-68` enthält `c.execute("DELETE FROM events")`.
-Die Behauptung in `daemon/cells/engineer/cardadmin.py:66` (*"The audit trail is
+Die Behauptung in `cells/engineer/cardadmin.py:66` (*"The audit trail is
 NOT deletable - events and the recording stay"*) ist am Code widerlegt.
 → *Part 11 §11.10(c),(e); Annex 11 §9*
 
 **GXP-A2 — Das gesamte Identitätsmanagement ist unauditiert. [KRITISCH]**
-`daemon/spine/auth/auth.py` importiert `events` nicht und emittiert null
+`spine/auth/auth.py` importiert `events` nicht und emittiert null
 Ereignisse (verifiziert: `grep -c emit` → 0). Damit erzeugen **keine** Spur:
 Benutzer anlegen (`auth.py:61-74`), Benutzer löschen (`auth.py:76-83`),
 Passwort ändern (`auth.py:85-94`), **Rollenwechsel** (`auth.py:96-105`),
@@ -333,7 +333,7 @@ damit in Proxy-Logs, Browser-History und `Referer`-Headern; vor dem Daemon
 stehen Cloudflare Tunnel und ein Worker.
 
 **GXP-S7 — Der Connector-„Sandbox" ist ein Lint, keine Sicherheitsgrenze. [HOCH]**
-`daemon/spine/auth/charter.py:34-46` ist eine Liste von 11 Regex-Mustern, die
+`spine/auth/charter.py:34-46` ist eine Liste von 11 Regex-Mustern, die
 einmalig bei der Installation über den Quelltext laufen. Die „Laufzeit-Sandbox"
 (`connectors.py:116-129`) ist ein `subprocess` **mit den vollen Rechten des
 Daemon-Benutzers**, vollem Dateisystem- und Netzzugriff und geerbtem
@@ -341,7 +341,7 @@ Daemon-Benutzers**, vollem Dateisystem- und Netzzugriff und geerbtem
 trivial umgehbar (`importlib` statt `subprocess`, `os.getenv` statt
 `os.environ`, `pathlib.write_text` statt `open(…,"w")`), und die Regel gegen
 Kern-Importe (`charter.py:43-44`) matcht noch die **alten flachen Modulnamen**
-und ist gegen die heutige `daemon.spine.*`-Struktur wirkungslos. Zudem führt
+und ist gegen die heutige `spine.*`-Struktur wirkungslos. Zudem führt
 `connectors.py:100-113` beim Auflisten `exec_module` **im Daemon-Prozess** aus —
 die Out-of-Process-Zusage gilt nur für `run()`.
 
@@ -637,7 +637,7 @@ Dokumente sind fachlich stark (`DEPLOY.md` mit 828 Zeilen und echten
 Ausführungsnachweisen, `HARNESS.md`, `docs/voice-interaction-design.md`), aber
 **ohne Version, ohne Freigabe, ohne Gültigkeitsdatum, ohne Revisionshistorie** —
 und teils inhaltlich abgedriftet: `CLAUDE.md:39` verweist auf `daemon/debt.py`,
-tatsächlich liegt das Register unter `daemon/spine/registry/debt.py`.
+tatsächlich liegt das Register unter `spine/registry/debt.py`.
 
 **GXP-V11 — Das Schuldenregister widerspricht dem eigenen Gesetz. [Kontext]**
 25 offene Einträge (verifiziert). `full-dynamism-decree` (`debt.py:1146`) hält
@@ -665,7 +665,7 @@ Autonomie, Fast-Track. Ein Board, das für jede Bewegung eine Signatur mit
 Re-Authentifizierung verlangt, ist kein HelmDeck mehr.
 
 Der Ausweg liegt in der Architektur, die bereits existiert. HelmDeck hat mit
-`daemon/spine/auth/policy.py` einen **einzigen, getrackten Mutationspfad für
+`spine/auth/policy.py` einen **einzigen, getrackten Mutationspfad für
 Policy**, mit `policy_seed.json` ein Seed-Konzept und mit dem Charter eine
 Stelle, an der etwas „human-only regardless" sein darf. Das ist exakt der
 Aufhänger für:

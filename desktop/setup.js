@@ -134,7 +134,7 @@ function whichWin(cmd) {
 
 /** The real executable behind an npm `claude.cmd` shim, or null.
  *
- * THE SILENT CONTEXT KILLER (daemon/spine/agent/agentcli.py::_real_claude_exe,
+ * THE SILENT CONTEXT KILLER (spine/agent/agentcli.py::_real_claude_exe,
  * fixed there in ea09780, never ported here): spawning claude.cmd via
  * `cmd /s /c "<argv>"` - which is what { shell: win } does on Windows - is not
  * quote-safe. cmd.exe's escaping plus the shim's own %* re-parse shifts

@@ -15,7 +15,7 @@ Run: py -3.12 daemon/test_desktop_lock_scope.py
 import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.cells.engineer import sessions
+from cells.engineer import sessions
 
 D = sessions._uses_desktop_control
 

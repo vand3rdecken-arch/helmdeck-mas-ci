@@ -27,7 +27,7 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="helmdeck-att-")
 
-from daemon.spine.agent import turnopts
+from spine.agent import turnopts
 
 _fails = []
 

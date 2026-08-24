@@ -18,15 +18,15 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.spine.agent import drivers
-from daemon.cells.engineer import sessions
+from spine.agent import drivers
+from cells.engineer import sessions
 
 _fails = []
 
@@ -137,7 +137,7 @@ def test_gating_pipeline():
     pipeline is never reaped no matter how long it runs; an UNregistered gating
     card (daemon died mid-gate / pipeline thread crashed) still is - with the
     gating-specific note, since there was no instruction to resend."""
-    from daemon.cells.engineer import lanemachine
+    from cells.engineer import lanemachine
 
     tid = "t-gate-live"
     g = _track(tid, "gating")
@@ -170,7 +170,7 @@ def test_move_lane_registration():
     see 'gating' unregistered), releases it on every exit, and counts DEPTH -
     park_and_retry_merge re-enters move_lane('review') from inside a 'done'
     pipeline and the outer registration must survive the inner unwind."""
-    from daemon.cells.engineer import lanemachine
+    from cells.engineer import lanemachine
 
     tid = "t-lane-reg"
     calls = []

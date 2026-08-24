@@ -15,7 +15,7 @@ Users panel if it is no longer wanted.
 """
 import sys
 
-from daemon.spine.auth import auth
+from spine.auth import auth
 
 
 def main():

@@ -21,7 +21,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from daemon.spine.media import voice, voice_stream                  # noqa: E402
+from spine.media import voice, voice_stream                  # noqa: E402
 
 fails = []
 total = 0

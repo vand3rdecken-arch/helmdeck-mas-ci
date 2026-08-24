@@ -27,13 +27,13 @@ Run: py -3.12 daemon/test_fast_track_direct.py
 import os, subprocess, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.storage import events
-from daemon.cells.engineer import sessions
-from daemon.cells.engineer import lanemachine
-from daemon.cells.engineer import dispatch
-from daemon.spine.agent import drivers
-from daemon.spine.storage import trackstore
-from daemon.spine.comms import notify
+from spine.storage import events
+from cells.engineer import sessions
+from cells.engineer import lanemachine
+from cells.engineer import dispatch
+from spine.agent import drivers
+from spine.storage import trackstore
+from spine.comms import notify
 
 
 class FakeDB:

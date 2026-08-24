@@ -380,7 +380,7 @@ Abhängigkeit.
 Vor Stufe 1 wollte der Owner erst hören, ob `edge_tts` (die bestehende
 `voice.py`-Engine, `en-US-AndrewMultilingualNeural`, +8 % Rate) überhaupt gut
 genug klingt, um darauf zu bauen. Zwei Proben über die ECHTE Rendering-Pipeline
-(`daemon/spine/media/voice.render`, nicht simuliert) erzeugt und nach
+(`spine/media/voice.render`, nicht simuliert) erzeugt und nach
 `C:\Users\Tien Duy Vo\Downloads\` kopiert, zum direkten Anhören:
 
 - `voice-sample-1-deploy-blocked.mp3` (35 KB) — gemischt Deutsch/Englisch, der
@@ -558,7 +558,7 @@ edge-tts, das nichts kostet, und ein Platform-STT, das seit §8c läuft. Ihr
 WebRTC-/Realtime-Server kauft Talk-over-the-model-Barge-in — genau das, was
 HFP/A2DP auf der Brille ohnehin verbietet (§4.5).
 
-**Wie es hier aussieht** (`daemon/spine/media/voice_stream.py`):
+**Wie es hier aussieht** (`spine/media/voice_stream.py`):
 Satzgrenze = Terminator **plus folgender Whitespace** — bei Token-Deltas ist das
 Leerzeichen der *Beweis*, dass der Satz zu ist, statt einer Vermutung. Chunk 1
 geht raus, sobald *ein* Satz existiert; spätere Chunks werden größer (140/260
@@ -687,9 +687,9 @@ meine eingeschlossen.
 
 ## 10. Provenance
 
-Aus erster Hand in diesem Worktree gelesen: `daemon/spine/media/voice.py`,
-`daemon/spine/http/routes/routes_glance.py`,
-`daemon/cells/copilot/routes_copilot.py`, `glasses/app.js`,
+Aus erster Hand in diesem Worktree gelesen: `spine/media/voice.py`,
+`spine/http/routes/routes_glance.py`,
+`cells/copilot/routes_copilot.py`, `glasses/app.js`,
 `app/plugins/withGlassVoice.js`, `app/plugins/glassvoice/GlassVoiceService.kt`,
 `app/package.json`, `docs/glasses-reference.md`, `docs/ios-watch-feasibility.md`.
 Der Ist-Stand in §2 ist gegriffen, nicht angenommen — inklusive der beiden

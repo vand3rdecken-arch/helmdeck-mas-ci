@@ -5,7 +5,7 @@ cursor) to mutual AWARENESS (several heavy ops may run at once while the box
 has headroom; a NEW one waits to START while OBSERVED CPU load stays over
 policy.load_admission's threshold - never a stored "busy" flag, never a
 permanent refusal). Pins, through lanemachine._admit_heavy directly with
-daemon.spine.ops.resources.cpu_percent faked (no real box load needed for a
+spine.ops.resources.cpu_percent faked (no real box load needed for a
 deterministic test):
   1. load under the threshold admits immediately, no wait note;
   2. load over the threshold queues; the wait note NAMES the current holder
@@ -25,10 +25,10 @@ Run: py -3.12 daemon/test_load_admission.py
 import os, sys, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.storage import events
-from daemon.spine.ops import resources
-from daemon.spine.git import locks
-from daemon.cells.engineer import lanemachine
+from spine.storage import events
+from spine.ops import resources
+from spine.git import locks
+from cells.engineer import lanemachine
 
 _fails = []
 
@@ -144,7 +144,7 @@ locks._release_heavy(tok4b)
 # --- 5) load that never drops still admits after wait_s (never permanent),
 #        and the give-up is REPORTED to Henry as a load-contention escalation
 #        (exactly once - deduped against an already-open one) ---------------
-from daemon.spine.registry import escalations
+from spine.registry import escalations
 _emitted = []
 escalations.emit = lambda kind, card=None, detail="": _emitted.append(
     {"kind": kind, "card": card, "detail": detail}) or "esc-test"
@@ -173,7 +173,7 @@ check(len(_emitted) == 1, "no duplicate escalation while one is already open")
 locks._release_heavy(token5b)
 
 # --- 6) Henry's snapshot line reads the SAME seam the admission decides by -
-from daemon.cells.copilot import henry_broker
+from cells.copilot import henry_broker
 _CPU[0] = 42.0
 tok6 = lanemachine._admit_heavy(track("visible-holder"), "gate", FakeLog())
 line = henry_broker._box_load_line()

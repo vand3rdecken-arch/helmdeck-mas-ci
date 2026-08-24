@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
-from daemon.spine.media import wincap
+from spine.media import wincap
 
 _fails = []
 
@@ -43,7 +43,7 @@ def _spawn_dummy():
 
 def test_start_stop_bookkeeping():
     p = _spawn_dummy()
-    from daemon.spine.agent import drivers
+    from spine.agent import drivers
     with wincap._pid_lock:
         pids = wincap._read_pids()
         pids[str(p.pid)] = drivers._proc_start_epoch(p.pid)
@@ -57,7 +57,7 @@ def test_start_stop_bookkeeping():
 def test_reap_kills_a_real_orphan():
     p = _spawn_dummy()
     time.sleep(0.3)   # let the OS start-time stamp settle
-    from daemon.spine.agent import drivers
+    from spine.agent import drivers
     with wincap._pid_lock:
         pids = wincap._read_pids()
         pids[str(p.pid)] = drivers._proc_start_epoch(p.pid)

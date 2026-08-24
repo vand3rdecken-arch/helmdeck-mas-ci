@@ -14,9 +14,9 @@ Run: py -3.12 daemon/test_escalations.py
 import os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.registry import escalations as esc
-from daemon.cells.copilot import henry_broker as hb
-from daemon.spine.storage import events
+from spine.registry import escalations as esc
+from cells.copilot import henry_broker as hb
+from spine.storage import events
 
 
 def main():

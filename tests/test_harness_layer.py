@@ -30,7 +30,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-from daemon.spine.registry import harness
+from spine.registry import harness
 
 _fails = []
 
@@ -43,8 +43,8 @@ def check(cond, msg):
 
 # -- 1. the data and the built-in fallback must not drift --------------------
 def test_no_drift():
-    from daemon.spine.agent import drivers
-    from daemon.cells.copilot import copilot
+    from spine.agent import drivers
+    from cells.copilot import copilot
     check(harness.brief("card-worker") == harness._resolve(
         harness._DEFAULT_CARD, harness._DEFAULTS["card-worker"][1]),
         "harness/agents/card-worker.md == the built-in card fallback")
@@ -60,7 +60,7 @@ def test_no_drift():
 
 # -- 2. the wire protocol is spliced in, and stays owned by ask.py ------------
 def test_ask_protocol():
-    from daemon.spine.ops import ask
+    from spine.ops import ask
     card = harness.brief("card-worker")
     check(ask.BRIEF in card, "the card brief carries ask.BRIEF verbatim")
     check(harness.ASK_MARKER not in card, "the {{ask_protocol}} marker is consumed")
@@ -237,9 +237,9 @@ def test_loop_state():
 
 # -- 6. one definition, both endpoints ---------------------------------------
 def test_one_definition():
-    from daemon.cells.engineer import sessions
-    from daemon.spine.http import server
-    from daemon.spine.http.routes import routes_info
+    from cells.engineer import sessions
+    from spine.http import server
+    from spine.http.routes import routes_info
     f = sessions.flow({"done": "Geliefert"})
     check([n["key"] for n in f["nodes"]] == list(sessions.LANES),
           "the lane graph covers exactly the real LANES tuple")
@@ -348,8 +348,8 @@ def _ts_interfaces():
 
 
 def test_export_matches_the_app_contract():
-    from daemon.spine.registry import harness
-    from daemon.cells.engineer import sessions
+    from spine.registry import harness
+    from cells.engineer import sessions
     import loop_state
     fields = _ts_interfaces()
     check(os.path.exists(CLIENT_TS), "app/src/data/client.ts is where we think it is")
@@ -443,7 +443,7 @@ def test_policy_knob_contract():
     screen nobody looks at twice. And a labelKey with no dict entry renders the
     raw key. Neither is a type error on either side."""
     import re
-    from daemon.spine.http import server
+    from spine.http import server
     schema = server._config_schema({})
     check(bool(schema), "server._config_schema() is importable and non-empty")
 

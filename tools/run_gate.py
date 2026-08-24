@@ -42,19 +42,28 @@ def run(label, args):
 # 2026-08-21: they are style JUDGMENT, not hygiene - a hardcoded German label
 # must not hold a merge hostage. They remain manual tools and belong to the
 # e2e-before-build step, where presentation is actually looked at.
-daemon_py = sorted(glob.glob(os.path.join("daemon", "**", "*.py"), recursive=True))
-daemon_py = [p for p in daemon_py if "__pycache__" not in p]
+daemon_py = sorted(
+    p
+    for tree in ("daemon", "spine", "cells")
+    for p in glob.glob(os.path.join(tree, "**", "*.py"), recursive=True)
+    if "__pycache__" not in p
+)
 if daemon_py:
-    run("py_compile daemon/**/*.py", [PY, "-m", "py_compile", *daemon_py])
+    run("py_compile daemon/spine/cells **/*.py", [PY, "-m", "py_compile", *daemon_py])
 
 # -- FUNCTION CHECK -----------------------------------------------------------
-# The daemon WIRES UP: importing the serve entrypoint pulls the spine, routes
-# and cells transitively, catching what py_compile cannot - a bad import, a
+# The daemon WIRES UP: importing the http server pulls the spine, routes and
+# cells transitively, catching what py_compile cannot - a bad import, a
 # missing symbol, a module-level wiring error (the exact class of the
 # function-local-import UnboundLocalError bug). Import only, never serve.
+# daemon.swarm alone no longer suffices: since spine/cells moved to the repo
+# root it is a thin launcher whose spine imports are function-local.
 if os.path.isdir("daemon"):
     run("daemon wires up (import daemon.swarm)",
         [PY, "-c", "import daemon.swarm"])
+if os.path.isdir("spine"):
+    run("spine+cells wire up (import spine.http.server)",
+        [PY, "-c", "import spine.http.server"])
 
 if not ran:
     print("gate: nothing to run on this branch - PASS")

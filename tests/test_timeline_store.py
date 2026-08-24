@@ -17,8 +17,8 @@ does (real __init__, only _spawn stubbed).
 import os, shutil, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.agent import drivers, timeline_store
-from daemon.spine.agent.drivers import _ClaudeSession
+from spine.agent import drivers, timeline_store
+from spine.agent.drivers import _ClaudeSession
 
 FAILS = []
 
@@ -224,7 +224,7 @@ check("no usage step when everything is 0 (matches read_transcript's `if ctx or 
 
 # ============================================================================
 print("run_turn - the submitted prompt folds as text, a harness-tagged one as a system note:")
-from daemon.spine.ops import ask as _ask
+from spine.ops import ask as _ask
 
 
 def _drive_turn(s, prompt, rd):

@@ -30,16 +30,16 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-bg-")
 
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.spine.agent import claude_sessions, drivers
-from daemon.cells.engineer import sessions
-from daemon.spine.ops.actionlog import ActionLog
+from spine.agent import claude_sessions, drivers
+from cells.engineer import sessions
+from spine.ops.actionlog import ActionLog
 
 PROJECTS = os.path.join(SANDBOX, "projects", "proj")
 os.makedirs(PROJECTS, exist_ok=True)
@@ -128,7 +128,7 @@ def test_cue_and_no_push():
     check(t["background"]["n"] == 1 and t["background"].get("since"),
           "background payload carries count + start time")
 
-    from daemon.spine.comms import notify
+    from spine.comms import notify
     pushed = []
     orig = notify.push_fcm
     notify.push_fcm = lambda title, body, track_id="": pushed.append(title)

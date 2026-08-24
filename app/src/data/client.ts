@@ -143,7 +143,7 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
    *  present only when the request asked for it (`voice: true`). It rides inside
    *  this JSON because the phone reaches the daemon through the E2EE relay,
    *  which seals one request/response and offers no second binary channel
-   *  (daemon/spine/media/voice.py render_b64). Absent when speech was
+   *  (spine/media/voice.py render_b64). Absent when speech was
    *  unavailable, which is a soft failure: the text reply is still here. */
   voice?: VoiceClip | null }
 
@@ -154,7 +154,7 @@ export interface SteerOpts {
   model?: string; thinking?: string; mode?: string; attachments?: Attach[];
   /** Ask the daemon to also render the reply as speech. Per REQUEST, not a
    *  server setting, because only the client knows whether the owner is looking
-   *  at the screen or driving (daemon/cells/copilot/routes_copilot.py).
+   *  at the screen or driving (cells/copilot/routes_copilot.py).
    *
    *  `true` renders ONE clip after the turn finishes and returns it inline.
    *  `"stream"` renders sentence by sentence WHILE the turn runs; those clips
@@ -337,7 +337,7 @@ export interface HarnessWriteResult {
   resolved_chars?: number; document: HarnessDocument;
 }
 
-// GET /cells manifest shape (daemon/cells.py manifest()) - one entry per
+// GET /cells manifest shape (cells.py manifest()) - one entry per
 // registered agentic-system cell, live enable-state derived from policy.
 // logicFiles/harnessFile/uiFiles are real repo-relative paths; routes is
 // DERIVED daemon-side from the cell's actual route module dispatch tables
@@ -388,7 +388,7 @@ export const api = {
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   usage: () => req<Usage>("GET", "/usage"),
   me: () => req<Me>("GET", "/me"),
-  // The cell registry manifest (daemon/cells.py) - which agentic systems exist
+  // The cell registry manifest (cells.py) - which agentic systems exist
   // and whether each is enabled. Used to gate nav (see (tabs)/_layout.tsx) and
   // the Modules screen's CELLS section.
   cells: () => req<{ cells: CellInfo[] }>("GET", "/cells"),
@@ -479,7 +479,7 @@ export const api = {
   },
   chatCancel: () => req("POST", "/chat/cancel", {}),
   /** LIVE voice pipeline STT: one VAD-cut utterance (WAV, base64) -> text.
-   *  Server-side faster-whisper (daemon/spine/media/stt.py); 501 with the
+   *  Server-side faster-whisper (spine/media/stt.py); 501 with the
    *  install hint when the daemon lacks the package - surfaced, never mute. */
   transcribe: (audioB64: string, lang?: string) =>
     req<{ text: string; info?: { lang?: string; p?: number; dur?: number } }>(

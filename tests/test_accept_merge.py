@@ -9,7 +9,7 @@ import os, sys, subprocess, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-from daemon.cells.engineer import sessions
+from cells.engineer import sessions
 
 _fails = []
 
@@ -195,7 +195,7 @@ def test_merge_event_signature_no_collision():
     # Regression: move_lane('done') does events.emit("merge", tid, ok=, outcome=,
     # detail=). A field named 'kind' here collides with emit's positional `kind`
     # param and crashed EVERY accept (TypeError). Guard the exact call shape.
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tempfile.mkdtemp(), "events.jsonl")   # isolate the append
     row = events.emit("merge", "t-sig", ok=True, outcome="merged", detail="x")
     check(row.get("kind") == "merge" and row.get("outcome") == "merged",
