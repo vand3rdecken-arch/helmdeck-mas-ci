@@ -155,8 +155,11 @@ CELLS = [
                      "cardadmin.py", "turnrunner.py"),
         storage="tracks table + worktrees (db.py)",
         route_modules=("routes_tracks", "routes_track_actions"),
-        ui_files=("src/plugins/surfaces/board.tsx", "src/ui/board.tsx",
-                   "src/app/(tabs)/board.tsx"),
+        # the Surface plugin lives in the CELL's own folder since phase 3 of
+        # the two-mains split (cells/<id>/ui/, repo-root-relative -> repo_files);
+        # the route shell + shared widgets stay app-side (ui_files).
+        repo_files=("cells/engineer/ui/surface.tsx",),
+        ui_files=("src/ui/board.tsx", "src/app/(tabs)/board.tsx"),
         # documentation-only reference (owner directive, 2026-08-18): the
         # editorial-diagram visual language this cell's own code-map UI
         # (this file's read_source() + app/src/ui/cell_diagram.tsx) follows.
@@ -174,8 +177,8 @@ CELLS = [
         storage="loop.json (daemon/pm/)",
         harness_file="daemon/pm.role.md",
         route_modules=("routes_pm",),
-        ui_files=("src/plugins/surfaces/pm.tsx", "src/ui/pm_panel.tsx",
-                   "src/app/loopmap.tsx"),
+        repo_files=("cells/pm/ui/surface.tsx",),
+        ui_files=("src/ui/pm_panel.tsx", "src/app/loopmap.tsx"),
     ),
     Cell(
         id="process", enabled_key="processEnabled",
@@ -187,8 +190,8 @@ CELLS = [
         logic_files=("processes.py",),
         storage="processes table (db.py)",
         route_modules=("routes_misc", "routes_system"),
-        ui_files=("src/plugins/surfaces/processes.tsx",
-                   "src/app/(tabs)/processes.tsx"),
+        repo_files=("cells/process/ui/surface.tsx",),
+        ui_files=("src/app/(tabs)/processes.tsx",),
     ),
     Cell(
         id="connectors", enabled_key="connectorsEnabled",
@@ -198,8 +201,8 @@ CELLS = [
         logic_files=("connectors.py",),
         storage="connector_state table (db.py) + connectors/ code dir",
         route_modules=("routes_connectors",),
-        ui_files=("src/plugins/surfaces/connectors.tsx",
-                   "src/app/(tabs)/connectors.tsx"),
+        repo_files=("cells/connectors/ui/surface.tsx",),
+        ui_files=("src/app/(tabs)/connectors.tsx",),
     ),
     Cell(
         id="copilot", enabled_key="copilotEnabled",
@@ -214,7 +217,8 @@ CELLS = [
         # escalations.py is the bus; engineer emits; THIS cell decides) -
         # copilotEnabled off = no broker, per the cell-lifecycle contract.
         start=("henry_broker", "start_broker"),
-        ui_files=("src/plugins/surfaces/copilot.tsx", "src/app/chat.tsx"),
+        repo_files=("cells/copilot/ui/surface.tsx",),
+        ui_files=("src/app/chat.tsx",),
     ),
     Cell(
         # Cell #6 - added 2026-08-18 after owner pushback: structurally this

@@ -185,7 +185,7 @@ def checks_red(touched):
                                 os.path.join(ROOT, p)], capture_output=True, text=True)
             if r.returncode != 0:
                 problems.append("%s: %s" % (p, (r.stderr or "").strip().splitlines()[-1][:100]))
-    if any(p.startswith("app/") and p.endswith((".ts", ".tsx")) for p in touched) and \
+    if any(p.startswith(("app/", "cells/")) and p.endswith((".ts", ".tsx")) for p in touched) and \
        os.path.isdir(os.path.join(APP, "node_modules")):
         try:
             npx = r"C:\Program Files\nodejs\npx.cmd"
@@ -193,7 +193,10 @@ def checks_red(touched):
                 npx = "npx.cmd" if os.name == "nt" else "npx"
             env = dict(os.environ)
             env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
-            r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.json"],
+            # tsconfig.typecheck.json, not tsconfig.json: the bare-module
+            # fallback for cells/<id>/ui/ files must stay invisible to Metro
+            # (which reads tsconfig.json's paths for runtime resolution).
+            r = subprocess.run([npx, "tsc", "--noEmit", "-p", "tsconfig.typecheck.json"],
                                cwd=APP, capture_output=True, text=True, env=env, timeout=180)
             if r.returncode != 0:
                 first = (r.stdout or r.stderr or "").strip().splitlines()
