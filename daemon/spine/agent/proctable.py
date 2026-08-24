@@ -205,15 +205,33 @@ def _proc_start_epoch(pid):
         return None
 
 
+# SUBSTRING-safe image names: long/distinctive enough that a false positive
+# (some unrelated process whose filename happens to CONTAIN one of these) is
+# implausible. "codex"/"opencode" added for their own native drivers
+# (docs/multi-engine-build-plan.md Cards 6/7) - unverified against real
+# binaries, but the image names themselves are exactly the CLI binary names
+# those drivers spawn, not a guess.
+_AGENT_IMG_SUBSTR = ("claude", "node", "cmd", "codex", "opencode")
+# EXACT-basename-only image names: too short/common to trust as a substring.
+# "omp" would match "compress.exe"/"compact.exe" (contain "omp"); "pi" would
+# match "pip.exe" - a near-universal process on any dev machine - as a
+# substring, which would have made reap_orphans/tree-kill treat a random pip
+# install as an agent process. Caught reviewing this same change (Cards 6-8),
+# not shipped - but the ALREADY-SHIPPED "omp" entry (Card 8) had the exact
+# same latent bug and is fixed here too, not left for later.
+_AGENT_IMG_EXACT = ("omp.exe", "omp", "pi.exe", "pi")
+
+
 def _is_agent_pid(pid):
-    """Weaker fallback guard: the pid is still a claude/node/cmd image."""
+    """Weaker fallback guard: the pid is still a known agent-driver image."""
     if os.name != "nt":
         return True
     try:
         for p, _pp, exe in _pid_table():
             if p == pid:
                 img = (exe or "").lower()
-                return any(n in img for n in ("claude", "node", "cmd"))
+                return (any(n in img for n in _AGENT_IMG_SUBSTR)
+                        or img in _AGENT_IMG_EXACT)
         return False
     except Exception:
         return False

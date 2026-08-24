@@ -19,8 +19,7 @@ by process so one client engagement reads as a swimlane."""
 import json, os, re, shutil, subprocess, threading, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
-CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
-          or r"C:\Program Files\nodejs\claude.cmd")
+from daemon.spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 MODES = ("do", "prepare", "cowork", "teach", "human")
 _lock = threading.Lock()
 

@@ -17,10 +17,10 @@ import json
 
 
 def tracks_stream_get(self, user, tid):
-    # per-card SSE: push the live turn transcript as the agent works.
-    # Claude Code writes the session .jsonl live, so we watch it and
-    # emit the parsed transcript whenever it grows - real streaming,
-    # no client poll, same shape as the board /stream above.
+    # per-card SSE: push the live turn transcript as the agent works. The
+    # driver folds the timeline_store live as the agent works (Card 2), so we
+    # watch ITS version and emit whenever it grows - real streaming, no
+    # client poll, same shape as the board /stream above.
     import time as _t
     from daemon.cells.engineer import sessions
     from daemon.spine.agent import claude_sessions
@@ -41,7 +41,11 @@ def tracks_stream_get(self, user, tid):
     # resolved fresh inside so streaming starts on turn 1 (sidecar)
     # too. The client refetches the transcript on each tick.
     def combined():
-        return claude_sessions.transcript_version(t)
+        # Card 2 cutover: the client refetches /transcript on each tick, and
+        # that route now serves timeline_store - this must watch the SAME
+        # source's version, or SSE and the endpoint it triggers a refetch of
+        # disagree about what "changed" means (see routes_tracks.py).
+        return claude_sessions.transcript_store_version(t)
 
     def tick(v):
         self.wfile.write(("data: %d" % v).encode() + b"\n\n")

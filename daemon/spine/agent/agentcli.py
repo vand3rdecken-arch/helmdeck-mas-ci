@@ -3,16 +3,27 @@
 line spawn module) as a clean, self-contained module seam. These are the helpers
 that resolve the real `claude` executable behind an npm .cmd shim, decide the
 quote-safe spawn form, and bridge a driver's MCP tool grants to their server
-definitions in ~/.claude.json. None are monkeypatched by the test suite, and
-their only external dependency is drivers.CLAUDE (referenced lazily to avoid a
-circular import). drivers.py re-imports these names, so build_argv/_spawn and
-copilot.argv_form_safe callers are unchanged.
+definitions in ~/.claude.json. drivers.py re-imports these names (including
+CLAUDE), so build_argv/_spawn and copilot.argv_form_safe callers are unchanged.
+
+CLAUDE is defined HERE, once - a leaf module with no daemon.* imports of its
+own, so nothing importing it risks a cycle. It used to be six independent
+copies of the same three-line resolution (drivers.py, copilot.py, sessions.py,
+processes.py, probe_harness_settings.py) that could drift; a driver-argv
+change once needed six edits done together instead of one. Everything real
+imports it from here now. `tests/probe_cli_askuser.py` deliberately keeps its
+OWN copy (and its own local `cmd_line`) - it is a standalone capability probe
+with zero daemon.* imports by design, meant to run even when the daemon
+package doesn't, so it stays self-contained on purpose.
 """
 import json
 import os
 import re as _re
 import shutil
 import subprocess
+
+CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
+          or r"C:\Program Files\nodejs\claude.cmd")
 
 
 def _real_claude_exe(cmd_path):
@@ -74,8 +85,7 @@ def argv_form_safe(exe=None):
     system prompt can go in --append-system-prompt (real role separation) or has
     to stay in the stdin prompt (the old way, safe everywhere)."""
     if exe is None:
-        from daemon.spine.agent import drivers  # lazy: drivers.CLAUDE is the single source, no import cycle
-        exe = drivers.CLAUDE
+        exe = CLAUDE          # this module's own CLAUDE - no import needed
     if os.name != "nt":
         return True
     if not str(exe).lower().endswith((".cmd", ".bat")):

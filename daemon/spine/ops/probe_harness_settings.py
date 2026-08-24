@@ -45,10 +45,9 @@ hooks-only settings file) before concluding a flag has regressed.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
-CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
-          or r"C:\Program Files\nodejs\claude.cmd")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from daemon.spine.agent import drivers  # _cmd_line: never exec the .cmd shim
+from daemon.spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 from daemon.spine.registry import harness  # the shipped settings files to validate
 
 USER_MODEL = "fable"          # what ~/.claude/settings.json pins (the tell)

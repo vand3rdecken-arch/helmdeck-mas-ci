@@ -67,14 +67,16 @@ def tracks_history_get(self, user, tid):
 
 
 def tracks_transcript_get(self, user, tid):
-    # the Paseo-style agent view: every turn's text + tool calls,
-    # read straight from the session's Claude Code transcript
+    # the Paseo-style agent view: every turn's text + tool calls.
+    # Card 2 cutover: served from the event-time timeline_store (folded live
+    # by the driver's own pump), not re-parsed from Claude Code's private
+    # .jsonl - see claude_sessions.read_transcript_store's docstring.
     from daemon.cells.engineer import sessions
     from daemon.spine.agent import claude_sessions
     t = sessions.get_track(tid)
     if user["role"] == "client" and (not t or t.get("client") != user["name"]):
         return self._send(403, json.dumps({"error": "not your card"}))
-    return self._send(200, json.dumps(claude_sessions.read_transcript_live(t)))
+    return self._send(200, json.dumps(claude_sessions.read_transcript_store(t)))
 
 
 def tracks_transcript_live_get(self, user, tid):
@@ -96,10 +98,10 @@ def tracks_transcript_live_get(self, user, tid):
     q = parse_qs(urlparse(self.path).query)
     want = (q.get("v") or [""])[0]
     deadline = _t.time() + 22
-    cur = claude_sessions.transcript_version(t)
+    cur = claude_sessions.transcript_store_version(t)
     while str(cur) == want and _t.time() < deadline:
         _t.sleep(0.35)
-        cur = claude_sessions.transcript_version(t)
+        cur = claude_sessions.transcript_store_version(t)
     # DELTA (perf): the client sends how many steps it already holds
     # (`have`); return only the TAIL - new steps plus a small overlap so
     # a late tool_result or the end-of-turn abandoned-relabel landing on a
@@ -108,7 +110,7 @@ def tracks_transcript_live_get(self, user, tid):
     # 100-227KB re-sent on every token/tool tick. The tail is a few KB.
     # `have` absent/0 -> full transcript (old client + the loop's first
     # call), so this is backward compatible.
-    steps = claude_sessions.read_transcript_live(t)
+    steps = claude_sessions.read_transcript_store(t)
     try:
         have = int((q.get("have") or ["0"])[0])
     except ValueError:
