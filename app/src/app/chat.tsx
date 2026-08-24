@@ -286,7 +286,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     voiceSink.current = onClip ?? null;
     // Reset only the seq half: the turn half may only move FORWARD (takeClips),
     // or a superseded drain could re-adopt the interrupted turn's clips.
-    voiceCur.current.seq = 0;
+    //
+    // And the seq half only resets while we have never seen a turn id (a
+    // LEGACY daemon, where seq is the whole cursor). On a turn-id daemon the
+    // previous turn's stream stays current until the daemon begins the new
+    // one - a zeroed seq in that window makes the poller re-collect EVERY
+    // clip of the finished answer, and Henry audibly says the whole previous
+    // message again (owner report 2026-08-23 evening, "viele Nachrichten
+    // doppelt"). With turn ids the correct reset happens in takeClips the
+    // moment the new turn's first clip arrives (ct > turn -> seq = 0).
+    if (voiceCur.current.turn === 0) voiceCur.current.seq = 0;
     try {
       const r = await api.chat(text, { voice: onClip ? "stream" : undefined });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded

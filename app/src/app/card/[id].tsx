@@ -547,10 +547,13 @@ export default function CardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const { width } = useWindowDimensions();
   const wide = isWeb && width >= 900;
-  const [tab, setTab] = useState<Tab>("overview");
+  // A push about a message (question/needs_you/bounced) deep-links here with
+  // ?tab=chat so the owner lands where the news actually is, not the overview
+  // tab he'd have to click past every time.
+  const [tab, setTab] = useState<Tab>(tabParam === "chat" ? "chat" : "overview");
   const [seed, setSeed] = useState({ text: "", key: 0 });
   const sheet = useActionSheet();
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
