@@ -46,9 +46,16 @@
 > die Routen gegen ein echtes git-Repo (`test_sign_routes.py`) und tsc; ein
 > Screenshot der Maske steht aus und gehört auf deinen Rechner.
 >
-> Offen: A3 (deine Entscheidung) · das
-> signierte git-Tag (braucht die Schlüsselentscheidung) · Phase D · der
-> gepackte Drei-Start-Durchlauf der Desktop-App.
+> **A3: entschieden und gebaut** (`2b7b77b`) — beides, wie gewählt: Analytics
+> auf Opt-in (`enabled: false` + `defaultOptIn: false` in der SDK selbst, nicht
+> nur unsere eigene Schranke), und die Datenschutzerklärung in `relay/relay.py`
+> in beiden Sprachen korrigiert — inklusive des zweiten, bisher unerwähnten
+> Verstoßes (Loops.so bekommt E-Mail + Vorname bei Registrierung). **Damit ist
+> Stufe 0 vollständig geschlossen**, alle sechs Punkte.
+>
+> Offen: das signierte git-Tag (braucht die Schlüsselentscheidung) · Phase D ·
+> der gepackte Drei-Start-Durchlauf der Desktop-App · der Screenshot der
+> Freigabemaske aus Phase C.
 >
 > **Neu, aus der Diskussion, nicht Teil dieser Karte:** Rohkommando bei
 > Sprache mitspeichern — für eine Karte im Geltungsbereich, wenn die Eingabe
