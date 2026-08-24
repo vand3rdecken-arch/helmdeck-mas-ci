@@ -26,8 +26,6 @@ daemon/copilot_sessions.json
 daemon/signkeys/
 # rendered speech clips (voice.py): regenerated on demand, content-addressed
 daemon/voice_cache/
-web/node_modules/
-web/.next/
 daemon/checkpoints/
 daemon/swarmdeck.db
 daemon/helmdeck.db
@@ -51,7 +49,10 @@ daemon/copilot_log.json
 daemon/copilot_stats.json
 daemon/driver_pids.json
 daemon/recorder_pids.json
-daemon/nightshift/state.json
+# nightshift output is RUNTIME data, all of it - plans/reports were once
+# committed (jul-28 artifacts, untracked in the data-hygiene sweep) like the
+# early APK; the whole dir is machine-local now.
+daemon/nightshift/
 daemon/restart_stdout.log
 daemon/restart_stderr.log
 daemon/daemon.out.log
@@ -62,8 +63,6 @@ daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 daemon/helmdeck.db-wal
 daemon/helmdeck.db-shm
-plane-selfhost/.env
-plane-selfhost/*.env
 backups/
 # NOT an accident (owner decision 2026-08-16, "you work local so just don't
 # publish docs"): already-tracked docs STAY tracked so card worktrees see them;
