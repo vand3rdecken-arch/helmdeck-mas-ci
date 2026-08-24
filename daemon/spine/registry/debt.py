@@ -2748,6 +2748,39 @@ DEBT = [
                "once after accepting.",
         "order": 45,
     },
+    {
+        "id": "auto-model-routing-is-claude-ids-only",
+        "title": "Auto model routing picks a claude-* id even when the driver isn't claude",
+        "status": "open",
+        "what": "turnrunner._turn resolves policy.auto to a concrete model id via "
+                "turnopts.resolve_model, whose whole manifest (turnopts.CLAUDE_MODELS: "
+                "claude-opus-5/claude-sonnet-5/claude-haiku-4-5) is Anthropic-specific. "
+                "That resolved id is then handed to WHATEVER driver the card uses, "
+                "unchanged - for the native omp driver it lands in build_argv's "
+                "--model flag verbatim.",
+        "why_it_bites": "Measured live 2026-08-24 (docs/multi-engine-build-plan.md "
+                        "Card 8): a card with driver=omp and no explicit model got "
+                        "auto-routed to the literal string 'claude-sonnet-5', which "
+                        "omp's own --model fuzzy-matcher happened to resolve to a real "
+                        "sonnet-tier model (the turn completed correctly, cost "
+                        "$0.147614 vs. an explicit 'haiku' dispatch's $0.11). It WORKED "
+                        "by fuzzy-match coincidence, not by design - a future omp "
+                        "catalog change, or a THIRD engine with a stricter --model "
+                        "parser, could silently fail or silently pick the wrong model "
+                        "with no error surfaced.",
+        "trigger": "any auto-routed card on a non-claude driver in production. "
+                   "Workaround today: pass an explicit model on card creation "
+                   "(bypasses turnrunner's auto-resolve branch entirely - proven, "
+                   "the second omp test dispatch used model='haiku' explicitly and "
+                   "got exactly that model, confirmed via the track's own `models` "
+                   "field). Real fix is Card 9's territory (econ/UI generalisation) "
+                   "or its own small card: either give resolve_model an engine "
+                   "parameter with a per-engine manifest, or have each native driver "
+                   "translate the generic auto tier (cheap/balanced/strong) into its "
+                   "own model id instead of receiving a claude-shaped string.",
+        "fix": "OPEN.",
+        "order": 46,
+    },
 ]
 
 def list_debt():

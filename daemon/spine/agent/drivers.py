@@ -80,13 +80,32 @@ _cancelled = set()
 
 
 
+def _omp_sessions():
+    """The native OMP driver's OWN session registry (omp_driver.py) - a
+    separate dict from this module's claude-only `_sessions`, same reasoning
+    as claude_sessions.py being its own module: one driver, one owner of its
+    session state. Lazy import so a claude-only board never loads it."""
+    from daemon.spine.agent import omp_driver
+    return omp_driver._sessions, omp_driver._sessions_guard
+
+
 def cancel(tid):
     """Stop the track's in-flight turn (composer Stop). Unblocks the waiting turn
     with a clean '(cancelled)' and tree-kills the session; the next steer respawns
-    and `--resume`s the session id, so no conversation is lost. Idempotent."""
+    and `--resume`s the session id, so no conversation is lost. Idempotent.
+    Checks BOTH registries - a caller here only ever has a tid, not the
+    track's driver type, so has_session/turn_active/cancel/drop_session all
+    check claude's registry first, then omp's, rather than pushing that
+    lookup onto every one of the 12+ call sites."""
     _cancelled.add(tid)
     with _sessions_guard:
         s = _sessions.get(tid)
+    if s:
+        s.cancel()
+        return True
+    omp_s, omp_g = _omp_sessions()
+    with omp_g:
+        s = omp_s.get(tid)
     if s:
         s.cancel()
         return True
@@ -98,7 +117,11 @@ def has_session(tid):
     flagged status=running WITHOUT one is a zombie - its turn died with a prior
     daemon process (see sessions.sweep_zombies)."""
     with _sessions_guard:
-        return tid in _sessions
+        if tid in _sessions:
+            return True
+    omp_s, omp_g = _omp_sessions()
+    with omp_g:
+        return tid in omp_s
 
 
 def turn_active(tid):
@@ -116,6 +139,10 @@ def turn_active(tid):
     froze with a spinner no sweep would ever clear."""
     with _sessions_guard:
         s = _sessions.get(tid)
+    if s is None:
+        omp_s, omp_g = _omp_sessions()
+        with omp_g:
+            s = omp_s.get(tid)
     if s is None:
         return False
     try:
@@ -247,24 +274,30 @@ def drop_session(tid):
     Same safety as sweep_idle: only a session with NO turn in flight is reaped
     (non-blocking lock + _cur check), and the conversation survives on disk keyed
     by session id, so the next steer resumes it. Returns True if a session was
-    dropped. Idempotent - a no-op when the card has no live session."""
-    with _sessions_guard:
-        s = _sessions.get(tid)
-        if s is None:
-            return False
-        if not s._turn_lock.acquire(blocking=False):
-            return False            # a turn holds it - leave it to _get_session
+    dropped. Idempotent - a no-op when the card has no live session.
+
+    Checks BOTH registries (see cancel's docstring) - a driver swap FROM omp
+    TO claude (or back) must drop whichever one is actually live, not just
+    claude's."""
+    for registry, guard in ((_sessions, _sessions_guard), _omp_sessions()):
+        with guard:
+            s = registry.get(tid)
+            if s is None:
+                continue
+            if not s._turn_lock.acquire(blocking=False):
+                return False        # a turn holds it - leave it to _get_session
+            try:
+                if s._cur is not None:
+                    return False    # turn in flight - never yank it mid-run
+                del registry[tid]
+            finally:
+                s._turn_lock.release()
         try:
-            if s._cur is not None:
-                return False        # turn in flight - never yank it mid-run
-            del _sessions[tid]
-        finally:
-            s._turn_lock.release()
-    try:
-        s.kill()
-    except Exception:
-        pass
-    return True
+            s.kill()
+        except Exception:
+            pass
+        return True
+    return False
 
 
 def shutdown_all():
@@ -293,6 +326,13 @@ def run(cfg, t, prompt):
         return _http(cfg, t, prompt)
     if kind == "cmd":
         return _cmd(cfg, t, prompt)
+    if kind == "omp":
+        # Native OMP driver (docs/multi-engine-build-plan.md Card 8) - its
+        # own persistent-session module, same shape as _ClaudeSession but a
+        # different wire protocol (JSONL-RPC, not stream-json). Lazy import:
+        # omp_driver has no reason to load for claude-only boards.
+        from daemon.spine.agent import omp_driver
+        return omp_driver.run(cfg, t, prompt)
     raise RuntimeError("unknown driver type: " + kind)
 
 # THE BRIEFS ARE DATA NOW - harness/agents/*.md, loaded by daemon/harness.py.

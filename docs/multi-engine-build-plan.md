@@ -337,7 +337,90 @@ does NOT affect a second concurrent OpenCode card's session (the isolation
 property this whole card exists to prove); cost shows a real number, not
 "n/a". Size **M–L (2.5–3d)**.
 
-## Card 8 — Pi/OMP native adapter (N3, analysis §6.6.3) — optional, smallest ecosystem
+## Card 8 — OMP native adapter (N3, analysis §6.6.3) — SHIPPED 2026-08-24 (omp only, Pi deferred)
+
+**Landed via an unplanned owner step — no new login needed at all.** `omp.exe`
+was already installed on this box (`%LOCALAPPDATA%\omp\omp.exe`, prior owner
+use), and `omp --help` shows `ANTHROPIC_OAUTH_TOKEN` takes precedence over
+`ANTHROPIC_API_KEY` — proven live: feeding it the SAME OAuth token
+`~/.claude/.credentials.json` already holds (the exact read `turnopts.
+_oauth_token()` already does) let it drive real turns on the owner's
+existing Claude subscription with zero new account. This made omp the ONE
+native engine actually buildable-and-verifiable end-to-end in this session -
+Codex/OpenCode/Pi still need their own owner step (Cards 6/7, and the Pi half
+of this one, remain unshipped).
+
+**The wire protocol in this card's original scope text (below the line) was
+WRONG in one specific and important way** - kept here, struck through, as a
+record of what "measure, don't assume" actually caught: reusing Paseo's own
+TS types (`pi/rpc-types.ts`) as ground truth got the REQUEST shape right
+(`{"type":"prompt","message":str}`, matching `PiAgentRunRequest`) but nothing
+in that source told a reader that ONE submitted prompt can produce MULTIPLE
+internal `turn_start`/`turn_end` pairs when tool calls are involved - proven
+live 2026-08-24: a two-tool prompt emitted two `turn_end` events, the FIRST
+carrying the model's own "I'll do X now" narration text, not the answer. An
+early version of this driver returned that narration as the reply. Fixed by
+treating `agent_end` (fires exactly once, for both normal completion AND
+after `abort`) as the true completion signal instead - a pinned regression
+test (`tests/test_omp_driver.py`, "MULTI-TURN tool loop") reproduces the
+exact failure this caused.
+
+**What shipped** (`daemon/spine/agent/omp_driver.py`, new; `drivers.py`
+`run()` dispatch + `cancel`/`has_session`/`turn_active`/`drop_session` now
+check omp's registry too; `proctable._is_agent_pid` knows the `omp` image):
+- Transport: JSONL-RPC over stdio, one persistent `omp --mode rpc-ui`
+  process per card (same isolation shape as `_ClaudeSession` - no shared-
+  server conflict, unlike OpenCode's default mode).
+- Session identity: a FILE PATH derived from `run_dir`
+  (`<run_dir>/omp_session`) - proven live: the SAME path across two SEPARATE
+  process spawns correctly recalled prior-turn context. No field to keep in
+  sync on the track; resume is automatic.
+- Brief delivery: native `--append-system-prompt` - no ACP-style blocker at
+  all (§6.3 does not apply to this engine).
+- Cost: REAL `usage.cost.total` in USD per message, accumulated onto the
+  turn's `cost_usd` - proven live ($0.11-0.15 per real dispatched turn,
+  correctly landing in the track's `ai_cost` and flowing through the SAME
+  `econ._record_econ` path claude uses, no new econ code needed).
+- Cancel: `{"type":"abort"}`; a cancelled tool call's own `tool_execution_end`
+  reports `isError:true` with `"[Command cancelled]"` - mapped to the 4-state
+  model's `canceled` (not `failed`), matching the claude driver's own
+  interrupt-sentinel rule, only caught by testing a REAL cancel against the
+  real daemon (a synthetic-only test pass would have missed this, since
+  nothing in the request/response shapes hints that a cancelled tool call
+  even reports `isError`).
+
+**Verified**: `tests/test_omp_driver.py` (27 checks, synthetic frames built
+from real captured JSON - see the module docstring's "measured live" notes)
++ real dispatches on the live throwaway daemon: a two-tool turn (write+ls,
+correct final reply, real cost), an explicit-model dispatch (confirms the
+auto-model-routing gap below), a steer/resume (turn 2 correctly recalled
+turn 1's file content), a real mid-turn Stop/cancel (tool step lands
+`canceled`, track `last_reply` reads "(turn cancelled by you)" - the SAME
+sentinel claude's driver uses) - through the ACTUAL `/tracks/.../transcript`
+HTTP route post-Card-2-cutover, not just the store directly.
+
+**One real gap found and registered, not silently shipped**: HelmDeck's
+`policy.auto` model routing (`turnopts.resolve_model`) only knows
+claude-shaped model ids and hands them to whatever driver is active
+unchanged - measured live, an auto-routed omp card got the literal string
+`"claude-sonnet-5"` fed to `--model`, which omp's OWN fuzzy-matcher happened
+to resolve correctly (the turn worked, cost more than an explicit `haiku`
+dispatch would have). Filed as `daemon/spine/registry/debt.py`'s
+`auto-model-routing-is-claude-ids-only` (open) - the workaround (an explicit
+`model` on card creation bypasses the auto-resolve branch entirely) is
+proven, the real fix is out of this card's scope.
+
+**Not built this session**: the Pi half (single-vendor CLI, not installed on
+this box, no owner-account shortcut like omp's existing OAuth reuse) -
+`daemon/spine/agent/omp_driver.py` is OMP-specific by name and by a few
+omp-only details (its tool-name vocabulary, its exact usage/cost field
+names); a Pi adapter would very likely reuse most of the JSONL-RPC/session-
+path/agent_end structure but needs its OWN live protocol measurement before
+being assumed identical - `pi/rpc-types.ts` and `omp`'s measured behavior are
+close cousins, not proven identical.
+
+<details>
+<summary>Original scope text (kept for the record; superseded above)</summary>
 
 Lowest priority of the three — single-vendor CLIs, not a widely-adopted
 engine. Build only if the owner specifically wants Pi or OMP; otherwise
@@ -358,6 +441,7 @@ fallback).
 
 **Verify**: same shape as Cards 6/7 — real card, real turn, resume works,
 cost is real. Size **S–M (1.5–2d)**.
+</details>
 
 ## Card 9 — Wire native engines' real cost into econ honesty (N4)
 
@@ -385,40 +469,46 @@ and in PM budget totals, not as "n/a" and not silently dropped. Size **S (1d)**.
 ## Order, totals, deferrals
 
 ```
-Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5 ──┬──→ Card 6 (Codex)     ──┐
-Card 2 ✅ ──────────────↗                    │                        │
-                                              ├──→ Card 7 (OpenCode)  ─┼──→ Card 9
-                                              │                        │
-                                              └──→ Card 8 (Pi/OMP,    ─┘
-                                                    optional)
+Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5 ──┬──→ Card 6 (Codex)    ──┐
+Card 2 ✅ ──┬───────────↗                    ├──→ Card 7 (OpenCode) ──┼──→ Card 9
+            └──→ Card 8 ✅ (omp; Pi deferred, no owner step needed) ──┘
 ```
 
-Cards 1 and 2 SHIPPED 2026-08-24 (see each card's section above for what
-landed and how it was verified). Card 3 is next, blocked only on the owner's
-one prerequisite (Gemini CLI install + login — not doable from a headless
-card). Cards 6–8 each have their OWN separate owner prerequisite (an account
-for that engine) and are independently orderable once Card 5 lands — build
-Codex first (biggest ecosystem after Gemini), OpenCode second (real cost
-reporting is the biggest win), Pi/OMP last-or-never (smallest ecosystem).
+Card 8 shipped directly off Cards 1+2 - it did NOT need Card 5's queue, it
+just also happens to satisfy Card 9's "needs 5 + whichever of 6-8 shipped"
+once Card 5 itself lands.
 
-**Total ~22–27.5 days across 9 cards, ~4–7 done** (full Paseo-equivalent
+Cards 1, 2 and 8 (omp half) SHIPPED 2026-08-24 (see each card's section
+above for what landed and how it was verified) — Card 8 shipped OUT OF the
+originally-planned order because omp turned out to need no new owner step at
+all (reused the daemon's existing Claude OAuth token), while Card 3's Gemini
+prerequisite and Cards 6/7's own account steps were still open. Card 3 is
+next, blocked only on the owner's one prerequisite (Gemini CLI install +
+login — not doable from a headless card). Cards 6/7 each have their OWN
+separate owner prerequisite and are independently orderable once Card 5
+lands — build Codex first (biggest ecosystem after Gemini), OpenCode second
+(real cost reporting is the biggest win). Pi (the other half of Card 8)
+has no owner-account shortcut the way omp did and stays deferred.
+
+**Total ~22–27.5 days across 9 cards, ~6–9 done** (full Paseo-equivalent
 breadth — analysis §6.6.4 has the per-native-adapter breakdown). The ACP-only
 subset (Cards 1–5) is **~12–16 days, ~4–7 done** and is a complete, coherent
 stopping point on its own — reaches ~30 engines, just without Codex/OpenCode/
-Pi-OMP's native depth. After Card 3 the owner has a working second engine at
-`cmd`-driver-plus quality and a measured answer to the §6.3 brief question;
-after Card 4 it is daily-usable; Card 5 makes it honest; Cards 6–9 bring it
-to full Paseo-equivalent breadth.
+Pi's native depth (omp's IS done, out of order). After Card 3 the owner has a
+working second engine at `cmd`-driver-plus quality and a measured answer to
+the §6.3 brief question; after Card 4 it is daily-usable; Card 5 makes it
+honest; Cards 6/7/9 bring the rest to full Paseo-equivalent breadth.
 
 **Deferred, deliberately**: E11 (copilot/PM/Henry/processes/distill stay
 claude-only — they are HelmDeck's governance organs, not card work);
 OpenCode's SHARED-BY-DEFAULT transport (Card 7 uses the dedicated mode
-instead — see that card and analysis §6.6.2); model-catalog discovery
-(`fetchCatalog` machinery — HelmDeck's picker is a whitelist by design);
-Card 8 (Pi/OMP) unless the owner specifically wants it.
+instead — see that card and analysis §6.6.2); the Pi half of Card 8 (no
+owner-account shortcut, no live protocol measurement yet — see that card's
+"not built this session" note).
 
 **Kill-switches**: if the Card-3 probe returns NO-GO on brief adherence (the
 engine cannot be made to follow the ask/DELIVERED protocol reliably), stop
 after Card 2 — which is worth having regardless — and revisit engine choice.
-Each of Cards 6/7/8 is independently droppable without affecting the others
-or Card 9's applicability to whichever DID ship.
+Each of Cards 6/7 is independently droppable without affecting the other or
+Card 9's applicability to whichever DID ship (omp already qualifies for
+Card 9 today).
