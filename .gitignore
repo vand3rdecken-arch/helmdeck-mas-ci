@@ -46,10 +46,13 @@ daemon/tracks.json.imported
 # events.jsonl.synced as untracked noise).
 daemon/*.synced
 daemon/**/*.synced
-# ad-hoc one-off diagnostic scripts left at repo root by a card/machine
-# session with direct hands on the live tree (Henry) - disposable scratch,
-# never source. Generalized: ANY root-level _*.py is session scratch.
+# ad-hoc one-off diagnostic scripts left by a session with direct hands on
+# the live tree (Henry) - disposable scratch, never source. Generalized
+# twice: root-level _*.py, and _henry*/_inspect* anywhere (he drops them
+# next to whatever he is inspecting, measured 2026-08-24 in ops/tools/).
 /_*.py
+**/_henry*.py
+**/_inspect*.py
 .loop/
 daemon/copilot_log.json
 daemon/copilot_stats.json
