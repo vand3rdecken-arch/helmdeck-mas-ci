@@ -62,6 +62,7 @@ from daemon.spine.http.routes import routes_misc
 from daemon.spine.http.routes import routes_control
 from daemon.spine.http.routes import routes_relay
 from daemon.cells.connectors import routes_connectors
+from daemon.spine.http.routes import routes_audit
 from daemon.spine.http.routes import routes_checkpoints
 from daemon.spine.http.routes import routes_sign
 from daemon.spine.http.routes import routes_projects
@@ -265,6 +266,8 @@ class H(BaseHTTPRequestHandler):
             if p.startswith("/sign/subject/"):
                 return routes_sign.sign_subject_get(
                     self, user, p[len("/sign/subject/"):])
+            if p in routes_audit.GET_ROUTES:
+                return routes_audit.GET_ROUTES[p](self, user)
             if p in routes_checkpoints.GET_ROUTES:
                 return routes_checkpoints.GET_ROUTES[p](self, user)
             if p.startswith("/checkpoints/") and p.endswith("/diff"):
