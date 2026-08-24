@@ -120,7 +120,7 @@ DEFAULTS = {
         # which roles may RECONFIGURE the workspace from the copilot chat
         # (actions/steering stay available to owner+operator regardless)
         "chat_configure_roles": ["owner"],
-        # LOAD-AWARE ADMISSION (backlog/load-aware-admission, the desktop-lock
+        # LOAD-AWARE ADMISSION (docs/backlog/load-aware-admission, the desktop-lock
         # pattern generalized to CPU): a heavy op (gate run, deploy/preview
         # hook - APK/Gradle build + emulator boot) admits immediately when
         # OBSERVED CPU load (spine.ops.resources, sampled on demand -

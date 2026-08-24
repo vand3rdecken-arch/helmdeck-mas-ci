@@ -470,7 +470,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-17.0.20.8-hotspot"
 export ANDROID_HOME="$HOME/AppData/Local/Android/Sdk"
 export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$PATH"
 ./gradlew assembleRelease -x lint --console=plain
-# -> app/build/outputs/apk/release/app-release.apk  (~140MB, signed w/ archive/apk/swarmdeck-release.jks)
+# -> app/build/outputs/apk/release/app-release.apk  (~140MB, signed w/ daemon/certs/apk-signing/swarmdeck-release.jks)
 ```
 
 ⚠ **Those raw gradle lines are for DEBUGGING a build, not for producing a

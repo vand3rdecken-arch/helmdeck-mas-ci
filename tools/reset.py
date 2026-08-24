@@ -12,7 +12,7 @@ touched.
   py tools/reset.py --yes --factory       also wipe users + settings (blank)
 
 Run with the daemon STOPPED (it holds the SQLite db). A timestamped backup of
-the db + a git bundle of every branch is written under backups/ first, so a
+the db + a git bundle of every branch is written under daemon/backups/ first, so a
 reset is reversible: restore the db files and `git bundle unbundle` to recover.
 """
 import argparse, os, shutil, subprocess, sys, time
@@ -25,7 +25,7 @@ sys.path.insert(0, ROOT)
 
 def backup():
     ts = time.strftime("%Y%m%d-%H%M%S")
-    bdir = os.path.join(ROOT, "backups", "reset-" + ts)
+    bdir = os.path.join(ROOT, "daemon", "backups", "reset-" + ts)
     os.makedirs(bdir, exist_ok=True)
     for f in ("helmdeck.db", "helmdeck.db-wal", "helmdeck.db-shm"):
         p = os.path.join(DAEMON, f)
@@ -82,7 +82,7 @@ def log_reset(bdir, removed, total, a):
            "op": "reset", "os_user": getpass.getuser(), "backup": bdir,
            "cards_removed": removed, "cards_total": total,
            "connectors": bool(a.connectors), "factory": bool(a.factory)}
-    logdir = os.path.join(ROOT, "backups")
+    logdir = os.path.join(ROOT, "daemon", "backups")
     os.makedirs(logdir, exist_ok=True)
     with open(os.path.join(logdir, "reset-log.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(rec) + "\n")

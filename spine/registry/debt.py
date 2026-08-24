@@ -2624,7 +2624,7 @@ DEBT = [
                  "TOTAL CPU only - not a running worker turn, not per-process "
                  "attribution",
         "status": "open",
-        "what": "backlog/load-aware-admission shipped: spine.ops.resources "
+        "what": "docs/backlog/load-aware-admission shipped: spine.ops.resources "
                 "samples whole-box CPU (ctypes GetSystemTimes delta, no psutil - "
                 "not vendored for the daemon's actual py -3.12 interpreter, "
                 "measured) and free RAM; lanemachine._admit_heavy defers the "

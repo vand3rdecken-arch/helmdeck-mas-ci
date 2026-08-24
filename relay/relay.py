@@ -36,14 +36,14 @@ _rooms = {}   # room -> {"q": [...], "cv": Condition, "waiting": {id: slot}, "la
 # --- phone pairing (App Links) -------------------------------------------
 # Android verifies HelmDeck can own https://<relay>/pair via this file, so a
 # scanned QR opens the app directly instead of the browser. Fingerprint = SHA256
-# of the HelmDeck release keystore (archive/apk/swarmdeck-release.jks).
+# of the HelmDeck release keystore (daemon/certs/apk-signing/swarmdeck-release.jks).
 ASSETLINKS = [{
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
         "namespace": "android_app",
         "package_name": "app.helmdeck",
         "sha256_cert_fingerprints": [
-            # local upload/sideload key (archive/apk/swarmdeck-release.jks)
+            # local upload/sideload key (daemon/certs/apk-signing/swarmdeck-release.jks)
             "75:21:BA:FA:C1:AD:10:08:27:DA:BA:BA:1D:53:75:6A:07:72:B3:95:20:0A:E5:47:D6:6E:63:3C:4F:79:0D:F4",
             # Play App Signing key - Play RE-SIGNS the bundle, so a store install
             # presents THIS fingerprint. Without it App Links stay unverified on
