@@ -38,7 +38,7 @@ DEBT = [
                "ssh signing landed in 2.34 - same auditor story, different key "
                "format. STRICT: an approval whose tag cannot be created is "
                "refused outright, never stored unanchored. Proven end to end "
-               "in daemon/test_gxp_tag.py against real gpg and real git.",
+               "in tests/test_gxp_tag.py against real gpg and real git.",
         "order": 0,
     },
     {
@@ -67,7 +67,7 @@ DEBT = [
                "scans events.jsonl from a byte-offset checkpoint (only what was "
                "appended since the last boot, not the whole history) and folds in "
                "anything the write-through missed. Verified against a genuinely "
-               "dropped write (daemon/test_events_reconcile.py) - healed on the "
+               "dropped write (tests/test_events_reconcile.py) - healed on the "
                "next reconcile, a repeat reconcile does not duplicate it, and the "
                "checkpoint advances so a clean boot rescans nothing.",
         "order": 0,
@@ -2052,7 +2052,7 @@ DEBT = [
                 "as every other flag, it already inherits the existing "
                 "agentMaySwap=false protection (an agent cannot flip it "
                 "without a human confirm) - no new safety mechanism needed.",
-        "fix": "PAID. daemon/test_loop_state_policy.py (new, sandboxed): "
+        "fix": "PAID. tests/test_loop_state_policy.py (new, sandboxed): "
                "8 assertions - fail-open on no file, seed-only True, "
                "live-missing-key defaults True, live=false really returns "
                "False, corrupt-live falls through to seed, stop_hook() "
@@ -2302,7 +2302,7 @@ DEBT = [
                         "monitor runs, and bisecting which one broke the "
                         "suite is manual. The suite itself now has no "
                         "enforced runner - if nothing schedules it, it rots "
-                        "into the same nobody-runs-it state daemon/test_*.py "
+                        "into the same nobody-runs-it state tests/test_*.py "
                         "was rescued from.",
         "trigger": "a merged card breaks behavior an old pin covered; a build "
                    "ships without any assembled-system verification",

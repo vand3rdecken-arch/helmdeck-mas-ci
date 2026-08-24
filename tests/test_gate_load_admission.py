@@ -16,7 +16,7 @@ tests/test_gate_verdict.py and tests/test_hook_idle.py don't cover:
 
   LOAD-AWARE ADMISSION is visible on the real card chat: with CPU faked high,
   _gate()'s ActionLog note names the wait, exactly as
-  daemon/test_load_admission.py already pins against the primitive directly -
+  tests/test_load_admission.py already pins against the primitive directly -
   this confirms the WIRING (a track WITH a run_dir, going through the real
   actionlog file), not just the primitive.
 

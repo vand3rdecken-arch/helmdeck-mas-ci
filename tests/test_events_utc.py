@@ -22,7 +22,7 @@ What this pins down:
      the hand-written computation was removed as redundant) and is a real UTC
      timestamp, not a coincidence of two independent clocks agreeing
 
-Run: py -3.12 daemon/test_events_utc.py
+Run: py -3.12 tests/test_events_utc.py
 """
 import json
 import os

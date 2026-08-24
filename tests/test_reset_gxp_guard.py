@@ -19,7 +19,7 @@ What this pins down:
   5. running reset twice APPENDS two records, never overwrites (the log
      itself has to be append-only too, or it just moved the problem)
 
-Run: py -3.12 daemon/test_reset_gxp_guard.py
+Run: py -3.12 tests/test_reset_gxp_guard.py
 """
 import json
 import os
@@ -45,7 +45,7 @@ def main():
     from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
-    from daemon import gxp
+    from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     db.init()
 

@@ -18,7 +18,7 @@ Pins, through the real sessions._turn with a stubbed drivers.run:
 Self-sandboxing: patched events.settings/emit, stubbed drivers.run, temp
 run_dirs - no daemon, no real spawn, no board.
 
-Run: py -3.12 daemon/test_desktop_lock_wait.py
+Run: py -3.12 tests/test_desktop_lock_wait.py
 """
 import os, sys, tempfile, threading, time
 

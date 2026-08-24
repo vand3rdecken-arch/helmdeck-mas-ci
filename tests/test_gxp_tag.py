@@ -28,7 +28,7 @@ What this pins down:
   7. password change rotates the key: the next approval gets a new
      fingerprint, and the OLD tag still verifies with the OLD exported key
 
-Run: py -3.12 daemon/test_gxp_tag.py
+Run: py -3.12 tests/test_gxp_tag.py
 """
 import json
 import os
@@ -75,7 +75,7 @@ def main():
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
     signkeys.KEYS_DIR = os.path.join(tmp, "signkeys")
-    from daemon import gxp
+    from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     db.init()
 

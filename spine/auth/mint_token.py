@@ -11,7 +11,7 @@ rest (auth._token_record), so the plaintext exists only in the moment it is
 minted. Each run therefore issues a fresh one - revoke the old entry in the
 Users panel if it is no longer wanted.
 
-    py -3.12 -m daemon.mint_token owner desktop
+    py -3.12 -m spine.auth.mint_token owner desktop
 """
 import sys
 

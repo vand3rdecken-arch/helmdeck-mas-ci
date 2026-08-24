@@ -41,7 +41,7 @@ CLEARABLE = ("project_id",)
 # (test_mode_dispatch.py pins this).
 BOOLFIELDS = ("autopilot", "fast_track", "gxp")
 
-# "gxp" pulls a single card into the regulated scope (daemon/gxp.py in_scope).
+# "gxp" pulls a single card into the regulated scope (spine/auth/gxp.py in_scope).
 # It is ONE-WAY on purpose: scope may grow, never shrink. If clearing it were
 # allowed, anything able to edit a card could walk that card out of the
 # validated system and land it unsigned - which is the whole control, undone by

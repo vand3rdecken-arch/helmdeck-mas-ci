@@ -8,8 +8,9 @@ it cost ~8 minutes, redded on base breakage a card never touched, and redded
 on box load. Recurring verification of the SYSTEM is e2e before builds/ships
 (live daemon + web + Playwright), not this file.
 
-Runs every self-sandboxed tests/test_*.py and daemon/test_*.py sequentially
-(the live-server e2e_* tests still need :3300 and are skipped).
+Runs every self-sandboxed tests/test_*.py sequentially - ONE home since the
+two-mains split moved the daemon-colocated tests here (2026-08-24). The
+live-server e2e_* tests still need a running stack and are skipped.
 
 Usage: py -3.12 tools/run_suite.py       (from the repo root)"""
 import glob
@@ -22,7 +23,7 @@ ROOT = os.getcwd()
 fails = []
 ran = []
 
-for d in ("tests", "daemon"):
+for d in ("tests",):
     for path in sorted(glob.glob(os.path.join(d, "test_*.py"))):
         name = os.path.basename(path)
         if name.startswith("e2e"):

@@ -39,7 +39,7 @@ Self-sandboxing: temp dirs only. No daemon, no git, no network, no spawn, and
 the real harness/ tree is never written to - AGENTS / SETTINGS / VERSIONS are
 redirected for every test that writes, and restored in a finally.
 
-Run: py -3.12 daemon/test_harness.py
+Run: py -3.12 tests/test_harness.py
 """
 import json, os, shutil, sys, tempfile
 

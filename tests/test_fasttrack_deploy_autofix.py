@@ -22,7 +22,7 @@ Self-sandboxing: fake DB, patched settings/emit/threading, stubbed git/gate/
 merge/hook, and `sessions.steer` itself replaced with a recorder - nothing
 touches a real repo, gate, board, or spawns an actual worker turn.
 
-Run: py -3.12 daemon/test_fasttrack_deploy_autofix.py
+Run: py -3.12 tests/test_fasttrack_deploy_autofix.py
 """
 import os, sys, tempfile
 

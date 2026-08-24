@@ -23,7 +23,7 @@ dir. events.py keeps its own ROOT globals, never covered by the db.ROOT patch -
 an earlier test in this repo appended to the production events.jsonl before
 that was understood, so both halves are patched here deliberately.
 
-Run: py -3.12 daemon/test_events_no_reimport.py
+Run: py -3.12 tests/test_events_no_reimport.py
 """
 import json
 import os

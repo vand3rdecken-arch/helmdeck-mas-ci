@@ -20,7 +20,7 @@ What this pins down:
   9. a consumed signature cannot authorise a second landing
  10. out of scope, none of this applies at all
 
-Run: py -3.12 daemon/test_gxp_signature.py
+Run: py -3.12 tests/test_gxp_signature.py
 """
 import json
 import os
@@ -54,7 +54,7 @@ def main():
     from spine.auth import auth, signatures
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
-    from daemon import gxp
+    from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     db.init()
 

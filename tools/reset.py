@@ -132,7 +132,7 @@ def main():
     # global events (auth, signatures, reconfig) are not tied to one repo, so a
     # regulated installation cannot have its evidence wiped by touching an
     # unrelated card.
-    from daemon import gxp
+    from spine.auth import gxp
     if gxp.active():
         print("refusing: GxP mode is active for this installation.\n"
               "Cards can carry signed approvals and the event log is "

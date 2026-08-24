@@ -45,7 +45,7 @@ the pre-harness behaviour.
 Failures are not swallowed, though. They accumulate in `harness.errors()`, which
 `/loop/map` and `/harness` surface, so a broken file is *visible* rather than
 mysteriously ineffective. That split - **silent fallback, loud reporting** - is
-the design, and `daemon/test_harness.py` pins both halves.
+the design, and `tests/test_harness.py` pins both halves.
 
 The write path is the deliberate **mirror**: `write_agent()` / `write_settings()`
 *must* raise on a rejected edit, and must leave the file byte-identical when they
@@ -514,7 +514,7 @@ python daemon/probe_harness_settings.py         # full sweep vs the real CLI (~2
 python daemon/probe_harness_settings.py --validate   # are the SHIPPED files accepted?
 python daemon/probe_harness_settings.py --skills     # per-surface skills + memory paths
 
-py -3.12 daemon/test_harness.py                 # loader, write path, isolation
+py -3.12 tests/test_harness.py                 # loader, write path, isolation
 py -3.12 tests/test_harness_layer.py            # no-drift, the loop, the app contract
 py -3.12 tests/test_memory_autocommit.py        # the Stop hook, incl. its never-wedge law
 py -3.12 tools/run_gate.py                      # everything the gate runs

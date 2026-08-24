@@ -18,7 +18,7 @@ What this pins down:
   6. the lockout applies to signing too, so it cannot be a brute-force oracle
      once login is rate-limited
 
-Run: py -3.12 daemon/test_sign_routes.py
+Run: py -3.12 tests/test_sign_routes.py
 """
 import json
 import os
@@ -69,7 +69,7 @@ def main():
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
-    from daemon import gxp
+    from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     from spine.auth import signkeys
     signkeys.KEYS_DIR = os.path.join(tmp, "signkeys")   # approvals mint real GPG keys now

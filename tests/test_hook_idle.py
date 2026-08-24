@@ -8,7 +8,7 @@ HEALTHY build. A hook that is still printing is working; only total silence
 means wedged.
 
 Also pins the live-narration merge (2026-08-15, superseding the abandoned
-daemon/test_repo_hook_streaming.py mechanism): any output line prefixed
+tests/test_repo_hook_streaming.py mechanism): any output line prefixed
 `HOOK-NOTE:` is logged to the actionlog THE MOMENT it's read, not just
 folded into the final tail - so ship.sh/build_apk.sh can narrate their own
 long phases instead of the owner watching dead silence for 15-20 min."""

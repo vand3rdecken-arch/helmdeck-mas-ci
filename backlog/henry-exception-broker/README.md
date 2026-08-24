@@ -6,7 +6,7 @@
 > deploy-red, broker loop via the pm._ask headless seam, bounded verbs
 > (rerun_deploy | steer | notify_owner | ignore), 2-attempt cap, policy =
 > settings.json `henry_policy` (data). Pinned once by
-> `daemon/test_escalations.py`. Open: more emit points (ship collision wait
+> `tests/test_escalations.py`. Open: more emit points (ship collision wait
 > note, starved-gate), a UI surface for the escalation log, richer snapshot
 > (box load once the load-aware-admission seam exists).
 

@@ -22,7 +22,7 @@ What this pins down:
 Sandbox: auth.USERS/SESS, events.EV/SET, db.ROOT/DBPATH. users.json is a
 git-ignored secret; no test may go near the real one.
 
-Run: py -3.12 daemon/test_auth_hardening.py
+Run: py -3.12 tests/test_auth_hardening.py
 """
 import json
 import os
