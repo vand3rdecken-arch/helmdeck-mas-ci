@@ -17,6 +17,33 @@ SESS = os.path.join(ROOT, "sessions.json")
 SESSION_TTL = 30 * 86400
 ROLES = ("owner", "operator", "client")
 
+# -- role model ------------------------------------------------------------
+# owner:    unrestricted - the only role that may touch identity (this
+#           module), settings, policy, machine-capability grants and relay
+#           pairing. System-wide blast radius stays owner-only, always.
+# operator: trusted day-to-day admin for card lifecycle - move/delete/
+#           archive, fast-track, set_driver, resolve_blocker/conflict, sign.
+#           Everything a card can do to itself or the board, nothing that
+#           reconfigures who else can do it.
+# client:   file + comment on their OWN card only (new/steer/answer/cancel/
+#           presence) - never a structural action on any card.
+#
+# `chat_admin_roles()` is the ONE place that answers "which roles may take a
+# structural action on a card" - both the chat verb dispatcher
+# (cells/copilot/copilot_actions.py) and the equivalent REST routes
+# (cells/engineer/routes_track_actions.py, routes_tracks.py) call this
+# instead of re-deriving their own role floor, so tightening
+# policy.chat_admin_roles actually binds every path to the action, not just
+# the chat one.
+def chat_admin_roles():
+    from spine.storage import events
+    return (events.settings().get("policy") or {}).get(
+        "chat_admin_roles", ["owner", "operator"])
+
+
+def is_admin(user):
+    return bool(user) and user.get("role") in chat_admin_roles()
+
 # -- brute-force lockout ---------------------------------------------------
 # There was no limit of ANY kind on password attempts: the relay exposes the
 # login to the internet and a guesser could run flat out forever. The audit

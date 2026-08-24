@@ -260,8 +260,15 @@ def tracks_forkchat_post(self, user, body, tid):
 
 def tracks_delete_post(self, user, body, tid):
     from cells.engineer import sessions
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
+    from spine.auth import auth
+    # Same role floor as the chat "delete" verb (policy.chat_admin_roles,
+    # default owner+operator) - this endpoint used to hardcode owner-only,
+    # so an operator could delete via chat but got a 403 on the identical
+    # REST call. One gate, one policy knob, both paths agree now.
+    if not auth.is_admin(user):
+        return self._send(403, json.dumps(
+            {"error": "role '%s' may not delete cards (policy.chat_admin_roles)"
+             % user["role"]}))
     try:
         return self._send(200, json.dumps(sessions.delete_track(
             tid, actor=user["name"])))

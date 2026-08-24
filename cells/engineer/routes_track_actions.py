@@ -131,6 +131,16 @@ def tracks_cancel_post(self, user, body, tid):
 
 def tracks_lane_post(self, user, body, tid):
     from cells.engineer import sessions
+    from spine.auth import auth
+    # Structural action on a card, same class as the chat "move" verb - must
+    # answer to the SAME role floor (policy.chat_admin_roles) or tightening
+    # that policy only restricts chat while this REST path (what the board UI
+    # drag-and-drop actually calls) stays wide open. Clients are already kept
+    # out entirely by the path allowlist in spine/http/server.py do_POST.
+    if not auth.is_admin(user):
+        return self._send(403, json.dumps(
+            {"error": "role '%s' may not move cards (policy.chat_admin_roles)"
+             % user["role"]}))
     lane = body.get("lane")
     actor = user["name"]
     from spine.http import server
