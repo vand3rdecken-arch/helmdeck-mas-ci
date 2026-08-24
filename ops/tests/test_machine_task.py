@@ -26,6 +26,8 @@ db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
+from spine.registry import escalations
+escalations.ESC_PATH = os.path.join(SANDBOX, "escalations.jsonl")
 db.init()
 
 from cells.engineer import sessions
