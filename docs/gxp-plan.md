@@ -37,7 +37,16 @@
 > Wer den Modus einschaltet, ohne C zu bauen, kann Karten im Geltungsbereich
 > nicht mehr abnehmen.
 >
-> Offen: A3 (deine Entscheidung) · **Phase C, das Freigabefenster** · das
+> **Phase C: gebaut** — C1 `005ac0f` (Daemon zeigt den GxP-Status der Karte),
+> C2/C3/C4/C6 `76a3c3c` (API, Freigabefenster, vier Board-Einstiegspunkte,
+> i18n de+en), C5 `e746dc0` (Stapelfreigabe). Der Modus ist damit **benutzbar**:
+> Karte in Review → „Freigeben" → Prüfstand, Bedeutung, Begründung, Passwort.
+>
+> Nicht per Klick verifiziert — hier ist kein Browser installiert. Belegt sind
+> die Routen gegen ein echtes git-Repo (`test_sign_routes.py`) und tsc; ein
+> Screenshot der Maske steht aus und gehört auf deinen Rechner.
+>
+> Offen: A3 (deine Entscheidung) · das
 > signierte git-Tag (braucht die Schlüsselentscheidung) · Phase D · der
 > gepackte Drei-Start-Durchlauf der Desktop-App.
 >
