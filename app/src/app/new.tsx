@@ -5,6 +5,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
@@ -48,6 +49,14 @@ export default function NewCard() {
   const [value, setValue] = useState("");
   const [client, setClient] = useState("");
   const [driver, setDriver] = useState("");
+  // "auto" here means "send no model at all" - the card then re-routes live
+  // every turn off its own signals (turnrunner._turn), same as today's
+  // default. Only an explicit pick becomes the card's STICKY model (stored
+  // once at creation, daemon/cells/engineer/dispatch.py:new_track) - without
+  // this field cards could only ever get a sticky model via a chat steer,
+  // and that pick used to not even persist onto the card (see steer() fix).
+  const [model, setModel] = useState("auto");
+  const { data: modelList } = useModels();
   const [busy, setBusy] = useState(false);
   // Inline error: Alert.alert is a NO-OP on react-native-web (desktop), so a
   // rejected create/adopt used to fail completely silently - the owner clicked
@@ -117,6 +126,7 @@ export default function NewCard() {
       if (value.trim()) body.value = parseFloat(value);
       if (client.trim()) body.client = client.trim();
       if (driver.trim()) body.driver = driver.trim();
+      if (model && model !== "auto") body.model = model;
       // The daemon can reject with a 200-body {error} (bad repo, WIP limit…),
       // so inspect it rather than assuming success.
       const res = await api.newTrack(body) as { error?: string };
@@ -229,6 +239,11 @@ export default function NewCard() {
             <TextInput value={driver} onChangeText={setDriver} autoCapitalize="none" placeholder="claude"
               placeholderTextColor={t.txtPlaceholder} style={field} />
           )}
+          <View style={{ height: 10 }} />
+          <Caption text={tr("new.model")} />
+          <ChipPick options={["auto", ...(modelList ?? []).map((m) => (typeof m === "string" ? m : m.id))]}
+            selected={[model]} onToggle={setModel} single
+            labelFor={(id) => id === "auto" ? tr("composer.modelAutoShort") : id.replace("claude-", "").replace(/-\d{8}$/, "")} />
         </Panel>
         {err ? (
           <View style={{ backgroundColor: t.danger + "1A", borderColor: t.danger + "66", borderWidth: 1,

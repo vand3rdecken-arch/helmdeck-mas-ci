@@ -134,6 +134,7 @@ export const composer: Dict = {
   "new.client": { de: "kunde", en: "customer" },
   "new.clientPlaceholder": { de: "Kunde", en: "Customer" },
   "new.driver": { de: "driver", en: "driver" },
+  "new.model": { de: "modell", en: "model" },
   "new.adopt": { de: "Übernehmen", en: "Adopt" },
 
   // example chips - the label AND the task text they seed into the input

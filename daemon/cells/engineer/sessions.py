@@ -459,6 +459,16 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns"),
                  "failed": was_bounced or bool(t.get("gate_failed")),
                  "fails": events.consecutive_gate_fails(t["id"])})
+    # An explicit composer pick (incl. "auto") is a STICKY card default, not a
+    # one-turn favor: without this, the picker only ever won the turn it was
+    # clicked on (t["model"] stayed "" from creation) and every later harness-
+    # initiated turn (dispatch retry, auto-continue, ask-repair) fell through
+    # turnrunner._turn's own auto-routing again - Sonnet picked here, Opus
+    # spawned two turns later with no visible cause. Persist the RAW pick
+    # (not cli_model): "auto" must stay "auto" so future turns keep re-routing
+    # on the card's live signals instead of freezing at today's resolution.
+    if model:
+        _mutate(tid, lambda tt: tt.__setitem__("model", model))
     # Hand the worker the daemon-side context it never saw (a merge conflict, a
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
