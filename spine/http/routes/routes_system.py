@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """System/ops routes - Nth slice of server.py's dispatch-table split (see
 routes_auth.py for the pattern/rationale). GET: /presence, /sessions/claude,
-/harness/version/<kind>/<name> (path-param, guard stays inline), /history,
+/ops/harness/version/<kind>/<name> (path-param, guard stays inline), /history,
 /dashboard/data. POST: /presence, /push/register, /debt/<id>/fix (path-param,
 guard stays inline), /import/jira|url, /harness, /nightshift/plan, and the
 /processes/<id>/step sub-router (path-param, guard stays inline per the
@@ -28,7 +28,7 @@ def sessions_claude_get(self, user):
 
 
 def harness_version_get(self, user, kind, name):
-    # /harness/version/<kind>/<name>?id=<vid> - the bytes of one
+    # /ops/harness/version/<kind>/<name>?id=<vid> - the bytes of one
     # archived version, so the owner can read a prior brief before
     # deciding to roll back to it.
     if user["role"] != "owner":
@@ -138,7 +138,7 @@ def nightshift_plan_post(self, user, body):
 
 def harness_post(self, user, body):
     # Owner edits an agent brief or a settings layer. Validated
-    # against harness/schema/*.schema.json BEFORE the write, the
+    # against ops/harness/schema/*.schema.json BEFORE the write, the
     # replaced file archived so the edit is revertable, and the
     # change appended to the audit log.
     #

@@ -208,7 +208,7 @@ def _proc_start_epoch(pid):
 # SUBSTRING-safe image names: long/distinctive enough that a false positive
 # (some unrelated process whose filename happens to CONTAIN one of these) is
 # implausible. "codex"/"opencode" added for their own native drivers
-# (docs/multi-engine-build-plan.md Cards 6/7) - unverified against real
+# (ops/docs/multi-engine-build-plan.md Cards 6/7) - unverified against real
 # binaries, but the image names themselves are exactly the CLI binary names
 # those drivers spawn, not a guess.
 _AGENT_IMG_SUBSTR = ("claude", "node", "cmd", "codex", "opencode")

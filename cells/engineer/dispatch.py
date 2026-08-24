@@ -447,7 +447,7 @@ _OUTCOME_BACKFILL_REVIEWED = {
     "20260728-094539-req-add-headless-unit-tests":
         "Driver unit tests rewritten against the streaming _ClaudeSession (new "
         "stream-events fixture, stale one removed), committed 1260272; "
-        "pytest tests/unit -> 35 passed, fully headless.",
+        "pytest ops/tests/unit -> 35 passed, fully headless.",
     "20260727-220243-adopt-34656ce4":
         "Kartenansicht auf Overview-first umgebaut: Tab 'Overview' (Status-Chips, "
         "Description zuerst, Worker-Digest, editierbare Felder + Rewind), Tab 'Chat' "
@@ -457,7 +457,7 @@ _OUTCOME_BACKFILL_REVIEWED = {
         "all 302 to the :3300 web UI, old templates deleted, auth intact (/tracks "
         "still 401); merge conflicts resolved marker-free.",
     "20260728-094539-req-one-command-check-script":
-        "tools/check_all.sh mirrors the loop in one command (compile+tsc+lint+unit, "
+        "ops/tools/check_all.sh mirrors the loop in one command (compile+tsc+lint+unit, "
         "8 checks green), repointed at app/ after the Expo cutover; test_drivers.py "
         "conflict resolved by taking expo-migration's superset (482e0ec).",
     "20260803-222549-chat-pm-coordinator-resilienc":
@@ -478,7 +478,7 @@ _OUTCOME_BACKFILL_REVIEWED = {
         "sessions._unique_id (9297069); the 'unresolved conflict' was gate "
         "flakiness from that bug, gate now PASS (9).",
     "20260803-233536-pm-store-listing-paket-date":
-        "Store listing package intact (docs/store/* + privacy page in relay.py); "
+        "Store listing package intact (ops/docs/store/* + privacy page in relay.py); "
         "chat.tsx conflict resolved by combining main's ChatBody structure with the "
         "i18n fix, 5 merged-in untranslated strings fixed; i18n lint 699 keys PASS, "
         "gate 14/14.",

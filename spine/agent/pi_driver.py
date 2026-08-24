@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Pi native driver - the deferred half of Card 8
-(docs/multi-engine-build-plan.md; the omp half shipped 2026-08-24 as
+(ops/docs/multi-engine-build-plan.md; the omp half shipped 2026-08-24 as
 omp_driver.py, live-verified against a real account).
 
 NOT LIVE-VERIFIED (no `pi` CLI on this box, no account - owner decree

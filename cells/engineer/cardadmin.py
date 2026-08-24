@@ -160,7 +160,7 @@ def update_track(tid, patch, actor="owner"):
         log.log("note", "EDITED by %s: %s" % (actor, ", ".join(changed)))
         # Visible capability-grant note (never a silent change) whenever the
         # NEW driver carries windows-mcp - the card's agent gains real
-        # desktop/GUI control from here on, and every future turn on this
+        # surfaces/desktop/GUI control from here on, and every future turn on this
         # driver is screen-recorded (see events.py DEFAULTS["drivers"]).
         if "driver" in changed:
             dcfg = (events.settings().get("drivers") or {}).get(changed["driver"]) or {}

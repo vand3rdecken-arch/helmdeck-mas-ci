@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""OMP native driver - JSONL-RPC over stdio (docs/multi-engine-support.md
-§6.6.3, docs/multi-engine-build-plan.md Card 8). One persistent `omp --mode
+"""OMP native driver - JSONL-RPC over stdio (ops/docs/multi-engine-support.md
+§6.6.3, ops/docs/multi-engine-build-plan.md Card 8). One persistent `omp --mode
 rpc-ui` process per card, mirroring drivers.py's _ClaudeSession model exactly
 (tree-kill teardown, PID registration, one turn at a time, folds into the
 SAME timeline_store Card 2 built) - the process/isolation shape Paseo's own
@@ -57,7 +57,7 @@ zero new login, unless the driver's settings.json env overrides it with a
 different key/token for a different backend.
 
 BRIEF DELIVERY: `--append-system-prompt` is a real, native omp flag (proven:
-`omp --help`) - unlike the ACP path (docs/multi-engine-support.md §6.3),
+`omp --help`) - unlike the ACP path (ops/docs/multi-engine-support.md §6.3),
 there is no brief-delivery blocker here at all.
 """
 import json
@@ -148,7 +148,7 @@ class _OmpSession:
         self.cfg = cfg
         self.worktree = t.get("worktree") or "."
         self.run_dir = t.get("run_dir") or "."
-        # Same brief source as drivers.py's _ClaudeSession (harness/agents/
+        # Same brief source as drivers.py's _ClaudeSession (ops/harness/agents/
         # *.md) - the agent id selection is drivers._agent_for's own 1-line
         # ternary, inlined rather than cross-imported for something this small.
         from spine.registry import harness

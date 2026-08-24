@@ -36,7 +36,7 @@ itself claims)."""
 import os
 
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT
-APP_ROOT = os.path.join(REPO_ROOT, "app")                    # app/ (sibling)
+APP_ROOT = os.path.join(REPO_ROOT, "surfaces", "app")                    # app/ (sibling)
 MAX_SOURCE_BYTES = 200_000
 
 
@@ -85,10 +85,10 @@ class Cell:
         self.harness_file = harness_file         # REPO-ROOT-relative *.md path, or "" if inline/none
         self.route_modules = tuple(route_modules)  # daemon module names, e.g. ("routes_pm",)
         self.ui_files = tuple(ui_files)          # app/-relative paths: surface plugin + real screens
-        self.tools = tuple(tools)                # external tools/refs this cell's own tooling uses -
+        self.tools = tuple(tools)                # external tool refs this cell's own tooling uses -
                                                   # documentation only, never readable via read_source
         self.repo_files = tuple(repo_files)      # REPO-ROOT-relative logic (not under daemon/ or
-                                                  # app/) - e.g. tools/loop_state.py for the buildloop
+                                                  # app/) - e.g. ops/tools/loop_state.py for the buildloop
                                                   # cell, which isn't daemon-hosted like the other 5
 
     def owns(self, path):
@@ -129,8 +129,8 @@ class Cell:
         routes_misc.py/routes_system.py, both multi-owner), then flat
         daemon/ as a last-resort fallback for anything not yet swept into
         one of the above."""
-        return (os.path.join(ROOT, "cells", self.id),
-                os.path.join(ROOT, "spine", "http", "routes"),
+        return (os.path.join(REPO_ROOT, "cells", self.id),
+                os.path.join(REPO_ROOT, "spine", "http", "routes"),
                 ROOT)
 
 
@@ -162,7 +162,7 @@ CELLS = [
         ui_files=("src/ui/board.tsx", "src/app/(tabs)/board.tsx"),
         # documentation-only reference (owner directive, 2026-08-18): the
         # editorial-diagram visual language this cell's own code-map UI
-        # (this file's read_source() + app/src/ui/cell_diagram.tsx) follows.
+        # (this file's read_source() + surfaces/app/src/ui/cell_diagram.tsx) follows.
         # Not vendored, not a runtime dependency - registered here so the
         # code-map itself shows what informed its own rendering style.
         tools=("github.com/cathrynlavery/diagram-design (visual style ref "
@@ -211,7 +211,7 @@ CELLS = [
         logic_files=("copilot.py", "copilot_stats.py", "copilot_actions.py",
                      "henry_broker.py"),
         storage="copilot_sessions.json, copilot_log.json, escalations.jsonl (shared bus)",
-        harness_file="harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
+        harness_file="ops/harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
         route_modules=("routes_copilot",),
         # Henry's judgement half of the escalation channel (spine/registry/
         # escalations.py is the bus; engineer emits; THIS cell decides) -
@@ -222,13 +222,13 @@ CELLS = [
     ),
     Cell(
         # Cell #6 - added 2026-08-18 after owner pushback: structurally this
-        # has the same shape as every other cell (its own harness/laws,
+        # has the same shape as every other cell (its own ops/harness/laws,
         # states/gates, UI presence), so it belongs in the registry. It is
         # NOT daemon-hosted like the other 5 though - it governs the CURRENT
         # interactive agent's own workflow via Claude Code's hooks
-        # (.claude/settings.json -> tools/loop_state.py), not a spawned
+        # (.claude/settings.json -> ops/tools/loop_state.py), not a spawned
         # daemon worker. No HTTP dispatch gate applies (paths=(),
-        # prefixes=()) - tools/loop_state.py reads policy_live.json/
+        # prefixes=()) - ops/tools/loop_state.py reads policy_live.json/
         # policy_seed.json DIRECTLY (see its _build_loop_enabled()), so the
         # flag is real - it actually silences the Stop hook - even when the
         # daemon isn't running. See daemon/debt.py for the full incident/
@@ -238,7 +238,7 @@ CELLS = [
         role="governs the current agent's own build workflow "
              "(ALIGN>ANALYZE>EXECUTE>TEST>CLEAN>BUILD>COMMIT), not a spawned "
              "worker - self-governance, not delegation",
-        repo_files=("tools/loop_state.py",),
+        repo_files=("ops/tools/loop_state.py",),
         storage="derived live from git status + compile/test/tsc results "
                 "(no persisted table - this cell IS its own NO-MONKEY-PATCH example)",
         harness_file="CLAUDE.md",

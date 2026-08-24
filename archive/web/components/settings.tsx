@@ -374,7 +374,7 @@ export default function SettingsView() {
         <div className="panel">
           <h3>Mobile app - pair a phone (end-to-end encrypted)</h3>
           <p className="hint">The phone reaches this daemon over the internet through your relay
-            (host <code>relay/relay.py</code> behind HTTPS). Traffic is NaCl-box encrypted end to end -
+            (host <code>surfaces/relay/relay.py</code> behind HTTPS). Traffic is NaCl-box encrypted end to end -
             the relay only sees ciphertext.</p>
           <label>Relay URL (where you host the relay, HTTPS)</label>
           <div className="row">

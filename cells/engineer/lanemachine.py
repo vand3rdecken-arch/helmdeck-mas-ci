@@ -91,7 +91,7 @@ def _run_streamed(cmd, cwd, env, idle, hard, note_cb=None, tail_n=400):
 
 
 def _admit_heavy(t, kind, log=None):
-    """LOAD-AWARE ADMISSION (docs/backlog/load-aware-admission) - the desktop
+    """LOAD-AWARE ADMISSION (ops/docs/backlog/load-aware-admission) - the desktop
     lock's pattern generalized from mutual EXCLUSION to mutual AWARENESS: a
     heavy op (gate run / build+emulator deploy hook / preview hook) admits
     immediately while OBSERVED CPU load stays under policy.load_admission's
@@ -206,9 +206,9 @@ def _gate(t):
             log = ActionLog(t["run_dir"]) if t.get("run_dir") else None
             st = events.settings()
             # SILENCE-bounded, not the old fixed 600s wall-clock cap: the LIGHT
-            # gate (tools/run_gate.py, debt gate-light) normally finishes in
+            # gate (ops/tools/run_gate.py, debt gate-light) normally finishes in
             # seconds, but under box contention it can legitimately run 3-5x
-            # slower (measured, docs/backlog/load-aware-admission) - a wall-clock cap
+            # slower (measured, ops/docs/backlog/load-aware-admission) - a wall-clock cap
             # then reds a gate that never actually stalled. gate_idle_s is total
             # OUTPUT silence (same shape as _repo_hook's hook_idle_s); an
             # optional gate_hard_s stays available for a runaway custom gate.
@@ -220,13 +220,13 @@ def _gate(t):
             idle = _num("gate_idle_s", 300.0)
             hard = _num("gate_hard_s", 0.0)
             # GATE SINGLETON (measured 2026-08-20, Display-Glasses card, debt
-            # item in docs/backlog/load-aware-admission): a second gate on the SAME
+            # item in ops/docs/backlog/load-aware-admission): a second gate on the SAME
             # tree blocks here instead of racing the first for the box's CPU.
             with _gate_lock_for(wt):
                 # Run in the worktree (cwd = the code under test), but expose the
                 # MAIN checkout as %HELMDECK_REPO% so the gate can invoke the
                 # CURRENT gate script from main - old branches don't carry
-                # tools/run_gate.py.
+                # ops/tools/run_gate.py.
                 genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
                 token = _admit_heavy(t, "gate", log)
                 try:
@@ -238,7 +238,7 @@ def _gate(t):
                                 % (why, out[-1200:], cmd[:120]))
             # Observed on the live board (card 20260812-164257): a `py -3.12`
             # gate run via shell=True on Windows can come back with a nonzero
-            # r.returncode while its OWN stdout is a clean tools/run_gate.py
+            # r.returncode while its OWN stdout is a clean ops/tools/run_gate.py
             # verdict - every check "ok", ending "gate: PASS (34 checks)" - a
             # shell/launcher exit-code hiccup downstream of the script's own
             # sys.exit(0), not a real failure. Root cause not pinned (no
@@ -637,7 +637,7 @@ def _repo_hook(t, kind):
     min", "APK built") - without this a healthy 15-20 min build looked from
     the owner's phone identical to a genuinely stuck card.
 
-    LOAD-AWARE ADMISSION (docs/backlog/load-aware-admission): before starting, this
+    LOAD-AWARE ADMISSION (ops/docs/backlog/load-aware-admission): before starting, this
     waits for OBSERVED CPU load to clear policy.load_admission's threshold -
     the deploy hook IS the APK/Gradle build + emulator boot, so gating its
     start is what keeps a build from launching straight into a box already at

@@ -15,7 +15,7 @@ from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 def _tls_config():
     """Resolve the daemon's TLS material: env (HELMDECK_TLS_CERT/KEY) beats
     settings.tls {cert,key,port} beats auto-detected daemon/certs/tls.crt+key
-    (what tools/make_tls_cert.py writes). Returns (cert, key, port) or
+    (what ops/tools/make_tls_cert.py writes). Returns (cert, key, port) or
     (None, None, port) when TLS is not configured."""
     from spine.storage import events
     t = events.settings().get("tls") or {}
@@ -144,7 +144,7 @@ def _take_singleton_lock(port):
                 subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
             else:
                 os.kill(pid, signal.SIGTERM)
-            print("SINGLETON: evicted %s pid %d - taking over relay/port %d." % (why, pid, port), flush=True)
+            print("SINGLETON: evicted %s pid %d - taking over surfaces/relay/port %d." % (why, pid, port), flush=True)
         except Exception:
             pass   # already gone
 

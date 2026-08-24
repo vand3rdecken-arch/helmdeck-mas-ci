@@ -28,11 +28,11 @@ _locks_guard = threading.Lock()
 
 
 def ffmpeg_path():
-    """ffmpeg from PATH, or a copy dropped next to the repo's tools/."""
+    """ffmpeg from PATH, or a copy dropped next to the repo's ops/tools/."""
     p = shutil.which("ffmpeg")
     if p:
         return p
-    local = os.path.join(_REPO_ROOT, "tools", "ffmpeg", "ffmpeg.exe")
+    local = os.path.join(_REPO_ROOT, "ops", "tools", "ffmpeg", "ffmpeg.exe")
     return local if os.path.exists(local) else None
 
 

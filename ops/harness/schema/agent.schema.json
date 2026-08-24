@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://helmdeck.de/schema/harness-agent.json",
+  "title": "HelmDeck harness agent file (YAML frontmatter of ops/harness/agents/*.md)",
+  "description": "Follows the Claude Code agent-file convention: YAML frontmatter, then the system prompt as the markdown body. HelmDeck adds `settings` and `ask_protocol`. The BODY is the editable policy; the harness appends the fixed wire protocol itself.",
+  "type": "object",
+  "required": ["name", "description"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Pointer to this schema, so an editor can validate the frontmatter."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Stable id. daemon/harness.py looks the agent up by this, and it must equal the filename stem."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One line: which surface this brief is spoken to."
+    },
+    "settings": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Which ops/harness/settings/<name>.json governs a process started with this brief. Absent = no explicit settings layer."
+    },
+    "setting_sources": {
+      "type": "string",
+      "description": "Value passed to `claude --setting-sources`. \"project\" keeps the repo's own .claude/settings.json build-loop hooks while dropping the operator's personal ~/.claude. \"\" (empty) loads no ambient layer at all. Omit the key entirely to leave the flag off and inherit everything (the pre-harness behaviour).",
+      "enum": ["", "user", "project", "local", "user,project", "project,local", "user,project,local"]
+    },
+    "ask_protocol": {
+      "type": "boolean",
+      "default": false,
+      "description": "Append daemon/ask.py's BRIEF (the <helmdeck-ask> wire protocol). The protocol text is deliberately NOT editable here: it is parsed by ask.parse()'s regex, so prompt and parser must ship together. Place it explicitly with a {{ask_protocol}} marker in the body, else it is appended at the end."
+    },
+    "model": {
+      "type": "string",
+      "description": "Optional model hint. Advisory only - the driver config and the card's own pick still win."
+    }
+  }
+}

@@ -4,7 +4,7 @@ the human and why, extracted from sessions.py. Pure over track dicts (blocker()
 touches no process table or disk); owner_blockers() pairs it with
 sessions.present() so a phantom `running` counts from the moment it is read.
 Every surface reads these instead of re-deriving from `status` (which is exactly
-what let the glasses/board/needs feeds drift). Not monkeypatched; sessions.py
+what let the surfaces/glasses/board/needs feeds drift). Not monkeypatched; sessions.py
 re-imports the names so callers are unchanged.
 """
 
@@ -16,7 +16,7 @@ def _blocker_text(v, n=160):
 
     Whitespace is COLLAPSED, not truncated at the first newline the way the
     card's compact `punch` is: a gate problem's first line is only the name of
-    the check ("tests/test_x.py:") and the assertion that actually failed sits
+    the check ("ops/tests/test_x.py:") and the assertion that actually failed sits
     on the line below it. At a glance the second line is the whole point."""
     if isinstance(v, (list, tuple)):
         v = " | ".join(str(x) for x in v if x)

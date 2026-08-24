@@ -11,7 +11,7 @@ own, so nothing importing it risks a cycle. It used to be six independent
 copies of the same three-line resolution (drivers.py, copilot.py, sessions.py,
 processes.py, probe_harness_settings.py) that could drift; a driver-argv
 change once needed six edits done together instead of one. Everything real
-imports it from here now. `tests/probe_cli_askuser.py` deliberately keeps its
+imports it from here now. `ops/tests/probe_cli_askuser.py` deliberately keeps its
 OWN copy (and its own local `cmd_line`) - it is a standalone capability probe
 with zero daemon.* imports by design, meant to run even when the daemon
 package doesn't, so it stays self-contained on purpose.

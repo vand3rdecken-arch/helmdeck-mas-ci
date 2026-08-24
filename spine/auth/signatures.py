@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Electronic signatures on a card acceptance (21 CFR 11.50 / 11.70).
 
-Read docs/gxp-mode-design.md 2.0-2.2. The parts that matter here:
+Read ops/docs/gxp-mode-design.md 2.0-2.2. The parts that matter here:
 
 WHAT IS SIGNED IS A PAIR OF COMMIT IDS, not a checksum we invented.
     git already content-addresses everything, so the subject of a signature is

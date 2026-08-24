@@ -27,7 +27,7 @@ DEFAULTS = {
                "default": {"in": 3.0, "out": 15.0}},
     "value_per_card": 50.0,   # default deliverable value; per-card value overrides
     "currency": "EUR",
-    # bearer token for the Meta Ray-Ban Display glance webapp (glasses/).
+    # bearer token for the Meta Ray-Ban Display glance webapp (surfaces/glasses/).
     # empty = the /glance endpoint is OFF. Owner sets it; it does not touch the
     # session-cookie auth - a scoped surface, read-only on its own.
     "glance_token": "",
@@ -45,11 +45,11 @@ DEFAULTS = {
     # would burn budget. The turn is advisory - board actions are dropped, never
     # executed (copilot.chat allow_actions=False).
     "glance_talk": False,
-    # The PUBLIC glance origin - the Cloudflare Worker (glasses/worker,
-    # deploy/push_glance.sh) that proxies /glance* to this daemon. The phone
+    # The PUBLIC glance origin - the Cloudflare Worker (surfaces/glasses/worker,
+    # ops/deploy/push_glance.sh) that proxies /glance* to this daemon. The phone
     # app's GlassVoiceService is a plain HttpURLConnection client OUTSIDE the
     # E2EE relay, so it needs this origin + glance_token to reach Henry
-    # (app/src/data/glasses.ts explains why the relay URL cannot serve).
+    # (surfaces/app/src/data/glasses.ts explains why the relay URL cannot serve).
     # Empty = glasses voice stays unconfigured; the app degrades, never errors.
     "glance_origin": "",
     # Un-versioned files copied into every new worktree. A worktree holds only
@@ -58,7 +58,7 @@ DEFAULTS = {
     # Signing material is intentionally NOT here - add it only if you want
     # agents to be able to sign releases.
     "worktree_seed": ["apk/local.properties", "local.properties"],
-    # zero-knowledge reverse-tunnel relay (relay/relay.py + e2ee.py) so the
+    # zero-knowledge reverse-tunnel relay (surfaces/relay/relay.py + e2ee.py) so the
     # mobile app reaches this daemon over the internet without port-forwarding
     # and end-to-end encrypted. url = where the owner hosts the relay (HTTPS);
     # room = public routing id; sk = this daemon's Curve25519 secret (generated
@@ -89,18 +89,18 @@ DEFAULTS = {
     "dashboard": {"tiles": ["value_delivered", "ai_spend", "margin",
                             "yield", "automation", "leverage"],
                   "panels": ["sows", "capacity", "gates", "work"]},
-    # POLICY - the flexible half of the harness/loop split. Everything here is
+    # POLICY - the flexible half of the ops/harness/loop split. Everything here is
     # workspace configuration the owner may change (incl. via the copilot):
     # how work flows. The FIXED half (auth, audit, gate-before-review, measured
     # economics, worktree isolation, chain ordering, driver commands) is code,
     # deliberately not configurable from chat.
     "policy": {
         # UI + owner-facing prose language: "de" | "en". ONE language, sharply -
-        # the app translates every screen through app/src/i18n.ts and the daemon
+        # the app translates every screen through surfaces/app/src/i18n.ts and the daemon
         # runs its chat/push messages through i18n.t(). The append-only AUDIT
         # trail (event log, gate output, git) stays English on purpose: it is a
         # technical record, not owner prose, and must read the same in every
-        # workspace. tools/i18n_lint.py enforces that nothing drifts back.
+        # workspace. ops/tools/i18n_lint.py enforces that nothing drifts back.
         "lang": "de",
         # EMPTY on purpose: a lane label shipped in the defaults would be
         # hardcoded in ONE language and it overrides the translation, so a
@@ -120,8 +120,8 @@ DEFAULTS = {
         # which roles may RECONFIGURE the workspace from the copilot chat
         # (actions/steering stay available to owner+operator regardless)
         "chat_configure_roles": ["owner"],
-        # LOAD-AWARE ADMISSION (docs/backlog/load-aware-admission, the desktop-lock
-        # pattern generalized to CPU): a heavy op (gate run, deploy/preview
+        # LOAD-AWARE ADMISSION (ops/docs/backlog/load-aware-admission, the desktop-lock
+        # pattern generalized to CPU): a heavy op (gate run, ops/deploy/preview
         # hook - APK/Gradle build + emulator boot) admits immediately when
         # OBSERVED CPU load (spine.ops.resources, sampled on demand -
         # never a stored flag) is under cpu_max_pct; over it, the op QUEUES

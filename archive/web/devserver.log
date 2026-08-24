@@ -636,7 +636,7 @@ AggregateError:
  GET / 200 in 282ms (next.js: 191ms, application-code: 91ms)
 ✓ Compiled in 598ms
  GET / 200 in 1242ms (next.js: 1091ms, application-code: 151ms)
-Failed to proxy http://localhost:8140/tracks/20260728-094539-req-add-headless-unit-tests/lane Error: socket hang up
+Failed to proxy http://localhost:8140/tracks/20260728-094539-req-add-headless-unit-ops/tests/lane Error: socket hang up
     at ignore-listed frames {
   code: 'ECONNRESET'
 }
@@ -644,7 +644,7 @@ Error: socket hang up
     at ignore-listed frames {
   code: 'ECONNRESET'
 }
-Failed to proxy http://localhost:8140/tracks/20260728-094539-req-add-headless-unit-tests/lane Error: socket hang up
+Failed to proxy http://localhost:8140/tracks/20260728-094539-req-add-headless-unit-ops/tests/lane Error: socket hang up
     at ignore-listed frames {
   code: 'ECONNRESET'
 }

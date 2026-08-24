@@ -1,1 +1,1 @@
-py -3.12 "%HELMDECK_REPO%\tools\run_gate.py"
+py -3.12 "%HELMDECK_REPO%\ops\tools\run_gate.py"

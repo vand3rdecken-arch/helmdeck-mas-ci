@@ -42,7 +42,7 @@ fun CardScreen(
     var steps by remember(track.id) { mutableStateOf<List<Step>>(emptyList()) }
     var draft by remember(track.id) { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
-    // optimistic echo (desktop/Paseo behavior): the sent message shows
+    // optimistic echo (surfaces/desktop/Paseo behavior): the sent message shows
     // IMMEDIATELY; it is dropped once the real transcript contains it
     var echo by remember { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }

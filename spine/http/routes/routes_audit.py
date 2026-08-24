@@ -60,7 +60,7 @@ def _to_csv(rows):
     Events carry heterogeneous extra fields per kind; a column per field seen
     anywhere would be a sparse, unstable schema. The catch-all stays
     greppable, which is the same standard the audit trail itself is held to
-    (app/src/i18n/index.ts:1-11 - a technical record must read identically
+    (surfaces/app/src/i18n/index.ts:1-11 - a technical record must read identically
     everywhere, not paginate its own columns differently per export)."""
     buf = io.StringIO()
     w = csv.writer(buf)

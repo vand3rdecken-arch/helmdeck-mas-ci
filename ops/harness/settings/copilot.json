@@ -1,0 +1,44 @@
+{
+  "$schema": "../schema/settings.schema.json",
+
+  "//": [
+    "The board copilot's OWN settings layer. Passed as",
+    "`--settings ops/harness/settings/copilot.json` with `--setting-sources \"\"`.",
+    "",
+    "WHY EMPTY SOURCES, unlike a card:",
+    "  The copilot is spawned with cwd=daemon/, so until now it inherited whatever",
+    "  the cwd happened to imply - the operator's personal ~/.claude PLUS the repo's",
+    "  project layer. Both are wrong here, and the project one is actively harmful:",
+    "  the repo's Stop hook runs ops/tools/loop_state.py --stop-hook, which BLOCKS a turn",
+    "  that isn't at a resting build-loop state. That hook exists to stop a coding",
+    "  agent from resting mid-loop; the board copilot writes no code and has no loop,",
+    "  so it would be blocked for a build state it can neither cause nor fix.",
+    "  So: no ambient layer at all, and everything it needs stated here.",
+    "",
+    "The copilot runs --permission-mode plan and executes nothing itself (it emits",
+    "an ```actions block the daemon executes), so it is granted no tools here.",
+    "",
+    "The memory Write()/Edit() deny below is belt-and-suspenders for the same reason:",
+    "plan mode already withholds the Write/Edit tools, so this only matters if that",
+    "mode ever changes - but memory_paths.auto resolves to the SAME shared, non-git",
+    "directory for this surface too (measured), so it costs nothing to say twice.",
+    "See ops/harness/settings/card.json for the full story."
+  ],
+
+  "env": {
+    "HELMDECK_SURFACE": "copilot"
+  },
+
+  "permissions": {
+    "deny": [
+      "Read(./daemon/settings.json)",
+      "Read(./daemon/users.json)",
+      "Read(./daemon/helmdeck.db)",
+      "Read(./daemon/copilot_log.json)",
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Write(~/.claude/projects/**)",
+      "Edit(~/.claude/projects/**)"
+    ]
+  }
+}

@@ -74,7 +74,7 @@ def glance_voice(self, user):
 def glance_banner_voice(self, user):
     # A fresh-blocker COUNT as speech, for the lens's proactive banner
     # (app.js notifyBanner/speakBanner) - the in-app half of "Blocker werden
-    # vorgelesen" (docs/glasses-reference.md SS4.6/SS11.6: the webview has no
+    # vorgelesen" (ops/docs/glasses-reference.md SS4.6/SS11.6: the webview has no
     # speechSynthesis but plays audio, so the daemon renders and the lens
     # plays a clip URL, exactly the shape /glance/talk already returns).
     #
@@ -111,7 +111,7 @@ def glance_banner_voice(self, user):
 
 
 def glance_get(self, user):
-    # glance surface for the Meta Ray-Ban Display webapp (glasses/).
+    # glance surface for the Meta Ray-Ban Display webapp (surfaces/glasses/).
     # Token-gated, cross-origin (CORS on via _send), no session-
     # cookie coupling. Off unless settings.glance_token is set.
     # READS here; the one write is POST /glance/answer, which is

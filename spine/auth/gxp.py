@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """GxP mode - the switch that makes HelmDeck's review-free paths go away.
 
-Read docs/gxp-mode-design.md first. The short version:
+Read ops/docs/gxp-mode-design.md first. The short version:
 
 HelmDeck can land and DEPLOY a card with no human involved - Henry's `move`
 verb, per-card fast-track, the policy auto-accept, machine cards. For a
@@ -123,7 +123,7 @@ def in_scope(track):
 def four_eyes():
     """Must the approver be someone other than the dispatcher? Off by default:
     a one-person shop cannot satisfy it and must not be locked out of the mode
-    (docs/gxp-mode-design.md 2.6)."""
+    (ops/docs/gxp-mode-design.md 2.6)."""
     doc = _read()
     return bool(doc and doc.get("four_eyes"))
 

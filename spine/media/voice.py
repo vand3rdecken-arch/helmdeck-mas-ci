@@ -6,11 +6,11 @@ Display webview has no `speechSynthesis`** - confirmed on-device 2026-07-16
 (`glass-crud-harness/app/index.html:804`) - **but it DOES play audio** ("podcasts
 work"). So the lens cannot synthesise a sentence, and it can play a file you
 hand it. Speech is therefore rendered HERE and played there as an ordinary audio
-clip. That is the same conclusion docs/glasses-reference.md §4 reached for the
+clip. That is the same conclusion ops/docs/glasses-reference.md §4 reached for the
 WhatsApp channel; this is the in-app half of it.
 
 Two deliberate differences from the reference recipe
-(`glass-crud-harness/tools/voice_note.py`), both because the destination differs:
+(`glass-crud-harness/ops/tools/voice_note.py`), both because the destination differs:
 - **mp3, not ogg/opus.** That recipe targets a WhatsApp voice note, which must
   be ogg/opus mono. The lens just plays a URL, and the reference's own
   announcement path already proves mp3 plays there ("announcements play as an

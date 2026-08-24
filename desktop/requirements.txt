@@ -1,4 +1,0 @@
-# HelmDeck Desktop tray supervisor (desktop/tray.py)
-# The daemon itself is stdlib-only; only the tray shell needs these.
-pystray>=0.19
-Pillow>=10

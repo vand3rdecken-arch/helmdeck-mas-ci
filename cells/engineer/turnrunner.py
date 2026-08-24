@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """The turn-runner SERVICE - extracted from sessions.py. _turn spawns ONE
-turn through the track's driver (desktop/direct lock coordination via
+turn through the track's driver (surfaces/desktop/direct lock coordination via
 locks.py); _settle_reply_compute/_apply interpret a finished turn's reply
 (question repair, background-wait detection); _finish_turn is the ONE
 atomic end-of-turn commit (session rotation + economics + typed lifecycle

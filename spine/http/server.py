@@ -527,7 +527,7 @@ def serve(port=8140):
         except Exception as e:
             print("TLS ERROR: %s\n    https listener NOT started; plain http stays "
                   "LOOPBACK-ONLY (no cleartext on the network). Fix the cert/key "
-                  "(tools/make_tls_cert.py) or remove them to serve http again." % e,
+                  "(ops/tools/make_tls_cert.py) or remove them to serve http again." % e,
                   flush=True)
     print("HelmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
     try:
