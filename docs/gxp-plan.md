@@ -53,8 +53,15 @@
 > Verstoßes (Loops.so bekommt E-Mail + Vorname bei Registrierung). **Damit ist
 > Stufe 0 vollständig geschlossen**, alle sechs Punkte.
 >
-> Offen: das signierte git-Tag (braucht die Schlüsselentscheidung) · Phase D ·
-> der gepackte Drei-Start-Durchlauf der Desktop-App · der Screenshot der
+> **Phase D: vollständig gebaut** — D1 `454f51b` (`reset.py` verweigert bei
+> aktivem GxP-Modus, jeder Reset wird protokolliert), D2 `d3b35e3` (jedes
+> Ereignis trägt `at_utc`, `ts` bleibt unangetastet lokal), D3 `4a87bae`
+> (stabile Ereignis-ID + `INSERT OR IGNORE` + Reconcile bei jedem Start —
+> Schuld `events-two-stores-unreconciled` bezahlt), D4 `2a1f82f`
+> (`GET /audit`, Filter + CSV-Export, Owner-only).
+>
+> Offen: das signierte git-Tag (braucht die Schlüsselentscheidung) · der
+> gepackte Drei-Start-Durchlauf der Desktop-App · der Screenshot der
 > Freigabemaske aus Phase C.
 >
 > **Neu, aus der Diskussion, nicht Teil dieser Karte:** Rohkommando bei

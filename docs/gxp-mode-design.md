@@ -680,14 +680,16 @@ Kein neuer Token nötig — `t.human`, `t.ok`, `t.danger`, `t.surface1`,
 ## 5. Was dieser Entwurf nicht löst
 
 Damit die Erwartung stimmt. Stand nach `docs/gxp-plan.md`: Stufe 0 ist
-geschlossen (A0–A5, S4, S1; A3 wartet auf Owner-Entscheidung), der strukturelle
-Blocker ist zu (kein Agent kann ohne Menschen landen), und die Signatur selbst
-liefert §11.50, §11.70 (auf das Commit-Paar gebunden), §11.200
-(Re-Authentifizierung) sowie Vier-Augen. Offen bleiben:
+geschlossen (A0–A5, A3, S4, S1 — alle sechs), der strukturelle Blocker ist zu
+(kein Agent kann ohne Menschen landen), die Signatur liefert §11.50, §11.70
+(auf das Commit-Paar gebunden), §11.200 (Re-Authentifizierung) sowie
+Vier-Augen, das Freigabefenster ist gebaut (Phase C), und **Phase D — die
+Audit-Härtung — ist vollständig gebaut**: jedes Ereignis trägt `at_utc`,
+Datei und Tabelle können nicht mehr unbemerkt auseinanderlaufen
+(`events-two-stores-unreconciled`, bezahlt), `tools/reset.py` verweigert bei
+aktivem Modus statt Beweise zu löschen, und `GET /audit` liefert Filter plus
+CSV-Export. Offen bleiben:
 
-- **Phase C — das Freigabefenster.** Unterschreiben geht heute nur über
-  `POST /sign`, es gibt keinen Knopf im Board. Ohne C ist der Modus nicht
-  benutzbar, nur API-technisch vorhanden.
 - **Das signierte git-Tag** — der Datensatz existiert und wird durchgesetzt,
   liegt aber in Speicher, den HelmDeck selbst besitzt. Ohne Tag kann ein
   Prüfer ihn nicht mit `git verify-tag` selbst nachrechnen, er muss uns
@@ -699,14 +701,12 @@ liefert §11.50, §11.70 (auf das Commit-Paar gebunden), §11.200
   System ein, z. B. per Sprachdiktat) wäre es tragend — dort gibt es kein
   unabhängiges zweites Artefakt wie einen Commit, gegen das man prüfen könnte.
   Das ist ein eigenständiges Vorhaben, kein Teil dieser Karte.
-- **Audit-Trail-Härtung, Rest** — UTC ist für Auth- und Signatur-Ereignisse
-  bereits da (A5, `auth._audit`), aber nicht durchgängig
-  (`events.py:176` bleibt lokal für alles andere); Review-Route mit Filter und
-  Export; `tools/reset.py:61-77` als Audit-Löscher entschärfen; die
-  Zwei-Speicher-Rekonziliation aus `events-two-stores-unreconciled`.
 - **Stufe 2 / CSV** — Validierungsplan, URS/FS/DS, RTM, IQ/OQ/PQ, Gate mit
   echtem Regressionstest, Umgebungstrennung, OTA-Code-Signing. Davon berührt
   dieser Entwurf nichts.
+- **Verifikation auf echter Hardware** — der gepackte Drei-Start-Durchlauf der
+  Desktop-App (A1) und ein Screenshot der Freigabemaske (Phase C) brauchen
+  einen Rechner mit Electron/Browser, den dieser Worktree nicht hat.
 
 ---
 
