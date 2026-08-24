@@ -56,6 +56,13 @@ DEFAULT_POLICY = (
     "notify_owner mit EINER konkreten Frage.\n"
     "- Roter Deploy-Hook nach Kappe: notify_owner mit dem Fehlerkern, kein "
     "weiterer Blindversuch.\n"
+    "- load-contention (Box laenger als die Wartezeit ueber der Admissions-"
+    "Schwelle): lies box-last und build-prozesse im Snapshot. Stauen sich "
+    "HelmDecks EIGENE schwere Ops (Holder sichtbar), loest sich das selbst - "
+    "ignore. Frisst ein EXTERNER Prozess die Box (keine Holder, aber java/"
+    "qemu/node/rustdesk im Prozess-Bild), benenne ihn dem Owner per "
+    "notify_owner. Toete NIE fremde Prozesse - beobachten und benennen, "
+    "nicht eingreifen.\n"
     "- Wecke den Owner nur, wenn keine sichere Selbsthilfe existiert."
 )
 
@@ -112,6 +119,7 @@ def _snapshot():
     except Exception as e:
         lines.append("(board unreadable: %s)" % e)
     lines.append(_ship_lock_line())
+    lines.append(_box_load_line())
     lines.append(_heavy_procs_line())
     return "\n".join(lines[:40])
 
@@ -139,10 +147,31 @@ def _pid_alive(pid):
         return False
 
 
+def _box_load_line():
+    """MEASURED box load - the SAME seam the load admission decides by
+    (daemon.spine.ops.resources, ctypes GetSystemTimes) plus the named
+    heavy-op holders its registry tracks. Paseo's collectDaemonDiagnostics
+    puts loadavg/freemem in the same snapshot the reader judges from;
+    Henry is that reader, so he gets the same numbers the code admits by -
+    one truth, not a second reconstruction."""
+    try:
+        from daemon.spine.ops import resources
+        from daemon.spine.git.locks import list_heavy_holders
+        s = resources.sample(0.2)
+        cpu = ("%.0f%%" % s["cpu_pct"]) if s.get("cpu_pct") is not None else "?"
+        ram = ("%.1f GB frei" % (s["free_ram_mb"] / 1024.0)) if s.get("free_ram_mb") else "?"
+        now = time.time()
+        holders = ", ".join("%s (%s, seit %ds)" % (h["kind"], h["card"], now - h["since"])
+                            for h in list_heavy_holders())
+        return "box-last: CPU %s, RAM %s | schwere Ops: %s" % (cpu, ram, holders or "keine")
+    except Exception as e:
+        return "box-last: (nicht lesbar: %s)" % str(e)[:120]
+
+
 def _heavy_procs_line():
-    """Box-load proxy without psutil/powershell (absent from this box's PATH):
-    count the classic build hogs via tasklist. Coarse on purpose - Henry needs
-    'a build is running', not percentages."""
+    """NAMES the load the holder registry cannot see (an external/manual
+    build, rustdesk): count the classic build hogs via tasklist. Coarse on
+    purpose - _box_load_line has the percentages; this line answers WHO."""
     try:
         out = subprocess.run(["tasklist", "/FO", "CSV"], capture_output=True,
                              text=True, timeout=15).stdout.lower()

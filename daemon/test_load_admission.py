@@ -141,7 +141,16 @@ check(dur4b < 0.5, "the SAME 60%% load admits immediately once the threshold pol
                     "no code changed (%.2fs)" % dur4b)
 locks._release_heavy(tok4b)
 
-# --- 5) load that never drops still admits after wait_s (never permanent) --
+# --- 5) load that never drops still admits after wait_s (never permanent),
+#        and the give-up is REPORTED to Henry as a load-contention escalation
+#        (exactly once - deduped against an already-open one) ---------------
+from daemon.spine.registry import escalations
+_emitted = []
+escalations.emit = lambda kind, card=None, detail="": _emitted.append(
+    {"kind": kind, "card": card, "detail": detail}) or "esc-test"
+_open = []
+escalations.list_open = lambda: _open
+
 reset(cpu_max=50, wait_s=1.5, poll_s=1)
 _CPU[0] = 95.0
 log5 = FakeLog()
@@ -150,7 +159,30 @@ token5 = lanemachine._admit_heavy(track("stuck"), "gate", log5)
 dur5 = time.time() - t0
 check(0.5 <= dur5 < 10.0, "gave up waiting near wait_s, not forever (%.2fs)" % dur5)
 check(any("trotzdem" in n for n in log5.notes), "the give-up note says it is starting ANYWAY: %r" % log5.notes)
+check(len(_emitted) == 1 and _emitted[0]["kind"] == "load-contention",
+      "the give-up emitted ONE load-contention escalation for Henry: %r" % _emitted)
+check(_emitted and "stuck" in _emitted[0]["detail"] and "CPU 95" in _emitted[0]["detail"],
+      "the escalation detail names the op's card and the measured load")
 locks._release_heavy(token5)
+
+# a second give-up while one is still OPEN must not stack a duplicate
+_open.append({"kind": "load-contention"})
+log5b = FakeLog()
+token5b = lanemachine._admit_heavy(track("stuck-again"), "build", log5b)
+check(len(_emitted) == 1, "no duplicate escalation while one is already open")
+locks._release_heavy(token5b)
+
+# --- 6) Henry's snapshot line reads the SAME seam the admission decides by -
+from daemon.cells.copilot import henry_broker
+_CPU[0] = 42.0
+tok6 = lanemachine._admit_heavy(track("visible-holder"), "gate", FakeLog())
+line = henry_broker._box_load_line()
+check("CPU 42%" in line, "Henry's box-last line carries the measured CPU: %r" % line)
+check("gate (visible-holder" in line, "…and NAMES the registered heavy-op holder: %r" % line)
+locks._release_heavy(tok6)
+line_empty = henry_broker._box_load_line()
+check("schwere Ops: keine" in line_empty,
+      "with no holder the line says keine, not unbekannt: %r" % line_empty)
 
 print()
 if _fails:
