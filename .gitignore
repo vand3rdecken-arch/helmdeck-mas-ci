@@ -44,8 +44,8 @@ daemon/*.synced
 daemon/**/*.synced
 # ad-hoc one-off diagnostic scripts left at repo root by a card/machine
 # session with direct hands on the live tree (Henry) - disposable scratch,
-# never source.
-/_henry_check.py
+# never source. Generalized: ANY root-level _*.py is session scratch.
+/_*.py
 .loop/
 daemon/copilot_log.json
 daemon/copilot_stats.json
