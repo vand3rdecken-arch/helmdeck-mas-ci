@@ -141,12 +141,28 @@ def _sweep_background():
         since = ((t.get("background") or {}).get("since")
                  or _epoch_of(t.get("updated")) or time.time())
         if time.time() - since > _BG_MAX_WAIT_S:
+            gave = {}
+
             def _giveup(tt):
                 if tt.get("waiting_on") != "background":
                     return False
                 tt["waiting_on"] = "you"     # give up watching, hand it back
                 tt.pop("background", None)
-            _mutate(t["id"], _giveup)
+                gave["ok"] = True
+            t = _mutate(t["id"], _giveup) or t
+            if gave.get("ok"):
+                # the hand-back must never be silent: the card just became a
+                # real needs_you (status was already parked there by
+                # _finish_turn) and no follow-up turn exists to notify for it.
+                from daemon.spine.ops.actionlog import ActionLog
+                ActionLog(t["run_dir"]).log(
+                    "note", "Hintergrund-Task hat nach 6h nicht gemeldet - "
+                    "Karte zurueck an dich")
+                from daemon.spine.comms import notify
+                try:
+                    notify.card_event(t, "needs_you")
+                except Exception:
+                    pass
             continue
         from daemon.spine.agent import claude_sessions
         try:
@@ -171,17 +187,28 @@ def _sweep_background():
             tt["waiting_on"] = "you"
             tt.pop("background", None)
             claim["ok"] = True
-        _mutate(t["id"], _claim)
+        t = _mutate(t["id"], _claim) or t
         if not claim.get("ok"):
             continue
         from daemon.spine.ops.actionlog import ActionLog
         # steer only ACTIVE work, and only if the owner allows auto-continue;
         # otherwise the cue is cleared (above) and the card honestly waits on
-        # the owner instead of on a task that has already reported.
+        # the owner instead of on a task that has already reported. `status`
+        # was already forced to "needs_you" by the turn that started this wait
+        # (_finish_turn always sets it, background-vs-not is carried by
+        # waiting_on alone) - so the claim above just made is_delivered() true.
+        # That transition has no turn of its own to notify from (unlike the
+        # auto-continue branch below, which gets a fresh turn's own
+        # card_event), so the push has to fire HERE or it never fires at all.
         if t.get("lane") not in ("working", "review") or not _bg_continue_on(t):
             ActionLog(t["run_dir"]).log(
                 "note", "Hintergrund-Task fertig - Karte wartet auf dich "
                 "(kein Auto-Continue)")
+            from daemon.spine.comms import notify
+            try:
+                notify.card_event(t, "needs_you")
+            except Exception:
+                pass
             continue
         ActionLog(t["run_dir"]).log(
             "note", "Hintergrund-Task fertig - Karte laeuft automatisch weiter")
