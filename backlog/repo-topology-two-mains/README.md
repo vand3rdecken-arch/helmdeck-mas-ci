@@ -49,6 +49,23 @@ copilot/henry - each bundling its backend AND its frontend unit).
    could group under one dir - LOW value, each has deploy scripts bound to
    its path. Decide only after 1-3 are green.
 
+## Ontology (aligned with owner 2026-08-24 - the worker inherits this)
+
+Two axes, never conflated: CELLS are vertical function slices (henry, pm,
+engineer, ...); SURFACES are horizontal delivery vehicles (android app,
+desktop, glasses, relay, site). Every surface build ships ALL enabled cells -
+cell on/off is POLICY DATA (`<cell>Enabled`), never a build variant, so there
+is no per-cell build and never will be (it would be an NxM matrix and break
+one-bundle-per-runtimeVersion OTA). Consequences:
+- Builds stay with surfaces: `deploy/` one entrypoint per surface + CI.
+  Phase 2/3 must NOT pull build machinery into cell folders.
+- The spine's job IS "merge and change cells": daemon-side the cell registry
+  (`cells.py`), app-side the plugin kernel. Same mechanism-vs-policy line.
+- Litmus test for file placement: would it exist with ZERO cells installed?
+  Yes -> spine or surface. No -> the cell.
+- A cell MAY carry per-surface UI variants as subunits (`cells/<id>/ui/...`),
+  but the shell and the build never move in.
+
 ## Traps
 
 - `docs` in .gitignore and the tracked `.attachments/` jpgs are OWNER
