@@ -28,17 +28,17 @@ ops/harness/
   .versions/  every write archives the bytes it replaced (git-ignored)
 ```
 
-Loaded by `daemon/harness.py`. The agent-file convention (frontmatter + body) is
+Loaded by `spine/registry/harness.py`. The agent-file convention (frontmatter + body) is
 Claude Code's own, deliberately, so these files need no translation layer.
 
 ### The one law of the loader
 
-> **`daemon/harness.py` can never break a spawn.**
+> **`spine/registry/harness.py` can never break a spawn.**
 
 A card is the owner's work in flight; a typo in a markdown file must not be able
 to strand it. So every function on the read path is **total** - it returns the
 built-in default instead of raising - and the built-in defaults in
-`daemon/harness.py:50-98` are the exact text that used to be hardcoded in
+`spine/registry/harness.py:50-98` are the exact text that used to be hardcoded in
 `drivers.py` / `copilot.py`. Deleting `ops/harness/` entirely degrades to precisely
 the pre-harness behaviour.
 
@@ -80,12 +80,12 @@ ops/harness/agents/<name>.md
 harness.brief(name)  ->  the string handed to --append-system-prompt
 ```
 
-Every step falls back rather than raising (`daemon/harness.py:209`).
+Every step falls back rather than raising (`spine/registry/harness.py:209`).
 
 ### Which surface a spawn is
 
 There are exactly three, declared once in `harness.SURFACES`
-(`daemon/harness.py:315`):
+(`spine/registry/harness.py:315`):
 
 | key | agent file | builder | cwd |
 |---|---|---|---|
@@ -475,7 +475,7 @@ Two files because a script living only in `~/.claude/hooks/` would itself be
 untracked and unreviewable - fixing untracked state with an untracked script.
 `--check` keeps the two byte-identical.
 
-**Its one law is `daemon/harness.py`'s law:** it can never break a turn. A `Stop`
+**Its one law is `spine/registry/harness.py`'s law:** it can never break a turn. A `Stop`
 hook that exits 2 **blocks** the turn, so that exit code is unreachable from
 `main()` - every git call is timeout-bounded, every failure becomes a log line,
 and the worst outcome is "this turn was not snapshotted", which the next turn
@@ -508,8 +508,8 @@ output says "Active from the NEXT session" for the same reason.
 ## 7. Run / verify
 
 ```bash
-python daemon/harness.py                        # what each surface resolved to
-python daemon/harness.py --preview              # full argv + provenance, as JSON
+python spine/registry/harness.py                        # what each surface resolved to
+python spine/registry/harness.py --preview              # full argv + provenance, as JSON
 python daemon/probe_harness_settings.py         # full sweep vs the real CLI (~20s)
 python daemon/probe_harness_settings.py --validate   # are the SHIPPED files accepted?
 python daemon/probe_harness_settings.py --skills     # per-surface skills + memory paths

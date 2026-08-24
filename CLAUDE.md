@@ -67,7 +67,7 @@ well-formed → propose the commit when work goes quiet).
 ```
 py -3.12 -m daemon.swarm serve               # API :8140 (run from REPO ROOT - daemon/ is the thin launcher)
 cd surfaces/app && npm run web                        # UI (Expo web dev server)
-py -3.12 ops/tools/run_gate.py                   # quick check: py_compile daemon/spine/cells + import wiring
+py -3.12 ops/tools/run_gate.py                   # quick check: py_compile daemon+spine+cells + import wiring
 cd surfaces/app && npx tsc --noEmit -p tsconfig.typecheck.json   # app types (incl. cells/<id>/ui)
 ```
 E2E smoke: Playwright against the Expo web dev server (login owner; password

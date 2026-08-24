@@ -7,10 +7,10 @@
 #   bash .smoke/pair_device.sh <owner-device-token>
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ADB="$HOME/AppData/Local/Android/Sdk/platform-ops/tools/adb.exe"
+ADB="$HOME/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 TOK="${1:?usage: pair_device.sh <owner-device-token>}"
 
-RESP="$(curl -s -m 15 -X POST http://127.0.0.1:8145/surfaces/relay/pair \
+RESP="$(curl -s -m 15 -X POST http://127.0.0.1:8145/relay/pair \
         -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{}')"
 echo "pair window: $RESP"
 case "$RESP" in *device_token*) ;; *) echo "PAIR WINDOW FAILED"; exit 1 ;; esac

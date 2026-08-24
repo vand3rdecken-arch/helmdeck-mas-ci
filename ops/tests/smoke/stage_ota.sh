@@ -15,8 +15,8 @@
 # update staged while the app is already running, and the footer has to show
 # which of the two is live.
 set -o pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT/app" || exit 1
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$ROOT/surfaces/app" || exit 1
 export PATH="/c/Program Files/nodejs:$PATH"
 
 MARKER="${1:-OTA-SMOKE}"
@@ -33,7 +33,7 @@ revert
 grep -q "$MARKER" "$F" && { echo "marker revert FAILED"; exit 1; }
 [ -f dist/metadata.json ] || { echo "no dist/metadata.json"; exit 1; }
 
-U="$ROOT/.smoke/updates"
+U="$ROOT/ops/tests/smoke/updates"
 rm -rf "$U.new"; mkdir -p "$U.new"
 cp -r dist/. "$U.new/"
 rm -rf "$U.old"; [ -d "$U" ] && mv "$U" "$U.old"

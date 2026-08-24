@@ -48,7 +48,7 @@ CARD = {"id": "c1", "task": "Login bauen"}
 OTHER = {"id": "c2", "task": "Andere Karte"}
 
 _pushed = []
-notify.push_fcm = lambda title, body, track_id="": _pushed.append((title, track_id))
+notify.push_fcm = lambda title, body, track_id="", **kw: _pushed.append((title, track_id))
 
 
 def _reset():
@@ -70,8 +70,10 @@ def test_tiers():
 
     _reset()
     presence.record("owner", "android", focused_card="c1", app_visible=False)
-    check(presence.plan("c1") == "inapp",
-          "app backgrounded on this card -> in-app (not silent)")
+    check(presence.plan("c1") == "push",
+          "app backgrounded on this card -> PUSH (a backgrounded client can't "
+          "show an in-app cue; measured 2026-08-24 - overnight questions never "
+          "buzzed under the old inapp downgrade)")
 
     _reset()
     presence.record("owner", "android", focused_card=None, app_visible=True)

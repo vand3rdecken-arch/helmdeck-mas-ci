@@ -13,7 +13,7 @@ export ANDROID_HOME="$HOME/AppData/Local/Android/Sdk"
 export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 printf 'sdk.dir=%s\n' 'C:/Users/Tien Duy Vo/AppData/Local/Android/Sdk' > surfaces/app/android/local.properties
-node app/plugins/withLanCleartext.js surfaces/app/android || { echo "withLanCleartext FAILED"; exit 1; }
+node surfaces/app/plugins/withLanCleartext.js surfaces/app/android || { echo "withLanCleartext FAILED"; exit 1; }
 
 echo "== drop stale .cxx caches (they reference the long C:\\ path)"
 find surfaces/app/node_modules -maxdepth 4 -type d -name .cxx -prune -exec rm -rf {} + 2>/dev/null

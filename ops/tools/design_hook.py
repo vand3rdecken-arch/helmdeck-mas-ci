@@ -10,7 +10,7 @@ try:
     json.load(sys.stdin)   # drain payload
 except Exception:
     pass
-sys.path.insert(0, os.path.join(ROOT, "tools"))
+sys.path.insert(0, os.path.join(ROOT, "ops", "tools"))
 try:
     import design_lint
     r = subprocess.run(["git", "-C", ROOT, "status", "--porcelain"],

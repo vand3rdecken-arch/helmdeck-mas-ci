@@ -24,7 +24,7 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WORKER = os.path.join(ROOT, "glasses", "worker")
+WORKER = os.path.join(ROOT, "surfaces", "glasses", "worker")
 SRC = os.path.join(WORKER, "src", "index.js")
 # The allowlist lives next door to the handler on purpose - the Workers runtime
 # rejects a non-function named export from the ENTRY module, so these constants

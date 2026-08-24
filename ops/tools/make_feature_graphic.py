@@ -13,8 +13,8 @@ import os
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT = os.path.join(ROOT, "docs", "store", "feature-graphic.png")
-ICON = os.path.join(ROOT, "app", "assets", "images", "icon.png")
+OUT = os.path.join(ROOT, "ops", "docs", "store", "feature-graphic.png")
+ICON = os.path.join(ROOT, "surfaces", "app", "assets", "images", "icon.png")
 
 W, H = 1024, 500
 # surfaces/app/src/theme/tokens.ts (dark)

@@ -9,8 +9,8 @@
 # commitTime is stamped NOW: the client only honours a directive newer than the
 # last rollback it applied, so a fresh stamp is what makes it take effect.
 set -o pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-U="$ROOT/.smoke/updates"
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+U="$ROOT/ops/tests/smoke/updates"
 [ -d "$U" ] || { echo "no $U"; exit 1; }
 
 if [ "${1:-}" = "--clear" ]; then

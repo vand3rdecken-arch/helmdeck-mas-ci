@@ -8,7 +8,7 @@
 # `am start` on a live process delivers onResume without recreating it - if the
 # PID is unchanged across a background/foreground cycle, the check that ran was
 # the AppState "active" handler in surfaces/app/src/data/ota.ts, not a fresh launch.
-ADB="$HOME/AppData/Local/Android/Sdk/platform-ops/tools/adb.exe"
+ADB="$HOME/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 PKG=app.helmdeck
 SHOTS="$(cd "$(dirname "$0")" && pwd)/shots"
 mkdir -p "$SHOTS"

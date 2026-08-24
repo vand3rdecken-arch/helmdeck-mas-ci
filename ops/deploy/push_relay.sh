@@ -23,11 +23,11 @@ TARGET="$SSH_USER@$RELAY_HOST"
 echo "==> shipping relay.py to $TARGET"
 scp "${SSH_OPTS[@]}" surfaces/relay/relay.py "$TARGET:/tmp/relay.py" || exit 1
 
-# Expo APK (post-cutover path). versionCode/Name come from app/app.json.
+# Expo APK (post-cutover path). versionCode/Name come from surfaces/app/app.json.
 APK="surfaces/app/android/app/build/outputs/apk/release/app-release.apk"
 if [ -f "$APK" ]; then
-  VCODE=$(sed -n 's/.*"versionCode"[^0-9]*\([0-9]*\).*/\1/p' app/app.json | head -1)
-  VNAME=$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' app/app.json | head -1)
+  VCODE=$(sed -n 's/.*"versionCode"[^0-9]*\([0-9]*\).*/\1/p' surfaces/app/app.json | head -1)
+  VNAME=$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' surfaces/app/app.json | head -1)
   # ?v=<versionCode> IS LOAD-BEARING, not decoration. relay.helmdeck.de is
   # proxied through CLOUDFLARE, which caches /apk/helmdeck.apk for 4 hours
   # (`cache-control: max-age=14400`). The file on the origin is replaced in

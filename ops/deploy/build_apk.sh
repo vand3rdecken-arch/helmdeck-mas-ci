@@ -49,14 +49,14 @@ printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROI
 # native config before every build: scope cleartext to the direct-LAN hosts
 # from app.json (pays debt [android-cleartext-lan]; same plugin runs on a
 # future `expo prebuild`, so the two paths cannot drift).
-node app/plugins/withLanCleartext.js surfaces/app/android \
+node surfaces/app/plugins/withLanCleartext.js surfaces/app/android \
   || { echo "[build_apk] network-security-config apply FAILED"; exit 1; }
 
 # Same rule, same reason: the glasses-voice permissions + the typed foreground
 # service. Without this line the APK builds perfectly clean and the microphone
 # is simply never grantable at runtime - a silent, on-device-only failure, which
 # is the exact class the line above exists to prevent.
-node app/plugins/withGlassVoice.js surfaces/app/android \
+node surfaces/app/plugins/withGlassVoice.js surfaces/app/android \
   || { echo "[build_apk] glass-voice manifest apply FAILED"; exit 1; }
 
 # Same rule, third time: the Meta DAT (glasses camera) gradle wiring + the
@@ -76,13 +76,13 @@ node app/plugins/withGlassVoice.js surfaces/app/android \
 # gradle step later dies on an unauthorized com.meta.wearable lookup, export it
 # and re-run - it is not a code failure:
 #     export GITHUB_TOKEN="$(gh auth token)"
-node app/plugins/withMetaDat.js surfaces/app/android \
+node surfaces/app/plugins/withMetaDat.js surfaces/app/android \
   || { echo "[build_apk] meta-dat wiring apply FAILED"; exit 1; }
 
 # Fourth re-apply, same silent-wrong-artifact class: the sherpa-onnx AAR for
 # the on-device STT option. Without it the build goes green and initLocalStt
-# throws NoClassDefFoundError at runtime (see app/plugins/withSherpaOnnx.js).
-node app/plugins/withSherpaOnnx.js surfaces/app/android \
+# throws NoClassDefFoundError at runtime (see surfaces/app/plugins/withSherpaOnnx.js).
+node surfaces/app/plugins/withSherpaOnnx.js surfaces/app/android \
   || { echo "[build_apk] sherpa-onnx wiring apply FAILED"; exit 1; }
 
 # THE CREDENTIAL, and WHY IT IS DERIVED HERE rather than assumed to be present.
@@ -121,7 +121,7 @@ fi
 # but the stale manifest kept the dead Oracle VM, so builds 48 + the first 49
 # shipped with an OTA URL that can never answer - and an OTA cannot fix a
 # wrong OTA URL. Emulator-proven (UpdateFailedToLoad, connect timeout).
-node app/plugins/withUpdateUrl.js surfaces/app/android \
+node surfaces/app/plugins/withUpdateUrl.js surfaces/app/android \
   || { echo "[build_apk] update-url manifest apply FAILED"; exit 1; }
 
 # Sync the hand-managed native version from app.json BEFORE building. The bump
@@ -133,7 +133,7 @@ node app/plugins/withUpdateUrl.js surfaces/app/android \
 # app.json so the APK, its runtimeVersion, and the OTA target can never drift.
 node -e '
   const fs = require("fs");
-  const e = JSON.parse(fs.readFileSync("app/app.json", "utf8")).expo;
+  const e = JSON.parse(fs.readFileSync("surfaces/app/app.json", "utf8")).expo;
   const ver = e.version, vc = String(e.android.versionCode);
   const g = "surfaces/app/android/app/build.gradle";
   fs.writeFileSync(g, fs.readFileSync(g, "utf8")

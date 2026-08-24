@@ -382,9 +382,9 @@ console.log("AndroidManifest.xml:");
 console.log("the runtime guard that makes the override safe:");
 {
   const dev = fs.readFileSync(
-    path.join(__dirname, "..", "app", "plugins", "metadat", "GlassesDevice.kt"), "utf8");
+    path.join(__dirname, "..", "..", "surfaces", "app", "plugins", "metadat", "GlassesDevice.kt"), "utf8");
   const cam = fs.readFileSync(
-    path.join(__dirname, "..", "app", "plugins", "metadat", "GlassCameraService.kt"), "utf8");
+    path.join(__dirname, "..", "..", "surfaces", "app", "plugins", "metadat", "GlassCameraService.kt"), "utf8");
   ok(dev.includes(`MIN_SDK = ${P.DAT_MIN_SDK}`),
      `GlassesDevice.MIN_SDK matches the plugin's ${P.DAT_MIN_SDK}`);
   ok(dev.includes("SDK_INT >= MIN_SDK"), "supported() checks the running API level");
@@ -546,7 +546,7 @@ console.log("withGlassVoice installs the shared arbiter:");
 console.log("build_apk.sh applies every local plugin:");
 {
   const appJson = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "..", "app", "app.json"), "utf8")
+    fs.readFileSync(path.join(__dirname, "..", "..", "surfaces", "app", "app.json"), "utf8")
   );
   const sh = fs.readFileSync(
     path.join(__dirname, "..", "deploy", "build_apk.sh"), "utf8"
@@ -567,7 +567,7 @@ console.log("build_apk.sh applies every local plugin:");
   // And each one must actually exist on disk, or the build dies at run time.
   for (const name of local) {
     ok(
-      fs.existsSync(path.join(__dirname, "..", "app", "plugins", `${name}.js`)),
+      fs.existsSync(path.join(__dirname, "..", "..", "surfaces", "app", "plugins", `${name}.js`)),
       `app/plugins/${name}.js exists`
     );
   }

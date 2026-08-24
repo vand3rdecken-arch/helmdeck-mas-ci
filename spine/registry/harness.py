@@ -326,7 +326,7 @@ def errors():
 
 def describe():
     """What each surface resolved to - for /loop/map and for a human check:
-    `python daemon/harness.py`."""
+    `python spine/registry/harness.py`."""
     out = []
     for name in sorted(_DEFAULTS):
         m = meta(name)
@@ -823,7 +823,7 @@ def preview(surface_key, cfg=None):
         "key": s["key"], "agent": agent, "label": s["label"],
         "builder": s["builder"], "cwd": s["cwd"],
         "brief": {
-            "source": _rel(apath) if araw is not None else "built-in default (daemon/harness.py)",
+            "source": _rel(apath) if araw is not None else "built-in default (spine/registry/harness.py)",
             "exists": araw is not None,
             "file_sha256": _sha(araw) if araw is not None else "",
             # the RESOLVED text is what the process is handed - hash that too,

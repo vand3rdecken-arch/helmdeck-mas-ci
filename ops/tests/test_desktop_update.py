@@ -18,8 +18,8 @@ import threading
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="hd-desktop-ota-")
 
-sys.path.insert(0, os.path.join(ROOT, "deploy"))
-sys.path.insert(0, os.path.join(ROOT, "desktop"))
+sys.path.insert(0, os.path.join(ROOT, "ops", "deploy"))
+sys.path.insert(0, os.path.join(ROOT, "surfaces", "desktop"))
 import desktop_manifest  # noqa: E402
 import desktop_update    # noqa: E402
 
@@ -60,7 +60,7 @@ man1 = make_export(EXPORT, "v1")
 publish(EXPORT)
 
 os.environ["HELMDECK_UPDATES_DIR"] = UPDATES
-sys.path.insert(0, os.path.join(ROOT, "relay"))
+sys.path.insert(0, os.path.join(ROOT, "surfaces", "relay"))
 import relay  # noqa: E402  (reads env at import)
 
 from http.server import ThreadingHTTPServer  # noqa: E402
@@ -169,7 +169,7 @@ node = shutil.which("node") or (
 if node:
     APP2 = os.path.join(TMP, "app-dist-js")
     os.makedirs(APP2)
-    r = subprocess.run([node, os.path.join(ROOT, "tests", "desktop_updater_harness.cjs"),
+    r = subprocess.run([node, os.path.join(ROOT, "ops", "tests", "desktop_updater_harness.cjs"),
                         BASE, APP2], capture_output=True, text=True, timeout=120)
     check("updater.js harness exits clean", r.returncode == 0,
           (r.stdout + r.stderr).strip()[-400:])

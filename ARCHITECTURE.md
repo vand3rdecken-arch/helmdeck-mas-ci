@@ -183,13 +183,13 @@ request, never by generated frontend code.
 
 ## Runtime topology (today)
 
-The single Expo app (`app/`) is the ONLY frontend - phone, web, and desktop
+The single Expo app (`surfaces/app/`) is the ONLY frontend - phone, web, and desktop
 from one codebase (the old `web/` Next.js app and `apk/` Kotlin client are
 archived; debt `expo-cutover-pipeline` is paid). It talks to the daemon
 directly (or through the sealed relay when off the LAN):
 
 ```
-app/ (Expo: phone + web :3300 + desktop) ──HTTP/SSE──► daemon (Python :8140)
+surfaces/app/ (Expo: phone + web :3300 + desktop) ──HTTP/SSE──► daemon (Python :8140)
 ```
 
 The daemon is NOT a handful of god-files anymore. Debt `daemon-god-files`
@@ -219,7 +219,7 @@ server.py (H handler, ~478 lines, was 2109)
   ├─ routes_pm.py          the proactive daily-loop's API surface
   ├─ routes_misc.py        /processes, /me
   ├─ routes_control.py     /control/state, teach/start, teach/stop, distill, demo
-  ├─ routes_relay.py       /surfaces/relay/pair, /surfaces/relay/unpair
+  ├─ routes_relay.py       /relay/pair, /relay/unpair
   ├─ routes_connectors.py  /connectors list, /connectors/<name>/rollback,run
   ├─ routes_checkpoints.py /checkpoints list, /checkpoints/<id>/diff,restore
   ├─ routes_projects.py    /projects CRUD

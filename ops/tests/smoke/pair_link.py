@@ -1,5 +1,5 @@
 # Mint a pairing deep link for the sandbox daemon (same payload the owner UI
-# builds: /surfaces/relay/pair = relay_client.pairing_payload + a fresh device token).
+# builds: /relay/pair = relay_client.pairing_payload + a fresh device token).
 #   py -3.12 .smoke/pair_link.py
 # Prints helmdeck://pair?c=<b64url{u,r,k,t}> - feed it to the emulator via
 #   adb shell am start -a android.intent.action.VIEW -d "<link>"

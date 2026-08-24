@@ -33,13 +33,13 @@ on:
     branches: [main]
     paths:
       - "surfaces/desktop/**"
-      - "app/**"
+      - "surfaces/app/**"
       - "daemon/**"
       - ".github/workflows/desktop-mac.yml"
   pull_request:
     paths:
       - "surfaces/desktop/**"
-      - "app/**"
+      - "surfaces/app/**"
       - "daemon/**"
       - ".github/workflows/desktop-mac.yml"
 
@@ -90,7 +90,7 @@ jobs:
       - name: Install app + desktop dependencies
         run: |
           (cd surfaces/app && npm ci)
-          (cd desktop && npm ci)
+          (cd surfaces/desktop && npm ci)
 
       # Written to a file because notarytool wants a path, not a blob. Skipped
       # entirely when the secret is absent - build-mac.sh then just doesn't

@@ -111,7 +111,7 @@ So the Mac artifact is built by GitHub's macOS runner:
 cross-compiles the x64 slice too). Trigger it from the Actions tab
 (**workflow_dispatch** — optional `version` to stamp, optional `release_tag` to
 attach the artifacts to a release) or let it run on a push touching
-`surfaces/desktop/**`, `app/**` or `daemon/**`. On a Mac, the same build is one command:
+`surfaces/desktop/**`, `surfaces/app/**` or `daemon/**`. On a Mac, the same build is one command:
 
 ```bash
 bash surfaces/desktop/build-mac.sh --version 0.2.3        # dmg + zip, arm64 + x64
@@ -510,7 +510,7 @@ testing — check `dumpsys package app.helmdeck | grep version` before trusting 
 measurement.
 
 Native config note: `surfaces/app/android/` is **git-ignored / hand-managed**. A native
-permission (e.g. CAMERA) must go in BOTH `app/app.json` `plugins` (so a future
+permission (e.g. CAMERA) must go in BOTH `surfaces/app/app.json` `plugins` (so a future
 `expo prebuild` reproduces it) AND the hand-managed
 `surfaces/app/android/app/src/main/AndroidManifest.xml` (what THIS build uses).
 
@@ -518,7 +518,7 @@ Cleartext / direct-LAN: cleartext HTTP is **scoped, not global** — a
 network-security-config allows it only for `10.0.2.2`/loopback plus the hosts
 in the `./plugins/withLanCleartext` entry in `app.json` (Android can't express
 IP ranges). `ops/deploy/build_apk.sh` re-applies it to the hand-managed
-`surfaces/app/android` before every gradle build (`node app/plugins/withLanCleartext.js
+`surfaces/app/android` before every gradle build (`node surfaces/app/plugins/withLanCleartext.js
 surfaces/app/android`), and the same file is the expo config plugin for a future
 prebuild. Direct-LAN from a real phone ⇒ add the PC's IP to that host list and
 rebuild the APK; surfaces/relay/HTTPS need nothing.
@@ -533,7 +533,7 @@ is a secret you may commit; the certificate and profile stay on Expo's servers.
 
 State as of this section: the project is **linked** —
 `@tienduyvo/helmdeck`, projectId `a0ea8905-52a1-4223-b102-1dfd9e98d561`, recorded
-in `app/app.json` as `extra.eas.projectId` + `owner`. `eas.json` already carries an
+in `surfaces/app/app.json` as `extra.eas.projectId` + `owner`. `eas.json` already carries an
 `internal` (ad-hoc/device) and a `production` (App Store) profile. A paid **Apple
 Developer Program** membership is the hard floor — without it Apple issues no
 distribution certificate and every route below dies at the identical step
@@ -664,7 +664,7 @@ even after a one-time bootstrap — `ensureAscAppAsync` hard-routes through user
 auth every time an `ascAppId` isn't already pinned in `eas.json`. Fix once a
 human has created the app record in App Store Connect (or logged in
 interactively to let eas-cli create it): copy the app's numeric ASC ID into
-`app/eas.json → submit.production.ios.ascAppId`, and every later
+`surfaces/app/eas.json → submit.production.ios.ascAppId`, and every later
 `eas submit --non-interactive` skips this step entirely.
 
 Both halves of that are verified in eas-cli source, not guessed:
@@ -731,9 +731,9 @@ registered as debt `ios-submit-local-asc-key`. Route (b) is the portable fix:
 one interactive `npx eas-cli credentials -p ios` from cmd.exe, then delete the
 three fields.
 
-⚠ `eas init` rewrites `app/app.json` through the expo-config normalizer and adds
+⚠ `eas init` rewrites `surfaces/app/app.json` through the expo-config normalizer and adds
 hunks you did not ask for — it added an `android.permissions: [CAMERA]` array and
-an empty `extra.router` here. Diff `app/app.json` after any `eas` command and keep
+an empty `extra.router` here. Diff `surfaces/app/app.json` after any `eas` command and keep
 only what you meant to change; the CAMERA permission is already delivered by the
 `expo-camera` plugin entry.
 
