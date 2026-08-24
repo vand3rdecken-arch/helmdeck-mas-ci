@@ -7,7 +7,7 @@ push.env
 
 # Local expo modules ARE tracked (surfaces/app/modules/glasses is real source), but a
 # native build drops gradle output inside them - first seen 2026-08-21, when
-# assembleRelease left surfaces/app/modules/surfaces/glasses/android/build/ as ~700 untracked
+# assembleRelease left surfaces/app/modules/glasses/android/build/ as ~700 untracked
 # files. Ignore the output, keep the source.
 surfaces/app/modules/*/android/build/
 daemon/tracks.json
@@ -57,7 +57,6 @@ daemon/restart_stdout.log
 daemon/restart_stderr.log
 daemon/daemon.out.log
 surfaces/app/dist-desktop/
-web/devserver.log
 surfaces/app/web_dev.log
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
