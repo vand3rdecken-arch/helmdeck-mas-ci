@@ -2677,6 +2677,156 @@ DEBT = [
                "coarse process picture proves insufficient in practice.",
         "order": 44,
     },
+    {
+        "id": "card-feed-is-claude-private-jsonl",
+        "title": "The card feed is a re-parse of Claude Code's own private session file",
+        "status": "paid",
+        "what": "claude_sessions.py (~660 lines) + claude_transcript_fmt.py build "
+                "every card's chat feed by globbing and parsing "
+                "~/.claude/projects/<cwd>/<uuid>.jsonl - a file Claude Code owns "
+                "and writes for ITS OWN purposes (record schema, envelope "
+                "sniffing for strings like '<task-notification>', "
+                "'[Request interrupted by user', tool-name whitelists). "
+                "transcript_version()'s long-poll change token is literally the "
+                "byte count of that foreign file.",
+        "why_it_bites": "This is a heuristic reconstruction of first-class state "
+                        "from another program's artifacts, at the OPPOSITE end "
+                        "of the spectrum from the law CLAUDE.md states for this "
+                        "repo (NO MONKEY PATCHES: derived and verified from the "
+                        "runtime's own signals, folded in at event time - never "
+                        "reconstructed by re-scanning artifacts). It has held "
+                        "only because there has been exactly one engine, ever. "
+                        "A second card driver (OpenCode/Codex/any ACP agent) "
+                        "produces no such file, so it produces NO CARD FEED AT "
+                        "ALL - not a degraded one, an absent one.",
+        "trigger": "docs/multi-engine-support.md (2026-08-24 analysis) + "
+                   "docs/multi-engine-build-plan.md Card 2 (E3, sized L/3-5d): "
+                   "the pump that already runs every claude turn "
+                   "(drivers.py _ClaudeSession._pump/_on_event) folds each "
+                   "normalized event into a persisted per-card timeline store "
+                   "at EVENT TIME - the same fold discipline already proven by "
+                   "_scan_bg (drivers.py:634-680). /transcript reads THAT. "
+                   "Dual-write against the old reader first, cut over only "
+                   "after N clean live turns diff empty; the old reader stays "
+                   "for adopting foreign claude sessions and pre-cutover "
+                   "session_chain history. Worth doing even if multi-engine "
+                   "support is never built further - it is closing a live law "
+                   "violation, not just an enabler.",
+        "fix": "PAID (spine/agent/timeline_store.py, drivers.py's "
+               "_ClaudeSession._fold_timeline, claude_sessions."
+               "read_transcript_store/transcript_store_version): the driver's "
+               "own pump folds every stream event into a per-card append-only "
+               "JSONL store at the moment each block completes - the SAME "
+               "TStep shape read_transcript already produced, just derived "
+               "from the LIVE stream instead of a re-parsed .jsonl. /transcript, "
+               "/transcript/live and the SSE tick (routes_tracks.py, "
+               "routes_track_actions.py) now all read the store; the old "
+               ".jsonl reader is kept ONLY for what genuinely still needs it - "
+               "session_chain history from before the store existed (adopted "
+               "or rotated-away foreign sessions) and the in-progress "
+               "live_partial.txt streaming block, exactly as the build plan's "
+               "own design called for. Dual-write verified before cutover with "
+               "tools/compare_timeline.py against real dispatched turns "
+               "(text, tool calls through all 4 states, todos, usage, a "
+               "harness-injected question note, and a real mid-turn Stop/"
+               "cancel) - PASS on every category. Two real bugs surfaced and "
+               "fixed during that verification, not assumed away: (1) the "
+               "human's own steer text never arrives on the OUTPUT stream at "
+               "all (Claude Code does not echo stdin back) - now folded at "
+               "the moment the driver WRITES it, including re-attributing "
+               "HelmDeck's own harness-injected prompts to a system note "
+               "exactly like the old reader did; (2) a message's LIVE "
+               "usage.output_tokens can read far below its own settled value "
+               "in the persisted file (measured: 2 live vs. 152 in the file, "
+               "same message id, no later live frame ever corrects it) - "
+               "documented as a permanent, harmless approximation (ctx, the "
+               "only usage field econ.py's context meter reads, is unaffected "
+               "and proven identical live vs. file). Not yet screenshotted in "
+               "the app: zero frontend code changed (the TStep wire contract "
+               "is byte-identical) and this worktree has no app/node_modules "
+               "set up - the owner should still spot-check a real card's feed "
+               "once after accepting.",
+        "order": 45,
+    },
+    {
+        "id": "auto-model-routing-is-claude-ids-only",
+        "title": "Auto model routing picks a claude-* id even when the driver isn't claude",
+        "status": "open",
+        "what": "turnrunner._turn resolves policy.auto to a concrete model id via "
+                "turnopts.resolve_model, whose whole manifest (turnopts.CLAUDE_MODELS: "
+                "claude-opus-5/claude-sonnet-5/claude-haiku-4-5) is Anthropic-specific. "
+                "That resolved id is then handed to WHATEVER driver the card uses, "
+                "unchanged - for the native omp driver it lands in build_argv's "
+                "--model flag verbatim.",
+        "why_it_bites": "Measured live 2026-08-24 (docs/multi-engine-build-plan.md "
+                        "Card 8): a card with driver=omp and no explicit model got "
+                        "auto-routed to the literal string 'claude-sonnet-5', which "
+                        "omp's own --model fuzzy-matcher happened to resolve to a real "
+                        "sonnet-tier model (the turn completed correctly, cost "
+                        "$0.147614 vs. an explicit 'haiku' dispatch's $0.11). It WORKED "
+                        "by fuzzy-match coincidence, not by design - a future omp "
+                        "catalog change, or a THIRD engine with a stricter --model "
+                        "parser, could silently fail or silently pick the wrong model "
+                        "with no error surfaced.",
+        "trigger": "any auto-routed card on a non-claude driver in production. "
+                   "Workaround today: pass an explicit model on card creation "
+                   "(bypasses turnrunner's auto-resolve branch entirely - proven, "
+                   "the second omp test dispatch used model='haiku' explicitly and "
+                   "got exactly that model, confirmed via the track's own `models` "
+                   "field). Real fix is Card 9's territory (econ/UI generalisation) "
+                   "or its own small card: either give resolve_model an engine "
+                   "parameter with a per-engine manifest, or have each native driver "
+                   "translate the generic auto tier (cheap/balanced/strong) into its "
+                   "own model id instead of receiving a claude-shaped string.",
+        "fix": "OPEN.",
+        "order": 46,
+    },
+    {
+        "id": "codex-opencode-pi-drivers-unverified",
+        "title": "Three native engine drivers exist as code with zero live turns run",
+        "status": "open",
+        "what": "daemon/spine/agent/{codex,opencode,pi}_driver.py (build plan "
+                "Cards 6/7/8-pi) were built 2026-08-24 per owner decree ('do all "
+                "like Paseo, test accounts later') - complete modules, unit-"
+                "tested against synthetic frames built from Paseo's real "
+                "TS source, gate green, wired into drivers.run() dispatch. NONE "
+                "has been run against a real codex/opencode/pi CLI - no account "
+                "exists for any of the three on this box. This is qualitatively "
+                "different from the omp half of Card 8, which IS live-verified "
+                "(real turns, real tool calls, real cost, real cancel, through "
+                "the actual daemon and HTTP route).",
+        "why_it_bites": "omp_driver.py's own history is the reason this matters: "
+                        "reading Paseo's real TS source got the request/response "
+                        "SHAPES right but missed a real behavioral surprise (one "
+                        "prompt can produce multiple internal turn_end events, the "
+                        "first carrying narration not the answer) that only live "
+                        "testing caught - and a second one (a cancelled tool call "
+                        "reports isError:true, which a naive mapping would have "
+                        "shown as a tool FAILURE, not a cancel). Codex/OpenCode/Pi "
+                        "each carry their own version of this risk, unmeasured. "
+                        "Confidence is NOT uniform across the three: Codex has the "
+                        "full JSON-RPC method+param shapes read from source (only "
+                        "the account is missing); Pi rides on omp's proven event-"
+                        "handling logic but pi's own stream has never been seen; "
+                        "OpenCode is the highest-risk of the three because its "
+                        "REST endpoint PATHS are INFERRED from SDK method names "
+                        "(@opencode-ai/sdk is not vendored in this checkout), not "
+                        "read from source at all - the one part of that module "
+                        "most likely to need correction, not just confirmation.",
+        "trigger": "an owner account for codex, opencode, or pi. Each card's own "
+                   "'Verify (STILL OPEN)' line in docs/multi-engine-build-plan.md "
+                   "is the concrete checklist - run it the same way omp's Card 8 "
+                   "verify ran (real dispatched turns through the live daemon and "
+                   "the actual /tracks/.../transcript HTTP route, not just the "
+                   "unit tests), and expect to find and fix at least one real "
+                   "surprise per engine the same way omp did. Do not accept any "
+                   "of these three cards as 'done' on unit-test-green alone.",
+        "fix": "OPEN. Three independent verification passes, one per engine, "
+               "each its own small follow-up card once that engine's account "
+               "exists. OpenCode's pass should start by confirming the REST "
+               "paths resolve at all before testing anything else.",
+        "order": 47,
+    },
 ]
 
 def list_debt():

@@ -33,9 +33,19 @@ import hashlib, json, os, re as _re, shutil, subprocess, threading, time as _tim
 import urllib.request
 from daemon.spine.agent.spawnenv import _card_env, _env
 from daemon.spine.agent.proctable import (_pid_table, _descendants, _tree_kill, _read_pids, _write_pids, _record_pid, _forget_pid, _proc_start_epoch, _is_agent_pid, _is_ours, reap_orphans)
-from daemon.spine.agent.agentcli import (_real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
+from daemon.spine.agent.agentcli import (CLAUDE, _real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
+from daemon.spine.agent import timeline_store
+from daemon.spine.agent.claude_transcript_fmt import (
+    _tool_label, _tool_detail, _tool_summary, _result_text, _clean_text)
 
 _re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
+
+# Caps mirroring claude_sessions.py's MAX_TEXT/MAX_THINK/MAX_RESULT - the same
+# per-step content ceilings, applied here because _fold_timeline writes the
+# SAME TStep shape from the live stream instead of a re-parsed transcript.
+_TL_MAX_TEXT = 200_000
+_TL_MAX_THINK = 60_000
+_TL_MAX_RESULT = 8_000
 
 
 def _text_of(content):
@@ -51,8 +61,9 @@ def _text_of(content):
 from daemon.spine.ops import ask  # the typed question channel taught to every worker (Phase 2.4)
 from daemon.spine.registry import harness  # briefs + settings layers as data (harness/), never raises
 
-CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
-          or r"C:\Program Files\nodejs\claude.cmd")
+# CLAUDE comes from agentcli.py now (the single source - see its module
+# docstring); still a real name in THIS module's namespace via the import
+# above, so `drivers.CLAUDE = ...` monkeypatching in tests is unchanged.
 
 # Persistent Claude sessions by track id - modelled on Paseo's provider/claude
 # agent (see _paseo_src packages/server/.../claude/agent.ts). A card holds ONE
@@ -69,16 +80,50 @@ _cancelled = set()
 
 
 
+# Every NATIVE driver module beyond claude (this module) - each owns its
+# OWN {tid: session} registry + guard, same reasoning as claude_sessions.py
+# being its own module: one driver, one owner of its session state. Lazy-
+# imported so a claude-only board never loads any of them. Add a new native
+# driver here (one line) and cancel/has_session/turn_active/drop_session all
+# pick it up - a caller only ever has a tid, not the track's driver type, so
+# the alternative is pushing a driver-type lookup onto every one of the
+# 12+ call sites instead of this one list.
+_NATIVE_DRIVER_MODULES = ("omp_driver", "codex_driver", "opencode_driver", "pi_driver")
+
+
+def _native_registries():
+    """[(sessions_dict, guard), ...] for every native driver module that
+    actually imports cleanly (a module with a missing/broken optional
+    dependency degrades to "no sessions there", never breaks the claude
+    path these functions all serve first)."""
+    out = []
+    for name in _NATIVE_DRIVER_MODULES:
+        try:
+            mod = __import__("daemon.spine.agent." + name, fromlist=[name])
+            out.append((mod._sessions, mod._sessions_guard))
+        except Exception:
+            continue
+    return out
+
+
 def cancel(tid):
     """Stop the track's in-flight turn (composer Stop). Unblocks the waiting turn
     with a clean '(cancelled)' and tree-kills the session; the next steer respawns
-    and `--resume`s the session id, so no conversation is lost. Idempotent."""
+    and `--resume`s the session id, so no conversation is lost. Idempotent.
+    Checks EVERY registry (claude's own, then each native driver's) - see
+    _native_registries' docstring for why the lookup lives here once."""
     _cancelled.add(tid)
     with _sessions_guard:
         s = _sessions.get(tid)
     if s:
         s.cancel()
         return True
+    for reg, guard in _native_registries():
+        with guard:
+            s = reg.get(tid)
+        if s:
+            s.cancel()
+            return True
     return False
 
 
@@ -87,7 +132,13 @@ def has_session(tid):
     flagged status=running WITHOUT one is a zombie - its turn died with a prior
     daemon process (see sessions.sweep_zombies)."""
     with _sessions_guard:
-        return tid in _sessions
+        if tid in _sessions:
+            return True
+    for reg, guard in _native_registries():
+        with guard:
+            if tid in reg:
+                return True
+    return False
 
 
 def turn_active(tid):
@@ -105,6 +156,12 @@ def turn_active(tid):
     froze with a spinner no sweep would ever clear."""
     with _sessions_guard:
         s = _sessions.get(tid)
+    if s is None:
+        for reg, guard in _native_registries():
+            with guard:
+                s = reg.get(tid)
+            if s is not None:
+                break
     if s is None:
         return False
     try:
@@ -236,24 +293,30 @@ def drop_session(tid):
     Same safety as sweep_idle: only a session with NO turn in flight is reaped
     (non-blocking lock + _cur check), and the conversation survives on disk keyed
     by session id, so the next steer resumes it. Returns True if a session was
-    dropped. Idempotent - a no-op when the card has no live session."""
-    with _sessions_guard:
-        s = _sessions.get(tid)
-        if s is None:
-            return False
-        if not s._turn_lock.acquire(blocking=False):
-            return False            # a turn holds it - leave it to _get_session
+    dropped. Idempotent - a no-op when the card has no live session.
+
+    Checks EVERY registry (see cancel's docstring) - a driver swap FROM one
+    native engine TO another (or to/from claude) must drop whichever one is
+    actually live, not just claude's."""
+    for registry, guard in ((_sessions, _sessions_guard), *_native_registries()):
+        with guard:
+            s = registry.get(tid)
+            if s is None:
+                continue
+            if not s._turn_lock.acquire(blocking=False):
+                return False        # a turn holds it - leave it to _get_session
+            try:
+                if s._cur is not None:
+                    return False    # turn in flight - never yank it mid-run
+                del registry[tid]
+            finally:
+                s._turn_lock.release()
         try:
-            if s._cur is not None:
-                return False        # turn in flight - never yank it mid-run
-            del _sessions[tid]
-        finally:
-            s._turn_lock.release()
-    try:
-        s.kill()
-    except Exception:
-        pass
-    return True
+            s.kill()
+        except Exception:
+            pass
+        return True
+    return False
 
 
 def shutdown_all():
@@ -282,6 +345,36 @@ def run(cfg, t, prompt):
         return _http(cfg, t, prompt)
     if kind == "cmd":
         return _cmd(cfg, t, prompt)
+    if kind == "omp":
+        # Native OMP driver (docs/multi-engine-build-plan.md Card 8) - its
+        # own persistent-session module, same shape as _ClaudeSession but a
+        # different wire protocol (JSONL-RPC, not stream-json). LIVE-VERIFIED
+        # against a real account. Lazy import: no reason to load for a
+        # claude-only board.
+        from daemon.spine.agent import omp_driver
+        return omp_driver.run(cfg, t, prompt)
+    if kind == "codex":
+        # Native Codex driver (build plan Card 6) - JSON-RPC over stdio.
+        # NOT LIVE-VERIFIED (owner decree 2026-08-24, "test accounts later")
+        # - protocol-correct-per-Paseo's-source, unproven against the real
+        # binary. See codex_driver.py's own module docstring.
+        from daemon.spine.agent import codex_driver
+        return codex_driver.run(cfg, t, prompt)
+    if kind == "opencode":
+        # Native OpenCode driver, DEDICATED-server mode (build plan Card 7,
+        # analysis §6.6.2) - one private `opencode serve` per card, never
+        # Paseo's shared-by-default pool. NOT LIVE-VERIFIED - see
+        # opencode_driver.py's own module docstring, including which REST
+        # paths are inferred rather than source-confirmed.
+        from daemon.spine.agent import opencode_driver
+        return opencode_driver.run(cfg, t, prompt)
+    if kind == "pi":
+        # Native Pi driver - the deferred half of Card 8 (omp shipped and
+        # is live-verified; pi is not). See pi_driver.py's own module
+        # docstring for exactly what's borrowed from omp's proven structure
+        # vs. genuinely unverified even by relation.
+        from daemon.spine.agent import pi_driver
+        return pi_driver.run(cfg, t, prompt)
     raise RuntimeError("unknown driver type: " + kind)
 
 # THE BRIEFS ARE DATA NOW - harness/agents/*.md, loaded by daemon/harness.py.
@@ -679,6 +772,133 @@ class _ClaudeSession:
                         except Exception:
                             pass
 
+    # -- event-time card feed (Card 2, DUAL-WRITE STAGE - see timeline_store.py) -
+    def _fold_timeline(self, ev):
+        """Fold ONE stream event into the card's event-time feed store, in the
+        SAME TStep shape claude_sessions.read_transcript already produces from
+        a re-parsed .jsonl - but derived here from the LIVE stream, at the
+        moment each block completes. DUAL-WRITE ONLY: nothing reads this store
+        in production yet (docs/multi-engine-build-plan.md Card 2). Best-
+        effort, same discipline as _scan_bg - a feed write must never disturb
+        a turn.
+
+        `ts`/`ta` are stamped at FOLD time (wall-clock), not read back off a
+        persisted-file timestamp the way read_transcript does - the more
+        literal reading of "derived from the runtime's own signal, folded in
+        AT EVENT TIME" (CLAUDE.md's law), and it is what a live feed actually
+        wants: the moment the daemon SAW the block, not whenever Claude Code
+        later flushed it to disk. An UPDATE patch (a tool's result arriving)
+        deliberately does not restamp ts/ta - a step keeps the time it was
+        first seen, matching read_transcript's own per-part timestamping.
+
+        Deliberately narrower than read_transcript for now (documented scope
+        cut, not a silent gap): plain role=user text is folded as a bare text
+        step without read_transcript's envelope re-attribution (command-label
+        rewriting, harness-tag notes, notification labels, compaction dedup).
+        tools/compare_timeline.py knows about this and reports those as
+        accepted differences, not failures.
+
+        MEASURED LIMIT (not a bug to fix - there is no live signal that carries
+        the corrected number): a usage step's tokOut can read LOWER than the
+        SAME message's output_tokens in the persisted .jsonl. Proven live
+        2026-08-24: a message split across two stream events (msg id shared
+        across a 'thinking' and a 'tool_use' frame) reported usage.output_
+        tokens=2 on BOTH live frames while the settled file later held 152 for
+        that exact message id - the wire delivers an early/interim count, only
+        the file gets corrected. tokIn/cacheRead/cacheWrite (and therefore ctx,
+        which is input+cache only) are unaffected - proven identical live vs.
+        file on the same turns - and ctx is the ONLY usage field econ.py's
+        context meter actually reads (econ._record_econ never touches
+        output_tokens). tools/compare_timeline.py excludes tokOut from its
+        usage comparison for exactly this reason."""
+        m = ev.get("message") or {}
+        role = m.get("role") or ev.get("type")
+        c = m.get("content")
+        typ = ev.get("type")
+        ts, ta = _time.strftime("%H:%M:%S", _time.localtime()), _time.time()
+        if typ == "assistant" and isinstance(c, list):
+            for p in c:
+                if not isinstance(p, dict):
+                    continue
+                pt = p.get("type")
+                if pt == "text":
+                    text = _clean_text((p.get("text") or "").strip())
+                    if text:
+                        timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
+                            {"role": role, "kind": "text", "text": text[:_TL_MAX_TEXT],
+                             "ts": ts, "ta": ta})
+                elif pt == "thinking":
+                    think = (p.get("thinking") or "").strip()
+                    if think:
+                        timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
+                            {"role": role, "kind": "thinking", "text": think[:_TL_MAX_THINK],
+                             "ts": ts, "ta": ta})
+                elif pt == "tool_use":
+                    name = p.get("name") or "tool"
+                    inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                    uid = p.get("id")
+                    if name == "TodoWrite":
+                        todos = [{"content": str(td.get("content", ""))[:220],
+                                  "status": str(td.get("status", ""))}
+                                 for td in (inp.get("todos") or []) if isinstance(td, dict)]
+                        if todos and uid:
+                            timeline_store.append(self.run_dir, "todos:" + uid,
+                                {"kind": "todos", "todos": todos, "ts": ts, "ta": ta})
+                        continue
+                    if name == "ExitPlanMode":
+                        if uid:
+                            timeline_store.append(self.run_dir, "plan:" + uid,
+                                {"kind": "plan", "text": str(inp.get("plan", ""))[:_TL_MAX_TEXT],
+                                 "ts": ts, "ta": ta})
+                        continue
+                    if not uid:
+                        continue
+                    lbl, sub = _tool_label(name, inp)
+                    step = {"role": role, "kind": "tool", "tool": name, "label": lbl,
+                            "text": sub or _tool_summary(inp), "result": "",
+                            "ok": True, "status": "running", "error": None,
+                            "running": True, "ts": ts, "ta": ta}
+                    detail = _tool_detail(name, inp)
+                    if detail:
+                        step["detail"] = detail
+                    timeline_store.append(self.run_dir, "tool:" + uid, step)
+            u = m.get("usage")
+            if isinstance(u, dict):
+                inp_t = int(u.get("input_tokens") or 0)
+                out_t = int(u.get("output_tokens") or 0)
+                cr = int(u.get("cache_read_input_tokens") or 0)
+                cc = int(u.get("cache_creation_input_tokens") or 0)
+                if (inp_t + cr + cc) or out_t:
+                    timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
+                        {"kind": "usage", "tokIn": inp_t, "tokOut": out_t,
+                         "cacheRead": cr, "cacheWrite": cc, "ctx": inp_t + cr + cc,
+                         "ts": ts, "ta": ta})
+        elif typ == "user" and isinstance(c, list):
+            for p in c:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "tool_result":
+                    uid = p.get("tool_use_id")
+                    if not uid:
+                        continue
+                    text = _result_text(p)
+                    interrupted = text.lstrip().startswith("[Request interrupted by user")
+                    if interrupted:
+                        status, err, ok = "canceled", None, True
+                    elif p.get("is_error"):
+                        status, err, ok = "failed", (text or "error")[:500], False
+                    else:
+                        status, err, ok = "completed", None, True
+                    timeline_store.append(self.run_dir, "tool:" + uid,
+                        {"result": text[:_TL_MAX_RESULT], "ok": ok, "status": status,
+                         "error": err, "running": False})
+        # NOTE: role=user PLAIN TEXT (the human's own steer) never arrives here -
+        # measured, not assumed: Claude Code's `type:"user"` output-stream frames
+        # are only tool_result echoes, never a mirror of what we submitted. That
+        # is folded directly at submission time in _run_turn_locked instead (see
+        # the comment there) - this method only ever sees list-content user
+        # frames (tool_result), never string content.
+
     def _burn_watch(self, ev, cur):
         """Loop detector (the token-burn signal). A worker stuck in a loop keeps
         STREAMING - so the inactivity watchdog never fires - and burns tokens
@@ -730,6 +950,10 @@ class _ClaudeSession:
                 self._scan_bg(ev)
             except Exception:
                 pass                     # registry is best-effort, never the turn
+            try:
+                self._fold_timeline(ev)
+            except Exception:
+                pass                     # dual-write only - never the turn (Card 2)
         if typ == "system" and ev.get("subtype") == "task_notification":
             # MEASURED 2026-08-24 (card 20260824-140559 + a probe run): a
             # background task finishing BETWEEN turns reaches the stream as
@@ -864,6 +1088,40 @@ class _ClaudeSession:
             self._cur = None
             self.kill()
             raise RuntimeError("claude session write failed: %s" % e)
+        # Card 2 dual-write: the human's OWN steer text never arrives back on
+        # the OUTPUT stream (measured - `_on_event`'s `type:"user"` frames are
+        # only tool_result echoes; Claude Code does not mirror what WE just
+        # wrote to stdin). read_transcript instead reads it off the PERSISTED
+        # file afterward. We already know it with certainty right here - it is
+        # what we just sent - so fold it now, at the moment of the real event
+        # (submission), not by waiting for something that never arrives.
+        #
+        # HARNESS-INJECTED prompts (ask-repair, the background-continue nudge)
+        # are ALSO submitted right here, so - unlike the command-envelope/
+        # notification cases (those originate inside Claude Code's own
+        # runtime, never as a `prompt` this driver sends, so they stay a
+        # permanent OLD-reader-only case) - this one IS reachable and is
+        # re-attributed exactly like read_transcript does (ask.harness_tag +
+        # claude_sessions._HARNESS_NOTE), not left as a stray text bubble.
+        # Measured live 2026-08-24: an un-repaired ask-repair turn showed up
+        # as raw "[[helmdeck:ask-repair]]..." protocol text before this fix.
+        try:
+            from daemon.spine.agent import claude_sessions
+            tag = ask.harness_tag(prompt)
+            tsv, tav = _time.strftime("%H:%M:%S", _time.localtime()), _time.time()
+            if tag:
+                timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                    {"kind": "system",
+                     "text": claude_sessions._HARNESS_NOTE.get(tag, "⚙ Harness-Hinweis"),
+                     "ts": tsv, "ta": tav})
+            else:
+                text = _clean_text((prompt or "").strip())
+                if text:
+                    timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                        {"role": "user", "kind": "text", "text": text[:_TL_MAX_TEXT],
+                         "ts": tsv, "ta": tav})
+        except Exception:
+            pass
         # INACTIVITY watchdog, not a wall-clock cap (Paseo bounds the TOOL, not
         # the turn). A fixed 1800s wall-clock killed long-but-PRODUCTIVE turns
         # mid-run ("killed during run" on a machine card doing gradle builds +
@@ -908,6 +1166,17 @@ class _ClaudeSession:
             # `canceled` is the structured signal (Paseo turn_canceled): the turn
             # ended by the owner's hand, not by an error - the lifecycle event
             # stream renders it as its own typed item, never a failure.
+            # Card 2 dual-write: the ONE turn-lifecycle step read_transcript
+            # derives (from the '[Request interrupted by user...]' sentinel
+            # string) - folded here instead from the PROGRAMMATIC signal, which
+            # is the more precise source the same way ACP's stopReason beats
+            # string-sniffing a result frame (docs/multi-engine-support.md §4.3).
+            try:
+                timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                    {"kind": "turn", "event": "canceled",
+                     "ts": _time.strftime("%H:%M:%S", _time.localtime()), "ta": _time.time()})
+            except Exception:
+                pass
             return self.session_id, "(turn cancelled by you)", \
                 {"usage": {}, "cost_usd": None, "models": [], "canceled": True}
         if not finished:

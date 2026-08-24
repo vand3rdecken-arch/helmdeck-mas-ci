@@ -32,9 +32,20 @@ daemon/checkpoints/
 daemon/swarmdeck.db
 daemon/helmdeck.db
 daemon/*.imported
+daemon/*.imported.*
 daemon/**/*.imported
+daemon/tracks.json.imported
+# events.jsonl sync/import runtime markers - a *.imported (no numbered
+# suffix) is already covered above; *.imported.<n> and *.synced are the
+# same class of daemon-regenerated marker and were missing (surfaced by a
+# throwaway verification daemon run leaving events.jsonl.imported.2 /
+# events.jsonl.synced as untracked noise).
 daemon/*.synced
 daemon/**/*.synced
+# ad-hoc one-off diagnostic scripts left at repo root by a card/machine
+# session with direct hands on the live tree (Henry) - disposable scratch,
+# never source.
+/_henry_check.py
 .loop/
 daemon/copilot_log.json
 daemon/copilot_stats.json

@@ -98,3 +98,8 @@ Recommended: P1 -> P2 -> (adopt protocol-discipline convention) -> P3 -> P4.
 Deferred (Phase 5, not scoped): provider seam / capability flags, opaque IDs over
 paths, forge registry, skills managed-dir. Not adopted: Paseo's PTY terminal
 (HelmDeck correctly uses piped stream-json), unbounded agent concurrency.
+
+Phase 5 is now ANALYSED (not built): see `docs/multi-engine-support.md` for the
+provider-seam comparison against the real Paseo source, the measured HelmDeck
+change surface, and an ACP-driver integration plan with per-block effort
+estimates.

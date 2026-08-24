@@ -14,8 +14,7 @@ from daemon.spine.ops.runs import REC
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT
 STORE = os.path.join(ROOT, "tracks.json")
 DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
-CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
-          or r"C:\Program Files\nodejs\claude.cmd")
+from daemon.spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 
 from daemon.spine.storage import db as _db
 from daemon.spine.git.worktrees import reclaim_worktree, sweep_worktrees

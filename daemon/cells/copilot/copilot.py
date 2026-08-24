@@ -11,8 +11,7 @@ SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
 from daemon.cells.copilot.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from daemon.cells.copilot.copilot_actions import _strip_actions_live, _parse_reply_actions
-CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
-          or r"C:\Program Files\nodejs\claude.cmd")
+from daemon.spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 
 
 # Appended ONLY on voice turns (routes_copilot.chat_post): a spoken answer has
