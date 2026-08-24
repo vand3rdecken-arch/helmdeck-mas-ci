@@ -125,7 +125,7 @@ esac
 
 # Worktrees never get their own install; without node_modules every eas command
 # dies with "Failed to resolve plugin for module expo-router".
-[ -d app/node_modules ] || fail "app/node_modules missing - junction it first (see shots/link.py)"
+[ -d app/node_modules ] || fail "app/node_modules missing - junction it first (see docs/shots/link.py)"
 
 grep -q "\"$PROFILE\"" app/eas.json || fail "profile '$PROFILE' is not in app/eas.json"
 

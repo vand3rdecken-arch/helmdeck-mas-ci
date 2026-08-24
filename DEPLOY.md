@@ -684,7 +684,7 @@ the live DOM** instead of transcribed by hand:
 ```bash
 py -3.12 deploy/asc_guide.py open    # launch/attach + open App Store Connect
 py -3.12 deploy/asc_guide.py where   # url + title + headings (login? app list?)
-py -3.12 deploy/asc_guide.py shot    # -> shots/asc.png
+py -3.12 deploy/asc_guide.py shot    # -> docs/shots/asc.png
 py -3.12 deploy/asc_guide.py appid   # the ascAppId for app.helmdeck
 ```
 Creating the record by hand: My Apps → **+** → New App → Platform *iOS*,
@@ -738,7 +738,7 @@ only what you meant to change; the CAMERA permission is already delivered by the
 `expo-camera` plugin entry.
 
 ⚠ Running `eas` from a worktree needs `app/node_modules` — the worktrees never get
-their own install. Junction it first (`shots/link.py` is the pattern:
+their own install. Junction it first (`docs/shots/link.py` is the pattern:
 `_winapi.CreateJunction(r"C:\hd\app\node_modules", "<worktree>/app/node_modules")`),
 otherwise every `eas` command dies with *"Failed to resolve plugin for module
 expo-router"*.

@@ -131,7 +131,7 @@ def cmd_open():
 def cmd_shot():
     pw, br, ctx = _attach()
     p = _wearables_page(ctx)
-    out = os.path.join(ROOT, "shots", "meta_wearables.png")
+    out = os.path.join(ROOT, "docs", "shots", "meta_wearables.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     p.screenshot(path=out, full_page=True)
     print("url=%s" % p.url)
