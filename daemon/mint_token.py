@@ -1,37 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Print a device token for <user> with <label>, reusing an existing one so the
-desktop doesn't pile up a new token every launch. Used by desktop/main.js to let
-the served Expo web UI authenticate to the local daemon with a Bearer token (the
-same auth the phone uses) - no daemon-auth weakening, no cookie coupling.
+"""Print a NEW device token for <user> with <label>.
 
-    py -3.12 mint_token.py owner desktop
+Operator tool. desktop/main.js used to call this at every launch and inject the
+result into the UI, which made opening the desktop app an owner login with no
+credential; it does not any more. What remains is a legitimate way to provision
+a device by hand.
+
+It no longer reuses an existing token, because it CANNOT: tokens are hashed at
+rest (auth._token_record), so the plaintext exists only in the moment it is
+minted. Each run therefore issues a fresh one - revoke the old entry in the
+Users panel if it is no longer wanted.
+
+    py -3.12 -m daemon.mint_token owner desktop
 """
-import json
-import os
 import sys
 
 from daemon.spine.auth import auth
-
-from daemon.paths import DAEMON_ROOT as HERE
-USERS = os.path.join(HERE, "users.json")
 
 
 def main():
     name = sys.argv[1] if len(sys.argv) > 1 else "owner"
     label = sys.argv[2] if len(sys.argv) > 2 else "desktop"
-    try:
-        with open(USERS, encoding="utf-8") as f:
-            data = json.load(f)
-        users = data if isinstance(data, list) else data.get("users", [])
-        for u in users:
-            if u.get("name") == name:
-                for tk in u.get("tokens", []):
-                    if tk.get("label") == label:
-                        sys.stdout.write(tk["token"])   # reuse
-                        return
-    except (OSError, ValueError):
-        pass
-    sys.stdout.write(auth.issue_token(name, label))     # mint fresh
+    # actor="cli:mint_token" and not the user: nobody authenticated here, so the
+    # audit line must not read as if <name> logged in and asked for a token.
+    sys.stdout.write(auth.issue_token(name, label, actor="cli:mint_token"))
 
 
 if __name__ == "__main__":

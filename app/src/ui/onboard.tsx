@@ -4,8 +4,7 @@ import * as util from "tweetnacl-util";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
-import { api } from "@/data/client";
-import { useConfig } from "@/data/config";
+import { api, AuthRequired } from "@/data/client";
 import { qrDataUrl } from "@/data/qrgen";
 import { setupApi, setupAvailable, useOnboard, type SetupLine, type SetupState } from "@/data/setup";
 import { useT } from "@/i18n";
@@ -62,18 +61,23 @@ export function Onboard() {
       setPairLink(link);
       setQr(await qrDataUrl(link));
     } catch (e) {
-      setPairErr(String((e as Error).message));
+      // Not being logged in is the EXPECTED state here now that the shell hands
+      // out no free owner token, so it must not read like a breakage: pairing a
+      // phone binds it to an account, and there is no account until someone
+      // signs in. The auth gate takes the screen from here.
+      setPairErr(e instanceof AuthRequired
+        ? tr("onboard.pairNeedsLogin")
+        : String((e as Error).message));
       paired.current = false;
     }
   }, [tr]);
 
   useEffect(() => {
     if (st?.daemon && !qr && !pairErr) {
-      if (st.token) useConfig.getState().set({ token: st.token });
       qc.invalidateQueries();
       makePairing();
     }
-  }, [st?.daemon, st?.token, qr, pairErr, makePairing, qc]);
+  }, [st?.daemon, qr, pairErr, makePairing, qc]);
 
   const busy = !!st?.running;
   const needsClaude = st && !st.claude;

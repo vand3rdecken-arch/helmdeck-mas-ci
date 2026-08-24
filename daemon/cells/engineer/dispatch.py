@@ -65,6 +65,12 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
          # (Jira/Plane description). Both editable; the agent reads title+desc+files.
          "description": description or "",
          "client": client, "session_id": None, "perm": perm, "lane": "backlog",
+         # WHO ASKED for this card - distinct from `client` (the customer it is
+         # billed to). Captured at intake because four-eyes needs it later: the
+         # person who filed a card must not also be the one who approves it
+         # (signatures.four_eyes_violation). Nothing can reconstruct this after
+         # the fact, so it is recorded here or it is lost.
+         "dispatched_by": actor,
          "status": "queued", "turns": 0, "run_dir": run_dir, "last_reply": "",
          "value": float(value) if value is not None else events.settings()["value_per_card"],
          "driver": driver or "claude", "priority": priority or "medium", "due": due or "",

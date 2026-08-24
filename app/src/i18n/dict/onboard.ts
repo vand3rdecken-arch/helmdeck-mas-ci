@@ -28,6 +28,13 @@ export const onboard: Dict = {
     de: "Kopplung fehlgeschlagen — ist eine Relay-URL in den Einstellungen hinterlegt?",
     en: "Pairing failed — is a relay URL configured in Settings?",
   },
+  // Pairing needs an authenticated account: the desktop shell no longer hands
+  // the UI a free owner token, so this is the normal state right after
+  // provisioning, not an error.
+  "onboard.pairNeedsLogin": {
+    de: "Melde dich zuerst an — danach kannst du dein Telefon koppeln.",
+    en: "Sign in first — then you can pair your phone.",
+  },
 
   // ---- sign in / register (ui/login_screen.tsx) ---------------------------
   // The error the daemon returns on a failed attempt is NOT here - routes_auth
