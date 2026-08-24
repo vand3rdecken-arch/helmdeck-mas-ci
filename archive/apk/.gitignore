@@ -1,6 +1,0 @@
-# release signing secrets - never commit
-*.jks
-*.keystore
-keystore.properties
-/app/build/
-/.gradle/
