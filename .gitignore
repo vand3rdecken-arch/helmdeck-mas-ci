@@ -1,16 +1,9 @@
 __pycache__/
 *.pyc
 daemon/recordings/
-apk/local.properties
-apk/.gradle/
-apk/build/
-apk/app/build/
 .idea/
 *.keystore
 push.env
-
-# built APK is committed as a release artifact at repo root; ignore build intermediates
-apk/gradle/wrapper/dists/
 
 # Local expo modules ARE tracked (app/modules/glasses is real source), but a
 # native build drops gradle output inside them - first seen 2026-08-21, when
@@ -22,7 +15,6 @@ daemon/settings.json
 daemon/plane_links.json
 daemon/plane_credentials.txt
 daemon/events.jsonl
-daemon/tracks.json
 daemon/users.json
 daemon/sessions.json
 daemon/processes.json
@@ -48,7 +40,8 @@ daemon/tracks.json.imported
 # same class of daemon-regenerated marker and were missing (surfaced by a
 # throwaway verification daemon run leaving events.jsonl.imported.2 /
 # events.jsonl.synced as untracked noise).
-daemon/events.jsonl.synced
+daemon/*.synced
+daemon/**/*.synced
 # ad-hoc one-off diagnostic scripts left at repo root by a card/machine
 # session with direct hands on the live tree (Henry) - disposable scratch,
 # never source.
@@ -72,6 +65,10 @@ daemon/helmdeck.db-shm
 plane-selfhost/.env
 plane-selfhost/*.env
 backups/
+# NOT an accident (owner decision 2026-08-16, "you work local so just don't
+# publish docs"): already-tracked docs STAY tracked so card worktrees see them;
+# this line only keeps NEW docs out of git by default. The public mirror strips
+# the whole tree - see the private-path check in deploy/publish_source.sh.
 docs
 
 # local credentials - never commit

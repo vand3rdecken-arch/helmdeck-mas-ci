@@ -954,6 +954,28 @@ class _ClaudeSession:
                 self._fold_timeline(ev)
             except Exception:
                 pass                     # dual-write only - never the turn (Card 2)
+        if typ == "system" and ev.get("subtype") == "task_notification":
+            # MEASURED 2026-08-24 (card 20260824-140559 + a probe run): a
+            # background task finishing BETWEEN turns reaches the stream as
+            # this system event - `{tool_use_id, status, summary}` - never as
+            # a user message (the "<task-notification>" user record exists
+            # only in the transcript, which the pump does not read). The old
+            # code routed only assistant/user frames to _scan_bg, so idle-time
+            # completions were invisible: the registry stayed "running", the
+            # auto-continue sweep never saw "clear", and the card sat parked
+            # until the 6h give-up. Fold the completion here, at event time.
+            uid = ev.get("tool_use_id") or ""
+            if uid:
+                self._bg_open.pop(uid, None)
+                st = ev.get("status") or "completed"
+                if st not in ("completed", "failed", "canceled"):
+                    st = "completed"
+                try:
+                    from daemon.cells.engineer import sessions
+                    sessions.bg_upsert(self.tid, uid, status=st,
+                                       result=str(ev.get("summary") or "")[:400])
+                except Exception:
+                    pass                 # registry is best-effort, never the turn
         if typ == "control_response":
             resp = ev.get("response") or {}
             slot = self._ctrl.get(resp.get("request_id"))
