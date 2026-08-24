@@ -53,6 +53,20 @@
 > into ops/tools/ (costs a mechanical sed over every test file's depth-1
 > sys.path bootstrap).
 
+> FOUR-FOLDER ROOT SHIPPED 2026-08-24 evening (298decc, owner: "4 top folder
+> moeglichst mit Architektur"): surfaces/{app,desktop,glasses,relay} + 
+> ops/{deploy,tools,tests,harness,docs}. daemon/ stays (launcher + runtime
+> data, tray-spawn compat). archive/ still awaits the owner literally naming
+> its deletion. TRAPS measured this round: the sweep rewrote HTTP WIRE paths
+> (/relay/pair, /harness/schema) - reverted everywhere, folder layout must
+> NEVER leak into the protocol; a TS regex literal matched the deploy/ sweep;
+> .gitignore negation lines start with '!' and escaped the guard char-class
+> (card-queue re-include fixed to ops/docs/backlog, check-ignore verified);
+> cells.py daemon_roots() had pointed at pre-split daemon/cells since noon.
+> Pre-existing red found, NOT fixed here: copilot.SYSTEM vs board-copilot.md
+> brief diverged ~1.9k chars in the henry refactor (6ae678a) - one side of
+> the byte-mirror was updated without the other.
+
 **Owner decree 2026-08-24.** The architecture is spine + cells, but the folder
 tree doesn't say so at the root: ~19 top-level dirs mixing products, ops and
 artifacts. Target: the first thing anyone sees is the architecture itself -
