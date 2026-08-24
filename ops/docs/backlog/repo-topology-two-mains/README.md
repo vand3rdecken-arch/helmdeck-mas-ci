@@ -56,8 +56,8 @@
 > FOUR-FOLDER ROOT SHIPPED 2026-08-24 evening (298decc, owner: "4 top folder
 > moeglichst mit Architektur"): surfaces/{app,desktop,glasses,relay} + 
 > ops/{deploy,tools,tests,harness,docs}. daemon/ stays (launcher + runtime
-> data, tray-spawn compat). archive/ still awaits the owner literally naming
-> its deletion. TRAPS measured this round: the sweep rewrote HTTP WIRE paths
+> data, tray-spawn compat). archive/ DELETED 6bb6e56 (owner named it; history
+> keeps the old frontends, keystore lives in daemon/certs/apk-signing/). TRAPS measured this round: the sweep rewrote HTTP WIRE paths
 > (/relay/pair, /harness/schema) - reverted everywhere, folder layout must
 > NEVER leak into the protocol; a TS regex literal matched the deploy/ sweep;
 > .gitignore negation lines start with '!' and escaped the guard char-class

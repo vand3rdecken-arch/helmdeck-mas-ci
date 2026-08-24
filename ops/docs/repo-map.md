@@ -42,7 +42,6 @@ daemon/ is the runtime home; everything else justifies itself.**
 | `ops/tests/` | Replayable pins (manual `run_suite.py`, never per-card by decree) + `smoke/` e2e harness. | Operators/agents on demand. |
 | `ops/harness/` | Policy-as-data: agent briefs (`agents/*.md`) + settings the daemon resolves at EVERY spawn. `.versions/` (local) is undo history. | Daemon runtime, owner-editable. |
 | `ops/docs/` | Internal knowledge (public-mirror-FILTERED by owner decree) + `ops/docs/backlog/` = the live card queue (tracked via gitignore negation) + `ops/docs/shots/`. | Owner workflow, card dispatch, mandatory reading rules. |
-| `archive/` | Superseded pre-Expo frontends. PENDING DELETION (owner naming); keystore already rescued to `daemon/certs/apk-signing/`. | Nothing. |
 | `.claude/` `.github/` | Harness hooks/skills (the build loop enforcement) and CI (mac desktop builds). | Every session / every CI run. |
 | `.attachments/` `.loop/` `.env` | Runtime user uploads, loop-hook state, local secrets - all git-ignored. | Daemon + hooks, machine-local. |
 
