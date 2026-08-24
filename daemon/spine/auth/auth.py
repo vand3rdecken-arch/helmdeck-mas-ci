@@ -99,11 +99,11 @@ def _audit(op, actor, subject, **extra):
     token values. A token shows up as its label plus the last four characters -
     enough to point at one row in the Users panel, useless as a credential.
 
-    `at_utc` rides ALONGSIDE the local-time `ts` that events.emit() stamps
-    (events.py:176). An audit timestamp that depends on the host timezone
-    cannot be correlated across machines and goes ambiguous twice a year at the
-    DST fold. Migrating `ts` itself touches every consumer and is phase D; the
-    identity events - the ones an auditor reads first - get a real one now.
+    UTC timestamp: events.emit() itself now stamps `at_utc` on every event
+    (phase D) - it used to exist only here, computed by hand, because an audit
+    timestamp that depends on the host timezone cannot be correlated across
+    machines and goes ambiguous twice a year at the DST fold. Identity events
+    were the first to get a real one; now nothing has to ask for it.
 
     Best-effort, like policy._mirror: auditing must not be the reason a login
     fails. That is the right trade today and the WRONG one under GxP, where a
@@ -113,7 +113,6 @@ def _audit(op, actor, subject, **extra):
     try:
         from daemon.spine.storage import events
         events.emit("auth", "-", op=op, actor=actor or subject, subject=subject,
-                    at_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     **extra)
     except Exception:
         pass
