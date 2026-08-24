@@ -17,7 +17,8 @@ import subprocess
 import time
 
 from daemon.spine.storage.trackstore import _find, _load, _mutate, _slug
-from daemon.spine.git.gitutil import _git, _git_try, is_git_repo
+from daemon import gxp
+from daemon.spine.git.gitutil import _git, _git_try, is_git_repo, AGENT_IDENT
 from daemon.spine.turn.blockers import blocker
 from daemon.spine.turn.outcomes import _record_outcome
 from daemon.spine.git.worktrees import reclaim_worktree
@@ -371,7 +372,8 @@ def _autocommit(t):
                          capture_output=True, text=True)
     if "conflict marker" in (chk.stdout or "").lower():
         return "markers"
-    if _git_try(wt, "commit", "-m", "HelmDeck: finalize %s" % t.get("id", ""))[0] != 0:
+    if _git_try(wt, *AGENT_IDENT, "commit",
+                "-m", "HelmDeck: finalize %s" % t.get("id", ""))[0] != 0:
         return False
     return True
 
@@ -751,6 +753,26 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
     if not t:
         raise RuntimeError("no such track: " + tid)
     prev = t.get("lane")
+    # ---- GxP: THE chokepoint -------------------------------------------
+    # Every accept path in the daemon arrives here - the board route, Henry's
+    # `move`, the policy auto-accept, the chat verb, the PM - and fast-track and
+    # machine cards branch off further down, still inside this function. So one
+    # question asked once closes all of them, and no agent needs a special case:
+    # they simply are not accounts (daemon/gxp.py is_human).
+    #
+    # Scoped per card, not globally: only cards aimed at a regulated repo (or
+    # flagged into scope) are affected, everything else keeps working exactly as
+    # before. Placed BEFORE the idempotency short-circuit below, so an already
+    # -'accepted' card cannot be walked through either.
+    if lane == "done":
+        _blocked = gxp.accept_block_reason(actor, t)
+        if _blocked:
+            events.emit("gxp", tid, outcome="accept_refused", actor=actor,
+                        lane_from=prev, reason=_blocked)
+            if t.get("run_dir"):
+                from daemon.spine.ops.actionlog import ActionLog as _AL
+                _AL(t["run_dir"]).log("note", "GxP: Abnahme abgelehnt - " + _blocked)
+            return dict(t, gxp_refused=_blocked)
     # record the human's board move in the card's own feed (chat), so a drag to
     # Review/Done/Working/Backlog reads alongside the agent's work, not just in the
     # global event log. The lane-specific handlers below add the outcome detail.
@@ -919,7 +941,21 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             # card rests on Review for your accept. The gate still guards (a red
             # gate already bounced above), so this is auto-accept, not skip-gate.
             _clean = kind in ("mergeable", "already_merged", "redundant_uncommitted")
-            if not (t.get("fast_track") and _clean):
+            _fast = bool(t.get("fast_track")) and _clean
+            # GxP: fast-track is the one path that turns a Review INTO a landing
+            # without a second call, so the chokepoint at the top of this
+            # function never sees it as a 'done'. Refused here instead, by
+            # demoting it to an ordinary review - the card then rests for a human
+            # like every other card.
+            #
+            # ONLY for a card in the regulated scope. Fast-track is not a flaw to
+            # be removed, it is the product working; it stays fully alive on
+            # every card that is not aimed at a validated artefact.
+            if _fast and gxp.in_scope(t) and gxp.disabled("fast_track"):
+                events.emit("gxp", tid, outcome="fast_track_refused", actor=actor)
+                log.log("note", "GxP: Fast-Track ist abgeschaltet - die Karte wartet auf Freigabe.")
+                _fast = False
+            if not _fast:
                 log.log("note", "REVIEW-Vorschau (%s): %s" % (kind, msg[:200]))
 
                 def _submit(tt):
@@ -973,6 +1009,25 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         _NOTE = {"merged": "MERGED -> main", "already_merged": "REDUNDANT (bereits in main) - geschlossen",
                  "redundant_uncommitted": "REDUNDANT (bereits in main; uncommittete Aenderungen ignoriert) - geschlossen"}
         log.log("note", "%s: %s" % (_NOTE.get(kind, "ACCEPTED"), mergemsg[:280]))
+        # GxP: burn the signature that authorised THIS landing. A record left
+        # open would still read as "approved" against a merged card and could
+        # authorise a second landing after the branch moved on. Records the
+        # merge it was spent on, so the audit joins signature -> commit.
+        if gxp.in_scope(t):
+            from daemon.spine.auth import signatures as _sigs
+            _spent = _sigs.valid_open(t)
+            if _spent:
+                _merge_sha = _git_try(t.get("repo") or ".", "rev-parse", "HEAD")[1]
+
+                def _burn(tt):
+                    for s in tt.get("signatures") or []:
+                        if s.get("seq") == _spent.get("seq"):
+                            s["consumed_by"] = {"lane": "done", "at": time.strftime(
+                                "%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+                            s.setdefault("git", {})["merge_sha"] = _merge_sha
+                t = _mutate(tid, _burn) or t
+                events.emit("signature", tid, op="consumed", seq=_spent.get("seq"),
+                            actor=_spent.get("actor"), merge_sha=_merge_sha)
         events.emit("touch", tid, touch="review", actor=actor)
         te = [e for e in events.read_events() if e.get("track") == tid]
         mode = events._completion_mode(te, t.get("turns"))
@@ -1108,7 +1163,7 @@ def park_and_retry_merge(tid, actor="owner"):
         wip = "wip-%s-%s" % (_slug(cur), time.strftime("%Y%m%d-%H%M%S"))
         _git(repo, "checkout", "-b", wip)
         _git(repo, "add", "-A")
-        _git(repo, "commit", "-m",
+        _git(repo, *AGENT_IDENT, "commit", "-m",
              "wip: park uncommitted %s work so card %s could merge (by %s)" % (cur, t["branch"], actor))
         _git(repo, "checkout", cur)     # back on the original branch, now clean
         parked = wip

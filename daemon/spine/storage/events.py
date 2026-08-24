@@ -9,7 +9,7 @@ The economic model (owner decision): humans are a FIXED-capacity resource
 (hired anyway - no per-minute billing), AI is the variable cost. Human work is
 counted in touch units against a daily budget; margin per card = value - AI cost;
 the human question is utilization/headroom, not dollars."""
-import json, os, time
+import json, os, secrets, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 EV = os.path.join(ROOT, "events.jsonl")
@@ -45,6 +45,13 @@ DEFAULTS = {
     # would burn budget. The turn is advisory - board actions are dropped, never
     # executed (copilot.chat allow_actions=False).
     "glance_talk": False,
+    # The PUBLIC glance origin - the Cloudflare Worker (glasses/worker,
+    # deploy/push_glance.sh) that proxies /glance* to this daemon. The phone
+    # app's GlassVoiceService is a plain HttpURLConnection client OUTSIDE the
+    # E2EE relay, so it needs this origin + glance_token to reach Henry
+    # (app/src/data/glasses.ts explains why the relay URL cannot serve).
+    # Empty = glasses voice stays unconfigured; the app degrades, never errors.
+    "glance_origin": "",
     # Un-versioned files copied into every new worktree. A worktree holds only
     # TRACKED files, so git-ignored local toolchain config (SDK paths, local
     # env) would be missing and builds that work by hand fail inside a card.
@@ -181,7 +188,27 @@ def save_settings(patch, actor="system", reason=""):
     return s
 
 def emit(kind, track, **fields):
-    row = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "track": track}
+    # `ts` stays host-local, on purpose: it is what every existing consumer
+    # (dashboard, day-boundary rollups, quota-window math) already reads, and
+    # reinterpreting it as UTC in place would silently shift every "today" /
+    # "this week" boundary computed from it - a correctness change disguised
+    # as a timestamp fix. `at_utc` is the unambiguous anchor added ALONGSIDE
+    # it, on every event (this used to exist only on auth/signature events,
+    # added by hand at each call site - now every emit() gets one, so no
+    # future event kind can forget it). A caller that already computed a more
+    # precise UTC value (e.g. a signature's own signed_at) can still pass its
+    # own at_utc in **fields - row.update() below runs after this and wins.
+    #
+    # `id`: the file and the db table used to share no key at all (debt
+    # events-two-stores-unreconciled), so a dropped db write-through - the
+    # try/except below is best-effort by design - stayed dropped and silent
+    # forever, and the file could never be safely re-scanned to heal it
+    # without risking duplicates. secrets.token_hex, not a counter: this must
+    # stay unique across process restarts with no shared state to coordinate
+    # against, which a counter can't promise and a random token can.
+    row = {"id": secrets.token_hex(12),
+           "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "track": track,
+           "at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     row.update(fields)
     with open(EV, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")

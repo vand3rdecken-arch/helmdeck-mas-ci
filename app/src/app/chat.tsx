@@ -17,6 +17,7 @@ import { Transcript, type TStep } from "@/ui/card_transcript";
 import { ContextMeter } from "@/ui/context_meter";
 import { Empty } from "@/ui/kit";
 import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
+import * as glassVoice from "@/data/glasses";
 
 // Desktop copilot is an IN-PAGE overlay (not a route), so the board stays mounted
 // and visible-behind-dimmed — a route/transparentModal leaves a black void on web
@@ -122,15 +123,25 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // round trips. So voice mode registers a sink and this loop hands clips over as
   // they land; the cursor lives here, beside the poll that moves it.
   const voiceSink = useRef<((c: VoiceClip) => void) | null>(null);
-  const voiceSeq = useRef(0);
-  const takeClips = useCallback((r: { voice?: (VoiceClip & { seq: number })[] } | null) => {
+  // The cursor is (turn, seq), never seq alone: the daemon restarts seq at 1
+  // every turn, so after a steer the old turn's high seq would make every clip
+  // of the NEW answer look like a duplicate — text on screen, speech silently
+  // dropped (measured 2026-08-23). Same addressing the Realtime APIs use:
+  // audio belongs to a response id, and a chunk from another turn is judged by
+  // its turn, not by a shared counter.
+  const voiceCur = useRef({ turn: 0, seq: 0 });
+  const takeClips = useCallback((r: { voice?: (VoiceClip & { turn?: number; seq: number })[] } | null) => {
     const sink = voiceSink.current;
     if (!sink || !r?.voice) return;
+    const cur = voiceCur.current;
     for (const c of r.voice) {
+      const ct = c.turn ?? 0;            // old daemon: no turn ids, one shared line
+      if (ct < cur.turn) continue;       // an interrupted answer's leftovers
+      if (ct > cur.turn) { cur.turn = ct; cur.seq = 0; }
       // Monotonic guard, not an assumption: the drain in ask() can overlap one
       // poll, and delivering a chunk twice would say the same sentence twice.
-      if (c.seq <= voiceSeq.current) continue;
-      voiceSeq.current = c.seq;
+      if (c.seq <= cur.seq) continue;
+      cur.seq = c.seq;
       sink(c);
     }
   }, []);
@@ -139,7 +150,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     let alive = true, to: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const r = await api.chatLive(voiceSink.current ? voiceSeq.current : undefined);
+        const r = await api.chatLive(voiceSink.current ? voiceCur.current.seq : undefined,
+          voiceSink.current ? voiceCur.current.turn : undefined);
         if (alive && r) { setStream(r.text || ""); setThink(r.thinking || ""); takeClips(r); }
       } catch { /* keep polling */ }
       if (alive) to = setTimeout(poll, 500);
@@ -272,7 +284,18 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     // end" to "a sentence at a time" — the two must be decided together, or the
     // owner gets a turn that renders speech nobody collects.
     voiceSink.current = onClip ?? null;
-    voiceSeq.current = 0;
+    // Reset only the seq half: the turn half may only move FORWARD (takeClips),
+    // or a superseded drain could re-adopt the interrupted turn's clips.
+    //
+    // And the seq half only resets while we have never seen a turn id (a
+    // LEGACY daemon, where seq is the whole cursor). On a turn-id daemon the
+    // previous turn's stream stays current until the daemon begins the new
+    // one - a zeroed seq in that window makes the poller re-collect EVERY
+    // clip of the finished answer, and Henry audibly says the whole previous
+    // message again (owner report 2026-08-23 evening, "viele Nachrichten
+    // doppelt"). With turn ids the correct reset happens in takeClips the
+    // moment the new turn's first clip arrives (ct > turn -> seq = 0).
+    if (voiceCur.current.turn === 0) voiceCur.current.seq = 0;
     try {
       const r = await api.chat(text, { voice: onClip ? "stream" : undefined });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
@@ -287,7 +310,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       // only on slow renders, which is the worst way to find a bug.
       if (onClip) {
         for (let i = 0; i < 40; i++) {
-          const live = await api.chatLive(voiceSeq.current).catch(() => null);
+          // A superseded turn's drain must DIE, not keep collecting: it shares
+          // the cursor with the turn that replaced it, and measured 2026-08-23
+          // it re-raised the seq the new ask() had just reset — every clip of
+          // the new answer then judged "already played" and dropped.
+          if (turn.current !== id) break;
+          const live = await api.chatLive(voiceCur.current.seq, voiceCur.current.turn).catch(() => null);
           takeClips(live);
           if (!live?.voice_pending) break;
           await new Promise((res) => setTimeout(res, 250));
@@ -302,10 +330,47 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     }
   }
 
+  // GLASSES CONVERSATION — hands-free loop through GlassVoiceService (native,
+  // Android only, owner only). The button is an AFFORDANCE, not a status: the
+  // service's own foreground notification is the truth surface for "listening/
+  // speaking" (its state lives outside React and survives this screen). Config
+  // is fetched lazily at start — glance_origin + glance_token come from daemon
+  // settings, and passing the RELAY url instead would fail silently off-LAN
+  // (data/glasses.ts explains which URL is the right one).
+  const glassAvail = useMemo(() => glassVoice.caps().available, []);
+  const [glassOn, setGlassOn] = useState(false);
+  const [glassBusy, setGlassBusy] = useState(false);
+  async function toggleGlasses() {
+    if (glassBusy) return;
+    if (glassOn) { glassVoice.stopListening(); setGlassOn(false); return; }
+    setGlassBusy(true);
+    try {
+      const s = await api.settings().catch(() => null);
+      const origin = (s?.glance_origin || "").trim();
+      const token = (s?.glance_token || "").trim();
+      if (!origin || !token || !glassVoice.configure(origin, token)) {
+        appendReply(++turn.current, {
+          cls: "error",
+          text: tr("chat.glassesUnconfigured"),
+        });
+        return;
+      }
+      if (glassVoice.listen(true)) setGlassOn(true);
+    } finally {
+      setGlassBusy(false);
+    }
+  }
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
+      {glassAvail && me?.role === "owner" ? (
+        <Pressable onPress={toggleGlasses} hitSlop={10} style={{ marginLeft: "auto" }}
+                   accessibilityLabel={tr("chat.glassesTalk")}>
+          <Ionicons name="glasses-outline" size={24}
+                    color={glassOn ? t.accent : t.txtSecondary} />
+        </Pressable>
+      ) : null}
     </View>
   );
 

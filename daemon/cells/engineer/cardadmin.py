@@ -26,7 +26,7 @@ DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
 
 
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",
-            "project_id", "billing", "rate", "autopilot", "fast_track")
+            "project_id", "billing", "rate", "autopilot", "fast_track", "gxp")
 # project_id may be explicitly cleared (unassign from a project) - unlike the
 # other fields, "" / null is a meaningful value here, not "leave unset".
 CLEARABLE = ("project_id",)
@@ -39,7 +39,15 @@ CLEARABLE = ("project_id",)
 # card dispatch only excludes the needs-a-person modes human/teach/cowork,
 # so the 'auto' stat on an accepted card can never block a (re)dispatch
 # (test_mode_dispatch.py pins this).
-BOOLFIELDS = ("autopilot", "fast_track")
+BOOLFIELDS = ("autopilot", "fast_track", "gxp")
+
+# "gxp" pulls a single card into the regulated scope (daemon/gxp.py in_scope).
+# It is ONE-WAY on purpose: scope may grow, never shrink. If clearing it were
+# allowed, anything able to edit a card could walk that card out of the
+# validated system and land it unsigned - which is the whole control, undone by
+# a checkbox. Turning it back off is a deliberate act on the lock file by
+# whoever owns the installation, not a card edit.
+ONEWAY_TRUE = ("gxp",)
 
 def archive_track(tid, on=True, actor="owner"):
     """Reversible: hides the card from work views; economics and audit stay."""
@@ -118,6 +126,13 @@ def update_track(tid, patch, actor="owner"):
             if drivers.turn_active(tid):
                 raise RuntimeError("cannot switch to fast-track while a turn is "
                                    "running - wait for it to finish")
+    for k in ONEWAY_TRUE:
+        # Scope may grow, never shrink - refuse loudly rather than silently
+        # ignoring, so a caller trying to clear it learns that it cannot.
+        if k in patch and not patch[k] and (_find(_load(), tid) or {}).get(k):
+            raise ValueError("'%s' cannot be turned off on a card: regulated "
+                             "scope only ever grows. Change the gxp.lock file "
+                             "if the installation itself is no longer in scope." % k)
     changed = {}
 
     def _edit(t):

@@ -38,8 +38,17 @@ def chat_live_get(self, user):
             after = int((q.get("voice_from") or ["0"])[0])
         except ValueError:
             after = 0
+        # `voice_turn` scopes that cursor: seq restarts at 1 every turn, so
+        # after a steer the daemon must know WHICH turn the client's seq counts
+        # in (voice_stream.take). Absent = an old app, pre-turn-id semantics.
+        turn = None
+        if "voice_turn" in q:
+            try:
+                turn = int((q.get("voice_turn") or ["0"])[0])
+            except ValueError:
+                turn = None
         from daemon.spine.media import voice_stream
-        clips, pending = voice_stream.take(user["name"], after)
+        clips, pending = voice_stream.take(user["name"], after, turn)
         out = dict(out)
         out["voice"] = clips
         # `running` alone cannot end the client's loop: the turn can be over

@@ -73,6 +73,36 @@ PRESENT_IDLE_S = 45      # spawn window: a just-started steer may briefly show
                          # running before its turn registers - don't coerce it
 
 
+def _present_gxp(t, out):
+    """Derive the two GxP facts the board needs, at READ time.
+
+    Same stance as the status coercion above: derived on the way out, never
+    stored. A persisted "this card is approved" boolean would go stale the
+    moment the branch moves - exactly the class of bug the signature design
+    exists to avoid.
+
+    Cost is why `gxp_signed` answers the CHEAP question ("is there an unconsumed
+    approved signature") and not the expensive one ("...and does it still match
+    git"). The board polls, and the exact drift check costs two `git rev-parse`
+    per card. It runs where it matters instead: when the sign-off window opens
+    (signatures.subject) and again in the lane machine right before the merge
+    (gxp.accept_block_reason). The badge is a VIEW; the guard is the authority,
+    and only the guard can refuse.
+
+    Out of scope this adds nothing - no field, no git, nothing beyond the lock
+    check itself.
+    """
+    from daemon import gxp
+    if not gxp.in_scope(t):
+        return out
+    out = dict(t) if out is None else out
+    out["gxp_scope"] = True
+    out["gxp_signed"] = any(
+        s.get("meaning") == "approved" and not s.get("consumed_by")
+        for s in (t.get("signatures") or []))
+    return out
+
+
 def present(t):
     """READ-side lifecycle derivation for the API (Paseo's normalizeArchivedStatus,
     server-side): a stored 'running' is only ever DELIVERED as running while a
@@ -81,17 +111,15 @@ def present(t):
     value. A phantom spinner is thereby impossible no matter what any write race
     puts in the DB (invariant I2); the reconciler remains the healer of the
     stored value. Returns a copy when coercing, the original otherwise."""
-    if (t or {}).get("status") != "running":
-        return t
-    from daemon.spine.agent import drivers
-    if drivers.turn_active(t["id"]):
-        return t
-    if _track_idle_s(t) <= PRESENT_IDLE_S:
-        return t                       # spawn window - let it settle
-    out = dict(t)
-    out["status"] = "needs_you"
-    out["status_derived"] = True       # marker: coerced at read, not stored
-    return out
+    out = None
+    if (t or {}).get("status") == "running":
+        from daemon.spine.agent import drivers
+        if not drivers.turn_active(t["id"]) and _track_idle_s(t) > PRESENT_IDLE_S:
+            out = dict(t)
+            out["status"] = "needs_you"
+            out["status_derived"] = True   # marker: coerced at read, not stored
+    out = _present_gxp(t, out)
+    return out if out is not None else t
 
 
 def sweep_zombies(min_idle_s=0):
