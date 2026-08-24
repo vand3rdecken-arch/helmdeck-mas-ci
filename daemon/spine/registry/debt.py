@@ -2781,6 +2781,52 @@ DEBT = [
         "fix": "OPEN.",
         "order": 46,
     },
+    {
+        "id": "codex-opencode-pi-drivers-unverified",
+        "title": "Three native engine drivers exist as code with zero live turns run",
+        "status": "open",
+        "what": "daemon/spine/agent/{codex,opencode,pi}_driver.py (build plan "
+                "Cards 6/7/8-pi) were built 2026-08-24 per owner decree ('do all "
+                "like Paseo, test accounts later') - complete modules, unit-"
+                "tested against synthetic frames built from Paseo's real "
+                "TS source, gate green, wired into drivers.run() dispatch. NONE "
+                "has been run against a real codex/opencode/pi CLI - no account "
+                "exists for any of the three on this box. This is qualitatively "
+                "different from the omp half of Card 8, which IS live-verified "
+                "(real turns, real tool calls, real cost, real cancel, through "
+                "the actual daemon and HTTP route).",
+        "why_it_bites": "omp_driver.py's own history is the reason this matters: "
+                        "reading Paseo's real TS source got the request/response "
+                        "SHAPES right but missed a real behavioral surprise (one "
+                        "prompt can produce multiple internal turn_end events, the "
+                        "first carrying narration not the answer) that only live "
+                        "testing caught - and a second one (a cancelled tool call "
+                        "reports isError:true, which a naive mapping would have "
+                        "shown as a tool FAILURE, not a cancel). Codex/OpenCode/Pi "
+                        "each carry their own version of this risk, unmeasured. "
+                        "Confidence is NOT uniform across the three: Codex has the "
+                        "full JSON-RPC method+param shapes read from source (only "
+                        "the account is missing); Pi rides on omp's proven event-"
+                        "handling logic but pi's own stream has never been seen; "
+                        "OpenCode is the highest-risk of the three because its "
+                        "REST endpoint PATHS are INFERRED from SDK method names "
+                        "(@opencode-ai/sdk is not vendored in this checkout), not "
+                        "read from source at all - the one part of that module "
+                        "most likely to need correction, not just confirmation.",
+        "trigger": "an owner account for codex, opencode, or pi. Each card's own "
+                   "'Verify (STILL OPEN)' line in docs/multi-engine-build-plan.md "
+                   "is the concrete checklist - run it the same way omp's Card 8 "
+                   "verify ran (real dispatched turns through the live daemon and "
+                   "the actual /tracks/.../transcript HTTP route, not just the "
+                   "unit tests), and expect to find and fix at least one real "
+                   "surprise per engine the same way omp did. Do not accept any "
+                   "of these three cards as 'done' on unit-test-green alone.",
+        "fix": "OPEN. Three independent verification passes, one per engine, "
+               "each its own small follow-up card once that engine's account "
+               "exists. OpenCode's pass should start by confirming the REST "
+               "paths resolve at all before testing anything else.",
+        "order": 47,
+    },
 ]
 
 def list_debt():

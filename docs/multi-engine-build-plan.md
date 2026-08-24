@@ -238,7 +238,24 @@ fires on a forced loop. Size **M–L (2–3d)**.
 + resume badge, JUDGED (readability, centering, collisions — the owner reviews
 UI hard). Size **M (2d)**.
 
-## Card 6 — Codex native adapter (N1, analysis §6.6.1)
+## Card 6 — Codex native adapter (N1, analysis §6.6.1) — CODE SHIPPED 2026-08-24, NOT LIVE-VERIFIED
+
+**Owner decree 2026-08-24: "test accounts later" - build the implementation
+now, verify live once an account exists.** `daemon/spine/agent/codex_driver.py`
+shipped: real JSON-RPC 2.0 bidirectional framing (Codex can send US inbound
+approval REQUESTS, not just notifications - a genuinely more complex
+protocol than omp's), every mechanic below read directly from Paseo's
+source with file:line citations kept in the module's own docstring
+(re-verified fresh for this card, not relayed from the earlier analysis
+pass). 18 unit tests (`tests/test_codex_driver.py`) exercise the FULL
+handshake + turn flow against a fake-but-protocol-accurate server,
+including the real `initialize`/`turn/start`/`turn/completed` sequence.
+**What did NOT happen**: a real `codex` CLI turn. No account exists on this
+box. This module is "protocol-correct-per-specification", the same
+confidence tier docs/multi-engine-support.md's original analysis was
+written at - NOT the tier omp_driver.py earned by finding two real bugs
+live testing alone could catch. Do not skip the live-verify step below
+once an account exists.
 
 **Owner prerequisite**: an OpenAI account with Codex CLI access —
 `npm i -g @openai/codex` (or the current install path), run once
@@ -271,12 +288,29 @@ Paseo reading: `codex-app-server-agent.ts:3226-3247` (spawn+handshake),
 (turn-end mapping), `:4253-4268` (interrupt), `:3472-3491` (approval
 handlers).
 
-**Verify**: a real card on driver `codex-native` writes a file and reports
-back; the SAME card's second turn resumes context (ask about what it just
-wrote); Stop mid-tool-call cleanly interrupts; no process leak after daemon
-kill (same orphan-reap check as Card 3). Size **M (2–2.5d)**.
+**Verify (STILL OPEN - code shipped, this step did not run)**: a real card
+on driver `codex` writes a file and reports back; the SAME card's second
+turn resumes context (ask about what it just wrote); Stop mid-tool-call
+cleanly interrupts; no process leak after daemon kill (same orphan-reap
+check as Card 3). Size **M (2–2.5d)** for the verify step now that the code
+exists (was 2-2.5d for code+verify together; code is done).
 
-## Card 7 — OpenCode native adapter, dedicated-server mode (N2, analysis §6.6.2)
+## Card 7 — OpenCode native adapter, dedicated-server mode (N2, analysis §6.6.2) — CODE SHIPPED 2026-08-24, NOT LIVE-VERIFIED
+
+**Owner decree 2026-08-24: "test accounts later".**
+`daemon/spine/agent/opencode_driver.py` shipped with the dedicated-server
+isolation model this card exists to prove (§6.6.2's whole point - one
+private `opencode serve` per card, never Paseo's shared pool), spawn/
+ready-signal/dedup/cost-accumulation/cancel-sequence all read directly from
+Paseo's source. 25 unit tests (`tests/test_opencode_driver.py`).
+**HONEST CONFIDENCE GAP, larger than Codex's**: the REST endpoint PATHS
+(`POST /session`, `POST /session/{id}/message`, `GET /event`, etc.) are
+INFERRED from `@opencode-ai/sdk` method names, not read from that SDK's own
+source (it isn't vendored in this checkout) - see opencode_driver.py's
+module docstring for exactly which calls are source-grounded vs. inferred.
+This is the single most likely thing to need correction once a real
+account exists - budget for it explicitly, don't treat this module as
+"just needs testing" the way Codex's is closer to being.
 
 **Owner prerequisite**: OpenCode installed + a model provider configured
 (`npm i -g opencode-ai`, then `opencode auth login` or equivalent for
@@ -330,14 +364,16 @@ handling), `:2489-2502` (delta/full dedup), `:3009-3110` (interrupt +
 pending-abort-before-next-turn), `:4323-4345` (auto-approve), `:808-858`
 (cost accumulation).
 
-**Verify**: a real card on driver `opencode-native` produces a per-card
-`opencode serve` process (confirm via PID table — NOT a shared one across
-two simultaneously-dispatched OpenCode cards); killing one card's session
-does NOT affect a second concurrent OpenCode card's session (the isolation
-property this whole card exists to prove); cost shows a real number, not
-"n/a". Size **M–L (2.5–3d)**.
+**Verify (STILL OPEN - code shipped, this step did not run)**: a real card
+on driver `opencode` produces a per-card `opencode serve` process (confirm
+via PID table — NOT a shared one across two simultaneously-dispatched
+OpenCode cards); killing one card's session does NOT affect a second
+concurrent OpenCode card's session (the isolation property this whole card
+exists to prove); cost shows a real number, not "n/a"; **confirm the REST
+endpoint paths actually work** (the one inferred part - see the card intro
+above). Size **M–L (2.5–3d)** was for code+verify together; code is done.
 
-## Card 8 — OMP native adapter (N3, analysis §6.6.3) — SHIPPED 2026-08-24 (omp only, Pi deferred)
+## Card 8 — Pi/OMP native adapters (N3, analysis §6.6.3) — omp SHIPPED + LIVE-VERIFIED 2026-08-24, pi CODE SHIPPED but NOT LIVE-VERIFIED
 
 **Landed via an unplanned owner step — no new login needed at all.** `omp.exe`
 was already installed on this box (`%LOCALAPPDATA%\omp\omp.exe`, prior owner
@@ -410,38 +446,48 @@ dispatch would have). Filed as `daemon/spine/registry/debt.py`'s
 `model` on card creation bypasses the auto-resolve branch entirely) is
 proven, the real fix is out of this card's scope.
 
-**Not built this session**: the Pi half (single-vendor CLI, not installed on
-this box, no owner-account shortcut like omp's existing OAuth reuse) -
-`daemon/spine/agent/omp_driver.py` is OMP-specific by name and by a few
-omp-only details (its tool-name vocabulary, its exact usage/cost field
-names); a Pi adapter would very likely reuse most of the JSONL-RPC/session-
-path/agent_end structure but needs its OWN live protocol measurement before
-being assumed identical - `pi/rpc-types.ts` and `omp`'s measured behavior are
-close cousins, not proven identical.
+**Pi shipped as code 2026-08-24** (`daemon/spine/agent/pi_driver.py`),
+after all — the owner's "do all like paseo, test accounts later" decision
+meant building it too rather than leaving it deferred. Deliberately modeled
+CLOSELY on omp_driver.py's PROVEN structure (same class shape, same
+`agent_end`-is-terminal handling applied proactively, same `{"type":
+"abort"}` cancel shape - the LATTER is source-confirmed on both pi and omp
+sides independently, per `pi/rpc-types.ts:133`, not just borrowed). 21 unit
+tests (`tests/test_pi_driver.py`), including one that replays the EXACT
+multi-turn narration-vs-answer sequence omp's bug taught, confirming pi's
+driver handles it correctly too - by construction, not yet by live proof.
 
-<details>
-<summary>Original scope text (kept for the record; superseded above)</summary>
+**Honest confidence ordering, all three unverified engines**: Codex is
+closest to verified (full JSON-RPC method+param shapes read from Paseo's
+source, only the account itself missing). Pi is next (structurally
+identical REQUEST shape to omp - confirmed by direct source comparison -
+riding on omp's proven event-handling logic, but pi's OWN event stream has
+never been observed). OpenCode carries the most risk (the REST paths
+themselves are inferred, not read from source). Card 8's Pi half and
+Card 6 need "does turn/completed have the same lifecycle a real turn
+exposed for omp" as their FIRST live check; Card 7 needs "do these REST
+calls even resolve" as its first.
 
-Lowest priority of the three — single-vendor CLIs, not a widely-adopted
-engine. Build only if the owner specifically wants Pi or OMP; otherwise
-defer indefinitely without blocking anything else (Cards 6/7/9 don't depend
-on it).
+One deliberate divergence from Paseo's own default named explicitly:
+Paseo's `pi/runtime.ts:85` defaults to `--mode rpc` (not `rpc-ui`) for pi.
+This driver uses `--mode rpc-ui` anyway - the ONE variant proven end-to-end
+(on omp), not the spec default that's never been run at all. See
+pi_driver.py's module docstring for the full reasoning.
 
-- `daemon/spine/agent/pirpc.py`: JSONL-RPC over stdio, `pi --mode rpc` /
-  `omp --mode rpc-ui`. Session identity is a FILE PATH, not a uuid —
-  `--session <path>` at spawn (`--no-session` for ephemeral) — the one engine
-  where resume is baked into argv instead of a protocol call.
-  Cost: `get_session_stats` RPC → `stats.cost`; version-compat fallback to
-  `get_state.contextUsage` if the stats RPC doesn't exist on the installed
-  version.
+Not refactored into a shared base class with omp_driver.py despite the
+structural closeness - the shipped, live-verified omp driver should not be
+put at risk to accommodate a not-yet-verified second engine. Worth
+revisiting once pi is ALSO live-verified.
 
-Paseo reading: `jsonl-rpc-process.ts` (whole file), `pi/runtime.ts:110-138`
-(argv construction), `pi/cli-runtime.ts:143-145,171-201` (abort, stats
-fallback).
+Paseo reading: `jsonl-rpc-process.ts` (whole file), `pi/runtime.ts:85-138`
+(protocol mode default + argv construction), `pi/cli-runtime.ts:143-145,
+171-201` (abort, stats fallback), `pi/rpc-types.ts:130-140` (the request
+union - confirmed identical to omp's measured shape).
 
-**Verify**: same shape as Cards 6/7 — real card, real turn, resume works,
-cost is real. Size **S–M (1.5–2d)**.
-</details>
+**Verify (STILL OPEN for Pi - code shipped, this step did not run)**: same
+shape as Cards 6/7 — real card, real turn, resume works, cost is real.
+omp's own equivalent verify is DONE (see above). Size **S–M (1.5–2d)** was
+for code+verify together; code is done.
 
 ## Card 9 — Wire native engines' real cost into econ honesty (N4)
 
@@ -469,46 +515,40 @@ and in PM budget totals, not as "n/a" and not silently dropped. Size **S (1d)**.
 ## Order, totals, deferrals
 
 ```
-Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5 ──┬──→ Card 6 (Codex)    ──┐
-Card 2 ✅ ──┬───────────↗                    ├──→ Card 7 (OpenCode) ──┼──→ Card 9
-            └──→ Card 8 ✅ (omp; Pi deferred, no owner step needed) ──┘
+Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5 ──→ Card 9 (real-cost wiring)
+Card 2 ✅ ──┬──────────────────────────────────────↑
+            ├──→ Card 6 (Codex)    - code ✅, LIVE VERIFY open
+            ├──→ Card 7 (OpenCode) - code ✅, LIVE VERIFY open
+            └──→ Card 8 (omp ✅ SHIPPED+VERIFIED / pi code ✅, LIVE VERIFY open)
 ```
 
-Card 8 shipped directly off Cards 1+2 - it did NOT need Card 5's queue, it
-just also happens to satisfy Card 9's "needs 5 + whichever of 6-8 shipped"
-once Card 5 itself lands.
+**2026-08-24, owner decree "do all like paseo, test accounts later":** ALL
+FOUR native adapters (omp, codex, opencode, pi) now exist as real, tested
+CODE, built directly off Cards 1+2 - none needed Card 5's originally-planned
+queue in practice. Only omp has cleared the LIVE-verify bar (a real
+account existed for it, via credential reuse - see Card 8). The other
+three are complete, unit-tested, gate-green modules whose remaining work is
+exclusively the "Verify (STILL OPEN)" lines in each card above, once an
+account exists for that engine - not more code.
 
-Cards 1, 2 and 8 (omp half) SHIPPED 2026-08-24 (see each card's section
-above for what landed and how it was verified) — Card 8 shipped OUT OF the
-originally-planned order because omp turned out to need no new owner step at
-all (reused the daemon's existing Claude OAuth token), while Card 3's Gemini
-prerequisite and Cards 6/7's own account steps were still open. Card 3 is
-next, blocked only on the owner's one prerequisite (Gemini CLI install +
-login — not doable from a headless card). Cards 6/7 each have their OWN
-separate owner prerequisite and are independently orderable once Card 5
-lands — build Codex first (biggest ecosystem after Gemini), OpenCode second
-(real cost reporting is the biggest win). Pi (the other half of Card 8)
-has no owner-account shortcut the way omp did and stays deferred.
+Card 3 (the ACP path) is UNCHANGED - still next for the ~30-engine-wide
+default, still blocked only on the owner's Gemini CLI login.
 
-**Total ~22–27.5 days across 9 cards, ~6–9 done** (full Paseo-equivalent
-breadth — analysis §6.6.4 has the per-native-adapter breakdown). The ACP-only
-subset (Cards 1–5) is **~12–16 days, ~4–7 done** and is a complete, coherent
-stopping point on its own — reaches ~30 engines, just without Codex/OpenCode/
-Pi's native depth (omp's IS done, out of order). After Card 3 the owner has a
-working second engine at `cmd`-driver-plus quality and a measured answer to
-the §6.3 brief question; after Card 4 it is daily-usable; Card 5 makes it
-honest; Cards 6/7/9 bring the rest to full Paseo-equivalent breadth.
+**Total ~22–27.5 days across 9 cards. Code-complete: ~7 of 9 (1,2,6,7,8
+[both halves],9-not-yet-since-it-needs-5). Live-verified: 3 of 9 (1,2, omp
+half of 8).** The ACP-only subset (Cards 1–5) remains a complete, coherent
+stopping point on its own — reaches ~30 engines without any native-adapter
+account. After Card 3 the owner has a working second engine at
+`cmd`-driver-plus quality and a measured answer to the §6.3 brief question;
+after Card 4 it is daily-usable; Card 5 makes it honest.
 
 **Deferred, deliberately**: E11 (copilot/PM/Henry/processes/distill stay
 claude-only — they are HelmDeck's governance organs, not card work);
 OpenCode's SHARED-BY-DEFAULT transport (Card 7 uses the dedicated mode
-instead — see that card and analysis §6.6.2); the Pi half of Card 8 (no
-owner-account shortcut, no live protocol measurement yet — see that card's
-"not built this session" note).
+instead — see that card and analysis §6.6.2).
 
 **Kill-switches**: if the Card-3 probe returns NO-GO on brief adherence (the
 engine cannot be made to follow the ask/DELIVERED protocol reliably), stop
 after Card 2 — which is worth having regardless — and revisit engine choice.
-Each of Cards 6/7 is independently droppable without affecting the other or
-Card 9's applicability to whichever DID ship (omp already qualifies for
-Card 9 today).
+Each of Cards 6/7/8-pi is independently droppable (or independently
+verifiable, whenever its account shows up) without affecting the others.
