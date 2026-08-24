@@ -1,0 +1,32 @@
+{
+  // TYPECHECK-ONLY config (tsc -p tsconfig.typecheck.json; loop_state + the
+  // CLAUDE.md verify line use it). Exists because the cell UI units live
+  // OUTSIDE this folder (cells/<id>/ui/) where TypeScript's node_modules
+  // walk-up finds nothing - the "*" fallback pins bare imports to this app's
+  // node_modules (@types first, real packages second).
+  //
+  // The fallback MUST NOT live in tsconfig.json: Expo/Metro reads that file's
+  // `paths` for RUNTIME resolution (tsconfigPaths, on by default) and would
+  // resolve `react` to @types/react - a types-only package - killing the
+  // bundle. Runtime resolution for cells/ is handled in metro.config.js
+  // (watchFolders + extraNodeModules + nodeModulesPaths) instead.
+  // `paths` does not deep-merge on extends, hence the aliases repeat here.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "@/assets/*": [
+        "./assets/*"
+      ],
+      "@cells/*": [
+        "../cells/*"
+      ],
+      "*": [
+        "./node_modules/@types/*",
+        "./node_modules/*"
+      ]
+    }
+  }
+}

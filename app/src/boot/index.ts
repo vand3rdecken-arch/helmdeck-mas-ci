@@ -12,11 +12,11 @@ import { Kernel, resolveProfile, selectPlugins, dumpConfig } from "@/kernel";
 import type { Plugin, ProfileDoc } from "@/kernel";
 
 import { CORE_PLUGINS, CORE_IDS } from "./core";
-import { boardSurface } from "@/plugins/surfaces/board";
-import { connectorsSurface } from "@/plugins/surfaces/connectors";
-import { pmSurface } from "@/plugins/surfaces/pm";
-import { processesSurface } from "@/plugins/surfaces/processes";
-import { copilotSurface } from "@/plugins/surfaces/copilot";
+import { boardSurface } from "@cells/engineer/ui/surface";
+import { connectorsSurface } from "@cells/connectors/ui/surface";
+import { pmSurface } from "@cells/pm/ui/surface";
+import { processesSurface } from "@cells/process/ui/surface";
+import { copilotSurface } from "@cells/copilot/ui/surface";
 import { tabsNav } from "@/plugins/surfaces/tabs";
 import { claudeEngine } from "@/plugins/engines/claude";
 import { copilotEngine } from "@/plugins/engines/copilot";
