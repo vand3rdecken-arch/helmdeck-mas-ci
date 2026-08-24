@@ -46,40 +46,29 @@ def sign_subject_get(self, user, tid):
     }))
 
 
-def sign_post(self, user, body):
-    from daemon.spine.auth import auth, signatures
+def _sign_one(user, tid, meaning, reason):
+    """Produce and store ONE signature. Password already verified by the caller.
+
+    Split out so the batch route cannot drift from the single route - one
+    implementation of "what a signature is", two ways in.
+    """
+    from daemon.spine.auth import signatures
     from daemon.spine.storage import events
     from daemon.spine.storage.trackstore import _find, _load, _mutate
 
-    tid = (body.get("card") or "").strip()
-    meaning = (body.get("meaning") or "").strip()
-    reason = body.get("reason") or ""
-    password = body.get("password") or ""
-
     t = _find(_load(), tid)
     if not t:
-        return self._send(404, json.dumps({"error": "no such card"}))
+        return {"card": tid, "ok": False, "error": "no such card"}
     if meaning not in signatures.MEANINGS:
-        return self._send(400, json.dumps(
-            {"error": "meaning must be one of %s" % (signatures.MEANINGS,)}))
-
-    # The subject is computed HERE, server-side, from git - never taken from
-    # the request. A client-supplied commit id would let a signature name a
-    # state the signer never saw, which is the one thing the binding exists to
-    # prevent.
+        return {"card": tid, "ok": False,
+                "error": "meaning must be one of %s" % (signatures.MEANINGS,)}
     subj, why = signatures.subject(t)
     if why:
-        return self._send(409, json.dumps({"error": why}))
-
-    if not auth.verify_password(user["name"], password):
-        # 401 and a flat message: the audit distinguishes wrong-password from
-        # locked-out, the response does not.
-        return self._send(401, json.dumps({"error": "password not accepted"}))
-
+        return {"card": tid, "ok": False, "error": why}
     try:
         sig = signatures.create(t, user["name"], user["role"], meaning, reason, subj)
     except ValueError as e:
-        return self._send(400, json.dumps({"error": str(e)}))
+        return {"card": tid, "ok": False, "error": str(e)}
 
     def _append(tt):
         tt.setdefault("signatures", []).append(sig)
@@ -89,17 +78,70 @@ def sign_post(self, user, body):
                 role=user["role"], meaning=meaning, reason=sig["reason"],
                 at_utc=sig["signed_at"], head=subj["head"], base=subj["base"],
                 seq=sig["seq"])
-
-    # A rejection is an instruction, not a dead end: send it back to the worker
-    # so the reason becomes the next turn's brief instead of dying in the log.
     if meaning == "rejected":
-        try:
-            from daemon.cells.engineer import sessions
-            sessions.move_lane(tid, "working", actor=user["name"])
-            if sig["reason"]:
-                sessions.steer(tid, "Freigabe abgelehnt: " + sig["reason"],
-                               actor=user["name"], source="gxp-rejection")
-        except Exception as e:
-            print("sign: rejection follow-up failed:", e)
+        _reject_followup(tid, user["name"], sig["reason"])
+    return {"card": tid, "ok": True, "signature": sig}
 
-    return self._send(200, json.dumps({"ok": True, "signature": sig}))
+
+def _reject_followup(tid, actor, reason):
+    """A rejection is an instruction, not a dead end: back to working, and the
+    reason becomes the worker's next brief instead of dying in the log."""
+    try:
+        from daemon.cells.engineer import sessions
+        sessions.move_lane(tid, "working", actor=actor)
+        if reason:
+            sessions.steer(tid, "Freigabe abgelehnt: " + reason,
+                           actor=actor, source="gxp-rejection")
+    except Exception as e:
+        print("sign: rejection follow-up failed:", tid, e)
+
+
+def sign_batch_post(self, user, body):
+    """Sign SEVERAL cards with ONE password entry.
+
+    21 CFR 11.200 speaks of a SERIES of signings, and batch approval with a
+    single credential entry is established practice in regulated document and
+    LIMS systems - provided every record gets its own full manifestation (name,
+    UTC time, meaning) and the signer sees each item at signing time. Both hold
+    here: one password check, N independent records, each bound to its own
+    commit pair.
+
+    Not all-or-nothing. A card that drifted since the list was drawn fails on
+    its own and the rest still land - forcing the whole batch to fail because
+    one branch moved would train people to re-sign blindly.
+    """
+    from daemon.spine.auth import auth
+
+    items = body.get("cards") or []
+    if not isinstance(items, list) or not items:
+        return self._send(400, json.dumps({"error": "no cards given"}))
+    if len(items) > 50:
+        return self._send(400, json.dumps({"error": "at most 50 cards at a time"}))
+    if not auth.verify_password(user["name"], body.get("password") or ""):
+        return self._send(401, json.dumps({"error": "password not accepted"}))
+
+    results = [_sign_one(user, (it.get("card") or "").strip(),
+                         (it.get("meaning") or "").strip(), it.get("reason") or "")
+               for it in items]
+    return self._send(200, json.dumps({"results": results}))
+
+
+def sign_post(self, user, body):
+    """Sign ONE card. Shares _sign_one with the batch route, so there is exactly
+    one implementation of what a signature is."""
+    from daemon.spine.auth import auth
+
+    if not auth.verify_password(user["name"], body.get("password") or ""):
+        # 401 and a flat message: the audit distinguishes wrong-password from
+        # locked-out, the response does not.
+        return self._send(401, json.dumps({"error": "password not accepted"}))
+
+    r = _sign_one(user, (body.get("card") or "").strip(),
+                  (body.get("meaning") or "").strip(), body.get("reason") or "")
+    if not r["ok"]:
+        # 409 for "the card is not in a signable state" (uncommitted work, drift),
+        # 404 for a card that is not there, 400 for a bad request.
+        err = r["error"]
+        code = 404 if "no such card" in err else 400 if "meaning must be" in err else 409
+        return self._send(code, json.dumps({"error": err}))
+    return self._send(200, json.dumps({"ok": True, "signature": r["signature"]}))

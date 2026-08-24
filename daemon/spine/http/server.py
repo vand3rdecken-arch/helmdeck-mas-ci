@@ -380,6 +380,8 @@ class H(BaseHTTPRequestHandler):
                     return self._send(400, json.dumps({"error": str(e)}))
             if p == "/sign":
                 return routes_sign.sign_post(self, user, body)
+            if p == "/sign/batch":
+                return routes_sign.sign_batch_post(self, user, body)
             if p in routes_pm.POST_ROUTES:
                 return routes_pm.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
