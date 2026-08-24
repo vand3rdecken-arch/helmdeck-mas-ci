@@ -17,7 +17,7 @@
 Self-sandboxing: fake procs, patched _tree_kill/_record_pid/_running_cards and a
 temp ~/.claude/projects - nothing spawns, kills or touches the real board.
 
-Run: py -3.12 daemon/test_p1_runtime.py
+Run: py -3.12 tests/test_p1_runtime.py
 """
 import json, os, sys, tempfile, threading, time
 

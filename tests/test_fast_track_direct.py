@@ -22,7 +22,7 @@ Pins:
 Self-sandboxing: fake DB, patched settings/emit/notify, stubbed drivers.run,
 a temp git repo - nothing touches the real board or spawns anything.
 
-Run: py -3.12 daemon/test_fast_track_direct.py
+Run: py -3.12 tests/test_fast_track_direct.py
 """
 import os, subprocess, sys, tempfile, threading, time
 

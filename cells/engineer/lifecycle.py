@@ -92,7 +92,7 @@ def _present_gxp(t, out):
     Out of scope this adds nothing - no field, no git, nothing beyond the lock
     check itself.
     """
-    from daemon import gxp
+    from spine.auth import gxp
     if not gxp.in_scope(t):
         return out
     out = dict(t) if out is None else out

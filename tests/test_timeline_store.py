@@ -11,7 +11,7 @@ Pins two things:
    question (stripped, matching _clean_text), and a cancel.
 
 Self-sandboxing: no real CLI, no real daemon - _on_event driven directly on a
-_ClaudeSession built the same way daemon/test_p1_runtime.py's make_session
+_ClaudeSession built the same way tests/test_p1_runtime.py's make_session
 does (real __init__, only _spawn stubbed).
 """
 import os, shutil, sys, tempfile, threading, time

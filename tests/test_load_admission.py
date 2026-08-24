@@ -20,7 +20,7 @@ deterministic test):
 Self-sandboxing: patched events.settings/emit + resources.cpu_percent, a fake
 ActionLog capturing notes, plain track dicts - no daemon, no real subprocess.
 
-Run: py -3.12 daemon/test_load_admission.py
+Run: py -3.12 tests/test_load_admission.py
 """
 import os, sys, threading, time
 

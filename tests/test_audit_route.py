@@ -20,7 +20,7 @@ What this pins down:
   7. no password, no full token, nothing secret leaks through the export just
      because a filter didn't happen to catch it
 
-Run: py -3.12 daemon/test_audit_route.py
+Run: py -3.12 tests/test_audit_route.py
 """
 import csv
 import io

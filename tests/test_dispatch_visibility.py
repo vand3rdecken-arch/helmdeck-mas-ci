@@ -6,7 +6,7 @@ fell back to backlog with no trace).
 Self-sandboxing: runs against a temp directory and an in-memory fake DB, and
 patches events.emit so nothing touches the real append-only event log.
 
-Run: py -3.12 daemon/test_dispatch_visibility.py
+Run: py -3.12 tests/test_dispatch_visibility.py
 """
 import os, shutil, sys, tempfile
 

@@ -5,8 +5,8 @@
 >
 > Jede Karte hat ihre Verifikation aus diesem Dokument tatsächlich durchlaufen;
 > A4 und A1 zusätzlich mit Gegenprobe am alten Code, damit der Test nicht
-> ungeprüft grün leuchtet. Neue Tests: `daemon/test_events_no_reimport.py`,
-> `daemon/test_auth_audit.py`, `app/test_config_hydrate.js`.
+> ungeprüft grün leuchtet. Neue Tests: `tests/test_events_no_reimport.py`,
+> `tests/test_auth_audit.py`, `app/test_config_hydrate.js`.
 >
 > Zwei Dinge sind beim Bauen aufgetaucht, die unten im Plan noch fehlen:
 > A1 hatte eine **zweite** Tür (das Onboarding mintete ebenfalls einen
@@ -22,7 +22,7 @@
 > `revoke_token` schrieb seinen Eingabewert ins Audit, und ein Skript darf da
 > den Volltoken übergeben.
 >
-> **Phase B, strukturelle Hälfte: gebaut** (`1049b6e`). `daemon/gxp.py` plus der
+> **Phase B, strukturelle Hälfte: gebaut** (`1049b6e`). `spine/auth/gxp.py` plus der
 > eine Guard in `_move_lane`. „Kein Agent kann ohne Menschen deployen" stimmt
 > jetzt. „Jede Auslieferung trägt eine elektronische Unterschrift" stimmt
 > **noch nicht** — als Schuldenposten `gxp-mode-has-no-signature-yet` eingetragen,
@@ -291,7 +291,7 @@ Importzyklen achten und im Zweifel innerhalb der Funktion importieren, wie es
 **Ist.** `desktop/main.js`, `mintDesktopToken()`:
 
 ```js
-spawnSync(py.cmd, [...py.args, "-m", "daemon.mint_token", "owner", "desktop"], …)
+spawnSync(py.cmd, [...py.args, "-m", "spine.auth.mint_token", "owner", "desktop"], …)
 if (r.status === 0 && r.stdout) desktopToken = r.stdout.trim();
 ```
 

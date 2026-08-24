@@ -477,7 +477,7 @@ Kartenflag erreichbar.
 ### 2.7 Modus-Aktivierung — und das Restrisiko, offen benannt
 
 ```
-daemon/gxp.py   ->  liest DAEMON_ROOT/gxp.lock bei JEDEM Aufruf frisch
+spine/auth/gxp.py   ->  liest DAEMON_ROOT/gxp.lock bei JEDEM Aufruf frisch
                     (kein Cache, kein Modul-Global -> kein veraltetes Flag)
 ```
 
@@ -651,7 +651,7 @@ bekannter Verstoß, kein Vorbild.
 
 | Datei | Änderung |
 |---|---|
-| `daemon/gxp.py` | **neu.** `aktiv()`, `sperren()`, `vier_augen()` — Lock-Datei bei jedem Aufruf frisch lesen |
+| `spine/auth/gxp.py` | **neu.** `aktiv()`, `sperren()`, `vier_augen()` — Lock-Datei bei jedem Aufruf frisch lesen |
 | `spine/auth/signatures.py` | **neu.** `subject(t)` (head/base-SHA), `create(...)` inkl. signiertem Tag, `gueltige_offene(t)`, `consume(...)` |
 | `spine/auth/signkeys.py` | **neu.** Ed25519 pro Benutzer, passwortentsperrt (§2.0 Option A); `gpg.format=ssh` |
 | `cells/engineer/lanemachine.py` | `_autocommit:188-211`: Agenten-Commits unter Agenten-Identität, nicht unter der des Hosts |

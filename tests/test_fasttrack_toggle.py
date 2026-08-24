@@ -14,7 +14,7 @@ Self-sandboxing: fake DB, patched settings/emit, a SyncThread stand-in that
 runs `_ship` inline, and stubbed git/gate/merge helpers - nothing touches a
 real repo, gate, or the live board.
 
-Run: py -3.12 daemon/test_fasttrack_toggle.py
+Run: py -3.12 tests/test_fasttrack_toggle.py
 """
 import os, sys, tempfile
 

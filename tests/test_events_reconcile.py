@@ -25,7 +25,7 @@ What this pins down:
   6. a shrunk/rotated file resets the checkpoint to 0 rather than silently
      skipping content
 
-Run: py -3.12 daemon/test_events_reconcile.py
+Run: py -3.12 tests/test_events_reconcile.py
 """
 import json
 import os

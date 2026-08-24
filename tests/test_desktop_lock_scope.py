@@ -10,7 +10,7 @@ turn. `_uses_desktop_control` now exempts read-only screen tools while staying
 FAIL-SAFE: a wildcard grant, or any tool not on the read-only allowlist, still
 locks so an unknown/new control tool can never silently bypass the guard.
 
-Run: py -3.12 daemon/test_desktop_lock_scope.py
+Run: py -3.12 tests/test_desktop_lock_scope.py
 """
 import os, sys
 

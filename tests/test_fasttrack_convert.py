@@ -14,7 +14,7 @@ repointed direct/live-tree, idle session dropped.
 Self-sandboxing: fake DB, patched settings/emit, stubbed git/merge/reclaim/
 driver helpers - nothing touches a real repo, gate, or the live board.
 
-Run: py -3.12 daemon/test_fasttrack_convert.py
+Run: py -3.12 tests/test_fasttrack_convert.py
 """
 import os, sys, tempfile
 

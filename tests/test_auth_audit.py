@@ -25,7 +25,7 @@ point at a temp dir. auth.py and events.py hold INDEPENDENT module globals -
 patching one does not cover the other, and users.json is a git-ignored secret
 that must never be touched by a test.
 
-Run: py -3.12 daemon/test_auth_audit.py
+Run: py -3.12 tests/test_auth_audit.py
 """
 import json
 import os

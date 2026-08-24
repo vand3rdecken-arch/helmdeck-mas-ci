@@ -106,7 +106,7 @@ job, once there is a real second engine to design it against.
 Paseo reading: `provider-registry.ts:118-159` (factory table),
 `provider-launch-config.ts` (whole file).
 
-**Verify**: gate green; full `daemon/test_*.py`; `/harness` spawn-preview argv
+**Verify**: gate green; full `tests/test_*.py`; `/harness` spawn-preview argv
 byte-identical before/after; one live throwaway card turn on the running
 daemon behaves identically. Size **M (1.5–2d)**.
 

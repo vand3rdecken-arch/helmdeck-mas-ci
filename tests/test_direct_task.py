@@ -18,7 +18,7 @@ Pins:
 Self-sandboxing: fake DB, patched settings/emit, stubbed drivers.run, temp
 git repos - nothing touches the real board or spawns anything.
 
-Run: py -3.12 daemon/test_direct_task.py
+Run: py -3.12 tests/test_direct_task.py
 """
 import os, subprocess, sys, tempfile, threading, time
 

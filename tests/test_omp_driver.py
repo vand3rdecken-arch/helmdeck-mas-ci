@@ -6,7 +6,7 @@ omp.exe v16.1.10 on 2026-08-24 (not invented fixtures - see omp_driver.py's
 module docstring for the measurement notes), plus the argv/env assembly.
 
 Self-sandboxing: no real omp.exe spawned - _on_event driven directly on an
-_OmpSession built the same way daemon/test_p1_runtime.py's make_session does
+_OmpSession built the same way tests/test_p1_runtime.py's make_session does
 (real __init__, only _spawn stubbed).
 """
 import os, shutil, sys, tempfile, threading, time

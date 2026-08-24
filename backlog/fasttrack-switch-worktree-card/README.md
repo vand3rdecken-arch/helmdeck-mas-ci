@@ -2,8 +2,8 @@
 
 > **SHIPPED 2026-08-20** (owner-decreed direct fix - "might get stuck in gate
 > again"): `sessions._convert_fast_track_live` + the `update_track` mid-turn
-> guard, pinned by `daemon/test_fasttrack_convert.py` and the updated 6c case
-> in `daemon/test_fast_track_direct.py`; debt note extended on
+> guard, pinned by `tests/test_fasttrack_convert.py` and the updated 6c case
+> in `tests/test_fast_track_direct.py`; debt note extended on
 > `fast-track-no-gate`. Punch list below kept for the record; the one open
 > item is the session-chain continuity measurement (last checkbox).
 

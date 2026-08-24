@@ -274,7 +274,7 @@ def _find_track(card):
 
 
 def _execute(action, card, lane, text, esc):
-    from daemon import gxp
+    from spine.auth import gxp
     from spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
     if action == "ignore":

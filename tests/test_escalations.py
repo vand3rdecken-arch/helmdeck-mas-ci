@@ -9,7 +9,7 @@ Self-sandboxing: escalation log redirected to a temp file, Henry's model
 call, notify and settings stubbed - nothing touches the live board, a real
 model or the phone.
 
-Run: py -3.12 daemon/test_escalations.py
+Run: py -3.12 tests/test_escalations.py
 """
 import os, sys, tempfile
 

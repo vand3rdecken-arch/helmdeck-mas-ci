@@ -444,7 +444,7 @@ sondern **aktiv irreführend** — regulatorisch schlimmer als eine Lücke.
 
 **GXP-U3 — Die Desktop-App meldet sich ohne Credential als Owner an. [KRITISCH]**
 Verifiziert: `desktop/main.js:292-306` ruft bei jedem Start
-`python -m daemon.mint_token owner desktop` auf und injiziert
+`python -m spine.auth.mint_token owner desktop` auf und injiziert
 `{baseUrl, token}` in den SPA-URL-Fragment (`:367-373`); `app/src/data/config.ts:94-96`
 übernimmt es. **Das Öffnen der Desktop-App ist ein Owner-Login ohne jede
 Authentifizierung.** Die wichtigste Zugangskontrolle des Systems fehlt auf

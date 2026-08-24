@@ -17,7 +17,7 @@ import subprocess
 import time
 
 from spine.storage.trackstore import _find, _load, _mutate, _slug
-from daemon import gxp
+from spine.auth import gxp
 from spine.git.gitutil import _git, _git_try, is_git_repo, AGENT_IDENT
 from spine.turn.blockers import blocker
 from spine.turn.outcomes import _record_outcome
@@ -758,7 +758,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
     # `move`, the policy auto-accept, the chat verb, the PM - and fast-track and
     # machine cards branch off further down, still inside this function. So one
     # question asked once closes all of them, and no agent needs a special case:
-    # they simply are not accounts (daemon/gxp.py is_human).
+    # they simply are not accounts (spine/auth/gxp.py is_human).
     #
     # Scoped per card, not globally: only cards aimed at a regulated repo (or
     # flagged into scope) are affected, everything else keeps working exactly as

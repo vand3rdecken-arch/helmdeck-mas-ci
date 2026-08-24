@@ -38,7 +38,7 @@ Deliberately NOT covered here: the real merge/deploy machinery. This tests the
 gate, not the landing - _move_lane's later half needs a git repo and a worktree
 and is exercised by actually running a card.
 
-Run: py -3.12 daemon/test_gxp_guard.py
+Run: py -3.12 tests/test_gxp_guard.py
 """
 import json
 import os
@@ -69,7 +69,7 @@ def main():
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
-    from daemon import gxp
+    from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
 
     real = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gxp.lock")

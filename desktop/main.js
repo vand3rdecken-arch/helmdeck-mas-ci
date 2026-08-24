@@ -80,7 +80,7 @@ const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__di
 
 // NO TOKEN IS MINTED HERE ANY MORE.
 //
-// This used to run `daemon.mint_token owner desktop` at every launch and inject
+// This used to run `spine.auth.mint_token owner desktop` at every launch and inject
 // the result into the SPA's #cfg hash, which meant OPENING THE APP WAS AN OWNER
 // LOGIN WITH NO CREDENTIAL: anyone at an unlocked machine had full owner rights
 // without knowing anything. The shell now hands over the daemon URL only; the
@@ -295,7 +295,7 @@ function startDaemon(pyOverride) {
 }
 
 // mintDesktopToken() lived here and is deliberately GONE (see the note at the
-// top). daemon/mint_token.py itself stays - it is still a legitimate operator
+// top). spine/auth/mint_token.py itself stays - it is still a legitimate operator
 // tool for provisioning a device token by hand - but nothing in the desktop
 // shell calls it any more, so no credential-free owner session is handed out.
 

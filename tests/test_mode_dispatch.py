@@ -23,7 +23,7 @@ This pins both invariants on the card-dispatch paths so they cannot regress.
 Self-sandboxing: fake DB, patched settings/emit, synchronous fake threads -
 nothing touches the real board or event log, nothing really dispatches.
 
-Run: py -3.12 daemon/test_mode_dispatch.py
+Run: py -3.12 tests/test_mode_dispatch.py
 """
 import os, shutil, sys, tempfile
 
