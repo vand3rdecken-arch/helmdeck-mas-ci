@@ -67,13 +67,32 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts TEXT, kind TEXT, track TEXT, data TEXT)""")
+        id TEXT, ts TEXT, kind TEXT, track TEXT, data TEXT)""")
+    _ensure_events_id_column(c)
+    # UNIQUE, allowing many NULLs (SQLite treats each NULL as distinct in a
+    # unique index) - pre-id-era rows imported before this column existed all
+    # have id=NULL and none of them collide with each other or with anything
+    # new. This is what makes _reconcile_events() safe to run every boot
+    # instead of only once: INSERT OR IGNORE on a genuine id conflict is a
+    # no-op, not a duplicate.
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ev_id ON events(id)")
     c.execute("CREATE INDEX IF NOT EXISTS ev_kind ON events(kind)")
     c.execute("CREATE INDEX IF NOT EXISTS ev_track ON events(track)")
     c.commit()
     _migrate()
+    _reconcile_events()
     if role == "daemon":
         _devalue_persisted_running()
+
+
+def _ensure_events_id_column(c):
+    """Migrate an EXISTING events table predating the `id` column - CREATE
+    TABLE IF NOT EXISTS is a no-op once the table already exists, so an
+    installation from before this change never gets the column any other
+    way."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(events)")}
+    if "id" not in cols:
+        c.execute("ALTER TABLE events ADD COLUMN id TEXT")
 
 
 def _devalue_persisted_running():
@@ -274,12 +293,75 @@ def connector_state_put(d):
 # -- events --------------------------------------------------------------
 
 def event_insert(row):
+    # `id` is deliberately left IN `extra` too (not excluded like ts/kind/track)
+    # so events_all()'s json.loads(data) round-trip still surfaces it on the
+    # reconstructed dict with no change to that function - it is stored twice
+    # on purpose, once as an indexed column for the UNIQUE constraint, once in
+    # the blob for read-back fidelity.
     extra = {k: v for k, v in row.items() if k not in ("ts", "kind", "track")}
     with conn() as c:
-        c.execute("INSERT INTO events(ts,kind,track,data) VALUES(?,?,?,?)",
-                  (row.get("ts"), row.get("kind"), row.get("track"),
+        # OR IGNORE: a genuine id conflict (this exact event already present -
+        # _reconcile_events re-inserting on a later boot, say) is a no-op, not
+        # a duplicate row. row.get("id") is None for anything that bypassed
+        # events.emit()'s id generation; SQLite treats every NULL in a UNIQUE
+        # index as distinct, so those never collide with each other either.
+        c.execute("INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
+                  (row.get("id"), row.get("ts"), row.get("kind"), row.get("track"),
                    json.dumps(extra)))
     bump()
+
+
+def _reconcile_events():
+    """Boot-time healer: fold into the db any event that made it into
+    events.jsonl but whose write-through (events.emit's best-effort
+    db.event_insert, wrapped in try/except) was dropped - a disk hiccup, a WAL
+    lock timeout. Before `id` existed this was impossible to do safely: the
+    file and the table shared no key, so a naive re-import could only either
+    skip everything (miss real drops, the bug this closes) or duplicate
+    everything (the bug A4 fixed). INSERT OR IGNORE on a UNIQUE id makes
+    re-scanning safe, so this can now run on every boot rather than once.
+
+    Cheap by construction: a checkpoint file remembers how many BYTES of
+    events.jsonl were already reconciled, so a boot only scans what was
+    appended since the last one, not the whole history every time. A file
+    that shrank (rotated, truncated) resets the checkpoint to 0 rather than
+    skipping the difference."""
+    ej = os.path.join(ROOT, "events.jsonl")
+    if not os.path.exists(ej):
+        return
+    ckpt = ej + ".synced"
+    start = 0
+    if os.path.exists(ckpt):
+        try:
+            start = int(open(ckpt, encoding="utf-8").read().strip() or "0")
+        except ValueError:
+            start = 0
+    if start > os.path.getsize(ej):
+        start = 0
+    c = conn()
+    healed = 0
+    with open(ej, encoding="utf-8") as f:
+        f.seek(start)
+        for line in f:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            rid = r.get("id")
+            if not rid:
+                continue   # pre-id-era row - nothing to reconcile it against
+            extra = {k: v for k, v in r.items() if k not in ("ts", "kind", "track")}
+            cur = c.execute(
+                "INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
+                (rid, r.get("ts"), r.get("kind"), r.get("track"), json.dumps(extra)))
+            if cur.rowcount:
+                healed += 1
+        end = f.tell()
+    c.commit()
+    with open(ckpt, "w", encoding="utf-8") as f:
+        f.write(str(end))
+    if healed:
+        print("db: reconciled %d event(s) the write-through had dropped" % healed)
 
 def events_all():
     rows = conn().execute(

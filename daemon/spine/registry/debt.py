@@ -43,27 +43,32 @@ DEBT = [
     {
         "id": "events-two-stores-unreconciled",
         "title": "events.jsonl and the events table can drift, with no way to tell",
-        "status": "open",
+        "status": "paid",
         "what": "events.emit() appends to events.jsonl and separately write-through "
                 "inserts the same row into the db (events.py:175-191). The db write "
-                "is best-effort inside a bare `except: pass`, and the comment there "
-                "claims the jsonl is 'the durable record regardless of db state'. "
-                "Rows carry no id, so the two stores share no key. Until A4 "
-                "(db.py _migrate) the file was re-imported on every boot, which "
-                "accidentally re-synced drift while duplicating everything else; "
-                "that re-import is now correctly limited to a first-start "
-                "migration, so a dropped db write stays dropped and silent.",
+                "is best-effort inside a bare `except: pass`. Rows carried no id, so "
+                "the two stores shared no key and a dropped db write stayed dropped "
+                "and silent forever - re-scanning to heal it could only either miss "
+                "real drops or duplicate everything (the bug A4 fixed).",
         "why_it_bites": "A failed write-through loses the event from every "
                         "dashboard, metric and audit query while it still sits in "
                         "the file - the two answers to 'what happened' disagree and "
                         "nothing detects it. For a GxP audit trail that is fatal: "
                         "the record has to be provably complete, not probably.",
         "trigger": "any db write failure during emit (disk full, lock timeout, "
-                   "WAL trouble) - silent today",
-        "fix": "Give every event a stable id at emit time (ULID or ts+counter), "
-               "make the db column UNIQUE, and re-import with INSERT OR IGNORE. "
-               "Then a boot-time reconcile is both safe and cheap, and the two "
-               "stores can be diffed on demand. Phase D of docs/gxp-plan.md.",
+                   "WAL trouble) - was silent, now healed on the next boot",
+        "fix": "PAID (phase D3, docs/gxp-plan.md): events.emit() stamps a stable "
+               "secrets.token_hex id on every row; the events table got a UNIQUE "
+               "index on it (ALTER TABLE migration for existing installs, NULLs "
+               "allowed for pre-id-era rows so they never collide); "
+               "db.event_insert uses INSERT OR IGNORE keyed on it. "
+               "db._reconcile_events() runs on every boot, not just the first: it "
+               "scans events.jsonl from a byte-offset checkpoint (only what was "
+               "appended since the last boot, not the whole history) and folds in "
+               "anything the write-through missed. Verified against a genuinely "
+               "dropped write (daemon/test_events_reconcile.py) - healed on the "
+               "next reconcile, a repeat reconcile does not duplicate it, and the "
+               "checkpoint advances so a clean boot rescans nothing.",
         "order": 0,
     },
     {
