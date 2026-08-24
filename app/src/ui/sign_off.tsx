@@ -27,7 +27,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 // single 13px ghost pill does both with no confirmation at all, so "what
 // happens" is genuinely new information, not ceremony.
 
-const MEANINGS: { id: SignMeaning; label: string; sub: string }[] = [
+export const MEANINGS: { id: SignMeaning; label: string; sub: string }[] = [
   { id: "approved", label: "sign.approved", sub: "sign.approvedSub" },
   { id: "reviewed", label: "sign.reviewed", sub: "sign.reviewedSub" },
   { id: "rejected", label: "sign.rejected", sub: "sign.rejectedSub" },
@@ -35,11 +35,11 @@ const MEANINGS: { id: SignMeaning; label: string; sub: string }[] = [
 
 /** Colour per meaning. A lookup rather than a keyof index, so adding a
  *  meaning is a compile error here instead of a silent undefined colour. */
-function meaningTone(t: ThemeTokens, m: SignMeaning): string {
+export function meaningTone(t: ThemeTokens, m: SignMeaning): string {
   return m === "approved" ? t.ok : m === "reviewed" ? t.human : t.danger;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const t = useTheme();
   return (
     <View style={{ gap: 6 }}>
@@ -292,7 +292,7 @@ export function SignOff({ card, onClose, onSigned }: {
 }
 
 /** Inline failure box. Never an Alert - see rule 2 at the top. */
-function Inline({ t, text, onRetry, retryLabel }: {
+export function Inline({ t, text, onRetry, retryLabel }: {
   t: ThemeTokens; text: string; onRetry?: () => void; retryLabel?: string;
 }) {
   return (
