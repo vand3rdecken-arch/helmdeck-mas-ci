@@ -12,32 +12,33 @@ DEBT = [
     {
         "id": "gxp-signature-not-independently-verifiable",
         "title": "GxP signatures are recorded, but only WE can vouch for them",
-        "status": "open",
-        "what": "The signature itself is built and enforced: re-authentication "
-                "at signing (auth.verify_password, no session or token minted), "
-                "printed name + UTC + MEANING + reason (21 CFR 11.50), bound to "
-                "the head/base commit pair with drift voiding it, consumed on "
-                "landing, four-eyes available. What is MISSING is the last step "
-                "of 11.70's intent: the record lives in helmdeck.db and "
-                "events.jsonl, both of which we own. There is no signed git tag, "
-                "so an auditor cannot verify a signature with stock `git "
-                "verify-tag` - they have to trust our storage. The owner "
-                "deliberately deferred the signing-key decision (server-held "
-                "password-unlocked Ed25519 vs. on-device), which is what that "
-                "step needs.",
-        "why_it_bites": "'A human signed this, and here is the commit they "
-                        "signed' is true and defensible. 'Here is cryptographic "
-                        "proof you can check yourself' is not yet available - "
-                        "and an auditor who asks how we know the record was not "
-                        "edited gets the answer 'the append-only log', which is "
-                        "a convention, not a proof.",
+        "status": "paid",
+        "what": "The signature record was built and enforced, but it lived in "
+                "helmdeck.db and events.jsonl - storage HelmDeck owns. An "
+                "auditor asking 'how do I know this wasn't edited' got 'the "
+                "append-only log', a convention rather than a proof.",
+        "why_it_bites": "'A human signed this' was true and defensible; 'here "
+                        "is cryptographic proof you can check yourself' was "
+                        "not available.",
         "trigger": "a supplier audit that asks to independently verify a "
                    "signature, or any dispute about a specific release",
-        "fix": "Pick the signing key, then emit a signed git tag per approval "
-               "(gpg.format=ssh, so no GPG install), record tag + tag_sha in "
-               "the signature's `git` block (already reserved), and cross-"
-               "witness: the sink holds the tag sha, the tag names the card. "
-               "docs/gxp-mode-design.md 2.0.",
+        "fix": "PAID (spine/auth/signkeys.py): every APPROVED signature also "
+               "lands as a GPG-signed tag gxp/approve/<card>-<seq> on the "
+               "approved commit; an auditor verifies with stock `git "
+               "verify-tag` + the exported public key, no HelmDeck code in the "
+               "loop. Per-user Ed25519 key whose passphrase IS the user's "
+               "password (owner's Option A) - the password is cryptographically "
+               "required, not merely hash-checked; agent passphrase caching is "
+               "disabled (default/max-cache-ttl 0), because with the default "
+               "cache a signature succeeded with the WRONG passphrase for as "
+               "long as the agent remembered the right one. Password changes "
+               "rotate the key; every public key ever used is exported "
+               "append-only so old tags verify forever. GPG rather than the "
+               "design's gpg.format=ssh because this host's git is 2.27 and "
+               "ssh signing landed in 2.34 - same auditor story, different key "
+               "format. STRICT: an approval whose tag cannot be created is "
+               "refused outright, never stored unanchored. Proven end to end "
+               "in daemon/test_gxp_tag.py against real gpg and real git.",
         "order": 0,
     },
     {
