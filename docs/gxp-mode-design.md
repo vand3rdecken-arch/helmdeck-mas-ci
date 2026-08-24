@@ -254,6 +254,50 @@ der ausdrücklichen Regel in `app/src/i18n/index.ts:1-11`, dass der Audit-Trail
 in jedem Workspace identisch und greppbar lesen muss. Übersetzt wird nur die
 Oberfläche.
 
+### 2.1b Rohkommando bei Sprache — zurückgestellt, aber eingeplant
+
+Owner-Frage: soll das gesprochene Rohkommando mitgespeichert werden, nicht für
+jede Karte, aber für GxP? Antwort: ja, mit einer Einschränkung, die die Regel
+schärfer macht als „GxP ja/nein" — sie hängt an **zwei** Bedingungen, nicht an
+einer.
+
+**Kanal.** Nur gesprochene Eingabe hat ein Verhör-Risiko. Getippter Text hat
+keine Interpretationsschicht dazwischen — was eingetippt wird, ist exakt das,
+was gespeichert wird. Das Feld lohnt sich nur für den Sprachpfad.
+
+**Geltungsbereich.** Ob man den Preis dafür zahlt — Speicherung, Aufbewahrung,
+und eine Sprachaufnahme ist personenbezogen (DSGVO), nicht nur ein
+Speicherplatz-Thema — ist eine Scope-Frage. Für eine beliebige Karte
+unverhältnismäßig, für eine GxP-Karte gerechtfertigt.
+
+**Beide zusammen:** bei einer Karte im Geltungsbereich, wenn die Eingabe über
+Sprache kam, wird das Rohkommando mitgespeichert. Bei Tastatur nicht nötig.
+Außerhalb des Geltungsbereichs nie.
+
+**Wo es trägt, und wo es nur zusätzliche Absicherung ist — das ist der Teil,
+der die Antwort ehrlich macht, statt „immer alles aufnehmen" zu sagen:**
+
+- **Begründungsfeld einer Signatur (`reason`): nice-to-have, nicht tragend.**
+  Die GxP-Aussage „dieser Code wurde geprüft und freigegeben" hängt am
+  Commit-Paar (§2.2), nicht am Wortlaut der Begründung. Verhört sich die KI
+  beim Diktieren eines Wortes in der Begründung, bleibt der signierte Diff
+  trotzdem unabhängig überprüfbar — er *ist* der eigentliche Beleg.
+- **Diktierte Messwerte oder Anweisungen ohne unabhängiges zweites
+  Artefakt: tragend.** Sobald es neben der Sprachäußerung nichts gibt, das
+  unabhängig davon existiert (kein Diff, kein Commit, nur die Aussage
+  selbst), ist das Rohkommando die **einzige** Stelle, an der ein späterer
+  Zweifel überhaupt festgemacht werden kann. Das ist der Fall bei
+  Sprachdiktat von Messwerten in ein fremdes System (Rolle A, siehe die
+  Diskussion zum pH-Meter-Beispiel) — dort trägt die gesamte Kontrolle auf
+  diesem einen Feld, nicht nur zusätzlich.
+
+**Umsetzung, wenn gebaut** (nicht Teil dieser Karte, siehe §6): ein Feld
+`auth.input_channel: "voice" | "typed"` neben dem bereits vorhandenen
+`auth.method` (`signatures.py:113`), bei `"voice"` zusätzlich ein Verweis auf
+den Audio-Schnipsel — nach demselben Muster, wie Karten schon heute auf ihre
+Bildschirm-/Browseraufzeichnung verweisen (`routes_runs.py`). Kein neues
+Konzept, nur ein weiteres Feld, vom Geltungsbereich abhängig statt pauschal.
+
 ### 2.2 Die Bindung: `subject_hash`
 
 §11.70 verlangt, dass die Signatur so an den Datensatz gebunden ist, dass sie
@@ -635,25 +679,34 @@ Kein neuer Token nötig — `t.human`, `t.ok`, `t.danger`, `t.surface1`,
 
 ## 5. Was dieser Entwurf nicht löst
 
-Damit die Erwartung stimmt. Der Entwurf schließt den **strukturellen** Blocker
-(kein Mensch in der Freigabe) und liefert §11.50, §11.70, §11.200 sowie
-Vier-Augen. Offen bleiben aus dem Register:
+Damit die Erwartung stimmt. Stand nach `docs/gxp-plan.md`: Stufe 0 ist
+geschlossen (A0–A5, S4, S1; A3 wartet auf Owner-Entscheidung), der strukturelle
+Blocker ist zu (kein Agent kann ohne Menschen landen), und die Signatur selbst
+liefert §11.50, §11.70 (auf das Commit-Paar gebunden), §11.200
+(Re-Authentifizierung) sowie Vier-Augen. Offen bleiben:
 
-- **Stufe 0** — die vier Punkte, die unabhängig von GxP echte Mängel sind
-  (Datenschutzerklärung vs. PostHog/Loops, Checkpoint-Diff-Leak, Desktop-Login
-  ohne Credential, Ereignis-Duplizierung). Der Desktop-Punkt ist sogar
-  **Voraussetzung**: eine Signatur ist wertlos, wenn die Hauptoberfläche ohne
-  Credential als Owner startet.
-- **Audit-Trail-Härtung** — UTC durchgängig (`events.py:176`),
-  Audit-Ereignisse für Benutzer- und Rollenoperationen (`auth.py` importiert
-  `events` nicht), Hash-Kette über die Ereignissenke, Review-Route mit Filter
-  und Export, `tools/reset.py:61-77` als Audit-Löscher entschärfen.
+- **Phase C — das Freigabefenster.** Unterschreiben geht heute nur über
+  `POST /sign`, es gibt keinen Knopf im Board. Ohne C ist der Modus nicht
+  benutzbar, nur API-technisch vorhanden.
+- **Das signierte git-Tag** — der Datensatz existiert und wird durchgesetzt,
+  liegt aber in Speicher, den HelmDeck selbst besitzt. Ohne Tag kann ein
+  Prüfer ihn nicht mit `git verify-tag` selbst nachrechnen, er muss uns
+  glauben. Braucht die Schlüsselentscheidung aus §2 (Server vs. Gerät),
+  bewusst vertagt. Debt: `gxp-signature-not-independently-verifiable`.
+- **Rohkommando bei Sprache** (§2.1b) — designed, nicht gebaut. Für Rolle B
+  (dieser Entwurf) ein Nice-to-have am Begründungsfeld. Für einen möglichen
+  Rolle-A-Zweig (KI trägt Messwerte/Anweisungen in ein fremdes reguliertes
+  System ein, z. B. per Sprachdiktat) wäre es tragend — dort gibt es kein
+  unabhängiges zweites Artefakt wie einen Commit, gegen das man prüfen könnte.
+  Das ist ein eigenständiges Vorhaben, kein Teil dieser Karte.
+- **Audit-Trail-Härtung, Rest** — UTC ist für Auth- und Signatur-Ereignisse
+  bereits da (A5, `auth._audit`), aber nicht durchgängig
+  (`events.py:176` bleibt lokal für alles andere); Review-Route mit Filter und
+  Export; `tools/reset.py:61-77` als Audit-Löscher entschärfen; die
+  Zwei-Speicher-Rekonziliation aus `events-two-stores-unreconciled`.
 - **Stufe 2 / CSV** — Validierungsplan, URS/FS/DS, RTM, IQ/OQ/PQ, Gate mit
   echtem Regressionstest, Umgebungstrennung, OTA-Code-Signing. Davon berührt
   dieser Entwurf nichts.
-
-Reihenfolge: **Stufe 0 zuerst.** Eine Signaturzeremonie über einer Oberfläche,
-die sich ohne Passwort als Owner anmeldet, ist Theater.
 
 ---
 

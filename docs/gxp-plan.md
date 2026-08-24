@@ -40,6 +40,16 @@
 > Offen: A3 (deine Entscheidung) · **Phase C, das Freigabefenster** · das
 > signierte git-Tag (braucht die Schlüsselentscheidung) · Phase D · der
 > gepackte Drei-Start-Durchlauf der Desktop-App.
+>
+> **Neu, aus der Diskussion, nicht Teil dieser Karte:** Rohkommando bei
+> Sprache mitspeichern — für eine Karte im Geltungsbereich, wenn die Eingabe
+> über Sprache statt Tastatur kam (`gxp-mode-design.md` §2.1b). Für die
+> Signatur selbst nur Zusatzabsicherung (der Commit-Diff ist der eigentliche
+> Beleg). Tragend würde es erst für ein eigenständiges Rolle-A-Vorhaben (KI
+> trägt Messwerte/Anweisungen in ein fremdes reguliertes System ein, etwa per
+> Sprachdiktat an einem Laborgerät) — dort gibt es kein unabhängiges zweites
+> Artefakt, das die Aussage prüfbar macht. Design-Diskussion vorhanden, keine
+> Karte angelegt.
 
 Fünf Karten. Jede ist ohne die anderen baubar und ohne GxP begründbar. Alles
 unten ist am Arbeitsbaum nachgelesen, Stand `838985c` — keine Schätzung aus dem
