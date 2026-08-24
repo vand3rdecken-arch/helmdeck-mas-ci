@@ -6,7 +6,7 @@ this document.** Effort estimates per building block are at the end.
 
 > **Build plan exists**: `docs/multi-engine-build-plan.md` turns this analysis
 > into five dispatchable cards and resolves the §7 open decisions with stated
-> defaults. Backlog filing: `backlog/multi-engine-acp/`.
+> defaults. Backlog filing: `docs/backlog/multi-engine-acp/`.
 
 This is the deferred **Phase 5** of `docs/paseo-adoption-plan.md`
 ("provider seam / capability flags, opaque IDs, forge registry — not scoped").

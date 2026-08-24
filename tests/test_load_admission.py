@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pins LOAD-AWARE ADMISSION (backlog/load-aware-admission) - the desktop
+"""Pins LOAD-AWARE ADMISSION (docs/backlog/load-aware-admission) - the desktop
 lock's pattern generalized from mutual EXCLUSION (only one card drives the
 cursor) to mutual AWARENESS (several heavy ops may run at once while the box
 has headroom; a NEW one waits to START while OBSERVED CPU load stays over

@@ -34,10 +34,24 @@
 > dir-relative and survived), acceptance.md -> docs/ (historical Define-round
 > doc, gxp-conformity already flagged it as outdated). worker/ was a doc,
 > not a surface (docs/relay-durable-object-sketch.md).
-> OPEN: phase 4 (optional surface grooming); consolidate the doubled data
-> homes (.attachments/ + backups/ at root vs their daemon/ twins - the
-> root .attachments/ has 5 tracked legacy jpgs and publish-filter paths
-> attached, needs its own careful cut).
+> ROOT-MIN ROUND 2 (2026-08-24, owner circled archive/backlog/backups):
+> backups/ -> daemon/backups/ (tools/reset.py repointed - the only writer);
+> backlog/ -> docs/backlog/ (cards leave the PUBLIC mirror incl. the board
+> PNGs in pm-board-move-ux-on-device/shots; .gitignore changed `docs` ->
+> `docs/**` + `!docs/backlog/**` because an ignored DIRECTORY cannot
+> re-include children and NEW cards must stay trackable - verified both
+> ways with git check-ignore); the RELEASE KEYSTORE moved out of archive/
+> to daemon/certs/apk-signing/ (swarmdeck-release.jks + keystore.properties
+> + legacy google-services; app/android build.gradle helmrelease block +
+> DEPLOY.md + relay.py repointed - losing that jks would kill
+> same-signature APK updates).
+> OPEN: DELETE archive/ itself (tracked content survives in git history;
+> local leftovers are regenerable node_modules/.next/.gradle junk) - the
+> permission layer wants the owner to NAME it explicitly; phase 4
+> (optional surface grooming); root .attachments/ consolidation (5 tracked
+> legacy jpgs + publish-filter paths, careful cut); optionally fold tests/
+> into tools/ (costs a mechanical sed over every test file's depth-1
+> sys.path bootstrap).
 
 **Owner decree 2026-08-24.** The architecture is spine + cells, but the folder
 tree doesn't say so at the root: ~19 top-level dirs mixing products, ops and

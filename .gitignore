@@ -67,9 +67,16 @@ plane-selfhost/*.env
 backups/
 # NOT an accident (owner decision 2026-08-16, "you work local so just don't
 # publish docs"): already-tracked docs STAY tracked so card worktrees see them;
-# this line only keeps NEW docs out of git by default. The public mirror strips
+# this only keeps NEW docs out of git by default. The public mirror strips
 # the whole tree - see the private-path check in deploy/publish_source.sh.
-docs
+# `docs/**` (contents) instead of bare `docs` (the dir) since the root-
+# minimization sweep: an ignored DIRECTORY cannot have children re-included,
+# and docs/backlog/ - the card queue, moved here 2026-08-24 - MUST track new
+# cards or the dispatch workflow silently loses them. Everything else under
+# docs/ behaves exactly as before.
+docs/**
+!docs/backlog/
+!docs/backlog/**
 
 # local credentials - never commit
 # App Store Connect API key. Apple serves the .p8 exactly ONCE - there is no
