@@ -22,6 +22,7 @@ import { BackgroundTasks } from "@/ui/card_background";
 import { ContextMeter } from "@/ui/context_meter";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { SignOff } from "@/ui/sign_off";
 import { useActionSheet } from "@/ui/action_sheet";
 
 type Tab = "overview" | "chat";
@@ -557,6 +558,7 @@ export default function CardScreen() {
   const [seed, setSeed] = useState({ text: "", key: 0 });
   const sheet = useActionSheet();
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const [signing, setSigning] = useState<Track | null>(null);   // GxP sign-off
   const showToast = (text: string, ok = true) => { setToast({ text, ok }); setTimeout(() => setToast(null), 3800); };
 
   // Presence (Phase 2.1): while this screen is mounted the owner is LOOKING at
@@ -709,6 +711,10 @@ export default function CardScreen() {
 
   async function moveTo(lane: string) {
     if (!k) return;
+    // GxP: a card in the regulated scope needs a signature before it can land.
+    // Same gate as the board's four entry points, so the card detail cannot
+    // become the one way around it.
+    if (lane === "done" && k.gxp_scope) { setSigning(k); return; }
     try {
       const res = await api.moveLane(k.id, lane);
       await qc.invalidateQueries({ queryKey: ["tracks"] });
@@ -716,7 +722,9 @@ export default function CardScreen() {
       // deploy hook), so there is no verdict to report yet — say what STARTED.
       // The outcome arrives on the card, woven into this feed as a lifecycle
       // note, and in the board chat; it is no longer toast-only.
-      if (res.gating) {
+      if (res.gxp_refused) {
+        showToast(res.gxp_refused, false);
+      } else if (res.gating) {
         showToast(tr(lane === "done" ? "card.toast.gateMerge" : "card.toast.gate"));
       } else if (lane === "working") {
         showToast(tr("card.toast.started", { lane: laneLabel(lane) }));
@@ -873,6 +881,22 @@ export default function CardScreen() {
             <Text style={{ color: t.txtPrimary, fontSize: 12.5, flexShrink: 1 }}>{toast.text}</Text>
           </View>
         </View>
+      ) : null}
+      {signing ? (
+        <SignOff
+          card={signing}
+          onClose={() => setSigning(null)}
+          onSigned={async (msg) => {
+            showToast(msg, true);
+            // Signing authorises the accept, it does not perform it - the lane
+            // machine verifies independently before merging.
+            try {
+              const res = await api.moveLane(signing.id, "done");
+              if (res.gxp_refused) showToast(res.gxp_refused, false);
+            } catch (e) { showToast(String((e as Error).message), false); }
+            await qc.invalidateQueries({ queryKey: ["tracks"] });
+          }}
+        />
       ) : null}
       {sheet.node}
     </View>
