@@ -1,4 +1,4 @@
-# Multi-engine build plan — ACP driver, card by card
+# Multi-engine build plan — full Paseo-equivalent breadth, card by card
 
 Executes the recommendation of `docs/multi-engine-support.md` (read that FIRST —
 it carries the analysis, the change surface, and the trap register). Same shape
@@ -41,10 +41,21 @@ the event union), and the spawn-site inventory matches an independent grep.
 These were the open decisions in `multi-engine-support.md` §7; building means
 picking, so the plan picks and says so:
 
-- **Path**: generic ACP driver (§6 recommendation). Not OpenCode-native.
-- **Probe engine**: Gemini CLI, free tier — the only zero-billing candidate.
+- **Path (REVISED 2026-08-24 — owner decision):** full Paseo-equivalent
+  breadth, not ACP alone. Generic ACP stays the DEFAULT (§6 of the analysis,
+  Cards 3–4 below) for the ~30 engines it reaches natively; NATIVE adapters
+  are added on top for the three Paseo treats specially — Codex, OpenCode
+  (via Paseo's own dedicated-server acquisition mode, not its shared
+  default — see analysis §6.6.2), and Pi/OMP. See analysis §6.6 for the full
+  reasoning and per-engine mechanics; Cards 6–9 below are the resulting work.
+- **Probe engine**: Gemini CLI, free tier — the only zero-billing candidate,
+  used to validate the ACP path (Card 3). Codex/OpenCode/Pi/OMP each need
+  their OWN owner step (account/login) before their native-adapter card —
+  named in each card below.
 - **Economics**: Paseo's model — when an engine reports no cost, the card shows
   "n/a", never a fabricated 0; plan-share math simply excludes those cards.
+  OpenCode and Pi/OMP DO report real cost natively (analysis §6.6.4) — Card 9
+  wires that in once Card 5's generic econ-honesty scaffolding exists.
 - **E3 (timeline store)**: its own card, dual-write with comparison before
   cutover. It pays the NO-MONKEY-PATCHES debt and is worth accepting even if
   the owner stops after it.
@@ -227,29 +238,187 @@ fires on a forced loop. Size **M–L (2–3d)**.
 + resume badge, JUDGED (readability, centering, collisions — the owner reviews
 UI hard). Size **M (2d)**.
 
+## Card 6 — Codex native adapter (N1, analysis §6.6.1)
+
+**Owner prerequisite**: an OpenAI account with Codex CLI access —
+`npm i -g @openai/codex` (or the current install path), run once
+interactively to complete login. Own step, separate from Card 3's Gemini
+login.
+
+- `daemon/spine/agent/codex.py`: JSON-RPC 2.0 over stdio, newline-delimited.
+  Spawn `codex app-server` (`+ --enable goals` if `codex --version` clears
+  `CODEX_GOALS_MIN_VERSION`); no cwd at spawn, it's a `thread/start` param.
+  Handshake: `initialize` request → `initialized` notify with
+  `CODEX_NON_ORIGINATING_APP_SERVER_CLIENT_INFO` (Codex keys "who is the
+  model-request originator" off the client name — do not invent one).
+  Session: `thread/start` → thread id; resume is `thread/resume` GUARDED by
+  `thread/loaded/list` (only resume a thread that's actually loaded).
+  Turn-end: `turn/completed` NOTIFICATION, `status: completed|failed|
+  interrupted` → `meta.subtype`/`is_error`/`canceled`. Interrupt:
+  `turn/interrupt {threadId, turnId}` — CANNOT interrupt before `turn/started`
+  names the turn id, so a Stop pressed in that narrow window must queue, not
+  error.
+- Permissions are STRUCTURAL, not per-prompt: `approvalPolicy` + `sandbox` at
+  `thread/start`, chosen from HelmDeck's `perm` knob (`acceptEdits`-class →
+  the least-restrictive Codex preset). If Codex nonetheless sends an inbound
+  `item/commandExecution/requestApproval` (a mode gap, not expected in
+  unattended mode), auto-`accept` it rather than hanging the turn.
+- `meta`: tokens only (`toAgentUsage`, no cost field) — same "n/a" handling
+  Card 5 already built for ACP engines.
+
+Paseo reading: `codex-app-server-agent.ts:3226-3247` (spawn+handshake),
+`:4506-4543` (thread/start), `:3564-3602` (resume guard), `:5297-5333`
+(turn-end mapping), `:4253-4268` (interrupt), `:3472-3491` (approval
+handlers).
+
+**Verify**: a real card on driver `codex-native` writes a file and reports
+back; the SAME card's second turn resumes context (ask about what it just
+wrote); Stop mid-tool-call cleanly interrupts; no process leak after daemon
+kill (same orphan-reap check as Card 3). Size **M (2–2.5d)**.
+
+## Card 7 — OpenCode native adapter, dedicated-server mode (N2, analysis §6.6.2)
+
+**Owner prerequisite**: OpenCode installed + a model provider configured
+(`npm i -g opencode-ai`, then `opencode auth login` or equivalent for
+whichever model backend the owner wants OpenCode driving — OpenCode itself
+is free/open-source, the COST is whatever provider it's pointed at).
+
+**The one thing this card must get right**: Paseo's DEFAULT OpenCode
+transport shares one `opencode serve` process across many sessions — that
+breaks HelmDeck's per-card tree-kill isolation (analysis §6.1 point 2). This
+card uses Paseo's OWN `acquireDedicated(env)` mode instead — one PRIVATE
+`opencode serve --port <ephemeral>` per card, spawned and owned by that
+card's session object exactly like `_ClaudeSession.proc`. Do not build the
+shared-pool version; there is no HelmDeck use case that needs it, and it is
+the one thing analysis §6.5 explicitly says not to adopt.
+
+- `daemon/spine/agent/opencode.py`: allocate an ephemeral port (`net`
+  bind-to-0 trick or equivalent), spawn `opencode serve --port <p>` with cwd
+  set to a NEUTRAL home dir (not the card's worktree — launching from the
+  worktree makes OpenCode index it as the default workspace; the actual
+  workspace is passed as `directory` on every HTTP call instead). Wait for
+  `"listening on"` on stdout, 30s cap, keep first 8KiB of stdout+stderr for
+  the failure message.
+  PID-register it exactly like a claude child so `reap_orphans`/tree-kill
+  see it; owner tag `{provider:"opencode", kind:"dedicated-server"}` in the
+  process table (distinct from Paseo's `"helper-server"` tag — this one is
+  NOT shared, don't let it get swept by shared-server logic that doesn't
+  exist here anyway, but keep the tag honest for future debugging).
+- Session: `POST /session {directory}` → session id (stored as the card's
+  `session_id`, same field every other driver uses). Resume is stateless —
+  no flag, just reattach id + cwd to a (new, since dedicated) server
+  instance; the OLD server is gone once its card's daemon session ends, so a
+  resume after an idle-eviction respawns BOTH a fresh server AND reattaches
+  the existing OpenCode session id to it (measured-safe per Paseo: session
+  identity lives in OpenCode's own storage, not in the server process).
+- Streaming: ONE SSE connection per card to `/global/event` (simpler than
+  Paseo's multi-tenant demux since this server serves exactly one card).
+  Turn-end: `session.idle` on the bus, NOT the HTTP response (`session.
+  promptAsync` is fire-and-forget). Dedup delta vs. full text parts by
+  `partID` (analysis §4.3). Cancel: local abort → `session.abort` capped at
+  2s → before the NEXT turn, poll `session.status` until idle (measured:
+  OpenCode 1.14.42+ blocks abort until the running tool actually stops).
+- Permissions: `permission.asked` event → `auto_accept` toggle answers it
+  BEFORE it's ever surfaced, for `acceptEdits`-class `perm`.
+- `meta`: REAL cost this time — `part.cost` accumulated per session, cross-
+  checked against `session.updated.info.cost`.
+
+Paseo reading: `opencode/server-manager.ts` (whole file — spawn, port alloc,
+`acquireDedicated`, PID registration), `opencode-agent.ts:1302-1388`
+(session create/resume), `:3485-3536` (SSE consume + EOF-during-turn
+handling), `:2489-2502` (delta/full dedup), `:3009-3110` (interrupt +
+pending-abort-before-next-turn), `:4323-4345` (auto-approve), `:808-858`
+(cost accumulation).
+
+**Verify**: a real card on driver `opencode-native` produces a per-card
+`opencode serve` process (confirm via PID table — NOT a shared one across
+two simultaneously-dispatched OpenCode cards); killing one card's session
+does NOT affect a second concurrent OpenCode card's session (the isolation
+property this whole card exists to prove); cost shows a real number, not
+"n/a". Size **M–L (2.5–3d)**.
+
+## Card 8 — Pi/OMP native adapter (N3, analysis §6.6.3) — optional, smallest ecosystem
+
+Lowest priority of the three — single-vendor CLIs, not a widely-adopted
+engine. Build only if the owner specifically wants Pi or OMP; otherwise
+defer indefinitely without blocking anything else (Cards 6/7/9 don't depend
+on it).
+
+- `daemon/spine/agent/pirpc.py`: JSONL-RPC over stdio, `pi --mode rpc` /
+  `omp --mode rpc-ui`. Session identity is a FILE PATH, not a uuid —
+  `--session <path>` at spawn (`--no-session` for ephemeral) — the one engine
+  where resume is baked into argv instead of a protocol call.
+  Cost: `get_session_stats` RPC → `stats.cost`; version-compat fallback to
+  `get_state.contextUsage` if the stats RPC doesn't exist on the installed
+  version.
+
+Paseo reading: `jsonl-rpc-process.ts` (whole file), `pi/runtime.ts:110-138`
+(argv construction), `pi/cli-runtime.ts:143-145,171-201` (abort, stats
+fallback).
+
+**Verify**: same shape as Cards 6/7 — real card, real turn, resume works,
+cost is real. Size **S–M (1.5–2d)**.
+
+## Card 9 — Wire native engines' real cost into econ honesty (N4)
+
+Small top-up, needs Card 5's generic scaffolding (`cost_usd=None` → "n/a")
+PLUS whichever of Cards 6–8 shipped. Codex stays "n/a" forever (tokens
+only, native or not) — this card is specifically for OpenCode/Pi/OMP's real
+`cost_usd`, which Card 5's scaffolding already has a slot for but nothing
+populates yet outside `claude`.
+
+- `econ.py`/`price_turn`: accept a driver-reported `cost_usd` from
+  OpenCode/Pi/OMP's `meta` the same way it already does for claude (no new
+  code path — Card 5 built this generically; confirm it actually fires for
+  a non-claude `cost_usd` and isn't accidentally gated on `driver=="claude"`
+  anywhere).
+- `pm_budget.py`/`plan_effective`: these cards should COUNT toward plan-share
+  economics now (they have real €), not be excluded the way tokens-only
+  engines are — confirm the exclusion logic keys off `cost_usd is None`,
+  not off `driver != "claude"`.
+
+**Verify**: a real OpenCode-native turn's cost appears in `/tracks/<id>/turns`
+and in PM budget totals, not as "n/a" and not silently dropped. Size **S (1d)**.
+
 ---
 
 ## Order, totals, deferrals
 
 ```
-Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5
-Card 2 ✅ ──────────────↗
+Card 1 ✅ ──→ Card 3 ──→ Card 4 ──→ Card 5 ──┬──→ Card 6 (Codex)     ──┐
+Card 2 ✅ ──────────────↗                    │                        │
+                                              ├──→ Card 7 (OpenCode)  ─┼──→ Card 9
+                                              │                        │
+                                              └──→ Card 8 (Pi/OMP,    ─┘
+                                                    optional)
 ```
 
 Cards 1 and 2 SHIPPED 2026-08-24 (see each card's section above for what
 landed and how it was verified). Card 3 is next, blocked only on the owner's
 one prerequisite (Gemini CLI install + login — not doable from a headless
-card). Total **~12–16 days** across 5 cards, ~4–7 done. After Card 3 the
-owner has a working second engine at `cmd`-driver-plus quality and a measured
-answer to the §6.3 brief question; after Card 4 it is daily-usable; Card 5
-makes it honest.
+card). Cards 6–8 each have their OWN separate owner prerequisite (an account
+for that engine) and are independently orderable once Card 5 lands — build
+Codex first (biggest ecosystem after Gemini), OpenCode second (real cost
+reporting is the biggest win), Pi/OMP last-or-never (smallest ecosystem).
+
+**Total ~22–27.5 days across 9 cards, ~4–7 done** (full Paseo-equivalent
+breadth — analysis §6.6.4 has the per-native-adapter breakdown). The ACP-only
+subset (Cards 1–5) is **~12–16 days, ~4–7 done** and is a complete, coherent
+stopping point on its own — reaches ~30 engines, just without Codex/OpenCode/
+Pi-OMP's native depth. After Card 3 the owner has a working second engine at
+`cmd`-driver-plus quality and a measured answer to the §6.3 brief question;
+after Card 4 it is daily-usable; Card 5 makes it honest; Cards 6–9 bring it
+to full Paseo-equivalent breadth.
 
 **Deferred, deliberately**: E11 (copilot/PM/Henry/processes/distill stay
-claude-only — they are HelmDeck's governance organs, not card work); OpenCode's
-native HTTP+SSE transport (breaks per-card tree-kill isolation, §6.1.2);
-model-catalog discovery (`fetchCatalog` machinery — HelmDeck's picker is a
-whitelist by design).
+claude-only — they are HelmDeck's governance organs, not card work);
+OpenCode's SHARED-BY-DEFAULT transport (Card 7 uses the dedicated mode
+instead — see that card and analysis §6.6.2); model-catalog discovery
+(`fetchCatalog` machinery — HelmDeck's picker is a whitelist by design);
+Card 8 (Pi/OMP) unless the owner specifically wants it.
 
-**Kill-switch**: if the Card-3 probe returns NO-GO on brief adherence (the
+**Kill-switches**: if the Card-3 probe returns NO-GO on brief adherence (the
 engine cannot be made to follow the ask/DELIVERED protocol reliably), stop
 after Card 2 — which is worth having regardless — and revisit engine choice.
+Each of Cards 6/7/8 is independently droppable without affecting the others
+or Card 9's applicability to whichever DID ship.

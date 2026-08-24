@@ -65,12 +65,23 @@ the background-task registry is engine-neutral at event time, and the app's
 provider-agnostic. There is even an unused client-side `Engine` plugin interface
 waiting for a daemon counterpart (`app/src/kernel/keys.ts:17-25`).
 
-**Recommendation:** add a generic **ACP** (Agent Client Protocol) driver, not an
-OpenCode-specific one. See §6 — it is one adapter for ~30 engines, its process
-model matches HelmDeck's per-card tree-kill isolation exactly, and its wire shape
-is nearly isomorphic to the `claude --input-format stream-json` machinery
-HelmDeck already runs. But it has one hard blocker (§6.3: ACP carries no system
-prompt) and one hard prerequisite (§5, E3: an event-time timeline store).
+**Recommendation:** add a generic **ACP** (Agent Client Protocol) driver as the
+DEFAULT path — it is one adapter for ~30 engines, its process model matches
+HelmDeck's per-card tree-kill isolation exactly, and its wire shape is nearly
+isomorphic to the `claude --input-format stream-json` machinery HelmDeck
+already runs. See §6. But it has one hard blocker (§6.3: ACP carries no system
+prompt) and one hard prerequisite (§5, E3: an event-time timeline store — now
+shipped, 2026-08-24).
+
+**2026-08-24 owner decision: match Paseo's full breadth, not ACP alone.**
+ACP-only reaches every *ACP-native* engine but leaves out the ones Paseo gives
+a **native, richer** adapter — Codex (structured approval policy, no ACP
+token-loss), OpenCode (real cost reporting, dynamic modes), Pi/OMP (native
+tool catalog). §6.6 extends the plan: generic ACP stays the wide default, and
+native adapters for these four are added on top, matching Paseo engine-for-
+engine. The one real conflict this creates — OpenCode's native transport is a
+*shared* server, HelmDeck's isolation model is *per-card* — is resolved in
+§6.6.2 by using a mode Paseo **already ships**, not inventing one.
 
 ---
 
@@ -536,13 +547,19 @@ notification stream, and a client-side `session/request_permission`
    session, over pipes — which is what `_ClaudeSession` already is, and what
    HelmDeck's per-card tree-kill, PID table, orphan reaping and
    background-task-as-child-process registry all assume.
-   **OpenCode's native transport does not**: it is a *shared, ref-counted*
-   `opencode serve` process handling many sessions
-   (`opencode/server-manager.ts:285-304`, `:182-213`). Tree-killing a card would
-   kill other cards' sessions; `_bg_open` tasks would no longer be children of
-   the card's tree; `_running_cards()`'s eviction guard (`drivers.py:141-158`)
-   would be meaningless. Adopting OpenCode natively means rebuilding HelmDeck's
-   isolation model. Reaching OpenCode *through ACP* avoids all of it.
+   **OpenCode's DEFAULT native transport does not**: it is a *shared,
+   ref-counted* `opencode serve` process handling many sessions
+   (`opencode/server-manager.ts:285-304`, `:182-213`). Tree-killing a card
+   would kill other cards' sessions; `_bg_open` tasks would no longer be
+   children of the card's tree; `_running_cards()`'s eviction guard
+   (`drivers.py:141-158`) would be meaningless. Reaching OpenCode through ACP
+   avoids all of it — which is why ACP stays the DEFAULT path for engines
+   without a native adapter. §6.6.2 revisits OpenCode specifically: Paseo's
+   OWN `acquireDedicated()` mode (one private server per session, not
+   shared) resolves this without rebuilding HelmDeck's isolation model, and
+   is worth the extra process for OpenCode's real cost reporting (ACP is
+   tokens-only, §4.4) — so OpenCode gets a native adapter after all, just
+   not via the shared mode this point argues against.
 3. **The wire shape is nearly isomorphic to what HelmDeck already runs.**
    `claude --input-format stream-json` is: persistent process, NDJSON on stdin,
    NDJSON on stdout, request/response correlated by `request_id`, streaming
@@ -643,11 +660,132 @@ Paseo's provider seam has measured defects worth not reproducing:
 - **Paseo's three-way registration split.** HelmDeck's `settings.json` →
   `drivers.{name}` is already the right shape; it needs a richer type table and
   capability flags, not a manifest + factory + override-schema triangle.
-- **Paseo's shared-helper-server pattern** (OpenCode) — see §6.1.2.
+- **Paseo's SHARED-BY-DEFAULT helper-server pattern** (OpenCode) — its
+  DEDICATED mode is adopted instead; see §6.6.2.
 - **`fetchCatalog` / model+mode discovery machinery.** HelmDeck's model picker is
   a server-side whitelist by design (`turnopts.resolve_model:191-203`); a per-
   engine static list plus capability-gating is enough.
 - **Rewind capability flags** — HelmDeck's rewind is git checkpoints.
+
+### 6.6 Full breadth — native adapters matching Paseo, engine by engine
+
+**Owner decision, 2026-08-24: match Paseo's actual breadth, not the ACP subset.**
+Paseo ships **six** built-in provider ids (`claude`, `codex`, `copilot`,
+`opencode`, `pi`, `omp` — `provider-manifest.ts:190-251`) and reaches every
+*other* engine through the generic ACP path. Only `copilot` is ACP-native
+among the six; the rest get bespoke transports precisely because ACP loses
+something each of them has: Codex loses its structured, no-prompt approval
+policy; OpenCode loses real cost reporting (§4.4 — ACP is tokens-only); Pi/OMP
+lose their native tool catalog (`supportsNativePaseoTools`). Matching Paseo
+means the same four native adapters, not routing everything through ACP.
+
+**Coverage after this section, matching Paseo's own split exactly:**
+
+| Engine | Path | Why native (not ACP) |
+|---|---|---|
+| claude | native (today, unchanged) | — |
+| copilot, cursor, gemini, goose, cline, openhands, qwen, kimi, kiro, ~20 more | generic ACP (§6.1–§6.5, unchanged) | ACP is their native protocol too — nothing to gain from bespoke |
+| codex | **native** — JSON-RPC over stdio | keeps `approvalPolicy`/`sandbox` (no per-prompt permission dance) and full `thread/*` lifecycle |
+| opencode | **native** — HTTP + SSE, one **dedicated** server per card | keeps real `total_cost_usd`-equivalent cost and dynamic mode/agent selection; ACP would lose the money |
+| pi, omp | **native** — JSONL-RPC over stdio | keeps `get_session_stats` (native cost) and the native tool catalog |
+
+This is additive, not a rewrite: the ACP driver (Card 3 as scoped) is
+unaffected and stays the default for anything not in this table. Each native
+adapter is its own card, independently shippable, independently killable if
+a probe goes badly.
+
+#### 6.6.1 Codex — native JSON-RPC stdio (no isolation conflict)
+
+Mechanics fully measured already in §4: spawn is `codex app-server` (plus
+`--enable goals` when available), NO cwd at spawn (it's a `thread/start`
+param), handshake is `initialize` + `initialized` notify
+(`codex-app-server-agent.ts:3226-3247`), session id is a `thread/start`
+response with `thread/resume` guarded by `thread/loaded/list`, turn-end is a
+`turn/completed` **notification** (status `completed|failed|interrupted`),
+interrupt is `turn/interrupt {threadId, turnId}`, and permissions arrive as
+**inbound JSON-RPC requests** (`item/commandExecution/requestApproval` etc.)
+that HelmDeck answers structurally via `approvalPolicy`/`sandbox` at
+`thread/start` for unattended mode — no per-prompt handling needed at all,
+which is the whole point of going native here.
+
+**Process model matches HelmDeck exactly** — one child per card, over pipes,
+tree-killable — same shape as `_ClaudeSession`. No architectural conflict.
+
+**Cost**: tokens only (`toAgentUsage`, §4.4) — same "n/a, never fabricated"
+handling as the ACP path (E8). Codex being native buys nothing on economics;
+it buys the clean approval model and full lifecycle fidelity.
+
+#### 6.6.2 OpenCode — native HTTP+SSE, but DEDICATED not shared
+
+**The conflict, stated precisely:** Paseo's default OpenCode transport is
+ONE shared, ref-counted `opencode serve` process serving MANY sessions
+(`opencode/server-manager.ts:285-304,182-213`) — cheaper, but it means a
+card's session lives on a process HelmDeck does not own exclusively.
+Tree-killing that process for one card would kill every other card's
+OpenCode session; `_bg_open` tasks would no longer be children of the
+owning card's process tree; `_running_cards()`'s eviction guard
+(`drivers.py:141-158`) would be meaningless. This is a real conflict with
+`CLAUDE.md`'s law ("Never weaken the fixed harness: … worktree isolation").
+
+**The resolution: Paseo already ships the fix.** `OpenCodeServerManager`
+has THREE acquisition modes, not one — `acquireCurrent()` (shared, the
+default), `acquireNew()` (rotate), and **`acquireDedicated(env)`** — *"a
+private generation when the agent has a custom launch env"*
+(`server-manager.ts:96-119`). HelmDeck's per-card driver config already
+carries a per-card env overlay (`_card_env`, `spawnenv.py`) — every card
+naturally qualifies for dedicated mode with zero protocol change. **One
+`opencode serve --port <ephemeral>` per card**, owned by that card's
+session object exactly like `_ClaudeSession.proc`, PID-registered,
+tree-killed on teardown like everything else. This is not inventing a
+workaround; it is picking the acquisition mode Paseo's own code already
+uses for the "this session needs its own launch env" case — HelmDeck's
+per-card driver config makes EVERY card that case.
+
+**Cost of going dedicated instead of shared:** one extra process per active
+OpenCode card instead of one process total. Given HelmDeck already runs one
+process per active `claude` card today, this is not a new resource class —
+it is the SAME shape, one more engine using it.
+
+Mechanics otherwise as measured in §4: `session.create {directory}` for a
+session id (no `--resume` flag — reattach by id + cwd), the global SSE bus
+at `/global/event` (per-server now, since the server is no longer shared —
+simplifies the multi-tenant demultiplexing Paseo needs and HelmDeck would
+not), `session.idle`/`session.error` for turn-end, `permission.reply
+{requestID, directory, reply:"once"}` auto-answered from the `perm` knob
+exactly like ACP, and the `auto_accept` unattended toggle
+(`opencode-agent.ts:162-195`).
+
+**Cost**: real money (`step-finish` parts, `part.cost` — §4.4) — the reason
+this is worth the extra process at all.
+
+#### 6.6.3 Pi / OMP — native JSONL-RPC stdio (lower priority)
+
+Smallest ecosystem of the four (Pi and OMP are single-vendor CLIs, not
+widely-adopted engines the way Codex/OpenCode/Gemini are), so this is the
+adapter to build LAST or defer past the initial multi-engine ship. Mechanics
+per §4: `pi --mode rpc` / `omp --mode rpc-ui`, session identity is a **file
+path** (`--session <path>` at spawn, unlike every other engine's id-based
+resume), cost via `get_session_stats` with a version-compat fallback to
+`get_state.contextUsage`, native `supportsNativePaseoTools` (OMP only) that
+HelmDeck can ignore (that flag exists for Paseo's own MCP-replacement tool
+catalog, which HelmDeck has no equivalent of and does not need one for).
+Process model: one child per card, no conflict, same as Codex.
+
+#### 6.6.4 Effort — additive to §5's table
+
+| # | Block | Depends on | Size | Days |
+|---|---|---|---|:--:|
+| N1 | Codex native adapter (spawn, session, turn-end, interrupt, structural approval) | E1–E3 (shipped) | M | 2–2.5 |
+| N2 | OpenCode dedicated-server adapter (spawn+port alloc, session, SSE demux, cost) | E1–E3 (shipped) | M–L | 2.5–3 |
+| N3 | Pi/OMP native adapter (JSONL-RPC, path-based session id, stats) | E1–E3 (shipped) | S–M | 1.5–2 |
+| N4 | Per-engine capability/cost wiring into E8's econ honesty (real $ for Codex? no — tokens only; real $ for OpenCode/Pi/OMP — yes) | E8, N1–N3 | S | 1 |
+
+Full breadth (ACP + all three native adapters) adds **~7–8.5 days** on top of
+§5's ~15–19, landing at **~22–27.5 days** total for Paseo-equivalent
+coverage. Each native adapter is independently shippable — build the ACP
+default first (Card 3 as scoped), then add native adapters in the order
+N1 → N2 → N3 (ecosystem size, descending), stopping after any one if the
+owner is satisfied with that engine's coverage.
 
 ---
 
@@ -655,21 +793,24 @@ Paseo's provider seam has measured defects worth not reproducing:
 
 These are policy, not engineering, and they gate the follow-up cards.
 
-1. **Which path.** (a) Generic ACP driver as recommended; (b) one native engine
-   (OpenCode HTTP+SSE — richer, but see §6.1.2); (c) Stage-0 spike only, decide
-   later; (d) stay single-engine and take E3 alone as a debt-paying card.
+1. ~~**Which path.**~~ **DECIDED 2026-08-24: full Paseo-equivalent breadth.**
+   Generic ACP as the default (§6) PLUS native adapters for Codex, OpenCode
+   (dedicated-server mode), and Pi/OMP (§6.6) — matching Paseo engine-for-
+   engine rather than routing everything through ACP. See
+   `docs/multi-engine-build-plan.md` for the resulting card sequence.
 2. **Economics.** HelmDeck's cost model is *plan-share percentage of the
    Anthropic subscription* (standing decree, `events.plan_effective`,
-   `pm_budget.py`). Most non-Claude engines report **tokens only, no money**, and
-   some run on a separate subscription or on BYOK. Options: (a) per-engine € price
-   table (contradicts the plan-share decree); (b) show "cost unknown" and exclude
-   those cards from PM budget maths; (c) a second plan-share window per engine.
-   Paseo's answer is (b) — omit the field, never estimate.
-3. **E3 scoping.** Own card now (recommended — it pays a law violation and
-   unblocks everything), or bundled into the first engine card.
+   `pm_budget.py`). Codex and ACP-native engines report **tokens only, no
+   money**; OpenCode and Pi/OMP report real cost (§6.6.4). Options: (a)
+   per-engine € price table (contradicts the plan-share decree); (b) show
+   "cost unknown" for the tokens-only engines, real cost for the rest,
+   excluding only the former from PM budget maths; (c) a second plan-share
+   window per engine. Paseo's own answer for the tokens-only case is (b) —
+   omit the field, never estimate; still open which of (b)/(c) applies to
+   the engines that DO report real cost.
+3. ~~**E3 scoping.**~~ SHIPPED 2026-08-24 as its own card (Card 2).
 4. **Brief delivery (§6.3)** needs a real probe against a real engine before
-   Stage 1 can be estimated with confidence. Which engine to probe against
-   decides #1.
+   Stage 1 can be estimated with confidence — still open, still gates Card 3.
 
 ---
 
