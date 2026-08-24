@@ -3,6 +3,15 @@
 Read `ARCHITECTURE.md` first: **the harness is code, policy is data**, and
 everything buildable walks charter → card → gate → accept.
 
+The tree reads as the architecture (two-mains split, 2026-08-24): `spine/` =
+shared infrastructure no cell owns (auth, http, storage, registry, turn, ...),
+`cells/<id>/` = each agentic system's own logic (engineer, pm, process,
+connectors, copilot). `daemon/` is only the thin launcher + machine-local
+runtime data (db, settings, events) - code does not go there. `app/` is the
+ONE frontend (Expo - phone/web/desktop; the old web/ and apk/ live in
+archive/). Builds belong to surfaces, never to cells: `deploy/` has one
+entrypoint per surface.
+
 Touching the agent layer - briefs, settings, spawn argv, a policy knob, the
 loop/lane state machines? Read `HARNESS.md`: where that line falls in code, how
 a card/machine/PM spawn resolves, and the traps that were measured rather than
@@ -25,16 +34,17 @@ from disk by `python tools/loop_state.py`; a Stop hook blocks resting while an
 agent-actionable state remains; a SessionStart hook re-orients fresh context.
 
 States: `COMPILE → TYPES → VERIFY → DEBT → WIP/COMMIT → DONE`
-(fix syntax → fix web types → fix daemon wiring → keep the debt register
+(fix syntax → fix app types → fix daemon wiring → keep the debt register
 well-formed → propose the commit when work goes quiet).
 
 ## Laws (do not violate)
 
 - Never weaken the fixed harness: auth, append-only audit/events,
   gate-before-review, measured economics, worktree isolation, driver
-  commands, the charter core (`daemon/charter.py`).
-- New load-bearing shortcut? Register it in `daemon/debt.py` in the same
-  commit. Paying debt: file the fix card, flip status to `paid`, keep it listed.
+  commands, the charter core (`spine/auth/charter.py`).
+- New load-bearing shortcut? Register it in `spine/registry/debt.py` in the
+  same commit. Paying debt: file the fix card, flip status to `paid`, keep it
+  listed.
 - Secrets (`settings.json`, `users.json`, `helmdeck.db`, tokens) are
   git-ignored - never commit them.
 - UI changes: screenshot and JUDGE (readability, centering, theming,
@@ -47,17 +57,18 @@ well-formed → propose the commit when work goes quiet).
   `sessions.record_bg` (background registry at event time),
   `sessions.resume_detached` (the session pointer only advances on proof).
   A heuristic reconstruction that ships anyway is a SHORTCUT -> register it in
-  `daemon/debt.py` in the same commit.
+  `spine/registry/debt.py` in the same commit.
 
 ## Run / verify
 
 ```
-py -3.12 -m daemon.swarm serve               # API :8140 (run from REPO ROOT - daemon/ is a real package now)
-cd web && npm run dev -- --port 3300        # UI
-py -3.12 -m py_compile daemon/*.py daemon/spine/*.py daemon/spine/routes/*.py daemon/cells/*/*.py   # quick daemon check
-cd web && npx tsc --noEmit                  # web types
+py -3.12 -m daemon.swarm serve               # API :8140 (run from REPO ROOT - daemon/ is the thin launcher)
+cd app && npm run web                        # UI (Expo web dev server)
+py -3.12 tools/run_gate.py                   # quick check: py_compile daemon/spine/cells + import wiring
+cd app && npx tsc --noEmit                   # app types
 ```
-E2E smoke: Playwright against :3300 (login owner; password in owner's hands).
+E2E smoke: Playwright against the Expo web dev server (login owner; password
+in owner's hands).
 
 ## Deploy / ship to the phone
 

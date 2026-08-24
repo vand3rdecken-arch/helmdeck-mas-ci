@@ -12,7 +12,7 @@ _OmpSession built the same way daemon/test_p1_runtime.py's make_session does
 import os, shutil, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.agent import omp_driver, timeline_store
+from spine.agent import omp_driver, timeline_store
 
 FAILS = []
 

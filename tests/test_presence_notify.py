@@ -26,14 +26,14 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-pres-")
 
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.spine.comms import notify, presence
+from spine.comms import notify, presence
 
 _fails = []
 

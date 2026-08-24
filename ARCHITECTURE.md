@@ -70,7 +70,7 @@ Two control planes carry this end to end:
 an agentic *system* - a "Cell" (a role like PM or Engineer), not a file or a
 screen. Each Cell bundles its own {orchestration logic, storage, harness/role,
 API connector routes, UI surface, lifecycle, enable-flag} and plugs INTO the
-spine above (which no Cell owns). `daemon/cells.py` is the registry: six cells
+spine above (which no Cell owns). `cells.py` is the registry: six cells
 today - **engineer** (cards/kanban), **pm**, **process** (n8n step-chains),
 **connectors**, **copilot**, and **buildloop** (the ALIGN>...>COMMIT loop that
 governs the current interactive agent's own build workflow). buildloop is
@@ -132,11 +132,11 @@ date, metadata over files still physically interleaved flat in `daemon/*.py`
 - a real gap against the "everything is a plugin" claim (compared directly
 against `deepseek-harness`, which splits every capability into its own
 `packages/<category>/<name>/` folder). Closed: each cell's own files now
-physically live under `daemon/cells/<id>/` (`engineer/`, `pm/`, `process/`,
+physically live under `cells/<id>/` (`engineer/`, `pm/`, `process/`,
 `connectors/`, `copilot/`), and everything no cell owns - `db.py`, `events.py`,
 `policy.py`, `auth.py`, `server.py`, `cells.py` itself, and the 13 route
-modules that are multi-owner or spine-owned - lives under `daemon/spine/`
-(routes further nested at `daemon/spine/routes/`). Every existing `import
+modules that are multi-owner or spine-owned - lives under `spine/`
+(routes further nested at `spine/routes/`). Every existing `import
 sessions`/`import events`-style flat import needed ZERO rewrites: a new
 `daemon/_subpaths.py` (which never itself moves) adds each subfolder to
 `sys.path` at boot (`ensure_cell_paths()`, called first thing by every
@@ -198,9 +198,9 @@ bottom-up first (so higher-level modules become thin dependents instead of
 reaching into a monolith), then the HTTP surface itself was split into a
 dispatch table. The module names below are unchanged since the Cell-folder
 reorg above physically moved them - `server.py` and every `routes_*.py` now
-live under `daemon/spine/`/`daemon/spine/routes/`, `sessions.py`/
+live under `spine/`/`spine/routes/`, `sessions.py`/
 `lanemachine.py`/`dispatch.py`/`cardadmin.py`/`turnrunner.py`/`routes_tracks.py`/
-`routes_track_actions.py` under `daemon/cells/engineer/` - see that section
+`routes_track_actions.py` under `cells/engineer/` - see that section
 for the full mapping. As of this writing:
 
 ```

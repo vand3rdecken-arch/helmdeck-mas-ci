@@ -65,13 +65,13 @@ class FakeH:
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-gxptag-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
-    from daemon.spine.auth import auth, signkeys
+    from spine.auth import auth, signkeys
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
     signkeys.KEYS_DIR = os.path.join(tmp, "signkeys")
@@ -79,7 +79,7 @@ def main():
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     db.init()
 
-    from daemon.spine.http.routes import routes_sign
+    from spine.http.routes import routes_sign
 
     PW = "owner-password-1"
     auth.create_user("duy", PW, "owner")

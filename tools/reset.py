@@ -44,7 +44,7 @@ def backup():
 
 
 def wipe_cards():
-    from daemon.cells.engineer import sessions
+    from cells.engineer import sessions
     ts = sessions.list_tracks()
     ok = 0
     for t in ts:
@@ -59,7 +59,7 @@ def wipe_cards():
 
 
 def clear_events():
-    from daemon.spine.storage import db
+    from spine.storage import db
     with db.conn() as c:
         c.execute("DELETE FROM events")
     db.bump()
@@ -89,7 +89,7 @@ def log_reset(bdir, removed, total, a):
 
 
 def clear_recordings():
-    from daemon.cells.engineer import sessions
+    from cells.engineer import sessions
     rec = sessions.REC
     if os.path.isdir(rec):
         for n in os.listdir(rec):
@@ -125,7 +125,7 @@ def main():
     # GxP: refuse the WHOLE reset, before backup() even runs, while the mode is
     # active anywhere in this installation. Two things this tool would destroy
     # with no in-band record: signed approvals (they live ON the track row,
-    # daemon/spine/auth/signatures.py) via wipe_cards(), and the append-only
+    # spine/auth/signatures.py) via wipe_cards(), and the append-only
     # event log itself via clear_events() - "append-only audit/events" is a
     # fixed law of this repo (CLAUDE.md), not a default reset.py may override
     # for convenience. Gated on gxp.active() as a whole, not per-repo scope:
@@ -154,7 +154,7 @@ def main():
     log_reset(bdir, ok, total, a)
 
     if a.connectors:
-        from daemon.cells.connectors import connectors
+        from cells.connectors import connectors
         st = os.path.join(os.path.dirname(connectors.STATE), "_state.json")
         if os.path.exists(st):
             os.remove(st); print("cleared connector import state (they'll re-pull fresh)")

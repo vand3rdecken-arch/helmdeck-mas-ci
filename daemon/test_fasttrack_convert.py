@@ -19,12 +19,12 @@ Run: py -3.12 daemon/test_fasttrack_convert.py
 import os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.storage import events
-from daemon.cells.engineer import sessions
-from daemon.spine.storage import trackstore
-from daemon.spine.agent import drivers
-from daemon.spine.git import worktrees
-from daemon.cells.engineer import lanemachine
+from spine.storage import events
+from cells.engineer import sessions
+from spine.storage import trackstore
+from spine.agent import drivers
+from spine.git import worktrees
+from cells.engineer import lanemachine
 
 
 class FakeDB:

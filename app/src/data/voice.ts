@@ -5,7 +5,7 @@ import { Platform } from "react-native";
  *  WHY A SEAM AND NOT A LIBRARY CALL. The two halves of a voice turn have very
  *  different provenance in HelmDeck:
  *
- *  - SPEAKING is SERVER work and is already settled. `daemon/spine/media/voice.py`
+ *  - SPEAKING is SERVER work and is already settled. `spine/media/voice.py`
  *    renders Henry's prose to mp3 (edge-tts) and `POST /chat {voice:true}` returns
  *    it inline as base64, because the phone reaches the daemon through the E2EE
  *    relay, which seals ONE request/response and has no second channel for a
@@ -50,7 +50,7 @@ import { Platform } from "react-native";
 
 const isWeb = Platform.OS === "web";
 
-/** The daemon's inline clip (daemon/spine/media/voice.py render_b64). */
+/** The daemon's inline clip (spine/media/voice.py render_b64). */
 export interface VoiceClip { id: string; mime: string; b64: string }
 
 /** What this runtime can actually do, answered by asking it. */
@@ -341,7 +341,7 @@ async function speakNative(uri: string): Promise<void> {
 /** A turn's speech, arriving in pieces.
  *
  *  The daemon now renders Henry's answer sentence by sentence while he is still
- *  writing it (daemon/spine/media/voice_stream.py), so the client no longer gets
+ *  writing it (spine/media/voice_stream.py), so the client no longer gets
  *  ONE clip at the end - it gets a series, and has to play them back to back
  *  without gaps, in order, and be able to throw the rest away mid-sentence when
  *  the owner interrupts. That is a queue, not a function call. */

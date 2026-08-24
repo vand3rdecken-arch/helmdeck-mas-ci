@@ -67,7 +67,7 @@ class FakeH:
 
 def call(path, user):
     h = FakeH(path)
-    from daemon.spine.http.routes import routes_audit
+    from spine.http.routes import routes_audit
     routes_audit.audit_get(h, user)
     return h
 
@@ -75,10 +75,10 @@ def call(path, user):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-auditroute-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     db.init()

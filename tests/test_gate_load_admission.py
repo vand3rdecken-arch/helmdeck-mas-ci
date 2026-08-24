@@ -23,7 +23,7 @@ tests/test_gate_verdict.py and tests/test_hook_idle.py don't cover:
 Self-sandboxing: throwaway git repos + a hand-written helmdeck.gate command
 that invokes a real script file (test_hook_idle.py's `_py` technique - a
 multi-line body embedded directly in a shell -c string breaks under cmd.exe),
-daemon.spine.ops.resources.cpu_percent faked - no daemon, no network, no real
+spine.ops.resources.cpu_percent faked - no daemon, no network, no real
 box load needed.
 
 Run: py -3.12 tests/test_gate_load_admission.py
@@ -34,10 +34,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
-from daemon.spine.storage import events
-from daemon.spine.ops import resources
-from daemon.cells.engineer import sessions
-from daemon.spine.git.locks import _gate_lock_for
+from spine.storage import events
+from spine.ops import resources
+from cells.engineer import sessions
+from spine.git.locks import _gate_lock_for
 
 _fails = []
 

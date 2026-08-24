@@ -10,9 +10,9 @@ import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
-from daemon.spine.storage import db
+from spine.storage import db
 db.init()
-from daemon.cells.engineer import sessions as S
+from cells.engineer import sessions as S
 
 _fails = []
 

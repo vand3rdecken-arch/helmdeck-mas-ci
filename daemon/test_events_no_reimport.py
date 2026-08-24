@@ -46,10 +46,10 @@ def count_events(db):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-evreimport-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 

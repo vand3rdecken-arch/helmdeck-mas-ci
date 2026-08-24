@@ -60,13 +60,13 @@ AGENTS = ["henry", "policy", "pm", "chain", "board-Agent (auto)", "", None]
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-gxpguard-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
-    from daemon.spine.auth import auth
+    from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
     from daemon import gxp
@@ -191,11 +191,11 @@ def main():
     ok(gxp.accept_block_reason("henry", REG) is None, "off again in the same process")
 
     print("\nthe card flag is one-way")
-    from daemon.spine.storage import db as _db
+    from spine.storage import db as _db
     _db.init()
     _db.track_put({"id": "t-oneway", "lane": "backlog", "status": "queued",
                    "task": "x", "gxp": True})
-    from daemon.cells.engineer import cardadmin
+    from cells.engineer import cardadmin
     try:
         cardadmin.update_track("t-oneway", {"gxp": False}, actor="duy")
         ok(False, "clearing gxp should have been refused")
@@ -208,8 +208,8 @@ def main():
 
     # ------------------------------------------------------------- 4 and 5 ---
     print("\nthe lane machine itself refuses, and does not move the card")
-    from daemon.spine.storage import trackstore
-    from daemon.cells.engineer import lanemachine
+    from spine.storage import trackstore
+    from cells.engineer import lanemachine
     db.init()                     # create the sandboxed tables
     for status, label in (("submitted", "a card resting on review"),
                           ("accepted", "an ALREADY ACCEPTED card")):

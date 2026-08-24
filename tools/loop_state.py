@@ -53,15 +53,15 @@ WORKORDER = os.path.join(LOOPDIR, "workorder.md")
 WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 
 # Fully package-qualified now that daemon/ is a real Python package (import
-# daemon.cells.pm.pm, not a sys.path trick) - each entry is checked via
+# cells.pm.pm, not a sys.path trick) - each entry is checked via
 # `import <entry>` in a fresh subprocess run with cwd=ROOT (repo root).
-CORE_MODULES = ["daemon.spine.storage.db", "daemon.spine.storage.events",
-                "daemon.cells.engineer.sessions", "daemon.spine.agent.drivers",
-                "daemon.cells.process.processes", "daemon.cells.copilot.copilot",
-                "daemon.cells.connectors.connectors", "daemon.spine.auth.charter",
-                "daemon.spine.ops.checkpoints", "daemon.spine.auth.auth",
-                "daemon.spine.ops.importers", "daemon.spine.registry.debt",
-                "daemon.spine.http.server"]
+CORE_MODULES = ["spine.storage.db", "spine.storage.events",
+                "cells.engineer.sessions", "spine.agent.drivers",
+                "cells.process.processes", "cells.copilot.copilot",
+                "cells.connectors.connectors", "spine.auth.charter",
+                "spine.ops.checkpoints", "spine.auth.auth",
+                "spine.ops.importers", "spine.registry.debt",
+                "spine.http.server"]
 SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
                 "helmdeck.db-shm", "copilot_log.json",
                 "plane_credentials.txt", "sessions.json")
@@ -72,7 +72,7 @@ _POLICY_ROOT = DAEMON
 
 
 def _build_loop_enabled():
-    """The build loop is Cell #6 (daemon/cells.py 'buildloop') - but it is NOT
+    """The build loop is Cell #6 (cells.py 'buildloop') - but it is NOT
     daemon-hosted like the other 5: it governs THIS agent's own workflow via
     Claude Code's hooks (.claude/settings.json -> this script), not a spawned
     daemon worker. No HTTP round-trip - reads daemon/policy_live.json (falling
@@ -225,7 +225,7 @@ def hygiene_problems():
     try:
         sys.path.insert(0, ROOT)
         import importlib
-        import daemon.spine.registry.debt as _d
+        import spine.registry.debt as _d
         importlib.reload(_d)
         for item in _d.DEBT:
             if item.get("status") not in ("open", "in_progress", "paid"):

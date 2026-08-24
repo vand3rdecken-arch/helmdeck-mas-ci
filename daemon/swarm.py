@@ -20,9 +20,9 @@ for _s in (sys.stdout, sys.stderr):
     except Exception: pass
 
 def wincap_test():
-    from daemon.spine.media import wincap
-    from daemon.spine.ops.runs import new_run, finish_run
-    from daemon.spine.ops.actionlog import ActionLog
+    from spine.media import wincap
+    from spine.ops.runs import new_run, finish_run
+    from spine.ops.actionlog import ActionLog
     rid, d = new_run("test", "wincap 5s smoke")
     log = ActionLog(d)
     log.log("note", "wincap smoke start")
@@ -34,8 +34,8 @@ def wincap_test():
     print("run:", rid)
 
 def browser_demo():
-    from daemon.spine.media.browsercap import AgentBrowser
-    from daemon.spine.ops.runs import new_run, finish_run
+    from spine.media.browsercap import AgentBrowser
+    from spine.ops.runs import new_run, finish_run
     rid, d = new_run("agent", "browser demo: example.com walk")
     b = AgentBrowser(d)
     try:
@@ -56,22 +56,22 @@ def main():
     if cmd == "wincap-test": wincap_test()
     elif cmd == "browser-demo": browser_demo()
     elif cmd == "teach":
-        from daemon.spine.ops.teach import record_demo
+        from spine.ops.teach import record_demo
         record_demo(sys.argv[2] if len(sys.argv) > 2 else "unnamed task")
     elif cmd == "distill":
-        from daemon.spine.ops.distill import distill
+        from spine.ops.distill import distill
         distill(sys.argv[2])
     elif cmd == "list":
-        from daemon.spine.ops.runs import list_runs
-        from daemon.spine.ops.actionlog import read_timeline
+        from spine.ops.runs import list_runs
+        from spine.ops.actionlog import read_timeline
         import os
-        from daemon.spine.ops.runs import REC
+        from spine.ops.runs import REC
         for m in list_runs():
             n = len(read_timeline(os.path.join(REC, m["id"])))
             print("%s  %-6s %-8s %3d steps  %s" %
                   (m["id"], m["kind"], m["status"], n, m["title"]))
     elif cmd == "serve":
-        from daemon.spine.http import server
+        from spine.http import server
         server.serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8140)
     else:
         print(__doc__)

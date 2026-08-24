@@ -40,6 +40,21 @@ extraResources:
       - "**/*.py"
       - "**/*.md"
       - "requirements.txt"
+  # spine/ and cells/ live at the REPO ROOT since the two-mains split
+  # (2026-08-24); daemon/ is only the thin launcher + runtime-data home. Same
+  # allowlist discipline as above - source extensions only, never state.
+  - from: ../spine
+    to: spine
+    filter:
+      - "!**/*"
+      - "**/*.py"
+      - "**/*.md"
+  - from: ../cells
+    to: cells
+    filter:
+      - "!**/*"
+      - "**/*.py"
+      - "**/*.md"
   # the single Expo web export (static SPA) that main.js serves locally - one
   # codebase for phone/web/desktop, replacing the old Next.js standalone server.
   - from: ../app/dist

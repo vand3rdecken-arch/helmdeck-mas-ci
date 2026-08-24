@@ -6,7 +6,7 @@
 // dashboard tile) and the loop map (app/loopmap.tsx's LoopMapScreen, the
 // pipeline/build-loop/laws view). This surface composes both into one PM
 // dashboard component, reusing each unmodified - the daemon PM cell
-// (daemon/cells.py, surface="surfaces.pm") owns /pm/* routes that both pull
+// (cells.py, surface="surfaces.pm") owns /pm/* routes that both pull
 // from (api.pmPlan / api.loopMap), so nothing here duplicates that fetching.
 
 import { ScrollView, View } from "react-native";

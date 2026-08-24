@@ -52,7 +52,7 @@ export default function NewCard() {
   // "auto" here means "send no model at all" - the card then re-routes live
   // every turn off its own signals (turnrunner._turn), same as today's
   // default. Only an explicit pick becomes the card's STICKY model (stored
-  // once at creation, daemon/cells/engineer/dispatch.py:new_track) - without
+  // once at creation, cells/engineer/dispatch.py:new_track) - without
   // this field cards could only ever get a sticky model via a chat steer,
   // and that pick used to not even persist onto the card (see steer() fix).
   const [model, setModel] = useState("auto");

@@ -10,12 +10,12 @@ import os, sys, threading, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-from daemon.spine.storage import db
+from spine.storage import db
 db.init()
-from daemon.cells.engineer import sessions
-from daemon.spine.agent import drivers
-from daemon.spine.storage import events
-from daemon.spine.comms import notify
+from cells.engineer import sessions
+from spine.agent import drivers
+from spine.storage import events
+from spine.comms import notify
 
 _fails = []
 
@@ -52,9 +52,9 @@ sessions._ensure_worktree = lambda t: ""
 sessions._maybe_compact = lambda t, log: t
 sessions._maybe_fast_track_ship = lambda t, log: None
 
-from daemon.spine.ops import actionlog
+from spine.ops import actionlog
 actionlog.ActionLog = lambda rd: type("L", (), {"log": lambda *a, **k: None})()
-from daemon.spine.agent import turnopts
+from spine.agent import turnopts
 turnopts.save_attachments = lambda *a, **k: []
 turnopts.resolve_model = lambda *a, **k: ("model", None)
 turnopts.augment_prompt = lambda text, *a, **k: text

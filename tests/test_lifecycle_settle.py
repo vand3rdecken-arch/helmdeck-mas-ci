@@ -13,14 +13,14 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-from daemon.spine.storage import db
+from spine.storage import db
 db.init()
-from daemon.cells.engineer import sessions
-from daemon.cells.engineer import lifecycle
-from daemon.spine.storage import trackstore
-from daemon.spine.agent import drivers
-from daemon.spine.storage import events
-from daemon.spine.comms import notify
+from cells.engineer import sessions
+from cells.engineer import lifecycle
+from spine.storage import trackstore
+from spine.agent import drivers
+from spine.storage import events
+from spine.comms import notify
 
 _fails = []
 

@@ -15,8 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
-from daemon.spine.agent import drivers
-from daemon.spine.agent import agentcli
+from spine.agent import drivers
+from spine.agent import agentcli
 
 # Generate the fake-CLI wrapper with the ABSOLUTE python path (the bare `py`
 # launcher isn't guaranteed on a spawned process's PATH). The driver's
@@ -203,7 +203,7 @@ def test_structured_error_and_nightshift():
     # _limit_hit lives in pm.py since the PM loop absorbed nightshift.py (the
     # old `import nightshift` kept "working" as a namespace package - the
     # daemon/nightshift/ DATA folder - and then failed on the attribute).
-    from daemon.cells.pm import pm
+    from cells.pm import pm
     track = {"last_subtype": meta.get("subtype"), "last_error": meta.get("error"),
              "last_reply": "all fine here"}   # reply is clean; only structured field flags it
     check(pm._limit_hit(track), "PM loop detects limit from STRUCTURED field, not prose")

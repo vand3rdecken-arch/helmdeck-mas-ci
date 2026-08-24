@@ -14,22 +14,22 @@ DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-rebind-")
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.spine.ops import runs
+from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs")
 os.makedirs(runs.REC, exist_ok=True)
-from daemon.spine.comms import notify
-from daemon.cells.engineer import sessions as S
+from spine.comms import notify
+from cells.engineer import sessions as S
 S.REC = runs.REC
 notify.card_event = lambda *a, **k: None
 
-from daemon.spine.ops.actionlog import ActionLog
+from spine.ops.actionlog import ActionLog
 
 _fails = []
 

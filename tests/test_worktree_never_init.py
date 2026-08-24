@@ -24,14 +24,14 @@ DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.cells.engineer import sessions
+from cells.engineer import sessions
 
 _fails = []
 
@@ -121,16 +121,16 @@ def test_steer_self_heal_guard_catches_existing_but_broken_worktree():
         return "sess-1", "done", {"usage": {}, "models": []}
     sessions._turn = fake_turn
 
-    from daemon.spine.ops import actionlog
+    from spine.ops import actionlog
     actionlog.ActionLog = lambda rd: type("L", (), {"log": lambda *a, **k: None})()
-    from daemon.spine.comms import notify
+    from spine.comms import notify
     notify.clear_dedup = lambda *a, **k: None
     notify.card_event = lambda *a, **k: None
-    from daemon.spine.agent import turnopts
+    from spine.agent import turnopts
     turnopts.save_attachments = lambda *a, **k: []
     turnopts.resolve_model = lambda *a, **k: ("model", None)
     turnopts.augment_prompt = lambda text, *a, **k: text
-    from daemon.spine.agent import drivers
+    from spine.agent import drivers
     drivers.turn_active = lambda tid: False
 
     try:

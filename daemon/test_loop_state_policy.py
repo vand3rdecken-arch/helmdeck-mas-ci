@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Self-sandboxing test for tools/loop_state.py's _build_loop_enabled() - the
-REAL enable flag for Cell #6 (daemon/cells.py "buildloop"). This is the ONE
+REAL enable flag for Cell #6 (cells.py "buildloop"). This is the ONE
 test in the whole daemon suite where the md5-before/after check on
 daemon/policy_live.json is not optional: this function reads that exact file
 to decide whether to silence the Stop hook currently governing THIS agent's

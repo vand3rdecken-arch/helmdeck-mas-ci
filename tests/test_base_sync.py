@@ -30,15 +30,15 @@ DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
-from daemon.spine.storage import db
+from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")      # never touch the real board
-from daemon.spine.storage import events
+from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from daemon.cells.engineer import sessions
-from daemon.spine.storage.trackstore import _save_track, _load, _find
+from cells.engineer import sessions
+from spine.storage.trackstore import _save_track, _load, _find
 
 _fails = []
 
@@ -222,7 +222,7 @@ def test_autoaccept_probe_syncs_before_gating():
     on foreign code forever and never auto-accepted, even though move_lane
     would sync and gate it green. The probe must sync first - and a sync
     CONFLICT must read as red (an auto-accept never lands a half-merge)."""
-    from daemon.cells.process import processes
+    from cells.process import processes
     repo = new_repo()
     write(os.path.join(repo, "lib.py"), "def f():\n    return 1\n")
     write(os.path.join(repo, "check.py"),

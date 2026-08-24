@@ -11,10 +11,10 @@ import inspect, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
-from daemon.spine.storage import db
+from spine.storage import db
 db.init()
-from daemon.spine.agent import drivers
-from daemon.cells.engineer import sessions
+from spine.agent import drivers
+from cells.engineer import sessions
 
 _fails = []
 

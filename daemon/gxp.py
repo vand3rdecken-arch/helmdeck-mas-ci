@@ -154,7 +154,7 @@ def is_human(actor):
     if not actor:
         return False
     try:
-        from daemon.spine.auth import auth
+        from spine.auth import auth
         return auth.get_user(actor) is not None
     except Exception:
         # Fail CLOSED: if the registry cannot be read we cannot prove a human,
@@ -183,7 +183,7 @@ def accept_block_reason(actor, track=None):
         return ("GxP mode: landing a card in the regulated scope needs a human "
                 "account - '%s' is not one" % (actor or "<none>"))
 
-    from daemon.spine.auth import signatures
+    from spine.auth import signatures
     sig = signatures.valid_open(track or {})
     if not sig:
         # Say WHICH of the two it is - "no signature" and "your signature no

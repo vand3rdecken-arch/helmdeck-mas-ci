@@ -42,10 +42,10 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-eventsutc-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     db.init()
@@ -91,7 +91,7 @@ def main():
 
     # ------------------------------------------------------------------ 4 ---
     print("\nauth._audit's at_utc now comes from emit() itself, and is real")
-    from daemon.spine.auth import auth
+    from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
     events.EV = os.path.join(tmp, "events3.jsonl")

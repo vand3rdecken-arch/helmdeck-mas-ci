@@ -275,8 +275,8 @@ function startDaemon(pyOverride) {
     // directly, which also removes the cmd.exe hop that was swallowing this
     // process's stdout/stderr (see resolvePython/realInterpreter above).
     const daemonNeedsShell = process.platform === "win32" && !path.isAbsolute(py.cmd);
-    // daemon/ is a real Python package now (absolute daemon.spine/
-    // daemon.cells.<id> imports) - launched as a module from the REPO
+    // daemon/ is a real Python package now (absolute spine/
+    // cells.<id> imports) - launched as a module from the REPO
     // ROOT, not a bare script from inside daemon/ (daemon/debt.py
     // sys-path-trick-to-real-package-imports). swarm.py itself stays put.
     daemon = spawn(py.cmd, [...py.args, "-m", "daemon.swarm", "serve", String(DAEMON_PORT)],

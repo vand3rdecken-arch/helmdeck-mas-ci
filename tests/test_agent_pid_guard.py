@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""_is_agent_pid's image-name guard (daemon/spine/agent/proctable.py).
+"""_is_agent_pid's image-name guard (spine/agent/proctable.py).
 
 Pins a real bug found and fixed while wiring the codex/opencode/pi native
 drivers (docs/multi-engine-build-plan.md Cards 6-8): a short, common
@@ -12,7 +12,7 @@ being shipped (Card 8) - fixed here too, not left for later.
 import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.agent import proctable
+from spine.agent import proctable
 
 FAILS = []
 

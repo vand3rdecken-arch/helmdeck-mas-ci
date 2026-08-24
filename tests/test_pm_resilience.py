@@ -20,12 +20,12 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-from daemon.cells.pm import pm
-from daemon.cells.pm import pm_comm
-from daemon.cells.pm import pm_state
-from daemon.cells.pm import pm_resolve
-from daemon.cells.engineer import sessions
-from daemon.spine.comms import notify
+from cells.pm import pm
+from cells.pm import pm_comm
+from cells.pm import pm_state
+from cells.pm import pm_resolve
+from cells.engineer import sessions
+from spine.comms import notify
 
 # pm.py, pm_comm.py and pm_state.py each independently compute their own
 # PLANS/LOOPSTATE/_ACTIVITY (extracted from pm.py, no shared reference) - the

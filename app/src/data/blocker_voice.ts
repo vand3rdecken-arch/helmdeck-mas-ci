@@ -4,7 +4,7 @@ import { create } from "zustand";
 // Proactive blocker announcements over the phone's own audio route (More ->
 // Voice). OFF by default, like every other proactive channel in this app
 // (glance_decide, glance_talk, relay.url) - the owner opts in rather than
-// discovering a talking phone. The clip is server-rendered (daemon/spine/
+// discovering a talking phone. The clip is server-rendered (spine/
 // media/voice.py via POST /notify/speak) and played with data/voice.ts's
 // speak(), which is the SAME native player the chat voice mode already
 // ships - this toggle only decides whether a fresh push also triggers it.

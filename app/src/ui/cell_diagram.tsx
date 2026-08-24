@@ -4,7 +4,7 @@
 // reference, 2026-08-18): hairline 1px strokes, no shadows, ONE accent color,
 // grid-aligned coordinates (all divisible by 4), generous whitespace, a
 // title/sublabel type-scale split - a style to emulate, not a vendored
-// dependency (see daemon/cells.py's engineer Cell.tools for the reference).
+// dependency (see cells.py's engineer Cell.tools for the reference).
 //
 // v2 layout (owner feedback: v1 "looks ugly" - diagnosed and fixed): each
 // category is now a single narrow COLUMN (leaves stacked vertically inside a

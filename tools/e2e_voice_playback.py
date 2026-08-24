@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from playwright.sync_api import sync_playwright                     # noqa: E402
 
-from daemon.spine.media import voice                                # noqa: E402
+from spine.media import voice                                # noqa: E402
 
 PHRASE = "Der Deploy ist blockiert. Soll ich anfangen?"
 

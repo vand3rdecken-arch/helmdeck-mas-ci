@@ -514,8 +514,8 @@ export const screens: Dict = {
   "modules.wipLimitSub": { de: "laufende Karten", en: "cards in flight" },
   "modules.cells": { de: "Cells", en: "Cells" },
   "modules.cellsHint": {
-    de: "Agentische Systeme (Rolle + Route + UI-Surface + Enable-Flag) - daemon/cells.py. Aus schaltet die Routen UND den Tab ab. Antippen zeigt die Architektur - Logic, Storage, Harness, API-Routes, UI-Surface - mit echtem Code beim Antippen einer Datei.",
-    en: "Agentic systems (role + route + UI surface + enable flag) - daemon/cells.py. Off disables the routes AND the tab. Tap one for its architecture - logic, storage, harness, API routes, UI surface - with the real code behind every file.",
+    de: "Agentische Systeme (Rolle + Route + UI-Surface + Enable-Flag) - cells.py. Aus schaltet die Routen UND den Tab ab. Antippen zeigt die Architektur - Logic, Storage, Harness, API-Routes, UI-Surface - mit echtem Code beim Antippen einer Datei.",
+    en: "Agentic systems (role + route + UI surface + enable flag) - cells.py. Off disables the routes AND the tab. Tap one for its architecture - logic, storage, harness, API routes, UI surface - with the real code behind every file.",
   },
   "modules.noCells": { de: "Keine Cells geladen.", en: "No cells loaded." },
   "modules.charter": { de: "Charter (geseedet)", en: "Charter (seeded)" },

@@ -11,9 +11,9 @@ Run: py -3.12 daemon/test_dispatch_visibility.py
 import os, shutil, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.cells.engineer import sessions
-from daemon.spine.storage import events
-from daemon.spine.storage import trackstore
+from cells.engineer import sessions
+from spine.storage import events
+from spine.storage import trackstore
 
 
 class FakeDB:

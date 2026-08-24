@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Self-sandboxing test for the auth audit trail (A5).
 
-Before this, daemon/spine/auth/auth.py did not import `events` at all
+Before this, spine/auth/auth.py did not import `events` at all
 (`grep -c emit auth.py` -> 0). Creating and deleting users, changing a password
 or a role, issuing and revoking device tokens, and every login - successful or
 not - happened with no record whatsoever. A failed login was a bare
@@ -49,13 +49,13 @@ PW_BOB_NEW = "bob-rotated-1234"
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-authaudit-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
-    from daemon.spine.auth import auth
+    from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
 

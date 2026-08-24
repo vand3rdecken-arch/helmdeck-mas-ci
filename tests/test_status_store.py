@@ -20,15 +20,15 @@ import json, os, random, sys, tempfile, threading, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(HERE)
 sys.path.insert(0, DAEMON)
-from daemon.spine.storage import db
+from spine.storage import db
 db.init()                      # role defaults to "tool": NO boot devaluation here
-from daemon.spine.storage import trackstore
-from daemon.cells.engineer import sessions
-from daemon.cells.engineer import lifecycle
-from daemon.cells.engineer import turnrunner
-from daemon.spine.agent import drivers
-from daemon.spine.storage import events
-from daemon.spine.comms import notify
+from spine.storage import trackstore
+from cells.engineer import sessions
+from cells.engineer import lifecycle
+from cells.engineer import turnrunner
+from spine.agent import drivers
+from spine.storage import events
+from spine.comms import notify
 
 _fails = []
 

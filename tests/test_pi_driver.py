@@ -15,7 +15,7 @@ controllable queue, same harness shape as test_omp_driver.py.
 import os, shutil, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from daemon.spine.agent import pi_driver, timeline_store
+from spine.agent import pi_driver, timeline_store
 
 FAILS = []
 

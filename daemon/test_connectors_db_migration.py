@@ -34,17 +34,17 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-conndb-test-")
 
-    from daemon.spine.storage import db
+    from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
-    from daemon.spine.storage import events
+    from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
     # sandbox connectors.py's own directory globals too - CDIR/VDIR are NOT
     # under db.ROOT's umbrella, they are module-level paths computed at import
     # time from connectors.py's own __file__.
-    from daemon.cells.connectors import connectors
+    from cells.connectors import connectors
     cdir = os.path.join(tmp, "connectors")
     vdir = os.path.join(cdir, "_versions")
     os.makedirs(vdir, exist_ok=True)

@@ -10,13 +10,13 @@ import os, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from daemon.spine.storage import events  # noqa: E402
+from spine.storage import events  # noqa: E402
 
 _TMP = tempfile.mkdtemp(prefix="helmdeck-pairtest-")
 events.SET = os.path.join(_TMP, "settings.json")
 events.EV = os.path.join(_TMP, "events.jsonl")
 
-from daemon.spine.comms import relay_client as rc  # noqa: E402  (after the sandbox redirect)
+from spine.comms import relay_client as rc  # noqa: E402  (after the sandbox redirect)
 
 FAILS = []
 
