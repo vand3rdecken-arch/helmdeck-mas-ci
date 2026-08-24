@@ -9,10 +9,14 @@
 > unchanged. run_gate.py compiles all three trees + wires spine.http.server
 > (daemon.swarm alone is thin now); electron-builder.yml ships spine/ + cells/
 > with the same allowlist discipline. web/ husk deleted, CLAUDE.md rewritten.
+> STRAYS DONE 2026-08-24 (e577a85): gxp.py + mint_token.py -> spine/auth/
+> (gxp is GOVERNANCE over all cells, not a cell - the zero-cells litmus),
+> daemon/test_*.py -> tests/ (one suite home, run_suite scans tests/ only).
+> daemon/connectors/ deliberately STAYS: it is the connectors cell's runtime
+> INSTALL target (connectors.py CDIR), data-home state like pm.role.md and
+> policy_seed.json. Daemon restarted onto the new layout, :8140 HTTP 200.
 > OPEN: phase 3 (frontend units into cells/<id>/ui, blocked by
-> plugin-kernel-dual-nav), phase 4 (optional surface grooming), and moving the
-> daemon-root strays (gxp.py, mint_token.py, connectors/hn_top.py, test files)
-> into spine/tests homes.
+> plugin-kernel-dual-nav), phase 4 (optional surface grooming).
 
 **Owner decree 2026-08-24.** The architecture is spine + cells, but the folder
 tree doesn't say so at the root: ~19 top-level dirs mixing products, ops and
