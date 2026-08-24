@@ -1,5 +1,11 @@
 __pycache__/
 *.pyc
+# GENERIC log net (2026-08-24 data-hygiene audit): every log is runtime
+# output, wherever a future feature drops one - the named entries further
+# down predate this rule and stay as documentation of what writes where.
+# Verified before adding: zero tracked *.log/*.err existed.
+*.log
+*.err
 daemon/recordings/
 .idea/
 *.keystore
@@ -148,5 +154,6 @@ surfaces/glasses/worker/dev.err
 daemon/policy_live.json
 daemon/escalations.jsonl
 daemon/settings.json.tmp
+daemon/copilot_stats.json.tmp
 daemon/models_stt/
 surfaces/app/modules/livemic/android/libs/
