@@ -173,7 +173,18 @@ def save_settings(patch, actor="system", reason=""):
     return s
 
 def emit(kind, track, **fields):
-    row = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "track": track}
+    # `ts` stays host-local, on purpose: it is what every existing consumer
+    # (dashboard, day-boundary rollups, quota-window math) already reads, and
+    # reinterpreting it as UTC in place would silently shift every "today" /
+    # "this week" boundary computed from it - a correctness change disguised
+    # as a timestamp fix. `at_utc` is the unambiguous anchor added ALONGSIDE
+    # it, on every event (this used to exist only on auth/signature events,
+    # added by hand at each call site - now every emit() gets one, so no
+    # future event kind can forget it). A caller that already computed a more
+    # precise UTC value (e.g. a signature's own signed_at) can still pass its
+    # own at_utc in **fields - row.update() below runs after this and wins.
+    row = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "track": track,
+           "at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     row.update(fields)
     with open(EV, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
