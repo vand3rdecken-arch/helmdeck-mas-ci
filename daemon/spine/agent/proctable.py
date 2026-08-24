@@ -206,14 +206,17 @@ def _proc_start_epoch(pid):
 
 
 def _is_agent_pid(pid):
-    """Weaker fallback guard: the pid is still a claude/node/cmd image."""
+    """Weaker fallback guard: the pid is still a known agent-driver image.
+    "omp" added for the native OMP driver (docs/multi-engine-build-plan.md
+    Card 8) - a real per-engine addition now that a second engine actually
+    exists, not the speculative registry Card 1 deliberately deferred."""
     if os.name != "nt":
         return True
     try:
         for p, _pp, exe in _pid_table():
             if p == pid:
                 img = (exe or "").lower()
-                return any(n in img for n in ("claude", "node", "cmd"))
+                return any(n in img for n in ("claude", "node", "cmd", "omp"))
         return False
     except Exception:
         return False
