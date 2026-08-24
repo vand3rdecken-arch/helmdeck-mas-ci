@@ -25,8 +25,19 @@
 > ui_files -> repo_files. Verified: tsc 0, expo export web 0, gate PASS.
 > The dual-nav debt itself stays OPEN for its last item: per-screen
 > COMPONENTS (route files still render their own imports, not the registry).
-> OPEN: phase 4 (optional surface grooming) - and worker/ turned out to be a
-> doc, not a surface (moved to docs/relay-durable-object-sketch.md).
+> ROOT-MINIMIZATION 2026-08-24 (owner frame: "daemon+app are the execution
+> parts, everything else justifies itself"): shots/ -> docs/shots/ (closes a
+> privacy inconsistency - tracked board PNGs were NOT mirror-filtered while
+> docs/store/screenshots deliberately are; writer paths in asc_guide/
+> meta_wearables_guide/ios_credentials updated), .smoke/ -> tests/smoke/
+> (a test harness, not a root citizen; its EVIDENCE.md shot refs are
+> dir-relative and survived), acceptance.md -> docs/ (historical Define-round
+> doc, gxp-conformity already flagged it as outdated). worker/ was a doc,
+> not a surface (docs/relay-durable-object-sketch.md).
+> OPEN: phase 4 (optional surface grooming); consolidate the doubled data
+> homes (.attachments/ + backups/ at root vs their daemon/ twins - the
+> root .attachments/ has 5 tracked legacy jpgs and publish-filter paths
+> attached, needs its own careful cut).
 
 **Owner decree 2026-08-24.** The architecture is spine + cells, but the folder
 tree doesn't say so at the root: ~19 top-level dirs mixing products, ops and

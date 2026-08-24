@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Screenshot the Loop-Map for the CLAUDE.md UI judgement.
 
-A CAMERA, not a test: it drives the real web build against shots/loopmap_sandbox.py
+A CAMERA, not a test: it drives the real web build against docs/shots/loopmap_sandbox.py
 (no demo fixtures), so what gets judged is the payload the daemon really serves.
 
 The interesting states of this screen are BEHIND A TAP - a fixed stage's reason
@@ -14,7 +14,7 @@ Each shot below opens exactly one of them:
     policy    a POLICY stage expanded: the reason + an env-var knob (not a link)
     wide      1280px, everything the phone shot showed, re-judged for centering
 
-    py -3.12 shots/shoot_loopmap.py --port 3852 --cfg <base64 {baseUrl,token}>
+    py -3.12 docs/shots/shoot_loopmap.py --port 3852 --cfg <base64 {baseUrl,token}>
 """
 import argparse, os
 

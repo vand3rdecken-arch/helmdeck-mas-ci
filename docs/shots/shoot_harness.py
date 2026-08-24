@@ -6,7 +6,7 @@ daemon (no demo fixtures), so what gets judged is the payload the daemon
 actually serves. Both themes and both widths, because "readable" is a claim
 about the worst combination, not the one that happened to be open.
 
-    py -3.12 shots/shoot_harness.py [--port 3599] [--cfg <base64>]
+    py -3.12 docs/shots/shoot_harness.py [--port 3599] [--cfg <base64>]
 """
 import argparse, base64, json, os, sys, time
 

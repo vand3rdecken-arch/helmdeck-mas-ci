@@ -7,7 +7,7 @@ the lane graph, the build loop, the harness surfaces and the laws out of the
 CODE, so a card fixture would add nothing and only risk colliding with a live
 board on a shared port.
 
-    py -3.12 shots/loopmap_sandbox.py [--port 8852] [--repo-mode]
+    py -3.12 docs/shots/loopmap_sandbox.py [--port 8852] [--repo-mode]
 
 --repo-mode drops HELMDECK_WORKTREE so loop_state.machine() reports the FULL
 seven-state loop (ALIGN..DONE). Without it a card worktree reports card mode and

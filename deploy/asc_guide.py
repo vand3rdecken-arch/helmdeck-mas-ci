@@ -13,7 +13,7 @@ profile - NOT the daily browser), the same harness standard as
 daemon/browsercap.py, so the Apple session survives between runs.
 
   py -3.12 deploy/asc_guide.py open     # launch/attach + go to App Store Connect
-  py -3.12 deploy/asc_guide.py shot     # screenshot current tab -> shots/asc.png
+  py -3.12 deploy/asc_guide.py shot     # screenshot current tab -> docs/shots/asc.png
   py -3.12 deploy/asc_guide.py where    # url + title + visible headline
   py -3.12 deploy/asc_guide.py apps     # list the apps ASC shows, with their IDs
   py -3.12 deploy/asc_guide.py appid    # print the numeric ascAppId for app.helmdeck
@@ -132,7 +132,7 @@ def cmd_open():
 def cmd_shot():
     pw, br, ctx = _attach()
     p = _asc_page(ctx)
-    out = os.path.join(ROOT, "shots", "asc.png")
+    out = os.path.join(ROOT, "docs", "shots", "asc.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     p.screenshot(path=out, full_page=False)
     print("url=%s" % p.url)
