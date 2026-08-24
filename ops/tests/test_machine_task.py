@@ -170,9 +170,10 @@ def test_chat_never_dead_ends():
     check("Maschinen-Aufgabe" in out, "resolve_conflict likewise refuses a machine card")
 
     # and the system prompt no longer tells the model to refuse machine work
-    check("NEVER DEAD-END" in copilot.SYSTEM, "chat is briefed as the coordinator")
-    check("machine_task" in copilot.SYSTEM, "chat knows the machine route")
-    check("is NOT a connector build" in copilot.SYSTEM,
+    from spine.registry import harness as _h
+    check("NEVER DEAD-END" in _h.brief("board-copilot"), "chat is briefed as the coordinator")
+    check("machine_task" in _h.brief("board-copilot"), "chat knows the machine route")
+    check("is NOT a connector build" in _h.brief("board-copilot"),
           "the charter is scoped to BUILT CODE, so PC work is no longer refused")
 
 
