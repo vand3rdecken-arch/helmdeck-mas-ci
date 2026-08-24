@@ -60,9 +60,22 @@
 > Schuld `events-two-stores-unreconciled` bezahlt), D4 `2a1f82f`
 > (`GET /audit`, Filter + CSV-Export, Owner-only).
 >
-> Offen: das signierte git-Tag (braucht die Schlüsselentscheidung) · der
-> gepackte Drei-Start-Durchlauf der Desktop-App · der Screenshot der
-> Freigabemaske aus Phase C.
+> **Das signierte git-Tag: gebaut.** Owner sagte „mach das" — umgesetzt mit der
+> mehrfach empfohlenen Option A (Server-Schlüssel, passwortentsperrt), per
+> GPG statt SSH-Signing, weil git 2.27 auf diesem Host SSH-Tags nicht kann
+> (kam erst mit 2.34). Jede Freigabe landet als signiertes Tag
+> `gxp/approve/<karte>-<seq>`; ein Prüfer verifiziert mit Stock-git plus
+> exportiertem Public Key, ohne HelmDeck-Code. Passphrase-Caching des
+> gpg-agent ist hart abgeschaltet — mit dem Standard-Cache signierte ein
+> falsches Passwort, solange der Agent das richtige noch im Speicher hatte
+> (vom Rotationstest gefunden, nicht aus Doku). Schuld
+> `gxp-signature-not-independently-verifiable` bezahlt. Umkehrbar: der
+> Schlüsselspeicher ist `daemon/signkeys/` (git-ignoriert); auf
+> Gerätespeicherung umzustellen hieße nur, `signkeys.py` zu ersetzen — die
+> Tag-Erzeugung bliebe identisch.
+>
+> Offen: der gepackte Drei-Start-Durchlauf der Desktop-App · der Screenshot
+> der Freigabemaske aus Phase C — beides braucht deinen Rechner.
 >
 > **Neu, aus der Diskussion, nicht Teil dieser Karte:** Rohkommando bei
 > Sprache mitspeichern — für eine Karte im Geltungsbereich, wenn die Eingabe

@@ -46,8 +46,11 @@ def sign_subject_get(self, user, tid):
     }))
 
 
-def _sign_one(user, tid, meaning, reason):
-    """Produce and store ONE signature. Password already verified by the caller.
+def _sign_one(user, tid, meaning, reason, password):
+    """Produce and store ONE signature. Password already verified by the caller;
+    it is passed through because an APPROVAL also unlocks the user's signing
+    key (signkeys.py) - the password is cryptographically required for the
+    tag, not merely checked against a hash.
 
     Split out so the batch route cannot drift from the single route - one
     implementation of "what a signature is", two ways in.
@@ -70,14 +73,41 @@ def _sign_one(user, tid, meaning, reason):
     except ValueError as e:
         return {"card": tid, "ok": False, "error": str(e)}
 
+    # APPROVED gets the independently verifiable anchor: a GPG-signed git tag
+    # an auditor checks with stock `git verify-tag` + the exported public key,
+    # no HelmDeck code in the loop. STRICT on purpose: an approval that could
+    # not be anchored is refused outright, because "signed, but you have to
+    # trust our database about it" is exactly the gap the tag closes - a soft
+    # fallback here would quietly reopen it. reviewed/rejected stay
+    # record-only: they authorise nothing, so they need no anchor.
+    if meaning == "approved":
+        from daemon.spine.auth import signkeys
+        manifestation = {"card": tid, "actor": sig["actor"],
+                         "role": sig["actor_role"], "meaning": meaning,
+                         "reason": sig["reason"], "signed_at": sig["signed_at"],
+                         "head": subj["head"], "base": subj["base"]}
+        try:
+            tag_name, tag_sha, fpr = signkeys.create_approval_tag(
+                t["repo"], tid, sig["seq"], subj["head"], user["name"],
+                password, manifestation)
+        except Exception as e:
+            return {"card": tid, "ok": False,
+                    "error": "approval tag failed: %s" % str(e)[:200]}
+        sig["git"] = {"tag": tag_name, "tag_sha": tag_sha,
+                      "fingerprint": fpr, "merge_sha": None}
+
     def _append(tt):
         tt.setdefault("signatures", []).append(sig)
     _mutate(tid, _append)
 
+    # tag_sha in the event = the cross-witness (gxp-mode-design.md 2.0): the
+    # sink names the tag, the tag names the card - editing either store now
+    # contradicts the other.
     events.emit("signature", tid, op="signed", actor=user["name"],
                 role=user["role"], meaning=meaning, reason=sig["reason"],
                 at_utc=sig["signed_at"], head=subj["head"], base=subj["base"],
-                seq=sig["seq"])
+                seq=sig["seq"], tag=sig.get("git", {}).get("tag"),
+                tag_sha=sig.get("git", {}).get("tag_sha"))
     if meaning == "rejected":
         _reject_followup(tid, user["name"], sig["reason"])
     return {"card": tid, "ok": True, "signature": sig}
@@ -121,7 +151,8 @@ def sign_batch_post(self, user, body):
         return self._send(401, json.dumps({"error": "password not accepted"}))
 
     results = [_sign_one(user, (it.get("card") or "").strip(),
-                         (it.get("meaning") or "").strip(), it.get("reason") or "")
+                         (it.get("meaning") or "").strip(), it.get("reason") or "",
+                         body.get("password") or "")
                for it in items]
     return self._send(200, json.dumps({"results": results}))
 
@@ -137,7 +168,8 @@ def sign_post(self, user, body):
         return self._send(401, json.dumps({"error": "password not accepted"}))
 
     r = _sign_one(user, (body.get("card") or "").strip(),
-                  (body.get("meaning") or "").strip(), body.get("reason") or "")
+                  (body.get("meaning") or "").strip(), body.get("reason") or "",
+                  body.get("password") or "")
     if not r["ok"]:
         # 409 for "the card is not in a signable state" (uncommitted work, drift),
         # 404 for a card that is not there, 400 for a bad request.
