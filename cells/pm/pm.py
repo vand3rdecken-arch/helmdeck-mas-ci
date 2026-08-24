@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """PM / CTO planning ROLE, run by the thin harness here.
 
-The PM's brain is DATA (pm.role.md + settings.pm), not code. This module only:
+The PM's brain is DATA (ops/harness/agents/pm.md + settings.pm), not code. This module only:
   - gathers signals (board + REAL economics + quota/velocity + goal),
   - runs the configured role for ONE plan-mode turn,
   - prices/times the plan in code (LLM judges effort in turns, code converts to
@@ -18,7 +18,6 @@ import json, math, os, re, subprocess, threading, time
 from spine.registry import i18n as _i18n
 
 from daemon.paths import DAEMON_ROOT as ROOT
-ROLE_FILE = os.path.join(ROOT, "pm.role.md")
 PLANS = os.path.join(ROOT, "pm")
 
 PM_DEFAULTS = {
@@ -113,11 +112,11 @@ def _clarifications_block():
 
 
 def _role():
-    try:
-        with open(ROLE_FILE, encoding="utf-8") as f:
-            role = f.read()
-    except OSError:
-        role = "You are the HelmDeck PM/CTO. Reply with JSON: {summary, done_pct, milestones, next, risks}."
+    # The role is DATA in the harness layer (ops/harness/agents/pm.md - owner-
+    # editable, versioned). brief() is total: a missing/mangled file degrades
+    # to the short JSON-shape floor in harness._DEFAULTS, never breaks a plan.
+    from spine.registry import harness
+    role = harness.brief("pm")
     extra = (_pm().get("role_extra") or "").strip()
     return role + ("\n\n## House additions\n" + extra if extra else "")
 
