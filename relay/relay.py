@@ -86,13 +86,15 @@ margin:40px 0}small,.muted{color:#8b9298}table{border-collapse:collapse;width:10
 font-size:14px}td,th{border:1px solid #2a2d2f;padding:8px;text-align:left;vertical-align:top}
 </style>
 <h1>Datenschutzerklärung – HelmDeck</h1>
-<p class=muted>Stand: 4. August 2026 · <a href="#en">English version below</a></p>
+<p class=muted>Stand: 23. August 2026 · <a href="#en">English version below</a></p>
 
 <p>HelmDeck ist eine Fernbedienung für die eigene HelmDeck-Installation
 („Daemon") auf dem eigenen Rechner. Die App verbindet das Telefon
 ausschließlich mit Infrastruktur, die die Nutzerin/der Nutzer selbst
-betreibt. Es gibt kein Entwickler-Konto, keinen zentralen Dienst, der Inhalte
-speichert, keine Werbung und keine Analyse-/Tracking-SDKs.</p>
+betreibt. Es gibt kein Entwickler-Konto und keinen zentralen Dienst, der
+Inhalte speichert, und keine Werbung. Die App enthält ein
+Analyse-SDK (Abschnitt 2a) – standardmäßig aus, nur nach ausdrücklicher
+Einwilligung aktiv.</p>
 
 <h2>1. Verantwortlicher / Kontakt</h2>
 <p>Tien Duy Vo · E-Mail:
@@ -113,10 +115,23 @@ Daemon; technisch an Google FCM zur Zustellung</td><td>Benachrichtigungen
 <tr><td>Kopplungsdaten (Server-Adresse, Raum-ID, Schlüssel, Geräte-Token)</td>
 <td>Bleiben auf dem Gerät (verschlüsselter Speicher, expo-secure-store)</td>
 <td>Verbindung halten</td></tr>
+<tr><td>E-Mail-Adresse und Vorname – nur wenn bei einer Registrierung
+freiwillig angegeben</td><td>Loops (Loops.so), USA – E-Mail-Anbieter für
+Willkommens-Nachrichten</td><td>Einführung neuer Nutzer</td></tr>
 </table>
-<p>Nicht verarbeitet werden: Standort, Kontakte, Werbe-IDs, Analysedaten.
-Die Kamera wird nur zum Scannen des Kopplungs-QR-Codes und für bewusst
-aufgenommene Anhang-Fotos genutzt; es findet keine Hintergrund-Aufnahme statt.</p>
+<p>Nicht verarbeitet werden: Standort, Kontakte, Werbe-IDs. Die Kamera wird
+nur zum Scannen des Kopplungs-QR-Codes und für bewusst aufgenommene
+Anhang-Fotos genutzt; es findet keine Hintergrund-Aufnahme statt.</p>
+
+<h2>2a. Analyse (PostHog) – standardmäßig aus</h2>
+<p>Unter Mehr → Datenschutz lässt sich „Anonyme Nutzungsstatistiken senden"
+einschalten. Bleibt der Schalter unberührt, wird <b>nichts</b> an PostHog
+gesendet – die App baut dann keine Verbindung zu PostHog auf. Wird
+eingeschaltet, gehen anonyme Ereignisse (App-Start, Karten-Aktionen, Login)
+an PostHog (EU-Cloud, Frankfurt). Übertragen werden ausschließlich grobe
+Aktionsnamen und kategorische Werte (z.&nbsp;B. eine Spur, ein Modus) – nie
+Karten-Inhalte, Chat-Text, Namen oder Karten-Titel. Die Einstellung gilt pro
+Gerät und lässt sich jederzeit widerrufen.</p>
 
 <h2>3. Das Relay ist „zero knowledge"</h2>
 <p>Wenn Telefon und Rechner nicht im selben Netz sind, laufen Anfragen über
@@ -150,21 +165,26 @@ nur gegenüber der eigenen HelmDeck-Installation; ihre Verwaltung (Anlegen,
 Löschen) liegt vollständig bei deren Betreiber.</p>
 
 <h2>7. Rechtsgrundlage (DSGVO)</h2>
-<p>Die Verarbeitung erfolgt zur Vertragserfüllung bzw. auf Grundlage des
-berechtigten Interesses an der Bereitstellung der selbst betriebenen
-Funktion (Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;b/f DSGVO). Betroffenenrechte
-(Auskunft, Löschung, Berichtigung) richten sich an den Kontakt oben; für
+<p>Die Kernfunktion (Board, Steuerung, Kopplung, Push) erfolgt zur
+Vertragserfüllung bzw. auf Grundlage des berechtigten Interesses an der
+Bereitstellung der selbst betriebenen Funktion (Art.&nbsp;6 Abs.&nbsp;1
+lit.&nbsp;b/f DSGVO). Die Analyse unter 2a beruht auf Einwilligung
+(Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;a DSGVO) und läuft ausschließlich, solange
+der Schalter aktiv ist. Die optionale Weitergabe an Loops unter 2 beruht auf
+der freiwilligen Angabe bei der Registrierung. Betroffenenrechte (Auskunft,
+Löschung, Berichtigung, Widerruf) richten sich an den Kontakt oben; für
 Inhalte auf der eigenen Installation an deren Betreiber.</p>
 
 <hr>
 <h1 id=en>Privacy Policy – HelmDeck</h1>
-<p class=muted>Last updated: August 4, 2026</p>
+<p class=muted>Last updated: August 23, 2026</p>
 
 <p>HelmDeck is a remote control for your own HelmDeck installation
 (“daemon”) on your own machine. The app connects your phone exclusively to
 infrastructure you operate yourself. There is no developer-hosted account,
-no central service storing your content, no ads and no analytics/tracking
-SDKs.</p>
+no central service storing your content, and no ads. The app does include
+one analytics SDK (see below) – off by default, active only after explicit
+consent.</p>
 
 <h2>Controller / contact</h2>
 <p>Tien Duy Vo · e-mail:
@@ -182,10 +202,21 @@ daemon; Google FCM transports delivery. Push payloads are end-to-end
 encrypted; FCM only ever carries ciphertext.</li>
 <li><b>Pairing data</b> (server address, room id, keys, device token) –
 stays on the device in encrypted storage (expo-secure-store).</li>
+<li><b>E-mail and first name</b> – only if you voluntarily provide them when
+registering – go to Loops (Loops.so, USA), our e-mail provider, to send a
+welcome message to new users.</li>
 </ul>
-<p>Not processed: location, contacts, advertising IDs, analytics. The camera
-is used only to scan the pairing QR code and for photos you deliberately
-attach.</p>
+<p>Not processed: location, contacts, advertising IDs. The camera is used
+only to scan the pairing QR code and for photos you deliberately attach.</p>
+
+<h2>Analytics (PostHog) – off by default</h2>
+<p>"Send anonymous usage analytics" under More → Privacy is off unless you
+turn it on. Leave it untouched and <b>nothing</b> is sent to PostHog – the
+app never connects to it. Turned on, anonymous events (app open, card
+actions, login) go to PostHog (EU cloud, Frankfurt). Only coarse action names
+and categorical values are transmitted (e.g. a lane, a mode) – never card
+content, chat text, names or card titles. The setting is per device and can
+be revoked at any time.</p>
 
 <h2>Zero-knowledge relay</h2>
 <p>When phone and computer are not on the same network, requests travel via
@@ -200,6 +231,15 @@ relay operator as with any internet service – content never is.</p>
 developer. Unpairing on the desktop revokes the phone's access immediately
 (keys and room are rotated) and removes the push token. Uninstalling the app
 deletes all locally stored data. There are no developer-hosted accounts.</p>
+
+<h2>Legal basis (GDPR)</h2>
+<p>Core functionality (board, steering, pairing, push) runs on contract
+performance or the legitimate interest in providing the self-hosted function
+(Art. 6(1)(b)/(f) GDPR). Analytics above runs on consent (Art. 6(1)(a) GDPR)
+and only while the switch is on. Sharing with Loops is based on the
+information you voluntarily provide at registration. Data subject rights
+(access, erasure, rectification, withdrawal) go to the contact above; for
+content on your own installation, to whoever operates it.</p>
 </html>"""
 
 # --- OTA self-hosted Expo Updates (Paseo-style silent updates) ----------
