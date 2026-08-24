@@ -80,35 +80,50 @@ _cancelled = set()
 
 
 
-def _omp_sessions():
-    """The native OMP driver's OWN session registry (omp_driver.py) - a
-    separate dict from this module's claude-only `_sessions`, same reasoning
-    as claude_sessions.py being its own module: one driver, one owner of its
-    session state. Lazy import so a claude-only board never loads it."""
-    from daemon.spine.agent import omp_driver
-    return omp_driver._sessions, omp_driver._sessions_guard
+# Every NATIVE driver module beyond claude (this module) - each owns its
+# OWN {tid: session} registry + guard, same reasoning as claude_sessions.py
+# being its own module: one driver, one owner of its session state. Lazy-
+# imported so a claude-only board never loads any of them. Add a new native
+# driver here (one line) and cancel/has_session/turn_active/drop_session all
+# pick it up - a caller only ever has a tid, not the track's driver type, so
+# the alternative is pushing a driver-type lookup onto every one of the
+# 12+ call sites instead of this one list.
+_NATIVE_DRIVER_MODULES = ("omp_driver", "codex_driver", "opencode_driver", "pi_driver")
+
+
+def _native_registries():
+    """[(sessions_dict, guard), ...] for every native driver module that
+    actually imports cleanly (a module with a missing/broken optional
+    dependency degrades to "no sessions there", never breaks the claude
+    path these functions all serve first)."""
+    out = []
+    for name in _NATIVE_DRIVER_MODULES:
+        try:
+            mod = __import__("daemon.spine.agent." + name, fromlist=[name])
+            out.append((mod._sessions, mod._sessions_guard))
+        except Exception:
+            continue
+    return out
 
 
 def cancel(tid):
     """Stop the track's in-flight turn (composer Stop). Unblocks the waiting turn
     with a clean '(cancelled)' and tree-kills the session; the next steer respawns
     and `--resume`s the session id, so no conversation is lost. Idempotent.
-    Checks BOTH registries - a caller here only ever has a tid, not the
-    track's driver type, so has_session/turn_active/cancel/drop_session all
-    check claude's registry first, then omp's, rather than pushing that
-    lookup onto every one of the 12+ call sites."""
+    Checks EVERY registry (claude's own, then each native driver's) - see
+    _native_registries' docstring for why the lookup lives here once."""
     _cancelled.add(tid)
     with _sessions_guard:
         s = _sessions.get(tid)
     if s:
         s.cancel()
         return True
-    omp_s, omp_g = _omp_sessions()
-    with omp_g:
-        s = omp_s.get(tid)
-    if s:
-        s.cancel()
-        return True
+    for reg, guard in _native_registries():
+        with guard:
+            s = reg.get(tid)
+        if s:
+            s.cancel()
+            return True
     return False
 
 
@@ -119,9 +134,11 @@ def has_session(tid):
     with _sessions_guard:
         if tid in _sessions:
             return True
-    omp_s, omp_g = _omp_sessions()
-    with omp_g:
-        return tid in omp_s
+    for reg, guard in _native_registries():
+        with guard:
+            if tid in reg:
+                return True
+    return False
 
 
 def turn_active(tid):
@@ -140,9 +157,11 @@ def turn_active(tid):
     with _sessions_guard:
         s = _sessions.get(tid)
     if s is None:
-        omp_s, omp_g = _omp_sessions()
-        with omp_g:
-            s = omp_s.get(tid)
+        for reg, guard in _native_registries():
+            with guard:
+                s = reg.get(tid)
+            if s is not None:
+                break
     if s is None:
         return False
     try:
@@ -276,10 +295,10 @@ def drop_session(tid):
     by session id, so the next steer resumes it. Returns True if a session was
     dropped. Idempotent - a no-op when the card has no live session.
 
-    Checks BOTH registries (see cancel's docstring) - a driver swap FROM omp
-    TO claude (or back) must drop whichever one is actually live, not just
-    claude's."""
-    for registry, guard in ((_sessions, _sessions_guard), _omp_sessions()):
+    Checks EVERY registry (see cancel's docstring) - a driver swap FROM one
+    native engine TO another (or to/from claude) must drop whichever one is
+    actually live, not just claude's."""
+    for registry, guard in ((_sessions, _sessions_guard), *_native_registries()):
         with guard:
             s = registry.get(tid)
             if s is None:
@@ -329,10 +348,33 @@ def run(cfg, t, prompt):
     if kind == "omp":
         # Native OMP driver (docs/multi-engine-build-plan.md Card 8) - its
         # own persistent-session module, same shape as _ClaudeSession but a
-        # different wire protocol (JSONL-RPC, not stream-json). Lazy import:
-        # omp_driver has no reason to load for claude-only boards.
+        # different wire protocol (JSONL-RPC, not stream-json). LIVE-VERIFIED
+        # against a real account. Lazy import: no reason to load for a
+        # claude-only board.
         from daemon.spine.agent import omp_driver
         return omp_driver.run(cfg, t, prompt)
+    if kind == "codex":
+        # Native Codex driver (build plan Card 6) - JSON-RPC over stdio.
+        # NOT LIVE-VERIFIED (owner decree 2026-08-24, "test accounts later")
+        # - protocol-correct-per-Paseo's-source, unproven against the real
+        # binary. See codex_driver.py's own module docstring.
+        from daemon.spine.agent import codex_driver
+        return codex_driver.run(cfg, t, prompt)
+    if kind == "opencode":
+        # Native OpenCode driver, DEDICATED-server mode (build plan Card 7,
+        # analysis §6.6.2) - one private `opencode serve` per card, never
+        # Paseo's shared-by-default pool. NOT LIVE-VERIFIED - see
+        # opencode_driver.py's own module docstring, including which REST
+        # paths are inferred rather than source-confirmed.
+        from daemon.spine.agent import opencode_driver
+        return opencode_driver.run(cfg, t, prompt)
+    if kind == "pi":
+        # Native Pi driver - the deferred half of Card 8 (omp shipped and
+        # is live-verified; pi is not). See pi_driver.py's own module
+        # docstring for exactly what's borrowed from omp's proven structure
+        # vs. genuinely unverified even by relation.
+        from daemon.spine.agent import pi_driver
+        return pi_driver.run(cfg, t, prompt)
     raise RuntimeError("unknown driver type: " + kind)
 
 # THE BRIEFS ARE DATA NOW - harness/agents/*.md, loaded by daemon/harness.py.
