@@ -33,7 +33,7 @@ import hashlib, json, os, re as _re, shutil, subprocess, threading, time as _tim
 import urllib.request
 from daemon.spine.agent.spawnenv import _card_env, _env
 from daemon.spine.agent.proctable import (_pid_table, _descendants, _tree_kill, _read_pids, _write_pids, _record_pid, _forget_pid, _proc_start_epoch, _is_agent_pid, _is_ours, reap_orphans)
-from daemon.spine.agent.agentcli import (_real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
+from daemon.spine.agent.agentcli import (CLAUDE, _real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
 
 _re_bg_done = _re.compile(r"<tool-use-id>(.*?)</tool-use-id>", _re.S)
 
@@ -51,8 +51,9 @@ def _text_of(content):
 from daemon.spine.ops import ask  # the typed question channel taught to every worker (Phase 2.4)
 from daemon.spine.registry import harness  # briefs + settings layers as data (harness/), never raises
 
-CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
-          or r"C:\Program Files\nodejs\claude.cmd")
+# CLAUDE comes from agentcli.py now (the single source - see its module
+# docstring); still a real name in THIS module's namespace via the import
+# above, so `drivers.CLAUDE = ...` monkeypatching in tests is unchanged.
 
 # Persistent Claude sessions by track id - modelled on Paseo's provider/claude
 # agent (see _paseo_src packages/server/.../claude/agent.ts). A card holds ONE
