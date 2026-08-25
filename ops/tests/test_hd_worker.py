@@ -13,6 +13,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -109,6 +110,106 @@ def main():
     d20 = hd._backoff_delay(20, base=2.0, cap=60.0)
     ok(d0 < d5, "backoff grows with more consecutive failures")
     ok(d20 <= 60.0 * 1.0 + 0.01, "backoff never exceeds the cap even after many failures")
+
+    # -- 5: _run_turn_locally parses --output-format json into usage_meta -----
+    print("\n_run_turn_locally: usage_meta parsed from --output-format json")
+    class _FakeCompleted:
+        def __init__(self, returncode, stdout, stderr=""):
+            self.returncode = returncode; self.stdout = stdout; self.stderr = stderr
+    orig_run = hd.subprocess.run
+    good_json = json.dumps({
+        "result": "did the thing", "total_cost_usd": 0.0234,
+        "usage": {"input_tokens": 500, "output_tokens": 200},
+        "modelUsage": {"claude-sonnet-5": {}},
+    })
+    hd.subprocess.run = lambda *a, **kw: _FakeCompleted(0, good_json)
+    try:
+        reply, meta = hd._run_turn_locally("C:/fake/repo", "br", "task", "")
+        ok(reply == "did the thing", "reply text extracted from the JSON result field")
+        ok(meta is not None and meta["cost_usd"] == 0.0234,
+           "cost_usd captured from total_cost_usd")
+        ok(meta["usage"] == {"input_tokens": 500, "output_tokens": 200},
+           "usage dict captured verbatim")
+        ok(meta["models"] == ["claude-sonnet-5"],
+           "models list derived from modelUsage KEYS - same shape drivers.py itself parses")
+    finally:
+        hd.subprocess.run = orig_run
+
+    # a non-JSON / unrecognized stdout must not crash the turn - it just
+    # carries no usage_meta (cost reporting is best-effort, never a blocker).
+    hd.subprocess.run = lambda *a, **kw: _FakeCompleted(0, "not json at all")
+    try:
+        reply, meta = hd._run_turn_locally("C:/fake/repo", "br", "task", "")
+        ok(reply == "not json at all" and meta is None,
+           "unparseable stdout falls back to raw text, usage_meta=None, no crash")
+    finally:
+        hd.subprocess.run = orig_run
+
+    hd.subprocess.run = lambda *a, **kw: _FakeCompleted(1, "", "boom")
+    try:
+        try:
+            hd._run_turn_locally("C:/fake/repo", "br", "task", "")
+            ok(False, "a non-zero claude exit should raise")
+        except RuntimeError:
+            ok(True, "a failed claude turn still raises (unrelated to JSON parsing)")
+    finally:
+        hd.subprocess.run = orig_run
+
+    # -- 6: DeviceRevoked - a 404 on the device's OWN queue stops the worker --
+    print("\nDeviceRevoked: 404 on /devices/<id>/queue is not a transient failure")
+    def fake_api_404(daemon, path, token, method="GET", body=None):
+        raise RuntimeError("HTTP 404 on %s: not found" % path)
+    orig_api = hd._api
+    hd._api = fake_api_404
+    try:
+        try:
+            hd.process_one("http://x", "dev1", "tok", "C:/fake/repo")
+            ok(False, "process_one should raise DeviceRevoked on a 404 queue poll")
+        except hd.DeviceRevoked as e:
+            ok("dev1" in str(e), "DeviceRevoked names the device")
+        except RuntimeError:
+            ok(False, "raised plain RuntimeError instead of the more specific DeviceRevoked")
+    finally:
+        hd._api = orig_api
+
+    # a 5xx/connection error on the SAME call must NOT be mistaken for revoke.
+    def fake_api_500(daemon, path, token, method="GET", body=None):
+        raise RuntimeError("HTTP 502 on %s: bad gateway" % path)
+    hd._api = fake_api_500
+    try:
+        try:
+            hd.process_one("http://x", "dev1", "tok", "C:/fake/repo")
+            ok(False, "should raise")
+        except hd.DeviceRevoked:
+            ok(False, "a transient 5xx must NOT be classified as DeviceRevoked")
+        except RuntimeError:
+            ok(True, "a transient failure stays a plain RuntimeError (retryable)")
+    finally:
+        hd._api = orig_api
+
+    # -- 7: config-file merge (argv wins on overlap) ---------------------------
+    print("\n_resolve_config / _load_config")
+    cfg_path = os.path.join(tempfile.mkdtemp(prefix="hd-worker-cfg-"), "worker.json")
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        json.dump({"daemon": "https://cfg-daemon", "device": "cfg-dev",
+                  "token": "cfg-tok", "repo": "C:/cfg-repo"}, f)
+    loaded = hd._load_config(cfg_path)
+    ok(loaded["daemon"] == "https://cfg-daemon", "_load_config reads the JSON file")
+
+    d, dev, tok, r, missing = hd._resolve_config(None, None, None, None, loaded)
+    ok((d, dev, tok, r) == ("https://cfg-daemon", "cfg-dev", "cfg-tok", "C:/cfg-repo"),
+       "with no argv, every value comes from the config file")
+    ok(missing == [], "nothing missing when the config supplies everything")
+
+    d, dev, tok, r, missing = hd._resolve_config(
+        "https://argv-daemon", None, None, None, loaded)
+    ok(d == "https://argv-daemon" and dev == "cfg-dev",
+       "an explicit argv value WINS over the config file for that field only")
+
+    d, dev, tok, r, missing = hd._resolve_config(None, None, None, None, {})
+    ok(len(missing) == 4, "with neither argv nor config, all 4 required values are missing")
+    ok("--daemon/config daemon" in missing[0] or any("--daemon" in m for m in missing),
+       "missing list names WHICH values are absent, not just that something is")
 
     print("\n%d failure(s)" % len(_fails))
     if _fails:

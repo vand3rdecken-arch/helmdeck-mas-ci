@@ -94,6 +94,15 @@ def devices_submit_post(self, user, body, did):
     bundle_b64 = body.get("bundle_b64")
     if not tid or not bundle_b64:
         return self._send(400, json.dumps({"error": "track and bundle_b64 required"}))
+    # Loosely validated, not trusted: usage_meta only ever feeds
+    # spine.turn.econ._record_econ, which itself tolerates missing/odd
+    # sub-fields (meta.get(...) or {} throughout) - the one thing worth
+    # guarding here is the top-level shape, so a malformed payload from a
+    # buggy/adversarial worker can't crash the submit instead of just
+    # silently recording no economics.
+    usage_meta = body.get("usage_meta")
+    if usage_meta is not None and not isinstance(usage_meta, dict):
+        usage_meta = None
     try:
         raw = base64.b64decode(bundle_b64)
     except Exception:
@@ -106,7 +115,8 @@ def devices_submit_post(self, user, body, did):
         # ITSELF (dispatch.submit_remote_result checks exec_site == this
         # device) - resolve() above already proved `did` belongs to `user`,
         # this additionally proves the CARD belongs to `did`.
-        result = dispatch.submit_remote_result(tid, path, actor=user["name"], device_id=did)
+        result = dispatch.submit_remote_result(tid, path, actor=user["name"],
+                                               device_id=did, usage_meta=usage_meta)
     except RuntimeError as e:
         return self._send(400, json.dumps({"error": str(e)}))
     finally:

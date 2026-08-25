@@ -590,7 +590,7 @@ def reassign_remote_task(tid, to_device_id, actor):
     return cur
 
 
-def submit_remote_result(tid, bundle_path, actor, device_id=None):
+def submit_remote_result(tid, bundle_path, actor, device_id=None, usage_meta=None):
     """A device reports a finished branch: import its bundle into the
     card's repo (spine.git.gitutil._import_bundle - verifies + refuses to
     clobber), materialize the now-existing branch as a real local worktree
@@ -606,7 +606,17 @@ def submit_remote_result(tid, bundle_path, actor, device_id=None):
     successful import must not turn a retry into a hard "already exists"
     error - _import_bundle's refuse-to-clobber is exactly right for a NEW
     branch colliding with unrelated history, but a re-submit of the SAME
-    card's own already-landed branch is not that case."""
+    card's own already-landed branch is not that case. Economics
+    (usage_meta) are folded ONLY on the fresh-landing path below, never on
+    an idempotent retry - the branch already existing means a prior submit
+    already recorded its cost once; recording it again would double-count.
+
+    usage_meta ({"usage", "cost_usd", "models"}, PLAN-hardening.md Phase D):
+    what the worker's own claude call reported. Folded via the SAME
+    spine.turn.econ._record_econ a local card's turn uses, tagged
+    external=True unless the device's own billing_scope is "shared" - see
+    _record_econ's docstring for why that tag matters (plan_calibration
+    would otherwise divide by an account quota this spend never drew on)."""
     from spine.storage import events
     t = _find(_load(), tid)
     if not t:
@@ -626,9 +636,17 @@ def submit_remote_result(tid, bundle_path, actor, device_id=None):
     # 'working' (e.g. the daemon restarted between import and move_lane) -
     # fall through and finish the landing without re-importing.
     wt = _ensure_worktree(t)
+    external = True
+    if usage_meta:
+        from spine.auth import devices as _devices
+        d = _devices.get_device(exec_site[len("local:"):])
+        external = (d or {}).get("billing_scope", "external") != "shared"
     def _land(tt):
         tt["worktree"] = wt
         tt.pop("claimed_at", None)
+        if usage_meta:
+            from spine.turn.econ import _record_econ
+            _record_econ(tt, usage_meta, external=external)
     t = _mutate(tid, _land) or t
     events.emit("remote_device", tid, action="submitted", actor=actor)
     return move_lane(tid, "review", actor=actor)

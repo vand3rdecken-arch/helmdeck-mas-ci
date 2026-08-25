@@ -158,23 +158,68 @@ device is refused.
 
 ## Phase D - packaging + real driver reuse  [polish, lowest priority]
 
-**The holes.** hd_worker.py shells out to `claude -p` directly instead of
-reusing spine/agent/drivers.py's turn machinery (so a device turn gets no
-usage/cost tracking and streams no transcript back to the board), and there
-is no install/autostart story - it's a bare script run by hand.
-
-**The fix (only if the feature sees real daily use - gate this phase on
-that).**
-1. The member's machine already has the repo (it's the clone the worker
-   runs in), so the worker CAN `import spine.agent.drivers`. Extract the
-   pure spawn-argv + stream-parse core of a turn into something callable
-   without daemon-side trackstore/run_dir state, and have the worker use it
-   - then a device turn reports the same usage/cost a local card does, and
-   can stream its transcript back over the queue channel for the board to
-   show live.
-2. An install story: a small `pip`-installable entry point or a packaged
-   launcher + an autostart registration (Windows scheduled task / service),
-   with the daemon URL + device token from a config file instead of argv.
+> **PARTIALLY SHIPPED 2026-08-25** (owner: "mache auch d"). What actually
+> got built differs from the original sketch below, for a real reason
+> found while implementing it - noted here rather than silently swapped.
+>
+> **Usage/cost capture: DONE, but NOT via extracting drivers.py's core.**
+> `_ClaudeSession` (spine/agent/drivers.py) turned out to be ~700 lines,
+> tightly coupled to daemon-side trackstore/run_dir/session-resumption
+> state - extracting a "pure" piece would have been a real refactor of the
+> crown-jewel turn engine, not a small lift. Found instead:
+> `spine/turn/econ.py`'s `_record_econ(t, meta)` is ALREADY a small,
+> self-contained function separate from `_ClaudeSession` - it takes a
+> track dict + a `{"usage","cost_usd","models"}` meta dict and folds
+> spend/tokens/the turn event, nothing else. hd_worker.py's
+> `_run_turn_locally` now calls `claude -p --output-format json` (was
+> plain text) and parses the SAME fields drivers.py itself parses off a
+> local card's result event (`total_cost_usd`, `usage`, `modelUsage`'s
+> keys - drivers.py:1194's exact shape), submits them as `usage_meta`,
+> and `dispatch.submit_remote_result` folds them via the REAL
+> `_record_econ` - genuine code reuse of the actual economics function,
+> not a duplicate implementation.
+>
+> **billing_scope enforced, not just recorded.** `_record_econ` gained an
+> `external` parameter; when true, the emitted `turn` event is tagged
+> `external=True`. `events.plan_calibration` (measured, real bug found
+> during this work): it divides tokens burned in the weekly window by the
+> DAEMON's OWN Claude-account usage percentage - an external device's
+> tokens never drew on that quota, so including them would have silently
+> inflated `tokens_per_pct` for every card sharing the real account.
+> Fixed to exclude `external=True` turns from that one calculation. Per-
+> card cost/token display is UNCHANGED (still shows real spend regardless
+> of whose subscription paid) - only the shared-account calibration
+> excludes it. Pinned in `ops/tests/test_device_billing_scope.py`.
+>
+> **Revoke-signals-worker: DONE, cheaply.** No new push channel was built
+> (the worker already polls every ~20s) - `hd_worker.py` now distinguishes
+> a 404 on ITS OWN `/devices/<id>/queue` as `DeviceRevoked` (a device
+> the daemon no longer recognizes) and exits with code 2 instead of
+> retrying forever under the Phase-B transient-failure backoff. A human
+> still has to re-register the device to bring it back - this closes "the
+> worker never notices," not "the worker keeps itself running."
+>
+> **Config file: DONE (the lighter alternative named in the original
+> sketch), full packaging NOT done.** `--config <path>` (JSON:
+> daemon/device/token/repo) - argv still wins per-field if both are given.
+> Real reason beyond convenience: a device token on the command line sits
+> in shell history and the OS process list for anything else on the box to
+> read; a config file does not. No pip entry point, no Windows Scheduled
+> Task/service registration - still a script you run by hand (or point
+> your OWN scheduler at, now more easily via `--config`).
+>
+> **NOT done, unchanged from the original plan:** live transcript
+> streaming mid-turn (needs the relay long-poll shape, a genuinely bigger
+> lift, see below), board-UI surfacing of stuck/reassignable device cards
+> (the API from Phase C works; no `surfaces/app` screen renders it).
+>
+> Pinned: `ops/tests/test_hd_worker.py` grew to 25 assertions (JSON
+> parsing, DeviceRevoked classification, config/argv merge). New
+> `ops/tests/test_device_billing_scope.py` (7 assertions) proves the
+> plan_calibration exclusion with real before/after token sums, not just a
+> unit check of the tag. `ops/tests/test_remote_device.py` grew to 61
+> (usage_meta folds through the real path end to end, tagged correctly by
+> billing_scope, a missing usage_meta still lands the card cleanly).
 
 **Test.** A device turn's usage/cost lands on the card's turn events like a
 local card's; the packaged entry point starts and claims one task.
@@ -185,6 +230,13 @@ local card's; the packaged entry point starts and claims one task.
 - Streaming a device turn's LIVE transcript to the board mid-turn is folded
   into Phase D, not a separate promise - the queue channel is request/reply
   today; live streaming would need the relay long-poll shape, a bigger lift.
+  STILL NOT DONE after the 2026-08-25 Phase D round above.
 - Bundle size caps / large-binary handling (the debt entry's last bullet)
   stays a separate follow-up - it's a transport concern, orthogonal to the
   reliability work above.
+- A packaged install/autostart registration (pip entry point, Windows
+  Scheduled Task/service) - the config-file piece above is the smaller,
+  shipped alternative; the full packaging story is still open.
+- Board UI surfacing of a stuck/reassignable device card - a frontend task
+  (surfaces/app), out of scope for this backend-only round; the API
+  (POST /devices/reassign, GET /devices/mine) it would call already works.
