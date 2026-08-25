@@ -128,22 +128,36 @@ DEBT = [
                 "Henry to --permission-mode plan (no edits possible) for any "
                 "card a `client`-role account filed, with a defense-in-depth "
                 "refusal if 'did' comes back anyway - pinned in ops/tests/"
-                "test_henry_privilege_gate.py. Still OPEN for owner/operator- "
-                "dispatched cards and card-less escalations (box load, deploy "
-                "hooks) - the general no-worktree/no-gate exposure below is "
-                "unchanged for those.",
-        "why_it_bites": "A wrong Henry fix lands unreviewed on the live tree - "
-                        "the same exposure the card rails exist to prevent, now "
-                        "on the one agent that fires unattended every 90s. "
-                        "(As of the narrowing above, this only applies to "
-                        "owner/operator-originated escalations - a client's "
-                        "card can no longer be the trigger.)",
-        "trigger": "any escalation on an owner/operator-dispatched (or "
-                   "card-less) situation that Henry decides to fix himself",
-        "fix": "Bound his hands the way direct cards are bound: run his acting "
-               "turns through the direct-task queue (per-tree serialization), "
-               "auto-commit a labelled baseline before he edits, and surface "
-               "his 'did' diffs in the History view for after-the-fact review.",
+                "test_henry_privilege_gate.py. BOUNDED FURTHER 2026-08-25 "
+                "(owner: 'ich sehe 1+2 [lock+baseline] und dann erstmal "
+                "erledigt'): the privileged path now goes through "
+                "_hands_on_ask, which (1) serializes against a direct/"
+                "machine card on the SAME repo via the existing "
+                "spine.git.locks._direct_lock_for (same primitive/bounded-"
+                "wait as turnrunner.py's DIRECT handling - Henry and a "
+                "direct card on this repo now queue instead of racing "
+                "blind over each other) and (2) auto-commits a labelled "
+                "baseline (_baseline_commit, no-ops on a clean tree) BEFORE "
+                "Henry's hands touch anything, so a wrong fix always has a "
+                "clean rollback point. Both pinned in ops/tests/"
+                "test_henry_privilege_gate.py (lock contention + baseline "
+                "commit/no-op behavior, real git). Still OPEN, scope "
+                "narrowed to exactly one item: Henry's 'did' diffs are not "
+                "surfaced in the History view - an owner can still only "
+                "find out what changed by reading the audit note text or "
+                "running git log/diff by hand outside the app.",
+        "why_it_bites": "Without diff visibility, reviewing what an "
+                        "unattended 'did' fix actually changed means "
+                        "leaving the app - the History view (built for "
+                        "exactly this after-the-fact review) shows the "
+                        "audit note text but not the diff itself.",
+        "trigger": "an owner wanting to review what Henry's last 'did' "
+                   "actually touched",
+        "fix": "Capture git diff <baseline>..HEAD (or the working-tree diff "
+               "if _baseline_commit had nothing to snapshot) right after a "
+               "'did' turn, in _decide/_execute, and surface it as a real "
+               "field the History view can render - not just the free-text "
+               "audit note _audit() already writes.",
         "order": -1,
     },
     {

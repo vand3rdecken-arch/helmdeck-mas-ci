@@ -69,6 +69,22 @@ def main():
     ok(hb._dispatcher_privileged({}) is True, "card dict with no dispatched_by key -> privileged")
 
     # -- 2 + 3: _decide wiring, via a fake _ask/_execute ----------------------
+    # _HENRY_REPO_ROOT patched to a throwaway git repo for the rest of this
+    # test - _hands_on_ask (the privileged path) runs REAL git commands
+    # (_baseline_commit) against it, and must never touch the actual live
+    # HelmDeck checkout this test process happens to be running inside of.
+    import subprocess
+    henry_repo = os.path.join(tmp, "henry-repo")
+    os.makedirs(henry_repo)
+    subprocess.run(["git", "-C", henry_repo, "init", "-q"])
+    subprocess.run(["git", "-C", henry_repo, "config", "user.email", "t@t.t"])
+    subprocess.run(["git", "-C", henry_repo, "config", "user.name", "T"])
+    open(os.path.join(henry_repo, "a.txt"), "w").write("base\n")
+    subprocess.run(["git", "-C", henry_repo, "add", "-A"])
+    subprocess.run(["git", "-C", henry_repo, "commit", "-qm", "base"])
+    orig_repo_root = hb._HENRY_REPO_ROOT
+    hb._HENRY_REPO_ROOT = henry_repo
+
     print("\n_decide: perm override + did-refusal for an unprivileged escalation")
     db.track_put({"id": "c-client", "repo": "/x", "branch": "b", "worktree": "/x",
                   "lane": "review", "status": "submitted", "task": "client card",
@@ -120,6 +136,55 @@ def main():
     finally:
         hb._ask = orig_ask
         hb._execute = orig_execute
+
+    # -- 5: _baseline_commit -------------------------------------------------
+    print("\n_baseline_commit")
+    log_before = subprocess.run(["git", "-C", henry_repo, "log", "--oneline"],
+                                capture_output=True, text=True).stdout
+    hb._baseline_commit()
+    log_after = subprocess.run(["git", "-C", henry_repo, "log", "--oneline"],
+                               capture_output=True, text=True).stdout
+    ok(log_after == log_before, "a CLEAN tree gets no baseline commit (nothing to snapshot)")
+
+    open(os.path.join(henry_repo, "dirty.txt"), "w").write("uncommitted work\n")
+    hb._baseline_commit()
+    log2 = subprocess.run(["git", "-C", henry_repo, "log", "--oneline"],
+                          capture_output=True, text=True).stdout
+    ok(log2 != log_after and "Henry baseline" in log2,
+       "a DIRTY tree gets a real baseline commit before Henry's hands touch it")
+    status = subprocess.run(["git", "-C", henry_repo, "status", "--porcelain"],
+                            capture_output=True, text=True).stdout
+    ok(status.strip() == "", "the tree is clean again after the baseline commit")
+
+    # -- 6: _hands_on_ask - lock + baseline wrap the privileged path ---------
+    print("\n_hands_on_ask")
+    open(os.path.join(henry_repo, "dirty2.txt"), "w").write("more uncommitted work\n")
+    hb._ask = lambda prompt, model="", perm=None: {"perm_seen": perm}
+    try:
+        result = hb._hands_on_ask("a judgement prompt")
+        ok(result == {"perm_seen": None}, "calls the real _ask with perm=None")
+        status = subprocess.run(["git", "-C", henry_repo, "status", "--porcelain"],
+                                capture_output=True, text=True).stdout
+        ok(status.strip() == "", "the dirty file got baseline-committed before _ask ran")
+    finally:
+        hb._ask = orig_ask
+
+    # a lock already held by someone else -> _hands_on_ask refuses promptly
+    # rather than blocking the whole 90s judgement cycle indefinitely.
+    from spine.git import locks as _locks
+    busy_lock = _locks._direct_lock_for(henry_repo)
+    ok(busy_lock.acquire(blocking=False), "test can grab the lock first")
+    try:
+        try:
+            hb._hands_on_ask("prompt", timeout=0.2)   # short: this is a same-thread hold,
+                                                        # nothing will ever release it
+            ok(False, "_hands_on_ask must raise when the tree's lock is already held")
+        except RuntimeError as e:
+            ok("busy" in str(e), "raises a clear 'tree busy' error instead of hanging")
+    finally:
+        busy_lock.release()
+
+    hb._HENRY_REPO_ROOT = orig_repo_root
 
     print("\n%d failure(s)" % len(_fails))
     if _fails:

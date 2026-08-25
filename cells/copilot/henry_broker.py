@@ -25,6 +25,15 @@ import time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 from spine.registry import escalations
+from spine.git.locks import _direct_lock_for
+
+# The fixed cwd every hands-on Henry turn runs in (_ask's cwd - the repo
+# root, one level up from DAEMON_ROOT). ONE path, so the lock below is the
+# SAME object a direct-build card on this exact repo would also contend for
+# (spine.git.locks._direct_lock_for is keyed by normalized path) - Henry and
+# a direct card editing the live tree at the same moment now queue against
+# each other instead of racing.
+_HENRY_REPO_ROOT = os.path.dirname(ROOT)
 
 _MAX_ATTEMPTS = 2
 _INTERVAL_S = 90
@@ -109,7 +118,7 @@ def _ask(prompt, model="", perm=None):
             "--permission-mode", perm or copilot.henry_pmode()]
     if model:
         argv += ["--model", model]
-    p = subprocess.Popen(drivers._cmd_line(argv), cwd=os.path.dirname(ROOT),
+    p = subprocess.Popen(drivers._cmd_line(argv), cwd=_HENRY_REPO_ROOT,
                          stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace")
@@ -127,6 +136,49 @@ def _ask(prompt, model="", perm=None):
     if not m:
         raise RuntimeError("henry: no JSON in reply: " + txt.strip()[:150])
     return json.loads(m.group(0))
+
+
+def _baseline_commit():
+    """Snapshot the repo BEFORE Henry's hands touch it, so a wrong 'did' has
+    a clean rollback point (debt henry-direct-hands: "no snapshot to roll
+    back to unless the agent commits first" - a direct-build card has the
+    same gap, unfixed; this closes it for Henry specifically). No-ops when
+    the tree is already clean - never an empty commit, never masks whose
+    change something was by committing on the owner's behalf when there is
+    nothing new to snapshot."""
+    from spine.git.gitutil import _git, _git_try, AGENT_IDENT
+    try:
+        dirty = _git(_HENRY_REPO_ROOT, "status", "--porcelain")
+    except Exception:
+        return   # not a git checkout or git unavailable - nothing to baseline
+    if not dirty:
+        return
+    _git_try(_HENRY_REPO_ROOT, *AGENT_IDENT, "add", "-A")
+    _git_try(_HENRY_REPO_ROOT, *AGENT_IDENT, "commit", "-m",
+            "Henry baseline - snapshot before hands-on judgement turn")
+
+
+def _hands_on_ask(prompt, timeout=60):
+    """_ask(), but for the PRIVILEGED (real hands) path only: serialize
+    against any other turn editing this same live tree (the direct-build
+    lock, spine.git.locks._direct_lock_for - same primitive, same bounded-
+    wait semantics as turnrunner.py's DIRECT card handling, so Henry and a
+    direct card on this exact repo now queue instead of racing), and commit
+    a baseline first. Bounded wait, not indefinite: a stuck lock must not
+    silently swallow every future escalation attempt - it bounces this
+    round, same as a direct card that gives up and retries later. `timeout`
+    is a param (not hardcoded) purely so a test can prove the busy-lock path
+    without a real 60s wait - _decide never overrides it."""
+    lock = _direct_lock_for(_HENRY_REPO_ROOT)
+    if not lock.acquire(timeout=timeout):
+        raise RuntimeError(
+            "henry: repo tree busy (a direct/machine card is editing it) - "
+            "waited %ss, giving up this round" % timeout)
+    try:
+        _baseline_commit()
+        return _ask(prompt, perm=None)
+    finally:
+        lock.release()
 
 
 def _snapshot():
@@ -287,7 +339,7 @@ def _decide(esc):
             "action \"did\" ist nicht verfuegbar; nutze steer/notify_owner/"
             "ignore.")
     try:
-        d = _ask(prompt, perm=("plan" if not privileged else None))
+        d = _ask(prompt, perm="plan") if not privileged else _hands_on_ask(prompt)
     except Exception as e:
         escalations.record_note(esc["id"], "ask failed: %s" % str(e)[:200])
         return False
