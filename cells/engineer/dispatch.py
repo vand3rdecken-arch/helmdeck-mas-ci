@@ -407,6 +407,82 @@ def _start_machine(t):
     return t
 
 
+# -- REMOTE DEVICE tasks: a team member's own PC executes, the gate stays here
+# (ops/docs/backlog/remote-device-execution). A device card is a NORMAL
+# worktree/branch card in every respect that matters to lanemachine.py - it
+# is filed with new_track exactly like a local card, and it is NEVER marked
+# machine/direct/fast_track. That is the one hard constraint the whole
+# feature rests on: those three flags are owner-only convenience paths that
+# bypass _gate/_merge_to_main by design (each is its own registered debt);
+# extending any of them to a team member's device would hand out an
+# unreviewed path to main. A device card differs from a local card in
+# exactly one way - who runs the turn - and the turn is not run here at all;
+# claim_remote_task/submit_remote_result bracket the part a local card does
+# inside _turn, with the device doing the work in between.
+
+def new_remote_task(repo, branch, task, device_id, actor, priority="medium",
+                    description="", value=None, model=""):
+    """File a card for a REGISTERED DEVICE to execute. Stays in `backlog`
+    (never dispatch=True/_start_inner - there is no local worktree to open a
+    session in yet) with exec_site recording which device owns it. The
+    device claims it via claim_remote_task when it next polls."""
+    from spine.storage import events
+    t = new_track(repo, branch, task, lane="backlog", actor=actor,
+                  priority=priority, description=description, driver="claude",
+                  value=value, model=model)
+    def _mark(tt):
+        tt["exec_site"] = "local:" + device_id
+    cur = _mutate(t["id"], _mark) or t
+    from spine.ops.actionlog import ActionLog
+    ActionLog(cur["run_dir"]).log(
+        "note", "filed for remote device %s (by %s)" % (device_id, actor))
+    events.emit("remote_device", cur["id"], action="filed", device=device_id, actor=actor)
+    return cur
+
+
+def claim_remote_task(device_id):
+    """The oldest backlog card filed for this device, or None. Marks it
+    'working'/'running' WITHOUT touching _start_inner - there is no local
+    worktree to create; the device is now the one doing the work, and the
+    card's worktree field stays empty until submit_remote_result imports it."""
+    from spine.storage import events
+    candidates = [t for t in _load()
+                 if t.get("exec_site") == "local:" + device_id and t.get("lane") == "backlog"]
+    if not candidates:
+        return None
+    t = min(candidates, key=lambda t: t.get("id", ""))
+    def _claim(tt):
+        tt["lane"] = "working"; tt["status"] = "running"
+    cur = _mutate(t["id"], _claim) or t
+    events.emit("lane", cur["id"], frm="backlog", to="working")
+    events.emit("remote_device", cur["id"], action="claimed", device=device_id)
+    return cur
+
+
+def submit_remote_result(tid, bundle_path, actor):
+    """A device reports a finished branch: import its bundle into the
+    card's repo (spine.git.gitutil._import_bundle - verifies + refuses to
+    clobber), materialize the now-existing branch as a real local worktree
+    via the SAME _ensure_worktree every local card uses, then hand off to
+    move_lane('review') UNMODIFIED - from here the card is gated exactly
+    like one that was worked locally: _gate runs, GxP's accept_block_reason
+    still applies at 'done', nothing about the merge path changes."""
+    from spine.git.gitutil import _import_bundle
+    from spine.storage import events
+    t = _find(_load(), tid)
+    if not t:
+        raise RuntimeError("no such card: %s" % tid)
+    if not t.get("exec_site", "").startswith("local:"):
+        raise RuntimeError("card %s was not filed for remote device execution" % tid)
+    _import_bundle(t["repo"], bundle_path, t["branch"])
+    wt = _ensure_worktree(t)
+    def _land(tt):
+        tt["worktree"] = wt
+    t = _mutate(tid, _land) or t
+    events.emit("remote_device", tid, action="submitted", actor=actor)
+    return move_lane(tid, "review", actor=actor)
+
+
 # -- the card's RESULT, persisted at accept -----------------------------------
 # The snapshot only surfaced last_reply while a card was needs_you; once
 # accepted, its result text vanished from the PM's view - so an owner decision

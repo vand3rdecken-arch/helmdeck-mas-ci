@@ -72,6 +72,7 @@ from cells.engineer import routes_track_actions
 from spine.http.routes import routes_runs
 from spine.http.routes import routes_system
 from spine.http.routes import routes_cells
+from spine.http.routes import routes_devices
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -257,6 +258,10 @@ class H(BaseHTTPRequestHandler):
                 return routes_track_actions.tracks_stream_get(self, user, tid)
             if p in routes_system.GET_ROUTES:
                 return routes_system.GET_ROUTES[p](self, user)
+            if p in routes_devices.GET_ROUTES:
+                return routes_devices.GET_ROUTES[p](self, user)
+            if len(parts) == 3 and parts[0] == "devices" and parts[2] == "queue":
+                return routes_devices.devices_queue_get(self, user, parts[1])
             if p in routes_info.GET_ROUTES:
                 return routes_info.GET_ROUTES[p](self, user)
             if p in routes_pm.GET_ROUTES:
@@ -387,7 +392,13 @@ class H(BaseHTTPRequestHandler):
                 return routes_sign.sign_batch_post(self, user, body)
             if p in routes_pm.POST_ROUTES:
                 return routes_pm.POST_ROUTES[p](self, user, body)
+            if p in routes_devices.POST_ROUTES:
+                return routes_devices.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
+            if len(parts) == 3 and parts[0] == "devices" and parts[2] == "revoke":
+                return routes_devices.devices_revoke_post(self, user, body, parts[1])
+            if len(parts) == 3 and parts[0] == "devices" and parts[2] == "submit":
+                return routes_devices.devices_submit_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "checkpoints" and parts[2] == "restore":
                 return routes_checkpoints.checkpoints_restore_post(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "rollback":

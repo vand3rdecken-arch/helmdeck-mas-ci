@@ -46,6 +46,33 @@ def _branch_exists(repo, branch):
     return r.returncode == 0
 
 
+def _import_bundle(repo, bundle_path, branch):
+    """Import a git bundle's <branch> ref into `repo` as a local branch - how
+    a remote device's finished work re-enters the central checkout (ops/docs/
+    backlog/remote-device-execution). Two safety properties, both mandatory
+    given the upload comes from a machine outside HelmDeck's own worktree
+    isolation:
+      - VERIFY before touching the repo (`git bundle verify`) - a corrupt or
+        adversarial upload fails loudly here, not mid-fetch.
+      - REFUSE to clobber an existing branch of the same name - a device
+        must never silently overwrite history already in the central repo.
+        The caller passes a fresh, per-card branch name (dispatch.py already
+        guarantees uniqueness for every card), so a collision here means
+        something is wrong, not that a retry should just overwrite.
+    After this call, `branch` exists in `repo` exactly as if a normal
+    worktree card had created it there directly - dispatch.py's
+    _ensure_worktree (unmodified) can `git worktree add` from it, and
+    everything downstream (gate/merge/GxP) treats it identically to a local
+    card's branch."""
+    code, out, err = _git_try(repo, "bundle", "verify", bundle_path)
+    if code != 0:
+        raise RuntimeError("bundle failed verification: %s" % (err or out))
+    if _branch_exists(repo, branch):
+        raise RuntimeError("branch %r already exists in %r - refusing to "
+                           "overwrite" % (branch, repo))
+    _git(repo, "fetch", bundle_path, "%s:%s" % (branch, branch))
+
+
 def is_git_repo(path):
     """Intake check: dispatch needs `git worktree add`, so a non-repo path must
     be rejected when the card is filed, not discovered mid-dispatch."""
