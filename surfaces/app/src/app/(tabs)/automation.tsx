@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, type TextStyle, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, type TextStyle, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -12,6 +12,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { HarnessSection } from "@/ui/harness_section";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Btn, Caption, ChipPick, fieldStyle, FormGrid, Toggle } from "@/ui/settings_sections";
+import { useResponsive } from "@/ui/responsive";
 
 // One declarative knob from the daemon's config_schema ("policy is data"): the app
 // renders it generically and writes it back, so a new knob is one daemon entry, not
@@ -103,8 +104,7 @@ export default function Automation() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
-  const { width } = useWindowDimensions();
-  const wide = Platform.OS === "web" && width >= 900;
+  const { wide } = useResponsive();
   const field = fieldStyle(t);
   // staleTime: this screen is a FORM. Without it react-query treats the data as
   // immediately stale and refetches on every remount/focus, which is exactly the

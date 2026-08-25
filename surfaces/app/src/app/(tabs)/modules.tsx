@@ -16,12 +16,14 @@ import { useTheme } from "@/theme";
 import { KEYS, type Engine, type PolicySet, type CharterDoc } from "@/kernel";
 import { useKernelOptional, useSurfaces, useJournal } from "@/kernel/react";
 import { CellDiagram } from "@/ui/cell_diagram";
+import { useResponsive } from "@/ui/responsive";
 
 type PolicyDoc = { version?: number; policies?: PolicySet; charter?: CharterDoc };
 
 export default function ModulesTab() {
   const t = useTheme();
   const tr = useT();
+  const { wide } = useResponsive();
   const kernel = useKernelOptional();
   const surfaces = useSurfaces();
   const journal = useJournal();
@@ -91,7 +93,8 @@ export default function ModulesTab() {
   );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: t.canvas }} contentContainerStyle={{ padding: 18, paddingBottom: 60 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: t.canvas }}
+      contentContainerStyle={{ padding: 18, paddingBottom: 60, width: "100%", maxWidth: wide ? 720 : undefined, alignSelf: "center" }}>
       <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{tr("modules.title")}</Text>
       <Text style={{ color: t.txtSecondary, fontSize: 13, marginTop: 4, marginBottom: 20 }}>
         {tr("modules.sub")}

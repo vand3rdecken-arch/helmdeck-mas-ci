@@ -106,7 +106,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
         </Pressable>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 10 }}>
-        <Text style={{ fontFamily: MONO, fontSize: 12, color: t.txtPrimary, lineHeight: 18 }}>{nodes}</Text>
+        <Text selectable style={{ fontFamily: MONO, fontSize: 12, color: t.txtPrimary, lineHeight: 18 }}>{nodes}</Text>
       </ScrollView>
     </View>
   );
@@ -141,7 +141,7 @@ export function Markdown({ children }: { children: string }) {
     if (h) {
       const lvl = Math.min(h[1].length, 6);
       const size = [0, 19, 17, 15.5, 14.5, 14, 13.5][lvl];
-      blocks.push(<Text key={key()} style={{ color: t.txtPrimary, fontSize: size, fontWeight: "700", marginTop: 6, marginBottom: 2 }}>{inline(h[2], key(), t)}</Text>);
+      blocks.push(<Text key={key()} selectable style={{ color: t.txtPrimary, fontSize: size, fontWeight: "700", marginTop: 6, marginBottom: 2 }}>{inline(h[2], key(), t)}</Text>);
       i++; continue;
     }
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
@@ -152,7 +152,7 @@ export function Markdown({ children }: { children: string }) {
       while (i < lines.length && /^\s*>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
       blocks.push(
         <View key={key()} style={{ borderLeftWidth: 3, borderLeftColor: t.borderStrong, paddingLeft: 10, marginVertical: 4 }}>
-          <Text style={{ ...p, color: t.txtSecondary, fontStyle: "italic" }}>{inline(buf.join(" "), key(), t)}</Text>
+          <Text selectable style={{ ...p, color: t.txtSecondary, fontStyle: "italic" }}>{inline(buf.join(" "), key(), t)}</Text>
         </View>); continue;
     }
     // GFM table
@@ -164,11 +164,11 @@ export function Markdown({ children }: { children: string }) {
       blocks.push(
         <View key={key()} style={{ borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 6, marginVertical: 4, overflow: "hidden" }}>
           <View style={{ flexDirection: "row", backgroundColor: t.surface2 }}>
-            {head.map((c, j) => <Text key={j} style={{ flex: 1, padding: 6, color: t.txtSecondary, fontSize: 12.5, fontWeight: "700" }}>{c}</Text>)}
+            {head.map((c, j) => <Text key={j} selectable style={{ flex: 1, padding: 6, color: t.txtSecondary, fontSize: 12.5, fontWeight: "700" }}>{c}</Text>)}
           </View>
           {rows.map((r, ri) => (
             <View key={ri} style={{ flexDirection: "row", borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
-              {head.map((_, j) => <Text key={j} style={{ flex: 1, padding: 6, color: t.txtPrimary, fontSize: 12.5 }}>{inline(r[j] ?? "", key(), t)}</Text>)}
+              {head.map((_, j) => <Text key={j} selectable style={{ flex: 1, padding: 6, color: t.txtPrimary, fontSize: 12.5 }}>{inline(r[j] ?? "", key(), t)}</Text>)}
             </View>
           ))}
         </View>); continue;
@@ -187,7 +187,7 @@ export function Markdown({ children }: { children: string }) {
               <Ionicons name={task[1].toLowerCase() === "x" ? "checkbox" : "square-outline"} size={14}
                 color={task[1].toLowerCase() === "x" ? t.ok : t.txtTertiary} style={{ marginRight: 6, marginTop: 3 }} />
             ) : <Text style={{ color: t.txtTertiary, marginRight: 6, fontSize: 14 }}>{bullet}</Text>}
-            <Text style={{ ...p, flex: 1 }}>{inline(task ? task[2] : it.text, key(), t)}</Text>
+            <Text selectable style={{ ...p, flex: 1 }}>{inline(task ? task[2] : it.text, key(), t)}</Text>
           </View>);
       });
       i = next; continue;
@@ -199,7 +199,7 @@ export function Markdown({ children }: { children: string }) {
     }
     const k = key();
     blocks.push(
-      <Text key={k} style={{ ...p, marginVertical: 2 }}>
+      <Text key={k} selectable style={{ ...p, marginVertical: 2 }}>
         {buf.map((ln, j) => <React.Fragment key={k + "l" + j}>{j > 0 ? "\n" : null}{inline(ln, k + "l" + j, t)}</React.Fragment>)}
       </Text>);
   }

@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Keyboard, Platform, Pressable,
-  ScrollView, Text, TextInput, useWindowDimensions, View,
+  ActivityIndicator, Alert, Keyboard, Pressable,
+  ScrollView, Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -24,9 +24,9 @@ import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { SignOff } from "@/ui/sign_off";
 import { useActionSheet } from "@/ui/action_sheet";
+import { isWeb, useResponsive } from "@/ui/responsive";
 
 type Tab = "overview" | "chat";
-const isWeb = Platform.OS === "web";
 
 interface Turn { ts?: string; cost?: number; models?: string[];
   usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
@@ -106,7 +106,7 @@ function DescriptionField({ value, onSave }: { value: string; onSave: (v: string
         if (!s) return <View key={i} style={{ height: 8 }} />;
         if (isHead(line)) {
           return (
-            <Text key={i} style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700",
+            <Text key={i} selectable style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700",
               letterSpacing: 0.6, marginTop: i ? 6 : 0 }}>{s}</Text>
           );
         }
@@ -114,11 +114,11 @@ function DescriptionField({ value, onSave }: { value: string; onSave: (v: string
           return (
             <View key={i} style={{ flexDirection: "row", gap: 6 }}>
               <Text style={{ color: t.txtTertiary, fontSize: 14, lineHeight: 20 }}>•</Text>
-              <Text style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, flex: 1 }}>{s.slice(2)}</Text>
+              <Text selectable style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, flex: 1 }}>{s.slice(2)}</Text>
             </View>
           );
         }
-        return <Text key={i} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }}>{s}</Text>;
+        return <Text key={i} selectable style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }}>{s}</Text>;
       })}
     </Pressable>
   );
@@ -549,8 +549,7 @@ export default function CardScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   // A push about a message (question/needs_you/bounced) deep-links here with
   // ?tab=chat so the owner lands where the news actually is, not the overview
   // tab he'd have to click past every time.

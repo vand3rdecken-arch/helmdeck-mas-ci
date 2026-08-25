@@ -8,6 +8,7 @@ import { api } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Empty, ScreenHeader } from "@/ui/kit";
+import { useResponsive } from "@/ui/responsive";
 
 // Henry's escalation log (dual architecture): what the harness reported,
 // what Henry decided, what still waits. Read-only - decisions happen in the
@@ -23,11 +24,13 @@ export default function EscalationsScreen() {
   // into odd shapes - never trust the wire to be an array (the models-picker
   // crash class: rendering a non-array took the whole app black).
   const rows = Array.isArray(data) ? data : [];
+  const { wide } = useResponsive();
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <ScreenHeader title={tr("nav.escalations")} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: insets.bottom + 24 }}>
+      <ScrollView contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: insets.bottom + 24,
+        width: "100%", maxWidth: wide ? 720 : undefined, alignSelf: "center" }}>
         <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("esc.sub")}</Text>
         {rows.length === 0 ? (
           <Empty text={tr("esc.empty")} />
@@ -46,7 +49,7 @@ export default function EscalationsScreen() {
               <Text style={{ color: t.txtSecondary, fontSize: 11.5 }}>{e.card}</Text>
             ) : null}
             {e.detail ? (
-              <Text style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={3}>
+              <Text selectable style={{ color: t.txtTertiary, fontSize: 11.5 }} numberOfLines={3}>
                 {e.detail}
               </Text>
             ) : null}

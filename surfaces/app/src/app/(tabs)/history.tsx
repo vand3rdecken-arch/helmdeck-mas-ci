@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, useWindowDimensions, View,
+  ActivityIndicator, Alert, Pressable, ScrollView, Text, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,8 +13,7 @@ import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Empty, ScreenHeader } from "@/ui/kit";
 import { HistoryGraph, type Hist } from "@/ui/history_graph";
-
-const isWeb = Platform.OS === "web";
+import { isWeb, useResponsive } from "@/ui/responsive";
 
 interface Checkpoint { id: string; actor: string; reason: string; ts: string }
 interface CpField { key: string; before: unknown; after: unknown }
@@ -151,8 +150,7 @@ export default function History() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
 
   const qc = useQueryClient();
   const hist = useQuery({ queryKey: ["history"], queryFn: () => api.get<Hist>("/history") });

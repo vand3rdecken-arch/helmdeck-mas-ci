@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet,
-  Text, useWindowDimensions, View,
+  Text, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,8 +13,7 @@ import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Empty, Panel, ScreenHeader } from "@/ui/kit";
-
-const isWeb = Platform.OS === "web";
+import { isWeb, useResponsive } from "@/ui/responsive";
 
 interface ClaudeSession {
   id: string; cwd: string; project: string; first: string; last_active?: string;
@@ -43,10 +42,10 @@ function SessionRow({ sv, onAdopt, onFork, busy }: {
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600" }}>{sv.project || tr("sessions.session")}</Text>
         {sv.last_active ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{sv.last_active}</Text> : null}
-        <Text style={{ color: t.txtTertiary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{sv.id.slice(0, 8)}</Text>
+        <Text selectable style={{ color: t.txtTertiary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{sv.id.slice(0, 8)}</Text>
       </View>
       <Text style={{ color: t.txtSecondary, fontSize: 12 }} numberOfLines={2}>{sv.first || tr("sessions.noText")}</Text>
-      <Text style={{ color: t.txtTertiary, fontSize: 10.5 }} numberOfLines={1}>{sv.cwd}</Text>
+      <Text selectable style={{ color: t.txtTertiary, fontSize: 10.5 }} numberOfLines={1}>{sv.cwd}</Text>
       {sv.card ? (
         // Already bound to a card - "continue" would only bounce with "session
         // already on the board" (one session, one owning card). The logical
@@ -79,8 +78,7 @@ export default function Sessions() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   const { data, isLoading, error } = useQuery({ queryKey: ["sessions"], queryFn: api.claudeSessions });
   const [busy, setBusy] = useState("");
   // Alert.alert is a NO-OP on react-native-web (desktop): a rejected adopt used

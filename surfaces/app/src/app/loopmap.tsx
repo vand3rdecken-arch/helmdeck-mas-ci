@@ -2,13 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type LoopMap, type LoopNode } from "@/data/client";
 import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { useResponsive } from "@/ui/responsive";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
 
@@ -211,8 +212,7 @@ export default function LoopMapScreen() {
   const [showCharter, setShowCharter] = useState(false);
   // On a desktop window this page is almost all prose, and prose at 1280px is a
   // 200-character measure nobody reads. Same cap the automation hub uses.
-  const { width } = useWindowDimensions();
-  const wide = Platform.OS === "web" && width >= 900;
+  const { wide } = useResponsive();
 
   const openHub = () => router.push("/automation" as never);
   const editable = data?.editable ?? [];
