@@ -3038,6 +3038,38 @@ DEBT = [
                "paths resolve at all before testing anything else.",
         "order": 47,
     },
+    {
+        "id": "android-build-arm64-only",
+        "title": "Release APK narrowed to arm64-v8a - armeabi-v7a/x86/x86_64 unbuildable",
+        "status": "open",
+        "what": "ops/deploy/build_apk.sh's gradlew assembleRelease now passes "
+                "-PreactNativeArchitectures=arm64-v8a (owner decree 2026-08-25), "
+                "so every ship.sh/release.sh android build produces an APK for "
+                "arm64-v8a only, down from the gradle.properties default of "
+                "armeabi-v7a,arm64-v8a,x86,x86_64.",
+        "why_it_bites": "react-native-reanimated's CMake/Ninja step for "
+                        "armeabi-v7a fails deterministically: `ninja: error: "
+                        "manifest 'build.ninja' still dirty after 100 tries`, "
+                        "reproduced 3/3 on this checkout including after "
+                        "clearing its .cxx cache (so not stale-cache corruption "
+                        "- a persistent, environmental failure). Suspected but "
+                        "UNCONFIRMED root cause: this checkout's Windows path "
+                        "contains a space (C:\\Users\\Tien Duy Vo\\...), a known "
+                        "class of CMake/Ninja fragility. Narrowing to arm64-v8a "
+                        "sidesteps it rather than fixing it - real devices are "
+                        "almost all arm64 now, but any 32-bit-ARM/x86/x86_64 "
+                        "device (old phones, some emulators/Chromebooks) can no "
+                        "longer install a build shipped from this pipeline.",
+        "trigger": "someone needs an APK for a non-arm64 device, OR someone "
+                   "has time to actually diagnose the ninja regen loop (try a "
+                   "checkout path with no spaces first - cheapest test of the "
+                   "leading theory - before patching reanimated's CMakeLists).",
+        "fix": "OPEN. Confirm/refute the path-with-spaces theory, then either "
+               "patch-package react-native-reanimated's CMake config or move "
+               "the checkout, and restore the full ABI list in "
+               "ops/deploy/build_apk.sh + surfaces/app/android/gradle.properties.",
+        "order": 48,
+    },
 ]
 
 def list_debt():

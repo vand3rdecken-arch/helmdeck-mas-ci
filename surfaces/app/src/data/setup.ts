@@ -19,6 +19,19 @@ export interface SetupState {
 }
 export interface SetupLine { ts: number; kind: string; line: string }
 
+/** Mirrors surfaces/desktop/setup.js's ENGINES catalog - `tier` is what
+ *  actually decides what the picker can promise for each engine (see that
+ *  file's own docstring): "full" (claude) finishes the whole flow,
+ *  "npm-install"/"agent-install" get their CLI fetched, "detect-only" is
+ *  status with no install action at all. Keep in sync by hand - it is a tiny,
+ *  rarely-changing list on the other side of a loopback HTTP call, not worth
+ *  a shared-schema package for. */
+export interface EngineStatus {
+  id: string; label: string;
+  tier: "full" | "npm-install" | "agent-install" | "detect-only";
+  installed: boolean; version: string;
+}
+
 interface Endpoint { port: number; nonce: string }
 
 function readEndpoint(): Endpoint | null {
@@ -47,7 +60,12 @@ async function call<T>(path: string): Promise<T | null> {
 export const setupApi = {
   state: () => call<SetupState>("/setup/state"),
   log: () => call<{ log: SetupLine[]; running: boolean; done: boolean }>("/setup/log"),
-  provision: () => call<{ started: boolean }>("/setup/provision"),
+  engines: () => call<{ engines: EngineStatus[] }>("/setup/engines"),
+  // `engines` is the picker's selection; "claude" is force-included
+  // server-side regardless (setup.js provision() - it is the only engine
+  // that can finish provisioning), so omitting it here still works.
+  provision: (engines: string[]) =>
+    call<{ started: boolean }>("/setup/provision?engines=" + encodeURIComponent(engines.join(","))),
 };
 
 /** Whether the onboarding screen should take over. It does so only on the

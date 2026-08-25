@@ -6,7 +6,10 @@ import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, View }
 
 import { api, AuthRequired } from "@/data/client";
 import { qrDataUrl } from "@/data/qrgen";
-import { setupApi, setupAvailable, useOnboard, type SetupLine, type SetupState } from "@/data/setup";
+import {
+  setupApi, setupAvailable, useOnboard,
+  type EngineStatus, type SetupLine, type SetupState,
+} from "@/data/setup";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
@@ -24,6 +27,11 @@ export function Onboard() {
   const dismiss = useOnboard((s) => s.dismiss);
   const [st, setSt] = useState<SetupState | null>(null);
   const [lines, setLines] = useState<SetupLine[]>([]);
+  const [engines, setEngines] = useState<EngineStatus[]>([]);
+  // "claude" is always in here: it is the only engine that can finish
+  // provisioning (setup.js ENGINES docstring), so the picker cannot remove
+  // it - only add optional extras on top.
+  const [selected, setSelected] = useState<Set<string>>(new Set(["claude"]));
   const [qr, setQr] = useState("");
   const [pairLink, setPairLink] = useState("");
   const [pairErr, setPairErr] = useState("");
@@ -35,10 +43,11 @@ export function Onboard() {
   useEffect(() => {
     let alive = true;
     const tick = async () => {
-      const [s, l] = await Promise.all([setupApi.state(), setupApi.log()]);
+      const [s, l, e] = await Promise.all([setupApi.state(), setupApi.log(), setupApi.engines()]);
       if (!alive) return;
       if (s) setSt(s);
       if (l) setLines(l.log);
+      if (e) setEngines(e.engines);
     };
     tick();
     const iv = setInterval(tick, 1200);
@@ -72,6 +81,17 @@ export function Onboard() {
     }
   }, [tr]);
 
+  // "claude" can't be removed - it's the only engine that can finish
+  // provisioning (see setup.js ENGINES). Everything else is a free toggle.
+  const toggleEngine = useCallback((id: string) => {
+    if (id === "claude") return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (st?.daemon && !qr && !pairErr) {
       qc.invalidateQueries();
@@ -92,6 +112,42 @@ export function Onboard() {
           </Text>
         </View>
 
+        {/* engine picker — claude is pinned (only it can finish setup, see
+            setup.js ENGINES); the rest are optional CLIs to also fetch.
+            Hidden once paired, disabled (not hidden) while running so the
+            selection stays visible but can't change mid-provision. */}
+        {!qr && engines.length > 0 ? (
+          <View style={{ gap: 8 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "600",
+              textTransform: "uppercase", letterSpacing: 0.4 }}>
+              {tr("onboard.enginesTitle")}
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {engines.map((e) => {
+                const isSelected = selected.has(e.id);
+                const locked = e.id === "claude";
+                return (
+                  <Pressable key={e.id} disabled={locked || busy} onPress={() => toggleEngine(e.id)}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 7,
+                      borderRadius: 10, borderWidth: 1,
+                      borderColor: isSelected ? t.accent : t.borderSubtle,
+                      backgroundColor: isSelected ? t.accent + "1a" : t.surface1,
+                      paddingHorizontal: 12, paddingVertical: 8, opacity: locked ? 0.85 : 1 }}>
+                    <View style={{ width: 7, height: 7, borderRadius: 3.5,
+                      backgroundColor: e.installed ? t.ok : t.txtTertiary }} />
+                    <View>
+                      <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600" }}>{e.label}</Text>
+                      <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>
+                        {locked ? tr("onboard.engineRequired") : tr("onboard.engineTier." + e.tier)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+
         {/* the pairing artifact — the end state of the whole screen */}
         {qr ? (
           <View style={{ alignItems: "center", gap: 12, backgroundColor: t.surface1, borderRadius: 16,
@@ -107,7 +163,7 @@ export function Onboard() {
           </View>
         ) : (
           <Pressable
-            onPress={() => { setLines([]); setupApi.provision(); }}
+            onPress={() => { setLines([]); setupApi.provision(Array.from(selected)); }}
             disabled={busy}
             style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
               backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 15 }}>

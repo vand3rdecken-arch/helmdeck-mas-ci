@@ -147,7 +147,18 @@ node -e '
 
 echo "HOOK-NOTE: npm ci done - gradle assembleRelease (native APK build, ~10-15 min)"
 echo "[build_apk] gradle assembleRelease (native, ~10 min first time)"
-( cd surfaces/app/android && ./gradlew assembleRelease -x lint --console=plain ) \
+# arm64-v8a ONLY (owner decree 2026-08-25): the default 4-ABI build
+# (gradle.properties reactNativeArchitectures) deterministically fails on
+# armeabi-v7a - `ninja: error: manifest 'build.ninja' still dirty after 100
+# tries` in react-native-reanimated's CMake step, reproduced 3/3 times
+# (including after clearing its .cxx cache, so NOT stale-cache corruption).
+# Root cause not fixed here - likely this checkout's Windows path containing
+# a space ("Tien Duy Vo"), a known class of CMake/Ninja fragility - just
+# scoped around: arm64-v8a covers virtually every real Android phone sold
+# since ~2020, so this is a real (if temporary) device-support narrowing,
+# not a free workaround. Tracked as debt - see spine/registry/debt.py.
+( cd surfaces/app/android && ./gradlew assembleRelease -x lint --console=plain \
+    -PreactNativeArchitectures=arm64-v8a ) \
   || { echo "[build_apk] APK BUILD FAILED"; exit 1; }
 APK="surfaces/app/android/app/build/outputs/apk/release/app-release.apk"
 [ -f "$APK" ] || { echo "[build_apk] no APK produced"; exit 1; }

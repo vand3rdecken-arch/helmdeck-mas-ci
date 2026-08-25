@@ -1,7 +1,8 @@
 // ONBOARDING CONTROL PLANE (desktop only).
 //
-// The promise: one screen, one button. The user connects Claude Code; from that
-// point HelmDeck provisions ITSELF and ends on a pairing QR.
+// The promise: one screen, one button, plus an OPTIONAL picker of which agent
+// engines to also fetch. The user connects Claude Code; from that point
+// HelmDeck provisions ITSELF and ends on a pairing QR.
 //
 // This lives in the Electron main process, NOT the daemon, because at first run
 // the daemon is exactly what does not exist yet: no Python, no dependencies, no
@@ -13,9 +14,16 @@
 //     processes; it must never be reachable from the LAN or from a stray page.
 //   - Every step is IDEMPOTENT and re-entrant: the screen may be reloaded, the
 //     button pressed twice, the app restarted mid-way.
-//   - Claude Code is the installer. Once `claude` is present and authenticated,
-//     anything still missing is handed to it as a task rather than reimplemented
-//     here as a bespoke installer per dependency.
+//   - Claude Code is the installer AND the only engine that finishes
+//     provisioning: it has a one-shot task interface (`claude -p "<task>"`)
+//     none of the other engines expose anywhere in this codebase or in
+//     Paseo's own source (checked, not assumed - see ENGINES' docstring), so
+//     it is force-selected regardless of the picker. Once it is present and
+//     authenticated, anything still missing is handed to it as a task rather
+//     than reimplemented here as a bespoke installer per dependency.
+//   - Other engines (ENGINES below) are OPTIONAL extras the picker can ask
+//     for: installed if there's a known safe way to, status-only if not, but
+//     never load-bearing for `done` and never promised more than they can do.
 //   - Python: prefer bundled, then system, else FETCH the embeddable runtime
 //     (~11 MB). The daemon is stdlib-only, so that is all it needs to run.
 const { spawn, spawnSync } = require("child_process");
@@ -123,6 +131,51 @@ function findClaude() {
   return null;
 }
 
+/** npm, needed only as the installer FOR Claude Code/Codex (see npmInstallGlobal).
+ *  Unlike Python there is no small embeddable fallback for Node - if this is
+ *  missing the honest floor is "go install Node.js", not a bespoke runtime we
+ *  can fetch and unpack ourselves. */
+function findNpm() {
+  const cmd = win ? "npm.cmd" : "npm";
+  const r = runQ(cmd, ["--version"]);
+  return r.status === 0 ? cmd : null;
+}
+
+/** The full engine catalog the picker shows. `tier` reflects EXACTLY what this
+ *  file can actually do for each - the whole point of this list is to keep
+ *  the picker from promising a capability the code doesn't have:
+ *    full          - claude: installs+logs in itself, AND is the only engine
+ *                    with a one-shot task interface (`claude -p "<task>"`),
+ *                    which is what lets it finish provisioning (Python
+ *                    fallback, daemon diagnosis) for ANY selection. No other
+ *                    engine here has an equivalent found anywhere in this
+ *                    codebase or in Paseo's own source (checked before
+ *                    writing this - see installSelectedEngines below).
+ *    npm-install   - codex: a documented public npm package, installable the
+ *                    same direct way as Claude itself, no agent needed.
+ *    agent-install - opencode: no confident direct install COMMAND (its
+ *                    public installer is a curl|sh script, not one npm
+ *                    invocation) - fetched via claudeTask instead, so it
+ *                    needs Claude present first.
+ *    detect-only   - omp/pi: no documented public install path at all (omp's
+ *                    copy on this machine came from something else entirely
+ *                    - ops/docs/multi-engine-build-plan.md Card 8) - status
+ *                    only, never an install attempt. */
+const ENGINES = [
+  { id: "claude", label: "Claude Code", tier: "full" },
+  { id: "codex", label: "Codex", tier: "npm-install", npmPkg: "@openai/codex" },
+  { id: "opencode", label: "OpenCode", tier: "agent-install" },
+  { id: "omp", label: "OMP", tier: "detect-only" },
+  { id: "pi", label: "Pi", tier: "detect-only" },
+];
+
+/** `--version` probe shared by every non-claude engine (claude has its own
+ *  richer findClaude, incl. the .cmd-shim guess - kept separate). */
+function probeCliVersion(cmd) {
+  const r = runQ(cmd, ["--version"]);
+  return { installed: r.status === 0, version: r.status === 0 ? (r.stdout || "").trim() : "" };
+}
+
 /** Absolute path of a PATH-resolved command, or null. Needed because `claude`
  *  found via runQ("claude", …) is a bare name - to see through the .cmd shim
  *  (below) we need to know which directory it actually lives in. */
@@ -175,6 +228,95 @@ function claudeAuthed(claude) {
   const out = ((r.stdout || "") + (r.stderr || "")).toLowerCase();
   if (/not logged in|unauthor|authenticate|login|invalid api key|no api key/.test(out)) return false;
   return r.status === 0;
+}
+
+/** Best-effort Node.js bootstrap via winget, mirroring the Python embeddable-
+ *  runtime fallback below. Only attempted on Windows (winget's the one
+ *  package manager guaranteed present on Win10 21H2+/Win11). A fresh install
+ *  updates the machine's registered PATH, but THIS process's env is already
+ *  loaded - a freshly-installed npm is typically still invisible until the
+ *  app restarts, so the caller re-probes once and, if still blind, says so
+ *  plainly instead of pretending the loop can route around it. */
+function installNodeViaWinget() {
+  if (!win) return false;
+  say("Installiere Node.js über winget…");
+  const r = runQ("winget", ["install", "-e", "--id", "OpenJS.NodeJS.LTS",
+    "--accept-source-agreements", "--accept-package-agreements"], { timeout: 180000 });
+  if (r.status !== 0) {
+    say("winget-Installation fehlgeschlagen: " + (r.stderr || r.stdout || "").trim(), "err");
+    return false;
+  }
+  say("Node.js installiert.", "ok");
+  return true;
+}
+
+/** The Paseo-style install step (packages/server/.../npm-global-cli.ts
+ *  installLatest): a global CLI dependency is installed BY THE APP, streamed
+ *  to the screen, not handed to the user as a command to type into a
+ *  terminal they have to go find. Paseo applies this to its own CLI package;
+ *  this generalizes it to any package with a plain `npm install -g <pkg>`
+ *  install (Claude Code and Codex both qualify - same "one button" promise,
+ *  same reason not to dead-end into a manual step). */
+function npmInstallGlobal(npmCmd, pkgName, displayName) {
+  return new Promise((resolve) => {
+    say("Installiere " + displayName + ": npm install -g " + pkgName);
+    const p = spawn(npmCmd, ["install", "-g", pkgName],
+      { shell: win, windowsHide: true, env: hydratedEnv() });
+    let tail = "";
+    let settled = false;
+    const finish = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+    const killer = setTimeout(() => { say("npm install hängt - breche ab.", "err"); p.kill(); finish(false); }, 300000);
+    const onData = (d) => {
+      tail += d.toString();
+      const lines = tail.split("\n");
+      tail = lines.pop() || "";
+      for (const l of lines) if (l.trim()) say(l.trim());
+    };
+    p.stdout.on("data", onData);
+    p.stderr.on("data", onData);
+    p.on("close", (code) => { clearTimeout(killer); if (tail.trim()) say(tail.trim()); finish(code === 0); });
+    p.on("error", (e) => { clearTimeout(killer); say("npm ließ sich nicht starten: " + e.message, "err"); finish(false); });
+  });
+}
+
+/** Login needs an interactive browser OAuth flow - that part genuinely can't
+ *  be automated - but the user shouldn't have to know `claude` is the magic
+ *  word or go hunting for a terminal themselves. Open one FOR them, already
+ *  running `claude` (no -p: interactive, so its own login prompt takes over).
+ *  Best-effort by platform: real on Windows (a fresh console); elsewhere an
+ *  attempt at the common terminal, never load-bearing -
+ *  waitForAuth's poll is what actually decides whether onboarding proceeds. */
+function openClaudeLoginTerminal(claude) {
+  try {
+    if (win) {
+      spawn("cmd.exe", ["/c", "start", "\"Claude Code Login\"", "cmd", "/k", claude.cmd],
+        { shell: false, windowsHide: false, detached: true, stdio: "ignore", env: hydratedEnv() }).unref();
+      return true;
+    }
+    if (process.platform === "darwin") {
+      spawn("osascript", ["-e",
+        `tell application "Terminal" to do script "${claude.cmd}"`], { detached: true, stdio: "ignore" }).unref();
+      return true;
+    }
+    spawn("x-terminal-emulator", ["-e", claude.cmd], { detached: true, stdio: "ignore" }).unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Poll claudeAuthed instead of dead-ending on the first check, so the user
+ *  can complete the browser login the app just opened for them without
+ *  leaving this screen or restarting HelmDeck. Bounded (5 min): a wedged or
+ *  abandoned login must not hang provisioning forever - pressing Start again
+ *  simply re-enters here (idempotent, same as every other step). */
+async function waitForAuth(claude, timeoutMs) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (claudeAuthed(claude)) return true;
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+  return claudeAuthed(claude);
 }
 
 function daemonUp(port) {
@@ -250,6 +392,55 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
   });
 }
 
+/** Installs whichever OPTIONAL engines the picker's selection asked for (never
+ *  "claude" - step 1 in provision() already owns that one). Not required for
+ *  the daemon (a card defaults to driver "claude") and codex/opencode/pi are
+ *  NOT LIVE-VERIFIED yet per their own driver module docstrings
+ *  (spine/agent/*_driver.py, owner decree 2026-08-24, "test accounts later")
+ *  - fetching a binary is not the same claim as its driver working, so this
+ *  only gets a CLI onto PATH, never auto-picks a card onto that driver.
+ *  Best-effort per engine, NEVER blocks `done`.
+ *
+ *  Three different install strategies, one per ENGINES tier (see its own
+ *  docstring for why each engine landed where it did):
+ *    npm-install   - installed directly (npmInstallGlobal), no agent needed.
+ *    agent-install - handed to Claude as a task (claudeTask), same hand-off
+ *                    Python's own fallback in provision() already uses -
+ *                    scales to engines with no single install COMMAND
+ *                    (opencode's public installer is curl|sh, not npm).
+ *    detect-only   - no action possible; just says so, once. */
+async function installSelectedEngines(claude, cwd, selected) {
+  const npmTargets = [], agentTargets = [], detectOnly = [];
+  for (const eng of ENGINES) {
+    if (eng.id === "claude" || !selected.has(eng.id)) continue;
+    if (probeCliVersion(eng.id).installed) { say(eng.label + " bereits vorhanden.", "ok"); continue; }
+    if (eng.tier === "npm-install") npmTargets.push(eng);
+    else if (eng.tier === "agent-install") agentTargets.push(eng);
+    else detectOnly.push(eng);
+  }
+  if (npmTargets.length) {
+    const npm = findNpm();
+    if (!npm) {
+      say("Ohne npm kann ich " + npmTargets.map((e) => e.label).join(", ") + " nicht installieren.", "err");
+    } else {
+      for (const eng of npmTargets) await npmInstallGlobal(npm, eng.npmPkg, eng.label);
+    }
+  }
+  if (agentTargets.length) {
+    say("Richte über Claude ein: " + agentTargets.map((e) => e.label).join(", ") + "…");
+    const list = agentTargets.map((e) => e.label + " (offizieller Installer, z.B. https://opencode.ai für OpenCode)").join("; ");
+    const ok = await claudeTask(claude,
+      "Install these optional coding-agent CLIs, skipping any already installed, so their "
+      + "`--version` command works: " + list + ". "
+      + "Do not modify anything else on this machine. Report which succeeded and which failed.",
+      cwd, "acceptEdits");
+    say(ok ? "Eingerichtet." : "Nicht alle erfolgreich - siehe oben.", ok ? "ok" : "hint");
+  }
+  for (const eng of detectOnly) {
+    say(eng.label + ": keine bekannte Installationsmethode - nur Status wird angezeigt.", "hint");
+  }
+}
+
 // ------------------------------------------------------------------ server ---
 
 /**
@@ -271,7 +462,7 @@ function startSetupServer(ctx) {
   // ~3s, cascading ~28 windows across the desktop. A found runtime doesn't
   // un-install mid-run; a MISSING one is re-probed (so installing Python
   // while the setup screen is open is still picked up on the next poll).
-  let _pyProbe = null, _claudeProbe = null;
+  let _pyProbe = null, _claudeProbe = null, _engineProbeCache = {};
   const state = async () => {
     const py = _pyProbe || (_pyProbe = findPython(ctx.resourcesDir));
     const claude = _claudeProbe || (_claudeProbe = findClaude());
@@ -283,23 +474,74 @@ function startSetupServer(ctx) {
     };
   };
 
-  async function provision() {
+  // Same cache-once-positive reasoning as _pyProbe/_claudeProbe above (a found
+  // CLI doesn't uninstall itself mid-run; a missing one is re-probed so an
+  // install that just happened elsewhere is picked up on the next poll).
+  const engineStatuses = () => ENGINES.map((eng) => {
+    if (eng.id === "claude") {
+      const c = _claudeProbe || (_claudeProbe = findClaude());
+      return { id: eng.id, label: eng.label, tier: eng.tier, installed: !!c, version: c ? c.version : "" };
+    }
+    const cached = _engineProbeCache[eng.id];
+    const status = (cached && cached.installed) ? cached : (_engineProbeCache[eng.id] = probeCliVersion(eng.id));
+    return { id: eng.id, label: eng.label, tier: eng.tier, installed: status.installed, version: status.version };
+  });
+
+  async function provision(selected) {
     if (running) return;
+    // The picker's selection; "claude" is force-included regardless of what
+    // was passed - it is the only engine that can finish provisioning (see
+    // ENGINES' docstring), so deselecting it would silently break every
+    // other selection, not just skip an optional extra.
+    selected = new Set(selected || ["claude"]);
+    selected.add("claude");
     running = true; done = false;
     try {
-      // 1) Claude Code — the one thing the user must own. We never install it
-      //    silently: it needs their account.
+      // 1) Claude Code — the one thing the user must own (their account), but
+      //    NOT the one thing they must type a terminal command for: the app
+      //    installs the CLI itself (Paseo's own-CLI installLatest, applied
+      //    here to Claude Code) and opens the login prompt for them. Only the
+      //    OAuth click in the browser is genuinely theirs to do.
       let claude = findClaude();
       if (!claude) {
-        say("Claude Code ist nicht installiert.", "err");
-        say("Installiere es und starte HelmDeck neu: npm i -g @anthropic-ai/claude-code", "hint");
-        return;
+        say("Claude Code ist nicht installiert.");
+        let npm = findNpm();
+        if (!npm) {
+          say("Node.js/npm wurde nicht gefunden.");
+          if (installNodeViaWinget()) npm = findNpm();
+        }
+        if (!npm) {
+          say("Ohne npm kann ich Claude Code nicht automatisch installieren.", "err");
+          say("Installiere Node.js von https://nodejs.org, dann hier erneut starten.", "hint");
+          return;
+        }
+        if (!(await npmInstallGlobal(npm, "@anthropic-ai/claude-code", "Claude Code"))) {
+          say("Automatische Installation fehlgeschlagen.", "err");
+          say("Installiere manuell: npm i -g @anthropic-ai/claude-code, dann hier erneut starten.", "hint");
+          return;
+        }
+        claude = findClaude();
+        if (!claude) {
+          say("Claude Code wurde installiert, ist aber noch nicht auffindbar.", "err");
+          say("Starte HelmDeck neu, damit die neue PATH-Eintragung geladen wird.", "hint");
+          return;
+        }
+        _claudeProbe = claude;   // installed just now — cache it, skip a re-probe
       }
       say("Claude Code gefunden: " + (claude.version || "ok"), "ok");
       if (!claudeAuthed(claude)) {
-        say("Claude Code ist nicht angemeldet.", "err");
-        say("Führe im Terminal `claude` aus, melde dich an, dann hier erneut starten.", "hint");
-        return;
+        say("Claude Code ist nicht angemeldet — öffne ein Anmeldefenster…");
+        if (!openClaudeLoginTerminal(claude)) {
+          say("Konnte kein Terminal öffnen.", "err");
+          say("Führe im Terminal `claude` aus, melde dich an, dann hier erneut starten.", "hint");
+          return;
+        }
+        say("Melde dich im geöffneten Fenster an — ich warte…", "hint");
+        if (!(await waitForAuth(claude, 5 * 60 * 1000))) {
+          say("Noch nicht angemeldet.", "err");
+          say("Melde dich im geöffneten Fenster an und drücke dann hier erneut Start.", "hint");
+          return;
+        }
       }
       say("Claude ist angemeldet.", "ok");
 
@@ -340,6 +582,10 @@ function startSetupServer(ctx) {
       if (!(await daemonUp(ctx.daemonPort))) { say("Instanz konnte nicht gestartet werden.", "err"); return; }
       say("Instanz läuft auf :" + ctx.daemonPort, "ok");
 
+      // 4) optional: other engine CLIs the picker selected (see
+      //    installSelectedEngines docstring) — never gates `done`.
+      await installSelectedEngines(claude, ctx.daemonDir, selected);
+
       done = true;
       say("Fertig — jetzt anmelden.", "ok");
     } finally {
@@ -356,7 +602,12 @@ function startSetupServer(ctx) {
     if (url.searchParams.get("n") !== nonce) return send(403, { error: "forbidden" });
     if (url.pathname === "/setup/state") return send(200, await state());
     if (url.pathname === "/setup/log") return send(200, { log, running, done });
-    if (url.pathname === "/setup/provision") { provision(); return send(200, { started: true }); }
+    if (url.pathname === "/setup/engines") return send(200, { engines: engineStatuses() });
+    if (url.pathname === "/setup/provision") {
+      const raw = (url.searchParams.get("engines") || "claude").split(",").map((s) => s.trim()).filter(Boolean);
+      provision(raw);
+      return send(200, { started: true });
+    }
     return send(404, { error: "not found" });
   });
   srv.on("error", (e) => say("Setup-Server: " + e.message, "err"));
