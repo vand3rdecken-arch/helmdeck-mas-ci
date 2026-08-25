@@ -276,6 +276,35 @@ def main():
     finally:
         hd.subprocess.Popen = orig_popen
 
+    # -- 9: autostart (Phase F) ------------------------------------------------
+    print("\n_autostart_cmd / _set_autostart (Windows HKCU Run key)")
+    cmd = hd._autostart_cmd("C:/some/worker.json")
+    ok("--config" in cmd and "worker.json" in cmd,
+       "_autostart_cmd builds a --config invocation (token stays in the file, not the Run value)")
+    ok(hd.os.path.abspath(hd.__file__.replace(".pyc", ".py")).split(os.sep)[-1] in cmd
+       or "hd_worker" in cmd, "the command points at the worker script")
+
+    if hd.winreg:
+        # round-trip against a THROWAWAY value name under the real Run key,
+        # cleaned up in finally even on failure - never touches the real
+        # HelmDeckDeviceWorker value.
+        test_name = "HelmDeckDeviceWorker__test__%d" % os.getpid()
+        try:
+            ok(hd._autostart_status(name=test_name) is None,
+               "throwaway autostart value absent before register")
+            reg = hd._set_autostart(True, "C:/some/worker.json", name=test_name)
+            ok(reg is True, "register returns True")
+            ok(hd._autostart_status(name=test_name) is not None,
+               "register wrote the Run-key value")
+            hd._set_autostart(False, name=test_name)
+            ok(hd._autostart_status(name=test_name) is None,
+               "unregister removed the Run-key value")
+        finally:
+            hd._set_autostart(False, name=test_name)   # belt-and-suspenders cleanup
+    else:
+        ok(hd._set_autostart(True, "x") is False,
+           "on a non-Windows box autostart no-ops (returns False), does not crash")
+
     print("\n%d failure(s)" % len(_fails))
     if _fails:
         sys.exit(1)

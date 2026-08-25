@@ -88,29 +88,33 @@ DEBT = [
                 "status across claim/reassign/unknown-card + the stale-"
                 "submit event) and test_hd_worker.py (still_mine=False "
                 "tree-kills + raises; still_mine=True runs to completion). "
-                "STILL OPEN: no pip entry point / Windows Scheduled Task or "
-                "service registration (config file exists, nothing installs "
-                "it for you), no live transcript streaming mid-turn (needs "
-                "the relay long-poll shape, a bigger lift, unchanged from "
-                "the original plan), and the board UI does not yet surface "
-                "a stuck/reassignable device card (the API + daemon-side "
-                "event exist, no surfaces/app screen renders them - a "
-                "frontend task).",
-        "why_it_bites": "The install/autostart gap means running a device "
-                        "worker is still a manual 'keep a terminal open' "
-                        "affair, not a background service. No board-UI "
-                        "visibility means a stuck device card is only "
+                "PHASE F PAID 2026-08-25 (owner: 'F und g'): pip entry point "
+                "(ops/tools/pyproject.toml, py-modules-scoped to just "
+                "hd_worker so `pip install ops/tools/` exposes `hd-worker` "
+                "without the daemon-side tools) + login autostart via an "
+                "HKCU Run key (hd-worker --install-autostart --config <path>, "
+                "same winreg mechanism as surfaces/desktop/tray.py, never "
+                "shelling to powershell; token stays in the config file not "
+                "the Run value; --uninstall-autostart removes it). Windows-"
+                "first, no-ops with a clear message on mac/Linux (manual "
+                "launchd/systemd recipe in the module docstring). Pinned in "
+                "test_hd_worker.py (autostart cmd shape + a real HKCU Run-key "
+                "register/read/remove round-trip against a throwaway value "
+                "name). STILL OPEN: no live transcript streaming mid-turn "
+                "(Phase H, needs the relay long-poll shape, a bigger lift), "
+                "and the board UI does not yet surface a stuck/reassignable "
+                "device card (Phase G, the API + daemon-side event exist, no "
+                "surfaces/app screen renders them - a frontend task).",
+        "why_it_bites": "No board-UI visibility means a stuck device card is "
+                        "only "
                         "discoverable via the API/logs, not the app the "
                         "owner actually looks at day to day.",
-        "trigger": "wanting a real background-service install (not a "
-                   "terminal you keep open), or the owner needing to SEE a "
-                   "stuck device card in the app rather than query the API",
-        "fix": "Add a packaged install/autostart story (pip entry point or "
-               "a Windows Scheduled Task/service registration pointing at "
-               "--config); stream a device turn's live transcript back over "
-               "the queue channel (needs the relay long-poll shape); "
-               "surface stuck/reassignable device cards in the board/"
-               "History UI.",
+        "trigger": "the owner needing to SEE a stuck device card in the app "
+                   "rather than query the API, or wanting a device turn's "
+                   "live transcript on the board",
+        "fix": "Stream a device turn's live transcript back over the queue "
+               "channel (needs the relay long-poll shape); surface stuck/"
+               "reassignable device cards in the board/History UI.",
         "order": 0,
     },
     {

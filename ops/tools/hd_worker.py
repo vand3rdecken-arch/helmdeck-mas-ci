@@ -13,18 +13,22 @@ function a local card's turn uses. The central daemon's gate/merge/GxP
 pipeline is untouched by any of this - it only ever sees a branch that has
 landed in its own repo, exactly like a local worktree card's.
 
-Still open (debt remote-worker-not-hardened, Phase D remainder): no
-packaged install/autostart registration (a config file exists now - see
---config below - but nothing installs a Task Scheduler entry/service for
-you), no live transcript streaming to the board mid-turn, no board-UI
-surfacing of a stuck/reassignable device card (the API + daemon-side event
-exist; POST /devices/reassign and GET /devices/mine already work, no
-surfaces/app screen renders them yet).
+Still open (debt remote-worker-not-hardened): no live transcript streaming
+to the board mid-turn (Phase H), no board-UI surfacing of a stuck/
+reassignable device card (Phase G - the API + daemon-side event exist;
+POST /devices/reassign and GET /devices/mine already work).
+
+Install (Phase F): `pip install ops/tools/` exposes an `hd-worker` console
+script (pyproject.toml there scopes it to this one module). Login autostart
+(Windows): `hd-worker --install-autostart --config <path>` (HKCU Run key,
+same mechanism as the daemon tray; token stays in the config file, not the
+Run-key value). Remove with --uninstall-autostart. mac/Linux: point a
+launchd/systemd unit at `hd-worker --config <path>` by hand.
 
 Usage (either form; a --config value only fills in what a flag omits):
     python ops/tools/hd_worker.py --daemon https://host:8140 --device <id> \
         --token sdk_xxx --repo C:/path/to/local/clone
-    python ops/tools/hd_worker.py --config C:/path/to/worker-config.json
+    hd-worker --config C:/path/to/worker-config.json
         # {"daemon": "...", "device": "...", "token": "sdk_xxx", "repo": "..."}
 """
 import argparse
@@ -268,10 +272,73 @@ def _load_config(path):
     command line sits in shell history and in `ps`/Task Manager's argument
     column for every other process on the box to read; a config file (with
     normal OS file permissions) does not. Second, it is the natural place
-    an autostart registration (Task Scheduler / a service) points at,
-    rather than baking a long argv into the scheduled task itself."""
+    an autostart registration points at, rather than baking a long argv
+    (token included) into the Run-key value itself."""
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+# --------------------------------------------------------------- autostart (Phase F)
+# HKCU Run key, the SAME mechanism surfaces/desktop/tray.py already uses for
+# the daemon tray (winreg, never shelling to powershell - that binary is not
+# on the owner's PATH, memory: paseo-architecture-learnings). Windows-first
+# (the owner's box); on mac/Linux this no-ops and the module docstring points
+# at the manual launchd/systemd recipe. The registered command runs the
+# worker with --config so the TOKEN stays in the config file, never in the
+# Run-key value a curious process could read.
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_RUN_NAME = "HelmDeckDeviceWorker"
+
+
+def _autostart_cmd(config_path):
+    """The exact string the Run key stores: pythonw (no console window) +
+    this script + --config. pythonw next to the interpreter if present, else
+    the interpreter itself - same resolution tray.py uses."""
+    exe = sys.executable or "python"
+    pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
+    launcher = pyw if os.path.exists(pyw) else exe
+    return '"%s" "%s" --config "%s"' % (launcher, os.path.abspath(__file__),
+                                        os.path.abspath(config_path))
+
+
+def _autostart_status(name=_RUN_NAME):
+    """The registered command, or None. Read-only."""
+    if not winreg:
+        return None
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            v, _ = winreg.QueryValueEx(k, name)
+            return v
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+def _set_autostart(on, config_path=None, name=_RUN_NAME):
+    """Register (on=True, needs config_path) or remove (on=False) the Run
+    key. Returns True on success. `name` is a parameter purely so a test can
+    round-trip against a throwaway value under the same key without touching
+    the real one."""
+    if not winreg:
+        return False
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            if on:
+                winreg.SetValueEx(k, name, 0, winreg.REG_SZ, _autostart_cmd(config_path))
+            else:
+                try:
+                    winreg.DeleteValue(k, name)
+                except FileNotFoundError:
+                    pass
+        return True
+    except Exception:
+        return False
 
 
 def _resolve_config(daemon, device, token, repo, cfg):
@@ -301,7 +368,34 @@ def main():
     ap.add_argument("--token")
     ap.add_argument("--repo", help="local clone of the target repo")
     ap.add_argument("--once", action="store_true", help="process one task and exit")
+    ap.add_argument("--install-autostart", action="store_true",
+                    help="register a Windows login autostart (HKCU Run) for --config, then exit")
+    ap.add_argument("--uninstall-autostart", action="store_true",
+                    help="remove the login autostart, then exit")
     a = ap.parse_args()
+
+    # Autostart management acts and exits - it never enters the poll loop.
+    if a.install_autostart or a.uninstall_autostart:
+        if not winreg:
+            print("error: autostart is Windows-only (HKCU Run key). On mac/Linux "
+                  "register a launchd/systemd unit pointing at --config manually.",
+                  file=sys.stderr)
+            sys.exit(1)
+        if a.uninstall_autostart:
+            ok_ = _set_autostart(False)
+            print("autostart removed." if ok_ else "error: could not remove autostart",
+                  file=sys.stderr if not ok_ else sys.stdout)
+            sys.exit(0 if ok_ else 1)
+        if not a.config:
+            print("error: --install-autostart needs --config <path> (the Run key "
+                  "stores a --config invocation so the token stays in the file)",
+                  file=sys.stderr)
+            sys.exit(1)
+        ok_ = _set_autostart(True, a.config)
+        print("autostart registered: %s" % _autostart_status() if ok_
+              else "error: could not register autostart",
+              file=sys.stdout if ok_ else sys.stderr)
+        sys.exit(0 if ok_ else 1)
 
     cfg = _load_config(a.config) if a.config else {}
     daemon, device, token, repo, missing = _resolve_config(
