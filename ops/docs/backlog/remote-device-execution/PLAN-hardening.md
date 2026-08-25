@@ -227,16 +227,134 @@ local card's; the packaged entry point starts and claims one task.
 ---
 
 ## What stays out of scope (named so it's a decision)
-- Streaming a device turn's LIVE transcript to the board mid-turn is folded
-  into Phase D, not a separate promise - the queue channel is request/reply
-  today; live streaming would need the relay long-poll shape, a bigger lift.
-  STILL NOT DONE after the 2026-08-25 Phase D round above.
 - Bundle size caps / large-binary handling (the debt entry's last bullet)
   stays a separate follow-up - it's a transport concern, orthogonal to the
   reliability work above.
-- A packaged install/autostart registration (pip entry point, Windows
-  Scheduled Task/service) - the config-file piece above is the smaller,
-  shipped alternative; the full packaging story is still open.
-- Board UI surfacing of a stuck/reassignable device card - a frontend task
-  (surfaces/app), out of scope for this backend-only round; the API
-  (POST /devices/reassign, GET /devices/mine) it would call already works.
+
+---
+
+# Remaining work plan (post-2026-08-25, closes the rest of
+# `remote-worker-not-hardened`)
+
+Four items survive the A-D rounds. Ordered by how directly each closes the
+debt's own title ("shipped as a reference implementation, NOT A SERVICE") -
+E and F make it a service; G and H are enhancements beyond that. Each is
+independently shippable with its own test, same discipline as A-D.
+
+Two technical subtleties found while grounding this plan, both of which
+would break the naive version of the fix - stated up front so they shape
+the work rather than surprising it:
+  1. A device turn runs as a `claude -p` subprocess on the WORKER's own
+     machine, NOT a daemon-hosted `_ClaudeSession`. So `drivers.cancel(tid)`
+     (which tree-kills a daemon session) does NOTHING for a device card -
+     there is no daemon-side process to kill. Any "interrupt the turn" fix
+     must SIGNAL the worker; only the worker can kill its own local
+     subprocess. (Phase E.)
+  2. Live transcript today crosses back only ONCE, in the final submit
+     (bundle + usage_meta). Streaming means a NEW worker->daemon push path
+     DURING the turn, folded into the card's timeline_store so the existing
+     board SSE/long-poll renders it unchanged. That new mid-turn data path
+     is the "bigger lift" - not the rendering. (Phase H.)
+
+## Phase E - revoke / reassign interrupts an IN-FLIGHT turn  [correctness]
+
+> **SHIPPED 2026-08-25** (owner: "direkt mit e anfangen"). Built exactly as
+> planned below, respecting subtlety #1 (a device turn has no daemon-side
+> session, so the interrupt SIGNALS the worker and the worker kills its own
+> local subprocess). dispatch.device_card_status + GET /devices/<id>/card/
+> <tid> = the read-only "still mine?" check; hd_worker._run_turn_locally
+> now runs claude via Popen with a still_mine watcher (~5s poll) that
+> tree-kills the subprocess (taskkill /T) and raises TurnInterrupted on a
+> reassign/reclaim/revoke, so no orphaned result is submitted; a late
+> submit from the reassigned-away device is rejected + logged as
+> remote_device action=stale_submit_rejected, not a bare 400. Pinned in
+> test_remote_device.py (61 -> 71 assertions) and test_hd_worker.py
+> (25 -> 27). A status-poll blip does NOT kill a live turn (fail toward
+> keeping real work alive; the stale-claim sweep is the backstop).
+
+**The gap (half-closed in Phase D).** Phase D made a revoked device's
+worker STOP on its next poll (DeviceRevoked -> exit). But a turn already
+running keeps running to completion on the worker's box, and a `reassign`
+of a card the worker is mid-turn on races the eventual submit (the submit
+would hit the device-match check and 400, wasting the whole turn).
+
+**The fix.**
+1. Worker side: between polls, the worker already holds the claimed card's
+   id. Add a lightweight "still mine?" check - either a periodic GET on the
+   card's own state, or (cheaper) have the daemon's queue/submit responses
+   carry a `revoked`/`reassigned` flag the worker reads. On a positive, the
+   worker tree-kills its local `claude` subprocess (same taskkill /T shape
+   drivers.py uses) and abandons the card cleanly.
+2. Daemon side: `reassign_remote_task` on a card whose worker is mid-turn is
+   already safe by construction (the reassigned card gets a fresh
+   claimed_at for the new device; the old worker's late submit hits the
+   device-match 400 and is dropped) - but that drop should be a clear
+   logged outcome, not a bare 400, so an operator sees "old device's stale
+   submit rejected" rather than a mystery error.
+
+**Test.** A worker mid-turn whose card is reassigned kills its subprocess
+and does not submit; the reassigned card is claimable by the new device; a
+stale submit from the old device is rejected with a clear reason.
+
+## Phase F - packaged install / autostart  [makes it a service]
+
+**The gap.** `--config` exists (Phase D) but nothing installs the worker as
+a background service - it's still "keep a terminal open."
+
+**The fix.**
+1. A `pip`-installable entry point (`hd-worker` console script) so a member
+   runs one install command, not a repo checkout + python invocation.
+2. A Windows autostart registration helper (`hd_worker.py --install-service`
+   or a small companion) that registers a Scheduled Task / service pointing
+   at the config file, surviving logout/reboot. Windows-first (the owner's
+   box), a documented manual recipe for mac/Linux rather than code.
+
+**Test.** The entry point starts from an installed package and claims one
+task with `--config` alone; the install helper registers and the task
+survives a simulated "logout" (a fresh process from the registration).
+
+## Phase G - board UI: see + rescue a stuck device card  [owner-facing]
+
+**The gap.** `POST /devices/reassign` and `GET /devices/mine` work over the
+API, but no `surfaces/app` screen renders a device card waiting on an
+offline device, or offers reassign. The owner can't SEE the thing the API
+can fix.
+
+**The fix (frontend - needs UI judgment + screenshots per CLAUDE.md, not
+just "it renders").**
+1. A device card carries enough already (`exec_site`, `claimed_at`, the
+   `reclaimed`/`reassigned` events) for `present()` to derive a
+   "waiting on device X / stale" badge - surface it on the board card.
+2. A small device panel (extend settings.tsx, which already has the
+   device-token/relay-pair UI) listing the user's devices (GET
+   /devices/mine) with last_seen, and a reassign/clear action per stuck
+   card (POST /devices/reassign).
+
+**Test.** Screenshot + JUDGE (readability, the stale badge is unmistakable,
+the reassign flow is obvious), driven against the Expo web dev server with
+a seeded stuck device card - not just "the component mounts".
+
+## Phase H - live device-turn transcript to the board  [enhancement, biggest lift]
+
+**The gap.** A device turn is invisible until it submits; a local card
+streams live.
+
+**The fix (the new data path from subtlety #2 above).**
+1. Worker: stream the turn's stdout deltas (it already runs
+   `--output-format json`; switch the live path to `stream-json` and POST
+   deltas up) to a new `POST /devices/<id>/stream` as the turn runs.
+2. Daemon: fold those deltas into the card's timeline_store via the SAME
+   `timeline_store.append` the local driver's `_fold_timeline` uses - then
+   the existing board SSE / `transcript_store_version` long-poll renders a
+   device turn live with ZERO board-side change.
+
+**Test.** A simulated worker POSTing deltas makes `read_transcript_store`
+grow mid-turn and `transcript_store_version` tick, exactly as a local
+card's turn does.
+
+## Recommended order
+E then F (these two are what the debt title actually asks for - a service
+that behaves correctly under revoke/reassign and installs like one). G when
+the owner wants to switch to a frontend round (it is the highest day-to-day
+value but needs UI judgment, not backend). H last - genuine enhancement,
+biggest lift, lowest urgency.

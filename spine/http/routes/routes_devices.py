@@ -84,6 +84,19 @@ def devices_queue_get(self, user, did):
     return self._send(200, json.dumps(t))
 
 
+def devices_card_status_get(self, user, did, tid):
+    # Read-only "is card <tid> still mine?" - the mid-turn worker's cheap
+    # interrupt check (Phase E). Same client-block + device-ownership gate as
+    # the queue/submit routes; touch() so a worker doing a long turn (polling
+    # THIS, not /queue) still counts as alive to sweep_stale_device_claims.
+    from spine.auth import devices
+    from cells.engineer import dispatch
+    if user["role"] == "client" or not devices.resolve(user, did):
+        return self._send(404, json.dumps({"error": "no such device"}))
+    devices.touch(did)
+    return self._send(200, json.dumps(dispatch.device_card_status(did, tid)))
+
+
 def devices_submit_post(self, user, body, did):
     from spine.auth import devices
     from cells.engineer import dispatch

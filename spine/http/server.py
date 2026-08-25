@@ -262,6 +262,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_devices.GET_ROUTES[p](self, user)
             if len(parts) == 3 and parts[0] == "devices" and parts[2] == "queue":
                 return routes_devices.devices_queue_get(self, user, parts[1])
+            if len(parts) == 4 and parts[0] == "devices" and parts[2] == "card":
+                return routes_devices.devices_card_status_get(self, user, parts[1], parts[3])
             if p in routes_info.GET_ROUTES:
                 return routes_info.GET_ROUTES[p](self, user)
             if p in routes_pm.GET_ROUTES:
