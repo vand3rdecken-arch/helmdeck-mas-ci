@@ -45,6 +45,8 @@ export const demo: Dict = {
                     en: "Onboarding email for new users" },
   "demo.c6.task": { de: "Fehler: Suche ignoriert Umlaute",
                     en: "Bug: search ignores accented characters" },
+  "demo.c7.task": { de: "Export-Pipeline auf Alices Rechner",
+                    en: "Export pipeline on Alice's machine" },
 
   "demo.gate.tests": { de: "Tests {n}/{n} grün", en: "tests {n}/{n} green" },
   "demo.gate.lint": { de: "Lint sauber", en: "lint clean" },

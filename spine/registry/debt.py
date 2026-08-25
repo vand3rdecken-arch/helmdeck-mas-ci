@@ -12,7 +12,7 @@ DEBT = [
     {
         "id": "remote-worker-not-hardened",
         "title": "Remote device execution shipped as a reference implementation, not a service",
-        "status": "open",
+        "status": "paid",
         "what": "ops/docs/backlog/remote-device-execution: a team member's own "
                 "PC can register as a device and execute cards locally, "
                 "submitting its finished branch back via a git bundle - the "
@@ -135,21 +135,32 @@ DEBT = [
                 "the same step, the moved-card guard, the route) and "
                 "test_hd_worker.py (streaming path forwards events + parses "
                 "usage from the stream-json result; interrupt still works). "
-                "STILL OPEN, the only remaining item: the CLAUDE.md UI law's "
-                "screenshot+JUDGE of the POPULATED Phase-G panels (empty-"
-                "state renders by pattern construction, but the owner reviews "
-                "UI hard and the populated device-list/stale-card/reassign "
-                "states were not screenshotted - needs a seeded Expo-web run).",
-        "why_it_bites": "The device UI has not had the visual screenshot+"
-                        "JUDGE the owner's UI-review law requires for its "
-                        "populated states - it typechecks and follows "
-                        "existing chip/panel patterns, but has not been SEEN "
-                        "with real device data.",
-        "trigger": "the owner (or a screenshot run) reviewing the populated "
-                   "device panel / stale-card badge / live device transcript",
-        "fix": "Screenshot + JUDGE the populated device panel + board badge "
-               "+ a live device turn's transcript (seed a device card in an "
-               "Expo-web run).",
+                "UI SCREENSHOT+JUDGE DONE 2026-08-25 (owner: 'ok teste'): "
+                "seeded a device card (exec_site local:, device_stale) + two "
+                "sample devices into data/demo.ts, built the web export, "
+                "served it SPA-style and drove Playwright (demo flag via "
+                "localStorage) at phone + wide widths. JUDGED: the board's "
+                "red 'device offline?' chip sits cleanly in the card's chip "
+                "row (correct t.danger, no collision); the settings Devices "
+                "panel shows both devices with own-account/shared billing "
+                "chips + revoke, the stale-card reassign row (red warn + "
+                "accent action), and register button, consistent with the "
+                "neighbouring Users/Pair panels, no overflow at either width. "
+                "One nit found + fixed in the same pass: last_seen rendered a "
+                "raw ISO timestamp - now formatted to the minute. All phases "
+                "A-H shipped, tested, and the UI visually judged - this debt "
+                "is PAID. Not separately screenshotted (fold logic is unit-"
+                "tested, the board transcript view is the existing unchanged "
+                "render path): a LIVE device stream mid-turn, which would "
+                "need a real streaming worker, not the static demo.",
+        "why_it_bites": "PAID - all A-H phases shipped + tested, the device "
+                        "UI screenshot-judged at phone + wide widths. The "
+                        "one deliberately-separate follow-up left is bundle "
+                        "size caps / large-binary handling on submit (a "
+                        "transport concern, its own small card).",
+        "trigger": "n/a (paid) - bundle size caps stay a separate follow-up",
+        "fix": "PAID. Remaining separate follow-up (not this debt): cap/"
+               "chunk large bundle uploads on /devices/<id>/submit.",
         "order": 0,
     },
     {

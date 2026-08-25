@@ -127,6 +127,13 @@ const SEED: Row[] = [
     id: "d6", taskKey: "demo.c6.task", lane: "backlog",
     value: 250, priority: "hoch", created: iso(60), updated: iso(60),
   }),
+  // a remote-device card whose worker went offline (Phase G): shows the
+  // "device offline?" board chip and the settings stuck-card rescue row.
+  row({
+    id: "d7", taskKey: "demo.c7.task", lane: "working", status: "running",
+    turns: 2, value: 500, priority: "normal", created: iso(200), updated: iso(40),
+    exec_site: "local:demo-laptop", device_stale: true,
+  }),
 ];
 
 let rows: Row[] = SEED.map((r) => ({ ...r }));
@@ -374,6 +381,14 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
     return {};
   }
 
+  // Two sample devices so the settings Devices panel shows populated (Phase
+  // G). One is the offline laptop the stale d7 card is stuck on.
+  if (path === "/devices/mine" && method === "GET") return [
+    { id: "demo-laptop", owner: "owner", label: "Alice's laptop",
+      billing_scope: "external", created: iso(4000), last_seen: iso(3600) },
+    { id: "demo-buildbox", owner: "owner", label: "Build box (shared)",
+      billing_scope: "shared", created: iso(2000), last_seen: iso(30) },
+  ];
   // Sections that need a real installation stay honestly empty in the demo.
   if (["/processes", "/runs", "/sessions/claude", "/history", "/connectors", "/users"].includes(path)) return [];
   if (path === "/settings") return metrics().settings ?? {};
