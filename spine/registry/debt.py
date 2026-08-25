@@ -10,6 +10,44 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "remote-worker-not-hardened",
+        "title": "Remote device execution shipped as a reference implementation, not a service",
+        "status": "open",
+        "what": "ops/docs/backlog/remote-device-execution: a team member's own "
+                "PC can register as a device and execute cards locally, "
+                "submitting its finished branch back via a git bundle - the "
+                "daemon-side registry/dispatch/import path (spine/auth/"
+                "devices.py, cells/engineer/dispatch.py's new_remote_task/"
+                "claim_remote_task/submit_remote_result, spine/git/gitutil.py's "
+                "_import_bundle) is proven end to end in ops/tests/"
+                "test_remote_device.py against real git repos and bundles. "
+                "ops/tools/hd_worker.py, the process that actually RUNS on a "
+                "member's machine, is a deliberately small reference "
+                "implementation: no retry/offline/reconnect handling, no "
+                "packaging/install story, shells out to `claude` directly "
+                "instead of reusing spine/agent/drivers.py's turn machinery. "
+                "Device revocation does not interrupt an in-flight task. A "
+                "device that goes offline mid-claim leaves its card stuck in "
+                "'working' with no local worktree and no timeout/reassignment.",
+        "why_it_bites": "Fine for one team member trying the feature by hand; "
+                        "a device that silently drops offline mid-task or a "
+                        "worker crash-looping on a bad turn has no daemon-side "
+                        "recovery path, and a revoked device's OS process keeps "
+                        "running (just loses its next API call) rather than "
+                        "being told to stop.",
+        "trigger": "a second team member actually depending on this daily, or "
+                   "the worker script left running unattended for a long "
+                   "session",
+        "fix": "Harden hd_worker.py into a real background service (retry/"
+               "backoff, reconnect, a packaged install), reuse drivers.py's "
+               "turn machinery instead of shelling out to `claude` directly "
+               "so a device turn gets the same streaming/usage/cost tracking a "
+               "local card does, add a claim timeout that reassigns/bounces a "
+               "stuck card, and make revoke() actively signal the worker to "
+               "stop rather than only invalidating its next call.",
+        "order": 0,
+    },
+    {
         "id": "gxp-signature-not-independently-verifiable",
         "title": "GxP signatures are recorded, but only WE can vouch for them",
         "status": "paid",
