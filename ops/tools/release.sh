@@ -65,8 +65,17 @@ PY
 build_android() {
   if [ "$BUMP" = 1 ]; then echo "==> bump versionCode"; bump_version || { fail+=("bump"); return 1; }; fi
   echo "==> android: gradlew assembleRelease (signed, bundles JS via Metro, JBR 17+)"
+  # arm64-v8a ONLY (owner decree 2026-08-25, same workaround as
+  # ops/deploy/build_apk.sh - see spine/registry/debt.py's
+  # android-build-arm64-only): the default 4-ABI build deterministically
+  # fails on armeabi-v7a (`ninja: error: manifest 'build.ninja' still dirty
+  # after 100 tries` in react-native-reanimated's CMake step). This script
+  # was missing the flag build_apk.sh already carries - confirmed live
+  # 2026-08-25: BUILD FAILED after looping "Re-running CMake..." for
+  # armeabi-v7a, exactly this signature.
   ( cd surfaces/app/android && JAVA_HOME="$JBR" ANDROID_HOME="$ANDROID_SDK" PATH="$JBR/bin:$PATH" \
-      ./gradlew assembleRelease --no-daemon --console=plain ) || { fail+=("android"); return 1; }
+      ./gradlew assembleRelease --no-daemon --console=plain \
+      -PreactNativeArchitectures=arm64-v8a ) || { fail+=("android"); return 1; }
   local apk="surfaces/app/android/app/build/outputs/apk/release/app-release.apk"
   [ -f "$apk" ] || { echo "    APK missing at $apk"; fail+=("android"); return 1; }
   ok+=("android: $apk")

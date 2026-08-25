@@ -33,7 +33,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 59,
+      "versionCode": 60,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
