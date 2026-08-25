@@ -82,13 +82,39 @@ def _git(repo, *args):
     return r.stdout.strip()
 
 
-def _run_turn_locally(repo, branch, task, description):
+class TurnInterrupted(RuntimeError):
+    """The card stopped being this device's mid-turn (reassigned/reclaimed/
+    revoked - the daemon's device_card_status said so). The local turn was
+    killed and the card must NOT be committed/bundled/submitted: another
+    device (or the reclaim sweep) now owns it. Distinct from a failure - the
+    worker just loops back to poll for its next real task."""
+
+
+def _tree_kill(proc):
+    """Kill the claude subprocess AND its children - a bare proc.kill() on
+    Windows would orphan whatever claude spawned (a build, a test runner)
+    still holding file locks in the worktree. Mirrors drivers.py's taskkill
+    /T shape for the daemon-side sessions."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                          capture_output=True)
+        else:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+    except Exception:
+        pass
+
+
+def _run_turn_locally(repo, branch, task, description, still_mine=None,
+                     poll_interval=5.0):
     """Runs the card's turn in the member's OWN local clone, full local
     capability - the same claude CLI invocation shape drivers.py uses
     centrally, minus the worktree/card.json sandboxing that only makes
-    sense on shared infrastructure. Deliberately simple (-p, acceptEdits,
-    no streaming/resume) - a reference point to build the real driver
-    integration against, not a replacement for it.
+    sense on shared infrastructure.
 
     --output-format json (not plain text) for exactly one reason: the
     result event's total_cost_usd/usage/modelUsage are the SAME economics
@@ -97,28 +123,62 @@ def _run_turn_locally(repo, branch, task, description):
     "cost_usd": d.get("total_cost_usd"), "models": list((d.get("modelUsage")
     or {}).keys())). Reusing that exact shape (not inventing a new one)
     means spine.turn.econ._record_econ, the daemon's real economics
-    function, can fold a device turn's spend in unmodified - no fork of
-    the pricing/context-window logic. Returns (reply_text, usage_meta).
-    On any parse failure, usage_meta is None - the turn still counts as
-    successful (the branch still gets submitted), it just carries no
-    cost/usage data. A cost-reporting parse failure must never block real
-    work from landing."""
+    function, can fold a device turn's spend in unmodified. Returns
+    (reply_text, usage_meta). On any parse failure, usage_meta is None -
+    the turn still counts as successful, it just carries no cost data.
+
+    still_mine (Phase E): a callable() -> bool checked every poll_interval
+    seconds WHILE the turn runs. False means the card was reassigned/
+    reclaimed/revoked out from under this worker - the subprocess is
+    tree-killed and TurnInterrupted is raised, so process_one abandons the
+    card without submitting a result nobody wants. When None (tests, or a
+    caller that doesn't care), the turn simply runs to completion - the
+    old blocking behavior."""
     prompt = task + (("\n\n" + description) if description else "")
-    r = subprocess.run(
-        ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json"],
-        cwd=repo, input=prompt, capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=1800)
-    if r.returncode != 0:
-        raise RuntimeError("claude turn failed: %s" % (r.stderr or r.stdout)[:400])
-    usage_meta = None
-    reply = r.stdout
+    argv = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json"]
+    if still_mine is None:
+        r = subprocess.run(argv, cwd=repo, input=prompt, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", timeout=1800)
+        return _parse_turn(r.returncode, r.stdout, r.stderr)
+    proc = subprocess.Popen(argv, cwd=repo, stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           text=True, encoding="utf-8", errors="replace")
     try:
-        d = json.loads(r.stdout)
-        reply = d.get("result", r.stdout)
+        proc.stdin.write(prompt); proc.stdin.close()
+    except (OSError, ValueError):
+        pass
+    waited = 0.0
+    while True:
+        try:
+            proc.wait(timeout=poll_interval)
+            break
+        except subprocess.TimeoutExpired:
+            waited += poll_interval
+            if not still_mine():
+                _tree_kill(proc)
+                raise TurnInterrupted(
+                    "card reassigned/reclaimed mid-turn - killed the local "
+                    "turn, not submitting")
+            if waited >= 1800:
+                _tree_kill(proc)
+                raise RuntimeError("claude turn exceeded 1800s - killed")
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    return _parse_turn(proc.returncode, out, err)
+
+
+def _parse_turn(returncode, stdout, stderr):
+    if returncode != 0:
+        raise RuntimeError("claude turn failed: %s" % (stderr or stdout)[:400])
+    usage_meta = None
+    reply = stdout
+    try:
+        d = json.loads(stdout)
+        reply = d.get("result", stdout)
         usage_meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
                      "models": list((d.get("modelUsage") or {}).keys())}
     except (ValueError, AttributeError):
-        pass   # not JSON, or a shape we don't recognize - reply stays the raw stdout
+        pass   # not JSON, or a shape we don't recognize - reply stays raw stdout
     return reply, usage_meta
 
 
@@ -153,9 +213,25 @@ def process_one(daemon, device_id, token, repo_root):
         _git(repo_root, "fetch", "-q", "origin")
     base = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     _git(repo_root, "checkout", "-q", "-b", branch, base)
+
+    def _still_mine():
+        # Phase E: cheap "is this card still mine?" the turn watcher calls
+        # every few seconds. A device-not-found (404) means the token was
+        # revoked - also "not mine". Any OTHER transient error: assume still
+        # mine (do NOT kill a running turn just because one status poll
+        # blipped - fail toward keeping real work alive, the sweep is the
+        # backstop if we're actually wrong).
+        try:
+            st = _api(daemon, "/devices/%s/card/%s" % (device_id, task["id"]),
+                     token, retries=2, base_delay=0.5, max_delay=2.0)
+            return bool(st.get("assigned"))
+        except RuntimeError as e:
+            return "HTTP 404" not in str(e)
+
     try:
         _reply, usage_meta = _run_turn_locally(
-            repo_root, branch, task["task"], task.get("description", ""))
+            repo_root, branch, task["task"], task.get("description", ""),
+            still_mine=_still_mine)
         if _git(repo_root, "status", "--porcelain"):
             _git(repo_root, "add", "-A")
             _git(repo_root, "commit", "-q", "-m",
@@ -172,6 +248,9 @@ def process_one(daemon, device_id, token, repo_root):
         result = _api(daemon, "/devices/%s/submit" % device_id, token, method="POST",
                       body=body)
         print("submitted -> lane=%s" % result.get("lane"))
+    except TurnInterrupted as e:
+        print("card %s: %s" % (task["id"], e))
+        return False   # not a failure - just loop back and poll for real work
     finally:
         _git(repo_root, "checkout", "-q", base)
     return True

@@ -403,6 +403,59 @@ def main():
                                        device_id=rec_ext["id"], usage_meta=None)
     ok(r9.get("lane") in ("review", "done"), "a submit with no usage_meta still lands normally")
 
+    # -- 11: device_card_status (Phase E mid-turn interrupt check) ------------
+    print("\ndevice_card_status + stale-submit outcome")
+    branchA = "device/feature-status"
+    t10 = dispatch.new_remote_task(central, branchA, "status card", did, actor="alice")
+    st = dispatch.device_card_status(did, t10["id"])
+    ok(st["assigned"] is False, "an unclaimed (backlog) card is not yet 'assigned' to the device")
+    dispatch.claim_remote_task(did)
+    st = dispatch.device_card_status(did, t10["id"])
+    ok(st["assigned"] is True, "a claimed, working card IS assigned to its device")
+    st = dispatch.device_card_status(rec_ext["id"], t10["id"])
+    ok(st["assigned"] is False and "another device" in st["reason"],
+       "the SAME card reports NOT assigned to a different device")
+    st = dispatch.device_card_status(did, "no-such-card")
+    ok(st["assigned"] is False, "an unknown card is not assigned")
+
+    # reassign it away, then the original device sees it's no longer theirs
+    dispatch.reassign_remote_task(t10["id"], rec_ext["id"], actor="alice")
+    st = dispatch.device_card_status(did, t10["id"])
+    ok(st["assigned"] is False and "reassigned" in st["reason"],
+       "after reassign, the original device's status check flips to not-assigned "
+       "(this is the signal a mid-turn worker kills its subprocess on)")
+
+    # a stale submit from the original device is rejected AND logged as a
+    # named outcome, not just a bare error
+    branchB = "device/feature-stale-submit"
+    git(remote_clone, "checkout", "-q", "-b", branchB)
+    open(os.path.join(remote_clone, "stale.txt"), "w").write("x\n")
+    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "stale")
+    bundleB = os.path.join(tmp, "sB.bundle")
+    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundleB, branchB],
+                   capture_output=True, text=True)
+    t11 = dispatch.new_remote_task(central, branchB, "stale submit", rec_ext["id"], actor="alice")
+    dispatch.claim_remote_task(rec_ext["id"])
+    dispatch.reassign_remote_task(t11["id"], did, actor="alice")   # moved to `did`
+    ev_before = len([e for e in _events.read_events()
+                     if e.get("kind") == "remote_device" and e.get("action") == "stale_submit_rejected"])
+    try:
+        dispatch.submit_remote_result(t11["id"], bundleB, actor="alice", device_id=rec_ext["id"])
+        ok(False, "a stale submit from the reassigned-away device should raise")
+    except RuntimeError as e:
+        ok("different device" in str(e), "stale submit rejected with a clear reason")
+    ev_after = len([e for e in _events.read_events()
+                    if e.get("kind") == "remote_device" and e.get("action") == "stale_submit_rejected"])
+    ok(ev_after == ev_before + 1,
+       "the stale submit is logged as a named outcome (stale_submit_rejected), not a silent 400")
+
+    # route layer: GET /devices/<id>/card/<tid>
+    h = call(routes_devices.devices_card_status_get, ALICE, did, t10["id"])
+    ok(h.code == 200 and isinstance(h.body, dict) and "assigned" in h.body,
+       "GET /devices/<id>/card/<tid> returns the status dict")
+    h = call(routes_devices.devices_card_status_get, CLIENT, did, t10["id"])
+    ok(h.code == 404, "a client role cannot poll device card status")
+
     print("\n%d failure(s)" % len(_fails))
     if _fails:
         sys.exit(1)

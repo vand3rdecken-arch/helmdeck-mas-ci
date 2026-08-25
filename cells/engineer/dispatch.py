@@ -466,6 +466,28 @@ def claim_remote_task(device_id):
     return cur
 
 
+def device_card_status(device_id, tid):
+    """Is card `tid` STILL this device's to work on? The cheap poll a mid-turn
+    worker uses to notice a reassign/reclaim/revoke WITHOUT waiting for its
+    turn to finish (ops/docs/backlog/remote-device-execution PLAN-hardening.md
+    Phase E). Returns {"assigned": bool, "reason": str}. `assigned` is False -
+    the worker should abandon the turn - when the card was reassigned to
+    another device (exec_site changed), reclaimed to backlog (a stale-claim
+    sweep, or the card was cancelled), or has already landed. Read-only, no
+    mutation. Device revocation is NOT checked here (the token itself stops
+    resolving at the auth layer, so the worker's next call 404s regardless);
+    this covers the case the token still works but the CARD moved."""
+    t = _find(_load(), tid)
+    if not t:
+        return {"assigned": False, "reason": "card no longer exists"}
+    exec_site = t.get("exec_site") or ""
+    if exec_site != "local:" + device_id:
+        return {"assigned": False, "reason": "card reassigned to another device or cleared"}
+    if t.get("lane") != "working" or not t.get("claimed_at"):
+        return {"assigned": False, "reason": "card no longer in your working queue (reclaimed/landed)"}
+    return {"assigned": True, "reason": ""}
+
+
 def sweep_stale_device_claims(claim_ttl_s=None, last_seen_grace_s=180):
     """Return a claimed-but-abandoned card to backlog for the SAME device to
     re-claim (never cross-device - that is an explicit owner action,
@@ -625,6 +647,12 @@ def submit_remote_result(tid, bundle_path, actor, device_id=None, usage_meta=Non
     if not exec_site.startswith("local:"):
         raise RuntimeError("card %s was not filed for remote device execution" % tid)
     if device_id and exec_site != "local:" + device_id:
+        # A late submit from a device the card was reassigned AWAY from while
+        # it was mid-turn (Phase E). Log it as a named outcome, not just a bare
+        # 400 to the caller - an operator watching the card sees WHY a stale
+        # result was dropped, not a mystery error.
+        events.emit("remote_device", tid, action="stale_submit_rejected",
+                   from_device=exec_site[len("local:"):], by_device=device_id)
         raise RuntimeError("card %s is bound to a different device" % tid)
     if not _branch_exists(t["repo"], t["branch"]):
         from spine.git.gitutil import _import_bundle
