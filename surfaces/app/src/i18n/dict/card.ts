@@ -79,12 +79,10 @@ export const card: Dict = {
   // chat column
   "card.chat.noMessages": { de: "Noch keine Nachrichten.", en: "No messages yet." },
   "card.chat.latest": { de: "Neueste", en: "Latest" },
-  "card.chat.worker": { de: "Worker", en: "Worker" },
-  "card.chat.agent": { de: "Agent", en: "Agent" },
-  "card.chat.hintAgent": { de: "⌘ Board-Agent — verschieben/löschen/steuern (getrennt vom Worker)",
-                           en: "⌘ Board agent — move/delete/steer (separate from the worker)" },
-  "card.chat.hintWorkerLive": { de: "Worker — Kontext läuft weiter", en: "Worker — context carries on" },
-  "card.chat.hintWorkerIdle": { de: "Worker — noch nicht gestartet", en: "Worker — not started yet" },
+  "card.chat.mentionHenry": { de: "verschieben/löschen/steuern (Board-Kontext)",
+                              en: "move/delete/steer (board context)" },
+  "card.chat.mentionWorker": { de: "steuert die Karten-Session", en: "steers the card's own session" },
+  "card.chat.henryThinking": { de: "Henry denkt…", en: "Henry is thinking…" },
   "card.chat.context": { de: "Kontext {k}k · {pct}%", en: "Context {k}k · {pct}%" },
   "card.chat.contextFull": { de: "Kontext fast voll — bei Überlauf startet eine frische Session, der Verlauf bleibt sichtbar", en: "Context nearly full — on overflow a fresh session starts, the history stays visible" },
   "card.chat.awaitingYou": { de: "Turn beendet — Worker wartet auf dich. Steuern setzt fort.",
@@ -114,13 +112,10 @@ export const card: Dict = {
   "card.q.tapAnswer": { de: "Tippen zum Antworten", en: "Tap to answer" },
   "card.q.tapExpand": { de: "Tippen zum Ausklappen & Antworten", en: "Tap to expand & answer" },
   "card.q.failedTitle": { de: "Antwort fehlgeschlagen", en: "Answer failed" },
-  "card.chat.phAgent": { de: "Sag dem Agenten was zu tun ist — z.B. 'verschiebe diese Karte nach done'",
-                         en: "Tell the agent what to do — e.g. 'move this card to done'" },
   "card.chat.phWorkerLive": { de: "Worker steuern – Kontext läuft weiter",
                               en: "Steer the worker – context carries on" },
   "card.chat.phWorkerIdle": { de: "Worker starten…", en: "Start the worker…" },
-  "card.chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
-  "card.chat.sendFailed": { de: "(Agent-Senden fehlgeschlagen)", en: "(sending to the agent failed)" },
+  "card.chat.sendFailed": { de: "Senden an Henry fehlgeschlagen", en: "Sending to Henry failed" },
 
   // slash commands (the hint the owner reads, and the text it types for them)
   "card.slash.planHint": { de: "erst planen, dann handeln", en: "plan before acting" },
@@ -188,7 +183,7 @@ export const card: Dict = {
   "transcript.todos": { de: "PLAN / TO-DOS", en: "PLAN / TO-DOS" },
   "transcript.plan": { de: "PLAN", en: "PLAN" },
   "transcript.boardAgent": { de: "Board-Agent", en: "Board agent" },
-  "transcript.boardAgentDivider": { de: "BOARD-AGENT", en: "BOARD AGENT" },
+  "transcript.worker": { de: "Worker", en: "Worker" },
   // Chain-break divider. Since /compact injection was removed (a0853d4) a
   // session_chain break is always a ROTATION (new session, context not carried
   // in full) - never an in-place compaction, which keeps its session id. The

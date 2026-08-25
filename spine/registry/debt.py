@@ -3070,6 +3070,55 @@ DEBT = [
                "ops/deploy/build_apk.sh + surfaces/app/android/gradle.properties.",
         "order": 48,
     },
+    {
+        "id": "alt-driver-by-wiring",
+        "title": "omp/codex drivers accept `by` (sender identity) but don't fold it",
+        "status": "open",
+        "what": "The team-chat identity fold (spine/agent/drivers.py's "
+                "_ClaudeSession._run_turn_locked) threads the steering human's "
+                "name (`by`) into the timeline step it writes for every "
+                "human-submitted prompt, so the transcript can show WHO sent "
+                "a message. spine/agent/omp_driver.py and codex_driver.py's "
+                "run() now accept the same `by` kwarg for signature parity "
+                "with drivers.run, but neither folds it into their own "
+                "transcript - only the default Claude driver path does.",
+        "why_it_bites": "A card running on the omp or codex driver (opt-in, "
+                        "not the default) will render its human steer text "
+                        "with no sender attribution - same as before this "
+                        "change, not a regression, just unfinished parity. "
+                        "Both drivers are themselves unverified against real "
+                        "accounts already (see the omp/codex driver docstrings).",
+        "trigger": "the omp or codex driver moves from 'not live-verified' to "
+                   "actually used against a real account.",
+        "fix": "OPEN. Mirror the fold drivers.py's _run_turn_locked does "
+               "(role/kind/text + by/byKind:human/to:worker) at each "
+               "driver's own equivalent submission point, once each has a "
+               "real account to verify against.",
+        "order": 49,
+    },
+    {
+        "id": "card-henry-reply-not-streamed",
+        "title": "Card-scoped Henry replies arrive whole, not token-streamed",
+        "status": "open",
+        "what": "cells/copilot/copilot.py's chat() already streams its prose "
+                "into a live_partial.txt for the global board chat "
+                "(surfaces/app/src/app/chat.tsx polls /chat/live), but a "
+                "card-scoped turn (card= set, the team-chat @Henry path from "
+                "surfaces/app/src/app/card/[id].tsx) only folds the finished "
+                "reply into the card's timeline once the whole turn returns.",
+        "why_it_bites": "A slow Henry turn on a card shows nothing but the "
+                        "local 'Henry denkt…' indicator (card.chat.henryThinking) "
+                        "for the full duration, instead of live text appearing "
+                        "the way a card Worker's own turn streams.",
+        "trigger": "a card-scoped Henry turn regularly takes long enough "
+                   "(multi-tool-call turns, slow model) that the no-feedback "
+                   "wait becomes annoying.",
+        "fix": "OPEN. Fold live_partial.txt's growing text into the card's "
+               "timeline as a streaming step (same shape drivers.py's own "
+               "streaming fold uses), keyed off the copilot run_dir, instead "
+               "of only writing the finished reply.",
+        "order": 50,
+    },
 ]
 
 def list_debt():

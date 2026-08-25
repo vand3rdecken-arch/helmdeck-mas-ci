@@ -36,7 +36,7 @@ export const useCopilotPanel = create<CopilotPanel>((set) => ({
 // differs (api.chat here vs api.steer on a card), so there is ONE chat UI to
 // maintain, not two. The board's flat ChatMsg log is mapped onto the transcript
 // step model below.
-function toStep(m: ChatMsg): TStep {
+function toStep(m: ChatMsg, me?: string): TStep {
   const mine = m.cls === "user" || m.cls === "you";
   return {
     role: mine ? "user" : "assistant",
@@ -44,7 +44,11 @@ function toStep(m: ChatMsg): TStep {
     cls: m.cls,
     text: m.cls === "error" ? "⚠ " + m.text : m.text,
     ts: m.ts,
-    agent: m.cls === "pm",   // the PM's proactive messages get the board-agent tag
+    // Henry's identity on EVERY reply here (not just proactive `pm` pushes) -
+    // this surface is Henry-only, so every non-user message is him.
+    by: mine ? me : (m.cls !== "error" ? "Henry" : undefined),
+    byKind: mine ? "human" : (m.cls !== "error" ? "henry" : undefined),
+    agent: m.cls === "pm",   // legacy flag, superseded by byKind above
   };
 }
 
@@ -395,11 +399,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
           {msgs.length === 0 && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
-            : <Transcript steps={(() => {
-                const s = msgs.map(toStep);
+            : <Transcript me={me?.name} steps={(() => {
+                const s = msgs.map((m) => toStep(m, me?.name));
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
-                if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true });
+                if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true, by: "Henry", byKind: "henry" });
                 return s;
               })()} />}
           {busy && !stream.trim() ? <ThinkingIndicator preview={think} /> : null}

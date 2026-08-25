@@ -695,7 +695,7 @@ def _say_card(t, text):
     try:
         from cells.copilot import copilot
         title = (t.get("task") or "").replace("\n", " ")[:60]
-        copilot.say("'%s': %s" % (title, text), cls="pm")
+        copilot.say("'%s': %s" % (title, text), cls="pm", card=t.get("id"))
     except Exception:
         pass
 

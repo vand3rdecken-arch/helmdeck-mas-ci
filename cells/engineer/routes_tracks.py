@@ -19,6 +19,19 @@ import json, os
 from urllib.parse import unquote
 
 
+def _client_safe(steps, user):
+    """A `client`-role user must never see Henry's card-scoped chat: it
+    carries board-wide context (other cards, capacity, prices) a client has
+    no business reading. `/chat` itself is already owner/operator-only
+    (routes_copilot.py), so this filter is the only place a client could
+    otherwise see Henry - applied to every transcript read, not just steps
+    already on disk (byKind steps land here from cells/copilot/copilot.py's
+    card-scoped fold)."""
+    if user.get("role") != "client":
+        return steps
+    return [s for s in steps if s.get("byKind") != "henry" and s.get("to") != "henry"]
+
+
 def tracks_list_get(self, user):
     from cells.engineer import sessions
     from spine.auth import auth
@@ -76,7 +89,7 @@ def tracks_transcript_get(self, user, tid):
     t = sessions.get_track(tid)
     if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
-    return self._send(200, json.dumps(claude_sessions.read_transcript_store(t)))
+    return self._send(200, json.dumps(_client_safe(claude_sessions.read_transcript_store(t), user)))
 
 
 def tracks_transcript_live_get(self, user, tid):
@@ -111,7 +124,7 @@ def tracks_transcript_live_get(self, user, tid):
     # 100-227KB re-sent on every token/tool tick. The tail is a few KB.
     # `have` absent/0 -> full transcript (old client + the loop's first
     # call), so this is backward compatible.
-    steps = claude_sessions.read_transcript_store(t)
+    steps = _client_safe(claude_sessions.read_transcript_store(t), user)
     try:
         have = int((q.get("have") or ["0"])[0])
     except ValueError:

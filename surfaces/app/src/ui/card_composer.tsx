@@ -12,6 +12,10 @@ import { useT } from "@/i18n";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string }
+export interface Recipient {
+  id: string; label: string; color: string; hint?: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+}
 
 // thinking levels — each `id` maps to a real Claude Code budget keyword
 // server-side (never translated); `key` is only the button label.
@@ -25,7 +29,7 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
-  onVoice,
+  onVoice, recipients, defaultTo,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   busy?: boolean;
@@ -43,6 +47,15 @@ export function Composer({
    *  on surfaces that have no voice — the button then does not exist at all,
    *  rather than existing and refusing. */
   onVoice?: () => void;
+  /** The team-chat roster (Henry / the card's Worker) — omitted on surfaces
+   *  with only one possible recipient (the global board chat), which then
+   *  gets no @mention popover and no recipient chip. */
+  recipients?: Recipient[];
+  /** Who an unaddressed message goes to. Re-applied whenever it changes
+   *  UNLESS the user has manually @mentioned someone this composer session
+   *  (a card going from idle to running must not silently steal a message
+   *  the owner just addressed to Henry). */
+  defaultTo?: string;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -51,6 +64,9 @@ export function Composer({
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
   const [picker, setPicker] = useState(false);
+  const [to, setTo] = useState(defaultTo);
+  const manualTo = useRef(false);
+  useEffect(() => { if (!manualTo.current) setTo(defaultTo); }, [defaultTo]);
   const [attachMenu, setAttachMenu] = useState(false);
   const [atts, setAtts] = useState<Attach[]>([]);
   const [seedKey, setSeedKey] = useState(0);
@@ -100,7 +116,8 @@ export function Composer({
   if (seed && seed.key !== seedKey) { setSeedKey(seed.key); setText(seed.text); }
 
   function buildOpts(): SteerOpts {
-    return { model, thinking, ...(modeOptions ? { mode } : {}), ...(atts.length ? { attachments: atts } : {}) };
+    return { model, thinking, ...(modeOptions ? { mode } : {}),
+      ...(atts.length ? { attachments: atts } : {}), ...(to ? { to } : {}) };
   }
 
   // clear input + its persisted draft after a message leaves the composer
@@ -178,6 +195,25 @@ export function Composer({
     return m ? slashCommands.filter((c) => c.name.startsWith(m[1].toLowerCase())) : [];
   }, [text, slashCommands]);
 
+  // @mention: a token at the END of what's been typed so far (mid-message
+  // addressing, not just at the start like slash commands). Only active
+  // when a roster was actually handed in.
+  const atMatches = useMemo(() => {
+    if (!recipients?.length) return [];
+    const m = text.match(/(?:^|\s)@(\S*)$/);
+    if (!m) return [];
+    const q = m[1].toLowerCase();
+    return recipients.filter((r) => r.label.toLowerCase().startsWith(q));
+  }, [text, recipients]);
+
+  function pickRecipient(r: Recipient) {
+    manualTo.current = true;
+    setTo(r.id);
+    setText(text.replace(/(?:^|\s)@\S*$/, (whole) => (whole.startsWith(" ") ? " " : "")));
+  }
+
+  const current = recipients?.find((r) => r.id === to);
+
   const thinkShort = tr(THINK.find((x) => x.id === thinking)?.key ?? "composer.thinkOff");
   const modeLabel = modeOptions?.find((m) => m.id === mode)?.label;
   const modelLabel = model === "auto" ? tr("composer.modelAutoShort")
@@ -203,6 +239,20 @@ export function Composer({
 
   return (
     <View style={{ borderTopWidth: 1, borderTopColor: t.glassBorder, paddingBottom: bottomInset }}>
+      {/* @mention popover: pick who this message goes to */}
+      {atMatches.length > 0 ? (
+        <View style={{ backgroundColor: t.surface1, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+          {atMatches.map((r) => (
+            <Pressable key={r.id} onPress={() => pickRecipient(r)}
+              style={{ flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingVertical: 8, alignItems: "baseline" }}>
+              <Ionicons name={r.icon} size={14} color={r.color} style={{ alignSelf: "center" }} />
+              <Text style={{ color: r.color, fontWeight: "700", fontSize: 13 }}>@{r.label}</Text>
+              {r.hint ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{r.hint}</Text> : null}
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       {/* slash-command popover */}
       {matches.length > 0 ? (
         <View style={{ backgroundColor: t.surface1, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
@@ -280,6 +330,24 @@ export function Composer({
           <Pressable onPress={() => setQueued(null)} hitSlop={8}>
             <Ionicons name="close" size={18} color={t.txtTertiary} />
           </Pressable>
+        </View>
+      ) : null}
+
+      {/* recipient chip: who an unaddressed message goes to right now — never
+          invisible, unlike the old Worker/Agent tab state it replaces. */}
+      {current ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingTop: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 5,
+            backgroundColor: current.color + "22", borderColor: current.color + "66", borderWidth: 1,
+            borderRadius: 999, paddingLeft: 9, paddingRight: 6, paddingVertical: 4 }}>
+            <Ionicons name={current.icon} size={12} color={current.color} />
+            <Text style={{ color: current.color, fontSize: 11.5, fontWeight: "700" }}>{current.label}</Text>
+            {manualTo.current ? (
+              <Pressable onPress={() => { manualTo.current = false; setTo(defaultTo); }} hitSlop={8}>
+                <Ionicons name="close-circle" size={13} color={current.color} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : null}
 

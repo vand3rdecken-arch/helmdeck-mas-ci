@@ -337,10 +337,10 @@ def shutdown_all():
 # Daemon-internal control keys the AGENT process must not inherit (Paseo's
 
 
-def run(cfg, t, prompt):
+def run(cfg, t, prompt, by=None):
     kind = cfg.get("type", "claude")
     if kind == "claude":
-        return _claude(cfg, t, prompt)
+        return _claude(cfg, t, prompt, by=by)
     if kind == "http":
         return _http(cfg, t, prompt)
     if kind == "cmd":
@@ -352,14 +352,14 @@ def run(cfg, t, prompt):
         # against a real account. Lazy import: no reason to load for a
         # claude-only board.
         from spine.agent import omp_driver
-        return omp_driver.run(cfg, t, prompt)
+        return omp_driver.run(cfg, t, prompt, by=by)
     if kind == "codex":
         # Native Codex driver (build plan Card 6) - JSON-RPC over stdio.
         # NOT LIVE-VERIFIED (owner decree 2026-08-24, "test accounts later")
         # - protocol-correct-per-Paseo's-source, unproven against the real
         # binary. See codex_driver.py's own module docstring.
         from spine.agent import codex_driver
-        return codex_driver.run(cfg, t, prompt)
+        return codex_driver.run(cfg, t, prompt, by=by)
     if kind == "opencode":
         # Native OpenCode driver, DEDICATED-server mode (build plan Card 7,
         # analysis §6.6.2) - one private `opencode serve` per card, never
@@ -1044,15 +1044,15 @@ class _ClaudeSession:
                         _flush_cur(cur)
 
     # -- one turn: push a message, wait bounded for its result ----------
-    def run_turn(self, prompt, run_dir):
+    def run_turn(self, prompt, run_dir, by=None):
         with self._turn_lock:
             self.last_used = _time.time()      # mark active so the idle sweeper skips us
             try:
-                return self._run_turn_locked(prompt, run_dir)
+                return self._run_turn_locked(prompt, run_dir, by=by)
             finally:
                 self.last_used = _time.time()
 
-    def _run_turn_locked(self, prompt, run_dir):
+    def _run_turn_locked(self, prompt, run_dir, by=None):
         _cancelled.discard(self.tid)
         if not self.alive():
             # session died (crash/cancel/opts-restart/idle-evict) - respawn & --resume.
@@ -1103,9 +1103,11 @@ class _ClaudeSession:
             else:
                 text = _clean_text((prompt or "").strip())
                 if text:
-                    timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
-                        {"role": "user", "kind": "text", "text": text[:_TL_MAX_TEXT],
-                         "ts": tsv, "ta": tav})
+                    step = {"role": "user", "kind": "text", "text": text[:_TL_MAX_TEXT],
+                            "ts": tsv, "ta": tav}
+                    if by:
+                        step["by"], step["byKind"], step["to"] = by, "human", "worker"
+                    timeline_store.append(run_dir, "s:" + uuid.uuid4().hex, step)
         except Exception:
             pass
         # INACTIVITY watchdog, not a wall-clock cap (Paseo bounds the TOOL, not
@@ -1242,14 +1244,14 @@ def _get_session(cfg, t):
         return s
 
 
-def _claude(cfg, t, prompt):
+def _claude(cfg, t, prompt, by=None):
     # A card holds ONE long-lived stream-json process across turns (Paseo's
     # persistent query). The session_id arrives in the first `system/init` event
     # and text deltas stream to run_dir/live_partial.txt; the `result` event
     # carries the SAME economics fields as before (result/total_cost_usd/usage/
     # modelUsage) so the gate and metrics are unchanged.
     s = _get_session(cfg, t)
-    return s.run_turn(prompt, t.get("run_dir") or ".")
+    return s.run_turn(prompt, t.get("run_dir") or ".", by=by)
 
 
 def _http(cfg, t, prompt):

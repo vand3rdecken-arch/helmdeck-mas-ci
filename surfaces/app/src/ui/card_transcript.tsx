@@ -37,7 +37,11 @@ export interface TStep {
   usage?: TurnUsage; cost?: number | null;   // turn-end economics (kind === "turn")
   tokIn?: number; tokOut?: number; cacheRead?: number; cacheWrite?: number; ctx?: number;  // kind === "usage": per-turn tokens
   ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
-  agent?: boolean;   // a board-Agent (copilot) message, not a Worker one
+  agent?: boolean;   // a board-Agent (copilot) message, not a Worker one — legacy,
+                      // superseded by byKind but still folded for old timeline rows
+  by?: string;        // display name of the sender ("Tien", "Henry")
+  byKind?: "human" | "henry" | "worker";
+  to?: string;         // on a user step: the resolved recipient ("henry" | "worker")
   streaming?: boolean; detail?: ToolDetail;
   todos?: { content: string; status: string }[];
 }
@@ -335,24 +339,18 @@ function keyFactory() {
   };
 }
 
-export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (text: string) => void }) {
+export function Transcript({ steps, onRewind, me }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string }) {
   const t = useTheme();
   const tr = useT();
   const keyFor = keyFactory();
   let lastToolIdx = -1;
   for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
+  let lastTextSender: string | null = null;   // consecutive-run grouping (Slack-style)
   return (
     <View style={{ gap: 8 }}>
       {steps.map((s, i) => {
         const kind = s.kind;
         const key = keyFor(s, i);
-        if (kind === "agentbreak") return (
-          <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
-            <Ionicons name="sparkles-outline" size={12} color={t.accent2} />
-            <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 }}>{tr("transcript.boardAgentDivider")}</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: t.accent2 + "40" }} />
-          </View>);
         // Turn lifecycle as first-class items (Phase 3.2/3.3): `started` renders
         // nothing (the owner's message right above it already marks the turn),
         // `completed` is a quiet usage line, `canceled` a centered marker,
@@ -419,26 +417,39 @@ export function Transcript({ steps, onRewind }: { steps: TStep[]; onRewind?: (te
         if (kind === "thinking") return <Thought key={key} s={s} t={t} />;
         if (kind === "result") return <Text key={key} style={{ color: t.txtTertiary, fontSize: 12 }}>{s.text}</Text>;
 
-        const mine = s.role === "user" || s.cls === "user";
-        const ac = s.agent ? t.accent2 : t.accent;   // board-Agent = violet, Worker = accent
+        const mine = s.by ? s.by === me : (s.role === "user" || s.cls === "user");
+        // byKind is authoritative; `agent` is the legacy flag old timeline
+        // rows carry (before this field existed) and still maps to "henry".
+        const byKind = s.byKind ?? (s.agent ? "henry" : mine ? "human" : "worker");
+        const ac = byKind === "henry" ? t.accent2 : byKind === "human" && !mine ? t.human : t.accent;
+        const senderKey = mine ? "me" : byKind + ":" + (s.by || "");
+        const showHeader = !mine && senderKey !== lastTextSender;
+        lastTextSender = senderKey;
+        const senderLabel = byKind === "henry" ? tr("transcript.boardAgent")
+          : byKind === "worker" ? tr("transcript.worker") : (s.by || "?");
+        const senderIcon = byKind === "henry" ? "sparkles-outline"
+          : byKind === "worker" ? "construct-outline" : "person-outline";
         if (mine) return (
           <View key={key} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: ac + "22", borderRadius: 10, padding: 10 }}>
             <Collapsible text={s.text || ""} color={ac}
               style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }} />
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, justifyContent: "flex-end" }}>
+              {s.to ? <Text style={{ color: s.to === "henry" ? t.accent2 : t.accent, fontSize: 10, fontWeight: "700" }}>
+                → {s.to === "henry" ? tr("transcript.boardAgent") : tr("transcript.worker")}</Text> : null}
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
               {onRewind ? <Pressable hitSlop={8} onPress={() => onRewind(s.text || "")}><Ionicons name="arrow-undo-outline" size={13} color={t.txtTertiary} /></Pressable> : null}
             </View>
           </View>);
-        // assistant text (board-Agent replies get a violet tag + border so they
-        // never read as the card's Worker)
+        // not-mine text (Henry, the Worker, or another human) — a sender
+        // header only on the first message of a consecutive run from them
+        // (Slack-style grouping), colored/badged by who's speaking.
         return (
-          <View key={key} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: s.agent ? t.accent2 + "66" : t.borderSubtle }}>
-            {s.agent ? (
+          <View key={key} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: byKind !== "worker" ? ac + "66" : t.borderSubtle }}>
+            {showHeader ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                <Ionicons name="sparkles-outline" size={11} color={t.accent2} />
-                <Text style={{ color: t.accent2, fontSize: 10.5, fontWeight: "700" }}>{tr("transcript.boardAgent")}</Text>
+                <Ionicons name={senderIcon} size={11} color={ac} />
+                <Text style={{ color: ac, fontSize: 10.5, fontWeight: "700" }}>{senderLabel}</Text>
               </View>
             ) : null}
             <CollapsibleMarkdown text={s.text || ""} color={ac} />
