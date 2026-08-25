@@ -607,7 +607,9 @@ export default function Settings() {
                     <Pressable onPress={() => revokeDeviceH(d)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.devices.revoke")}</Text></Pressable>
                   </View>
                   <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
-                    {d.last_seen ? tr("settings.devices.lastSeen", { when: d.last_seen }) : tr("settings.devices.neverSeen")}
+                    {/* clean the raw daemon timestamp (ISO w/ ms/Z, or the
+                        daemon's "YYYY-MM-DD HH:MM:SS") down to the minute */}
+                    {d.last_seen ? tr("settings.devices.lastSeen", { when: String(d.last_seen).replace("T", " ").slice(0, 16) }) : tr("settings.devices.neverSeen")}
                   </Text>
                 </View>
               ))}
