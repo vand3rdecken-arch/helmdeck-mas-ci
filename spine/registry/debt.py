@@ -119,11 +119,27 @@ DEBT = [
                 "a working permission mode (default acceptEdits, settings "
                 "henry_permission_mode) with cwd at the repo root, and may fix "
                 "escalations itself (action 'did') instead of only steering "
-                "workers. No worktree, no gate, no review lane for those edits.",
+                "workers. No worktree, no gate, no review lane for those edits. "
+                "NARROWED 2026-08-25 (owner: 'das soll ok sein, solange user is "
+                "owner oder hat genuegend rechte'): henry_broker._decide now "
+                "resolves the escalating card's dispatcher (dispatched_by, "
+                "resolved fresh against the user registry, never the `client` "
+                "billing label) via the new _dispatcher_privileged() and drops "
+                "Henry to --permission-mode plan (no edits possible) for any "
+                "card a `client`-role account filed, with a defense-in-depth "
+                "refusal if 'did' comes back anyway - pinned in ops/tests/"
+                "test_henry_privilege_gate.py. Still OPEN for owner/operator- "
+                "dispatched cards and card-less escalations (box load, deploy "
+                "hooks) - the general no-worktree/no-gate exposure below is "
+                "unchanged for those.",
         "why_it_bites": "A wrong Henry fix lands unreviewed on the live tree - "
                         "the same exposure the card rails exist to prevent, now "
-                        "on the one agent that fires unattended every 90s.",
-        "trigger": "any escalation Henry decides to fix himself",
+                        "on the one agent that fires unattended every 90s. "
+                        "(As of the narrowing above, this only applies to "
+                        "owner/operator-originated escalations - a client's "
+                        "card can no longer be the trigger.)",
+        "trigger": "any escalation on an owner/operator-dispatched (or "
+                   "card-less) situation that Henry decides to fix himself",
         "fix": "Bound his hands the way direct cards are bound: run his acting "
                "turns through the direct-task queue (per-tree serialization), "
                "auto-commit a labelled baseline before he edits, and surface "
