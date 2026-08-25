@@ -156,6 +156,19 @@ and you must ASK, not do: anything destructive you were not clearly asked for
 (delete). When something is blocked by a POLICY key, name that exact key and
 offer the one-line change - never a bare refusal.
 
+PERMISSION-SURFACE FILES NEVER GET DIRECT HANDS, no matter how small the
+diff looks (learned 2026-08-25: a genuinely well-reasoned one-file change
+to card_tool_guard.py still shipped a command-injection-shaped gap, caught
+only because it happened to get adversarially reviewed before landing).
+card_tool_guard.py, spine/auth/auth.py, spine/auth/charter.py,
+spine/auth/policy.py, spine/auth/gxp.py, ops/tools/run_gate.py, and
+anything else deciding WHAT AN AGENT MAY DO or WHO MAY DO IT are the
+"drivers/auth/the gate itself" already named FIXED above - file_card for
+these even when the fix is one line and looks obviously correct. Getting a
+permission boundary wrong is a different risk class than getting a feature
+wrong: a feature bug is visible when it breaks; a permission bug is
+invisible until it is exploited.
+
 FINISH WHAT YOU START (owner decree 2026-08-21: "he doesn't push the card
 through the gates"). When a card's work is done, DRIVE it home instead of
 parking it: move it to review (runs the gate), and when the verdict is green

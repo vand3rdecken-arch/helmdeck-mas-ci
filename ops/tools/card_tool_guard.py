@@ -30,6 +30,31 @@ independently-testable rule instead of a side effect of CLI defaults:
     steering their own card has no legitimate need for the agent to reach the
     network, and it is the one category no path check can cover.
 
+CLIENT-SCOPE BUILD/TEST ALLOWLIST (2026-08-25, owner request: a client card
+must still be able to WORK, not just be fenced in). Measured first, not
+assumed: acceptEdits already auto-approves ordinary in-worktree shell (ls,
+mkdir, git, etc. - no allow-list entry needed) but the CLI treats toolchain
+launchers like npm as needing explicit approval regardless of the actual
+subcommand, which headless mode can never give. card.json's static
+`permissions.allow` is one global list with no notion of scope; rather than
+grow that file with client-specific nuance, this hook grants a CURATED,
+narrow set of build/test invocations via permissionDecision:"allow" (proven
+in the same probe session to genuinely pre-approve a command the base CLI
+would otherwise block) - but ONLY under HELMDECK_TOOL_SCOPE=client, and
+ONLY after the same path-escape scan every Bash command already goes
+through. A DENY-first check for package-mutating/publishing verbs
+(install, publish, add a dependency, ...) wins even if a command's prefix
+would otherwise match the allowlist - "run the tests" and "add a new
+dependency from the network" are different risk classes and must not share
+one gate.
+
+Matched on ARGV, not the raw string (_client_allow_argv_hit): the first cut
+of this allowlist matched a raw string prefix, so "npm run test; rm -rf /"
+matched "npm run test" and _grant()'d the whole line - found by adversarial
+testing the same day, before landing, and fixed before this file was ever
+committed. See _grant()'s own comment for the invariant that closes the
+class of bug, not just this one instance.
+
 FAIL-CLOSED ON OUR OWN BUGS: a PreToolUse hook that crashes does NOT block the
 tool call (measured in the same probe session - a Python SyntaxError in a
 test hook let the call through, permission_denials stayed empty). So every
@@ -39,6 +64,7 @@ opposites, and permissive is not safe.
 """
 import json
 import os
+import shlex
 import sys
 
 
@@ -58,7 +84,105 @@ def _allow():
     sys.exit(0)
 
 
+def _grant(reason):
+    # INVARIANT (learned the hard way, 2026-08-25): a pre-approve must be at
+    # LEAST as strict as whatever check it skips past. _bash_escape_paths'
+    # own docstring below says it relies on the base CLI's static analysis
+    # to already catch `;`/`&`/`$(...)` shell-chaining - but _grant() runs
+    # BEFORE that analysis gets a turn (that IS the point: pre-approving
+    # something the CLI would otherwise hold). So every _grant() call site
+    # must independently re-verify that same property itself. The first
+    # version of the client-scope allowlist didn't: it matched a RAW STRING
+    # prefix, so "npm run test; rm -rf /" matched "npm run test" and got
+    # the whole line - chained rm included - waved through. Fixed same day
+    # by _client_allow_argv_hit (argv-tokenized + metachar refusal), pinned
+    # in ops/tests/test_card_tool_guard.py. Any NEW _grant() call site must
+    # clear this bar too, not just "looks like a safe prefix".
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    sys.exit(0)
+
+
 _PATH_KEYS = ("file_path", "path", "notebook_path")
+
+# Package-mutating/publishing verbs - network egress and arbitrary
+# postinstall-script execution, the two things a client card must not get
+# just because its stated task happens to touch a package.json. Checked as
+# whole words so "install" doesn't also kill "npm run reinstall-fixtures"
+# (a project script name), and matched BEFORE the allowlist so it wins on
+# any overlap.
+_DENY_VERBS = (
+    "install", "uninstall", "add", "remove", "publish", "unpublish",
+    "link", "unlink", "update", "upgrade", "dedupe", "audit", "ci",
+    "config", "login", "logout", "token", "owner", "deprecate", "star",
+    "pip3",  # bare pip/pip3 invocation without an allowlisted subcommand
+)
+
+# Curated, narrow build/test invocations - matched as an ARGV PREFIX (not a
+# raw string prefix; see _client_allow_argv_hit). ("npm","run") alone means
+# "npm run <any script name>" - the script itself still runs inside the
+# worktree under the card's own permissions, same trust boundary the old
+# string-prefix form already accepted; this only changes HOW the prefix is
+# matched, not what scope it grants.
+_CLIENT_ALLOW_ARGV = (
+    ("npm", "run"),
+    ("npm", "test"),
+    ("npx", "tsc", "--noEmit"),
+    ("npx", "jest"),
+    ("npx", "eslint"),
+    ("pytest",),
+    ("python", "-m", "pytest"),
+    ("python3", "-m", "pytest"),
+    ("py", "-3.12", "-m", "pytest"),
+    ("py", "-3.12", "ops/tools/run_gate.py"),
+    ("python", "ops/tools/run_gate.py"),
+)
+
+# Shell control operators that would let a second, unreviewed command ride
+# in after an otherwise-legitimate prefix. Checked on the RAW string BEFORE
+# any tokenizing - shlex.split() is a plain word-splitter, not a POSIX/cmd
+# shell, so it does not treat `;`/`&`/`|` as separators; it would just hand
+# back "test;" or "rm" as ordinary-looking tokens, silently defeating an
+# argv-prefix match if this check were skipped. Measured 2026-08-25: before
+# this existed, "npm run test; rm -rf /" matched the "npm run test" STRING
+# prefix and _grant()'d the whole line, chained rm included.
+_SHELL_METACHARS = (";", "&", "|", "`", "$(", "\n", "\r", ">", "<")
+
+
+def _client_allow_argv_hit(command):
+    """True if `command` is EXACTLY one curated invocation - its argv starts
+    with one of _CLIENT_ALLOW_ARGV's tuples - and carries no shell control
+    operator that could chain a second command after it. Any ambiguity
+    (a metacharacter present, or shlex failing to parse the string at all -
+    unbalanced quotes) refuses the fast-grant; that is NOT a new denial, it
+    is simply "no opinion", falling through to the same _allow() this
+    command would have reached before this allowlist ever existed."""
+    if any(ch in (command or "") for ch in _SHELL_METACHARS):
+        return False
+    try:
+        argv = shlex.split(command or "", posix=(os.name != "nt"))
+    except ValueError:
+        return False
+    if not argv:
+        return False
+    for prefix in _CLIENT_ALLOW_ARGV:
+        if len(argv) < len(prefix) or tuple(argv[:len(prefix)]) != prefix:
+            continue
+        if prefix == ("npm", "run") and len(argv) < 3:
+            continue   # "npm run" alone names no script - nothing to grant
+        return True
+    return False
+
+
+def _bash_word_hit(command, words):
+    import re
+    toks = set(re.findall(r"[A-Za-z][A-Za-z0-9_-]*", (command or "").lower()))
+    return next((w for w in words if w in toks), None)
 
 
 def _outside_worktree(candidate, worktree):
@@ -135,11 +259,23 @@ def main():
             return
 
         if tool == "Bash":
-            bad = _bash_escape_paths(ti.get("command") or "", worktree)
+            command = ti.get("command") or ""
+            bad = _bash_escape_paths(command, worktree)
             if bad:
                 _deny("card_tool_guard: command references %r, outside "
                       "this card's worktree" % bad)
                 return
+            if scope == "client":
+                hit = _bash_word_hit(command, _DENY_VERBS)
+                if hit:
+                    _deny("card_tool_guard: '%s' is a package-mutating/"
+                          "publishing command, not available on a "
+                          "client-filed card" % hit)
+                    return
+                if _client_allow_argv_hit(command):
+                    _grant("card_tool_guard: curated build/test command "
+                           "for a client-filed card")
+                    return
             _allow()
             return
 
