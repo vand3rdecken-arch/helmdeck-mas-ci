@@ -355,8 +355,17 @@ def plan_calibration(ev=None, s=None):
     if not isinstance(used, (int, float)) or used < MIN_CALIB_PCT:
         return None
     cutoff = time.time() - WEEK_SEC
+    # external=True (spine.turn.econ._record_econ, a remote device with its
+    # OWN Claude account - ops/docs/backlog/remote-device-execution) is
+    # excluded HERE specifically: `used` above is THIS account's own usage
+    # percentage from the Anthropic usage API, and an external device's
+    # tokens never drew against it - folding them into `tok` would inflate
+    # tokens_per_pct for every card sharing the real account. Measured
+    # 2026-08-25: without this exclusion the corruption is silent, not an
+    # error - the number is just wrong.
     rows = [e for e in (ev if ev is not None else read_events())
-            if e.get("kind") == "turn" and _ts_epoch(e.get("ts", "")) >= cutoff]
+            if e.get("kind") == "turn" and not e.get("external")
+            and _ts_epoch(e.get("ts", "")) >= cutoff]
     tok = sum(turn_tokens(e) for e in rows)
     if tok <= 0:
         return None

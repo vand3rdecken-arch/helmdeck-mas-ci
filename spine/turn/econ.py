@@ -10,14 +10,28 @@ referenced lazily to avoid an import cycle.
 import time
 
 
-def _record_econ(t, meta):
+def _record_econ(t, meta, external=False):
     """Fold ONE model call's spend into the card + the event log.
 
     Split out of _record_turn because not every model call is a card turn: the
     question-repair call (_repair_question) is real spend on the owner's account
     and the 'measured economics' law admits no unbilled calls - but it is not a
     turn of the conversation, so it must not move the failure signal or drop a
-    rewind checkpoint."""
+    rewind checkpoint.
+
+    external=True (remote device execution, ops/docs/backlog/remote-device-
+    execution, a device with spine.auth.devices billing_scope="external"):
+    the spend still lands on THIS CARD (ai_cost/tokens_in/out - a real card's
+    real cost, worth showing regardless of who paid for it) and the "turn"
+    event still carries it for that per-card view - but the event is tagged
+    `external=True` so events.plan_calibration's window sum can exclude it.
+    That calibration divides measured tokens by the DAEMON's OWN account's
+    usage percentage (from the Anthropic usage API) - a device's own,
+    separate Claude subscription never touched that quota, so folding its
+    tokens into the numerator would inflate tokens_per_pct for every OTHER
+    card sharing the real account. Silently NOT excluding this was measured
+    (2026-08-25) to actively corrupt that shared calibration, not just be
+    imprecise."""
     from spine.storage import events
     from cells.engineer import sessions
     u = meta.get("usage") or {}
@@ -59,7 +73,9 @@ def _record_econ(t, meta):
     if (t.get("ctx_tokens") or 0) > sessions._CTX_WINDOW:
         win = 1_000_000
     t["ctx_window"] = max(win, t.get("ctx_window") or 0, t.get("ctx_tokens") or 0)
-    events.emit("turn", t["id"], cost=round(cost, 6), usage=u, models=meta.get("models") or [])
+    kwargs = {"external": True} if external else {}
+    events.emit("turn", t["id"], cost=round(cost, 6), usage=u,
+               models=meta.get("models") or [], **kwargs)
     return cost
 
 

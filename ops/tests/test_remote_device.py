@@ -347,6 +347,62 @@ def main():
     ok(h.code == 200 and h.body.get("exec_site") == "local:" + rec_ext["id"],
        "POST /devices/reassign works for the owning actor")
 
+    # -- 10: submit_remote_result folds usage_meta via the real econ path ----
+    print("\nsubmit_remote_result: usage_meta -> spine.turn.econ, external tag by billing_scope")
+    from spine.storage import events as _events
+    meta = {"usage": {"input_tokens": 2000, "output_tokens": 1000}, "cost_usd": 0.10,
+           "models": ["claude-sonnet-5"]}
+
+    branch7 = "device/feature-econ-ext"
+    git(remote_clone, "checkout", "-q", "-b", branch7)
+    open(os.path.join(remote_clone, "econ_ext.txt"), "w").write("x\n")
+    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "econ ext")
+    bundle7 = os.path.join(tmp, "s7.bundle")
+    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle7, branch7],
+                   capture_output=True, text=True)
+    t7 = dispatch.new_remote_task(central, branch7, "econ ext", rec_ext["id"], actor="alice")
+    dispatch.claim_remote_task(rec_ext["id"])
+    r7 = dispatch.submit_remote_result(t7["id"], bundle7, actor="alice",
+                                       device_id=rec_ext["id"], usage_meta=meta)
+    t7_now = dispatch._find(dispatch._load(), t7["id"])
+    ok(t7_now.get("ai_cost", 0) > 0, "an EXTERNAL device's usage still lands on ITS card (ai_cost)")
+    turn_ev7 = next((e for e in _events.read_events()
+                     if e.get("kind") == "turn" and e.get("track") == t7["id"]), None)
+    ok(turn_ev7 and turn_ev7.get("external") is True,
+       "the turn event for an external-scope device is tagged external=True")
+
+    branch8 = "device/feature-econ-shared"
+    git(remote_clone, "checkout", "-q", "-b", branch8)
+    open(os.path.join(remote_clone, "econ_shared.txt"), "w").write("x\n")
+    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "econ shared")
+    bundle8 = os.path.join(tmp, "s8.bundle")
+    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle8, branch8],
+                   capture_output=True, text=True)
+    t8 = dispatch.new_remote_task(central, branch8, "econ shared", rec_shared["id"], actor="alice")
+    dispatch.claim_remote_task(rec_shared["id"])
+    r8 = dispatch.submit_remote_result(t8["id"], bundle8, actor="alice",
+                                       device_id=rec_shared["id"], usage_meta=meta)
+    turn_ev8 = next((e for e in _events.read_events()
+                     if e.get("kind") == "turn" and e.get("track") == t8["id"]), None)
+    ok(turn_ev8 and not turn_ev8.get("external"),
+       "the turn event for a SHARED-scope device carries no external tag")
+
+    # a submit with NO usage_meta (worker couldn't parse the CLI output) must
+    # still land the card cleanly - cost reporting is best-effort, never a
+    # blocker for real work.
+    branch9 = "device/feature-no-usage"
+    git(remote_clone, "checkout", "-q", "-b", branch9)
+    open(os.path.join(remote_clone, "no_usage.txt"), "w").write("x\n")
+    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "no usage")
+    bundle9 = os.path.join(tmp, "s9.bundle")
+    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle9, branch9],
+                   capture_output=True, text=True)
+    t9 = dispatch.new_remote_task(central, branch9, "no usage", rec_ext["id"], actor="alice")
+    dispatch.claim_remote_task(rec_ext["id"])
+    r9 = dispatch.submit_remote_result(t9["id"], bundle9, actor="alice",
+                                       device_id=rec_ext["id"], usage_meta=None)
+    ok(r9.get("lane") in ("review", "done"), "a submit with no usage_meta still lands normally")
+
     print("\n%d failure(s)" % len(_fails))
     if _fails:
         sys.exit(1)
