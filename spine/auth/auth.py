@@ -44,6 +44,28 @@ def chat_admin_roles():
 def is_admin(user):
     return bool(user) and user.get("role") in chat_admin_roles()
 
+
+def owns_card(user, track):
+    """May `user` see/act on THIS card? True unconditionally for owner and
+    operator - a client is the only role a card can be private FROM.
+
+    This is the check three GET routes shipped without
+    (spine/http/routes/routes_runs.py's screen recording + action log,
+    routes_sign.py's signature metadata, routes_system.py's /history) -
+    each one hand-rolled its own `user["role"]=="client" and t.get("client")
+    != user["name"]` instead of calling one function, and the three misses
+    were exactly the routes nobody thought to copy the pattern into.
+    cells/engineer/routes_tracks.py and routes_track_actions.py now call
+    this too, so there is exactly one place the ownership rule lives -
+    a new route gets it right by construction instead of by remembering to
+    paste four lines correctly.
+
+    Takes the track dict directly rather than an id: every call site has
+    already looked the card up (to 404 on a missing one, to act on it), so
+    a second internal lookup here would just be a second place that lookup
+    could drift from the caller's."""
+    return user.get("role") != "client" or bool(track) and track.get("client") == user.get("name")
+
 # -- brute-force lockout ---------------------------------------------------
 # There was no limit of ANY kind on password attempts: the relay exposes the
 # login to the internet and a guesser could run flat out forever. The audit

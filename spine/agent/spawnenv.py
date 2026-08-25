@@ -39,7 +39,16 @@ def _card_env(t):
     bind HELMDECK_DEV_PORT instead of fighting siblings over the project's
     default port. Deliberately NOT exposed: the source checkout path (Paseo's
     PASEO_SOURCE_CHECKOUT_PATH) - that is where the secrets live that the
-    worktree was isolated away from."""
+    worktree was isolated away from.
+
+    HELMDECK_TOOL_SCOPE is what ops/tools/card_tool_guard.py's PreToolUse hook
+    reads to decide how hard to enforce the worktree boundary. Derived from
+    `dispatched_by` - WHO ASKED for this card (dispatch.py), not `client` (the
+    billing label, which an owner can set on their own card for invoicing and
+    is therefore not proof of who is steering it) - resolved fresh against the
+    user registry at spawn time, same pattern as gxp.is_human(): a role is
+    read from auth.get_user() at the moment it matters, never assumed from a
+    stored string on the track."""
     if not t:
         return {}
     out = {}
@@ -49,6 +58,13 @@ def _card_env(t):
         out["HELMDECK_WORKTREE"] = str(t["worktree"])
     if t.get("branch") and not t.get("machine"):
         out["HELMDECK_BRANCH"] = str(t["branch"])
+    try:
+        from spine.auth import auth
+        u = auth.get_user(t.get("dispatched_by") or "")
+        if u and u.get("role") == "client":
+            out["HELMDECK_TOOL_SCOPE"] = "client"
+    except Exception:
+        pass   # unresolved role: no scope var set, guard falls back to its own default
     return out
 
 

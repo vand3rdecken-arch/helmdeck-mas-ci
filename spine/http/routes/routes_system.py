@@ -84,6 +84,8 @@ def history_get(self, user):
             "client": t.get("client") if t else "",
         })
     branches.sort(key=lambda b: (b["track"] is None, b["name"]))
+    from spine.auth import auth
+    branches = [b for b in branches if auth.owns_card(user, b)]
     return self._send(200, json.dumps(
         {"head": head, "main": main, "branches": branches[:40]}))
 

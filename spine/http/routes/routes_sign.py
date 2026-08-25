@@ -33,6 +33,9 @@ def sign_subject_get(self, user, tid):
     t = _find(_load(), tid)
     if not t:
         return self._send(404, json.dumps({"error": "no such card"}))
+    from spine.auth import auth
+    if not auth.owns_card(user, t):
+        return self._send(403, json.dumps({"error": "not your card"}))
     from spine.auth import gxp
     subj, why = signatures.subject(t)
     return self._send(200, json.dumps({

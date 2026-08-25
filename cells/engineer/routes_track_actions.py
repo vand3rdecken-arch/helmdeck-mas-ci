@@ -24,8 +24,9 @@ def tracks_stream_get(self, user, tid):
     import time as _t
     from cells.engineer import sessions
     from spine.agent import claude_sessions
+    from spine.auth import auth
     t = sessions.get_track(tid)
-    if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+    if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
     self.send_response(200)
     self.send_header("Content-Type", "text/event-stream")
@@ -69,13 +70,12 @@ def tracks_stream_get(self, user, tid):
 
 def tracks_steer_post(self, user, body, tid):
     from cells.engineer import sessions
+    from spine.auth import auth
     text = body.get("text")
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     actor = user["name"]
     model = body.get("model", "")
     thinking = body.get("thinking", "")          # level string, "" = off
@@ -95,11 +95,10 @@ def tracks_answer_post(self, user, body, tid):
     # worker continues with the decision), so holding the request
     # would block the phone for the length of that turn.
     from cells.engineer import sessions
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    from spine.auth import auth
     t = sessions.get_track(tid)
+    if not auth.owns_card(user, t):
+        return self._send(403, json.dumps({"error": "not your card"}))
     if not t or not t.get("question"):
         return self._send(409, json.dumps({"error": "no pending question"}))
     # validate BEFORE backgrounding, so a bad/stale answer reports
@@ -122,10 +121,9 @@ def tracks_answer_post(self, user, body, tid):
 
 def tracks_cancel_post(self, user, body, tid):
     from cells.engineer import sessions
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    from spine.auth import auth
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     return self._send(200, json.dumps(sessions.cancel_turn(tid, actor=user["name"])))
 
 
