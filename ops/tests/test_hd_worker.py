@@ -211,37 +211,34 @@ def main():
     ok("--daemon/config daemon" in missing[0] or any("--daemon" in m for m in missing),
        "missing list names WHICH values are absent, not just that something is")
 
-    # -- 8: _run_turn_locally interrupt (Phase E) ------------------------------
+    # -- 8: _run_turn_locally streaming path (Phase E interrupt + Phase H stream)
     print("\n_run_turn_locally: still_mine=False mid-turn kills the subprocess")
-    # a fake long-running child: a python one-liner that sleeps. still_mine
-    # flips to False after the first poll, so the watcher must kill it and
-    # raise TurnInterrupted well before the sleep would finish.
-    import subprocess as _sp
-    polls = {"n": 0}
-    def still_mine_flip():
-        polls["n"] += 1
-        return polls["n"] < 1   # False from the very first check
+    import threading as _th
     orig_popen = hd.subprocess.Popen
     killed = {"done": False}
-    class _FakeProc:
+    # A stdout whose iteration BLOCKS (a turn still running) until the process
+    # is killed - so the reader thread stays alive and the poll loop actually
+    # reaches the still_mine check, exactly like a real long turn.
+    class _BlockingStdout:
+        def __init__(self): self._stop = _th.Event()
+        def __iter__(self): return self
+        def __next__(self):
+            self._stop.wait()          # block until released
+            raise StopIteration
+        def read(self): return ""
+    class _BlockingProc:
         def __init__(self):
-            self.pid = -1
-            self.returncode = None
-            self.stdin = io.StringIO()
-            self.stdout = io.StringIO("")
-            self.stderr = io.StringIO("")
-            self._waits = 0
-        def wait(self, timeout=None):
-            self._waits += 1
-            raise _sp.TimeoutExpired("claude", timeout)   # never finishes on its own
-    fake = _FakeProc()
-    hd.subprocess.Popen = lambda *a, **kw: fake
+            self.pid = -1; self.returncode = None
+            self.stdin = io.StringIO(); self.stdout = _BlockingStdout(); self.stderr = io.StringIO("")
+        def wait(self, timeout=None): return 0
+    bp = _BlockingProc()
+    hd.subprocess.Popen = lambda *a, **kw: bp
     orig_treekill = hd._tree_kill
-    hd._tree_kill = lambda proc: killed.__setitem__("done", True)
+    hd._tree_kill = lambda proc: (killed.__setitem__("done", True), bp.stdout._stop.set())
     try:
         try:
             hd._run_turn_locally("C:/fake/repo", "br", "task", "",
-                                still_mine=still_mine_flip, poll_interval=0.01)
+                                still_mine=lambda: False, poll_interval=0.01)
             ok(False, "a still_mine that goes False should raise TurnInterrupted")
         except hd.TurnInterrupted:
             ok(True, "TurnInterrupted raised when the card stops being ours mid-turn")
@@ -250,31 +247,52 @@ def main():
         hd.subprocess.Popen = orig_popen
         hd._tree_kill = orig_treekill
 
-    # still_mine that stays True: the turn runs to completion (proc.wait
-    # returns normally on the 2nd poll), usage parsed from stdout.
-    print("\n_run_turn_locally: still_mine=True runs to completion")
-    good = json.dumps({"result": "ok", "total_cost_usd": 0.01,
-                      "usage": {"input_tokens": 10}, "modelUsage": {"m": {}}})
-    class _FinishingProc:
+    # still_mine stays True: the turn runs to completion (stdout EOFs), usage
+    # parsed from the stream-json result event, and on_stream got the events.
+    print("\n_run_turn_locally: streams events + completes with usage")
+    lines = "\n".join([
+        json.dumps({"type": "assistant", "message": {"role": "assistant",
+                    "content": [{"type": "text", "text": "hi"}]}}),
+        json.dumps({"type": "result", "subtype": "success", "result": "ok",
+                    "total_cost_usd": 0.01, "usage": {"input_tokens": 10},
+                    "modelUsage": {"m": {}}}),
+    ]) + "\n"
+    class _StreamProc:
         def __init__(self):
             self.pid = -2; self.returncode = 0
-            self.stdin = io.StringIO()
-            self.stdout = io.StringIO(good); self.stderr = io.StringIO("")
-            self._n = 0
-        def wait(self, timeout=None):
-            self._n += 1
-            if self._n < 2:
-                raise _sp.TimeoutExpired("claude", timeout)
-            return 0   # finishes on the 2nd poll
-    fp = _FinishingProc()
-    hd.subprocess.Popen = lambda *a, **kw: fp
+            self.stdin = io.StringIO(); self.stdout = io.StringIO(lines); self.stderr = io.StringIO("")
+        def wait(self, timeout=None): return 0
+    hd.subprocess.Popen = lambda *a, **kw: _StreamProc()
+    streamed = []
     try:
         reply, meta = hd._run_turn_locally("C:/fake/repo", "br", "task", "",
-                                          still_mine=lambda: True, poll_interval=0.01)
+                                          still_mine=lambda: True,
+                                          on_stream=lambda evs: streamed.extend(evs),
+                                          poll_interval=0.05)
         ok(reply == "ok" and meta and meta["cost_usd"] == 0.01,
-           "an uninterrupted turn completes and its usage is parsed as usual")
+           "the turn completes and usage is parsed from the stream-json result event")
+        ok(any(e.get("type") == "assistant" for e in streamed),
+           "on_stream received the live turn events (Phase H)")
+        ok(any(e.get("type") == "result" for e in streamed),
+           "the result event is streamed too")
     finally:
         hd.subprocess.Popen = orig_popen
+
+    # simple path (no still_mine, no on_stream): the old blocking --output-format
+    # json call, unchanged - still parses usage.
+    print("\n_run_turn_locally: simple blocking path still works")
+    good = json.dumps({"result": "done", "total_cost_usd": 0.02,
+                      "usage": {"input_tokens": 5}, "modelUsage": {"m2": {}}})
+    orig_run2 = hd.subprocess.run
+    class _CP:
+        def __init__(self): self.returncode = 0; self.stdout = good; self.stderr = ""
+    hd.subprocess.run = lambda *a, **kw: _CP()
+    try:
+        reply, meta = hd._run_turn_locally("C:/fake/repo", "br", "task", "")
+        ok(reply == "done" and meta and meta["cost_usd"] == 0.02,
+           "the simple path (no callbacks) parses usage from --output-format json")
+    finally:
+        hd.subprocess.run = orig_run2
 
     # -- 9: autostart (Phase F) ------------------------------------------------
     print("\n_autostart_cmd / _set_autostart (Windows HKCU Run key)")

@@ -488,6 +488,40 @@ def device_card_status(device_id, tid):
     return {"assigned": True, "reason": ""}
 
 
+def record_remote_stream(tid, device_id, stream_events):
+    """Fold a batch of a device turn's LIVE stream events into the card's
+    timeline (ops/docs/backlog/remote-device-execution PLAN-hardening.md
+    Phase H) - so the board shows a device turn AS IT HAPPENS, exactly like a
+    local card. Reuses spine.agent.drivers.fold_timeline_event (the same
+    function the local driver's own pump calls), NOT a fork - a device turn's
+    events are the same Claude stream-json events. Only accepts events for a
+    card that is STILL this device's own working card (same guard as
+    device_card_status), so a stale/reassigned worker cannot keep writing to
+    a card that moved. Best-effort per the feed-write discipline: a bad event
+    is skipped, never raised - a broken stream must not fail the turn's real
+    result, which lands via submit_remote_result regardless. Returns the
+    number of events folded."""
+    from spine.agent import drivers
+    t = _find(_load(), tid)
+    if not t:
+        raise RuntimeError("no such card: %s" % tid)
+    if t.get("exec_site") != "local:" + device_id or t.get("lane") != "working":
+        raise RuntimeError("card %s is not this device's active card" % tid)
+    run_dir = t.get("run_dir")
+    if not run_dir:
+        return 0
+    n = 0
+    for ev in (stream_events or []):
+        if not isinstance(ev, dict):
+            continue
+        try:
+            drivers.fold_timeline_event(run_dir, ev)
+            n += 1
+        except Exception:
+            pass   # one malformed event never breaks the batch or the turn
+    return n
+
+
 def sweep_stale_device_claims(claim_ttl_s=None, last_seen_grace_s=180):
     """Return a claimed-but-abandoned card to backlog for the SAME device to
     re-claim (never cross-device - that is an explicit owner action,

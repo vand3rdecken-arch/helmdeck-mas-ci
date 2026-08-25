@@ -364,6 +364,26 @@ a seeded stuck device card - not just "the component mounts".
 
 ## Phase H - live device-turn transcript to the board  [enhancement, biggest lift]
 
+> **SHIPPED 2026-08-25** (owner: "ok, h"). Built exactly on subtlety #2
+> (the new worker->daemon mid-turn data path). Extraction: drivers.py's
+> _fold_timeline body moved to a module-level fold_timeline_event(run_dir,
+> ev); the method delegates, so the local path is byte-identical (proven -
+> test_timeline_store.py drives _fold_timeline via _on_event and stayed
+> green). Worker: _run_turn_locally's streaming path now uses --output-
+> format stream-json, a reader thread (no PIPE-fill deadlock) forwards
+> event batches to on_stream while still checking still_mine; process_one
+> POSTs them to POST /devices/<id>/stream. Daemon: dispatch.record_remote_
+> stream folds each event through the SAME drivers.fold_timeline_event a
+> local card uses, guarded to this device's own working card, best-effort -
+> so the existing board SSE / transcript_store_version renders a device
+> turn live with ZERO board-side change (the landing side was already
+> done, exactly as the subtlety predicted). Pinned in test_remote_device.py
+> (fold shape incl. tool_result patching the same step by _id, the moved-
+> card guard, the route: client-blocked, missing-events 400) and
+> test_hd_worker.py (streaming forwards events + parses usage from the
+> stream-json result event; the Phase E interrupt still works on the new
+> reader-thread path).
+
 **The gap.** A device turn is invisible until it submits; a local card
 streams live.
 

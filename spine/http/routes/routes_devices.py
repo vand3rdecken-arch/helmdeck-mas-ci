@@ -97,6 +97,28 @@ def devices_card_status_get(self, user, did, tid):
     return self._send(200, json.dumps(dispatch.device_card_status(did, tid)))
 
 
+def devices_stream_post(self, user, body, did):
+    # Live transcript deltas from a device turn (Phase H). Same gate as
+    # queue/submit; touch()es so a long streaming turn counts as alive to
+    # the stale-claim sweep. Best-effort - a stream error is a 400 the worker
+    # ignores (its real result still lands via /submit); it never affects the
+    # turn.
+    from spine.auth import devices
+    from cells.engineer import dispatch
+    if user["role"] == "client" or not devices.resolve(user, did):
+        return self._send(404, json.dumps({"error": "no such device"}))
+    devices.touch(did)
+    tid = body.get("track")
+    events = body.get("events")
+    if not tid or not isinstance(events, list):
+        return self._send(400, json.dumps({"error": "track and events[] required"}))
+    try:
+        n = dispatch.record_remote_stream(tid, did, events)
+    except RuntimeError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps({"folded": n}))
+
+
 def devices_submit_post(self, user, body, did):
     from spine.auth import devices
     from cells.engineer import dispatch

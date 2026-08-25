@@ -113,25 +113,43 @@ DEBT = [
                 "lint clean for the new keys (the 6 remaining i18n reds "
                 "pre-date this and are the known base issue), present() "
                 "device_stale derivation pinned in test_remote_device.py. "
-                "OUTSTANDING for G: the CLAUDE.md UI law's screenshot+JUDGE "
-                "of the POPULATED panels (empty-state renders by pattern "
-                "construction, but the owner reviews UI hard and the "
-                "populated device-list/stale-card/reassign states were not "
-                "screenshotted this round - needs a seeded Expo-web run). "
-                "STILL OPEN: no live transcript streaming mid-turn (Phase H, "
-                "needs the relay long-poll shape, a bigger lift).",
-        "why_it_bites": "Phase H aside, the device UI has not had the visual "
-                        "screenshot+JUDGE the owner's UI-review law requires "
-                        "for its populated states - it typechecks and follows "
+                "PHASE H PAID 2026-08-25 (owner: 'ok, h'): a device turn now "
+                "streams its live transcript to the board, identical to a "
+                "local card. spine/agent/drivers.py's _fold_timeline body was "
+                "EXTRACTED to a module-level fold_timeline_event(run_dir, ev) "
+                "(the method now delegates - test_timeline_store.py, which "
+                "drives _fold_timeline via _on_event, still green, proving the "
+                "local path is byte-identical), so BOTH a local pump and the "
+                "device path fold through the same function, no fork. Worker: "
+                "_run_turn_locally's streaming path switched to --output-"
+                "format stream-json, reads events in a reader thread (avoids "
+                "the PIPE-fill deadlock), forwards each batch to on_stream "
+                "WHILE checking still_mine every poll; process_one POSTs them "
+                "to POST /devices/<id>/stream. Daemon: dispatch.record_remote_"
+                "stream folds each event via drivers.fold_timeline_event into "
+                "the card's timeline, guarded to this device's own working "
+                "card, best-effort (a bad event skipped, never raised) - so "
+                "the existing board SSE/transcript_store_version renders a "
+                "device turn live with ZERO board-side change. Pinned in "
+                "test_remote_device.py (fold shape incl. tool_result patching "
+                "the same step, the moved-card guard, the route) and "
+                "test_hd_worker.py (streaming path forwards events + parses "
+                "usage from the stream-json result; interrupt still works). "
+                "STILL OPEN, the only remaining item: the CLAUDE.md UI law's "
+                "screenshot+JUDGE of the POPULATED Phase-G panels (empty-"
+                "state renders by pattern construction, but the owner reviews "
+                "UI hard and the populated device-list/stale-card/reassign "
+                "states were not screenshotted - needs a seeded Expo-web run).",
+        "why_it_bites": "The device UI has not had the visual screenshot+"
+                        "JUDGE the owner's UI-review law requires for its "
+                        "populated states - it typechecks and follows "
                         "existing chip/panel patterns, but has not been SEEN "
                         "with real device data.",
         "trigger": "the owner (or a screenshot run) reviewing the populated "
-                   "device panel / stale-card badge, or wanting a device "
-                   "turn's live transcript on the board",
+                   "device panel / stale-card badge / live device transcript",
         "fix": "Screenshot + JUDGE the populated device panel + board badge "
-               "(seed a stuck device card in an Expo-web run); stream a "
-               "device turn's live transcript back over the queue channel "
-               "(needs the relay long-poll shape).",
+               "+ a live device turn's transcript (seed a device card in an "
+               "Expo-web run).",
         "order": 0,
     },
     {
