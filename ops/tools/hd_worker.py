@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
-"""SKETCH, not a hardened service (ops/docs/backlog/remote-device-execution,
-"Explicitly NOT done this round"). Runs ON A TEAM MEMBER'S OWN PC: long-polls
-the central daemon's device queue, runs a card's turn in a LOCAL clone with
-full local capability (this is the member's own trusted machine - no
-worktree/tool sandboxing here, that only matters on shared infrastructure,
-see ops/tools/card_tool_guard.py's own docstring for that distinction),
-commits, bundles the branch, and submits it back. The central daemon's gate/
-merge/GxP pipeline is untouched by any of this - it only ever sees a branch
-that has landed in its own repo, exactly like a local worktree card's.
+"""Reference worker implementation (ops/docs/backlog/remote-device-execution,
+PLAN-hardening.md Phases A-C shipped daemon-side + this file's own Phase B).
+Runs ON A TEAM MEMBER'S OWN PC: long-polls the central daemon's device
+queue, runs a card's turn in a LOCAL clone with full local capability (this
+is the member's own trusted machine - no worktree/tool sandboxing here,
+that only matters on shared infrastructure, see ops/tools/card_tool_guard.py's
+own docstring for that distinction), commits, bundles the branch, and
+submits it back. The central daemon's gate/merge/GxP pipeline is untouched
+by any of this - it only ever sees a branch that has landed in its own
+repo, exactly like a local worktree card's.
 
-No retry/offline/reconnect handling, no packaging or install story, no
-config file - a deliberately small reference implementation of the protocol,
-proven end to end by ops/tests/test_remote_device.py against the daemon
-side. Hardening this into a real background service is follow-up work.
+Still open (debt remote-worker-not-hardened, Phase D): no packaging/install
+story, shells out to `claude` directly instead of reusing
+spine/agent/drivers.py's turn machinery (so a device turn reports no usage/
+cost - see spine.auth.devices' billing_scope field, which is where that
+work will plug in once it exists).
 
 Usage:
     python ops/tools/hd_worker.py --daemon https://host:8140 --device <id> \
@@ -22,6 +24,7 @@ import argparse
 import base64
 import json
 import os
+import random
 import subprocess
 import sys
 import time
@@ -29,18 +32,40 @@ import urllib.error
 import urllib.request
 
 
-def _api(daemon, path, token, method="GET", body=None):
+def _api(daemon, path, token, method="GET", body=None,
+        retries=5, base_delay=1.0, max_delay=30.0):
+    """HTTP call with bounded exponential backoff + jitter - but ONLY on
+    transient failures (connection errors, 5xx): a daemon restart or a
+    dropped wifi packet should not turn into a lost turn. A 4xx is a real
+    refusal (bad token, wrong device, malformed body) and is raised
+    immediately, unretried - retrying a request the server has already
+    explicitly rejected wastes time and never succeeds differently.
+    `retries` is bounded (never an infinite retry loop) so a persistently
+    broken call still surfaces to the caller instead of hanging forever."""
     url = daemon.rstrip("/") + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Authorization": "Bearer " + token,
-                                          "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8") or "null")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")
-        raise RuntimeError("HTTP %s on %s: %s" % (e.code, path, body[:300]))
+    last_err = None
+    for attempt in range(retries):
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Authorization": "Bearer " + token,
+                                              "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8") or "null")
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                body_txt = e.read().decode("utf-8", "replace")
+                raise RuntimeError("HTTP %s on %s: %s" % (e.code, path, body_txt[:300]))
+            last_err = RuntimeError("HTTP %s on %s (server error)" % (e.code, path))
+        except (urllib.error.URLError, OSError) as e:
+            last_err = RuntimeError("connection error on %s: %s" % (path, e))
+        if attempt < retries - 1:
+            # Jitter REDUCES the capped delay (random.uniform(0.5, 1.0)),
+            # never multiplies it past max_delay - a jitter factor that can
+            # exceed 1.0 would make the "cap" not actually cap anything.
+            delay = min(max_delay, base_delay * (2 ** attempt)) * random.uniform(0.5, 1.0)
+            time.sleep(delay)
+    raise last_err
 
 
 def _git(repo, *args):
@@ -98,6 +123,12 @@ def process_one(daemon, device_id, token, repo_root):
     return True
 
 
+def _backoff_delay(consecutive_failures, base=2.0, cap=60.0):
+    # Same jitter shape as _api's retry delay - uniform(0.5, 1.0) REDUCES
+    # the capped value, never multiplies past `cap`.
+    return min(cap, base * (2 ** min(consecutive_failures, 6))) * random.uniform(0.5, 1.0)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--daemon", required=True)
@@ -111,16 +142,39 @@ def main():
         print("error: --repo is not a git checkout: %s" % a.repo, file=sys.stderr)
         sys.exit(1)
 
-    while True:
-        try:
-            did_work = process_one(a.daemon, a.device, a.token, a.repo)
-        except RuntimeError as e:
-            print("error: %s" % e, file=sys.stderr)
-            did_work = False
-        if a.once:
-            break
-        if not did_work:
-            time.sleep(2)
+    # "no work available" (a normal, expected poll result) and "can't reach
+    # the daemon at all" get DIFFERENT pacing - hammering a healthy-but-idle
+    # daemon every 2s is fine, hammering a genuinely down one every 2s just
+    # adds load to whatever is already struggling. consecutive_failures only
+    # counts the latter (an _api RuntimeError after its own internal retries
+    # were exhausted); a clean "no task claimed" resets it.
+    consecutive_failures = 0
+    reachable = True
+    try:
+        while True:
+            try:
+                did_work = process_one(a.daemon, a.device, a.token, a.repo)
+                consecutive_failures = 0
+                if not reachable:
+                    print("daemon reachable again.")
+                    reachable = True
+            except RuntimeError as e:
+                consecutive_failures += 1
+                did_work = False
+                if reachable:   # log the transition, not every failed attempt
+                    print("error: %s (retrying with backoff)" % e, file=sys.stderr)
+                    reachable = False
+            if a.once:
+                break
+            if consecutive_failures:
+                time.sleep(_backoff_delay(consecutive_failures))
+            elif not did_work:
+                time.sleep(2)
+    except KeyboardInterrupt:
+        print("\nshutting down - if a task was claimed mid-turn, it stays "
+              "'working' until the daemon's stale-claim sweep reclaims it "
+              "for re-processing (or you rerun this worker).")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

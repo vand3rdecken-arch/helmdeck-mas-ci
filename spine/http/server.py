@@ -490,6 +490,10 @@ def serve(port=8140):
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
         print("SESSIONS: reclaimed %d merged worktree(s)" % reclaimed)  # stays clean by having none at all.
+    reclaimed_claims = sessions.sweep_stale_device_claims()  # a card claimed by a remote
+    if reclaimed_claims:                     # device that then went quiet before this boot -
+        print("SESSIONS: reclaimed %d stale device claim(s): %s"  # same backstop-at-boot
+             % (len(reclaimed_claims), ", ".join(reclaimed_claims)))  # shape as worktrees above.
     # start_zombie_reconciler()/start_background_watcher() moved OFF this flat
     # boot path (daemon/debt.py order 33, Phase 3): both are CONTINUOUS pollers
     # over Engineer-cell state (card `status`, session liveness, background-

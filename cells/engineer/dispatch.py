@@ -440,11 +440,17 @@ def new_remote_task(repo, branch, task, device_id, actor, priority="medium",
     return cur
 
 
+_TS_FMT = "%Y-%m-%d %H:%M:%S"
+
+
 def claim_remote_task(device_id):
     """The oldest backlog card filed for this device, or None. Marks it
     'working'/'running' WITHOUT touching _start_inner - there is no local
     worktree to create; the device is now the one doing the work, and the
-    card's worktree field stays empty until submit_remote_result imports it."""
+    card's worktree field stays empty until submit_remote_result imports it.
+    Stamps `claimed_at` (UTC-naive, same format as devices.json's
+    created/last_seen) - the one fact sweep_stale_device_claims needs to
+    tell a genuinely abandoned claim from a card mid-turn."""
     from spine.storage import events
     candidates = [t for t in _load()
                  if t.get("exec_site") == "local:" + device_id and t.get("lane") == "backlog"]
@@ -453,31 +459,176 @@ def claim_remote_task(device_id):
     t = min(candidates, key=lambda t: t.get("id", ""))
     def _claim(tt):
         tt["lane"] = "working"; tt["status"] = "running"
+        tt["claimed_at"] = time.strftime(_TS_FMT)
     cur = _mutate(t["id"], _claim) or t
     events.emit("lane", cur["id"], frm="backlog", to="working")
     events.emit("remote_device", cur["id"], action="claimed", device=device_id)
     return cur
 
 
-def submit_remote_result(tid, bundle_path, actor):
+def sweep_stale_device_claims(claim_ttl_s=None, last_seen_grace_s=180):
+    """Return a claimed-but-abandoned card to backlog for the SAME device to
+    re-claim (never cross-device - that is an explicit owner action,
+    reassign_remote_task below). A claim counts as stale only when BOTH
+    signals agree - never a blind clock:
+      - claimed_at is older than the TTL (default 1800s), AND
+      - the device's last_seen (touched on every queue poll) is older than
+        `last_seen_grace_s` - a device still polling (blocked inside one
+        long Bash call between polls, say) has NOT gone quiet, so its claim
+        is left alone even past the TTL. Only a device that has stopped
+        polling entirely gets its claim reclaimed.
+    A device with no last_seen at all (never polled since claiming, or
+    deleted/revoked) counts as quiet - fails closed toward reclaiming
+    rather than leaving a card wedged on a device that may not exist
+    anymore."""
+    from spine.storage import events
+    from spine.auth import devices
+    from datetime import datetime
+    try:
+        ttl = float(claim_ttl_s if claim_ttl_s is not None else
+                   ((events.settings().get("policy") or {}).get("device") or {}).get("claim_ttl_s", 1800))
+    except (TypeError, ValueError):
+        ttl = 1800.0
+    now = datetime.strptime(time.strftime(_TS_FMT), _TS_FMT)
+    reclaimed = []
+    for t in _load():
+        exec_site = t.get("exec_site") or ""
+        if not exec_site.startswith("local:") or t.get("lane") != "working":
+            continue
+        claimed_at = t.get("claimed_at")
+        if not claimed_at:
+            continue   # pre-this-fix card, or already reclaimed once - nothing to judge by
+        try:
+            age = (now - datetime.strptime(claimed_at, _TS_FMT)).total_seconds()
+        except ValueError:
+            continue
+        if age < ttl:
+            continue
+        device_id = exec_site[len("local:"):]
+        d = devices.get_device(device_id)
+        last_seen = (d or {}).get("last_seen")
+        if last_seen:
+            try:
+                quiet = (now - datetime.strptime(last_seen, _TS_FMT)).total_seconds() > last_seen_grace_s
+            except ValueError:
+                quiet = True
+        else:
+            quiet = True
+        if not quiet:
+            continue
+        def _release(tt):
+            tt["lane"] = "backlog"; tt["status"] = "queued"
+            tt.pop("claimed_at", None)
+        cur = _mutate(t["id"], _release) or t
+        events.emit("lane", cur["id"], frm="working", to="backlog")
+        events.emit("remote_device", cur["id"], action="reclaimed", device=device_id)
+        try:
+            from spine.ops.actionlog import ActionLog
+            ActionLog(cur["run_dir"]).log(
+                "note", "Device %s war laenger nicht erreichbar - Karte zurueck in "
+                        "Backlog, dasselbe Geraet kann sie beim naechsten Connect "
+                        "wieder claimen." % device_id)
+        except Exception:
+            pass
+        reclaimed.append(cur["id"])
+    return reclaimed
+
+
+def start_device_claim_sweeper(interval=60):
+    """Continuous poller, same shape as lifecycle.start_zombie_reconciler:
+    sweep_stale_device_claims is also useful one-shot (called at boot, next
+    to sessions.sweep_worktrees), but a card claimed AFTER boot and then
+    abandoned needs a running pass to ever be noticed. Idempotent to call
+    once; sessions.start_engineer_lifecycle() is only invoked once per boot
+    (cells.start_enabled()'s own contract), so no guard needed here beyond
+    that."""
+    import threading
+    def _loop():
+        while True:
+            time.sleep(interval)
+            try:
+                reclaimed = sweep_stale_device_claims()
+                if reclaimed:
+                    print("DEVICE SWEEP: reclaimed %d stale claim(s): %s"
+                         % (len(reclaimed), ", ".join(reclaimed)), flush=True)
+            except Exception as e:
+                print("device claim sweeper error: %s" % e, flush=True)
+    threading.Thread(target=_loop, daemon=True).start()
+
+
+def reassign_remote_task(tid, to_device_id, actor):
+    """Owner/operator recovery action (Phase C): move a stuck card off a
+    dead device onto a DIFFERENT one the SAME actor owns, or clear
+    exec_site entirely (to_device_id falsy) to fall back to a normal
+    dispatchable worktree card. Only meaningful while the card is still
+    backlog/working with no worktree yet - once a worktree exists the card
+    already landed real work through the gate and reassigning its
+    executor after the fact would be nonsensical."""
+    from spine.storage import events
+    from spine.auth import devices
+    t = _find(_load(), tid)
+    if not t:
+        raise RuntimeError("no such card: %s" % tid)
+    if not (t.get("exec_site") or "").startswith("local:"):
+        raise RuntimeError("card %s is not a remote-device card" % tid)
+    if t.get("worktree"):
+        raise RuntimeError("card %s already has a landed worktree - nothing to reassign" % tid)
+    if to_device_id:
+        d = devices.get_device(to_device_id)
+        if not d or d.get("owner") != actor:
+            raise RuntimeError("no such device of yours: %s" % to_device_id)
+    def _reassign(tt):
+        if to_device_id:
+            tt["exec_site"] = "local:" + to_device_id
+        else:
+            tt.pop("exec_site", None)
+        tt["lane"] = "backlog"; tt["status"] = "queued"
+        tt.pop("claimed_at", None)
+    cur = _mutate(tid, _reassign) or t
+    events.emit("remote_device", tid, action="reassigned",
+               to_device=to_device_id or None, actor=actor)
+    return cur
+
+
+def submit_remote_result(tid, bundle_path, actor, device_id=None):
     """A device reports a finished branch: import its bundle into the
     card's repo (spine.git.gitutil._import_bundle - verifies + refuses to
     clobber), materialize the now-existing branch as a real local worktree
     via the SAME _ensure_worktree every local card uses, then hand off to
     move_lane('review') UNMODIFIED - from here the card is gated exactly
     like one that was worked locally: _gate runs, GxP's accept_block_reason
-    still applies at 'done', nothing about the merge path changes."""
-    from spine.git.gitutil import _import_bundle
+    still applies at 'done', nothing about the merge path changes.
+
+    device_id, when given, must match the card's OWN exec_site - a device
+    may only submit against a card bound to itself, never another device's.
+
+    Idempotent on the branch already existing: a lost HTTP response after a
+    successful import must not turn a retry into a hard "already exists"
+    error - _import_bundle's refuse-to-clobber is exactly right for a NEW
+    branch colliding with unrelated history, but a re-submit of the SAME
+    card's own already-landed branch is not that case."""
     from spine.storage import events
     t = _find(_load(), tid)
     if not t:
         raise RuntimeError("no such card: %s" % tid)
-    if not t.get("exec_site", "").startswith("local:"):
+    exec_site = t.get("exec_site", "")
+    if not exec_site.startswith("local:"):
         raise RuntimeError("card %s was not filed for remote device execution" % tid)
-    _import_bundle(t["repo"], bundle_path, t["branch"])
+    if device_id and exec_site != "local:" + device_id:
+        raise RuntimeError("card %s is bound to a different device" % tid)
+    if not _branch_exists(t["repo"], t["branch"]):
+        from spine.git.gitutil import _import_bundle
+        _import_bundle(t["repo"], bundle_path, t["branch"])
+    elif t.get("lane") in ("review", "done"):
+        events.emit("remote_device", tid, action="submit_retry_idempotent", actor=actor)
+        return t
+    # else: branch already imported but the card never advanced past
+    # 'working' (e.g. the daemon restarted between import and move_lane) -
+    # fall through and finish the landing without re-importing.
     wt = _ensure_worktree(t)
     def _land(tt):
         tt["worktree"] = wt
+        tt.pop("claimed_at", None)
     t = _mutate(tid, _land) or t
     events.emit("remote_device", tid, action="submitted", actor=actor)
     return move_lane(tid, "review", actor=actor)

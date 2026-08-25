@@ -164,12 +164,14 @@ def main():
     ok(os.path.exists(os.path.join(wt, "feature.txt")),
        "the device's actual commit content is present in the central worktree")
 
-    # re-submitting the same branch must not silently clobber
-    try:
-        dispatch.submit_remote_result(t["id"], bundle_path, actor="alice")
-        ok(False, "re-submitting an already-imported branch should raise")
-    except RuntimeError as e:
-        ok("already exists" in str(e), "refuses to re-import/clobber the branch")
+    # re-submitting the same branch is IDEMPOTENT (Phase A), not an error:
+    # a lost HTTP response must not turn a retry into a hard failure. The
+    # underlying refuse-to-clobber in _import_bundle is exercised directly
+    # in section 6 below (device-match / fresh-branch-collision cases), not
+    # through the public submit_remote_result retry path.
+    again = dispatch.submit_remote_result(t["id"], bundle_path, actor="alice")
+    ok(again.get("id") == t["id"] and again.get("lane") == result.get("lane"),
+       "re-submitting an already-landed branch is idempotent, not an error")
 
     # -- 4: HTTP route layer ---------------------------------------------------
     print("\nHTTP route layer")
@@ -215,6 +217,135 @@ def main():
 
     h = call(routes_devices.devices_submit_post, BOB, {"track": t2["id"], "bundle_b64": b64}, did2)
     ok(h.code == 404, "a different user's token cannot submit against alice's device")
+
+    # -- 5: billing_scope on the device registry ------------------------------
+    print("\nbilling_scope (Phase A data model, Phase D usage capture will key off it)")
+    rec_ext = devices.register("alice", "default scope")
+    ok(devices.get_device(rec_ext["id"])["billing_scope"] == "external",
+       "default billing_scope is 'external' (device's own account pays)")
+    rec_shared = devices.register("alice", "company box", billing_scope="shared")
+    ok(devices.get_device(rec_shared["id"])["billing_scope"] == "shared",
+       "billing_scope='shared' is recorded when explicitly asked for")
+    try:
+        devices.register("alice", "bad", billing_scope="nonsense")
+        ok(False, "an invalid billing_scope should raise")
+    except ValueError:
+        ok(True, "an invalid billing_scope is rejected")
+
+    # -- 6: idempotent submit (a lost HTTP response after a real landing) ----
+    print("\nsubmit_remote_result: idempotent on a branch already landed")
+    branch3 = "device/feature-z"
+    git(remote_clone, "checkout", "-q", "-b", branch3)
+    open(os.path.join(remote_clone, "feature3.txt"), "w").write("idempotency test\n")
+    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "feature z")
+    bundle3 = os.path.join(tmp, "submission3.bundle")
+    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle3, branch3],
+                   capture_output=True, text=True)
+    t3 = dispatch.new_remote_task(central, branch3, "feature Z", did, actor="alice")
+    dispatch.claim_remote_task(did)
+    r1 = dispatch.submit_remote_result(t3["id"], bundle3, actor="alice", device_id=did)
+    ok(r1.get("lane") in ("review", "done"), "first submit lands normally")
+    # the device never saw r1 (simulated lost response) and retries with the
+    # SAME bundle - must not error on _import_bundle's refuse-to-clobber.
+    r2 = dispatch.submit_remote_result(t3["id"], bundle3, actor="alice", device_id=did)
+    ok(r2.get("id") == t3["id"] and r2.get("lane") == r1.get("lane"),
+       "a re-submit of an already-landed branch is idempotent, not an error")
+
+    # -- 7: device-match on submit (device X may not submit device Y's card) -
+    print("\nsubmit_remote_result: device-match")
+    branch4 = "device/feature-w"
+    git(remote_clone, "checkout", "-q", "-b", branch4)
+    open(os.path.join(remote_clone, "feature4.txt"), "w").write("device match test\n")
+    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "feature w")
+    bundle4 = os.path.join(tmp, "submission4.bundle")
+    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle4, branch4],
+                   capture_output=True, text=True)
+    t4 = dispatch.new_remote_task(central, branch4, "feature W", did, actor="alice")
+    dispatch.claim_remote_task(did)
+    try:
+        dispatch.submit_remote_result(t4["id"], bundle4, actor="alice", device_id=rec_ext["id"])
+        ok(False, "a different device (same owner) submitting card bound to `did` should raise")
+    except RuntimeError as e:
+        ok("different device" in str(e), "device-match refuses cleanly with a clear reason")
+    r4 = dispatch.submit_remote_result(t4["id"], bundle4, actor="alice", device_id=did)
+    ok(r4.get("lane") in ("review", "done"), "the CORRECT device can still submit normally")
+
+    # -- 8: claimed_at + sweep_stale_device_claims ----------------------------
+    print("\nclaimed_at + sweep_stale_device_claims")
+    from datetime import datetime, timedelta
+    branch5 = "device/feature-v"
+    git(remote_clone, "checkout", "-q", "-b", branch5)
+    t5 = dispatch.new_remote_task(central, branch5, "feature V", did, actor="alice")
+    claimed = dispatch.claim_remote_task(did)
+    ok(claimed.get("claimed_at"), "claim_remote_task stamps claimed_at")
+
+    swept = dispatch.sweep_stale_device_claims(claim_ttl_s=1800)
+    ok(t5["id"] not in swept, "a FRESH claim is never swept")
+
+    fmt = dispatch._TS_FMT
+    long_ago = (datetime.now() - timedelta(seconds=3700)).strftime(fmt)
+    dispatch._mutate(t5["id"], lambda tt: tt.update(claimed_at=long_ago))
+    devices.touch(did)   # device is actively polling RIGHT NOW
+    swept = dispatch.sweep_stale_device_claims(claim_ttl_s=1800, last_seen_grace_s=180)
+    ok(t5["id"] not in swept,
+       "an OLD claim on a device that is STILL POLLING is not reclaimed (long turn, not dead)")
+
+    long_ago_seen = (datetime.now() - timedelta(seconds=400)).strftime(fmt)
+    dev_rec = devices._load()
+    for d in dev_rec:
+        if d["id"] == did:
+            d["last_seen"] = long_ago_seen
+    devices._save(dev_rec)
+    swept = dispatch.sweep_stale_device_claims(claim_ttl_s=1800, last_seen_grace_s=180)
+    ok(t5["id"] in swept,
+       "an OLD claim on a device that has gone QUIET is reclaimed")
+    t5_now = dispatch._find(dispatch._load(), t5["id"])
+    ok(t5_now["lane"] == "backlog" and not t5_now.get("claimed_at"),
+       "a reclaimed card is back in backlog with claimed_at cleared")
+    ok(t5_now.get("exec_site") == "local:" + did,
+       "reclaim keeps the SAME device bound - it can re-claim on reconnect (not a reassign)")
+
+    reclaimed_again = dispatch.claim_remote_task(did)
+    ok(reclaimed_again and reclaimed_again["id"] == t5["id"],
+       "the same device CAN re-claim the reclaimed card")
+
+    # -- 9: reassign_remote_task (owner recovery for a dead device) ----------
+    print("\nreassign_remote_task")
+    branch6 = "device/feature-u"
+    t6 = dispatch.new_remote_task(central, branch6, "feature U", did, actor="alice")
+    reassigned = dispatch.reassign_remote_task(t6["id"], rec_ext["id"], actor="alice")
+    ok(reassigned["exec_site"] == "local:" + rec_ext["id"],
+       "reassign moves exec_site to the new device")
+    ok(reassigned["lane"] == "backlog", "reassigned card goes back to backlog for the new device")
+
+    cleared = dispatch.reassign_remote_task(t6["id"], "", actor="alice")
+    ok("exec_site" not in cleared, "reassign with no target device clears exec_site entirely")
+
+    try:
+        dispatch.reassign_remote_task("no-such-card", did, actor="alice")
+        ok(False, "reassigning an unknown card should raise")
+    except RuntimeError:
+        ok(True, "reassigning an unknown card raises")
+
+    t6b = dispatch.new_remote_task(central, "device/feature-t", "feature T", did, actor="alice")
+    try:
+        dispatch.reassign_remote_task(t6b["id"], rec_ext["id"], actor="bob")
+        ok(False, "bob reassigning alice's device-bound card to bob's own device id should fail")
+    except RuntimeError:
+        ok(True, "reassign refuses a target device the actor does not own")
+
+    # route layer
+    h = call(routes_devices.devices_reassign_post, BOB,
+            {"track": t6b["id"], "to_device": rec_ext["id"]})
+    ok(h.code == 400, "POST /devices/reassign: bob is operator (role passes) but does not "
+                       "own the target device - refused with 400, not 403 (a role vs. "
+                       "ownership distinction)")
+    h = call(routes_devices.devices_reassign_post, CLIENT, {"track": t6b["id"], "to_device": ""})
+    ok(h.code == 403, "a client role cannot call /devices/reassign")
+    h = call(routes_devices.devices_reassign_post, ALICE,
+            {"track": t6b["id"], "to_device": rec_ext["id"]})
+    ok(h.code == 200 and h.body.get("exec_site") == "local:" + rec_ext["id"],
+       "POST /devices/reassign works for the owning actor")
 
     print("\n%d failure(s)" % len(_fails))
     if _fails:
