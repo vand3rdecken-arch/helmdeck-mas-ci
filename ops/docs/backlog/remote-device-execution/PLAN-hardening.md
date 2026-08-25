@@ -298,6 +298,19 @@ stale submit from the old device is rejected with a clear reason.
 
 ## Phase F - packaged install / autostart  [makes it a service]
 
+> **SHIPPED 2026-08-25** (owner: "F und g"). pip entry point:
+> ops/tools/pyproject.toml, py-modules-scoped to hd_worker alone so
+> `pip install ops/tools/` exposes `hd-worker` without dragging in the
+> daemon-side tools. Login autostart: `hd-worker --install-autostart
+> --config <path>` writes an HKCU Run key (the SAME winreg mechanism
+> surfaces/desktop/tray.py uses - no powershell, absent from the owner's
+> PATH; the Run value stores a --config invocation so the token lives in
+> the file, not the registry), --uninstall-autostart removes it. Windows-
+> first; a clear "Windows-only, use launchd/systemd manually" message +
+> no-op on mac/Linux. Pinned in test_hd_worker.py (autostart cmd shape +
+> a real HKCU register/read/remove round-trip against a throwaway value
+> name, cleaned up in finally so the real value is never touched).
+
 **The gap.** `--config` exists (Phase D) but nothing installs the worker as
 a background service - it's still "keep a terminal open."
 
