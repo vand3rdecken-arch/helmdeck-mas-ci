@@ -27,7 +27,7 @@ from spine.storage.trackstore import _load, _save, _save_track, _find, _slug, _u
 from spine.git.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
 from cells.engineer.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE, GATE_CUT_NOTE)
 from cells.engineer.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, _say_card, move_lane, lane_active, _is_dirty_block, park_and_retry_merge)
-from cells.engineer.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED)
+from cells.engineer.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED, new_remote_task, claim_remote_task, submit_remote_result, reassign_remote_task, sweep_stale_device_claims, start_device_claim_sweeper)
 from cells.engineer.cardadmin import (archive_track, delete_track, update_track, apply_board_directives, add_attachments, remove_attachment, list_checkpoints, rewind_files, fork_conversation, fork_track, history, EDITABLE, CLEARABLE, BOOLFIELDS, DIRECTIVES)
 from cells.engineer.lifecycle import (_interrupt_note_report, _promote_live_session, _track_idle_s, present, sweep_zombies, start_zombie_reconciler, PRESENT_IDLE_S, _BOUNCE_ESCALATE_AT)
 
@@ -925,23 +925,30 @@ from cells.engineer.sessions_bg import (
 
 
 def start_engineer_lifecycle():
-    """Launch the Engineer cell's two continuous pollers (the zombie reconciler
-    + the background-task auto-continue watcher) as ONE registrable entry point
-    for cells.start_enabled() (daemon/debt.py order 33, Phase 3). Both pollers
-    operate directly on track/session state (card `status`, session liveness,
-    background-task completion) - they are the Engineer cell's own lifecycle,
-    not spine-adjacent generic housekeeping, so they belong behind
-    engineerEnabled the same way pm's proactive loop belongs behind pmEnabled.
+    """Launch the Engineer cell's THREE continuous pollers (the zombie
+    reconciler, the background-task auto-continue watcher, and the device
+    claim sweeper - ops/docs/backlog/remote-device-execution/PLAN-
+    hardening.md Phase A) as ONE registrable entry point for
+    cells.start_enabled() (daemon/debt.py order 33, Phase 3). All three
+    operate directly on track/session state (card `status`, session
+    liveness, background-task completion, a remote device's claim) - they
+    are the Engineer cell's own lifecycle, not spine-adjacent generic
+    housekeeping, so they belong behind engineerEnabled the same way pm's
+    proactive loop belongs behind pmEnabled.
     (Contrast: sessions.sweep_worktrees() stays a flat ONE-SHOT boot call in
     serve() - it is a backstop pass over git worktrees at startup, not a
     continuous poller, so it has nothing to "stop" if a cell is disabled later
-    and stays alongside the other one-shot boot calls like backfill_outcomes.)
+    and stays alongside the other one-shot boot calls like backfill_outcomes.
+    sweep_stale_device_claims() gets the SAME one-shot boot call too, next to
+    sweep_worktrees - this function only adds the ongoing poll.)
     Call this ONCE (cells.start_enabled() only calls a cell's `start` once per
     boot): start_background_watcher() is internally idempotent
-    (_bg_watcher_started guard), start_zombie_reconciler() is not guarded and
-    would spawn a second sweep thread if invoked twice."""
+    (_bg_watcher_started guard), start_zombie_reconciler()/
+    start_device_claim_sweeper() are not guarded and would spawn a second
+    thread if invoked twice."""
     start_zombie_reconciler()
     start_background_watcher()
+    start_device_claim_sweeper()
 
 
 def adopt_session(session_id, cwd, mode="continue", first="", actor="owner"):

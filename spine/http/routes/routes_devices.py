@@ -10,11 +10,16 @@ that, but each handler still verifies device OWNERSHIP (a device belongs to
 exactly one user, spine.auth.devices.resolve, same discipline as
 spine.auth.auth.owns_card for cards).
 
-  POST /devices/register        {label} -> {id, token}   (owner/operator)
+  POST /devices/register        {label, billing_scope} -> {id, token}   (owner/operator; billing_scope: "external" default or "shared")
   GET  /devices/mine                    -> [devices]      (owner/operator)
   POST /devices/<id>/revoke                                (owner/operator, own device)
   GET  /devices/<id>/queue              -> card or null    (device's own token)
-  POST /devices/<id>/submit     {track, bundle_b64}         (device's own token)
+  POST /devices/<id>/submit     {track, bundle_b64}         (device's own token - must be
+                                                              the card's OWN exec_site device)
+  POST /devices/reassign        {track, to_device}         (owner/operator recovery: move a
+                                                              stuck card to a different OWN
+                                                              device, or omit to_device to
+                                                              clear it back to a normal card)
 """
 import base64
 import json
@@ -27,8 +32,10 @@ def devices_register_post(self, user, body):
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.auth import devices
     label = (body.get("label") or "").strip()
+    billing_scope = (body.get("billing_scope") or "external").strip()
     try:
-        rec = devices.register(user["name"], label, actor=user["name"])
+        rec = devices.register(user["name"], label, actor=user["name"],
+                               billing_scope=billing_scope)
     except ValueError as e:
         return self._send(400, json.dumps({"error": str(e)}))
     return self._send(200, json.dumps(rec))
@@ -95,7 +102,11 @@ def devices_submit_post(self, user, body, did):
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(raw)
-        result = dispatch.submit_remote_result(tid, path, actor=user["name"])
+        # device_id=did: a device may only submit against a card bound to
+        # ITSELF (dispatch.submit_remote_result checks exec_site == this
+        # device) - resolve() above already proved `did` belongs to `user`,
+        # this additionally proves the CARD belongs to `did`.
+        result = dispatch.submit_remote_result(tid, path, actor=user["name"], device_id=did)
     except RuntimeError as e:
         return self._send(400, json.dumps({"error": str(e)}))
     finally:
@@ -106,9 +117,25 @@ def devices_submit_post(self, user, body, did):
     return self._send(200, json.dumps(result))
 
 
+def devices_reassign_post(self, user, body):
+    if user["role"] not in ("owner", "operator"):
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    from cells.engineer import dispatch
+    tid = body.get("track")
+    to_device = (body.get("to_device") or "").strip()
+    if not tid:
+        return self._send(400, json.dumps({"error": "track required"}))
+    try:
+        result = dispatch.reassign_remote_task(tid, to_device, actor=user["name"])
+    except RuntimeError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(result))
+
+
 GET_ROUTES = {
     "/devices/mine": devices_mine_get,
 }
 POST_ROUTES = {
     "/devices/register": devices_register_post,
+    "/devices/reassign": devices_reassign_post,
 }

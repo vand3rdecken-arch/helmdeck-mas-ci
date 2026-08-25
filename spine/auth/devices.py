@@ -41,12 +41,26 @@ def _save(devices):
     os.replace(tmp, DEVICES)
 
 
-def register(owner_name, label, actor=None):
+def register(owner_name, label, actor=None, billing_scope="external"):
     """Mint a device token (via auth.issue_token, so it is hashed at rest
     the same way every other device credential is - devices.py never stores
     or sees the plaintext beyond this one return) and record its metadata.
     Returns {id, token} - the token is returned HERE AND NOWHERE ELSE, same
-    rule as auth.issue_token itself."""
+    rule as auth.issue_token itself.
+
+    billing_scope: "external" (default) - this device's own Claude account/
+    subscription pays for its turns, NOT the daemon's. spine.storage.events'
+    ai_billing/plan_calibration is workspace-global, calibrated against ONE
+    account's quota (debt ai-billing-workspace-global/plan-share-
+    calibration) - an "external" device's usage must never be folded into
+    that pool once real usage capture exists (ops/docs/backlog/
+    remote-device-execution/PLAN-hardening.md, Phase D). "shared" is the
+    only other value: the daemon's own account/API key is used remotely
+    (e.g. a company-provisioned box), so ITS usage DOES belong in the
+    shared pool like a local card's. Recorded now, before Phase D needs it,
+    so that work has a field to key off instead of a schema migration."""
+    if billing_scope not in ("external", "shared"):
+        raise ValueError("billing_scope must be 'external' or 'shared'")
     from spine.auth import auth
     if not auth.get_user(owner_name):
         raise ValueError("no such user: %s" % owner_name)
@@ -57,6 +71,7 @@ def register(owner_name, label, actor=None):
     devices.append({
         "id": did, "owner": owner_name, "label": label or "device",
         "token_id": auth._token_hash(token)[:12],
+        "billing_scope": billing_scope,
         "created": time.strftime("%Y-%m-%d %H:%M:%S"),
         "last_seen": None,
     })
