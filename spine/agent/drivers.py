@@ -467,6 +467,110 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     return argv
 
 
+def fold_timeline_event(run_dir, ev):
+    """Fold ONE Claude stream event into a card's event-time feed store
+    (run_dir/timeline.jsonl), in the SAME TStep shape
+    claude_sessions.read_transcript produces from a re-parsed .jsonl - but
+    derived from the LIVE stream at the moment each block completes.
+    Extracted from _ClaudeSession._fold_timeline so BOTH a local card turn
+    (the driver's own pump) AND a remote device turn (its streamed events,
+    folded daemon-side via dispatch.record_remote_stream - Phase H) run the
+    identical logic, no fork. Best-effort: a feed write must never disturb a
+    turn.
+
+    `ts`/`ta` are stamped at FOLD time (wall-clock) - "derived from the
+    runtime's own signal, folded in AT EVENT TIME" (CLAUDE.md's law): the
+    moment the daemon SAW the block. An UPDATE patch (a tool's result
+    arriving) does not restamp - a step keeps the time it was first seen.
+
+    MEASURED LIMIT (not a bug - no live signal carries the corrected number):
+    a usage step's tokOut can read LOWER than the settled .jsonl's
+    output_tokens (an interim wire count). tokIn/cacheRead/cacheWrite - and
+    therefore ctx, the only usage field econ's context meter reads - are
+    unaffected. ops/tools/compare_timeline.py excludes tokOut for this."""
+    m = ev.get("message") or {}
+    role = m.get("role") or ev.get("type")
+    c = m.get("content")
+    typ = ev.get("type")
+    ts, ta = _time.strftime("%H:%M:%S", _time.localtime()), _time.time()
+    if typ == "assistant" and isinstance(c, list):
+        for p in c:
+            if not isinstance(p, dict):
+                continue
+            pt = p.get("type")
+            if pt == "text":
+                text = _clean_text((p.get("text") or "").strip())
+                if text:
+                    timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                        {"role": role, "kind": "text", "text": text[:_TL_MAX_TEXT],
+                         "ts": ts, "ta": ta})
+            elif pt == "thinking":
+                think = (p.get("thinking") or "").strip()
+                if think:
+                    timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                        {"role": role, "kind": "thinking", "text": think[:_TL_MAX_THINK],
+                         "ts": ts, "ta": ta})
+            elif pt == "tool_use":
+                name = p.get("name") or "tool"
+                inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                uid = p.get("id")
+                if name == "TodoWrite":
+                    todos = [{"content": str(td.get("content", ""))[:220],
+                              "status": str(td.get("status", ""))}
+                             for td in (inp.get("todos") or []) if isinstance(td, dict)]
+                    if todos and uid:
+                        timeline_store.append(run_dir, "todos:" + uid,
+                            {"kind": "todos", "todos": todos, "ts": ts, "ta": ta})
+                    continue
+                if name == "ExitPlanMode":
+                    if uid:
+                        timeline_store.append(run_dir, "plan:" + uid,
+                            {"kind": "plan", "text": str(inp.get("plan", ""))[:_TL_MAX_TEXT],
+                             "ts": ts, "ta": ta})
+                    continue
+                if not uid:
+                    continue
+                lbl, sub = _tool_label(name, inp)
+                step = {"role": role, "kind": "tool", "tool": name, "label": lbl,
+                        "text": sub or _tool_summary(inp), "result": "",
+                        "ok": True, "status": "running", "error": None,
+                        "running": True, "ts": ts, "ta": ta}
+                detail = _tool_detail(name, inp)
+                if detail:
+                    step["detail"] = detail
+                timeline_store.append(run_dir, "tool:" + uid, step)
+        u = m.get("usage")
+        if isinstance(u, dict):
+            inp_t = int(u.get("input_tokens") or 0)
+            out_t = int(u.get("output_tokens") or 0)
+            cr = int(u.get("cache_read_input_tokens") or 0)
+            cc = int(u.get("cache_creation_input_tokens") or 0)
+            if (inp_t + cr + cc) or out_t:
+                timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                    {"kind": "usage", "tokIn": inp_t, "tokOut": out_t,
+                     "cacheRead": cr, "cacheWrite": cc, "ctx": inp_t + cr + cc,
+                     "ts": ts, "ta": ta})
+    elif typ == "user" and isinstance(c, list):
+        for p in c:
+            if not isinstance(p, dict):
+                continue
+            if p.get("type") == "tool_result":
+                uid = p.get("tool_use_id")
+                if not uid:
+                    continue
+                text = _result_text(p)
+                interrupted = text.lstrip().startswith("[Request interrupted by user")
+                if interrupted:
+                    status, err, ok = "canceled", None, True
+                elif p.get("is_error"):
+                    status, err, ok = "failed", (text or "error")[:500], False
+                else:
+                    status, err, ok = "completed", None, True
+                timeline_store.append(run_dir, "tool:" + uid,
+                    {"result": text[:_TL_MAX_RESULT], "ok": ok, "status": status,
+                     "error": err, "running": False})
+
+
 class _ClaudeSession:
     """One long-lived `claude` stream-json process for a card, reused across
     turns. Faithful port of Paseo's persistent SDK query: turns are messages
@@ -774,130 +878,12 @@ class _ClaudeSession:
 
     # -- event-time card feed (Card 2, DUAL-WRITE STAGE - see timeline_store.py) -
     def _fold_timeline(self, ev):
-        """Fold ONE stream event into the card's event-time feed store, in the
-        SAME TStep shape claude_sessions.read_transcript already produces from
-        a re-parsed .jsonl - but derived here from the LIVE stream, at the
-        moment each block completes. DUAL-WRITE ONLY: nothing reads this store
-        in production yet (ops/docs/multi-engine-build-plan.md Card 2). Best-
-        effort, same discipline as _scan_bg - a feed write must never disturb
-        a turn.
-
-        `ts`/`ta` are stamped at FOLD time (wall-clock), not read back off a
-        persisted-file timestamp the way read_transcript does - the more
-        literal reading of "derived from the runtime's own signal, folded in
-        AT EVENT TIME" (CLAUDE.md's law), and it is what a live feed actually
-        wants: the moment the daemon SAW the block, not whenever Claude Code
-        later flushed it to disk. An UPDATE patch (a tool's result arriving)
-        deliberately does not restamp ts/ta - a step keeps the time it was
-        first seen, matching read_transcript's own per-part timestamping.
-
-        Deliberately narrower than read_transcript for now (documented scope
-        cut, not a silent gap): plain role=user text is folded as a bare text
-        step without read_transcript's envelope re-attribution (command-label
-        rewriting, harness-tag notes, notification labels, compaction dedup).
-        ops/tools/compare_timeline.py knows about this and reports those as
-        accepted differences, not failures.
-
-        MEASURED LIMIT (not a bug to fix - there is no live signal that carries
-        the corrected number): a usage step's tokOut can read LOWER than the
-        SAME message's output_tokens in the persisted .jsonl. Proven live
-        2026-08-24: a message split across two stream events (msg id shared
-        across a 'thinking' and a 'tool_use' frame) reported usage.output_
-        tokens=2 on BOTH live frames while the settled file later held 152 for
-        that exact message id - the wire delivers an early/interim count, only
-        the file gets corrected. tokIn/cacheRead/cacheWrite (and therefore ctx,
-        which is input+cache only) are unaffected - proven identical live vs.
-        file on the same turns - and ctx is the ONLY usage field econ.py's
-        context meter actually reads (econ._record_econ never touches
-        output_tokens). ops/tools/compare_timeline.py excludes tokOut from its
-        usage comparison for exactly this reason."""
-        m = ev.get("message") or {}
-        role = m.get("role") or ev.get("type")
-        c = m.get("content")
-        typ = ev.get("type")
-        ts, ta = _time.strftime("%H:%M:%S", _time.localtime()), _time.time()
-        if typ == "assistant" and isinstance(c, list):
-            for p in c:
-                if not isinstance(p, dict):
-                    continue
-                pt = p.get("type")
-                if pt == "text":
-                    text = _clean_text((p.get("text") or "").strip())
-                    if text:
-                        timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
-                            {"role": role, "kind": "text", "text": text[:_TL_MAX_TEXT],
-                             "ts": ts, "ta": ta})
-                elif pt == "thinking":
-                    think = (p.get("thinking") or "").strip()
-                    if think:
-                        timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
-                            {"role": role, "kind": "thinking", "text": think[:_TL_MAX_THINK],
-                             "ts": ts, "ta": ta})
-                elif pt == "tool_use":
-                    name = p.get("name") or "tool"
-                    inp = p.get("input") if isinstance(p.get("input"), dict) else {}
-                    uid = p.get("id")
-                    if name == "TodoWrite":
-                        todos = [{"content": str(td.get("content", ""))[:220],
-                                  "status": str(td.get("status", ""))}
-                                 for td in (inp.get("todos") or []) if isinstance(td, dict)]
-                        if todos and uid:
-                            timeline_store.append(self.run_dir, "todos:" + uid,
-                                {"kind": "todos", "todos": todos, "ts": ts, "ta": ta})
-                        continue
-                    if name == "ExitPlanMode":
-                        if uid:
-                            timeline_store.append(self.run_dir, "plan:" + uid,
-                                {"kind": "plan", "text": str(inp.get("plan", ""))[:_TL_MAX_TEXT],
-                                 "ts": ts, "ta": ta})
-                        continue
-                    if not uid:
-                        continue
-                    lbl, sub = _tool_label(name, inp)
-                    step = {"role": role, "kind": "tool", "tool": name, "label": lbl,
-                            "text": sub or _tool_summary(inp), "result": "",
-                            "ok": True, "status": "running", "error": None,
-                            "running": True, "ts": ts, "ta": ta}
-                    detail = _tool_detail(name, inp)
-                    if detail:
-                        step["detail"] = detail
-                    timeline_store.append(self.run_dir, "tool:" + uid, step)
-            u = m.get("usage")
-            if isinstance(u, dict):
-                inp_t = int(u.get("input_tokens") or 0)
-                out_t = int(u.get("output_tokens") or 0)
-                cr = int(u.get("cache_read_input_tokens") or 0)
-                cc = int(u.get("cache_creation_input_tokens") or 0)
-                if (inp_t + cr + cc) or out_t:
-                    timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
-                        {"kind": "usage", "tokIn": inp_t, "tokOut": out_t,
-                         "cacheRead": cr, "cacheWrite": cc, "ctx": inp_t + cr + cc,
-                         "ts": ts, "ta": ta})
-        elif typ == "user" and isinstance(c, list):
-            for p in c:
-                if not isinstance(p, dict):
-                    continue
-                if p.get("type") == "tool_result":
-                    uid = p.get("tool_use_id")
-                    if not uid:
-                        continue
-                    text = _result_text(p)
-                    interrupted = text.lstrip().startswith("[Request interrupted by user")
-                    if interrupted:
-                        status, err, ok = "canceled", None, True
-                    elif p.get("is_error"):
-                        status, err, ok = "failed", (text or "error")[:500], False
-                    else:
-                        status, err, ok = "completed", None, True
-                    timeline_store.append(self.run_dir, "tool:" + uid,
-                        {"result": text[:_TL_MAX_RESULT], "ok": ok, "status": status,
-                         "error": err, "running": False})
-        # NOTE: role=user PLAIN TEXT (the human's own steer) never arrives here -
-        # measured, not assumed: Claude Code's `type:"user"` output-stream frames
-        # are only tool_result echoes, never a mirror of what we submitted. That
-        # is folded directly at submission time in _run_turn_locked instead (see
-        # the comment there) - this method only ever sees list-content user
-        # frames (tool_result), never string content.
+        """Fold ONE stream event into THIS card's event-time feed store. Thin
+        method wrapper over the module-level fold_timeline_event (extracted so
+        a remote device turn can fold its streamed events through the EXACT
+        same logic - ops/docs/backlog/remote-device-execution PLAN-hardening.md
+        Phase H - instead of a fork). Behaviour unchanged for the local path."""
+        fold_timeline_event(self.run_dir, ev)
 
     def _burn_watch(self, ev, cur):
         """Loop detector (the token-burn signal). A worker stuck in a loop keeps

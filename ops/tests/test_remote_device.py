@@ -477,6 +477,56 @@ def main():
     ok(not present(backlog_dev).get("device_stale"),
        "a backlog device card (not yet claimed) is not stale")
 
+    # -- 13: record_remote_stream (Phase H live transcript) ------------------
+    print("\nrecord_remote_stream: device turn events fold into the card timeline")
+    from spine.agent import timeline_store
+    branchC = "device/feature-stream"
+    tC = dispatch.new_remote_task(central, branchC, "stream card", did, actor="alice")
+    # claim THIS card directly (claim_remote_task picks the oldest backlog card
+    # for the device, which by now is a different one from earlier sections)
+    dispatch._mutate(tC["id"], lambda tt: tt.update(
+        lane="working", status="running", claimed_at=dispatch.time.strftime(dispatch._TS_FMT)))
+    # the SAME Claude stream-json event shapes a local turn produces
+    stream_events = [
+        {"type": "assistant", "message": {"role": "assistant",
+         "content": [{"type": "text", "text": "working on it"}]}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "ls"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu1", "content": "a.txt"}]}},
+    ]
+    n = dispatch.record_remote_stream(tC["id"], did, stream_events)
+    ok(n == 3, "all 3 stream events folded")
+    steps = timeline_store.read(tC["run_dir"])
+    kinds = [s.get("kind") for s in steps]
+    ok("text" in kinds, "a text step landed in the card's timeline")
+    tool_steps = [s for s in steps if s.get("kind") == "tool"]
+    ok(tool_steps and tool_steps[0].get("tool") == "Bash",
+       "the tool_use folded as a tool step (same shape as a local turn)")
+    ok(tool_steps and tool_steps[0].get("status") == "completed"
+       and tool_steps[0].get("result") == "a.txt",
+       "the tool_result patched the SAME step to completed with its output "
+       "(fold-by-_id, exactly like the local driver)")
+
+    # a stream POST for a card NOT this device's own working card is refused
+    dispatch.reassign_remote_task(tC["id"], rec_ext["id"], actor="alice")
+    try:
+        dispatch.record_remote_stream(tC["id"], did, stream_events)
+        ok(False, "streaming to a reassigned-away card should raise")
+    except RuntimeError as e:
+        ok("not this device" in str(e), "stream refused once the card moved to another device")
+
+    # route layer
+    tD = dispatch.new_remote_task(central, "device/feature-stream2", "s2", did, actor="alice")
+    dispatch._mutate(tD["id"], lambda tt: tt.update(
+        lane="working", status="running", claimed_at=dispatch.time.strftime(dispatch._TS_FMT)))
+    h = call(routes_devices.devices_stream_post, ALICE, {"track": tD["id"], "events": stream_events}, did)
+    ok(h.code == 200 and h.body.get("folded") == 3, "POST /devices/<id>/stream folds and reports count")
+    h = call(routes_devices.devices_stream_post, CLIENT, {"track": tD["id"], "events": stream_events}, did)
+    ok(h.code == 404, "a client role cannot stream device events")
+    h = call(routes_devices.devices_stream_post, ALICE, {"track": tD["id"]}, did)
+    ok(h.code == 400, "a stream POST without events[] is rejected")
+
     print("\n%d failure(s)" % len(_fails))
     if _fails:
         sys.exit(1)

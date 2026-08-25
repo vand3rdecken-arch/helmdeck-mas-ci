@@ -38,6 +38,7 @@ import os
 import random
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -113,37 +114,62 @@ def _tree_kill(proc):
         pass
 
 
+def _usage_from_result(res):
+    """The three economics fields, pulled off a stream-json/json `result`
+    event - the SAME shape spine/agent/drivers.py parses off a local card's
+    result event, so spine.turn.econ._record_econ folds a device turn's
+    spend unmodified. None when there is no result event."""
+    if not isinstance(res, dict):
+        return None
+    return {"usage": res.get("usage") or {}, "cost_usd": res.get("total_cost_usd"),
+            "models": list((res.get("modelUsage") or {}).keys())}
+
+
 def _run_turn_locally(repo, branch, task, description, still_mine=None,
-                     poll_interval=5.0):
+                     on_stream=None, poll_interval=5.0):
     """Runs the card's turn in the member's OWN local clone, full local
-    capability - the same claude CLI invocation shape drivers.py uses
-    centrally, minus the worktree/card.json sandboxing that only makes
-    sense on shared infrastructure.
+    capability - the same claude CLI invocation drivers.py uses centrally,
+    minus the worktree/card.json sandboxing that only matters on shared
+    infrastructure. Returns (reply_text, usage_meta).
 
-    --output-format json (not plain text) for exactly one reason: the
-    result event's total_cost_usd/usage/modelUsage are the SAME economics
-    fields spine/agent/drivers.py's _ClaudeSession parses off a local
-    card's result event (drivers.py:1194 - "usage": d.get("usage"),
-    "cost_usd": d.get("total_cost_usd"), "models": list((d.get("modelUsage")
-    or {}).keys())). Reusing that exact shape (not inventing a new one)
-    means spine.turn.econ._record_econ, the daemon's real economics
-    function, can fold a device turn's spend in unmodified. Returns
-    (reply_text, usage_meta). On any parse failure, usage_meta is None -
-    the turn still counts as successful, it just carries no cost data.
+    Two paths:
+    - SIMPLE (still_mine is None AND on_stream is None): one blocking
+      `--output-format json` call. Used by tests and any caller that wants
+      neither interrupt-checking nor live streaming.
+    - STREAMING (still_mine and/or on_stream given): `--output-format
+      stream-json`, read line-by-line in a reader thread (a PIPE that fills
+      would deadlock proc.wait() alone), so we can BOTH forward each event
+      to on_stream AS IT ARRIVES (Phase H live transcript) and check
+      still_mine every poll_interval to abort a reassigned/revoked card
+      (Phase E). Both callbacks are best-effort: a streaming or status-poll
+      error never fails the turn, whose real result still lands via
+      submit_remote_result.
 
-    still_mine (Phase E): a callable() -> bool checked every poll_interval
-    seconds WHILE the turn runs. False means the card was reassigned/
-    reclaimed/revoked out from under this worker - the subprocess is
-    tree-killed and TurnInterrupted is raised, so process_one abandons the
-    card without submitting a result nobody wants. When None (tests, or a
-    caller that doesn't care), the turn simply runs to completion - the
-    old blocking behavior."""
+    on_stream(events) (Phase H): called with each batch of raw Claude stream
+    events while the turn runs; process_one POSTs them to /devices/<id>/
+    stream, where the daemon folds them through the SAME
+    drivers.fold_timeline_event a local card uses - so a device turn shows
+    on the board live, identical to a local one."""
     prompt = task + (("\n\n" + description) if description else "")
-    argv = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json"]
-    if still_mine is None:
-        r = subprocess.run(argv, cwd=repo, input=prompt, capture_output=True,
-                          text=True, encoding="utf-8", errors="replace", timeout=1800)
-        return _parse_turn(r.returncode, r.stdout, r.stderr)
+    if still_mine is None and on_stream is None:
+        r = subprocess.run(
+            ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json"],
+            cwd=repo, input=prompt, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=1800)
+        if r.returncode != 0:
+            raise RuntimeError("claude turn failed: %s" % (r.stderr or r.stdout)[:400])
+        usage_meta = None
+        reply = r.stdout
+        try:
+            d = json.loads(r.stdout)
+            reply = d.get("result", r.stdout)
+            usage_meta = _usage_from_result(d)
+        except (ValueError, AttributeError):
+            pass
+        return reply, usage_meta
+
+    argv = ["claude", "-p", "--permission-mode", "acceptEdits",
+            "--output-format", "stream-json", "--verbose"]
     proc = subprocess.Popen(argv, cwd=repo, stdin=subprocess.PIPE,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                            text=True, encoding="utf-8", errors="replace")
@@ -151,39 +177,63 @@ def _run_turn_locally(repo, branch, task, description, still_mine=None,
         proc.stdin.write(prompt); proc.stdin.close()
     except (OSError, ValueError):
         pass
+    buf = []
+    buf_lock = threading.Lock()
+    result_holder = {}
+
+    def _read():
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                with buf_lock:
+                    buf.append(ev)
+                if ev.get("type") == "result":
+                    result_holder["ev"] = ev
+        except Exception:
+            pass
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+
+    def _flush():
+        with buf_lock:
+            batch = buf[:]
+            buf.clear()
+        if batch and on_stream:
+            try:
+                on_stream(batch)
+            except Exception:
+                pass   # streaming is best-effort - never fail the turn on it
+
     waited = 0.0
     while True:
-        try:
-            proc.wait(timeout=poll_interval)
+        reader.join(timeout=poll_interval)
+        _flush()
+        if not reader.is_alive():
             break
-        except subprocess.TimeoutExpired:
-            waited += poll_interval
-            if not still_mine():
-                _tree_kill(proc)
-                raise TurnInterrupted(
-                    "card reassigned/reclaimed mid-turn - killed the local "
-                    "turn, not submitting")
-            if waited >= 1800:
-                _tree_kill(proc)
-                raise RuntimeError("claude turn exceeded 1800s - killed")
-    out = proc.stdout.read() if proc.stdout else ""
+        waited += poll_interval
+        if still_mine and not still_mine():
+            _tree_kill(proc)
+            raise TurnInterrupted(
+                "card reassigned/reclaimed mid-turn - killed the local "
+                "turn, not submitting")
+        if waited >= 1800:
+            _tree_kill(proc)
+            raise RuntimeError("claude turn exceeded 1800s - killed")
+
+    proc.wait()
     err = proc.stderr.read() if proc.stderr else ""
-    return _parse_turn(proc.returncode, out, err)
-
-
-def _parse_turn(returncode, stdout, stderr):
-    if returncode != 0:
-        raise RuntimeError("claude turn failed: %s" % (stderr or stdout)[:400])
-    usage_meta = None
-    reply = stdout
-    try:
-        d = json.loads(stdout)
-        reply = d.get("result", stdout)
-        usage_meta = {"usage": d.get("usage") or {}, "cost_usd": d.get("total_cost_usd"),
-                     "models": list((d.get("modelUsage") or {}).keys())}
-    except (ValueError, AttributeError):
-        pass   # not JSON, or a shape we don't recognize - reply stays raw stdout
-    return reply, usage_meta
+    res = result_holder.get("ev")
+    if res is None and proc.returncode not in (0, None):
+        raise RuntimeError("claude turn failed: %s" % (err or "")[:400])
+    reply = (res or {}).get("result", "")
+    return reply, _usage_from_result(res)
 
 
 class DeviceRevoked(RuntimeError):
@@ -232,10 +282,22 @@ def process_one(daemon, device_id, token, repo_root):
         except RuntimeError as e:
             return "HTTP 404" not in str(e)
 
+    def _on_stream(events):
+        # Phase H: forward this batch of live turn events to the daemon,
+        # which folds them into the card's timeline so the board shows the
+        # device turn AS IT HAPPENS. Best-effort - streaming failing must
+        # never fail the turn (its real result lands via /submit).
+        try:
+            _api(daemon, "/devices/%s/stream" % device_id, token, method="POST",
+                 body={"track": task["id"], "events": events},
+                 retries=2, base_delay=0.5, max_delay=2.0)
+        except RuntimeError:
+            pass
+
     try:
         _reply, usage_meta = _run_turn_locally(
             repo_root, branch, task["task"], task.get("description", ""),
-            still_mine=_still_mine)
+            still_mine=_still_mine, on_stream=_on_stream)
         if _git(repo_root, "status", "--porcelain"):
             _git(repo_root, "add", "-A")
             _git(repo_root, "commit", "-q", "-m",

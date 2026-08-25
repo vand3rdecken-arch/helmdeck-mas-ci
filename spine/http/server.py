@@ -401,6 +401,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_devices.devices_revoke_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "devices" and parts[2] == "submit":
                 return routes_devices.devices_submit_post(self, user, body, parts[1])
+            if len(parts) == 3 and parts[0] == "devices" and parts[2] == "stream":
+                return routes_devices.devices_stream_post(self, user, body, parts[1])
             if len(parts) == 3 and parts[0] == "checkpoints" and parts[2] == "restore":
                 return routes_checkpoints.checkpoints_restore_post(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "connectors" and parts[2] == "rollback":
