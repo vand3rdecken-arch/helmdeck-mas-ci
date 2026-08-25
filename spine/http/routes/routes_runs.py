@@ -34,6 +34,14 @@ def runs_item_get(self, user, rid, what):
     # sent), False otherwise - server.py's caller only falls through to the
     # rest of the if-chain on False, matching the original inline behaviour
     # (self._send() itself returns None, so that can't double as the signal).
+    # A run's dir is keyed by track id (cells/engineer/dispatch.py run_dir),
+    # so it carries that card's screen recording + action log - same
+    # ownership rule as every other per-card route (spine.auth.auth.owns_card).
+    from spine.auth import auth
+    from cells.engineer import sessions
+    if not auth.owns_card(user, sessions.get_track(rid)):
+        self._send(403, json.dumps({"error": "not your card"}))
+        return True
     d = os.path.join(REC, os.path.basename(rid))
     if what == "timeline":
         self._send(200, json.dumps(read_timeline(d)))

@@ -21,11 +21,11 @@ from urllib.parse import unquote
 
 def tracks_list_get(self, user):
     from cells.engineer import sessions
+    from spine.auth import auth
     # present(): stored 'running' is never believed on the way OUT -
     # only a live turn (drivers.turn_active) may render a spinner.
     ts = [sessions.present(t) for t in sessions.list_tracks()]
-    if user["role"] == "client":   # clients see only their own cards
-        ts = [t for t in ts if t.get("client") == user["name"]]
+    ts = [t for t in ts if auth.owns_card(user, t)]   # clients: own cards only
     return self._send(200, json.dumps(ts))
 
 
@@ -34,8 +34,9 @@ def tracks_live_get(self, user, tid):
     # turn is being screen-recorded (fresh = written in last 20s)
     import time as _t
     from cells.engineer import sessions
+    from spine.auth import auth
     t = sessions.get_track(tid)
-    if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+    if not auth.owns_card(user, t):
         return self._send(403, b"not your card", "text/plain")
     fp = os.path.join(t["run_dir"], "live.jpg") if t else ""
     if fp and os.path.exists(fp) and _t.time() - os.path.getmtime(fp) < 20:
@@ -48,10 +49,9 @@ def tracks_turns_get(self, user, tid):
     # per-card AI usage: every turn's model, tokens, cost
     from spine.storage import events
     from cells.engineer import sessions
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    from spine.auth import auth
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     turns = [e for e in events.read_events()
              if e.get("kind") == "turn" and e.get("track") == tid]
     return self._send(200, json.dumps(turns))
@@ -59,10 +59,9 @@ def tracks_turns_get(self, user, tid):
 
 def tracks_history_get(self, user, tid):
     from cells.engineer import sessions
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    from spine.auth import auth
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     return self._send(200, json.dumps(sessions.history(tid)))
 
 
@@ -73,8 +72,9 @@ def tracks_transcript_get(self, user, tid):
     # .jsonl - see claude_sessions.read_transcript_store's docstring.
     from cells.engineer import sessions
     from spine.agent import claude_sessions
+    from spine.auth import auth
     t = sessions.get_track(tid)
-    if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+    if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
     return self._send(200, json.dumps(claude_sessions.read_transcript_store(t)))
 
@@ -89,11 +89,12 @@ def tracks_transcript_live_get(self, user, tid):
     import time as _t
     from cells.engineer import sessions
     from spine.agent import claude_sessions
+    from spine.auth import auth
     from urllib.parse import parse_qs, urlparse
     t = sessions.get_track(tid)
     if not t:
         return self._send(404, json.dumps({"error": "no such card"}))
-    if user["role"] == "client" and t.get("client") != user["name"]:
+    if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
     q = parse_qs(urlparse(self.path).query)
     want = (q.get("v") or [""])[0]
@@ -123,16 +124,18 @@ def tracks_transcript_live_get(self, user, tid):
 
 def tracks_checkpoints_get(self, user, tid):
     from cells.engineer import sessions
+    from spine.auth import auth
     t = sessions.get_track(tid)
-    if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+    if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
     return self._send(200, json.dumps(sessions.list_checkpoints(tid)))
 
 
 def tracks_attachments_get(self, user, tid):
     from cells.engineer import sessions
+    from spine.auth import auth
     t = sessions.get_track(tid)
-    if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+    if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
     out = []
     for fp in (t or {}).get("attachments") or []:
@@ -147,8 +150,9 @@ def tracks_attachments_get(self, user, tid):
 def tracks_attachment_get(self, user, tid, name):
     import mimetypes
     from cells.engineer import sessions
+    from spine.auth import auth
     t = sessions.get_track(tid)
-    if user["role"] == "client" and (not t or t.get("client") != user["name"]):
+    if not auth.owns_card(user, t):
         return self._send(403, b"not your card", "text/plain")
     name = unquote(name)
     # only serve a file the card actually references (no path escape)
@@ -278,19 +282,16 @@ def tracks_delete_post(self, user, body, tid):
 
 def tracks_update_post(self, user, body, tid):
     from cells.engineer import sessions
-    from spine.storage import events
+    from spine.auth import auth
     if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
+        if not auth.owns_card(user, sessions.get_track(tid)):
             return self._send(403, json.dumps({"error": "not your card"}))
         body.pop("autopilot", None)   # autopilot opt-in is owner/operator only
         body.pop("driver", None)      # capability grant (GUI/desktop control) - admin only
     elif "driver" in body:
-        admin_roles = (events.settings().get("policy") or {}).get(
-            "chat_admin_roles", ["owner", "operator"])
-        if user["role"] not in admin_roles:
+        if not auth.is_admin(user):
             return self._send(403, json.dumps(
-                {"error": "changing a card's driver requires: " + ", ".join(admin_roles)}))
+                {"error": "changing a card's driver requires: " + ", ".join(auth.chat_admin_roles())}))
     try:
         return self._send(200, json.dumps(
             sessions.update_track(tid, body, actor=user["name"])))
@@ -311,10 +312,9 @@ def tracks_rewind_post(self, user, body, tid):
 
 def tracks_attach_post(self, user, body, tid):
     from cells.engineer import sessions
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    from spine.auth import auth
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     try:
         return self._send(200, json.dumps(
             sessions.add_attachments(tid, body.get("attachments"), actor=user["name"])))
@@ -324,10 +324,9 @@ def tracks_attach_post(self, user, body, tid):
 
 def tracks_attach_remove_post(self, user, body, tid):
     from cells.engineer import sessions
-    if user["role"] == "client":
-        t = sessions.get_track(tid)
-        if not t or t.get("client") != user["name"]:
-            return self._send(403, json.dumps({"error": "not your card"}))
+    from spine.auth import auth
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     try:
         return self._send(200, json.dumps(
             sessions.remove_attachment(tid, body.get("name", ""), actor=user["name"])))
