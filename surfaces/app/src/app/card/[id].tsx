@@ -813,7 +813,7 @@ export default function CardScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}>
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
-        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }} numberOfLines={1}>{k?.task ?? tr("card.card")}</Text>
+        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }} numberOfLines={2}>{k?.task ?? tr("card.card")}</Text>
         {running ? <ActivityIndicator size="small" color={t.ai} /> : null}
         {k?.fast_track ? (
           <Pressable onPress={() => edit({ fast_track: false })} hitSlop={6} accessibilityLabel={tr("card.fastTrack.off")}
