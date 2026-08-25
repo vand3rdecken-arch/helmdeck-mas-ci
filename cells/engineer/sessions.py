@@ -498,7 +498,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         except Exception as _we:
             log.log("note", "WORKTREE fehlt und Neuaufbau schlug fehl: %s" % str(_we)[:200])
     try:
-        sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override)
+        sid, result, meta = _turn(t, prompt, model=cli_model, perm=perm_override, by=actor)
     except BaseException as e:
         # The steer thread must NEVER die leaving 'running' behind - that flag
         # is a stored promise only this thread would clear, and a card frozen

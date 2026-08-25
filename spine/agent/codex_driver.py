@@ -549,7 +549,9 @@ def _get_session(cfg, t):
         return s
 
 
-def run(cfg, t, prompt):
+def run(cfg, t, prompt, by=None):
+    # `by` accepted for signature parity with drivers.run, not yet folded
+    # into this driver's own transcript - see debt `alt-driver-by-wiring`.
     s = _get_session(cfg, t)
     sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".")
     return sid or t.get("session_id"), reply, meta

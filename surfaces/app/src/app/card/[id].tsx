@@ -17,7 +17,7 @@ import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
-import { Composer } from "@/ui/card_composer";
+import { Composer, type Recipient } from "@/ui/card_composer";
 import { BackgroundTasks } from "@/ui/card_background";
 import { ContextMeter } from "@/ui/context_meter";
 import { QuestionPanel } from "@/ui/card_question";
@@ -338,23 +338,34 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
 
 // ---- chat column ----------------------------------------------------------
 
-function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bottomInset }: {
+function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bottomInset, me }: {
   k: Track; feed: TStep[]; onSend: (text: string, o: SteerOpts) => Promise<void>; onStop: () => void;
   models: (string | { id: string; label?: string; desc?: string })[]; modeOptions: { id: string; label: string }[];
   seed: { text: string; key: number }; setSeed: (s: { text: string; key: number }) => void; bottomInset: number;
+  me?: string;
 }) {
   const t = useTheme();
   const tr = useT();
   const qc = useQueryClient();
   const running = k.status === "running";
-  // card chat mode: "worker" steers the card's own worker (default), "agent" talks
-  // to the free board copilot about this card (it can move/delete/archive/steer).
-  const [agentMode, setAgentMode] = useState(false);
-  // optimistic echo: your just-sent worker message shows instantly, before the
+  // Team-chat roster: an unaddressed message goes to the Worker while the
+  // card has an active/live session, else to Henry (steering a backlog card
+  // still auto-dispatches it - the @mention chip is what makes the choice
+  // legible instead of the old silent tab state).
+  const recipients: Recipient[] = useMemo(() => [
+    { id: "henry", label: tr("transcript.boardAgent"), color: t.accent2, icon: "sparkles-outline",
+      hint: tr("card.chat.mentionHenry") },
+    { id: "worker", label: tr("transcript.worker"), color: t.accent, icon: "construct-outline",
+      hint: tr("card.chat.mentionWorker") },
+  ], [tr, t]);
+  const defaultTo = k.session_id || k.status === "running" || k.lane !== "done" ? "worker" : "henry";
+  // Henry's card-scoped reply arrives whole on the POST return (not token-
+  // streamed like the worker) - this local flag is the only "is Henry
+  // working" cue until then.
+  const [henryBusy, setHenryBusy] = useState(false);
+  // optimistic echo: your just-sent message shows instantly, before the
   // session transcript catches up. Reconciled away once the real feed carries it.
   const [pending, setPending] = useState<TStep[]>([]);
-  // the free-agent (copilot) conversation about this card
-  const [agentMsgs, setAgentMsgs] = useState<TStep[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
   // edge-to-edge (SDK 57) breaks Android adjustResize -> lift the composer above
@@ -389,13 +400,12 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
     }));
   }, [feed]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // the rendered feed = the worker story + optimistic echoes, then (clearly
-  // separated) the board-Agent conversation. A divider makes the Worker/Agent
-  // boundary unmistakable instead of the two streams blurring together.
-  const steps = useMemo<TStep[]>(() => [
-    ...feed, ...pending,
-    ...(agentMsgs.length ? [{ kind: "agentbreak", ts: "" } as TStep, ...agentMsgs] : []),
-  ], [feed, pending, agentMsgs]);
+  // ONE real chronological stream: Henry's card-scoped exchange now folds
+  // server-side into this same card's timeline (cells/copilot/copilot.py),
+  // so it arrives through `feed` exactly like the worker's own turns -
+  // identity (by/byKind/to) is what tells them apart in the transcript, not
+  // a client-side divider.
+  const steps = useMemo<TStep[]>(() => [...feed, ...pending], [feed, pending]);
 
   // The turn is still PRODUCING while the transcript streams. The machine-card
   // driver can flip status->needs_you on a first/quick reply while claude keeps
@@ -416,27 +426,33 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
 
   const hhmm = () => new Date().toTimeString().slice(0, 5);
   async function handleSend(text: string, o: SteerOpts) {
-    if (agentMode) {
-      setAgentMsgs((m) => [...m, { role: "user", kind: "text", text, ts: hhmm(), agent: true }]);
-      try {
-        const r = await api.chat(text, { ...o, card: k.id });
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: r.reply || r.error || tr("card.chat.noReply"), ts: hhmm(), agent: true }]);
-      } catch {
-        setAgentMsgs((m) => [...m, { role: "assistant", kind: "text", text: tr("card.chat.sendFailed"), ts: hhmm(), agent: true }]);
-      }
-      // the board agent may have moved/deleted/archived cards — refresh the board
-      await qc.invalidateQueries({ queryKey: ["tracks"] });
-      return;
-    }
-    // worker: echo instantly, then steer; retract the echo if the send throws.
-    // baseline = this occurrence's rank among same-text messages already in
-    // feed + already-pending, so the reconcile effect can tell THIS repeat
-    // apart from an earlier identical one (see effect above).
+    const to = o.to ?? defaultTo;
+    // echo instantly, then send; retract the echo if it throws. baseline =
+    // this occurrence's rank among same-text messages already in feed +
+    // already-pending, so the reconcile effect can tell THIS repeat apart
+    // from an earlier identical one (see the effect above `steps`).
     const key = text.trim();
     const baseline = feed.filter((s) => s.role === "user" && (s.text ?? "").trim() === key).length
       + pending.filter((e) => (e.text ?? "").trim() === key).length;
-    const echo = { role: "user", kind: "text", text, ts: hhmm(), baseline } as TStep & { baseline: number };
+    const echo = { role: "user", kind: "text", text, ts: hhmm(), by: me, byKind: "human", to, baseline } as TStep & { baseline: number };
     setPending((p) => [...p, echo]);
+    if (to === "henry") {
+      setHenryBusy(true);
+      try {
+        await api.chat(text, { ...o, card: k.id });
+      } catch {
+        setPending((p) => p.filter((e) => e !== echo));
+        Alert.alert(tr("ui.error"), tr("card.chat.sendFailed"));
+      } finally {
+        setHenryBusy(false);
+      }
+      // Henry's reply already landed server-side (cells/copilot/copilot.py
+      // folds it before returning) - pull it in, and the board agent may
+      // have moved/deleted/archived cards too, so refresh the board.
+      await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      return;
+    }
     try { await onSend(text, o); }
     catch { setPending((p) => p.filter((e) => e !== echo)); }
   }
@@ -468,7 +484,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
               below carries that (Paseo parity: ONE line, not pill + list) -
               the pill stays only for pre-registry cards with no bg_tasks
             - otherwise         -> the plain "your move, steering resumes" cue */}
-      {!running && !agentMode && !streaming && k.question ? (
+      {!running && !streaming && k.question ? (
         <QuestionPanel cardId={k.id} question={k.question}
           onAnswered={async () => {
             // the answer starts a turn: pull the card (status->running, question
@@ -476,7 +492,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             await qc.invalidateQueries({ queryKey: ["tracks"] });
             await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
           }} />
-      ) : !running && !agentMode && !streaming && (k.status === "needs_you" || k.status === "bounced")
+      ) : !running && !streaming && (k.status === "needs_you" || k.status === "bounced")
           && !(k.waiting_on === "background" && k.bg_tasks && Object.keys(k.bg_tasks).length > 0) ? (
         <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
@@ -500,42 +516,31 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
           ones stay inspectable inside the expansion - and it carries the
           "waiting, not your move" state itself when the card is parked on
           them, replacing a second blocker pill. */}
-      {!agentMode && k.bg_tasks && Object.keys(k.bg_tasks).length > 0 ? (
+      {k.bg_tasks && Object.keys(k.bg_tasks).length > 0 ? (
         <BackgroundTasks tasks={k.bg_tasks} waiting={k.waiting_on === "background"} />
       ) : null}
 
-      {/* mode switch: steer the card's Worker, or talk to the board Agent. One
-          segmented control (not two loose buttons) so the active target is
-          unmistakable; Agent is violet, Worker is accent, matching the chat. */}
-      <View style={{ paddingHorizontal: 12, paddingTop: 8, gap: 6 }}>
-        <View style={{ flexDirection: "row", backgroundColor: t.surface2, borderRadius: 9, borderWidth: 1, borderColor: t.borderSubtle, padding: 2 }}>
-          {([["worker", "card.chat.worker", "construct-outline"], ["agent", "card.chat.agent", "sparkles-outline"]] as const).map(([id, label, icon]) => {
-            const on = (id === "agent") === agentMode;
-            const col = id === "agent" ? t.accent2 : t.accent;
-            return (
-              <Pressable key={id} onPress={() => setAgentMode(id === "agent")}
-                style={{ flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5,
-                  backgroundColor: on ? col + "22" : "transparent", borderRadius: 7, paddingVertical: 7 }}>
-                <Ionicons name={icon} size={14} color={on ? col : t.txtTertiary} />
-                <Text style={{ color: on ? col : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "700" : "500" }}>{tr(label)}</Text>
-              </Pressable>
-            );
-          })}
+      {/* Henry's card-scoped reply isn't token-streamed (arrives whole on the
+          POST return - debt card-henry-reply-not-streamed) - this is the only
+          "Henry is working" cue until then. */}
+      {henryBusy ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
+          <ActivityIndicator size="small" color={t.accent2} />
+          <Text style={{ color: t.accent2, fontSize: 11.5 }}>{tr("card.chat.henryThinking")}</Text>
         </View>
-        <Text numberOfLines={1} style={{ color: agentMode ? t.accent2 : t.txtTertiary, fontSize: 11 }}>
-          {agentMode ? tr("card.chat.hintAgent")
-            : tr(k.session_id ? "card.chat.hintWorkerLive" : "card.chat.hintWorkerIdle")}
-        </Text>
-        {/* Context meter (Paseo-parity): the worker's window fills over a long card
-            and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
-            Shared with the board/PM chat - see ui/context_meter.tsx. */}
-        {!agentMode ? <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window} style={{ marginTop: 3 }} /> : null}
+      ) : null}
+
+      {/* Context meter (Paseo-parity): the worker's window fills over a long card
+          and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
+          Shared with the board/PM chat - see ui/context_meter.tsx. */}
+      <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
+        <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window} />
       </View>
 
-      <Composer onSend={handleSend} busy={running && !agentMode} onStop={onStop} models={models} modeOptions={modeOptions}
+      <Composer onSend={handleSend} busy={running} onStop={onStop} models={models} modeOptions={modeOptions}
         slashCommands={slashCommands(tr)} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
-        placeholder={agentMode ? tr("card.chat.phAgent")
-          : tr(k.session_id ? "card.chat.phWorkerLive" : "card.chat.phWorkerIdle")} />
+        recipients={recipients} defaultTo={defaultTo}
+        placeholder={tr(k.session_id ? "card.chat.phWorkerLive" : "card.chat.phWorkerIdle")} />
     </View>
   );
 }
@@ -846,7 +851,7 @@ export default function CardScreen() {
           </ScrollView>
           <View style={{ flex: 1.2 }}>
             <Chat k={k} feed={feed} onSend={send} onStop={stop} models={models ?? []} modeOptions={modeOptions}
-              seed={seed} setSeed={setSeed} bottomInset={insets.bottom} />
+              seed={seed} setSeed={setSeed} bottomInset={insets.bottom} me={me?.name} />
           </View>
         </View>
       ) : (
@@ -867,7 +872,7 @@ export default function CardScreen() {
             </ScrollView>
           ) : (
             <Chat k={k} feed={feed} onSend={send} onStop={stop} models={models ?? []} modeOptions={modeOptions}
-              seed={seed} setSeed={setSeed} bottomInset={insets.bottom + 8} />
+              seed={seed} setSeed={setSeed} bottomInset={insets.bottom + 8} me={me?.name} />
           )}
         </>
       )}

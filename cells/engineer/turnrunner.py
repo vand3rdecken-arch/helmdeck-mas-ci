@@ -33,7 +33,7 @@ GATE_CUT_NOTE = ("gate/merge pipeline died mid-run (daemon restart) - nothing wa
                  "landed; move the card to Review again to re-run the gate")
 
 
-def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
+def _turn(t, prompt, model=None, perm=None, idle_timeout=None, by=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
     hook: a driver with record:true gets its whole turn screen-captured into the
@@ -41,7 +41,9 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
     `perm` overrides (from the chat composer's model + mode controls) win over
     the driver's configured values. `idle_timeout` overrides the driver's
     900s-of-silence watchdog for callers who know their own turn is bounded
-    (e.g. _maybe_compact - see there for why)."""
+    (e.g. _maybe_compact - see there for why). `by` is the human actor's name
+    (steer's caller) - threaded down to the driver so the prompt it folds into
+    the timeline carries WHO sent it, not just that a human did."""
     from spine.agent import drivers
     from spine.storage import events
     # Pre-P4 cards were dispatched without a reserved dev port - claim one on
@@ -138,7 +140,7 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None):
                 "turn ends." % wait_s)
     try:
         with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
-            return drivers.run(cfg, t, prompt)
+            return drivers.run(cfg, t, prompt, by=by)
     finally:
         if dlock:
             dlock.release()

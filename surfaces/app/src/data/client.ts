@@ -152,6 +152,11 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
 // and /chat spread these opts into the request body, so adding it here wires it.
 export interface SteerOpts {
   model?: string; thinking?: string; mode?: string; attachments?: Attach[];
+  /** Team-chat recipient picked in the composer ("henry" | "worker") — read
+   *  client-side to route the send (api.chat vs api.steer) and echoed onto
+   *  the rendered message; harmless if it rides along in a steer POST body,
+   *  the server ignores unknown fields there. */
+  to?: string;
   /** Ask the daemon to also render the reply as speech. Per REQUEST, not a
    *  server setting, because only the client knows whether the owner is looking
    *  at the screen or driving (cells/copilot/routes_copilot.py).

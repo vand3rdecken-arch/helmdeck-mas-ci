@@ -4,7 +4,7 @@ turn (resumable per user, so the conversation has memory) with a fresh board
 snapshot; the model answers with JSON: a reply for the human plus zero or more
 ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
-import json, os, re, shutil, subprocess, threading, time
+import json, os, re, shutil, subprocess, threading, time, uuid
 
 from daemon.paths import DAEMON_ROOT as ROOT
 SESS = os.path.join(ROOT, "copilot_sessions.json")
@@ -430,19 +430,32 @@ def history(user):
             "stats": st}
 
 
-def say(text, cls="pm"):
+def say(text, cls="pm", card=None):
     """THE harness's voice in the owner's board chat - the one place anything
     non-interactive speaks to the owner (pm._say and the lane pipeline both go
     through here). Without this, work that happens without the owner typing
     (a gate verdict, a merge, a bounce) only ever reached the flight recorder
     and the event log, so the chat looked frozen while the daemon worked.
-    Best-effort by design: never let a chat write break the work it reports."""
+    Best-effort by design: never let a chat write break the work it reports.
+
+    `card` = a card id this notice is ABOUT (e.g. a lane outcome). When it
+    resolves to a live run_dir, the notice ALSO folds into that card's own
+    timeline (byKind:henry) - so a proactive nudge about a specific card
+    shows up in its team-chat too, not only the global board chat."""
     try:
         from spine.auth import auth
         owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
         if not owner:
             return
         _append_log(owner, [{"cls": cls, "text": text, "ts": time.strftime("%H:%M")}])
+        if card:
+            ct = _find_card(card)
+            run_dir = ct.get("run_dir") if ct and not isinstance(ct, list) else None
+            if run_dir:
+                from spine.agent import timeline_store
+                timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
+                    {"kind": "note", "text": text, "byKind": "henry",
+                     "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
     except Exception:
         pass
 
@@ -632,12 +645,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths))
     body = turnopts.augment_prompt(message, thinking, paths)
     focus = ""
+    card_run_dir = None
     if card:
         ct = _find_card(card)
         if ct and not isinstance(ct, list):
             focus = ("\n\nCURRENT CARD (the user is viewing this - resolve 'this card' / 'it' "
                      "to it; a plain work instruction means steer it): %s | %s | %s"
                      % (ct["id"], ct.get("branch"), (ct.get("task") or "")[:80]))
+            card_run_dir = ct.get("run_dir") or None
+    if card_run_dir and not _retried:
+        # Card-scoped chat is a real participant in THAT card's own team-chat
+        # transcript, not a client-side illusion - fold the human's message in
+        # right now, at submission (same discipline as drivers.py's own
+        # timeline fold), so a second device watching the card sees it live.
+        # Guarded by `not _retried`: the filler-guard retry below calls chat()
+        # again with the SAME message - it must not fold the human's words in
+        # twice.
+        from spine.agent import timeline_store
+        _tsv, _tav = time.strftime("%H:%M:%S"), time.time()
+        timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
+            {"role": "user", "kind": "text", "text": message,
+             "by": user, "byKind": "human", "to": "henry", "ts": _tsv, "ta": _tav})
     _plan = _pm_plan_digest()
     # The ROLE is data: ops/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
@@ -870,11 +898,24 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # Actions (moves, MERGES, steers - potentially minutes) run in the BACKGROUND
     # and append their results to the transcript as they land; the chat polls, so
     # you see them live. This is why 'move 4 cards to done' no longer freezes.
-    entries = [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
-               {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
-    if rotate_note:
-        entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
-    _append_log(user, entries)
+    if card_run_dir:
+        # One owner, folded at event time: the reply lands in the CARD's own
+        # timeline (not the user's global copilot_log) - it is that card's
+        # conversation, visible to every device/user watching it.
+        from spine.agent import timeline_store
+        _tsv, _tav = time.strftime("%H:%M:%S"), time.time()
+        timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
+            {"role": "assistant", "kind": "text", "text": out.get("reply", ""),
+             "by": "Henry", "byKind": "henry", "ts": _tsv, "ta": _tav, "usage": usage})
+        if rotate_note:
+            timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
+                {"kind": "note", "text": rotate_note, "byKind": "henry", "ts": _tsv, "ta": _tav})
+    else:
+        entries = [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
+                   {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
+        if rotate_note:
+            entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
+        _append_log(user, entries)
     _schedule_compact(user)      # background + single-flight, never blocks this reply
     refused = []
     if acts and not allow_actions:
@@ -886,10 +927,16 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # refusal is logged and returned, so no surface can report a change that
         # did not happen.
         refused = sorted({str(a.get("type") or "?") for a in acts})
-        _append_log(user, [{"cls": "error",
-                            "text": "advisory surface: %d board action(s) NOT run (%s)"
-                                    % (len(acts), ", ".join(refused)),
-                            "ts": time.strftime("%H:%M")}])
+        _refused_text = ("advisory surface: %d board action(s) NOT run (%s)"
+                          % (len(acts), ", ".join(refused)))
+        if card_run_dir:
+            from spine.agent import timeline_store as _ts
+            _ts.append(card_run_dir, "s:" + uuid.uuid4().hex,
+                {"kind": "note", "text": _refused_text, "byKind": "henry",
+                 "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
+        else:
+            _append_log(user, [{"cls": "error", "text": _refused_text,
+                                "ts": time.strftime("%H:%M")}])
         acts = []
     if acts:
         def _run_bg():
@@ -900,7 +947,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 except Exception as e:
                     done.append("action failed: %s" % str(e)[:200])
             if done:
-                _append_log(user, [{"cls": "act", "text": r} for r in done])
+                if card_run_dir:
+                    from spine.agent import timeline_store as _ts
+                    for r in done:
+                        _ts.append(card_run_dir, "s:" + uuid.uuid4().hex,
+                            {"kind": "note", "text": r, "byKind": "henry",
+                             "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
+                else:
+                    _append_log(user, [{"cls": "act", "text": r} for r in done])
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}
