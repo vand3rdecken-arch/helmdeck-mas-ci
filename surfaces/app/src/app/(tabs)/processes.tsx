@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView, StyleSheet,
-  Text, TextInput, useWindowDimensions, View,
+  ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet,
+  Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -14,8 +14,7 @@ import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { useAiFlat } from "@/ui/billing";
 import { Chip, Dot, Empty, Panel, ScreenHeader } from "@/ui/kit";
-
-const isWeb = Platform.OS === "web";
+import { isWeb, useResponsive } from "@/ui/responsive";
 
 // Executor modes the daemon understands (daemon/processes.py MODES).
 const MODES = ["do", "prepare", "cowork", "teach", "human"] as const;
@@ -376,8 +375,7 @@ export default function Processes() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   const { data, isLoading, error } = useQuery({ queryKey: ["processes"], queryFn: api.processes, refetchInterval: 8000 });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["processes"] });
 

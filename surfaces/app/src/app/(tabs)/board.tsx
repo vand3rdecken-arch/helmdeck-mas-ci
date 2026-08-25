@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -11,6 +11,7 @@ import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { BoardList } from "@/ui/board";
 import { GlowBackdrop } from "@/ui/glow";
 import { useTheme } from "@/theme";
+import { useResponsive } from "@/ui/responsive";
 
 /** Capacity meter (old web header): WIP running / limit · attention touches ·
  *  headroom. Owner-facing at-a-glance load. */
@@ -39,8 +40,7 @@ export default function BoardTab() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const wide = Platform.OS === "web" && width >= 900;
+  const { wide } = useResponsive();
   const copilotEnabled = useCellEnabled("copilot");
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>

@@ -6,7 +6,7 @@ import util from "tweetnacl-util";
 import { useConfig } from "@/data/config";
 import { qrDataUrl } from "@/data/qrgen";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -20,6 +20,7 @@ import { UsagePanel } from "@/ui/dash_panels";
 import { PMControls } from "@/ui/pm_panel";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { UpdatesPanel } from "@/ui/updates_info";
+import { useResponsive } from "@/ui/responsive";
 
 const BACKDROPS = ["mesh", "aurora", "ember", "forest", "mono"] as const;
 // auto-modes / chat-roles / prios / lane-labels moved to the Automatik hub
@@ -38,8 +39,7 @@ export default function Settings() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const qc = useQueryClient();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   const { data: s, isLoading, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users });
   const { data: devices, refetch: refetchDevices } = useQuery({ queryKey: ["devices"], queryFn: api.devices });

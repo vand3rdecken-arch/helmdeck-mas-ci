@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -11,8 +11,7 @@ import { statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, Empty, Panel, ScreenHeader } from "@/ui/kit";
 import { confirmAsync } from "@/ui/settings_sections";
-
-const isWeb = Platform.OS === "web";
+import { isWeb, useResponsive } from "@/ui/responsive";
 
 // Real frosted glass on the web; a crisp translucent surface on native (mirrors board.tsx).
 function glassStyle(t: ThemeTokens) {
@@ -62,8 +61,7 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
   { conn: ConnectorInfo; tracks: Track[]; savedMins: number; onRefresh: () => Promise<void> }) {
   const t = useTheme();
   const tr = useT();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   const [busy, setBusy] = useState(false);
   const [mins, setMins] = useState(savedMins > 0 ? String(savedMins) : "");
 
@@ -167,8 +165,7 @@ export default function Connectors() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   const qc = useQueryClient();
 
   const connectors = useQuery({ queryKey: ["connectors"], queryFn: api.connectors });

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -10,8 +10,7 @@ import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, Empty, Panel, ScreenHeader } from "@/ui/kit";
-
-const isWeb = Platform.OS === "web";
+import { isWeb, useResponsive } from "@/ui/responsive";
 
 function glassStyle(t: ThemeTokens) {
   return isWeb
@@ -102,8 +101,7 @@ export default function Recordings() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;
+  const { wide } = useResponsive();
   const { data, isLoading, error } = useQuery({ queryKey: ["runs"], queryFn: api.runs });
 
   return (

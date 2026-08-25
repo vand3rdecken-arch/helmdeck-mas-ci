@@ -10,6 +10,7 @@ import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Caption, ChipPick, fieldStyle } from "@/ui/settings_sections";
+import { useResponsive } from "@/ui/responsive";
 
 // Shape of one entry from claude_sessions.list_sessions (daemon/claude_sessions.py).
 type ClaudeSession = {
@@ -79,6 +80,7 @@ export default function NewCard() {
   });
 
   const field = fieldStyle(t);
+  const { wide } = useResponsive();
   // The app already knows the configured drivers via metrics.settings.drivers
   // (same source the web modal uses). Selector when present, text input otherwise.
   const drivers = Object.keys(metrics?.settings?.drivers ?? {});
@@ -139,7 +141,7 @@ export default function NewCard() {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <Text style={{ color: t.txtPrimary, fontSize: 20, fontWeight: "700", padding: 16 }}>{tr("new.title")}</Text>
-      <ScrollView contentContainerStyle={{ padding: 12, gap: 10 }}>
+      <ScrollView contentContainerStyle={{ padding: 12, gap: 10, width: "100%", maxWidth: wide ? 560 : undefined, alignSelf: "center" }}>
         <Panel>
           <Caption text={tr("new.examples")} />
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>

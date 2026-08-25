@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
-import { type ColorValue, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { type ColorValue, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CellInfo } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
@@ -9,9 +9,9 @@ import { useT } from "@/i18n";
 import { tokens } from "@/theme/tokens";
 import { useSurfaces } from "@/kernel/react";
 import type { Surface } from "@/kernel";
+import { useResponsive } from "@/ui/responsive";
 
 const t = tokens.dark;
-const isWeb = Platform.OS === "web";
 const LOGO = require("../../../assets/images/icon.png");
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -187,8 +187,7 @@ const TAB_FALLBACK: TabItem[] = [
 
 export default function TabsLayout() {
   const tr = useT();
-  const { width } = useWindowDimensions();
-  const sidebar = isWeb && width >= 900;   // desktop nav shell vs phone bottom bar
+  const { wide: sidebar } = useResponsive();   // desktop nav shell vs phone bottom bar
   // The tab set now comes from the kernel surface registry (nav.tabs plugin),
   // falling back to TAB_FALLBACK when no kernel is provided — identical output.
   const surfaces = useSurfaces();

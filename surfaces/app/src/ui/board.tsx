@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -19,12 +19,12 @@ import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "./billing";
 import { GanttView } from "./board_gantt";
 import { LiveThumb } from "./board_live";
 import { Chip, Dot, Empty } from "./kit";
+import { isWeb, useResponsive } from "./responsive";
 import { useActionSheet } from "./action_sheet";
 import { SignOff } from "./sign_off";
 import { SignOffBatch } from "./sign_off_batch";
 
 const LANES = ["backlog", "working", "review", "done"] as const;
-const isWeb = Platform.OS === "web";
 
 /** Content-layer card (Apple HIG: don't put Liquid Glass in the content layer —
  *  use an opaque standard surface with a hairline + soft elevation shadow, and
@@ -557,8 +557,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     setToast(m);
     setTimeout(() => setToast(null), 5200);
   }, []);
-  const { width } = useWindowDimensions();
-  const wide = isWeb && width >= 900;   // desktop kanban vs phone single-scroll
+  const { wide } = useResponsive();   // desktop kanban vs phone single-scroll
   const sheet = useActionSheet();
   // GxP: a card in the regulated scope cannot just be moved to done - it needs
   // a signature first. ONE gate for all four entry points below (pill, move

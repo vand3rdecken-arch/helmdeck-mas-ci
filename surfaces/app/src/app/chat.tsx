@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
@@ -17,6 +17,7 @@ import { Transcript, type TStep } from "@/ui/card_transcript";
 import { ContextMeter } from "@/ui/context_meter";
 import { Empty } from "@/ui/kit";
 import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
+import { useResponsive } from "@/ui/responsive";
 import * as glassVoice from "@/data/glasses";
 
 // Desktop copilot is an IN-PAGE overlay (not a route), so the board stays mounted
@@ -453,8 +454,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 export function CopilotOverlay() {
   const t = useTheme();
   const tr = useT();
-  const { width } = useWindowDimensions();
-  const wide = Platform.OS === "web" && width >= 900;
+  const { wide } = useResponsive();
   const open = useCopilotPanel((s) => s.open);
   const hide = useCopilotPanel((s) => s.hide);
   if (!wide || !open) return null;
@@ -471,8 +471,7 @@ export function CopilotOverlay() {
 export default function ChatScreen() {
   const router = useRouter();
   const tr = useT();
-  const { width } = useWindowDimensions();
-  const wide = Platform.OS === "web" && width >= 900;
+  const { wide } = useResponsive();
   // Phone: the chat is a full-screen route. Desktop reaches the copilot via the
   // in-page CopilotOverlay (board FAB opens the panel store), NOT this route — but
   // if a wide window ever lands here directly (deep link / reload), still render
