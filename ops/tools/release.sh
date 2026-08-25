@@ -43,13 +43,14 @@ ok=(); fail=()
 
 bump_version() {
   # Android updates an installed APK in place only if versionCode is higher, and
-  # the code lives in TWO places kept in sync: app/app.json (what push_relay.sh
-  # reports in version.json) and the prebuilt android/app/build.gradle (what the
-  # APK actually carries). Bump both. versionName is left for a human to set.
+  # the code lives in TWO places kept in sync: surfaces/app/app.json (what
+  # push_relay.sh reports in version.json) and the prebuilt android/app/
+  # build.gradle (what the APK actually carries). Bump both. versionName is
+  # left for a human to set.
   py -3.12 - "$ROOT" <<'PY'
 import json, re, sys
 root = sys.argv[1]
-aj = root + "/app/app.json"; gr = root + "/app/android/app/build.gradle"
+aj = root + "/surfaces/app/app.json"; gr = root + "/surfaces/app/android/app/build.gradle"
 d = json.load(open(aj, encoding="utf-8"))
 cur = int(d["expo"]["android"]["versionCode"]); new = cur + 1
 d["expo"]["android"]["versionCode"] = new
@@ -77,7 +78,7 @@ build_android() {
     py -3.12 -c "
 from spine.comms import notify
 import json
-build = json.load(open('app/app.json', encoding='utf-8'))['expo']['android']['versionCode']
+build = json.load(open('surfaces/app/app.json', encoding='utf-8'))['expo']['android']['versionCode']
 notify.push_fcm('Update verfuegbar', 'Build %d ist bereit - unter Mehr installieren' % build)
 " || echo "    (notify skipped - daemon not importable from here, non-fatal)"
   fi
