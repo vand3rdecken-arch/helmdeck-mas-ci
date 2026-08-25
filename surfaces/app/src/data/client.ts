@@ -550,5 +550,13 @@ export const api = {
   connectors: () => req<any[]>("GET", "/connectors"),
   runConnector: (name: string) => req<{ cards?: number }>("POST", `/connectors/${name}/run`),
   rollbackConnector: (name: string) => req("POST", `/connectors/${name}/rollback`),
+
+  // remote devices (ops/docs/backlog/remote-device-execution)
+  devices: () => req<import("./types").DeviceRow[]>("GET", "/devices/mine"),
+  registerDevice: (label: string, billingScope: "external" | "shared" = "external") =>
+    req<{ id: string; token: string }>("POST", "/devices/register", { label, billing_scope: billingScope }),
+  revokeDevice: (id: string) => req("POST", `/devices/${id}/revoke`),
+  reassignCard: (track: string, toDevice: string) =>
+    req<import("./types").Track>("POST", "/devices/reassign", { track, to_device: toDevice }),
 };
 

@@ -456,6 +456,27 @@ def main():
     h = call(routes_devices.devices_card_status_get, CLIENT, did, t10["id"])
     ok(h.code == 404, "a client role cannot poll device card status")
 
+    # -- 12: present() device_stale derivation (Phase G board hint) ----------
+    print("\nlifecycle.present: device_stale derived hint")
+    from cells.engineer.lifecycle import present
+    from datetime import datetime as _dt, timedelta as _td
+    fmt2 = dispatch._TS_FMT
+    fresh = {"id": "d-fresh", "exec_site": "local:" + did, "lane": "working",
+             "status": "running", "claimed_at": _dt.now().strftime(fmt2)}
+    ok(not present(fresh).get("device_stale"),
+       "a freshly-claimed device card is NOT flagged stale")
+    old = {"id": "d-old", "exec_site": "local:" + did, "lane": "working",
+           "status": "running", "claimed_at": (_dt.now() - _td(seconds=3700)).strftime(fmt2)}
+    ok(present(old).get("device_stale") is True,
+       "a device card claimed longer than the TTL is flagged device_stale")
+    non_device = {"id": "d-plain", "lane": "working", "status": "running"}
+    ok("device_stale" not in present(non_device),
+       "a normal (non-device) card never gets a device_stale field")
+    backlog_dev = {"id": "d-bl", "exec_site": "local:" + did, "lane": "backlog",
+                   "status": "queued"}
+    ok(not present(backlog_dev).get("device_stale"),
+       "a backlog device card (not yet claimed) is not stale")
+
     print("\n%d failure(s)" % len(_fails))
     if _fails:
         sys.exit(1)

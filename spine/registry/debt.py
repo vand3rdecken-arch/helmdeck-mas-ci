@@ -100,21 +100,38 @@ DEBT = [
                 "launchd/systemd recipe in the module docstring). Pinned in "
                 "test_hd_worker.py (autostart cmd shape + a real HKCU Run-key "
                 "register/read/remove round-trip against a throwaway value "
-                "name). STILL OPEN: no live transcript streaming mid-turn "
-                "(Phase H, needs the relay long-poll shape, a bigger lift), "
-                "and the board UI does not yet surface a stuck/reassignable "
-                "device card (Phase G, the API + daemon-side event exist, no "
-                "surfaces/app screen renders them - a frontend task).",
-        "why_it_bites": "No board-UI visibility means a stuck device card is "
-                        "only "
-                        "discoverable via the API/logs, not the app the "
-                        "owner actually looks at day to day.",
-        "trigger": "the owner needing to SEE a stuck device card in the app "
-                   "rather than query the API, or wanting a device turn's "
-                   "live transcript on the board",
-        "fix": "Stream a device turn's live transcript back over the queue "
-               "channel (needs the relay long-poll shape); surface stuck/"
-               "reassignable device cards in the board/History UI.",
+                "name). "
+                "PHASE G CODE-COMPLETE 2026-08-25 (owner: 'F und g'): the "
+                "board now shows a device card's exec_site as an 'on device'/"
+                "'device offline?' chip (t.ai / t.danger, the latter driven "
+                "by a new lifecycle._present_device read-side device_stale "
+                "derivation - claimed_at older than the sweep TTL, a hint; "
+                "the sweep stays authority), and settings has a Devices panel "
+                "(GET /devices/mine + register/revoke, billing_scope + "
+                "last_seen shown, and a reassign action for any stale device "
+                "card via POST /devices/reassign). tsc --noEmit clean, i18n "
+                "lint clean for the new keys (the 6 remaining i18n reds "
+                "pre-date this and are the known base issue), present() "
+                "device_stale derivation pinned in test_remote_device.py. "
+                "OUTSTANDING for G: the CLAUDE.md UI law's screenshot+JUDGE "
+                "of the POPULATED panels (empty-state renders by pattern "
+                "construction, but the owner reviews UI hard and the "
+                "populated device-list/stale-card/reassign states were not "
+                "screenshotted this round - needs a seeded Expo-web run). "
+                "STILL OPEN: no live transcript streaming mid-turn (Phase H, "
+                "needs the relay long-poll shape, a bigger lift).",
+        "why_it_bites": "Phase H aside, the device UI has not had the visual "
+                        "screenshot+JUDGE the owner's UI-review law requires "
+                        "for its populated states - it typechecks and follows "
+                        "existing chip/panel patterns, but has not been SEEN "
+                        "with real device data.",
+        "trigger": "the owner (or a screenshot run) reviewing the populated "
+                   "device panel / stale-card badge, or wanting a device "
+                   "turn's live transcript on the board",
+        "fix": "Screenshot + JUDGE the populated device panel + board badge "
+               "(seed a stuck device card in an Expo-web run); stream a "
+               "device turn's live transcript back over the queue channel "
+               "(needs the relay long-poll shape).",
         "order": 0,
     },
     {

@@ -64,6 +64,13 @@ export interface Track {
   // is checked when the dialog opens and again before the merge, because that
   // costs git calls the board's polling must not pay.
   gxp?: boolean; gxp_scope?: boolean; gxp_signed?: boolean; dispatched_by?: string;
+  /** remote device execution (ops/docs/backlog/remote-device-execution): a card
+   *  a team member's own PC runs. "local:<device-id>" when set; absent for a
+   *  daemon-executed card. `device_stale` is DERIVED server-side per read
+   *  (lifecycle._present_device) - true when a working device card has been
+   *  claimed longer than the sweep's TTL, i.e. its device may be offline. Just
+   *  a badge hint; dispatch.sweep_stale_device_claims is the authority. */
+  exec_site?: string; device_stale?: boolean;
   forked_from?: string; forked_ref?: string; adopted?: boolean;
   question?: PendingQuestion;
   waiting_on?: "you" | "background";
@@ -194,6 +201,16 @@ export interface UserRow {
   // so a human can tell two devices apart. The full value exists exactly once,
   // in the response to issueToken.
   tokens: { label: string; id: string; tail: string; created?: string }[];
+}
+
+// A registered remote-execution device (ops/docs/backlog/remote-device-
+// execution). Same "no token" rule as UserRow: the plaintext exists once, in
+// the register response. `billing_scope` = whose Claude account pays
+// ("external" = the device's own; "shared" = the daemon's).
+export interface DeviceRow {
+  id: string; owner: string; label: string;
+  billing_scope?: "external" | "shared";
+  created?: string; last_seen?: string | null;
 }
 
 // Claude subscription usage (from /usage) - the 5h + weekly rate-limit windows.

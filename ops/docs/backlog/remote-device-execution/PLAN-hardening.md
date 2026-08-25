@@ -328,6 +328,21 @@ survives a simulated "logout" (a fresh process from the registration).
 
 ## Phase G - board UI: see + rescue a stuck device card  [owner-facing]
 
+> **CODE-COMPLETE 2026-08-25 (owner: "F und g"), visual JUDGE outstanding.**
+> Daemon: lifecycle._present_device adds a read-side `device_stale` hint
+> (claimed_at older than the sweep TTL - a badge hint, the sweep stays
+> authority), pinned in test_remote_device.py. Frontend: Track type gains
+> exec_site + device_stale; board.tsx renders an "on device"/"device
+> offline?" chip (t.ai / t.danger); settings.tsx gains a Devices panel
+> (api.devices/registerDevice/revokeDevice + a reassign action for a stale
+> card via api.reassignCard); i18n keys added (de+en). `tsc --noEmit`
+> clean, i18n lint clean for the new keys. OUTSTANDING: the CLAUDE.md UI
+> law's screenshot+JUDGE of the POPULATED states (device list, stale-card
+> badge, reassign flow) - not run this round, needs a seeded Expo-web run;
+> the owner reviews UI hard, so this is flagged, not claimed done. Empty-
+> state renders by construction (reuses Chip/Panel/Pressable + existing
+> theme tokens exactly).
+
 **The gap.** `POST /devices/reassign` and `GET /devices/mine` work over the
 API, but no `surfaces/app` screen renders a device card waiting on an
 offline device, or offers reassign. The owner can't SEE the thing the API
