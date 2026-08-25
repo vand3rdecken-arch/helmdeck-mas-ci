@@ -36,6 +36,15 @@ export const onboard: Dict = {
     en: "Sign in first — then you can pair your phone.",
   },
 
+  // ---- engine picker (setup.js ENGINES; see that file's own docstring for
+  // why each tier can only promise what it promises) -----------------------
+  "onboard.enginesTitle": { de: "Agent-Engines", en: "Agent engines" },
+  "onboard.engineRequired": { de: "erforderlich", en: "required" },
+  "onboard.engineTier.full": { de: "richtet alles ein", en: "sets up everything" },
+  "onboard.engineTier.npm-install": { de: "wird automatisch installiert", en: "installed automatically" },
+  "onboard.engineTier.agent-install": { de: "Claude installiert es für dich", en: "Claude installs it for you" },
+  "onboard.engineTier.detect-only": { de: "nur Status, keine Installation", en: "status only, no install" },
+
   // ---- sign in / register (ui/login_screen.tsx) ---------------------------
   // The error the daemon returns on a failed attempt is NOT here - routes_auth
   // speaks through daemon/i18n.py, so it arrives already in the right language.

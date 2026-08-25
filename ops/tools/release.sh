@@ -22,7 +22,7 @@
 # JDK 17+ (Android Studio's JBR). A .env with RELAY_HOST/RELAY_SSH_* is needed
 # only for --push. Adjust the two paths below if the toolchain moves.
 set -o pipefail        # NOT -u: Git Bash leaves some Windows env vars unset
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 JBR="/c/Program Files/Android/Android Studio1/jbr"
