@@ -60,7 +60,37 @@ DEFAULT_POLICY = (
 )
 
 
-def _ask(prompt, model=""):
+def _dispatcher_privileged(t):
+    """May Henry get live-tree HANDS for the card THIS escalation is about?
+    Derived fresh, at judgement time, from who actually dispatched the card
+    (t['dispatched_by'] - "WHO ASKED", per dispatch.py - not `client`, the
+    billing label an owner can set on their own card; same distinction
+    spawnenv._card_env's HELMDECK_TOOL_SCOPE derivation already draws)
+    against the CURRENT user registry - never assumed, never cached, same
+    shape as gxp.is_human().
+
+    A card-less escalation (box load, a deploy hook - nothing a specific
+    external card produced) or one dispatched by an agent name (pm, henry,
+    chain - auth.get_user finds no account) has no client to be restricted
+    FROM; hands stay on, unchanged from today. Only an escalation on a card
+    a real `client`-role account filed loses hands.
+
+    Owner decree 2026-08-25 (chat): "das soll ok sein, solange user is owner
+    oder hat genuegend rechte" - this is that constraint, enforced rather
+    than assumed true."""
+    if not t:
+        return True
+    dispatched_by = t.get("dispatched_by")
+    if not dispatched_by:
+        return True
+    from spine.auth import auth
+    u = auth.get_user(dispatched_by)
+    if not u:
+        return True
+    return u.get("role") in auth.chat_admin_roles()
+
+
+def _ask(prompt, model="", perm=None):
     """Headless one-shot judgement call - same spawn shape as the board
     copilot/PM (drivers._cmd_line, never a bare .cmd with quoted args).
 
@@ -68,11 +98,15 @@ def _ask(prompt, model=""):
     "Henry should start in normal mode... do stuff directly"): Henry may fix
     the exception himself in this turn - hands like a direct/machine card, on
     the live tree, cwd repo root. The bounded-verb JSON stays as the CLOSING
-    report, not the only channel. Override via settings `henry_permission_mode`."""
+    report, not the only channel. Override via settings `henry_permission_mode`.
+
+    `perm`, when given, overrides that default for THIS call only - used by
+    _decide to drop to "plan" (no edits) when _dispatcher_privileged(t) says
+    the escalating card's owner does not qualify for Henry's hands."""
     from cells.copilot import copilot
     from spine.agent import drivers
     argv = [copilot.CLAUDE, "-p", "--output-format", "json",
-            "--permission-mode", copilot.henry_pmode()]
+            "--permission-mode", perm or copilot.henry_pmode()]
     if model:
         argv += ["--model", model]
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=os.path.dirname(ROOT),
@@ -223,6 +257,8 @@ def _decide(esc):
     policy = (events.settings().get("henry_policy") or "").strip() or DEFAULT_POLICY
     escalations.record_attempt(esc["id"])
     card_log = _card_log_tail(esc.get("card"))
+    t = _find_track(esc.get("card"))
+    privileged = _dispatcher_privileged(t)
     prompt = (
         policy
         + "\n\n== ESKALATION ==\nkind: %s\ncard: %s\ndetail:\n%s\n" % (
@@ -239,8 +275,19 @@ def _decide(esc):
           ' "lane": "bei move: review|done",\n'
           ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "why": "ein satz begruendung"}')
+    if not privileged:
+        # This card was filed by a client-role account, not owner/operator -
+        # Henry gets NO hands for it (spine.auth.devices' same distinction:
+        # dispatched_by, resolved fresh, not the client billing label).
+        # perm="plan" makes any edit attempt fail at the tool layer, and the
+        # prompt says so up front so the turn doesn't waste itself trying.
+        prompt += (
+            "\n\nHINWEIS: Diese Karte wurde von einem client-Account "
+            "eingereicht - du hast in diesem Turn KEINE Haende (nur lesen). "
+            "action \"did\" ist nicht verfuegbar; nutze steer/notify_owner/"
+            "ignore.")
     try:
-        d = _ask(prompt)
+        d = _ask(prompt, perm=("plan" if not privileged else None))
     except Exception as e:
         escalations.record_note(esc["id"], "ask failed: %s" % str(e)[:200])
         return False
@@ -249,6 +296,15 @@ def _decide(esc):
     lane = (d.get("lane") or "").strip()
     text = (d.get("text") or "").strip()
     why = (d.get("why") or "").strip()
+    if action == "did" and not privileged:
+        # Defense in depth: even if the model tried anyway, this card's
+        # escalation does not get closed via "did" - stays open for a
+        # privileged human/owner to see, same shape as the GxP refusal
+        # below (_execute's did/move gate).
+        escalations.record_note(esc["id"],
+            "Henry versuchte 'did' auf einer client-Karte ohne Haende - "
+            "abgelehnt, bleibt offen")
+        return False
     if not _execute(action, card, lane, text, esc):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why)
