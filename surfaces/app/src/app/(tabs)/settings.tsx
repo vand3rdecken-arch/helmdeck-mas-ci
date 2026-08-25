@@ -42,6 +42,10 @@ export default function Settings() {
   const wide = isWeb && width >= 900;
   const { data: s, isLoading, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users });
+  const { data: devices, refetch: refetchDevices } = useQuery({ queryKey: ["devices"], queryFn: api.devices });
+  // shares the board's ["tracks"] cache - used only to surface a device card
+  // that went stale (its worker offline), so the owner can reassign it here.
+  const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
   const actors = metrics?.capacity?.actors ?? {};   // touch units per person today
   const pmEnabled = useCellEnabled("pm");
@@ -286,6 +290,35 @@ export default function Settings() {
   async function saveReg() {
     try { await api.saveSettings({ registration: { open: regOpen, invite_code: regCode.trim(), default_role: regRole } }); ok(tr("settings.saved.registration")); }
     catch (e) { fail(e); }
+  }
+  // Remote devices (ops/docs/backlog/remote-device-execution). Register mints a
+  // token that goes to the member's own PC (config file); it is shown ONCE here,
+  // same one-time rule as a user device token.
+  async function addDevice() {
+    const label = (await promptText(tr("settings.devices.labelPrompt"), "my-pc")) ?? "my-pc";
+    try {
+      const r = await api.registerDevice(label);
+      await Clipboard.setStringAsync(r.token);
+      Alert.alert(tr("settings.devices.tokenCopiedTitle"), tr("settings.devices.tokenCopiedMsg"));
+      await refetchDevices();
+    } catch (e) { fail(e); }
+  }
+  async function revokeDeviceH(d: import("@/data/types").DeviceRow) {
+    if (!(await confirmAsync(tr("settings.devices.revokeTitle"), tr("settings.devices.revokeMsg", { label: d.label })))) return;
+    try { await api.revokeDevice(d.id); await refetchDevices(); } catch (e) { fail(e); }
+  }
+  // Reassign a stuck card to another of the owner's devices, or clear it back
+  // to a normal daemon-executed card. Same Alert-of-choices shape as changeRole.
+  function reassignCard(card: import("@/data/types").Track) {
+    const others = (devices ?? []).filter((d) => ("local:" + d.id) !== card.exec_site);
+    Alert.alert(card.task.slice(0, 60), tr("settings.devices.reassignPrompt"), [
+      ...others.map((d) => ({
+        text: d.label,
+        onPress: async () => { try { await api.reassignCard(card.id, d.id); await qc.invalidateQueries({ queryKey: ["tracks"] }); } catch (e) { fail(e); } },
+      })),
+      { text: tr("settings.devices.reassignClear"), onPress: async () => { try { await api.reassignCard(card.id, ""); await qc.invalidateQueries({ queryKey: ["tracks"] }); } catch (e) { fail(e); } } },
+      { text: tr("ui.cancel"), style: "cancel" as const },
+    ]);
   }
 
   // Restores the "Abmelden" control the old Next.js web app had (lost at the
@@ -560,6 +593,35 @@ export default function Settings() {
               <ChipPick options={["operator", "client", "owner"]} selected={[uRole]} single onToggle={setURole} />
               <View style={{ height: 10 }} />
               <Btn label={tr("settings.users.create")} onPress={addUser} />
+            </Panel>
+
+            <Panel>
+              <SectionLabel text={tr("settings.sec.devices", { n: devices?.length ?? 0 })} />
+              <Hint text={tr("settings.devices.hint")} />
+              {(devices ?? []).map((d) => (
+                <View key={d.id} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 4 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }} numberOfLines={1}>{d.label}</Text>
+                    <Chip text={tr(d.billing_scope === "shared" ? "settings.devices.scopeShared" : "settings.devices.scopeExternal")}
+                          dot={d.billing_scope === "shared" ? t.ai : t.txtTertiary} />
+                    <Pressable onPress={() => revokeDeviceH(d)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.devices.revoke")}</Text></Pressable>
+                  </View>
+                  <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
+                    {d.last_seen ? tr("settings.devices.lastSeen", { when: d.last_seen }) : tr("settings.devices.neverSeen")}
+                  </Text>
+                </View>
+              ))}
+              {/* stuck device cards: a device card that went stale (its worker
+                  offline) - the owner rescues it here by reassigning to another
+                  device or clearing it back to a normal card. */}
+              {(tracks ?? []).filter((k) => k.device_stale).map((k) => (
+                <View key={k.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+                  <Text style={{ color: t.danger, fontSize: 12, flex: 1 }} numberOfLines={1}>⚠ {k.task.slice(0, 50)}</Text>
+                  <Pressable onPress={() => reassignCard(k)}><Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.devices.reassign")}</Text></Pressable>
+                </View>
+              ))}
+              <View style={{ height: 10 }} />
+              <Btn label={tr("settings.devices.register")} kind="ghost" onPress={addDevice} />
             </Panel>
 
             <Panel>

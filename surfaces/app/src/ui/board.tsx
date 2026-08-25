@@ -256,6 +256,14 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
           <Chip text={k.gxp_signed ? tr("sign.badgeSigned") : tr("sign.badgeNeeds")}
                 dot={k.gxp_signed ? t.ok : t.human} />
         ) : null}
+        {/* remote device execution: a card running on a team member's own PC.
+            t.ai (machine-work token) for the normal "on device" state; t.danger
+            when the daemon's read-side hint says the device may be offline, so
+            a stuck card is unmistakable at a glance (owner reviews the board). */}
+        {k.exec_site && k.exec_site.startsWith("local:") ? (
+          <Chip text={k.device_stale ? tr("board.deviceStale") : tr("board.onDevice")}
+                dot={k.device_stale ? t.danger : t.ai} />
+        ) : null}
         {k.due ? <Chip text={tr("board.due", { d: k.due })} /> : null}
         {k.value > 0 ? <Chip text={`€${k.value}`} /> : null}
         {k.ai_cost > 0 ? <Chip text={flat

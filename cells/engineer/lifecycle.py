@@ -119,7 +119,44 @@ def present(t):
             out["status"] = "needs_you"
             out["status_derived"] = True   # marker: coerced at read, not stored
     out = _present_gxp(t, out)
+    out = _present_device(t, out)
     return out if out is not None else t
+
+
+def _present_device(t, out):
+    """Derive the board's device-execution hint at READ time (ops/docs/backlog/
+    remote-device-execution PLAN-hardening.md Phase G). Same stance as
+    _present_gxp: a VIEW, computed on the way out, never stored. `exec_site`
+    is already on the track dict (it flows to the payload untouched) - this
+    only ADDS `device_stale`, a cheap hint that a device card in `working`
+    has been claimed longer than the sweep's TTL, i.e. its device may be
+    offline. It is deliberately the CHEAP question (claimed_at age only, from
+    the card's own field) - the AUTHORITATIVE offline decision (age AND the
+    device's last_seen) still lives in dispatch.sweep_stale_device_claims,
+    which is what actually reclaims the card. The badge points; the sweep
+    acts."""
+    exec_site = (t or {}).get("exec_site") or ""
+    if not exec_site.startswith("local:"):
+        return out
+    stale = False
+    if t.get("lane") == "working" and t.get("claimed_at"):
+        from datetime import datetime
+        try:
+            from spine.storage import events
+            ttl = float(((events.settings().get("policy") or {}).get("device") or {})
+                        .get("claim_ttl_s", 1800))
+        except Exception:
+            ttl = 1800.0
+        try:
+            age = (datetime.strptime(time.strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
+                   - datetime.strptime(t["claimed_at"], "%Y-%m-%d %H:%M:%S")).total_seconds()
+            stale = age > ttl
+        except (ValueError, TypeError):
+            stale = False
+    if stale:
+        out = dict(t) if out is None else out
+        out["device_stale"] = True
+    return out
 
 
 def sweep_zombies(min_idle_s=0):

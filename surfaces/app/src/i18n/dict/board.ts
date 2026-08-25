@@ -64,6 +64,8 @@ export const board: Dict = {
   "board.step": { de: "Schritt {n}", en: "step {n}" },
   "board.process": { de: "Prozess", en: "process" },
   "board.due": { de: "fällig {d}", en: "due {d}" },
+  "board.onDevice": { de: "auf Gerät", en: "on device" },
+  "board.deviceStale": { de: "Gerät offline?", en: "device offline?" },
   // flat plan (Max-Abo): a card's AI figure is its SHARE OF THE SUBSCRIPTION.
   // aiTok stays as the fallback for when the quota can't be calibrated.
   "board.aiPlan": { de: "KI {pct} vom Abo", en: "AI {pct} of plan" },
