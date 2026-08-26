@@ -487,6 +487,28 @@ def test_policy_knob_contract():
     check(all(e.get("keys") for e in schema if e["control"] == "labels"),
           "every labels knob ships its keys")
 
+    # settings-ia-redesign phase 1 (settings-schema-v2): door/level/descKey/
+    # scope are the metadata the planned settings hub reads to place and
+    # describe each knob without a second hand-maintained table. Held to the
+    # same rigor as control/labelKey above - a knob missing one of these
+    # would render in the wrong door, in the wrong tier, or with no
+    # explanation, silently.
+    check(all(e.get("door") for e in schema), "every knob names its settings-hub door")
+    check(all(e.get("level") in ("basic", "advanced") for e in schema),
+          "every knob is basic or advanced (progressive disclosure)")
+    check(all(e.get("scope") in ("workspace", "device", "personal") for e in schema),
+          "every knob names its scope (workspace/device/personal)")
+    for e in schema:
+        dk = e.get("descKey")
+        check(bool(dk), "%s has a descKey" % e["path"])
+        if not dk:
+            continue
+        hit = re.search(r'"%s"\s*:\s*\{([^}]*)\}' % re.escape(dk), dict_src)
+        check(bool(hit), "%s has an i18n entry" % dk)
+        if hit:
+            check("de:" in hit.group(1) and "en:" in hit.group(1),
+                  "%s carries BOTH languages" % dk)
+
 
 for fn in (test_no_drift, test_ask_protocol, test_cli_args,
            test_never_breaks_a_spawn, test_loop_state, test_one_definition,
