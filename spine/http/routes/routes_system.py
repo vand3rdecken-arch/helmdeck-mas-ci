@@ -128,10 +128,14 @@ def push_register_post(self, user, body):
 
 
 def nightshift_plan_post(self, user, body):
-    # alias: run the PM plan now, file its cards
+    # alias: run the PM plan now, file its cards. Same role gate as the
+    # synchronous /pm/report it now backs in the app (owner/operator) - the
+    # dashboard/settings "Neu planen" button used to hit /pm/report directly,
+    # which allows operator too; narrowing to owner-only here would have been
+    # a silent permission regression for that button.
     from cells.pm import pm
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.http.server import _bg
     _bg("pm:plan", lambda: pm.make_plan(actor=user["name"]))
     return self._send(200, json.dumps({"planning": True,

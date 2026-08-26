@@ -1,11 +1,49 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
 
 import { api, type PmBrief, type PmConfig, type PmData } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
+
+/** Shared "Neu planen" trigger for the Dashboard triangle panel + Settings'
+ *  PM controls: kicks the async /nightshift/plan (answers instantly, the
+ *  model turn runs server-side in a background thread) instead of holding
+ *  api.pmReport()'s HTTP request open for the minutes a self-repair + verify
+ *  pass can take - over the relay round trip that left a "Plant..." spinner
+ *  stuck forever even after the plan had actually landed. Polls pmPlan while
+ *  planning and stops the moment plan.generated_at moves past what it was
+ *  before the kick; a 5-minute safety bail-out re-arms the button if the
+ *  background run genuinely dies, since polling (unlike the old held-open
+ *  request) is cheap to just retry. */
+export function usePmReplan() {
+  const qc = useQueryClient();
+  const [planning, setPlanning] = useState(false);
+  const baseline = useRef<string | undefined>(undefined);
+  const bail = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000,
+    refetchInterval: planning ? 4000 : false });
+  useEffect(() => {
+    if (!planning) return;
+    if (data?.plan?.generated_at && data.plan.generated_at !== baseline.current) {
+      setPlanning(false);
+      qc.invalidateQueries({ queryKey: ["tracks"] });
+    }
+  }, [planning, data?.plan?.generated_at, qc]);
+  useEffect(() => () => { if (bail.current) clearTimeout(bail.current); }, []);
+  const kick = useMutation({
+    mutationFn: api.pmReplan,
+    onMutate: () => {
+      baseline.current = data?.plan?.generated_at;
+      setPlanning(true);
+      if (bail.current) clearTimeout(bail.current);
+      bail.current = setTimeout(() => setPlanning(false), 5 * 60 * 1000);
+    },
+    onError: (e: unknown) => { setPlanning(false); Alert.alert("PM", String((e as Error).message)); },
+  });
+  return { planning, replan: () => kick.mutate() };
+}
 
 // act.now lines are DAEMON prose (translated daemon-side, see daemon/i18n.py) -
 // we don't translate them, we only pick an icon from their leading verb.
@@ -87,6 +125,7 @@ export function PMControls() {
   const { data, isLoading } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [goal, setGoal] = useState<string | null>(null);
   const [editGoal, setEditGoal] = useState(false);
+  const { planning, replan } = usePmReplan();
 
   const report = useMutation({
     mutationFn: (g?: string) => api.pmReport(g),
@@ -192,11 +231,11 @@ export function PMControls() {
 
       {/* manual replan + consolidate */}
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable onPress={() => report.mutate(undefined)} disabled={report.isPending}
+        <Pressable onPress={replan} disabled={planning}
           style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
             backgroundColor: t.surface2, borderRadius: 10, paddingVertical: 10 }}>
-          {report.isPending ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={15} color={t.txtSecondary} />}
-          <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{report.isPending ? tr("pm.planning") : tr("pm.refresh")}</Text>
+          {planning ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={15} color={t.txtSecondary} />}
+          <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{planning ? tr("pm.planning") : tr("pm.refresh")}</Text>
         </Pressable>
         <Pressable onPress={consolidate} disabled={proposing}
           style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
