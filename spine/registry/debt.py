@@ -26,6 +26,16 @@ DEBT = [
                 "`py -3.12 ops/tools/make_icon.py` would have regenerated every "
                 "icon/splash/favicon back to the OLD design and overwritten the "
                 "redesign with zero warning.",
+        "why_it_bites": "PAID - a script that's the documented single source "
+                        "for a brand asset but silently disagrees with what's "
+                        "actually shipped means the next person who touches "
+                        "icons (including a future agent turn) trusts the "
+                        "generator, reruns it to make an unrelated tweak, and "
+                        "reverts the whole redesign with a clean exit code and "
+                        "no diff review catching it until someone notices the "
+                        "app icon changed.",
+        "trigger": "n/a (paid) - was: anyone running "
+                   "`py -3.12 ops/tools/make_icon.py` for any reason.",
         "fix": "PAID (option b from the original two): make_icon.py's parametric "
                "h_mask()/glass_H()/make_tile() were retired. The generator now "
                "loads a fixed traced alpha mask (ops/tools/assets/logo_h_mask.png "
