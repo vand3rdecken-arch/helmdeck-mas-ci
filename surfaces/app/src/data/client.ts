@@ -553,6 +553,13 @@ export const api = {
   // PM/CTO: cached briefing (no LLM) vs a fresh report (one model turn).
   pmPlan: () => req<PmData>("GET", "/pm/plan"),
   pmReport: (goal?: string, model?: string) => req<PmBrief>("POST", "/pm/report", { goal, model }),
+  // Fire-and-forget re-plan: the daemon answers INSTANTLY and runs the model
+  // turn in a background thread (vs pmReport, which holds one HTTP request
+  // open for as long as the turn takes - a self-repair + verify pass can run
+  // several minutes, and over the relay round trip that left the UI spinning
+  // forever with no way to tell success from a dead connection). Callers poll
+  // pmPlan for plan.generated_at to move.
+  pmReplan: () => req<{ planning: boolean; repos: string[] }>("POST", "/nightshift/plan", {}),
   pmConfig: (patch: Record<string, unknown>) => req<PmConfig>("POST", "/pm/config", patch),
   pmConsolidatePropose: () => req<ConsolidationProposal>("POST", "/pm/consolidate", { mode: "propose" }),
   pmConsolidateApply: (repos: ConsolidationRepo[]) =>
