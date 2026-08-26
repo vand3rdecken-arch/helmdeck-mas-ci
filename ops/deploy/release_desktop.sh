@@ -69,9 +69,9 @@ if [ "$NO_BUILD" != "1" ]; then
     # powershell absent (it can be off the PATH on this box) - build inline with
     # the same steps: icon, deps, winCodeSign-without-darwin, web export, build.
     echo "==> powershell not found - inline bash build"
-    ( cd desktop
+    ( cd surfaces/desktop
       # icon.ico is git-ignored (generated from icon-1024.png); NSIS needs it.
-      [ -f assets/icon.ico ] || py -3.12 ../ops/tools/make_icon.py || exit 1
+      [ -f assets/icon.ico ] || py -3.12 ../../ops/tools/make_icon.py || exit 1
       [ -d node_modules/electron-builder ] || npm install || exit 1
       cache="$LOCALAPPDATA/electron-builder/Cache/winCodeSign"
       z="node_modules/7zip-bin/win/x64/7za.exe"
