@@ -138,6 +138,49 @@ unsichtbar statt 403.
 Reihenfolge fix: 1 → 2 → 3, danach 4–6 parallelisierbar. Jede Karte:
 tsc + run_gate + Playwright-Screenshots (Phone 390×844 + Desktop) gejudged.
 
+## Plausibilitätsprüfung gegen den Code (2026-08-26, vor Dispatch eingearbeitet)
+
+Verifiziert und TRAGFÄHIG:
+- `pm.autonomy` kennt exakt notify/ask/act (`cells/pm/pm.py`) — das
+  Dial-Mapping in Tür 2 erfindet keine neuen Zustände.
+- `_config_schema` ist bereits als importierbares Contract-Modul gebaut
+  (`spine/http/apimeta.py`), mit Contract-Test
+  `ops/tests/test_harness_layer.py` (Control-Union + Zwei-Sprachen-Pflicht).
+  Phase 1 MUSS diesen Test um die neuen Metadaten-Felder erweitern
+  (door/cell/level/descKey/scope je Pflicht), sonst rendern neue Knobs
+  wieder still als nichts.
+- `GET /cells` liefert schon heute ein registry-getriebenes Manifest
+  (`spine/registry/cells.py::manifest()`) — der Katalog (Tür 3) setzt darauf
+  auf statt auf eine Client-Liste. Der Dummy-Cell-Akzeptanztest ist damit
+  real machbar; `enabled()` defaultet unbekannte Keys auf true, `/policy/swap`
+  toggelt generisch. Phase 1 ergänzt `Cell` um ein nutzerlesbares `descKey`
+  (das vorhandene `role`-Feld ist technisch, keine Nutzer-Erklärung).
+
+KORREKTUREN am Zielbild:
+1. **Rollen-Widerspruch Tür 1:** „Allgemein — jede Rolle" kollidiert mit der
+   Realität, dass `POST /settings` owner-only ist (server.py 403). Sprache/
+   Aussehen sind für Nicht-Owner heute schlicht nicht schreibbar. Lösung in
+   Phase 2 wählen und umsetzen: entweder (a) gerätelokaler Sprach-Override
+   (Zustand-Store, wie Voice/Analytics) mit Workspace-Default vom Owner, oder
+   (b) neues schmales `POST /me/prefs` (jede Rolle, nur whitelisted
+   Personal-Keys). NICHT `/settings` für Nicht-Owner öffnen (Auth-Gesetz).
+2. **Plugin-Kernel-Nav (Debt `plugin-kernel-dual-nav`, offen):** Der Hub in
+   Phase 2 registriert sich im Kernel-Surface-Registry
+   (`surfaces/app/src/plugins/surfaces/tabs.ts`) und entfernt dort die
+   Einträge automation/settings/modules; die 1:1-Fallback-Tabellen in
+   `(tabs)/_layout.tsx` im SELBEN Commit nachziehen. Der Umbau darf das
+   Dual-Nav-Debt nicht vertiefen (keine dritte Navigationsquelle); wenn er
+   es nicht tilgen kann, Debt-Eintrag fortschreiben.
+3. **Nightshift-Merge ist Daemon-Arbeit, nicht UI-Dedup:** Neben pm.py liest
+   auch `cells/engineer/dispatch.py` (und routes_control/routes_settings)
+   `settings.nightshift` direkt. Phase 4 behandelt die Zusammenlegung als
+   echte Migration mit allen Lesern — oder lässt die Keys stehen und
+   dedupliziert NUR die Edit-Oberfläche (eine Form, ein Ort). Letzteres ist
+   der kleinere, erlaubte erste Schritt.
+4. **Klarstellung Akzeptanztest Phase 3:** „ohne Client-Codeänderung" heißt:
+   Client-Bundle unverändert; die Dummy-Cell entsteht als Eintrag in
+   `CELLS` + Schema — dass dafür der Daemon neu startet, ist erwartbar.
+
 ## Nicht-Ziele
 
 - Keine Änderung der Gesetze selbst (gate-before-review etc. bleiben fix).
