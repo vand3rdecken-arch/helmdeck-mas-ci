@@ -17,7 +17,7 @@ const LOGO = require("../../../assets/images/icon.png");
 type IconName = keyof typeof Ionicons.glyphMap;
 // labelKey / sectionKey are i18n keys, not prose - the nav renders them through
 // the translator so the shell speaks the workspace language.
-type NavItem = { name: string; labelKey: string; icon: IconName; sectionKey?: string; teamOnly?: boolean };
+type NavItem = { name: string; labelKey: string; icon: IconName; sectionKey?: string; teamOnly?: boolean; ownerOnly?: boolean };
 
 // Desktop left-sidebar FALLBACK nav - used ONLY when the kernel registry is
 // empty (boot failed). Must mirror the registry (tabs.ts + the 3 cell
@@ -30,12 +30,16 @@ const NAV: NavItem[] = [
   { name: "board", labelKey: "nav.board", icon: "grid-outline" },
   { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
   { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", sectionKey: "nav.sectionWorkflow" },
-  { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline" },
+  // recordings (/runs) is client-blocked server-side (routes_runs.py) - see
+  // teamOnly below, fixed alongside the same-day server gate.
+  { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline", teamOnly: true },
   { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", teamOnly: true },
-  { name: "history", labelKey: "nav.history", icon: "time-outline" },
+  { name: "history", labelKey: "nav.history", icon: "time-outline", teamOnly: true },
   { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
-  { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", teamOnly: true },
-  { name: "settings", labelKey: "nav.settings", icon: "settings-outline", teamOnly: true },
+  // automation/settings are GET-owner-only server-side; ownerOnly hides them
+  // from operators too (teamOnly alone only hid clients - see tabs.ts).
+  { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", ownerOnly: true },
+  { name: "settings", labelKey: "nav.settings", icon: "settings-outline", ownerOnly: true },
   { name: "modules", labelKey: "nav.modules", icon: "cube-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
 ];
 // Cell-enable nav gating (Phase 1 of the cell-registry decree, daemon/debt.py
@@ -86,7 +90,7 @@ function Sidebar({ state, navigation }: any) {
   const disabledCells = useDisabledCellSurfaces();
   const registryNav = surfaces
     .filter((s) => s.route && s.nav && !s.nav.phoneOnly && !isSurfaceCellDisabled(s, disabledCells))
-    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, teamOnly: s.nav!.teamOnly }));
+    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, teamOnly: s.nav!.teamOnly, ownerOnly: s.nav!.ownerOnly }));
   const navItems: NavItem[] = registryNav.length ? registryNav : NAV;
   const filter = useBoardFilter((s) => s.filter);
   const setFilter = useBoardFilter((s) => s.setFilter);
@@ -122,7 +126,10 @@ function Sidebar({ state, navigation }: any) {
         <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>HelmDeck</Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        {navItems.filter((item) => !(item.teamOnly && me?.role === "client")).map((item) => {
+        {navItems.filter((item) =>
+          !(item.teamOnly && me?.role === "client") &&
+          !(item.ownerOnly && me?.role !== "owner"),
+        ).map((item) => {
           const active = activeName === item.name;
           const color = active ? t.txtPrimary : t.txtSecondary;
           return (

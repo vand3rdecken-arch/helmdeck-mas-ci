@@ -14,6 +14,12 @@ from spine.ops.runs import REC, list_runs
 
 
 def runs_get(self, user):
+    # Unlike runs_item_get below, this lists EVERY recorded run across every
+    # card - no per-card owns_card check applies here, so the role gate is
+    # the only thing standing between a client and the whole team's screen
+    # recordings. Same tier as /history and /sessions/claude (client blocked).
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
     runs = list_runs()
     for m in runs:
         m["steps"] = len(read_timeline(os.path.join(REC, m["id"])))
@@ -21,6 +27,10 @@ def runs_get(self, user):
 
 
 def live_jpg_get(self, user):
+    # The desktop's LIVE screen frame while a run records - same sensitivity
+    # as the recordings list above, same gate.
+    if user["role"] == "client":
+        return self._send(403, b"owner/operator only", "text/plain")
     from spine.http import server
     lp = server._active_live()
     if not lp:

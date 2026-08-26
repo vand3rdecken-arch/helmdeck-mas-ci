@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -10,6 +10,7 @@ import { useBlockerVoice } from "@/data/blocker_voice";
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
+import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { ApkUpdateBanner } from "@/ui/apk_update";
@@ -17,27 +18,42 @@ import { Panel, SectionLabel } from "@/ui/kit";
 import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
 
+// tier mirrors the desktop sidebar's teamOnly/ownerOnly split (see
+// (tabs)/_layout.tsx + plugins/surfaces/tabs.ts) - this list used to render
+// unconditionally for EVERY role, so a client saw Automation/Settings and
+// got a 403 on tap. "any" = every role, "team" = owner+operator (client
+// blocked server-side), "owner" = owner only (blocked server-side for
+// operator too). Keep this in sync with the server gate cited per row - a
+// role check exists to hide a route that ACTUALLY 403s, never the reverse.
+type Tier = "any" | "team" | "owner";
 // The phone's "everything else" list, grouped so 9 flat rows become 3 scannable
 // blocks. Every row carries a one-line subtitle (more.sub.*) - the labels alone
 // ("Automatik", "Prozesse") proved opaque even to the owner - and every icon is
 // UNIQUE within the list (three near-identical git glyphs before).
-const GROUPS: readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string])[]][] = [
+const GROUPS: readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string, Tier])[]][] = [
   ["more.grp.control", [
-    ["automation", "nav.automation", "options-outline", "more.sub.automation"],
-    ["processes", "nav.processes", "git-network-outline", "more.sub.processes"],
-    ["connectors", "nav.connectors", "extension-puzzle-outline", "more.sub.connectors"],
+    ["automation", "nav.automation", "options-outline", "more.sub.automation", "owner"],   // routes_settings.py automation_get: owner only
+    ["processes", "nav.processes", "git-network-outline", "more.sub.processes", "any"],    // no role check in processes.py
+    ["connectors", "nav.connectors", "extension-puzzle-outline", "more.sub.connectors", "team"], // routes_connectors.py: client blocked
   ]],
   ["more.grp.logs", [
-    ["history", "nav.history", "time-outline", "more.sub.history"],
-    ["escalations", "nav.escalations", "alert-circle-outline", "more.sub.escalations"],
-    ["sessions", "nav.sessions", "chatbubbles-outline", "more.sub.sessions"],
-    ["recordings", "nav.recordings", "videocam-outline", "more.sub.recordings"],
+    ["history", "nav.history", "time-outline", "more.sub.history", "team"],                // routes_system.py history_get: client blocked
+    ["escalations", "nav.escalations", "alert-circle-outline", "more.sub.escalations", "team"], // routes_info.py escalations_get: "not for clients"
+    ["sessions", "nav.sessions", "chatbubbles-outline", "more.sub.sessions", "team"],       // routes_system.py sessions_claude_get: client blocked
+    ["recordings", "nav.recordings", "videocam-outline", "more.sub.recordings", "team"],    // routes_runs.py runs_get: client blocked (fixed alongside this)
   ]],
   ["more.grp.system", [
-    ["settings", "nav.settings", "settings-outline", "more.sub.settings"],
-    ["loopmap", "nav.loopmap", "map-outline", "more.sub.loopmap"],
+    ["settings", "nav.settings", "settings-outline", "more.sub.settings", "owner"],         // routes_settings.py settings_get: owner only
+    ["loopmap", "nav.loopmap", "map-outline", "more.sub.loopmap", "any"],                   // /loop/map: no role check
   ]],
 ] as const;
+
+function allowed(tier: Tier, role: string | undefined): boolean {
+  if (tier === "any") return true;
+  if (!role) return false;
+  if (tier === "team") return role !== "client";
+  return role === "owner";
+}
 
 export default function MoreTab() {
   const t = useTheme();
@@ -45,6 +61,7 @@ export default function MoreTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { baseUrl, token, set, applyPairing, relayMode } = useConfig();
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const qc = useQueryClient();
   const [url, setUrl] = useState(baseUrl);
   const [tok, setTok] = useState(token);
@@ -162,7 +179,10 @@ export default function MoreTab() {
           <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
           <Hint text={tr("settings.privacy.hint")} />
         </Panel>
-        {GROUPS.map(([grpKey, links]) => (
+        {GROUPS.map(([grpKey, allLinks]) => {
+          const links = allLinks.filter(([, , , , tier]) => allowed(tier, me?.role));
+          if (!links.length) return null;
+          return (
           <View key={grpKey} style={{ gap: 6 }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "700", letterSpacing: 0.6,
               textTransform: "uppercase", paddingHorizontal: 4, paddingTop: 6 }}>{tr(grpKey)}</Text>
@@ -193,7 +213,8 @@ export default function MoreTab() {
               ) : null}
             </Panel>
           </View>
-        ))}
+          );
+        })}
         <ApkUpdateBanner />
         <VersionFooter />
       </ScrollView>

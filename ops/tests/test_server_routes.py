@@ -502,6 +502,19 @@ def main():
         status, body = req("GET", "/live.jpg", cookie=sid, expect=404)
         ok(isinstance(body, bytes) or body is None, "/live.jpg: 404, no active run")
 
+        # /runs lists EVERY recorded run across every card (no per-card
+        # owns_card check applies, unlike /runs/<id>/*) and /live.jpg streams
+        # the desktop's live screen capture - both had NO role gate at all
+        # until this fix, so any authenticated client could watch the whole
+        # team's screen recordings. Same tier as /history (owner/operator).
+        status, body = req("GET", "/runs", cookie=csid, expect=403)
+        ok(isinstance(body, dict) and body.get("error"), "/runs refuses a client (owner/operator only)")
+        # live_jpg_get's gate replies text/plain (matching its own 404 body
+        # style above), so req()'s json.loads fails and body comes back None -
+        # the 403 status assertion inside req() is the real check here.
+        status, body = req("GET", "/live.jpg", cookie=csid, expect=403)
+        ok(body is None, "/live.jpg refuses a client (owner/operator only)")
+
         status, body = req("GET", "/runs/doesnotexist/timeline", cookie=sid, expect=200)
         ok(body == [], "/runs/<id>/timeline: empty list for an unknown run (no run dir yet)")
 
