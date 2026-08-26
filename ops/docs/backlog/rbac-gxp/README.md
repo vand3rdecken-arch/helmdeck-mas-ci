@@ -142,6 +142,22 @@ reibungslos), Aktivierung auditiert.
 
 Reihenfolge: 1 sofort; 2 → 3 → 4 sequenziell; 5–7 danach, 5 und 6 parallelisierbar.
 
+## Reihenfolge gegenüber settings-ia-redesign (bindend)
+
+Beide Pläne laufen parallel, EIN Berührungspunkt ist sequenzpflichtig:
+- `rbac-quick-gates` (Karte 1) läuft SOFORT, unabhängig von allem.
+- `settings-schema-v2` (Settings Karte 1) nimmt das Feld `scope` gleich
+  GxP-tauglich auf: Wert `personal` markiert die Keys, die später unter
+  `me.prefs.write` fallen — kein zweiter Schema-Durchgang.
+- Der Settings-Hub (Settings Karte 2) deklariert seine Türen im
+  Kernel-Registry VON ANFANG AN mit dem `cap`-Feld aus RBAC Karte 4
+  (Interim-Mapping: `cap: "team.member"` ≙ teamOnly, `cap: "settings.write"`
+  ≙ owner-only), damit dieselben Nav-Zeilen nicht zweimal migriert werden.
+  RBAC Karte 4 ersetzt dann nur die Auswertung (statisch → /me-Capabilities),
+  nicht die Deklarationen.
+- `rbac-permission-registry` (Karte 2) braucht den Hub NICHT — nur die
+  Dispatch-Tabellen. Beide Stränge bleiben parallelisierbar.
+
 ## Wechselwirkungen
 
 - **settings-ia-redesign:** Korrektur 1 dort (Sprache für Nicht-Owner) wird
