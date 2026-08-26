@@ -40,6 +40,29 @@ echo "HOOK-NOTE: npm ci (node_modules sync with the just-merged lockfile, can ta
 echo "[build_apk] npm ci (sync node_modules with the just-merged lockfile)"
 ( cd surfaces/app && npm ci ) || { echo "[build_apk] npm ci FAILED"; exit 1; }
 
+# REGENERATE surfaces/app/android FROM app.json + assets (2026-08-26). This script used
+# to assume the git-ignored, hand-managed android/ folder was already current
+# and only re-applied the 5 custom with*.js patches below - fine for a .kt/
+# .java source change, but SILENTLY WRONG for anything Expo's own config-
+# plugin system is responsible for (icon.png, splash-icon.png, the
+# adaptiveIcon layers, expo-splash-screen's backgroundColor, expo-camera's
+# permission strings, ...): those are baked into android/ by `expo prebuild`
+# ONLY, so a rebuild without this step ships whatever was baked in on the
+# LAST prebuild - a real incident, not hypothetical: the logo redesign this
+# line exists for built a real, green, signed APK with the OLD icon still in
+# it. `--clean` is safe here because every native customization this repo
+# needs beyond Expo's own plugins is ALREADY re-applied unconditionally right
+# below (LanCleartext/GlassVoice/MetaDat/SherpaOnnx/UpdateUrl) regardless of
+# whether prebuild just ran - so a fresh android/ loses nothing this script
+# doesn't already restore. `npx` itself fails on this box with a bare quoting
+# error (Program Files' space in the node path breaks its shim), so the
+# local binary is invoked directly; CI=1 replaces the unsupported
+# --non-interactive flag.
+echo "HOOK-NOTE: expo prebuild (regenerate android/ native resources from app.json + assets)"
+echo "[build_apk] expo prebuild --platform android --clean"
+( cd surfaces/app && CI=1 ./node_modules/.bin/expo prebuild --platform android --clean ) \
+  || { echo "[build_apk] expo prebuild FAILED"; exit 1; }
+
 # local.properties MUST use forward slashes - the Java properties parser eats
 # backslashes ("filename syntax incorrect" in the NDK locator).
 printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROID_HOME")" \
