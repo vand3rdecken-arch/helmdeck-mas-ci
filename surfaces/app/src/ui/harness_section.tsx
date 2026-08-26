@@ -332,7 +332,12 @@ export function HarnessSection() {
   const put = (d: HarnessDocument) => qc.setQueryData(["harness"], d);
 
   if (isLoading) return <Panel><ActivityIndicator color={t.accent} /></Panel>;
-  if (error || !data) return null;         // non-owner or unreachable: stay silent
+  // non-owner, unreachable, or an incomplete document (e.g. the demo-mode
+  // fixture's {} for an unmodelled endpoint) - stay silent rather than crash
+  // on .find() of a missing array. A malformed real response degrades the
+  // same way, which is the correct failure mode for a read-only info panel.
+  if (error || !data || !Array.isArray(data.surfaces) || !Array.isArray(data.previews)
+      || !Array.isArray(data.agents) || !Array.isArray(data.settings)) return null;
 
   const sur = data.surfaces.find((s) => s.key === surface) ?? data.surfaces[0];
   const prev = data.previews.find((p) => p.key === sur?.key);
