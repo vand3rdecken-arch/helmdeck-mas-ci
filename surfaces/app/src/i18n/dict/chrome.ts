@@ -26,6 +26,26 @@ export const chrome: Dict = {
   "esc.demoWhy": { de: "Deploy starb mit dem Daemon-Neustart", en: "Deploy died with the daemon restart" },
   "nav.feedback": { de: "Feedback geben", en: "Give feedback" },
 
+  // "More" tab: group headers + one-line subtitles so every row says what is
+  // behind it (the labels alone proved opaque even to the owner).
+  "more.grp.control": { de: "Steuerung", en: "Control" },
+  "more.grp.logs": { de: "Protokolle", en: "Activity" },
+  "more.grp.system": { de: "App & System", en: "App & system" },
+  "more.sub.automation": { de: "Regeln & Freigaben: was allein laufen darf", en: "Rules & approvals: what may run on its own" },
+  "more.sub.processes": { de: "Mehrstufige Abläufe anlegen und starten", en: "Create and run multi-step workflows" },
+  "more.sub.connectors": { de: "Externe Dienste anbinden", en: "Connect external services" },
+  "more.sub.history": { de: "Alles, was passiert ist – chronologisch", en: "Everything that happened, in order" },
+  "more.sub.escalations": { de: "Was Henry entschieden hat, was offen ist", en: "What Henry decided, what is still open" },
+  "more.sub.sessions": { de: "Chat-Verläufe der Agenten", en: "Agent chat transcripts" },
+  "more.sub.recordings": { de: "Mitschnitte erledigter Arbeit", en: "Recordings of finished work" },
+  "more.sub.settings": { de: "Team, Geräte, Import, Nachtschicht", en: "Team, devices, import, night shift" },
+  "more.sub.loopmap": { de: "Schaubild: wie Karten durch Gate & Review laufen", en: "Diagram: how cards flow through gate & review" },
+  "more.sub.feedback": { de: "Wunsch oder Problem melden", en: "Report a wish or a problem" },
+  "more.device.section": { de: "Dieses Gerät", en: "This device" },
+  "more.conn.connectedRelay": { de: "Mit dem Desktop gekoppelt (über Relay)", en: "Paired with the desktop (via relay)" },
+  "more.conn.edit": { de: "Ändern", en: "Change" },
+  "more.conn.hide": { de: "Fertig", en: "Done" },
+
   // lanes (defaults; policy.lane_labels still overrides per workspace)
   "lane.backlog": { de: "Backlog", en: "Backlog" },
   "lane.working": { de: "In Arbeit", en: "Working" },
