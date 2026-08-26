@@ -10,6 +10,40 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "make-icon-py-stale-design",
+        "title": "ops/tools/make_icon.py still hardcodes the OLD logo - would revert the redesign if rerun",
+        "status": "open",
+        "what": "The 2026-08-26 logo redesign (H with a swept diagonal crossbar, "
+                "hand-traced from an approved AI concept) shipped by directly "
+                "overwriting the asset files across surfaces/app/assets/images/, "
+                "surfaces/app/assets/expo.icon/, and surfaces/desktop/assets/ - "
+                "NOT by updating the repo's own canonical generator. "
+                "ops/tools/make_icon.py is a deterministic Pillow script whose "
+                "docstring lists it as the single source for every one of those "
+                "same files (straight-post 'glass H' on an aurora-glow tile, a "
+                "completely different design). It was never touched, so it is "
+                "now silently out of sync with what's actually shipped: running "
+                "`py -3.12 ops/tools/make_icon.py` today would regenerate every "
+                "icon/splash/favicon back to the OLD design and overwrite this "
+                "redesign with zero warning, because nothing checks the two "
+                "against each other. "
+                "Also worth noting while this is being paid: the new mark's "
+                "crossbar shape came from thresholding a raster image (not a "
+                "clean parametric path), so folding it into make_icon.py isn't "
+                "a small edit - it needs either a proper traced vector path or "
+                "a rewrite of make_icon.py's h_mask() to draw the new geometry "
+                "natively.",
+        "fix": "Either (a) update make_icon.py's h_mask()/glass rendering to "
+               "produce the new diagonal-crossbar H so it becomes the source of "
+               "truth again, or (b) delete/retire make_icon.py's parametric "
+               "generation and replace it with a script that derives every "
+               "target from the single master surfaces/app/assets/images/icon.png "
+               "(what this session's manual desktop-icon regeneration did ad "
+               "hoc - see the logo-redesign commits around 2026-08-26). Either "
+               "way, there must be exactly one generator again, not a script "
+               "that quietly disagrees with the shipped assets.",
+    },
+    {
         "id": "remote-worker-not-hardened",
         "title": "Remote device execution shipped as a reference implementation, not a service",
         "status": "paid",
