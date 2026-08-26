@@ -182,7 +182,7 @@ export const card: Dict = {
   "transcript.thinking": { de: "Gedanken", en: "Thinking" },
   "transcript.todos": { de: "PLAN / TO-DOS", en: "PLAN / TO-DOS" },
   "transcript.plan": { de: "PLAN", en: "PLAN" },
-  "transcript.boardAgent": { de: "Board-Agent", en: "Board agent" },
+  "transcript.boardAgent": { de: "Henry", en: "Henry" },
   "transcript.worker": { de: "Worker", en: "Worker" },
   // Chain-break divider. Since /compact injection was removed (a0853d4) a
   // session_chain break is always a ROTATION (new session, context not carried
