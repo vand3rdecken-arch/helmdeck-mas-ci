@@ -487,6 +487,10 @@ export const screens: Dict = {
     en: "Desktop app update {version} downloaded - installs on next restart.",
   },
   "updates.native.installNow": { de: "Jetzt neu starten & installieren", en: "Restart & install now" },
+  "updates.js.staged": {
+    de: "App-Update {version} geladen und geprüft - liegt bereit, bis die App neu startet.",
+    en: "App update {version} downloaded and verified - waiting for the app to restart.",
+  },
 
   // ---- connection health --------------------------------------------------
   "health.reconnecting": {
