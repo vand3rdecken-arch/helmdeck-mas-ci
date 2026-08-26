@@ -14,6 +14,7 @@ import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { ApkUpdateBanner } from "@/ui/apk_update";
+import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
@@ -216,6 +217,7 @@ export default function MoreTab() {
           );
         })}
         <ApkUpdateBanner />
+        <DesktopUpdateBanner />
         <VersionFooter />
       </ScrollView>
     </View>
