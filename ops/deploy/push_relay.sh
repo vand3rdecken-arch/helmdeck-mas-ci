@@ -45,8 +45,17 @@ if [ -f "$APK" ]; then
   # box's wrangler OAuth token has no `cache_purge` scope). version.json itself
   # is `cf-cache-status: DYNAMIC` - never cached - so phones read the new URL
   # immediately. Verified: relay.py routes on the path and ignores the query.
-  printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/helmdeck.apk?v=%s"}\n' \
-         "$VCODE" "$VNAME" "$VCODE" > /tmp/sd_version.json
+  #
+  # ?v= carries versionCode AND a content-hash prefix (2026-08-26): versionCode
+  # alone collided the day a build was re-cut at the SAME version - the signing
+  # hotfix re-shipped v62 under the identical ?v=62 key, so every phone pulled
+  # the previous (debug-signed) body from edge cache and install died on
+  # INSTALL_FAILED_UPDATE_INCOMPATIBLE, while this script's length check even
+  # passed (both builds were coincidentally byte-identical in SIZE). The hash
+  # makes the cache key track the BYTES, which is the only thing that never lies.
+  APK_SHA=$(sha256sum "$APK" | cut -c1-12)
+  printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/helmdeck.apk?v=%s-%s"}\n' \
+         "$VCODE" "$VNAME" "$VCODE" "$APK_SHA" > /tmp/sd_version.json
   echo "==> shipping APK v$VNAME ($VCODE) + version.json"
   scp "${SSH_OPTS[@]}" "$APK" "$TARGET:/tmp/helmdeck.apk" || exit 1
   scp "${SSH_OPTS[@]}" /tmp/sd_version.json "$TARGET:/tmp/version.json" || exit 1
@@ -78,17 +87,21 @@ curl -s -m 20 "https://$RELAY_DOMAIN/apk/version.json" && echo
 # describes it. Same discipline push_site.sh already enforces ("never verify a
 # deploy from git log"): everything above this line was green on 2026-08-21
 # while Cloudflare served the previous release's 146 MB body from edge cache.
-# So re-read the download URL out of the version.json we just published and
-# compare its length to the local file, byte for byte.
+# So re-read the download URL out of the version.json we just published,
+# DOWNLOAD the body, and compare its sha256 to the local file. Length alone
+# is proven insufficient: on 2026-08-26 the edge served a stale build that
+# was coincidentally byte-identical in SIZE to the new one (same code, only
+# the signing cert differed) and the old length check waved it through.
 if [ -f "$APK" ]; then
   URL=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' /tmp/sd_version.json)
-  WANT=$(wc -c < "$APK" | tr -d ' ')
-  GOT=$(curl -s -m 60 -I "https://$RELAY_DOMAIN$URL" \
-        | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ll]ength: *//p' | tail -1)
+  WANT=$(sha256sum "$APK" | cut -d' ' -f1)
+  curl -s -m 300 -o /tmp/sd_apk_verify.apk "https://$RELAY_DOMAIN$URL" || true
+  GOT=$(sha256sum /tmp/sd_apk_verify.apk 2>/dev/null | cut -d' ' -f1)
+  rm -f /tmp/sd_apk_verify.apk
   if [ "$GOT" = "$WANT" ]; then
-    echo "==> APK verified at $URL ($GOT bytes)"
+    echo "==> APK verified at $URL (sha256 ${GOT:0:12}...)"
   else
-    echo "==> APK MISMATCH at $URL: serving ${GOT:-?} bytes, built $WANT"
+    echo "==> APK MISMATCH at $URL: serving sha256 ${GOT:-?}, built $WANT"
     echo "==> the phone would install a DIFFERENT build than the one just made"
     exit 1
   fi
