@@ -434,8 +434,12 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   // (Max plan - the real rate-limit windows the PM checked, same UsageRow the
   // Settings panel uses) or "cash" (API plan - euro spend vs cap). The PM owns
   // the verdict; the board only draws. Adding a plan = a new kind branch.
+  const reasons = plan.triage_reasons;
+  const GateReason = ({ text }: { text?: string }) =>
+    text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
   const budget = (
     <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
+      <GateReason text={reasons?.budget} />
       {b?.kind === "usage" ? (
         <View>
           {b.windows?.length ? b.windows.map((w) => <UsageRow key={w.id} w={w} />)
@@ -463,9 +467,6 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
     </CornerPanel>
   );
 
-  const reasons = plan.triage_reasons;
-  const GateReason = ({ text }: { text?: string }) =>
-    text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
   const timeline = (
     <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}>
       <GateReason text={reasons?.timeline} />
