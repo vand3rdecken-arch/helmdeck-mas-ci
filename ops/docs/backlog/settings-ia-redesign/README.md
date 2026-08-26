@@ -128,7 +128,7 @@ unsichtbar statt 403.
 
 | # | Karte | Inhalt | Akzeptanz |
 |---|---|---|---|
-| 1 | `settings-schema-v2` | Daemon: Schema-Metadaten (door/cell/level/descKey/scope), fehlende Knobs (PM-Subkeys, glance_*, load_admission) aufnehmen; Endpoint liefert vollständigen Index | Schema enthält jeden heute editierbaren Knob genau 1×; run_gate grün |
+| 1 | `settings-schema-v2` — **ERLEDIGT** (Metadaten-Teil) | Daemon: Schema-Metadaten (door/level/descKey/scope) auf allen 9 bestehenden Knobs; Contract-Test erweitert | Metadaten-Pass grün (test_harness_layer.py + tsc + run_gate). **Scope-Korrektur während der Umsetzung:** PM-Subkeys/glance_*/load_admission NICHT hier reingezwungen (passen nicht ins flache 2-Level-Pfadmodell bzw. gehören laut Punkt C zu handgebauten Türen) — pm.autonomy bekommt seine echte Oberfläche in `autonomy-dial` (Karte 4), glance_* in Tür 4, load_admission bleibt vorerst ohne UI. |
 | 2 | `settings-hub-shell` | Hub-Navigator (6 Türen, Phone-Drilldown + Desktop-Zweispalter), generischer SettingsPage-Renderer, Türen 1/2/6 live; alte Panels ziehen um | Kein Knob verliert seine Editierbarkeit; settings.tsx gelöscht; Screenshots beider Layouts gejudged |
 | 3 | `cells-catalog` | Tür 3: Cell-Karten mit Beschreibung/Toggle/Status/Detail-Seite; Gesetze-Block zieht aus modules.tsx um | Jede Cell erklärt sich in einem Satz; modules.tsx gelöscht; Cell-Disable wirkt weiter auf Nav |
 | 4 | `autonomy-dial` | Presets-Dial über pm.autonomy + auto_accept + auto_dispatch; Erweitert-Schicht; Nightshift-Dedup (+ evtl. pm-Migration mit Debt) | Dial-Stufe ↔ Einzel-Knobs konsistent in beide Richtungen; nightshift nur noch 1 Edit-Ort |
