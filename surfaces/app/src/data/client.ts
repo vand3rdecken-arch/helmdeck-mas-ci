@@ -84,15 +84,35 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
     if (cfg.relayMode()) {
       ({ status, body: txt } = await relayReq(method, path, bodyStr));
     } else {
+      // Bare fetch has NO default timeout (Paseo's daemon client bounds every
+      // probe to 6-10s; this had none). Measured failure: a fresh install's
+      // default baseUrl is the ANDROID EMULATOR loopback (10.0.2.2) - dead on
+      // a real phone - and an unreachable host doesn't reject a plain fetch
+      // promptly, it hangs. The Dashboard's query then sits in isLoading
+      // forever with no error to show a HealthBanner or a pairing prompt -
+      // an unrecoverable spinner on first launch. Wrap the CALLER's signal (if
+      // any - React Query's unmount-abort) so both cancellation and timeout
+      // still fire the fetch's own AbortError, then tell them apart below.
+      const timeoutCtl = new AbortController();
+      const timer = setTimeout(() => timeoutCtl.abort(), 8000);
+      if (signal) {
+        if (signal.aborted) timeoutCtl.abort();
+        else signal.addEventListener("abort", () => timeoutCtl.abort(), { once: true });
+      }
       let r: Response;
       try {
         r = await fetch(cfg.baseUrl + path, {
           method, headers: authHeaders(),
-          body: method === "GET" ? undefined : bodyStr, signal,
+          body: method === "GET" ? undefined : bodyStr, signal: timeoutCtl.signal,
         });
       } catch (e) {
-        if ((e as Error)?.name === "AbortError") throw e;   // caller cancelled, not a health event
+        if ((e as Error)?.name === "AbortError") {
+          if (signal?.aborted) throw e;   // caller cancelled, not a health event
+          throw new TransportError(t("net.lanTimeout"));   // OUR timeout fired
+        }
         throw new TransportError(t("net.lanFailed"));
+      } finally {
+        clearTimeout(timer);
       }
       status = r.status; txt = await r.text();
     }

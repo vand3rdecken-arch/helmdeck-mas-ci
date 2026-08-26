@@ -230,6 +230,11 @@ export const settings: Dict = {
   "settings.reg.role": { de: "Default-Rolle", en: "Default role" },
   "settings.reg.save": { de: "Registrierung speichern", en: "Save registration" },
 
+  // ---- native pairing gate (fresh install / reinstall, no daemon known yet) ----
+  "gate.title": { de: "Mit deinem Desktop koppeln", en: "Pair with your desktop" },
+  "gate.hint": { de: "Scanne den QR-Code aus Einstellungen → Team & Geräte → Telefon koppeln, oder füge den Code unten ein.",
+                 en: "Scan the QR code from Settings → Team & devices → Pair phone, or paste the code below." },
+
   // ---- More tab (phone) ----
   "settings.more.pairSection": { de: "Mit einem Desktop koppeln", en: "pair with a desktop" },
   "settings.more.pairedRelay": { de: "● gekoppelt (Relay)", en: "● paired (relay)" },
