@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { api, type PmBrief, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
@@ -310,8 +310,19 @@ function cornerIssues(plan: PmBrief | null | undefined, corner: "budget" | "time
 export function TrianglePanel() {
   const t = useTheme();
   const tr = useT();
+  const qc = useQueryClient();
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [openCorner, setOpenCorner] = React.useState<"budget" | "timeline" | "scope" | null>(null);
+  // manual re-scope, right on the dashboard (was Settings-only) - a real re-plan
+  // spends an LLM turn so this stays a deliberate tap, not an auto-poll; Budget
+  // itself no longer needs it (pm_triangle.py tracks its measured state live,
+  // both directions), Timeline/Scope still only tighten until the planner
+  // revisits them.
+  const report = useMutation({
+    mutationFn: () => api.pmReport(undefined),
+    onSuccess: (b: PmBrief) => qc.setQueryData<PmData>(["pmPlan"], (o) => o ? { ...o, plan: b, goal: b.goal ?? o.goal } : o),
+    onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
+  });
   const goal = data?.goal || data?.plan?.goal;
   if (!goal) return null;
   const plan = data?.plan;
@@ -322,7 +333,14 @@ export function TrianglePanel() {
   const shownIssues = openCorner ? cornerIssues(plan, openCorner) : [];
   return (
     <GlassPanel title={tr("dash.triangle.title")}>
-      <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, marginBottom: 12 }}>{goal}</Text>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
+        <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, flex: 1 }}>{goal}</Text>
+        <Pressable onPress={() => report.mutate()} disabled={report.isPending} hitSlop={8}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface2, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
+          {report.isPending ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={13} color={t.txtSecondary} />}
+          <Text style={{ color: t.txtSecondary, fontSize: 11, fontWeight: "600" }}>{report.isPending ? tr("pm.planning") : tr("pm.refresh")}</Text>
+        </Pressable>
+      </View>
       {/* the three corners as prominent status cards - tap a blocked one for its issues */}
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
         <TriCorner label={tr("dash.triangle.budget")} state={tri?.budget} issues={cornerIssues(plan, "budget")}
