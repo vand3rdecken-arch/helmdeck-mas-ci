@@ -132,7 +132,7 @@ reibungslos), Aktivierung auditiert.
 
 | # | Karte | Inhalt | Akzeptanz |
 |---|---|---|---|
-| 1 | `rbac-quick-gates` | Sofort-Fixes aus 6 | /runs & /live.jpg 403 für client (Test); Operator-Nav ohne 403-Sackgassen (Screenshot) |
+| 1 | `rbac-quick-gates` — **ERLEDIGT** (ee3df24, 2026-08-26) | Sofort-Fixes aus 6 | /runs & /live.jpg 403 für client (Test grün); Operator-Nav ohne 403-Sackgassen (Screenshot owner/operator/client verifiziert) |
 | 2 | `rbac-permission-registry` | permissions.py + Guard + Routen-Deklaration + zentrale Enforcement-Stelle; Inline-Checks ersetzt | Paritäts-Test alt=neu für alle 3 Bestandsrollen; jede Route hat genau 1 Capability (Test zählt) |
 | 3 | `rbac-roles-quality-auditor` | neue Rollen + SoD-Knob `policy.sod_accept` | quality kann accepten aber nicht dispatchen (Test); SoD an: Dispatcher-Accept wird 403 + Audit-Event |
 | 4 | `rbac-nav-from-matrix` | `/me` liefert Capabilities; Nav-`cap`-Feld in allen 3 Tabellen + more.tsx; teamOnly-Ablösung | Rolle×Screen-Matrix-Test: sichtbar ⇔ Route erlaubt; Screenshots owner/operator/client/quality/auditor gejudged |
