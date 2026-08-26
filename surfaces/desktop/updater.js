@@ -127,9 +127,22 @@ function applyStaged(appDist, pending) {
 
 // The long-lived updater the Electron main process runs. All checks are the
 // silent/automatic intent: failures are logged and retried, never dialogs.
-function createUpdater({ feedBase, appDistDir, log }) {
+//
+// `notify` closes the same gap as native-updater.js's (owner report,
+// 2026-08-26): this updater DOES apply new bundles (silently, on quit or at
+// next startup), but the RUNNING window keeps serving the old app-dist until
+// then, and nothing ever told the UI a bundle was staged - so a JS update
+// could sit fully downloaded+verified for hours while the settings screen
+// still showed yesterday's code, indistinguishable from "nothing shipped".
+// UpdatesPanel's "check for update" button is a SEPARATE, unrelated
+// expo-updates call (meaningful on the phone's native OTA, not on this
+// desktop JS-bundle mechanism) - it cannot see this updater's state either.
+function createUpdater({ feedBase, appDistDir, log, notify }) {
   const pending = appDistDir + ".pending";
   const say = (m) => { try { log("update", m + "\n"); } catch { /* never fatal */ } };
+  const emit = typeof notify === "function" ? notify : () => {};
+  let status = { state: "current", version: null, message: null };
+  const set = (state, extra) => { status = { state, version: null, message: null, ...extra }; emit(status); };
   let timer = null, busy = false, pendingRetry = false;
 
   async function cycle() {
@@ -142,17 +155,22 @@ function createUpdater({ feedBase, appDistDir, log }) {
           fs.rmSync(pending, { recursive: true, force: true });
         }
         pendingRetry = false;
+        if (status.state !== "staged") set("current");
         return;
       }
       say("version " + (man.version || "?") + " (" + String(man.id).slice(0, 8) + ") found - downloading");
+      set("downloading", { version: man.version || null });
       await stage(feedBase, man, pending);
       pendingRetry = false;
       say("downloaded + verified - will be applied silently on quit (Paseo install-on-quit)");
+      set("staged", { version: man.version || null });
     } catch (e) {
       // Paseo: "[DesktopUpdater] Silent update check failed" - log only, and
       // while an update is mid-download re-check on the 10s cadence.
       pendingRetry = true;
-      say("silent update check failed: " + (e && e.message ? e.message : e));
+      const message = String((e && e.message) || e);
+      say("silent update check failed: " + message);
+      set("error", { message });
     } finally {
       busy = false;
       schedule();
@@ -186,6 +204,20 @@ function createUpdater({ feedBase, appDistDir, log }) {
     start() { void cycle(); },
 
     hasStage() { return Boolean((readMarker(pending) || {}).id); },
+
+    getStatus: () => status,
+
+    // Owner-initiated "restart now" (DesktopUpdateBanner's button) - applies
+    // the ALREADY-VERIFIED staged bundle immediately instead of waiting for
+    // quit/next-startup. Synchronous swap (applyStaged throws if the stage
+    // failed verification since it was set), so a caller that then calls
+    // app.relaunch()+app.exit() is safe to do right after this returns.
+    applyStagedNow() {
+      if (!fs.existsSync(pending) || !verifyStaged(pending)) return false;
+      applyStaged(appDistDir, pending);
+      say("staged update applied on demand (owner tapped restart)");
+      return true;
+    },
 
     // Paseo installUpdateOnQuit: revalidate the manifest against the feed
     // first (a superseded download must not install), bounded by the 5s

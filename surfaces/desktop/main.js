@@ -98,22 +98,39 @@ const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__di
 //    UI-bundle sync; either can apply without the other.
 // Dev runs are exempt from both, exactly like Paseo ("Auto-update is not
 // available in development mode").
+// sendToWindow reads the module-scope `win` AT CALL TIME (not a captured
+// reference) - the window can be null (still opening) or replaced (a rare
+// recreate path), and an update event can fire at any point in that
+// lifecycle. Silent no-op if there's nowhere to send it yet; the renderer
+// still gets the current state on mount via each get-status IPC handler.
+const sendToWindow = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
+
 let updater = null;
 if (app.isPackaged) {
   const { createUpdater, readRelayUrl } = require("./updater");
   const feedBase = readRelayUrl(path.join(daemonDir, "settings.json"));
-  if (feedBase) updater = createUpdater({ feedBase, appDistDir, log });
-  else log("update", "no relay configured - desktop OTA dormant\n");
+  if (feedBase) {
+    updater = createUpdater({
+      log, feedBase, appDistDir,
+      notify: (status) => sendToWindow("js-update:changed", status),
+    });
+  } else log("update", "no relay configured - desktop OTA dormant\n");
 }
+ipcMain.handle("js-update:get", () => (updater ? updater.getStatus() : { state: "current", version: null, message: null }));
+// The staged bundle is already downloaded + sha256-verified (updater.js
+// stage()); applying it just swaps the directory. A JS bundle swap alone
+// doesn't hot-reload the running window, so this restarts the whole app -
+// same shape as the native updater's "restart & install now" button.
+ipcMain.on("js-update:apply-now", () => {
+  if (!updater || !updater.applyStagedNow()) return;
+  app.relaunch();
+  app.exit(0);
+});
+
 const { createNativeUpdater } = require("./native-updater");
-// notify reads the module-scope `win` AT CALL TIME (not a captured
-// reference) - the window can be null (still opening) or replaced (a rare
-// recreate path), and an update event can fire at any point in that
-// lifecycle. Silent no-op if there's nowhere to send it yet; the renderer
-// still gets the current state on mount via the getStatus() IPC handler below.
 const nativeUpdater = createNativeUpdater({
   log, isPackaged: app.isPackaged,
-  notify: (status) => { if (win && !win.isDestroyed()) win.webContents.send("native-update:changed", status); },
+  notify: (status) => sendToWindow("native-update:changed", status),
 });
 ipcMain.handle("native-update:get", () => nativeUpdater.getStatus());
 ipcMain.on("native-update:install", () => nativeUpdater.quitAndInstall());
