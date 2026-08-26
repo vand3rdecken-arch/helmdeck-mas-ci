@@ -63,15 +63,21 @@ if ($LASTEXITCODE -ne 0) { throw "web export failed" }
 # the hand-rolled SHA256SUMS.txt step already there.
 $ebArgs = @("--win", "--config", "electron-builder.yml", "--publish", "never")
 $pkgBak = $null
+# [IO.File]'s static methods resolve relative paths against .NET's
+# Environment.CurrentDirectory, which Set-Location above does NOT always keep
+# in sync with PowerShell's own $PWD (a known divergence) - a bare "package.json"
+# here threw FileNotFoundException even though $PSScriptRoot was correct
+# (measured 2026-08-26, ops/deploy/release_desktop.sh's first real run).
+$pkgJsonPath = Join-Path $PSScriptRoot "package.json"
 if ($Version) {
   $ebArgs += "-c.extraMetadata.version=$Version"
-  $pkgBak = [IO.File]::ReadAllText("package.json")
+  $pkgBak = [IO.File]::ReadAllText($pkgJsonPath)
 }
 try {
   npx electron-builder @ebArgs
   if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
 } finally {
-  if ($pkgBak -ne $null) { [IO.File]::WriteAllText("package.json", $pkgBak) }
+  if ($pkgBak -ne $null) { [IO.File]::WriteAllText($pkgJsonPath, $pkgBak) }
 }
 
 Write-Host ""
