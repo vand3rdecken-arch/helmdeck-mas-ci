@@ -67,6 +67,17 @@ Zwei-Spalten wie Paseo). Türen, in Nutzer-Sprache, jede mit Untertitel:
    `cell`-Metadaten erweiterten `config_schema`. Die 6 Gesetzes-Toggles aus
    „Module" ziehen hierher um als read-mostly „Grundgesetze"-Block (Änderung
    → Henry-Eskalation, nicht Toggle-Flip). *Owner.*
+
+   **Erweiterbarkeits-Anforderung (bindend für Phase 3):** die Zellen-Liste
+   wird zur Laufzeit aus `spine/registry/cells.py::enabled()` + dem
+   Schema-Index gerendert — KEINE hartcodierte Cell-Liste im Client (anders
+   als heute `LINKS`/`GROUPS` in more.tsx). Eine neue Cell braucht NUR einen
+   Schema-Eintrag (Name, `descKey`, ihre Knobs mit `door`/`level`) im Daemon;
+   die Karte, das Icon-Slot, die Detail-Seite und die Suchindexierung
+   entstehen automatisch aus dem generischen `SettingsPage`-Renderer (Punkt C).
+   Kein `cells/<id>/ui/settings.tsx` pro Cell, kein manuelles Icon-Picking im
+   Client. Akzeptanztest für Phase 3: eine Dummy-Cell mit 2 Knobs im Schema
+   hinzufügen, OHNE Client-Codeänderung erscheint sie korrekt im Katalog.
 4. **Verbindungen** — Capability-Inventar: Jira (als geführter
    Verbinden-Wizard statt 4 nackter Felder), URL-Import, Connectoren-Liste
    mit Status + Zeitplan, Glasses/Glance (die bisher UI-losen `glance_*`-Keys).
