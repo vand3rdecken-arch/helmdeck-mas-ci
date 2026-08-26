@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
-# Push the HelmDeck SOURCE to github.com/Tienduyvo/helmdeck - the same repo
-# that already hosts the releases (owner's decision 2026-08-14: one repo, not
-# a second source repo), which is what finally gives the macOS CI runner
-# something to check out (.github/workflows/desktop-mac.yml).
+# RETIRED 2026-08-26 - read before using.
 #
-#   bash ops/deploy/publish_source.sh --dry-run     # audit only, push nothing
-#   bash ops/deploy/publish_source.sh               # audit, then push main
-#
-# THE REPO IS PUBLIC. A push publishes HISTORY, not just the working tree, and
-# .gitignore only ever protected the present. So this script is an AUDIT that
-# happens to end in a push - it re-runs every check on every invocation,
-# because "it was clean in August" is not a property that survives new commits.
-#
-# What it refuses to do, and why each one is a real failure and not paperwork:
-#   - push anything but ONE branch. `--all`/`--mirror` would publish ~20 stale
-#     card branches AND hit GitHub's hard 100 MB file limit: the WIP branch
-#     wip-expo-migration-20260812-223553 parks a 136 MB APK, an 81 MB .exe and
-#     a 78 MB .aab under ops/deploy/release_v1.0.7/. main itself is clean (largest
-#     blob 14.8 MB) - that difference is the whole reason for --single-branch.
-#   - push a blob over the limit (re-measured here, not assumed).
-#   - push credential-shaped content found anywhere in the pushed history.
-#   - push while the working tree is dirty.
+# This script's entire premise (owner's decision 2026-08-14: "one repo" -
+# filter+push SOURCE into the SAME repo the public release builds live in,
+# because that repo was public and CI needed something to check out) no
+# longer holds. The repo has since been split:
+#   - Tienduyvo/helmdeck (PRIVATE) now holds the FULL, UNFILTERED source via
+#     a plain `git push` (no .attachments/ or ops/docs/ stripping needed -
+#     there is no public reader to protect it from anymore).
+#   - Tienduyvo/helmdeck-release (PUBLIC) holds ONLY release binaries -
+#     running THIS script against it (e.g. via HELMDECK_GH_REPO) would push
+#     full source into a repo meant to carry release assets only.
+# The macOS CI runner (.github/workflows/desktop-mac.yml) now checks out the
+# PRIVATE repo directly - normal `git push origin expo-migration` already
+# gets it there, same as every other commit. If Actions on a private repo
+# ever needs *filtered* history again for some other reason, revive this;
+# until then it fails loudly below rather than silently doing something that
+# made sense under the old topology but not this one.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
+if [ -z "${HELMDECK_PUBLISH_SOURCE_ACKNOWLEDGE_RETIRED:-}" ]; then
+  echo "!!! publish_source.sh is retired (repo split 2026-08-26) - see the header comment."
+  echo "!!! Source now goes to the PRIVATE Tienduyvo/helmdeck via a plain 'git push'."
+  echo "!!! Set HELMDECK_PUBLISH_SOURCE_ACKNOWLEDGE_RETIRED=1 to run this anyway."
+  exit 1
+fi
 REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck}"
 # The local trunk is NOT called main. main is a stale 2026-08-12 branch with no
 # .github/ at all; the branch that actually carries the source (and the mac

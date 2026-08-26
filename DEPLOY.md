@@ -281,11 +281,26 @@ missing from the release.
 
 ## 1d) Publishing the source — what the macOS runner needs
 
-CI can only build what it can check out, and until 2026-08-14 the local clone
-had **no git remote at all**: `github.com/Tienduyvo/helmdeck` was a download
-shelf holding `README.md` plus release assets, everything uploaded by `gh`.
-Owner's decision: **one repo** — the source goes into that same public repo,
-next to the builds. Not a second source repo.
+**SUPERSEDED 2026-08-26 — repo split.** `Tienduyvo/helmdeck` is now
+**private** and holds the full, unfiltered source; `Tienduyvo/helmdeck-release`
+is a separate **public** repo holding only release binaries. Publishing
+source is now just `git push origin expo-migration` (origin already points
+at the private repo) - no filtering, no `.attachments`/`ops/docs` stripping,
+no privacy audit needed, since there is no public reader of the source repo
+to protect from anymore. `ops/deploy/publish_source.sh` is retired (see its
+own header) - the section below is kept as the historical record of the
+one-repo-public era, not a live runbook. The macOS CI runner
+(`.github/workflows/desktop-mac.yml`) now checks out the private repo
+directly; `ops/deploy/release_desktop.sh` defaults to the public release
+repo for installer uploads.
+
+### (historical) CI can only build what it can check out
+
+Until 2026-08-14 the local clone had **no git remote at all**:
+`github.com/Tienduyvo/helmdeck` was a download shelf holding `README.md`
+plus release assets, everything uploaded by `gh`. Owner's decision at the
+time: **one repo** — the source goes into that same public repo, next to
+the builds. Not a second source repo.
 
 ```bash
 bash ops/deploy/publish_source.sh --dry-run     # audit only, pushes nothing
