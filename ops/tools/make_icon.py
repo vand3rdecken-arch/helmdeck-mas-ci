@@ -1,15 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Render HelmDeck's app icon - one glass 'H' monogram across every surface.
+"""Render HelmDeck's app icon - one 'H' monogram across every surface.
 
-The mark is an abstract 'H' monogram rendered as Apple "Liquid Glass": a
-frosted rounded-square tile with an aurora glow (teal top-left -> violet
-top-right) blooming through, a crisp specular rim-light on the top edge, and a
-soft depth shadow. Centred is a bold minimal 'H' - two posts and a raised
-crossbar - cut from a brighter vibrant-white glass so it reads as the same
-material lifted toward the light; the crossbar sits slightly high to hint at a
-deck/board shelf.
+SINGLE SOURCE OF TRUTH (2026-08-26, paying debt [make-icon-py-stale-design]):
+this script used to hardcode a "glass H" design that had been superseded by
+hand-editing every asset file directly during a logo redesign, leaving the
+generator silently out of sync - running it would have reverted the ship.
+It now derives EVERY target below from one fixed alpha mask,
+ops/tools/assets/logo_h_mask.png (1024x1024): the H with a swept diagonal
+crossbar, traced from an owner-approved AI concept image via luminance
+threshold (see that day's session history - .loop/logo_final/
+build_from_reference.py - for the extraction method; the shape has organic
+curves with no clean parametric description, which is why it's a fixed
+mask asset rather than drawn geometry like the old glass_H()/h_mask()).
 
-Deterministic (Pillow only, 4x supersampled). Re-run after tweaking geometry:
+The mark is flat (no gradient/shadow/sheen inside the glyph itself) in
+#EAF2FB, composited onto a two-stop diagonal gradient tile (violet
+top-right #534885 -> dark navy bottom-left #0D1C25 - the exact colors
+already live in android-icon-background.png, sampled once during the
+redesign and reused here so this script's output matches it exactly).
+
+To change the mark: regenerate ops/tools/assets/logo_h_mask.png (a plain
+white-on-transparent or white-on-black 1024x1024 PNG, any source), then:
     py -3.12 ops/tools/make_icon.py
 Outputs:
     surfaces/desktop/assets/icon-1024.png, surfaces/desktop/assets/icon.ico   (Windows/Electron)
@@ -19,7 +30,10 @@ Outputs:
     surfaces/app/assets/images/android-icon-background.png           (adaptive bg)
     surfaces/app/assets/images/android-icon-foreground.png           (adaptive fg, H only)
     surfaces/app/assets/images/android-icon-monochrome.png           (themed-icon H)
+    surfaces/app/assets/images/splash-icon.png                       (native splash)
+    surfaces/app/assets/expo.icon/Assets/helmdeck-h.png              (iOS Liquid Glass layer)
 """
+import json
 import os
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -27,116 +41,71 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 DESK = os.path.join(ROOT, "surfaces", "desktop", "assets")
 APPIMG = os.path.join(ROOT, "surfaces", "app", "assets", "images")
+EXPOICON = os.path.join(ROOT, "surfaces", "app", "assets", "expo.icon")
+MASK_PATH = os.path.join(HERE, "assets", "logo_h_mask.png")
 
-SS = 4                       # supersample factor -> smooth edges
-S = 1024 * SS                # working canvas
+SIZE = 1024
 
-# --- brand palette (matches surfaces/app/src/theme/tokens.ts dark theme) -------------
-CANVAS_TOP = (18, 22, 26)            # subtle top of the tile gradient
-CANVAS_BOT = (12, 13, 14)            # ~#0E0F10 near-black
-GLOW_TEAL = (40, 147, 204)           # #2893CC accent  (top-left aurora)
-GLOW_VIOLET = (150, 122, 240)        # #967AF0 accent2 (top-right aurora)
-GLASS_FILL = (150, 180, 205)         # cool glass body the H is cut from
-GLASS_HI = (232, 244, 252)           # vibrant near-white top sheen of the H
-RIM = (255, 255, 255)                # specular rim-light on the tile edge
+# --- brand palette - matches the live android-icon-background.png exactly ---
+GRADIENT_TOP_RIGHT = (0x53, 0x48, 0x85)     # #534885 violet
+GRADIENT_BOTTOM_LEFT = (0x0D, 0x1C, 0x25)   # #0D1C25 dark navy
+GLYPH_COLOR = (0xEA, 0xF2, 0xFB)            # #EAF2FB flat light blue-white
 
-
-def radial(size, cx, cy, rad, color, a0):
-    """A soft radial glow blob centred at (cx,cy) in px, faded to 0 at rad."""
-    g = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(g)
-    gd.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=color + (a0,))
-    return g.filter(ImageFilter.GaussianBlur(rad * 0.55))
+SAFE_ZONE = 0.62   # Android adaptive-icon inset so OEM circle/squircle masks never clip
 
 
-def make_tile():
-    """The aurora glass tile (no monogram yet)."""
-    tile = Image.new("RGBA", (S, S), (0, 0, 0, 255))
+def gradient_tile(size=SIZE):
+    """Diagonal gradient: violet top-right -> navy bottom-left."""
+    tile = Image.new("RGB", (size, size))
     px = tile.load()
-    for y in range(S):                       # vertical base gradient
-        t = y / (S - 1)
-        r = int(CANVAS_TOP[0] + (CANVAS_BOT[0] - CANVAS_TOP[0]) * t)
-        g = int(CANVAS_TOP[1] + (CANVAS_BOT[1] - CANVAS_TOP[1]) * t)
-        b = int(CANVAS_TOP[2] + (CANVAS_BOT[2] - CANVAS_TOP[2]) * t)
-        for x in range(S):
-            px[x, y] = (r, g, b, 255)
-    # aurora: teal bloom top-left, violet bloom top-right (the app backdrop)
-    tile.alpha_composite(radial(S, int(S * 0.20), int(S * 0.14), int(S * 0.55), GLOW_TEAL, 150))
-    tile.alpha_composite(radial(S, int(S * 0.86), int(S * 0.12), int(S * 0.50), GLOW_VIOLET, 135))
-    tile.alpha_composite(radial(S, int(S * 0.55), int(S * 1.02), int(S * 0.55), GLOW_TEAL, 90))
-    return tile
+    tr, tg, tb = GRADIENT_TOP_RIGHT
+    br, bg, bb = GRADIENT_BOTTOM_LEFT
+    denom = 2 * (size - 1)
+    for y in range(size):
+        for x in range(size):
+            t = ((size - 1 - x) + y) / denom
+            px[x, y] = (
+                round(tr + (br - tr) * t),
+                round(tg + (bg - tg) * t),
+                round(tb + (bb - tb) * t),
+            )
+    return tile.convert("RGBA")
 
 
-def h_mask():
-    """A crisp alpha mask of the 'H' monogram (posts + raised crossbar)."""
-    m = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(m)
-    post_w = int(S * 0.135)
-    left = int(S * 0.315)
-    right = int(S * 0.685) - post_w
-    top = int(S * 0.285)
-    bot = int(S * 0.715)
-    rad = int(post_w * 0.42)
-    d.rounded_rectangle([left, top, left + post_w, bot], radius=rad, fill=255)
-    d.rounded_rectangle([right, top, right + post_w, bot], radius=rad, fill=255)
-    # crossbar sits slightly high (deck/board shelf); rounded caps
-    bar_h = int(S * 0.120)
-    bar_y = int(S * 0.430)
-    d.rounded_rectangle([left, bar_y, right + post_w, bar_y + bar_h],
-                        radius=int(bar_h * 0.32), fill=255)
-    return m
+def load_glyph_mask():
+    return Image.open(MASK_PATH).convert("L")
 
 
-def glass_H(mask):
-    """Fill the H mask with cool glass + a bright top-edge sheen + inner glow."""
-    h = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    px = h.load()
-    for y in range(S):                        # vertical sheen: bright top -> body
-        t = min(1.0, max(0.0, (y / S - 0.26) / 0.48))
-        r = int(GLASS_HI[0] + (GLASS_FILL[0] - GLASS_HI[0]) * t)
-        g = int(GLASS_HI[1] + (GLASS_FILL[1] - GLASS_HI[1]) * t)
-        b = int(GLASS_HI[2] + (GLASS_FILL[2] - GLASS_HI[2]) * t)
-        for x in range(S):
-            px[x, y] = (r, g, b, 255)
-    h.putalpha(mask)
-    # drop shadow so the H floats above the glass tile
-    sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    black = Image.new("RGBA", (S, S), (0, 0, 0, 255)); black.putalpha(mask)
-    sh.alpha_composite(black, (0, int(S * 0.012)))
-    sh = sh.filter(ImageFilter.GaussianBlur(int(S * 0.02)))
-    sh.putalpha(sh.split()[3].point(lambda v: int(v * 0.5)))
-    out = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    out.alpha_composite(sh)
-    out.alpha_composite(h)
+def flat_glyph(mask, color):
+    out = Image.new("RGBA", mask.size, color + (0,))
+    out.putalpha(mask)
     return out
 
 
-def rim_light(mask_radius):
-    """A thin specular highlight along the top edge of the rounded tile."""
-    rim = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    rd = ImageDraw.Draw(rim)
-    rd.rounded_rectangle([int(S * 0.06), int(S * 0.05), S - int(S * 0.06), S - int(S * 0.05)],
-                         radius=mask_radius, outline=RIM + (150,), width=int(S * 0.006))
-    rim = rim.filter(ImageFilter.GaussianBlur(int(S * 0.004)))
-    # keep mostly the top arc: fade the lower half out
-    fade = Image.new("L", (S, S), 0)
-    fd = ImageDraw.Draw(fade)
-    for y in range(S):
-        fd.line([(0, y), (S, y)], fill=max(0, int(255 * (1 - y / (S * 0.6)))))
-    rim.putalpha(Image.composite(rim.split()[3], Image.new("L", (S, S), 0), fade))
-    return rim
+def shrink_to_safezone(img, scale=SAFE_ZONE):
+    size = img.size[0]
+    new_size = round(size * scale)
+    small = img.resize((new_size, new_size), Image.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    offset = (size - new_size) // 2
+    canvas.paste(small, (offset, offset), small)
+    return canvas
 
 
-def make_master(rounded_tile=True):
-    tile = make_tile()
-    rad = int(S * 0.225)
-    if rounded_tile:
-        mask = Image.new("L", (S, S), 0)
-        ImageDraw.Draw(mask).rounded_rectangle([0, 0, S - 1, S - 1], radius=rad, fill=255)
-        tile.putalpha(mask)
-        tile.alpha_composite(rim_light(rad))
-    tile.alpha_composite(glass_H(h_mask()))
-    return tile.resize((1024, 1024), Image.LANCZOS)
+def rounded_mask(size, radius_ratio=0.225):
+    m = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, size - 1, size - 1],
+                                         radius=round(size * radius_ratio), fill=255)
+    return m
+
+
+def make_master():
+    """Full-bleed gradient + glyph, rounded-square alpha baked in - the
+    shared master for the desktop tile, the Expo unified icon, and favicon."""
+    tile = gradient_tile(SIZE)
+    tile.alpha_composite(flat_glyph(load_glyph_mask(), GLYPH_COLOR))
+    tile.putalpha(rounded_mask(SIZE))
+    return tile
 
 
 def mac_master(master):
@@ -152,7 +121,6 @@ def mac_master(master):
     BODY, PAD = 824, 100                       # Apple's macOS app-icon grid
     out = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
     body = master.resize((BODY, BODY), Image.LANCZOS)
-    # contact shadow: the body's own silhouette, black, nudged down and blurred
     sil = Image.new("RGBA", (BODY, BODY), (0, 0, 0, 0))
     sil.paste((0, 0, 0, 115), mask=body.split()[3])
     shadow = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
@@ -170,7 +138,9 @@ def save_png(img, path):
 
 
 def main():
-    master = make_master(rounded_tile=True)        # desktop tile + phone unified
+    mask = load_glyph_mask()
+
+    master = make_master()                          # desktop tile + phone unified
     save_png(master, os.path.join(DESK, "icon-1024.png"))
     ico_sizes = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
     os.makedirs(DESK, exist_ok=True)
@@ -184,26 +154,41 @@ def main():
     master.resize((48, 48), Image.LANCZOS).save(os.path.join(APPIMG, "favicon.png"))
     print("wrote", os.path.join(APPIMG, "favicon.png"))
 
-    # Android adaptive: full-bleed aurora background (no rounding/rim, the OS
-    # masks the shape) + a foreground that is the H monogram alone, inset into
-    # the adaptive safe zone.
-    bg = make_tile().resize((1024, 1024), Image.LANCZOS)
-    save_png(bg, os.path.join(APPIMG, "android-icon-background.png"))
+    # Android adaptive: full-bleed gradient background (no rounding/rim, the
+    # OS masks the shape) + a foreground that is the H monogram alone, inset
+    # into the adaptive safe zone.
+    save_png(gradient_tile(), os.path.join(APPIMG, "android-icon-background.png"))
 
-    fg_full = glass_H(h_mask()).resize((1024, 1024), Image.LANCZOS)
-    fg = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
-    inner = fg_full.resize((round(1024 * 0.66), round(1024 * 0.66)), Image.LANCZOS)
-    fg.alpha_composite(inner, ((1024 - inner.width) // 2, (1024 - inner.height) // 2))
+    fg = shrink_to_safezone(flat_glyph(mask, GLYPH_COLOR))
     save_png(fg, os.path.join(APPIMG, "android-icon-foreground.png"))
 
-    # Monochrome (themed icons): flat white H on transparent, same inset.
-    mono_full = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    white = Image.new("RGBA", (S, S), (255, 255, 255, 255)); white.putalpha(h_mask())
-    mono_full.alpha_composite(white)
-    mono_full = mono_full.resize((round(1024 * 0.66), round(1024 * 0.66)), Image.LANCZOS)
-    mono = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
-    mono.alpha_composite(mono_full, ((1024 - mono_full.width) // 2, (1024 - mono_full.height) // 2))
+    mono = shrink_to_safezone(flat_glyph(mask, (255, 255, 255)))
     save_png(mono, os.path.join(APPIMG, "android-icon-monochrome.png"))
+
+    # Native splash screen (expo-splash-screen plugin): tight-cropped glyph,
+    # transparent, exported at 3x the configured 76pt display width.
+    full_glyph = flat_glyph(mask, GLYPH_COLOR)
+    bbox = full_glyph.getbbox()
+    cropped = full_glyph.crop(bbox)
+    target_w = 76 * 3
+    scale = target_w / cropped.width
+    splash = cropped.resize((target_w, round(cropped.height * scale)), Image.LANCZOS)
+    save_png(splash, os.path.join(APPIMG, "splash-icon.png"))
+
+    # iOS Liquid Glass icon bundle: a white silhouette PNG layer (grid.png in
+    # the same bundle is already a raster layer, so this follows an existing
+    # pattern, not a new one) + the fill color on icon.json.
+    white_glyph = flat_glyph(mask, (255, 255, 255))
+    save_png(white_glyph, os.path.join(EXPOICON, "Assets", "helmdeck-h.png"))
+    icon_json_path = os.path.join(EXPOICON, "icon.json")
+    with open(icon_json_path, encoding="utf-8") as f:
+        icon_json = json.load(f)
+    r, g, b = (c / 255 for c in GRADIENT_TOP_RIGHT)
+    icon_json["fill"]["automatic-gradient"] = f"extended-srgb:{r:.5f},{g:.5f},{b:.5f},1.00000"
+    with open(icon_json_path, "w", encoding="utf-8") as f:
+        json.dump(icon_json, f, indent=2)
+        f.write("\n")
+    print("wrote", icon_json_path)
 
 
 if __name__ == "__main__":
