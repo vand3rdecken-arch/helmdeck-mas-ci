@@ -73,7 +73,18 @@ def gradient_tile(size=SIZE):
 
 
 def load_glyph_mask():
-    return Image.open(MASK_PATH).convert("L")
+    mask = Image.open(MASK_PATH).convert("L")
+    if mask.size != (SIZE, SIZE):
+        # PIL's alpha_composite does NOT error on a mismatched size - it
+        # silently composites into the top-left corner only, producing a
+        # tiny misplaced glyph on every output with no warning (measured
+        # 2026-08-26: feeding a 512x512 mask through this script exited 0
+        # and wrote 8 broken files before the mismatch was caught by eye).
+        raise ValueError(
+            f"logo_h_mask.png is {mask.size}, expected ({SIZE}, {SIZE}) - "
+            "resize it before regenerating icons, or every output below "
+            "will silently be wrong.")
+    return mask
 
 
 def flat_glyph(mask, color):
