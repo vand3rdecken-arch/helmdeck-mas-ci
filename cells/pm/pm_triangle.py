@@ -56,7 +56,12 @@ def _gate_triangle(out, econ, est_turns, pace):
 
     - Budget: the real bottleneck. Max -> subscription usage/pacing; API -> euro
       vs the monthly cap (_budget_assess). A window pacing to exhaust before its
-      reset, or a projection over the cap, turns Budget red.
+      reset, or a projection over the cap, turns Budget red. Unlike timeline/
+      scope, Budget tracks BOTH directions (not only-tightens): it is 100%
+      code-measured from live usage.snapshot() on every read (live_plan() calls
+      this with no LLM involved), so there is no "planner's optimism" on this
+      axis to guard against - a corner frozen red after the quota recovers is
+      just stale, not a caught overclaim.
     - Timeline: measured VELOCITY. No turns yet (pace 0) => the ETA is a guess,
       not a commitment => red. Otherwise the launch date IS the measured ETA, so
       the planner can't be more optimistic than the math.
@@ -72,10 +77,14 @@ def _gate_triangle(out, econ, est_turns, pace):
         tri[corner] = "blocked"
         reasons[corner] = reason
 
-    # -- Budget: measured usage/pacing or euro-vs-cap ------------------------
+    # -- Budget: measured usage/pacing or euro-vs-cap - BOTH directions, see
+    # docstring (this is the one corner with no narrative risk to guard against)
     out["budget"], bstate = _budget_assess(econ, est_turns, pace)
     if bstate == "blocked":
         downgrade("budget", out["budget"].get("note"))
+    else:
+        tri["budget"] = "ok"
+        reasons.pop("budget", None)
 
     # -- Timeline: measured velocity underwrites the ETA --------------------
     if not pace or pace <= 0:
