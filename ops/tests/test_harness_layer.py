@@ -442,13 +442,18 @@ def test_policy_knob_contract():
     each knob generically by switching on `control`, so a knob whose control has
     no branch in that switch renders as NOTHING - silently, on an owner-only
     screen nobody looks at twice. And a labelKey with no dict entry renders the
-    raw key. Neither is a type error on either side."""
+    raw key. Neither is a type error on either side.
+
+    Reads settings.tsx, not automation.tsx: settings-ia-redesign's
+    settings-hub-shell moved the Ctl union + Control component into the hub's
+    "automation" door (settings.tsx) - automation.tsx is now a thin redirect
+    to it, so the Ctl union no longer lives there."""
     import re
     from spine.http import server
     schema = server._config_schema({})
     check(bool(schema), "server._config_schema() is importable and non-empty")
 
-    auto_tsx = os.path.join(ROOT, "surfaces", "app", "src", "app", "(tabs)", "automation.tsx")
+    auto_tsx = os.path.join(ROOT, "surfaces", "app", "src", "app", "(tabs)", "settings.tsx")
     src = open(auto_tsx, encoding="utf-8").read()
     m = re.search(r'type\s+Ctl\s*=\s*([^;]+);', src)
     check(bool(m), "the app declares its Ctl union in automation.tsx")

@@ -13,6 +13,25 @@ export const settings: Dict = {
   "nav.clients": { de: "Clients", en: "Clients" },
   "nav.commands": { de: "⌘K · Befehle", en: "⌘K · Commands" },
 
+  // ---- settings hub doors (ops/docs/backlog/settings-ia-redesign) ----
+  // 6 doors in user-goal language (Home Assistant pattern), each a short
+  // subtitle - the flat 10-panel screen + the opaque "Automatik"/"Module"
+  // labels were the owner's original complaint (2026-08-26).
+  "hub.door.general": { de: "Allgemein", en: "General" },
+  "hub.door.general.sub": { de: "Sprache, Aussehen", en: "Language, appearance" },
+  "hub.door.automation": { de: "Agenten & Autonomie", en: "Agents & autonomy" },
+  "hub.door.automation.sub": { de: "Was die Agenten allein entscheiden dürfen, Nachtschicht, Briefs",
+                               en: "What the agents may decide on their own, night shift, briefs" },
+  "hub.door.cells": { de: "Zellen", en: "Cells" },
+  "hub.door.cells.sub": { de: "Welche agentischen Systeme laufen und was sie tun",
+                          en: "Which agentic systems run and what they do" },
+  "hub.door.connections": { de: "Verbindungen", en: "Connections" },
+  "hub.door.connections.sub": { de: "Jira, Import, externe Connectoren", en: "Jira, import, external connectors" },
+  "hub.door.team": { de: "Team & Geräte", en: "Team & devices" },
+  "hub.door.team.sub": { de: "Nutzer, Telefon koppeln, Registrierung", en: "Users, pair a phone, registration" },
+  "hub.door.system": { de: "System", en: "System" },
+  "hub.door.system.sub": { de: "Geschäft, Nutzung, Updates", en: "Business, usage, updates" },
+
   // ---- language switch ----
   "settings.lang.hint": {
     de: "Eine Sprache für alles: Oberfläche und Agenten-Antworten wechseln zusammen. Der Audit-Trail bleibt technisch (Englisch).",
