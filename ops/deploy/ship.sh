@@ -81,6 +81,28 @@ try:
     blob += "\n".join(l for l in manifest.splitlines() if "EXPO_RUNTIME_VERSION" not in l)
 except FileNotFoundError:
     pass
+# ICON/SPLASH ASSET BYTES (2026-08-26): app.json only stores PATHS to these
+# files ("./assets/images/icon.png" etc.), so a redesign that swaps the PNG
+# bytes without touching app.json moved this fingerprint by zero - a native
+# rebuild (new launcher icon, new splash) silently classified as "JS-only"
+# and shipped as a bare OTA that could never carry it. web-only favicon.png
+# is deliberately excluded - it needs no native rebuild.
+import glob, os
+for path in sorted(
+    ["surfaces/app/assets/images/icon.png",
+     "surfaces/app/assets/images/splash-icon.png",
+     "surfaces/app/assets/images/android-icon-foreground.png",
+     "surfaces/app/assets/images/android-icon-background.png",
+     "surfaces/app/assets/images/android-icon-monochrome.png"]
+    + glob.glob("surfaces/app/assets/expo.icon/**/*", recursive=True)
+):
+    if not os.path.isfile(path):  # the glob also yields directories, and
+        continue                  # Windows raises PermissionError (not
+    try:                          # IsADirectoryError) opening those
+        with open(path, "rb") as f:
+            blob += path + hashlib.sha256(f.read()).hexdigest()
+    except FileNotFoundError:
+        pass
 print(hashlib.sha256(blob.encode("utf-8")).hexdigest())
 PY
 }

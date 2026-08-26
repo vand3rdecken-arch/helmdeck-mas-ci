@@ -340,28 +340,86 @@ def _native_fp():
         except OSError:
             pass
         try:
+            # pre-four-folder path ("app/android/...") predates the
+            # spine/cells/surfaces/ops split - it never existed under that
+            # name and this silently no-op'd via the blanket except below,
+            # so the manifest half of the fingerprint was ALWAYS missing
+            # here while ship.sh's real cfg_fp (which uses the correct
+            # surfaces/app/android/... path) included it - a second,
+            # independent source of drift from the one this function's
+            # docstring already warns about, found while fixing that one.
             manifest_path = os.path.join(
-                ROOT, "app", "android", "app", "src", "main", "AndroidManifest.xml")
+                ROOT, "surfaces", "app", "android", "app", "src", "main", "AndroidManifest.xml")
             with open(manifest_path, encoding="utf-8") as f:
                 blob += "\n".join(
                     l for l in f.read().splitlines() if "EXPO_RUNTIME_VERSION" not in l)
         except OSError:
             pass
+        import glob as _glob
+        # ICON/SPLASH ASSET BYTES - mirrors ship.sh's cfg_fp() addition
+        # (2026-08-26, the logo redesign): app.json only stores PATHS to
+        # these files, so a PNG-only redesign moved neither this hash nor
+        # ship.sh's without this block - which is exactly the drift this
+        # function's own docstring warns about. os.path.isfile guards
+        # against the glob yielding directories (Windows raises
+        # PermissionError, not IsADirectoryError, opening one).
+        #
+        # The expo.icon glob MUST run as ship.sh runs it: a bare relative
+        # pattern under cwd==ROOT. glob.glob on Windows returns forward
+        # slashes for the literal prefix you typed but backslashes for the
+        # parts IT fills in recursing - "surfaces/app/assets/expo.icon\\
+        # Assets\\grid.png" - a mixed-separator string that's a pain to
+        # reconstruct by hand from an absolute path (relpath+replace
+        # normalizes to all-forward-slash, which is a DIFFERENT string and
+        # produced a real mismatch, measured 2026-08-26). Reproducing
+        # ship.sh's own cwd-relative call sidesteps needing to know its
+        # separator quirks at all.
+        _prev_cwd = os.getcwd()
+        os.chdir(ROOT)
+        try:
+            expo_icon_paths = _glob.glob("surfaces/app/assets/expo.icon/**/*", recursive=True)
+        finally:
+            os.chdir(_prev_cwd)
+        for rel in sorted(
+            ["surfaces/app/assets/images/icon.png",
+             "surfaces/app/assets/images/splash-icon.png",
+             "surfaces/app/assets/images/android-icon-foreground.png",
+             "surfaces/app/assets/images/android-icon-background.png",
+             "surfaces/app/assets/images/android-icon-monochrome.png"]
+            + expo_icon_paths
+        ):
+            path = os.path.join(ROOT, rel)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "rb") as f:
+                    blob += rel + hashlib.sha256(f.read()).hexdigest()
+            except OSError:
+                pass
         cfg = hashlib.sha256(blob.encode("utf-8")).hexdigest()
         # source half (ship.sh kt_fp, added 2026-08-23): every .kt/.java under
         # app/plugins and surfaces/app/modules is compiled into the APK. Combined as
         # sha256("<cfg> <kt>") - exactly ship.sh's combine_fp shape.
-        import glob as _glob
+        # Same separator trap as the expo.icon glob above: ship.sh's kt_fp
+        # globs RELATIVE patterns under cwd==ROOT, and the resulting
+        # mixed-separator strings ("surfaces/app/plugins\\...") go into the
+        # blob verbatim - relpath+replace normalization produced a different
+        # string and therefore a different hash (measured 2026-08-26).
+        _prev_cwd = os.getcwd()
+        os.chdir(ROOT)
+        try:
+            kt_srcs = sorted(
+                _glob.glob("surfaces/app/plugins/**/*.kt", recursive=True)
+                + _glob.glob("surfaces/app/plugins/**/*.java", recursive=True)
+                + _glob.glob("surfaces/app/modules/**/*.kt", recursive=True)
+                + _glob.glob("surfaces/app/modules/**/*.java", recursive=True))
+        finally:
+            os.chdir(_prev_cwd)
         kb = ""
-        for src in sorted(
-                _glob.glob(os.path.join(ROOT, "surfaces", "app", "plugins", "**", "*.kt"), recursive=True)
-                + _glob.glob(os.path.join(ROOT, "surfaces", "app", "plugins", "**", "*.java"), recursive=True)
-                + _glob.glob(os.path.join(ROOT, "surfaces", "app", "modules", "**", "*.kt"), recursive=True)
-                + _glob.glob(os.path.join(ROOT, "surfaces", "app", "modules", "**", "*.java"), recursive=True)):
+        for src in kt_srcs:
             try:
-                rel = os.path.relpath(src, ROOT).replace(os.sep, "/")
-                with open(src, encoding="utf-8") as f:
-                    kb += rel + "\n" + f.read()
+                with open(os.path.join(ROOT, src), encoding="utf-8") as f:
+                    kb += src + "\n" + f.read()
             except OSError:
                 pass
         kt = hashlib.sha256(kb.encode("utf-8")).hexdigest()
