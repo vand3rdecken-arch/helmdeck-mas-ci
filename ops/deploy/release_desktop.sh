@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Build the HelmDeck Windows desktop installer and publish it to the GitHub
-# "Downloads" release (github.com/Tienduyvo/helmdeck) - the desktop analog of
-# push_relay.sh / push_update.sh, turning the "build the installer, checksum
-# it, upload it, keep SHA256SUMS.txt correct" chore into one command.
+# "Downloads" release (github.com/Tienduyvo/helmdeck-release) - the desktop
+# analog of push_relay.sh / push_update.sh, turning the "build the installer,
+# checksum it, upload it, keep SHA256SUMS.txt correct" chore into one command.
+#
+# 2026-08-26: repo split - Tienduyvo/helmdeck (private) now holds full source,
+# Tienduyvo/helmdeck-release (public) holds ONLY release binaries. This
+# script's default moved to the latter; publish_source.sh's filtered-mirror
+# default was deliberately left untouched (repointing it here would push
+# source into a repo meant to carry release assets only - see its own header
+# for why it should probably be retired, not redirected).
 #
 # This build carries BOTH auto-updaters: the relay OTA (surfaces/desktop/updater.js +
 # surfaces/desktop/tray.py, UI bundle only) and electron-updater (surfaces/desktop/native-
@@ -25,7 +32,7 @@
 # gh must be authenticated (gh auth status). Repo override: HELMDECK_GH_REPO.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
-REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck}"
+REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck-release}"
 export PATH="/c/Program Files/nodejs:$PATH"
 
 VERSION=""; TAG=""; USE_LATEST=0; NO_BUILD=0; DRY_RUN=0; NOTES_FILE=""
