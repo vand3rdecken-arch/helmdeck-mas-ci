@@ -474,6 +474,19 @@ export const screens: Dict = {
     en: "A new app version is available (build {build}). This install is too old for OTA to reach - only a fresh APK gets you current again.",
   },
   "updates.apkInstall": { de: "Jetzt installieren", en: "Install now" },
+  // ---- native desktop-shell updates (surfaces/desktop/native-updater.js) --
+  // Separate from the OTA panel above: this is the whole Electron app
+  // (main.js/app.asar), not just the JS bundle - owner-reported gap
+  // (2026-08-26), the phone had a banner for this, the desktop app didn't.
+  "updates.native.downloading": {
+    de: "Neue Desktop-Version {version} wird heruntergeladen…",
+    en: "Downloading desktop app update {version}…",
+  },
+  "updates.native.downloaded": {
+    de: "Desktop-Version {version} heruntergeladen - installiert sich beim nächsten Neustart.",
+    en: "Desktop app update {version} downloaded - installs on next restart.",
+  },
+  "updates.native.installNow": { de: "Jetzt neu starten & installieren", en: "Restart & install now" },
 
   // ---- connection health --------------------------------------------------
   "health.reconnecting": {

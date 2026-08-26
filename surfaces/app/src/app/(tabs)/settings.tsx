@@ -21,6 +21,7 @@ import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
 import { PMControls } from "@/ui/pm_panel";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
+import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { UpdatesPanel } from "@/ui/updates_info";
 import { useResponsive } from "@/ui/responsive";
 
@@ -453,6 +454,7 @@ export default function Settings() {
               </Pressable>
             ))}
           </Panel>
+          <DesktopUpdateBanner />
           <UpdatesPanel />
         </ScrollView>
       </View>
@@ -762,6 +764,7 @@ export default function Settings() {
           <View style={{ height: 12 }} />
           <Btn label={tr("ui.save")} onPress={saveBusiness} />
         </Panel>
+        <DesktopUpdateBanner />
         <UpdatesPanel />
       </ScrollView>
     </View>

@@ -17,12 +17,24 @@ const { autoUpdater } = require("electron-updater");
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;   // same cadence as updater.js
 
-function createNativeUpdater({ log, isPackaged }) {
+// The gap this closes (owner-reported 2026-08-26): the phone gets a visible
+// "update available" banner (apk_update.tsx, checked against the relay's own
+// version.json), but the desktop shell's update state only ever went to the
+// log file - checking/available/downloaded/error was real and running, just
+// invisible in the app. `notify` is the seam: main.js wires it to an IPC
+// push to the renderer (see preload.js), so the SAME events that already
+// fire here become a UI state instead of a log line, with no change to the
+// update mechanism itself (still autoDownload + autoInstallOnAppQuit).
+function createNativeUpdater({ log, isPackaged, notify }) {
+  const emit = typeof notify === "function" ? notify : () => {};
+  let status = { state: "unavailable", version: null, message: null };
+  const set = (state, extra) => { status = { state, version: null, message: null, ...extra }; emit(status); };
+
   if (!isPackaged) {
     // Paseo parity: "Auto-update is not available in development mode" - a
     // dev run has no published release to compare against and no installed
     // location to replace.
-    return { start() {}, stop() {} };
+    return { start() {}, stop() {}, getStatus: () => status, quitAndInstall() {} };
   }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -36,13 +48,25 @@ function createNativeUpdater({ log, isPackaged }) {
     error: (m) => log("update", "[native] ERROR " + m + "\n"),
     debug: () => { /* quiet */ },
   };
-  autoUpdater.on("update-available", (info) =>
-    log("update", "[native] update available: " + info.version + " - downloading\n"));
-  autoUpdater.on("update-not-available", () => log("update", "[native] up to date\n"));
-  autoUpdater.on("update-downloaded", (info) =>
-    log("update", "[native] " + info.version + " downloaded - installs silently on quit\n"));
-  autoUpdater.on("error", (e) =>
-    log("update", "[native] check/download failed (will retry next cycle): " + (e && e.message) + "\n"));
+  set("checking");
+  autoUpdater.on("checking-for-update", () => set("checking"));
+  autoUpdater.on("update-available", (info) => {
+    log("update", "[native] update available: " + info.version + " - downloading\n");
+    set("downloading", { version: info.version });
+  });
+  autoUpdater.on("update-not-available", () => {
+    log("update", "[native] up to date\n");
+    set("current");
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    log("update", "[native] " + info.version + " downloaded - installs silently on quit\n");
+    set("downloaded", { version: info.version });
+  });
+  autoUpdater.on("error", (e) => {
+    const message = String((e && e.message) || e);
+    log("update", "[native] check/download failed (will retry next cycle): " + message + "\n");
+    set("error", { message });
+  });
 
   let timer = null;
   function checkOnce() {
@@ -55,6 +79,12 @@ function createNativeUpdater({ log, isPackaged }) {
       timer = setInterval(checkOnce, CHECK_INTERVAL_MS);
     },
     stop() { if (timer) { clearInterval(timer); timer = null; } },
+    getStatus: () => status,
+    // Explicit, owner-initiated install (the "restart now" tap) instead of
+    // waiting for autoInstallOnAppQuit - same call electron-updater's own
+    // quit-and-install path uses; isSilent=false shows the native progress
+    // dialog, isForceRunAfter=true reopens the app once reinstalled.
+    quitAndInstall() { if (status.state === "downloaded") autoUpdater.quitAndInstall(false, true); },
   };
 }
 

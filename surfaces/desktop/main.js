@@ -7,7 +7,7 @@
 // Requirements on the user's machine (same as HelmDeck itself):
 //   - Python 3.12 (the `py -3.12` launcher on Windows, or `python3`)
 //   - the `claude` CLI (Claude Code) - the agent runtime cards execute in
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, shell, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -106,7 +106,17 @@ if (app.isPackaged) {
   else log("update", "no relay configured - desktop OTA dormant\n");
 }
 const { createNativeUpdater } = require("./native-updater");
-const nativeUpdater = createNativeUpdater({ log, isPackaged: app.isPackaged });
+// notify reads the module-scope `win` AT CALL TIME (not a captured
+// reference) - the window can be null (still opening) or replaced (a rare
+// recreate path), and an update event can fire at any point in that
+// lifecycle. Silent no-op if there's nowhere to send it yet; the renderer
+// still gets the current state on mount via the getStatus() IPC handler below.
+const nativeUpdater = createNativeUpdater({
+  log, isPackaged: app.isPackaged,
+  notify: (status) => { if (win && !win.isDestroyed()) win.webContents.send("native-update:changed", status); },
+});
+ipcMain.handle("native-update:get", () => nativeUpdater.getStatus());
+ipcMain.on("native-update:install", () => nativeUpdater.quitAndInstall());
 
 // find a working Python 3: probe candidates with `--version` and use the first
 // that runs, so we don't depend on `py` alone being on PATH.
@@ -352,7 +362,8 @@ function createWindow() {
     ...(process.platform === "darwin"
       ? {}
       : { icon: path.join(__dirname, "assets", "icon.ico") }),
-    autoHideMenuBar: true, webPreferences: { contextIsolation: true },
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, preload: path.join(__dirname, "preload.js") },
   });
   // Hand the Expo web app the daemon URL via the URL hash (config.ts reads
   // #cfg). NO token: the SPA logs in like any other client and keeps its own
