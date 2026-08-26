@@ -18,7 +18,7 @@ import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
-import { useConfig } from "@/data/config";
+import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
 import { usePresenceHeartbeat } from "@/data/presence";
@@ -31,6 +31,7 @@ import { HealthBanner } from "@/ui/health_banner";
 import { DemoBanner } from "@/ui/demo_banner";
 import { Onboard, useShowOnboard } from "@/ui/onboard";
 import { LoginScreen } from "@/ui/login_screen";
+import { PairingGate } from "@/ui/pairing_gate";
 import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
@@ -272,6 +273,11 @@ export default function RootLayout() {
   // back in besides a fresh pairing link from another device. Demo mode is
   // exempt at the source (client.ts never reports it while demo is active).
   const needsLogin = useAuthGate((s) => s.needsLogin);
+  // Native counterpart to showOnboard (desktop/web-only, see useShowOnboard):
+  // a fresh/reinstalled Android app with no daemon configured used to fall
+  // straight into the tabbed UI and hang on an unreachable default address
+  // (surfaces/app/src/data/config.ts useNeedsPairing()'s comment has the story).
+  const needsPairing = useNeedsPairing();
   // Hold the tree one tick until the persisted board is hydrated, so screens
   // mount onto last-known data (instant paint) instead of an empty spinner.
   if (!restored) {
@@ -285,6 +291,21 @@ export default function RootLayout() {
             <SafeAreaProvider>
               <StatusBar style="light" />
               <Onboard />
+              <WebStyles />
+            </SafeAreaProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    );
+  }
+  if (needsPairing) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider name="dark">
+            <SafeAreaProvider>
+              <StatusBar style="light" />
+              <PairingGate />
               <WebStyles />
             </SafeAreaProvider>
           </ThemeProvider>

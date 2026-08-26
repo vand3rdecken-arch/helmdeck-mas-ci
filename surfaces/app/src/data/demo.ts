@@ -30,6 +30,7 @@ const isWeb = Platform.OS === "web";
 
 interface DemoState {
   active: boolean;
+  hydrated: boolean;
   enable: () => void;
   disable: () => void;
   hydrate: () => Promise<void>;
@@ -45,6 +46,7 @@ async function persist(active: boolean) {
 
 export const useDemo = create<DemoState>((set) => ({
   active: false,
+  hydrated: false,
   enable: () => { reset(); set({ active: true }); persist(true); },
   disable: () => { set({ active: false }); persist(false); },
   hydrate: async () => {
@@ -52,6 +54,7 @@ export const useDemo = create<DemoState>((set) => ({
       const raw = isWeb ? globalThis.localStorage?.getItem(KEY) : await SecureStore.getItemAsync(KEY);
       if (raw) set({ active: true });
     } catch { /* ignore */ }
+    set({ hydrated: true });
   },
 }));
 

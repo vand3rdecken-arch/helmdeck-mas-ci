@@ -29,6 +29,10 @@ export const net: Dict = {
     de: "Direktverbindung (LAN) fehlgeschlagen – läuft HelmDeck am Desktop?",
     en: "Direct (LAN) connection failed – is HelmDeck running on the desktop?",
   },
+  "net.lanTimeout": {
+    de: "Direktverbindung antwortet nicht (Timeout) – läuft HelmDeck am Desktop?",
+    en: "Direct connection is not answering (timeout) – is HelmDeck running on the desktop?",
+  },
 
   // pairing codes
   "pair.empty": { de: "Kein Code eingegeben.", en: "No code entered." },

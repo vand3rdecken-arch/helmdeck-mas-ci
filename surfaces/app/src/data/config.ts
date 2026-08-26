@@ -118,3 +118,30 @@ export const useConfig = create<ConfigState>((set, get) => ({
     set({ hydrated: true });
   },
 }));
+
+// Native pairing gate (2026-08-26). Desktop/web has useShowOnboard (setup.ts,
+// Platform.OS==="web" only) - native had NOTHING: a fresh install (or a
+// reinstall, which wipes SecureStore) falls straight through _layout.tsx into
+// the tabbed UI with the untouched DEFAULTS above, whose baseUrl is the
+// ANDROID EMULATOR loopback (10.0.2.2) - unreachable from a real phone. The
+// Dashboard's query used to hang forever with no error (client.ts had no
+// fetch timeout either); now it fails in ~8s, but a real phone should never
+// even try that request before pairing has a chance to run. True only once,
+// right after hydration, before any pairing/demo choice has been made -
+// applying a pairing code or enabling demo both flip a field this checks.
+//
+// Both stores' OWN hydrated flags are required, not just config's: _layout.tsx
+// awaits useConfig.hydrate() THEN useDemo.hydrate() in sequence (two separate
+// SecureStore reads), so a returning demo-mode user would otherwise see
+// config.hydrated=true, demo.active=false for a tick and flash this gate.
+export function useNeedsPairing(): boolean {
+  const configHydrated = useConfig((s) => s.hydrated);
+  const relay = useConfig((s) => s.relayMode());
+  const baseUrl = useConfig((s) => s.baseUrl);
+  const token = useConfig((s) => s.token);
+  const demoHydrated = useDemo((s) => s.hydrated);
+  const demoActive = useDemo((s) => s.active);
+  if (Platform.OS === "web") return false;   // desktop/web owns its own gate
+  if (!configHydrated || !demoHydrated || demoActive || relay) return false;
+  return baseUrl === DEFAULTS.baseUrl && !token;
+}
