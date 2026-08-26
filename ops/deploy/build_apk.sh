@@ -75,6 +75,17 @@ printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROI
 node surfaces/app/plugins/withLanCleartext.js surfaces/app/android \
   || { echo "[build_apk] network-security-config apply FAILED"; exit 1; }
 
+# Same rule, most silent-wrong-artifact yet: the release-signing keystore.
+# `expo prebuild --clean` (added 2026-08-26 for the icon pipeline fix)
+# regenerates build.gradle's signingConfigs from scratch, wiping a hand-edit
+# with no script anywhere else to reproduce it - every release build then
+# silently fell back to the debug keystore. The build still succeeds and
+# EXITS ZERO; the only symptom is Android refusing to INSTALL the result
+# over an already-installed copy ("Konflikt mit einem bestehenden Paket" /
+# INSTALL_FAILED_UPDATE_INCOMPATIBLE) - discovered live on the owner's phone.
+node surfaces/app/plugins/withReleaseSigning.js surfaces/app/android \
+  || { echo "[build_apk] release-signing apply FAILED"; exit 1; }
+
 # Same rule, same reason: the glasses-voice permissions + the typed foreground
 # service. Without this line the APK builds perfectly clean and the microphone
 # is simply never grantable at runtime - a silent, on-device-only failure, which
