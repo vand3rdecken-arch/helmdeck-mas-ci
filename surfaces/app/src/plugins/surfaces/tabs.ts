@@ -22,9 +22,19 @@ const TABS: NavSurface[] = [
   { id: "tab.needs", title: "", path: "needs", route: "needs", nav: { group: "primary", order: 2, icon: "notifications-outline", labelKey: "nav.needsYou" } },
   { id: "tab.recordings", title: "", path: "recordings", route: "recordings", nav: { group: "more", order: 4, icon: "videocam-outline", labelKey: "nav.recordings", desktopOnly: true } },
   { id: "tab.sessions", title: "", path: "sessions", route: "sessions", nav: { group: "more", order: 5, icon: "chatbubbles-outline", labelKey: "nav.sessions", teamOnly: true, desktopOnly: true } },
-  { id: "tab.history", title: "", path: "history", route: "history", nav: { group: "more", order: 6, icon: "time-outline", labelKey: "nav.history", desktopOnly: true } },
-  { id: "tab.automation", title: "", path: "automation", route: "automation", nav: { group: "more", order: 8, icon: "git-branch-outline", labelKey: "nav.automation", teamOnly: true, desktopOnly: true } },
-  { id: "tab.settings", title: "", path: "settings", route: "settings", nav: { group: "more", order: 9, icon: "settings-outline", labelKey: "nav.settings", teamOnly: true, desktopOnly: true } },
+  // history is /history in server.py: owner/operator only (client 403s) -
+  // teamOnly was missing here entirely until this fix, so a client saw the
+  // sidebar link and hit a dead end.
+  { id: "tab.history", title: "", path: "history", route: "history", nav: { group: "more", order: 6, icon: "time-outline", labelKey: "nav.history", teamOnly: true, desktopOnly: true } },
+  // automation/settings are GET-owner-only server-side (routes_settings.py) -
+  // teamOnly alone only hid these from clients, so an operator saw the link
+  // and 403'd on tap. ownerOnly hides from operator too (see kernel/keys.ts).
+  { id: "tab.automation", title: "", path: "automation", route: "automation", nav: { group: "more", order: 8, icon: "git-branch-outline", labelKey: "nav.automation", ownerOnly: true, desktopOnly: true } },
+  { id: "tab.settings", title: "", path: "settings", route: "settings", nav: { group: "more", order: 9, icon: "settings-outline", labelKey: "nav.settings", ownerOnly: true, desktopOnly: true } },
+  // modules(policy): GET /policy is owner/operator (routes_policy.py), only
+  // POST /policy/swap is owner-only - teamOnly (client hidden) is correct as
+  // is, an operator can read the page even if the write buttons should be
+  // disabled for them (page-level concern, not nav-visibility).
   { id: "tab.modules", title: "", path: "modules", route: "modules", nav: { group: "more", order: 10, icon: "cube-outline", labelKey: "nav.modules", sectionKey: "nav.sectionSetup", teamOnly: true, desktopOnly: true } },
   { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 11, icon: "ellipsis-horizontal", phoneOnly: true } },
 ];
