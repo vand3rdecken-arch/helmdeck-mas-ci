@@ -112,9 +112,9 @@ export const card: Dict = {
   "card.q.tapAnswer": { de: "Tippen zum Antworten", en: "Tap to answer" },
   "card.q.tapExpand": { de: "Tippen zum Ausklappen & Antworten", en: "Tap to expand & answer" },
   "card.q.failedTitle": { de: "Antwort fehlgeschlagen", en: "Answer failed" },
-  "card.chat.phWorkerLive": { de: "Worker steuern – Kontext läuft weiter",
-                              en: "Steer the worker – context carries on" },
-  "card.chat.phWorkerIdle": { de: "Worker starten…", en: "Start the worker…" },
+  "card.chat.phWorkerLive": { de: "Worker steuern – Kontext läuft weiter · @Henry, /commands",
+                              en: "Steer the worker – context carries on · @Henry, /commands" },
+  "card.chat.phWorkerIdle": { de: "Worker starten… · @Henry, /commands", en: "Start the worker… · @Henry, /commands" },
   "card.chat.sendFailed": { de: "Senden an Henry fehlgeschlagen", en: "Sending to Henry failed" },
 
   // slash commands (the hint the owner reads, and the text it types for them)
