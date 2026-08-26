@@ -17,17 +17,26 @@ import { Panel, SectionLabel } from "@/ui/kit";
 import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
 
-// route → nav key + icon for the phone's "everything else" list
-const LINKS = [
-  ["loopmap", "nav.loopmap", "git-network-outline"],
-  ["automation", "nav.automation", "git-branch-outline"],
-  ["processes", "nav.processes", "git-network-outline"],
-  ["connectors", "nav.connectors", "sync-outline"],
-  ["history", "nav.history", "time-outline"],
-  ["escalations", "nav.escalations", "alert-circle-outline"],
-  ["sessions", "nav.sessions", "chatbubbles-outline"],
-  ["recordings", "nav.recordings", "videocam-outline"],
-  ["settings", "nav.settings", "settings-outline"],
+// The phone's "everything else" list, grouped so 9 flat rows become 3 scannable
+// blocks. Every row carries a one-line subtitle (more.sub.*) - the labels alone
+// ("Automatik", "Prozesse") proved opaque even to the owner - and every icon is
+// UNIQUE within the list (three near-identical git glyphs before).
+const GROUPS: readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string])[]][] = [
+  ["more.grp.control", [
+    ["automation", "nav.automation", "options-outline", "more.sub.automation"],
+    ["processes", "nav.processes", "git-network-outline", "more.sub.processes"],
+    ["connectors", "nav.connectors", "extension-puzzle-outline", "more.sub.connectors"],
+  ]],
+  ["more.grp.logs", [
+    ["history", "nav.history", "time-outline", "more.sub.history"],
+    ["escalations", "nav.escalations", "alert-circle-outline", "more.sub.escalations"],
+    ["sessions", "nav.sessions", "chatbubbles-outline", "more.sub.sessions"],
+    ["recordings", "nav.recordings", "videocam-outline", "more.sub.recordings"],
+  ]],
+  ["more.grp.system", [
+    ["settings", "nav.settings", "settings-outline", "more.sub.settings"],
+    ["loopmap", "nav.loopmap", "map-outline", "more.sub.loopmap"],
+  ]],
 ] as const;
 
 export default function MoreTab() {
@@ -46,6 +55,10 @@ export default function MoreTab() {
   const [pairKind, setPairKind] = useState<"info" | "ok" | "err">("info");
   const [pairBusy, setPairBusy] = useState(false);
   const paired = relayMode();
+  // Once paired, the two big connection panels collapse to one status line -
+  // they were the top half of the screen on a phone that is long since paired.
+  const [connOpen, setConnOpen] = useState(false);
+  const showConn = !paired || connOpen;
   const analyticsOn = useAnalytics((s) => s.enabled);
   const setAnalytics = useAnalytics((s) => s.setEnabled);
   const blockerVoiceOn = useBlockerVoice((s) => s.enabled);
@@ -83,6 +96,20 @@ export default function MoreTab() {
         {tr("nav.more")}
       </Text>
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120, gap: 10 }}>
+        {paired ? (
+          <Panel>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.ok }} />
+              <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }}>{tr("more.conn.connectedRelay")}</Text>
+              <Pressable onPress={() => setConnOpen((o) => !o)}>
+                <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>
+                  {connOpen ? tr("more.conn.hide") : tr("more.conn.edit")}
+                </Text>
+              </Pressable>
+            </View>
+          </Panel>
+        ) : null}
+        {showConn ? (
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <SectionLabel text={tr("settings.more.pairSection")} />
@@ -109,6 +136,8 @@ export default function MoreTab() {
           </Pressable>
           {pairMsg ? <Text style={{ color: pairKind === "ok" ? t.ok : pairKind === "info" ? t.txtSecondary : t.danger, fontSize: 12, marginTop: 6 }}>{pairMsg}</Text> : null}
         </Panel>
+        ) : null}
+        {showConn ? (
         <Panel>
           <SectionLabel text={tr("settings.more.lanSection")} />
           <Text style={{ color: t.txtTertiary, fontSize: 12, marginBottom: 6 }}>{tr("settings.more.lanHelp")}</Text>
@@ -123,36 +152,48 @@ export default function MoreTab() {
             <Text style={{ color: "#fff", fontWeight: "600" }}>{tr("ui.save")}</Text>
           </Pressable>
         </Panel>
+        ) : null}
+        {/* device-local switches, one panel instead of two */}
         <Panel>
-          <SectionLabel text={tr("settings.voice.section")} />
-          <Hint text={tr("settings.voice.hint")} />
+          <SectionLabel text={tr("more.device.section")} />
           <Toggle label={tr("settings.voice.speakBlockers")} value={blockerVoiceOn} onChange={setBlockerVoice} />
-        </Panel>
-        <Panel>
-          <SectionLabel text={tr("settings.privacy.section")} />
-          <Hint text={tr("settings.privacy.hint")} />
+          <Hint text={tr("settings.voice.hint")} />
+          <View style={{ height: 10 }} />
           <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
+          <Hint text={tr("settings.privacy.hint")} />
         </Panel>
-        <Panel style={{ padding: 0 }}>
-          {LINKS.map(([route, labelKey, icon], i) => (
-            <Pressable key={route} onPress={() => router.push(`/${route}` as never)}
-              style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
-                borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
-              <Ionicons name={icon} size={18} color={t.txtSecondary} />
-              <Text style={{ color: t.txtPrimary, fontSize: 14, flex: 1 }}>{tr(labelKey)}</Text>
-              <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
-            </Pressable>
-          ))}
-          {FEEDBACK_BOARD_URL ? (
-            <Pressable onPress={openFeedbackBoard}
-              style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
-                borderTopWidth: 1, borderTopColor: t.glassBorder }}>
-              <Ionicons name="megaphone-outline" size={18} color={t.txtSecondary} />
-              <Text style={{ color: t.txtPrimary, fontSize: 14, flex: 1 }}>{tr("nav.feedback")}</Text>
-              <Ionicons name="open-outline" size={16} color={t.txtTertiary} />
-            </Pressable>
-          ) : null}
-        </Panel>
+        {GROUPS.map(([grpKey, links]) => (
+          <View key={grpKey} style={{ gap: 6 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "700", letterSpacing: 0.6,
+              textTransform: "uppercase", paddingHorizontal: 4, paddingTop: 6 }}>{tr(grpKey)}</Text>
+            <Panel style={{ padding: 0 }}>
+              {links.map(([route, labelKey, icon, subKey], i) => (
+                <Pressable key={route} onPress={() => router.push(`/${route}` as never)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11,
+                    borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
+                  <Ionicons name={icon} size={18} color={t.txtSecondary} />
+                  <View style={{ flex: 1, gap: 1 }}>
+                    <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{tr(labelKey)}</Text>
+                    <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr(subKey)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
+                </Pressable>
+              ))}
+              {grpKey === "more.grp.system" && FEEDBACK_BOARD_URL ? (
+                <Pressable onPress={openFeedbackBoard}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11,
+                    borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+                  <Ionicons name="megaphone-outline" size={18} color={t.txtSecondary} />
+                  <View style={{ flex: 1, gap: 1 }}>
+                    <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{tr("nav.feedback")}</Text>
+                    <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("more.sub.feedback")}</Text>
+                  </View>
+                  <Ionicons name="open-outline" size={16} color={t.txtTertiary} />
+                </Pressable>
+              ) : null}
+            </Panel>
+          </View>
+        ))}
         <ApkUpdateBanner />
         <VersionFooter />
       </ScrollView>
