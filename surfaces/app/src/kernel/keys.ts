@@ -46,15 +46,13 @@ export interface Surface {
     labelKey?: string;
     /** i18n key for a sidebar section header shown above this item. */
     sectionKey?: string;
-    /** The capability (spine/auth/permissions.py CAPS) the daemon route this
-     *  surface renders actually requires - checked via `can(me, cap)`
-     *  (src/kernel/caps.ts) against `/me`'s live `caps` list. Replaces the old
-     *  teamOnly/ownerOnly booleans (ops/docs/backlog/rbac-gxp card 4): one
-     *  field, matched 1:1 to a real server-side gate, instead of a second
-     *  hand-maintained role tier that could drift from what the route
-     *  actually enforces. `"team.member"` is the interim stand-in for the
-     *  old teamOnly (client excluded, no daemon capability backs it yet). */
-    cap?: string;
+    /** hidden from clients (owner/operator only). */
+    teamOnly?: boolean;
+    /** hidden from clients AND operators (owner only - matches a daemon
+     *  route that 403s anyone but the owner, e.g. /automation, /settings).
+     *  Interim flag ahead of rbac-gxp's capability-driven nav (ops/docs/
+     *  backlog/rbac-gxp) - do not add a third role tier beyond this. */
+    ownerOnly?: boolean;
     /** shown only in the desktop sidebar, not the phone bottom bar. */
     desktopOnly?: boolean;
     /** shown only on the phone bottom bar, not the desktop sidebar (e.g. More). */
