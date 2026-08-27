@@ -462,7 +462,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       <View style={{ flex: 1 }}>
         <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
           contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
-          {steps.length === 0 ? <Empty text={tr("card.chat.noMessages")} /> :
+          {steps.length === 0 ? (
+            <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />
+          ) :
             <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
         </ScrollView>
         {!atBottom ? (

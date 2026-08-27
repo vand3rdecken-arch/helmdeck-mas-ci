@@ -78,6 +78,8 @@ export const card: Dict = {
 
   // chat column
   "card.chat.noMessages": { de: "Noch keine Nachrichten.", en: "No messages yet." },
+  "card.chat.historyLost": { de: "Verlauf nicht verfügbar - {n} Runden liefen, aber die Aufzeichnung dazu ist verloren gegangen (nicht diese Karte kaputt: die Daten fehlen).",
+                             en: "History unavailable - {n} turns ran, but the recording of them is gone (not this card breaking: the data is missing)." },
   "card.chat.latest": { de: "Neueste", en: "Latest" },
   "card.chat.mentionHenry": { de: "verschieben/löschen/steuern (Board-Kontext)",
                               en: "move/delete/steer (board context)" },
