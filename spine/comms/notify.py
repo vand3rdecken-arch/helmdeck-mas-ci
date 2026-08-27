@@ -91,17 +91,27 @@ def push_fcm(title, body, track_id="", urgent=False, kind=""):
             _json.dumps({"title": title, "body": body, "track": track_id,
                          "kind": kind}).encode("utf-8"),
             e2ee.import_sec(rel["sk"]), e2ee.import_pub(rel["phone_pub"]))
-        # A GENERIC notification block so Android displays the push automatically
-        # even when the app is backgrounded/killed (a data-only message needs an
-        # in-app background handler, which we don't ship). Zero-knowledge is kept:
-        # the block carries NO card content - just "you have a message" - while the
-        # real title/body stay in the sealed `cipher`, which the app decrypts and
-        # re-presents in full when it's open.
+        # DATA-ONLY on purpose (no `notification` block). Android's FCM SDK only
+        # invokes an in-app handler for messages shaped this way; a message that
+        # ALSO carries a `notification` block auto-displays that block from the
+        # system tray whenever the app is backgrounded/killed and never reaches
+        # app code until tapped (measured behaviour, not an assumption - this is
+        # why HelmDeck used to ship the generic "Neue Meldung" hybrid). The app
+        # now ships that in-app handler (surfaces/app/src/data/push.ts,
+        # BACKGROUND_NOTIFICATION_TASK via expo-task-manager), which decrypts
+        # `cipher` and raises the real title/body as a local notification itself
+        # - so zero-knowledge is unchanged (Google still transports only
+        # ciphertext) and the phone now shows real content instead of a
+        # generic "tap to see" placeholder in every app state.
+        #
+        # ROLLOUT ORDER: this is a native app change (new dependency), so an
+        # old installed APK has no background handler and would show NOTHING
+        # for a data-only push while backgrounded. Ship the new APK (and
+        # confirm the background task fires) BEFORE restarting the daemon on
+        # this code - see ops/docs/backlog/wear-os-integration/README.md §4.3.
         msg = {"message": {"token": device,
                            "data": {"cipher": cipher},
-                           "notification": {"title": "HelmDeck",
-                                            "body": "Neue Meldung – zum Ansehen tippen"},
-                           "android": {"priority": "high", "notification": {"channel_id": "default"}}}}
+                           "android": {"priority": "high"}}}
         req = urllib.request.Request(
             "https://fcm.googleapis.com/v1/projects/%s/messages:send" % sa["project_id"],
             data=_json.dumps(msg).encode(), method="POST")
