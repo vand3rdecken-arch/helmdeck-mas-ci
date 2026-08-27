@@ -12,7 +12,7 @@ DEBT = [
     {
         "id": "ship-aborted-loop-root-cause-open",
         "order": -4,
-        "title": "rerun_deploy no longer silently no-ops on a repo_hooks mismatch; the daemon-restart trigger for the FIRST two ship-aborted escalations is still unconfirmed (a THIRD apparent recurrence was investigated and traced to something else entirely - see below)",
+        "title": "rerun_deploy no longer silently no-ops on a repo_hooks mismatch; the ACTUAL cause of every ship-aborted recurrence today (wrong hook path, fixed) found and corrected; the daemon-restart trigger itself is still unconfirmed",
         "status": "open",
         "what": "Fixed (2026-08-27, found live during an unrelated RBAC "
                 "session): cells/copilot/henry_broker.py's rerun_deploy "
@@ -59,7 +59,25 @@ DEBT = [
                 "a failed `git status` makes it a safe no-op there) - the "
                 "same defense-in-depth test_henry_privilege_gate.py already "
                 "had. No daemon-side fix was needed for this half; it was "
-                "never a daemon behavior.",
+                "never a daemon behavior.\n"
+                "ACTUAL RECURRENCE CAUSE, found 2026-08-27 13:17 (same dead "
+                "pid 28356 reported a THIRD time, ~3h20m after the 08:27-fix "
+                "landed): daemon/settings.json's repo_hooks deploy command "
+                "still pointed at 'deploy/ship.sh', a path that stopped "
+                "existing when 298decc (the four-folder root refactor, "
+                "2026-08-24) moved the script to 'ops/deploy/ship.sh'. That "
+                "settings.json is git-ignored machine-local state, so the "
+                "refactor commit never touched it. Every rerun_deploy since "
+                "then spawned bash.exe against a nonexistent relative path - "
+                "cmd was non-empty so the 08:27 exists-check passed, but the "
+                "hook process failed instantly (before touching .loop/"
+                "ship.lock at all), leaving the SAME dead pid to be "
+                "re-reported on every subsequent daemon restart forever. "
+                "Fixed by correcting the path in settings.json (not a code "
+                "change - no commit carries this half). This was the real "
+                "engine behind the loop; the daemon-restart trigger below is "
+                "a separate, still-open question about why the daemon kept "
+                "restarting at all.",
         "why_it_bites": "Every daemon restart while a ship.lock is stale "
                         "auto-commits the ENTIRE uncommitted working tree "
                         "via henry_broker.py's _baseline_commit() (a card-"
