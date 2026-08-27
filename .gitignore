@@ -67,6 +67,10 @@ daemon/restart_stderr.log
 daemon/daemon.out.log
 surfaces/app/dist-desktop/
 surfaces/app/web_dev.log
+# tsc emit output for the zero-dependency self-tests (src/kernel/__selftest__.ts,
+# src/kernel/__caps_selftest__.ts) - compiled JS, not source.
+surfaces/app/.kernel-out/
+surfaces/app/.capstest-out/
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 daemon/helmdeck.db-wal

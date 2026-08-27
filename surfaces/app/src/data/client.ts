@@ -8,7 +8,7 @@ import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
 import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow,
-  SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult } from "./types";
+  SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult, GxpState } from "./types";
 import type { VoiceClip } from "./voice";
 
 export class AuthRequired extends Error {}
@@ -448,6 +448,17 @@ export const api = {
     track("card_sign_batch", { n: cards.length });
     return req<{ results: SignBatchResult[] }>(
       "POST", "/sign/batch", { cards, password }, undefined, true);
+  },
+
+  // ---- GxP mode activation (card 6) ----------------------------------------
+  gxpState: () => req<GxpState>("GET", "/gxp/state"),
+  // Same re-auth shape as sign() above: skipAuthGate=true so a wrong password
+  // answers 401 inline instead of bouncing the whole app to the login screen.
+  // `repos` omitted/undefined = workspace-wide scope (spine/auth/gxp.py).
+  activateGxp: (repos: string[] | undefined, fourEyes: boolean, password: string) => {
+    track("gxp_activate", { scope: repos?.length ? "repos" : "workspace" });
+    return req<GxpState>(
+      "POST", "/gxp/activate", { repos, four_eyes: fourEyes, password }, undefined, true);
   },
 
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),

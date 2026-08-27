@@ -7,14 +7,16 @@ POST /pm/config (owner sets the loop policy - whitelisted keys only), POST
 model turn - the proactive briefing), POST /pm/reconcile (re-derive a red
 golden-triangle corner from real evidence). Bodies are byte-identical to the
 inline blocks they replace.
+
+Capability-gated (ops/docs/backlog/rbac-gxp card 2, spine/auth/permissions.py):
+pm.view (owner+operator - economics/plan/report/reconcile) and pm.manage
+(owner-only - config/consolidate, both change the loop's own policy).
 """
 import json
 
 
 def pm_economics_get(self, user):
     # cheap, no-LLM economics snapshot + the stored MVP goal
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.pm import pm
     return self._send(200, json.dumps({"goal": pm.get_goal(), "economics": pm.economics()}))
 
@@ -22,8 +24,6 @@ def pm_economics_get(self, user):
 def pm_plan_get(self, user):
     # the last PM briefing (cached artifact) + live economics - no LLM,
     # so the Dashboard shows instantly; /pm/report refreshes it.
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.pm import pm
     return self._send(200, json.dumps({"goal": pm.get_goal(),
         "economics": pm.economics(), "plan": pm.live_plan(),
@@ -33,8 +33,6 @@ def pm_plan_get(self, user):
 def pm_config_post(self, user, body):
     # owner sets the proactive-loop policy (on/off, autonomy ladder,
     # repos allowlist, timing/caps). Whitelisted keys only.
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.pm import pm
     from spine.storage import events
     allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
@@ -53,8 +51,6 @@ def pm_config_post(self, user, body):
 def pm_consolidate_post(self, user, body):
     # Phase 3: propose (read-only) or apply (non-destructive) the
     # roll-up of many small cards into 2-5 stream cards per repo.
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.pm import pm
     try:
         if body.get("mode") == "apply":
@@ -69,8 +65,6 @@ def pm_consolidate_post(self, user, body):
 def pm_report_post(self, user, body):
     # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
     # token/cost projection grounded in real spend. One model turn.
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.pm import pm
     try:
         return self._send(200, json.dumps(pm.brief(
@@ -80,11 +74,10 @@ def pm_report_post(self, user, body):
 
 
 def pm_reconcile_post(self, user, body):
-    # Owner-triggered when a golden-triangle corner is RED: gather real
-    # evidence behind the corner and re-plan (pm.reconcile_corner). The
-    # agent supplies facts; the gate re-derives the corner (no monkey patch).
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    # Gather real evidence behind a RED golden-triangle corner and re-plan
+    # (pm.reconcile_corner). The agent supplies facts; the gate re-derives
+    # the corner (no monkey patch). Owner+operator (pm.view), same tier as
+    # report - despite the name, this isn't config-changing (pm.manage).
     from cells.pm import pm
     try:
         return self._send(200, json.dumps(pm.reconcile_corner(
@@ -102,4 +95,14 @@ POST_ROUTES = {
     "/pm/consolidate": pm_consolidate_post,
     "/pm/report": pm_report_post,
     "/pm/reconcile": pm_reconcile_post,
+}
+GET_CAPS = {
+    "/pm/economics": "pm.view",
+    "/pm/plan": "pm.view",
+}
+POST_CAPS = {
+    "/pm/config": "pm.manage",
+    "/pm/consolidate": "pm.manage",
+    "/pm/report": "pm.view",
+    "/pm/reconcile": "pm.view",
 }

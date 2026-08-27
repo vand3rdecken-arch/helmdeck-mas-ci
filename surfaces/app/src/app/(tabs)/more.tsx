@@ -11,6 +11,7 @@ import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
 import type { Me } from "@/data/types";
+import { can } from "@/kernel";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { ApkUpdateBanner } from "@/ui/apk_update";
@@ -18,43 +19,14 @@ import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
+import { GROUPS as GROUPS_DATA } from "../_more_groups";
 
-// tier mirrors the desktop sidebar's teamOnly/ownerOnly split (see
-// (tabs)/_layout.tsx + plugins/surfaces/tabs.ts) - this list used to render
-// unconditionally for EVERY role, so a client saw Automation/Settings and
-// got a 403 on tap. "any" = every role, "team" = owner+operator (client
-// blocked server-side), "owner" = owner only (blocked server-side for
-// operator too). Keep this in sync with the server gate cited per row - a
-// role check exists to hide a route that ACTUALLY 403s, never the reverse.
-type Tier = "any" | "team" | "owner";
-// The phone's "everything else" list, grouped so 9 flat rows become 3 scannable
-// blocks. Every row carries a one-line subtitle (more.sub.*) - the labels alone
-// ("Automatik", "Prozesse") proved opaque even to the owner - and every icon is
-// UNIQUE within the list (three near-identical git glyphs before).
-const GROUPS: readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string, Tier])[]][] = [
-  ["more.grp.control", [
-    ["automation", "nav.automation", "options-outline", "more.sub.automation", "owner"],   // routes_settings.py automation_get: owner only
-    ["processes", "nav.processes", "git-network-outline", "more.sub.processes", "any"],    // no role check in processes.py
-    ["connectors", "nav.connectors", "extension-puzzle-outline", "more.sub.connectors", "team"], // routes_connectors.py: client blocked
-  ]],
-  ["more.grp.logs", [
-    ["history", "nav.history", "time-outline", "more.sub.history", "team"],                // routes_system.py history_get: client blocked
-    ["escalations", "nav.escalations", "alert-circle-outline", "more.sub.escalations", "team"], // routes_info.py escalations_get: "not for clients"
-    ["sessions", "nav.sessions", "chatbubbles-outline", "more.sub.sessions", "team"],       // routes_system.py sessions_claude_get: client blocked
-    ["recordings", "nav.recordings", "videocam-outline", "more.sub.recordings", "team"],    // routes_runs.py runs_get: client blocked (fixed alongside this)
-  ]],
-  ["more.grp.system", [
-    ["settings", "nav.settings", "settings-outline", "more.sub.settings", "owner"],         // routes_settings.py settings_get: owner only
-    ["loopmap", "nav.loopmap", "map-outline", "more.sub.loopmap", "any"],                   // /loop/map: no role check
-  ]],
-] as const;
-
-function allowed(tier: Tier, role: string | undefined): boolean {
-  if (tier === "any") return true;
-  if (!role) return false;
-  if (tier === "team") return role !== "client";
-  return role === "owner";
-}
+// GROUPS data now lives in ../_more_groups.ts (card 4, ops/docs/backlog/
+// rbac-gxp) - split out so a plain-node self-test can import the SAME data
+// without pulling in react-native/@expo/vector-icons. Re-typed here with
+// the stricter Ionicons icon type; the data file itself uses a plain string.
+const GROUPS = GROUPS_DATA as unknown as
+  readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string, string | undefined])[]][];
 
 export default function MoreTab() {
   const t = useTheme();
@@ -181,7 +153,7 @@ export default function MoreTab() {
           <Hint text={tr("settings.privacy.hint")} />
         </Panel>
         {GROUPS.map(([grpKey, allLinks]) => {
-          const links = allLinks.filter(([, , , , tier]) => allowed(tier, me?.role));
+          const links = allLinks.filter(([, , , , cap]) => can(me, cap));
           if (!links.length) return null;
           return (
           <View key={grpKey} style={{ gap: 6 }}>

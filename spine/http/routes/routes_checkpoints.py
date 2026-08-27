@@ -19,13 +19,10 @@ def checkpoints_list_get(self, user):
 
 
 def checkpoints_diff_get(self, user, cid):
-    # OWNER ONLY, same as restore below. The diff carries settings before->after
-    # VALUES, so it hands out relay.sk, glance_token and registration.invite_code
-    # to anyone who is merely logged in - the generic 401 in server.py lets an
-    # operator or a client through. Fail closed rather than redact: a redaction
-    # list has to enumerate every secret key and silently leaks the one it forgot.
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
+    # OWNER ONLY (cap settings.read via permissions.PATTERNS), same as restore
+    # below. The diff carries settings before->after VALUES, so it hands out
+    # relay.sk, glance_token and registration.invite_code to anyone who can
+    # read settings - same secret class settings.read already protects.
     from spine.ops import checkpoints
     try:
         return self._send(200, json.dumps(checkpoints.diff(cid)))
@@ -34,8 +31,7 @@ def checkpoints_diff_get(self, user, cid):
 
 
 def checkpoints_restore_post(self, user, cid):
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
+    # cap settings.write via permissions.PATTERNS - restore mutates settings.json.
     from spine.ops import checkpoints
     try:
         checkpoints.restore(cid, actor=user["name"])

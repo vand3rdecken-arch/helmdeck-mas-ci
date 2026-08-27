@@ -14,15 +14,11 @@ import json
 
 def projects_list_get(self, user):
     from spine.ops import projects
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
     return self._send(200, json.dumps(projects.list_projects()))
 
 
 def projects_new_post(self, user, body):
     from spine.ops import projects
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
     try:
         return self._send(200, json.dumps(projects.new_project(
             body.get("name"), body.get("billing"), client=body.get("client", ""),
@@ -34,8 +30,6 @@ def projects_new_post(self, user, body):
 
 def projects_update_post(self, user, body, pid):
     from spine.ops import projects
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
     try:
         return self._send(200, json.dumps(
             projects.update_project(pid, body, actor=user["name"])))
@@ -45,8 +39,6 @@ def projects_update_post(self, user, body, pid):
 
 def projects_delete_post(self, user, body, pid):
     from spine.ops import projects
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
     try:
         return self._send(200, json.dumps(
             projects.delete_project(pid, actor=user["name"])))
@@ -60,3 +52,11 @@ GET_ROUTES = {
 POST_ROUTES = {
     "/projects": projects_new_post,
 }
+GET_CAPS = {
+    "/projects": "projects.view",
+}
+POST_CAPS = {
+    "/projects": "projects.manage",
+}
+# projects_update_post/projects_delete_post (/projects/<id>/update,
+# /projects/<id>/delete) are path-param routes - see permissions.PATTERNS.

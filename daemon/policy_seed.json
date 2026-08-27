@@ -14,7 +14,19 @@
     "processEnabled": true,
     "connectorsEnabled": true,
     "copilotEnabled": true,
-    "buildLoopEnabled": true
+    "buildLoopEnabled": true,
+    "sod_accept": false,
+    "permissions": {
+      "owner": ["settings.read", "settings.write", "users.manage", "recordings.view",
+                "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate",
+                "cards.admin", "system.introspect", "projects.view", "projects.manage",
+                "pm.view", "pm.manage"],
+      "operator": ["recordings.view", "devices.manage", "devices.use", "chat.use", "cards.admin",
+                   "projects.view", "pm.view"],
+      "client": [],
+      "quality": [],
+      "auditor": ["settings.read", "recordings.view", "audit.read"]
+    }
   },
   "charter": {
     "source": "CLAUDE.md",

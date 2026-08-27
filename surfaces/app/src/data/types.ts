@@ -38,6 +38,18 @@ export interface SignBatchItem { card: string; meaning: SignMeaning; reason: str
  *  taking the others down - the result is a list, not all-or-nothing. */
 export interface SignBatchResult { card: string; ok: boolean; error?: string; signature?: Signature }
 
+/** GxP mode state (spine/auth/gxp.py's state(), card 6). `active: false` is
+ *  the whole shape when the mode is off - never leaks the lock file's other
+ *  fields (see gxp.py's own docstring on `state()`). */
+export interface GxpState {
+  active: boolean;
+  activated_at?: string; activated_by?: string;
+  four_eyes?: boolean;
+  scope?: "workspace" | "repos";
+  repos?: string[];
+  disabled?: string[];
+}
+
 export interface Track {
   id: string; repo: string; branch: string; worktree: string; task: string;
   description?: string; attachments?: string[];
@@ -187,6 +199,11 @@ export interface Process {
  *  labels). The full settings blob stays owner-only on /settings. */
 export interface Me {
   name: string; role: string;
+  /** Effective capabilities for this role (spine/auth/permissions.py CAPS),
+   *  derived live server-side - never recompute this client-side from
+   *  `role`, that's exactly the drift rbac-gxp card 4 closes. See
+   *  src/kernel/caps.ts's `can()`. */
+  caps?: string[];
   ui?: { lang?: string; lane_labels?: Record<string, string>;
     /** flat = Max subscription (quota, not cash) → cost surfaces show tokens;
      *  metered = API pay-per-token → $ amounts are real spend. */
@@ -200,7 +217,11 @@ export interface UserRow {
   // plaintext back. `id` is the revoke handle, `tail` the last six characters
   // so a human can tell two devices apart. The full value exists exactly once,
   // in the response to issueToken.
-  tokens: { label: string; id: string; tail: string; created?: string }[];
+  // last_used/expires/stale: card 5 debt (rbac-audit-hardening-partial) -
+  // access-review signal. `stale` is computed server-side (auth._token_stale,
+  // >90d unused), never recomputed client-side from a cached timestamp.
+  tokens: { label: string; id: string; tail: string; created?: string;
+    last_used?: string | null; expires?: string | null; stale?: boolean }[];
 }
 
 // A registered remote-execution device (ops/docs/backlog/remote-device-

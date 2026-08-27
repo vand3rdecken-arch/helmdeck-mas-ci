@@ -10,7 +10,114 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "rbac-audit-hardening-partial",
+        "order": -3,
+        "title": "Card 5 (rbac-gxp) audit hardening - PAID in full, including the two items deferred at first ship",
+        "status": "paid",
+        "what": "events.save_settings() emits an old->new diff event per "
+                "write (changed keys only, secrets masked by key-name regex). "
+                "events.query_audit() is the one shared filter GET /audit "
+                "(routes_audit.py), Henry's chat 'audit_query' action "
+                "(cells/copilot/copilot_actions.py), and Henry's autonomous "
+                "escalation judgement (see below) all call. The app has a "
+                "real screen (surfaces/app/src/app/audit.tsx, cap-gated "
+                "audit.read). PAID LATER, SAME PASS: (1) device-token TTL - "
+                "auth.issue_token(expires_days=...) (optional, default None = "
+                "unchanged behaviour), resolve() refuses an expired token, "
+                "_touch_token records last_used (throttled to once/day - "
+                "resolve() runs on every request, an unthrottled write would "
+                "rewrite users.json constantly), _token_stale() computes "
+                "'>90 days unused' live (last_used wins over created) and "
+                "GET /users surfaces it; the Users panel (settings.tsx) shows "
+                "a stale badge. (2) henry_broker.py's autonomous escalation "
+                "path now DOES pull audit context: new _audit_context(t) in "
+                "_decide()'s prompt construction, gated on the card's own "
+                "dispatched_by holding audit.read (never a standing "
+                "capability Henry holds itself - it only ever sees what that "
+                "account could see), capped to the card's own last 8 events, "
+                "degrades to '' on any lookup failure rather than blocking "
+                "the judgement turn.",
+        "why_it_bites": "n/a (paid) - was: no access-review signal for stale "
+                        "device tokens, and Henry's autonomous judgement on a "
+                        "blocked card couldn't see the audit history that "
+                        "would explain WHY the block exists.",
+        "trigger": "n/a (paid).",
+        "fix": "PAID. Tests: ops/tests/test_token_staleness.py (issuance, "
+               "expiry, throttled last_used, staleness computation, real "
+               "GET /users round-trip) and ops/tests/"
+               "test_henry_audit_context.py (empty on no-dispatcher/no-"
+               "audit.read/lookup-failure, populated and track-scoped when "
+               "the dispatcher has audit.read) - both green.",
+    },
+    {
+        "id": "rbac-permission-registry-partial",
+        "order": -2,
+        "title": "spine/auth/permissions.py's central capability guard covers a first tranche of routes, not all ~85 inline role checks",
+        "status": "open",
+        "what": "ops/docs/backlog/rbac-gxp card 2 built spine/auth/permissions.py "
+                "(matrix/can/require/cap_for, seeded in "
+                "policy_seed.json['policies']['permissions']) and wired it into "
+                "spine/http/server.py's do_GET/do_POST right after the existing "
+                "cell gate - additively: cap_for() returns None for anything not "
+                "yet declared, so an unmigrated route's own inline check remains "
+                "its only enforcement. Migrated so far (old inline checks REMOVED, "
+                "central guard is now the only gate): routes_settings.py (all 4 "
+                "routes), routes_runs.py (/runs, /live.jpg - NOT the per-card "
+                "runs_item_get, which stays on auth.owns_card by design), "
+                "routes_audit.py (/audit), routes_devices.py (all handlers, table "
+                "+ path-param via PATTERNS), routes_misc.py (/voice/transcribe), "
+                "routes_gxp.py (new in card 6, /gxp/state + /gxp/activate), "
+                "routes_checkpoints.py (/checkpoints/<id>/diff + /restore, path-"
+                "param, cap settings.read/write), routes_cells.py (/cells/<id>/"
+                "source, path-param, new cap system.introspect), routes_projects.py "
+                "(all 4 routes incl. 2 path-param, new caps projects.view/manage), "
+                "cells/pm/routes_pm.py (all 6 routes, new caps pm.view/manage), and "
+                "server.py's own /users block + PATTERNS entries for /users, "
+                "/users/<name>/<action>. copilot_actions.py's chat_admin_roles() "
+                "gate was ALSO unified (auth.chat_admin_roles() now derives from "
+                "the matrix's cards.admin capability instead of reading "
+                "settings.json's policy.chat_admin_roles independently - the "
+                "deferral noted below is PAID). NOT yet migrated: cells/engineer/"
+                "routes_tracks.py, routes_track_actions.py (the crown-jewel card-"
+                "lifecycle routes - highest blast radius, deliberately last), "
+                "cells/copilot/routes_copilot.py, cells/connectors/"
+                "routes_connectors.py, routes_system.py, routes_info.py, and "
+                "server.py's own biggest block: the client-blanket-POST allowlist "
+                "(do_POST, 'clients can file and comment only') and the large "
+                "/tracks/* path-param if-chain (~20-25 checks).",
+        "why_it_bites": "Anyone reading only spine/auth/permissions.py could "
+                        "believe every route is capability-gated centrally; it "
+                        "is not. A route in an unmigrated module still relies "
+                        "entirely on its own inline `if user[\"role\"] != ...` "
+                        "check - correct today (nothing was removed there), but "
+                        "it means the 'one central place that says who can do "
+                        "what' promise is only true for the modules listed above. "
+                        "A reviewer auditing authorization for compliance "
+                        "purposes must still read the unmigrated modules by hand, "
+                        "same as before card 2.",
+        "trigger": "Adding a new route to an unmigrated module and assuming the "
+                   "central guard covers it (it silently doesn't - cap_for() "
+                   "returns None, so ONLY that route's own inline check, if any, "
+                   "protects it). Or: an owner/auditor assuming the permission "
+                   "matrix is a complete authorization map before Card 2's "
+                   "migration finishes.",
+        "fix": "Continue the migration sequencing already designed in card 2 "
+               "(add *_CAPS/PATTERNS entries for one more module, add it to "
+               "permissions._CAP_MODULES, verify against ops/tests/"
+               "test_server_routes.py, THEN remove that module's old inline "
+               "checks) until every remaining module above is covered, finishing "
+               "with the client-blanket-POST block and the /tracks/* path-param "
+               "chain last as planned. Extend ops/tests/test_permissions.py's "
+               "coverage loop to assert 100% of GET_ROUTES/POST_ROUTES across "
+               "every route module has a capability entry once that point is "
+               "reached (currently it only asserts internal consistency for the "
+               "modules in permissions._CAP_MODULES, not repo-wide completeness - "
+               "a repo-wide assertion today would fail loudly, which is the "
+               "honest state to be in until the migration is actually done).",
+    },
+    {
         "id": "make-icon-py-stale-design",
+        "order": 0,
         "title": "ops/tools/make_icon.py still hardcodes the OLD logo - would revert the redesign if rerun",
         "status": "paid",
         "what": "The 2026-08-26 logo redesign (H with a swept diagonal crossbar, "
