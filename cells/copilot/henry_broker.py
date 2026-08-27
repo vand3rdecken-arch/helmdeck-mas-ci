@@ -457,16 +457,32 @@ def _execute(action, card, lane, text, esc):
         return True
     if action == "rerun_deploy":
         from cells.engineer.lanemachine import _repo_hook
+        from spine.storage import events
         if t is None:
             # card-less ship abort: rebuild the hook target from the default
             # repo - the hook only needs repo/run_dir-shaped fields.
-            from spine.storage import events
             repo = events.settings().get("default_repo") or ""
             if not repo:
                 return False
             t = {"id": "-", "repo": repo, "run_dir": os.path.join(ROOT, "recordings", "_henry"),
                  "worktree": repo}
             os.makedirs(t["run_dir"], exist_ok=True)
+        # Fail LOUD, not quiet (found live 2026-08-27): _repo_hook silently
+        # returns None when settings.repo_hooks has no EXACT-string-matching
+        # "deploy" entry for this repo path - a stale ship.lock then
+        # re-escalates on every daemon restart forever, because rerun_deploy
+        # still returned True (the escalation closes as "decided") while
+        # actually doing nothing at all, and the lock's dead pid never
+        # changes. Check the hook exists BEFORE spawning the fire-and-forget
+        # thread, so a misconfiguration surfaces as a normal give-up
+        # (_give_up already notifies the owner after _MAX_ATTEMPTS) instead
+        # of a silent no-op loop.
+        cmd = ((events.settings().get("repo_hooks") or {}).get(t["repo"]) or {}).get("deploy", "").strip()
+        if not cmd:
+            escalations.record_note(esc["id"],
+                "rerun_deploy: kein settings.repo_hooks['%s']['deploy'] konfiguriert "
+                "(oder der Repo-Pfad passt nicht exakt) - kein Deploy ausgeloest." % t["repo"])
+            return False
         threading.Thread(target=_repo_hook, args=(dict(t), "deploy"), daemon=True).start()
         return True
     if action == "notify_owner":

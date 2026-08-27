@@ -86,6 +86,20 @@ def main():
         assert "ship-aborted" in kinds, "dead lock pid must escalate: %r" % kinds
         print("PASS boot: dead ship.lock pid -> ship-aborted escalation")
 
+        # -- rerun_deploy with no matching repo_hooks entry: fails LOUD, not --
+        # -- quiet (found live 2026-08-27: a stale lock kept re-escalating on --
+        # -- every daemon restart because this silently returned True) -------
+        events.settings = lambda: {"default_repo": "C:/some/repo", "repo_hooks": {}}
+        eid4 = esc.emit("ship-aborted", card=None, detail="lock dead")
+        e4 = [e for e in esc.list_open() if e["id"] == eid4][0]
+        ok4 = hb._execute("rerun_deploy", "", "", "", e4)
+        assert ok4 is False, "no configured deploy hook -> _execute must return False, not silently succeed"
+        with open(esc.ESC_PATH, encoding="utf-8") as f:
+            raw_lines = f.readlines()
+        assert any(eid4 in ln and "repo_hooks" in ln and '"event": "note"' in ln for ln in raw_lines), \
+            "the missing-hook reason must be recorded as a note on the escalation"
+        print("PASS broker: rerun_deploy with no matching repo_hooks entry -> False + noted, not a silent no-op success")
+
         print("ALL PASS")
     finally:
         (esc.ESC_PATH, hb._ask, hb._notify_owner, events.settings, events.emit) = saved
