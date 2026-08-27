@@ -48,6 +48,13 @@ def append(run_dir, step_id, patch):
     rec["_id"] = step_id
     try:
         with _lock:
+            # run_dir can go missing out from under a live card (found live
+            # 2026-08-27: an external wipe of daemon/recordings/ left this
+            # swallowing every subsequent write via the bare `except OSError`
+            # below - the turn kept running with no error, but the feed was
+            # silently gone from that point on). Recreate it so recording
+            # resumes instead of vanishing quietly.
+            os.makedirs(run_dir, exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, default=str) + "\n")
     except OSError:
