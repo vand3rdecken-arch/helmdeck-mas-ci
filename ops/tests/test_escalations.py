@@ -21,7 +21,7 @@ from spine.storage import events
 
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-esc-")
-    saved = (esc.ESC_PATH, hb._ask, hb._notify_owner, events.settings, events.emit)
+    saved = (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings, events.emit)
     try:
         esc.ESC_PATH = os.path.join(tmp, "escalations.jsonl")
         events.settings = lambda: {}
@@ -36,8 +36,17 @@ def main():
         print("PASS bus: emit -> open, folded from the log")
 
         # -- Henry decides notify_owner: executes, closes ---------------------
-        hb._ask = lambda prompt, model="": {"action": "notify_owner", "card": "",
-                                            "text": "build neu anstossen?", "why": "restart"}
+        # Card-less escalations are PRIVILEGED (_dispatcher_privileged(None)
+        # is True - no client to be restricted from), so _decide calls
+        # _hands_on_ask, not _ask - both must be stubbed or this silently
+        # falls through to the real headless-claude seam (found live
+        # 2026-08-27: this test asserted True but got False for exactly this
+        # reason, unrelated to the rerun_deploy work below - a real gap this
+        # fixes alongside it).
+        decision = {"action": "notify_owner", "card": "",
+                    "text": "build neu anstossen?", "why": "restart"}
+        hb._ask = lambda prompt, model="", perm=None: decision
+        hb._hands_on_ask = lambda prompt, timeout=60: decision
         assert hb._decide(opens[0]) is True
         assert not esc.list_open(), "decided escalation must fold closed"
         assert notified and "neu anstossen" in notified[0]
@@ -45,7 +54,8 @@ def main():
 
         # -- malformed decision stays open, attempts counted ------------------
         eid2 = esc.emit("conflict-unresolved", card=None, detail="x")
-        hb._ask = lambda prompt, model="": {"action": "levitate"}
+        hb._ask = lambda prompt, model="", perm=None: {"action": "levitate"}
+        hb._hands_on_ask = lambda prompt, timeout=60: {"action": "levitate"}
         e2 = [e for e in esc.list_open() if e["id"] == eid2][0]
         assert hb._decide(e2) is False
         e2 = [e for e in esc.list_open() if e["id"] == eid2][0]
@@ -66,6 +76,7 @@ def main():
         eid3 = esc.emit("deploy-red", card=None, detail="boom")
         def _raise(*a, **k): raise RuntimeError("model down")
         hb._ask = _raise
+        hb._hands_on_ask = _raise
         e3 = [e for e in esc.list_open() if e["id"] == eid3][0]
         assert hb._decide(e3) is False and [e for e in esc.list_open() if e["id"] == eid3]
         print("PASS broker: model failure -> escalation survives, no crash")
@@ -86,9 +97,23 @@ def main():
         assert "ship-aborted" in kinds, "dead lock pid must escalate: %r" % kinds
         print("PASS boot: dead ship.lock pid -> ship-aborted escalation")
 
+        # -- rerun_deploy with no matching repo_hooks entry: fails LOUD, not --
+        # -- quiet (found live 2026-08-27: a stale lock kept re-escalating on --
+        # -- every daemon restart because this silently returned True) -------
+        events.settings = lambda: {"default_repo": "C:/some/repo", "repo_hooks": {}}
+        eid4 = esc.emit("ship-aborted", card=None, detail="lock dead")
+        e4 = [e for e in esc.list_open() if e["id"] == eid4][0]
+        ok4 = hb._execute("rerun_deploy", "", "", "", e4)
+        assert ok4 is False, "no configured deploy hook -> _execute must return False, not silently succeed"
+        with open(esc.ESC_PATH, encoding="utf-8") as f:
+            raw_lines = f.readlines()
+        assert any(eid4 in ln and "repo_hooks" in ln and '"event": "note"' in ln for ln in raw_lines), \
+            "the missing-hook reason must be recorded as a note on the escalation"
+        print("PASS broker: rerun_deploy with no matching repo_hooks entry -> False + noted, not a silent no-op success")
+
         print("ALL PASS")
     finally:
-        (esc.ESC_PATH, hb._ask, hb._notify_owner, events.settings, events.emit) = saved
+        (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings, events.emit) = saved
 
 
 if __name__ == "__main__":

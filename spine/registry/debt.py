@@ -10,6 +10,66 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "ship-aborted-loop-root-cause-open",
+        "order": -4,
+        "title": "rerun_deploy no longer silently no-ops on a repo_hooks mismatch, but WHY the daemon keeps restarting (the real trigger) is still unexplained",
+        "status": "open",
+        "what": "Fixed (2026-08-27, found live during an unrelated RBAC "
+                "session that got its uncommitted work baseline-committed "
+                "THREE times in ~2h by this exact loop): "
+                "cells/copilot/henry_broker.py's rerun_deploy handler used "
+                "to spawn its deploy hook in a fire-and-forget thread and "
+                "unconditionally return True, closing the escalation as "
+                "'decided' even when cells/engineer/lanemachine.py's "
+                "_repo_hook() silently no-ops (settings.repo_hooks has no "
+                "EXACT string match for the resolved repo path) - the "
+                "ship.lock's dead pid then never changes. Now it checks the "
+                "hook command exists BEFORE spawning the thread and returns "
+                "False + records a note if not, so a misconfiguration "
+                "surfaces via the existing 2-attempt give-up + owner-notify "
+                "path instead of silently repeating forever. NOT fixed / "
+                "still open: WHY the daemon keeps restarting in the first "
+                "place. check_stale_ship_lock() only runs from "
+                "start_broker() (cells.py's copilot-cell boot hook, guarded "
+                "by a per-process _started flag) - the SAME dead pid (28356) "
+                "was reported by two 'ship-aborted' escalations ~62 minutes "
+                "apart, which only makes sense if the real daemon process "
+                "itself restarted twice, not just the escalation re-firing. "
+                "surfaces/desktop/tray.py's supervisor restarts the daemon "
+                "whenever :8140 stops answering its health check - a "
+                "plausible trigger (a stuck/heavy deploy attempt starving "
+                "the health endpoint, itself possibly related to the "
+                "daemon/recordings/ external-wipe incident fixed the same "
+                "session in spine/agent/timeline_store.py + spine/ops/"
+                "actionlog.py) but NOT confirmed: at investigation time the "
+                "box was idle (24% CPU, no gradle/java/node process) and the "
+                "lock was still stale, which argues AGAINST 'a build is "
+                "currently hogging the health check' as the whole story.",
+        "why_it_bites": "Every daemon restart during this window "
+                        "auto-commits the ENTIRE uncommitted working tree "
+                        "via henry_broker.py's _baseline_commit() (a card-"
+                        "less escalation is 'privileged' per "
+                        "_dispatcher_privileged(None)==True, so it runs "
+                        "through _hands_on_ask, which snapshots the tree "
+                        "before giving Henry real hands) - any agent or "
+                        "human with uncommitted work in this repo at the "
+                        "wrong moment gets it swept into a commit without "
+                        "warning, repeatedly, until the restart cause stops.",
+        "trigger": "The daemon restarting while ops/deploy's repo_hooks."
+                   "deploy is unconfigured/mismatched for default_repo, OR "
+                   "recurring while someone has uncommitted work in this "
+                   "exact repo checkout.",
+        "fix": "Confirm the actual restart trigger (add a boot-time log line "
+               "in daemon/swarm.py or spine/http/server.py's serve() noting "
+               "the previous process's exit reason if determinable, or "
+               "watch tray.py's health-check log across a real recurrence). "
+               "Separately, consider whether _baseline_commit() firing on "
+               "EVERY hands-on judgement turn (not just ones that edit code) "
+               "is too broad - a card-less, read-only-outcome escalation "
+               "like a misconfigured deploy hook doesn't need a tree "
+               "snapshot at all.",
+    },
+    {
         "id": "rbac-audit-hardening-partial",
         "order": -3,
         "title": "Card 5 (rbac-gxp) audit hardening - PAID in full, including the two items deferred at first ship",
