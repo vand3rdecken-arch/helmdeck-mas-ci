@@ -303,38 +303,6 @@ def _card_log_tail(card, n=35):
         return "(actionlog unreadable: %s)" % e
 
 
-def _audit_context(t):
-    """Recent audit-trail events for THIS card, folded into Henry's judgement
-    prompt (card 5's deferred 'Consumer 2' - the chat's audit_query action,
-    cells/copilot/copilot_actions.py, got Henry's interactive half; this is
-    the autonomous-escalation half).
-
-    Gated the same question as the chat action (permissions.can(...,
-    'audit.read')), but keyed off the card's OWN dispatcher rather than a
-    session role - Henry has none of its own. An escalation on a card filed
-    by an account without audit.read must not hand Henry (and therefore the
-    owner-notify text it can produce) more visibility than that account's
-    own would have had."""
-    if not t:
-        return ""
-    try:
-        from spine.auth import auth, permissions
-        from spine.storage import events
-        disp = auth.get_user(t.get("dispatched_by") or "")
-        if not disp or not permissions.can(disp, "audit.read"):
-            return ""
-        rows = events.query_audit(track=t.get("id"))[-8:]
-        if not rows:
-            return ""
-        lines = ["%s  %s  actor=%s%s" % (
-            e.get("at_utc", "?"), e.get("kind", "?"), e.get("actor", "-"),
-            ("  " + e["reason"]) if e.get("reason") else "")
-            for e in rows]
-        return "\n== AUDIT (juengste Ereignisse dieser Karte) ==\n" + "\n".join(lines)
-    except Exception:
-        return ""  # never let a context-enrichment failure block the judgement turn
-
-
 def _decide(esc):
     """One judgement round. Returns True if the escalation was closed."""
     from spine.storage import events
@@ -348,7 +316,6 @@ def _decide(esc):
         + "\n\n== ESKALATION ==\nkind: %s\ncard: %s\ndetail:\n%s\n" % (
             esc["kind"], esc.get("card") or "-", esc.get("detail") or "")
         + ("\n== KARTE (actionlog, juengste zuerst unten) ==\n" + card_log + "\n" if card_log else "")
-        + _audit_context(t)
         + "\n== SYSTEM ==\n" + _snapshot()
         + "\n\nDu darfst vor der Antwort selbst handeln (Dateien, Kommandos). "
           "Fertige Arbeit SCHIEBST du durch: action \"move\" mit lane review "
