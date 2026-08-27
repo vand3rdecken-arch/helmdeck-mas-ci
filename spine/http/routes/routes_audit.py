@@ -38,23 +38,6 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 
-def _matches(e, kinds, track, actor, since, until, text):
-    if kinds and e.get("kind") not in kinds:
-        return False
-    if track and e.get("track") != track:
-        return False
-    if actor and e.get("actor") != actor:
-        return False
-    at = e.get("at_utc") or ""
-    if since and at < since:
-        return False
-    if until and at >= until:
-        return False
-    if text and text not in json.dumps(e, ensure_ascii=False, sort_keys=True).lower():
-        return False
-    return True
-
-
 def _to_csv(rows):
     """Fixed core columns + a `data` catch-all for the rest, JSON-encoded.
     Events carry heterogeneous extra fields per kind; a column per field seen
@@ -73,29 +56,20 @@ def _to_csv(rows):
 
 
 def audit_get(self, user):
-    if user["role"] != "owner":
-        return self._send(403, json.dumps({"error": "owner only"}))
-
     from spine.storage import events
     q = parse_qs(urlparse(self.path).query)
 
     def one(name, default=""):
         return (q.get(name) or [default])[0].strip()
 
-    kinds = {k for k in one("kind").split(",") if k}
-    track = one("track")
-    actor = one("actor")
-    since = one("since")
-    until = one("until")
-    text = one("q").lower()
     fmt = one("format", "json")
     try:
         limit = max(1, min(int(one("limit", "500")), 5000))
     except ValueError:
         limit = 500
 
-    rows = [e for e in events.read_events()
-            if _matches(e, kinds, track, actor, since, until, text)]
+    rows = events.query_audit(kind=one("kind"), track=one("track"), actor=one("actor"),
+                              since=one("since"), until=one("until"), q=one("q"))
 
     if fmt == "csv":
         body = _to_csv(rows).encode("utf-8")
@@ -118,3 +92,4 @@ def audit_get(self, user):
 
 
 GET_ROUTES = {"/audit": audit_get}
+GET_CAPS = {"/audit": "audit.read"}

@@ -189,6 +189,14 @@ def tracks_reorder_post(self, user, body):
 def tracks_new_post(self, user, body):
     from cells.engineer import sessions
     from spine.storage import events
+    # SoD counterpart (card 3, ops/docs/backlog/rbac-gxp): quality/auditor are
+    # approve/read-only roles - they may never be the one who files/dispatches
+    # a card, independent of whether policy.sod_accept is even on (that knob
+    # only governs the ACCEPT side, in lanemachine._sod_block_reason - this is
+    # the dispatch side, which is unconditional for these two roles).
+    if user["role"] in ("quality", "auditor"):
+        return self._send(403, json.dumps(
+            {"error": "role '%s' may not dispatch cards" % user["role"]}))
     repo = body.get("repo") or events.settings().get("default_repo")
     branch = body.get("branch"); task = body.get("task")
     if task and not branch:   # preset flow: task alone is enough

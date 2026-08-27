@@ -14,7 +14,16 @@
     "processEnabled": true,
     "connectorsEnabled": true,
     "copilotEnabled": true,
-    "buildLoopEnabled": true
+    "buildLoopEnabled": true,
+    "sod_accept": false,
+    "permissions": {
+      "owner": ["settings.read", "settings.write", "users.manage", "recordings.view",
+                "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate"],
+      "operator": ["recordings.view", "devices.manage", "devices.use", "chat.use"],
+      "client": [],
+      "quality": [],
+      "auditor": ["settings.read", "recordings.view", "audit.read"]
+    }
   },
   "charter": {
     "source": "CLAUDE.md",

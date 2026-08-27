@@ -14,6 +14,7 @@ export { Registry } from "./registry-collection";
 export { resolveProfile, dumpConfig, selectPlugins } from "./profiles";
 export { KEYS, makeRegistries } from "./keys";
 export type { Engine, Surface, Manifest, ApiClient, PolicySet, CharterDoc } from "./keys";
+export { can, TEAM_MEMBER_CAP } from "./caps";
 export type { ResolvedProfile } from "./profiles";
 export type {
   Plugin,

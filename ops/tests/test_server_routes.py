@@ -509,11 +509,13 @@ def main():
         # team's screen recordings. Same tier as /history (owner/operator).
         status, body = req("GET", "/runs", cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/runs refuses a client (owner/operator only)")
-        # live_jpg_get's gate replies text/plain (matching its own 404 body
-        # style above), so req()'s json.loads fails and body comes back None -
-        # the 403 status assertion inside req() is the real check here.
+        # Both routes now refuse through the central permission guard
+        # (spine/auth/permissions.py, cap recordings.view) rather than each
+        # handler's own inline check - the guard always replies JSON, so
+        # /live.jpg's refusal body is a parseable dict now, not the old
+        # text/plain "owner/operator only" string.
         status, body = req("GET", "/live.jpg", cookie=csid, expect=403)
-        ok(body is None, "/live.jpg refuses a client (owner/operator only)")
+        ok(isinstance(body, dict) and body.get("error"), "/live.jpg refuses a client (owner/operator only)")
 
         status, body = req("GET", "/runs/doesnotexist/timeline", cookie=sid, expect=200)
         ok(body == [], "/runs/<id>/timeline: empty list for an unknown run (no run dir yet)")

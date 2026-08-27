@@ -29,9 +29,15 @@ def me_get(self, user):
     # non-owners and 403s clients. Whitelisted, never the whole
     # settings blob - that stays owner-only.
     from spine.storage import events
+    from spine.auth import permissions
     pol = events.settings().get("policy") or {}
     return self._send(200, json.dumps({
         "name": user["name"], "role": user["role"],
+        # Card 4 (ops/docs/backlog/rbac-gxp): the app's ONE source for "what
+        # may I see/do" - derived live from permissions.matrix() every call,
+        # never cached here or in the client beyond a query invalidation on
+        # login/role-change. Nav renders from this, not from a role string.
+        "caps": sorted(permissions.matrix().get(user["role"], set())),
         "ui": {"lang": pol.get("lang", "de"),
                "lane_labels": pol.get("lane_labels") or {},
                # flat (Max subscription) vs metered (API): every
@@ -54,10 +60,8 @@ def processes_new_post(self, user, body):
 def voice_transcribe_post(self, user, body):
     # STT stage of the LIVE voice pipeline (spine/media/stt.py): the
     # phone's LiveMic module cut one utterance with its own VAD and sends it
-    # here as a WAV blob over the sealed relay. Team-only, same gate as /chat -
-    # a transcript's whole purpose is to become a chat turn.
-    if user["role"] not in ("owner", "operator"):
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    # here as a WAV blob over the sealed relay. Team-only, same gate as /chat
+    # (cap chat.use) - a transcript's whole purpose is to become a chat turn.
     import base64
     from spine.media import stt
     b64 = body.get("audio") or ""
@@ -81,4 +85,9 @@ GET_ROUTES = {
 POST_ROUTES = {
     "/processes/new": processes_new_post,
     "/voice/transcribe": voice_transcribe_post,
+}
+# /processes, /me, /processes/new are open to every role by design (client
+# filtering happens by parameter, not by capability) - no entry here for them.
+POST_CAPS = {
+    "/voice/transcribe": "chat.use",
 }
