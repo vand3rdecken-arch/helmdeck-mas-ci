@@ -15,7 +15,7 @@ from daemon.paths import DAEMON_ROOT as ROOT
 USERS = os.path.join(ROOT, "users.json")
 SESS = os.path.join(ROOT, "sessions.json")
 SESSION_TTL = 30 * 86400
-ROLES = ("owner", "operator", "client")
+ROLES = ("owner", "operator", "client", "quality", "auditor")
 
 # -- role model ------------------------------------------------------------
 # owner:    unrestricted - the only role that may touch identity (this
@@ -27,18 +27,36 @@ ROLES = ("owner", "operator", "client")
 #           reconfigures who else can do it.
 # client:   file + comment on their OWN card only (new/steer/answer/cancel/
 #           presence) - never a structural action on any card.
+# quality:  (ops/docs/backlog/rbac-gxp card 3) the SoD approver counterpart -
+#           may accept/sign a card, may NOT file/dispatch one (tracks_new_post
+#           refuses this role explicitly). With policy.sod_accept on, a
+#           quality actor additionally cannot accept a card THEY dispatched
+#           (cells/engineer/lanemachine.py's SoD check, keyed on the card's
+#           own `dispatched_by` - see dispatch.py's new_track).
+# auditor:  read-only, everywhere - zero write capabilities in the permission
+#           matrix (spine/auth/permissions.py), by construction rather than
+#           by remembering to exclude it from each write path.
 #
 # `chat_admin_roles()` is the ONE place that answers "which roles may take a
 # structural action on a card" - both the chat verb dispatcher
 # (cells/copilot/copilot_actions.py) and the equivalent REST routes
 # (cells/engineer/routes_track_actions.py, routes_tracks.py) call this
-# instead of re-deriving their own role floor, so tightening
-# policy.chat_admin_roles actually binds every path to the action, not just
-# the chat one.
+# instead of re-deriving their own role floor, so tightening the underlying
+# capability actually binds every path to the action, not just the chat one.
+#
+# Card 2's deferred promise, paid: this used to read settings.json's
+# policy.chat_admin_roles - a THIRD storage location independent of both
+# policy_live.json's "policies" and the new "permissions" matrix (spine/auth/
+# permissions.py). Now it derives from that SAME matrix (capability
+# cards.admin), so there is exactly one place that answers "who may
+# structurally touch a card" instead of two that could silently drift apart.
+# settings.json's old policy.chat_admin_roles key is no longer read here -
+# still technically writable via the chat "configure" verb (policy.* is in
+# ALLOWED_CONFIG), but inert; changing WHO is admin now goes through
+# permissions.set_role_caps("<role>", [...,"cards.admin"], actor).
 def chat_admin_roles():
-    from spine.storage import events
-    return (events.settings().get("policy") or {}).get(
-        "chat_admin_roles", ["owner", "operator"])
+    from spine.auth import permissions
+    return [r for r in ROLES if permissions.can({"role": r}, "cards.admin")]
 
 
 def is_admin(user):
@@ -191,10 +209,32 @@ def _token_hash(token):
     return hashlib.sha256((token or "").encode()).hexdigest()
 
 
-def _token_record(token, label):
+def _token_record(token, label, expires_days=None):
     th = _token_hash(token)
-    return {"label": label or "device", "th": th, "id": th[:12],
-            "tail": token[-6:], "created": time.strftime("%Y-%m-%d %H:%M:%S")}
+    rec = {"label": label or "device", "th": th, "id": th[:12],
+           "tail": token[-6:], "created": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if expires_days:
+        rec["expires"] = time.strftime("%Y-%m-%d",
+            time.localtime(time.time() + expires_days * 86400))
+    return rec
+
+
+STALE_DAYS = 90  # card 5 debt (rbac-audit-hardening-partial): access-review
+                 # signal, not an enforcement - a stale token still works
+                 # until someone revokes it, this only flags it for review.
+
+
+def _token_stale(t):
+    """Unused (or never used) for STALE_DAYS - review signal for the Users
+    panel, computed live from created/last_used, never a stored flag."""
+    basis = t.get("last_used") or t.get("created")
+    if not basis:
+        return False
+    try:
+        age_s = time.time() - time.mktime(time.strptime(basis[:19], "%Y-%m-%d %H:%M:%S"))
+    except ValueError:
+        return False
+    return age_s > STALE_DAYS * 86400
 
 
 def _migrate_tokens(users):
@@ -304,20 +344,44 @@ def set_role(name, role, actor=None):
 
 # -- device/API tokens ---------------------------------------------------
 
-def issue_token(name, label, actor=None):
+def issue_token(name, label, actor=None, expires_days=None):
     """Mint a device token. The plaintext is returned HERE AND NOWHERE ELSE -
-    only its hash is kept, so a lost token is re-issued, never recovered."""
+    only its hash is kept, so a lost token is re-issued, never recovered.
+    `expires_days` is optional (card 5 debt) - None keeps today's behaviour
+    (never expires); resolve() refuses a token past its `expires` date."""
     users = list_users()
     for u in users:
         if u["name"] == name:
             tok = "sdk_" + secrets.token_urlsafe(24)
-            rec = _token_record(tok, label)
+            rec = _token_record(tok, label, expires_days=expires_days)
             u.setdefault("tokens", []).append(rec)
             _save(USERS, users)
             _audit("token.issue", actor, name,
-                   label=rec["label"], tail=_tail(tok), token_id=rec["id"])
+                   label=rec["label"], tail=_tail(tok), token_id=rec["id"],
+                   expires=rec.get("expires"))
             return tok
     raise ValueError("no such user")
+
+
+def _touch_token(name, token_id):
+    """Best-effort, throttled to once/day: resolve() runs on EVERY
+    authenticated request, so this must not rewrite users.json every time -
+    only when the stored last_used is missing or already a day stale."""
+    today = time.strftime("%Y-%m-%d")
+    try:
+        users = _load(USERS)
+        for u in users:
+            if u["name"] != name:
+                continue
+            for t in u.get("tokens", []):
+                if t.get("id") == token_id:
+                    if (t.get("last_used") or "")[:10] == today:
+                        return  # already touched today, skip the write
+                    t["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    _save(USERS, users)
+                    return
+    except Exception:
+        pass  # never let a bookkeeping write fail an actual auth check
 
 def revoke_token(name, ident, actor=None):
     """Revoke by token id (what the owner panel has) or by the full token
@@ -427,7 +491,11 @@ def resolve(sid=None, token=None):
         for u in list_users():
             for t in u.get("tokens", []):
                 if hmac.compare_digest(t.get("th", ""), th):
+                    exp = t.get("expires")
+                    if exp and exp < time.strftime("%Y-%m-%d"):
+                        continue  # expired: same as not matching at all
                     name = u["name"]
+                    _touch_token(u["name"], t["id"])
     if not name:
         return None
     u = get_user(name)

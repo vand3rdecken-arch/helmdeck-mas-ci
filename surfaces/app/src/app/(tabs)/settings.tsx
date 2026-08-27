@@ -12,13 +12,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useCellEnabled } from "@/data/cells";
-import type { UserRow } from "@/data/types";
+import type { Me, UserRow } from "@/data/types";
 import { LANGS, useT, type Lang } from "@/i18n";
+import { can } from "@/kernel";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
+import { GxpActivate } from "@/ui/gxp_activate";
 import { PMControls } from "@/ui/pm_panel";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { DesktopUpdateBanner } from "@/ui/desktop_update";
@@ -168,8 +170,15 @@ export default function Settings() {
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
   const actors = metrics?.capacity?.actors ?? {};
   const pmEnabled = useCellEnabled("pm");
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
 
   const field = fieldStyle(t);
+
+  // ---- GxP mode (door: system, card 6) ----
+  const [showGxp, setShowGxp] = useState(false);
+  const [gxpMsg, setGxpMsg] = useState<string | null>(null);
+  const { data: gxpState } = useQuery({ queryKey: ["gxpState"], queryFn: api.gxpState,
+    enabled: can(me, "gxp.activate") });
 
   // ---- business (door: system) ----
   const [repo, setRepo] = useState("");
@@ -653,7 +662,16 @@ export default function Settings() {
                   <View style={{ gap: 3 }}>
                     {u.tokens.map((tk) => (
                       <View key={tk.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>{tk.label} · …{tk.tail}</Text>
+                        <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                          {tk.label} · …{tk.tail}
+                          {tk.stale ? "  " : ""}
+                        </Text>
+                        {/* card 5 debt: >90d unused, computed server-side */}
+                        {tk.stale ? (
+                          <View style={{ borderWidth: 1, borderColor: t.warn + "66", borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ color: t.warn, fontSize: 9.5, fontWeight: "600" }}>{tr("settings.users.stale")}</Text>
+                          </View>
+                        ) : null}
                         <Pressable onPress={() => revokeToken(u, tk.id)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
                       </View>
                     ))}
@@ -764,9 +782,35 @@ export default function Settings() {
           <View style={{ height: 12 }} />
           <Btn label={tr("ui.save")} onPress={saveBusiness} />
         </Panel>
+
+        {/* GxP-mode activation (card 6, ops/docs/backlog/rbac-gxp) - defense
+            in depth beyond this door already being owner-only: also checked
+            against the live capability matrix, not assumed from the door. */}
+        {can(me, "gxp.activate") ? (
+          <Panel>
+            <SectionLabel text={tr("gxp.openDialog")} />
+            <Hint text={tr("gxp.openDialogSub")} />
+            <Text style={{ color: gxpState?.active ? t.ok : t.txtTertiary, fontSize: 12, marginBottom: 8 }}>
+              {gxpState?.active
+                ? (gxpState.scope === "workspace"
+                    ? tr("gxp.activeWorkspace", { who: gxpState.activated_by ?? "?" })
+                    : tr("gxp.activeRepos", { who: gxpState.activated_by ?? "?", n: gxpState.repos?.length ?? 0 }))
+                : tr("gxp.inactive")}
+            </Text>
+            {gxpMsg ? <Text style={{ color: t.ok, fontSize: 12, marginBottom: 8 }}>{gxpMsg}</Text> : null}
+            <Btn label={tr("gxp.openDialog")} kind="ghost" onPress={() => { setGxpMsg(null); setShowGxp(true); }} />
+          </Panel>
+        ) : null}
+
         <DesktopUpdateBanner />
         <UpdatesPanel />
       </ScrollView>
+      {showGxp ? (
+        <GxpActivate
+          onClose={() => setShowGxp(false)}
+          onActivated={(msg) => setGxpMsg(msg)}
+        />
+      ) : null}
     </View>
   );
 }

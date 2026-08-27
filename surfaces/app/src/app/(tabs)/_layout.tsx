@@ -8,40 +8,21 @@ import { useBoardFilter } from "@/data/boardfilter";
 import { useT } from "@/i18n";
 import { tokens } from "@/theme/tokens";
 import { useSurfaces } from "@/kernel/react";
-import type { Surface } from "@/kernel";
+import { can, type Surface } from "@/kernel";
 import { useResponsive } from "@/ui/responsive";
+import { NAV, TAB_FALLBACK, type NavItem as FallbackNavItem, type TabItem as FallbackTabItem } from "./_nav_fallback";
 
 const t = tokens.dark;
 const LOGO = require("../../../assets/images/icon.png");
 
 type IconName = keyof typeof Ionicons.glyphMap;
-// labelKey / sectionKey are i18n keys, not prose - the nav renders them through
-// the translator so the shell speaks the workspace language.
-type NavItem = { name: string; labelKey: string; icon: IconName; sectionKey?: string; teamOnly?: boolean; ownerOnly?: boolean };
-
-// Desktop left-sidebar FALLBACK nav - used ONLY when the kernel registry is
-// empty (boot failed). Must mirror the registry (tabs.ts + the 3 cell
-// surfaces) 1:1, or a kernel failure silently changes the shell. This array
-// had drifted from before the index/board swap (its "index" was the board,
-// it carried a phantom "dashboard" route and lacked board + modules) -
-// caught and resynced in the 2026-08-24 duplicate audit.
-const NAV: NavItem[] = [
-  { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
-  { name: "board", labelKey: "nav.board", icon: "grid-outline" },
-  { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
-  { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", sectionKey: "nav.sectionWorkflow" },
-  // recordings (/runs) is client-blocked server-side (routes_runs.py) - see
-  // teamOnly below, fixed alongside the same-day server gate.
-  { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline", teamOnly: true },
-  { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", teamOnly: true },
-  { name: "history", labelKey: "nav.history", icon: "time-outline", teamOnly: true },
-  { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
-  // automation/settings are GET-owner-only server-side; ownerOnly hides them
-  // from operators too (teamOnly alone only hid clients - see tabs.ts).
-  { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", ownerOnly: true },
-  { name: "settings", labelKey: "nav.settings", icon: "settings-outline", ownerOnly: true },
-  { name: "modules", labelKey: "nav.modules", icon: "cube-outline", sectionKey: "nav.sectionSetup", teamOnly: true },
-];
+// NAV/TAB_FALLBACK data now lives in ./_nav_fallback.ts (card 4, ops/docs/
+// backlog/rbac-gxp) - split out so a plain-node self-test can import the
+// SAME arrays without pulling in react-native (which this file does).
+// Re-typed here with the stricter Ionicons icon type; the data file itself
+// uses a plain string (see its own comment on why).
+type NavItem = FallbackNavItem & { icon: IconName };
+type TabItem = FallbackTabItem & { icon: IconName };
 // Cell-enable nav gating (Phase 1 of the cell-registry decree, daemon/debt.py
 // order 33; the 3 tab-bearing surfaces got real route+nav in the
 // plugin-kernel-dual-nav cutover): a disabled cell's tab must not appear,
@@ -90,8 +71,8 @@ function Sidebar({ state, navigation }: any) {
   const disabledCells = useDisabledCellSurfaces();
   const registryNav = surfaces
     .filter((s) => s.route && s.nav && !s.nav.phoneOnly && !isSurfaceCellDisabled(s, disabledCells))
-    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, teamOnly: s.nav!.teamOnly, ownerOnly: s.nav!.ownerOnly }));
-  const navItems: NavItem[] = registryNav.length ? registryNav : NAV;
+    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, cap: s.nav!.cap }));
+  const navItems: NavItem[] = registryNav.length ? registryNav : (NAV as NavItem[]);
   const filter = useBoardFilter((s) => s.filter);
   const setFilter = useBoardFilter((s) => s.setFilter);
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
@@ -126,10 +107,7 @@ function Sidebar({ state, navigation }: any) {
         <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>HelmDeck</Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        {navItems.filter((item) =>
-          !(item.teamOnly && me?.role === "client") &&
-          !(item.ownerOnly && me?.role !== "owner"),
-        ).map((item) => {
+        {navItems.filter((item) => can(me, item.cap)).map((item) => {
           const active = activeName === item.name;
           const color = active ? t.txtPrimary : t.txtSecondary;
           return (
@@ -176,21 +154,10 @@ function Sidebar({ state, navigation }: any) {
 // The bottom-bar / tab set, matching the hard-coded list 1:1. Used as the
 // FALLBACK when the kernel registry is empty (no KernelProvider / boot failed),
 // so the shell renders identically with or without the plugin kernel.
-type TabItem = { name: string; labelKey: string; icon: IconName; desktopOnly?: boolean; phoneOnly?: boolean };
-const TAB_FALLBACK: TabItem[] = [
-  { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
-  { name: "board", labelKey: "nav.board", icon: "grid-outline" },
-  { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
-  { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", desktopOnly: true },
-  { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline", desktopOnly: true },
-  { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", desktopOnly: true },
-  { name: "history", labelKey: "nav.history", icon: "time-outline", desktopOnly: true },
-  { name: "connectors", labelKey: "nav.connectors", icon: "sync-outline", desktopOnly: true },
-  { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", desktopOnly: true },
-  { name: "settings", labelKey: "nav.settings", icon: "settings-outline", desktopOnly: true },
-  { name: "modules", labelKey: "nav.modules", icon: "cube-outline", desktopOnly: true },
-  { name: "more", labelKey: "nav.more", icon: "ellipsis-horizontal", phoneOnly: true },
-];
+// `cap`: card 4 closed a real gap here - this list previously had NO role
+// gating fields at all, so a kernel failure (or, before the registry path was
+// fixed below, even the normal registry path) showed every tab, owner-only
+// ones included, to every role on the phone bottom bar.
 
 export default function TabsLayout() {
   const tr = useT();
@@ -199,10 +166,11 @@ export default function TabsLayout() {
   // falling back to TAB_FALLBACK when no kernel is provided — identical output.
   const surfaces = useSurfaces();
   const disabledCells = useDisabledCellSurfaces();
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const fromRegistry = surfaces
     .filter((s) => s.route && s.nav && !isSurfaceCellDisabled(s, disabledCells))
-    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly }));
-  const tabItems: TabItem[] = fromRegistry.length ? fromRegistry : TAB_FALLBACK;
+    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly, cap: s.nav!.cap }));
+  const tabItems: TabItem[] = (fromRegistry.length ? fromRegistry : (TAB_FALLBACK as TabItem[])).filter((item) => can(me, item.cap));
   // Hiding a screen from the phone bottom bar uses href:null (see TAB_FALLBACK /
   // the map below). A null tabBarButton still reserves a flex slot, so the real
   // tabs would be sized to 1/11 of the width and clip to "Bo…", "Da…".

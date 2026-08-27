@@ -15,11 +15,9 @@ from spine.ops.runs import REC, list_runs
 
 def runs_get(self, user):
     # Unlike runs_item_get below, this lists EVERY recorded run across every
-    # card - no per-card owns_card check applies here, so the role gate is
-    # the only thing standing between a client and the whole team's screen
-    # recordings. Same tier as /history and /sessions/claude (client blocked).
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    # card - no per-card owns_card check applies here, so the role gate (now
+    # the central permission guard, cap recordings.view) is the only thing
+    # standing between a client and the whole team's screen recordings.
     runs = list_runs()
     for m in runs:
         m["steps"] = len(read_timeline(os.path.join(REC, m["id"])))
@@ -28,9 +26,7 @@ def runs_get(self, user):
 
 def live_jpg_get(self, user):
     # The desktop's LIVE screen frame while a run records - same sensitivity
-    # as the recordings list above, same gate.
-    if user["role"] == "client":
-        return self._send(403, b"owner/operator only", "text/plain")
+    # as the recordings list above, same gate (cap recordings.view).
     from spine.http import server
     lp = server._active_live()
     if not lp:
@@ -120,4 +116,11 @@ def runs_item_get(self, user, rid, what):
 GET_ROUTES = {
     "/runs": runs_get,
     "/live.jpg": live_jpg_get,
+}
+# runs_item_get (/runs/<id>/<what>) deliberately has NO capability entry -
+# it's gated by auth.owns_card() (resource ownership, a client may see their
+# OWN card's recording), which is a different question than "can this role
+# ever see recordings" and never belongs in the capability matrix.
+GET_CAPS = {
+    "/runs": "recordings.view", "/live.jpg": "recordings.view",
 }

@@ -183,6 +183,7 @@ export const settings: Dict = {
   // ---- users ----
   "settings.users.touchesToday": { de: "{n}t heute", en: "{n}t today" },
   "settings.users.revoke": { de: "widerrufen", en: "revoke" },
+  "settings.users.stale": { de: ">90 Tage inaktiv", en: ">90 days unused" },
   "settings.users.invite": { de: "Einladen", en: "Invite" },
   "settings.users.addToken": { de: "+ Token", en: "+ token" },
   "settings.users.password": { de: "Passwort", en: "Password" },
