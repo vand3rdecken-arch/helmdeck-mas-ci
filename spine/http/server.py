@@ -73,6 +73,7 @@ from spine.http.routes import routes_runs
 from spine.http.routes import routes_system
 from spine.http.routes import routes_cells
 from spine.http.routes import routes_devices
+from spine.http.routes import routes_gxp
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -191,10 +192,20 @@ class H(BaseHTTPRequestHandler):
             from spine.registry import cells
             if cells.path_disabled(p):
                 return self._send(404, json.dumps({"error": "cell disabled"}))
+            # Permission gate (ops/docs/backlog/rbac-gxp card 2): same position
+            # as the cell gate above, same "one derived check" shape. No-op for
+            # any route not yet migrated onto GET_CAPS/PATTERNS - its own inline
+            # check (below) remains the only enforcement until it's migrated
+            # (spine/auth/permissions.py's module docstring + debt.py).
+            from spine.auth import permissions
+            _parts = p.strip("/").split("/")
+            _cap = permissions.cap_for("GET", p, _parts)
+            if _cap:
+                _denial = permissions.require(user, _cap)
+                if _denial:
+                    return self._send(*_denial)
             if p == "/users":
                 from spine.auth import auth
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
                 # `id` + `tail`, never the token itself. This used to ship every
                 # device token in full to the panel on every load, while the UI
                 # only ever displayed the last six characters - the other 186
@@ -260,6 +271,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_system.GET_ROUTES[p](self, user)
             if p in routes_devices.GET_ROUTES:
                 return routes_devices.GET_ROUTES[p](self, user)
+            if p in routes_gxp.GET_ROUTES:
+                return routes_gxp.GET_ROUTES[p](self, user)
             if len(parts) == 3 and parts[0] == "devices" and parts[2] == "queue":
                 return routes_devices.devices_queue_get(self, user, parts[1])
             if len(parts) == 4 and parts[0] == "devices" and parts[2] == "card":
@@ -334,11 +347,16 @@ class H(BaseHTTPRequestHandler):
             from spine.registry import cells
             if cells.path_disabled(p):
                 return self._send(404, json.dumps({"error": "cell disabled"}))
-            # ---- user management (owner only) ----
+            # Permission gate (see do_GET's twin block for the full rationale).
+            from spine.auth import permissions
             parts = p.strip("/").split("/")
+            _cap = permissions.cap_for("POST", p, parts)
+            if _cap:
+                _denial = permissions.require(user, _cap)
+                if _denial:
+                    return self._send(*_denial)
+            # ---- user management (owner only, cap users.manage) ----
             if parts[0] == "users":
-                if user["role"] != "owner":
-                    return self._send(403, json.dumps({"error": "owner only"}))
                 try:
                     # actor= is what makes these auditable: auth.py records WHO
                     # changed WHOSE account, and only this layer knows the caller.
@@ -396,6 +414,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_pm.POST_ROUTES[p](self, user, body)
             if p in routes_devices.POST_ROUTES:
                 return routes_devices.POST_ROUTES[p](self, user, body)
+            if p in routes_gxp.POST_ROUTES:
+                return routes_gxp.POST_ROUTES[p](self, user, body)
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "devices" and parts[2] == "revoke":
                 return routes_devices.devices_revoke_post(self, user, body, parts[1])
