@@ -77,7 +77,30 @@ DEBT = [
                 "change - no commit carries this half). This was the real "
                 "engine behind the loop; the daemon-restart trigger below is "
                 "a separate, still-open question about why the daemon kept "
-                "restarting at all.",
+                "restarting at all.\n"
+                "NEW OPEN ISSUE, found the same session (13:17-13:31): "
+                "Henry's own two hands-on attempts at THIS exact escalation "
+                "(ship-aborted-1787829465743) never closed it - both ended "
+                "'ask failed: no JSON in reply' and it gave up after "
+                "_MAX_ATTEMPTS, notifying the owner, EVEN THOUGH the "
+                "underlying turn had done real, correct, valuable work (it is "
+                "the turn that found and fixed the settings.json path bug "
+                "documented above). Root cause: _ask()'s headless `claude -p` "
+                "subprocess runs with cwd=_HENRY_REPO_ROOT - the SAME repo "
+                "checkout this daemon's own session lives in - so it inherits "
+                "THIS repo's project-level SessionStart/Stop hooks (the "
+                "ALIGN/ANALYZE/EXECUTE/TEST/CLEAN/BUILD/COMMIT build loop, "
+                "CLAUDE.md). Both attempts got redirected into filling in "
+                ".loop/workorder.md as a normal build-loop session would, "
+                "instead of replying with the bounded-verb JSON henry_broker."
+                "py's own prompt demands - so _ask()'s regex-JSON parse found "
+                "prose about the workorder instead. The stray, git-ignored "
+                ".loop/workorder.md this left behind then made the NEXT "
+                "interactive session's OWN loop_state.py read 'stuck at "
+                "ANALYZE' - a real collision between two consumers of the "
+                "same repo-root hooks, not just a wasted turn. Deleted by "
+                "hand this session; nothing currently prevents it recurring "
+                "on the next hands-on Henry turn.",
         "why_it_bites": "Every daemon restart while a ship.lock is stale "
                         "auto-commits the ENTIRE uncommitted working tree "
                         "via henry_broker.py's _baseline_commit() (a card-"
@@ -97,7 +120,10 @@ DEBT = [
                    "Test-sandboxing gap (closed): any ops/tests/*.py that "
                    "imports cells.copilot.henry_broker and calls _decide() "
                    "or _hands_on_ask() on a privileged/card-less escalation "
-                   "without first redirecting _HENRY_REPO_ROOT.",
+                   "without first redirecting _HENRY_REPO_ROOT. Hook-hijack "
+                   "gap (open): any privileged/card-less escalation at all - "
+                   "every _ask() call inherits this repo's own build-loop "
+                   "hooks via cwd, nothing scopes them to Henry's turn.",
         "fix": "Daemon-restart half still needs: a boot-time log line in "
                "daemon/swarm.py or spine/http/server.py's serve() noting the "
                "previous process's exit reason if determinable, or watching "
@@ -107,7 +133,13 @@ DEBT = [
                "hands-on judgement turn (not just ones that edit code) may "
                "be too broad - a card-less, read-only-outcome escalation "
                "like a misconfigured deploy hook doesn't need a tree "
-               "snapshot at all.",
+               "snapshot at all. Hook-hijack half needs: either point "
+               "henry_broker._ask()'s subprocess at a settings scope that "
+               "excludes THIS repo's own SessionStart/Stop hooks (the CLI "
+               "supports --settings, though HARNESS.md warns it 'excludes "
+               "nothing' by itself - worth re-reading before relying on it "
+               "here), or make the build-loop's Stop hook recognize a "
+               "workorder it did not itself create and refuse to gate on it.",
     },
     {
         "id": "rbac-audit-hardening-partial",

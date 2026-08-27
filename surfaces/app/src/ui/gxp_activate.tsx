@@ -8,6 +8,14 @@ import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Inline, Section } from "./sign_off";
 
+// numberOfLines=1 truncates from the END, which for a filesystem path hides
+// exactly the part that tells two repos apart (the trailing folder name) -
+// found live screenshotting this dialog. Truncate from the START instead,
+// so "C:\...\helmdeck-release" and "C:\...\helmdeck-main" stay distinguishable.
+function shortPath(p: string, max = 44): string {
+  return p.length <= max ? p : "…" + p.slice(-(max - 1));
+}
+
 // GxP-mode activation (ops/docs/backlog/rbac-gxp card 6; ops/docs/
 // gxp-mode-design.md §2.7's own text: "Einschalten: Owner-Aktion, selbst
 // signiert, in der Ereignissenke"). Deliberately built as a sibling of
@@ -140,7 +148,7 @@ export function GxpActivate({ onClose, onActivated }: {
                       <Ionicons name={picked.has(p) ? "checkbox" : "square-outline"} size={18}
                         color={picked.has(p) ? t.human : t.txtTertiary} />
                       <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1, fontFamily: "monospace" }}
-                        numberOfLines={1}>{p}</Text>
+                        numberOfLines={1}>{shortPath(p)}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -176,7 +184,7 @@ export function GxpActivate({ onClose, onActivated }: {
                         backgroundColor: t.surface2, borderRadius: 6, padding: 8 }}>
                         <Ionicons name="git-branch-outline" size={14} color={t.human} />
                         <Text style={{ color: t.txtSecondary, fontSize: 12, flex: 1, fontFamily: "monospace" }}
-                          numberOfLines={1}>{p}</Text>
+                          numberOfLines={1}>{shortPath(p)}</Text>
                         <Pressable onPress={() => removeNewPath(p)} hitSlop={8}>
                           <Ionicons name="close" size={15} color={t.txtTertiary} />
                         </Pressable>
