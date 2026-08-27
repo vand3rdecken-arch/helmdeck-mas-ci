@@ -104,6 +104,7 @@ The action objects (inside the ```actions array) are zero or more of:
    {"type": "run_connector", "name": "<installed connector>"}  - run it now; items become backlog cards
    {"type": "rollback_connector", "name": "..."}  - restore the previous version (originals are always archived)
    {"type": "schedule_connector", "name": "...", "every_minutes": 60}  - or 0 to unschedule
+   {"type": "audit_query", "kind": "gxp,signature", "actor": "duy", "since": "2026-08-01", "q": "", "limit": 20}  - read the append-only audit trail (who/what/when) to answer a question like "wer hat GxP aktiviert" or "zeig mir die letzten Ablehnungen diese Woche". All params optional (kind is a comma-separated filter, e.g. "gxp,signature,reconfig,settings"; q is a free-text substring match). Read-only - it can never write anything. Roles per spine/auth/permissions.py's matrix (owner + auditor by default, refused otherwise with the exact roles that DO have it).
 
 configure may ONLY touch these keys (the flexible half of the workspace):
   policy.lane_labels {backlog,working,review,done: "label"} - rename lanes
@@ -118,8 +119,11 @@ configure may ONLY touch these keys (the flexible half of the workspace):
   dashboard {tiles: [...], panels: [...]} - what the economics dashboard shows, in order.
     tiles vocabulary: value_delivered, ai_spend, margin, yield, automation, leverage
     panels vocabulary: capacity, gates, work
-Everything else (auth, users, drivers, audit, the gate itself) is FIXED - refuse
-politely and explain it is part of the harness, not policy.
+Everything else (auth, users, drivers, the gate itself) is FIXED - refuse
+politely and explain it is part of the harness, not policy. The audit trail
+itself cannot be CONFIGURED, but it CAN be READ - use audit_query above
+whenever the owner asks a who/what/when question about the audit trail
+instead of refusing it as harness.
 
 CAPABILITY CHARTER - read the scope carefully, it is narrower than it looks:
 it governs CODE THAT GETS INSTALLED INTO THIS PROGRAM (connectors, templates,

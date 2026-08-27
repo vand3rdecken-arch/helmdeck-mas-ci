@@ -15,7 +15,7 @@ from daemon.paths import DAEMON_ROOT as ROOT
 USERS = os.path.join(ROOT, "users.json")
 SESS = os.path.join(ROOT, "sessions.json")
 SESSION_TTL = 30 * 86400
-ROLES = ("owner", "operator", "client")
+ROLES = ("owner", "operator", "client", "quality", "auditor")
 
 # -- role model ------------------------------------------------------------
 # owner:    unrestricted - the only role that may touch identity (this
@@ -27,6 +27,15 @@ ROLES = ("owner", "operator", "client")
 #           reconfigures who else can do it.
 # client:   file + comment on their OWN card only (new/steer/answer/cancel/
 #           presence) - never a structural action on any card.
+# quality:  (ops/docs/backlog/rbac-gxp card 3) the SoD approver counterpart -
+#           may accept/sign a card, may NOT file/dispatch one (tracks_new_post
+#           refuses this role explicitly). With policy.sod_accept on, a
+#           quality actor additionally cannot accept a card THEY dispatched
+#           (cells/engineer/lanemachine.py's SoD check, keyed on the card's
+#           own `dispatched_by` - see dispatch.py's new_track).
+# auditor:  read-only, everywhere - zero write capabilities in the permission
+#           matrix (spine/auth/permissions.py), by construction rather than
+#           by remembering to exclude it from each write path.
 #
 # `chat_admin_roles()` is the ONE place that answers "which roles may take a
 # structural action on a card" - both the chat verb dispatcher
