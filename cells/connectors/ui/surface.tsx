@@ -12,7 +12,7 @@
 // against the /cells manifest generically.
 
 import ConnectorsTab from "@/app/(tabs)/connectors";
-import { KEYS, type Plugin, type Surface, TEAM_MEMBER_CAP } from "@/kernel";
+import { KEYS, type Plugin, type Surface } from "@/kernel";
 
 const connectors: Surface = {
   id: "surfaces.connectors",
@@ -23,12 +23,9 @@ const connectors: Surface = {
   // cutover, daemon/debt.py plugin-kernel-dual-nav): this Surface is now
   // BOTH what renders (component) and where it lives in nav (route/nav).
   // tabs.ts's matching entry is removed in the same change.
-  // cap (card 4, ops/docs/backlog/rbac-gxp): routes_connectors.py is not yet
-  // migrated onto permissions.py (client blocked server-side, no capability
-  // backs it yet) - TEAM_MEMBER_CAP is the interim stand-in, see kernel/caps.ts.
   route: "connectors",
   nav: { group: "more", order: 7, icon: "sync-outline", labelKey: "nav.connectors",
-        sectionKey: "nav.sectionSetup", cap: TEAM_MEMBER_CAP, desktopOnly: true },
+        sectionKey: "nav.sectionSetup", teamOnly: true, desktopOnly: true },
 };
 
 export const connectorsSurface: Plugin = {

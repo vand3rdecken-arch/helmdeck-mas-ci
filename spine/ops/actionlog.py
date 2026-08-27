@@ -6,7 +6,6 @@ import json, os, time, threading
 
 class ActionLog:
     def __init__(self, run_dir):
-        self.run_dir = run_dir
         self.path = os.path.join(run_dir, "actions.jsonl")
         self.t0 = time.time()
         self._lock = threading.Lock()
@@ -20,14 +19,6 @@ class ActionLog:
         rec.update(extra)
         with self._lock:
             self._n += 1
-            # run_dir can go missing out from under a live card (an external
-            # wipe of daemon/recordings/, found live 2026-08-27: every steer/
-            # answer/lane-move on an affected card crashed here with
-            # FileNotFoundError instead of degrading, silently bricking the
-            # card). Recreate it rather than let a housekeeping gap turn into
-            # a dead card - this file is the primary review artifact, so
-            # losing a write here is worse than a redundant makedirs.
-            os.makedirs(self.run_dir, exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         return rec
