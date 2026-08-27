@@ -18,8 +18,8 @@
 
 import { can, TEAM_MEMBER_CAP } from "./caps";
 import { TABS } from "../plugins/surfaces/tabs";
-import { NAV, TAB_FALLBACK } from "../app/(tabs)/_nav_fallback";
-import { GROUPS } from "../app/_more_groups";
+import { NAV, TAB_FALLBACK } from "../nav/nav_fallback";
+import { GROUPS } from "../nav/more_groups";
 import type { Me } from "../data/types";
 
 let failures = 0;

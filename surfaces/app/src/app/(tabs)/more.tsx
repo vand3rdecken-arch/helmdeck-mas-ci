@@ -19,12 +19,16 @@ import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { Panel, SectionLabel } from "@/ui/kit";
 import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
-import { GROUPS as GROUPS_DATA } from "../_more_groups";
+import { GROUPS as GROUPS_DATA } from "@/nav/more_groups";
 
-// GROUPS data now lives in ../_more_groups.ts (card 4, ops/docs/backlog/
-// rbac-gxp) - split out so a plain-node self-test can import the SAME data
-// without pulling in react-native/@expo/vector-icons. Re-typed here with
-// the stricter Ionicons icon type; the data file itself uses a plain string.
+// GROUPS data lives in @/nav/more_groups.ts - split out so a plain-node
+// self-test can import the SAME data without pulling in react-native/
+// @expo/vector-icons, and moved OUT of app/ entirely (2026-08-27): a data
+// file directly under app/ gets swept into expo-router's route/tab scan
+// (no default export -> "Element type is invalid ... got undefined" if it
+// ends up rendered as a screen - see (tabs)/_layout.tsx's note on the same
+// bug for _nav_fallback.ts). Re-typed here with the stricter Ionicons icon
+// type; the data file itself uses a plain string.
 const GROUPS = GROUPS_DATA as unknown as
   readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string, string | undefined])[]][];
 

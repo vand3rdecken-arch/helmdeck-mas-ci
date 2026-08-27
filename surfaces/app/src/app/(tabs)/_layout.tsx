@@ -10,15 +10,21 @@ import { tokens } from "@/theme/tokens";
 import { useSurfaces } from "@/kernel/react";
 import { can, type Surface } from "@/kernel";
 import { useResponsive } from "@/ui/responsive";
-import { NAV, TAB_FALLBACK, type NavItem as FallbackNavItem, type TabItem as FallbackTabItem } from "./_nav_fallback";
+import { NAV, TAB_FALLBACK, type NavItem as FallbackNavItem, type TabItem as FallbackTabItem } from "@/nav/nav_fallback";
 
 const t = tokens.dark;
 const LOGO = require("../../../assets/images/icon.png");
 
 type IconName = keyof typeof Ionicons.glyphMap;
-// NAV/TAB_FALLBACK data now lives in ./_nav_fallback.ts (card 4, ops/docs/
-// backlog/rbac-gxp) - split out so a plain-node self-test can import the
-// SAME arrays without pulling in react-native (which this file does).
+// NAV/TAB_FALLBACK data lives in @/nav/nav_fallback.ts - split out so a
+// plain-node self-test can import the SAME arrays without pulling in
+// react-native (which this file does), and moved OUT of app/ entirely
+// (2026-08-27, the crash this fixed): expo-router's file-based router does
+// NOT exclude underscore-prefixed files from its route/tab scan the way
+// Next.js does, so `(tabs)/_nav_fallback.ts` was silently picked up as an
+// extra phone tab with no default-exported screen component - "Element
+// type is invalid ... got undefined" on tap. Any data file that must be
+// imported by app/ code but is not itself a screen belongs OUTSIDE app/.
 // Re-typed here with the stricter Ionicons icon type; the data file itself
 // uses a plain string (see its own comment on why).
 type NavItem = FallbackNavItem & { icon: IconName };
