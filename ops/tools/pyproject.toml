@@ -1,0 +1,31 @@
+# Packaging for the remote device worker ONLY (ops/docs/backlog/
+# remote-device-execution PLAN-hardening.md Phase F). Deliberately scoped to
+# the single hd_worker module via py-modules - `pip install ops/tools/`
+# exposes an `hd-worker` console script without pulling in the rest of
+# ops/tools/ (design_hook, loop_state, card_tool_guard, ...) which are
+# daemon-side, not things a team member installs on their own PC.
+#
+# The worker is pure stdlib (urllib/json/subprocess/winreg) - no
+# dependencies to resolve, so an install is just the entry point. A member
+# still needs a local git clone of the target repo (that is --repo/config
+# repo); this packages the RUNNER, not the repo.
+#
+# Autostart at login is separate from pip: `hd-worker --install-autostart
+# --config <path>` registers an HKCU Run key (Windows). mac/Linux: point a
+# launchd/systemd unit at `hd-worker --config <path>` by hand.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helmdeck-device-worker"
+version = "0.1.0"
+description = "HelmDeck remote device worker - runs cards on a team member's own PC, submits branches back to the central daemon for the gate."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+hd-worker = "hd_worker:main"
+
+[tool.setuptools]
+py-modules = ["hd_worker"]

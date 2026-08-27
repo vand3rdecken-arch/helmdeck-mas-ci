@@ -1,0 +1,144 @@
+appId: work.21stgen.helmdeck
+productName: HelmDeck
+directories:
+  output: release
+# only the Electron shell goes in the asar; the daemon + built UI are shipped as
+# plain resources so the app can spawn them (Python daemon, Next standalone server)
+files:
+  - main.js
+  - setup.js
+  - updater.js         # the relay OTA auto-updater (UI-bundle-only) main.js require()s
+  - native-updater.js  # electron-updater wrapper - FULL-app updates (main.js included)
+  - package.json
+# electron-updater's target feed (Paseo parity): a real full-app auto-update,
+# not just the UI bundle. --publish never (release_desktop.sh's default) still
+# writes latest.yml + the NSIS blockmap locally without uploading anything -
+# the script uploads them itself alongside the .exe, same discipline as the
+# hand-rolled checksum/SHA256SUMS.txt step already there.
+publish:
+  provider: github
+  owner: Tienduyvo
+  repo: helmdeck
+extraResources:
+  # the Python daemon SOURCE (the brain + runner). Secrets and per-user data
+  # are NEVER bundled - they are created fresh on the user's machine at first
+  # run. ALLOWLIST, not a denylist: a live daemon directory accumulates state
+  # files (dbs, session tokens, service-account keys, sqlite backups, cached
+  # STT models) interleaved with source in the SAME directories, and a
+  # by-name exclude list silently falls behind - proven live (2026-08-24) when
+  # fcm_service_account.json (a real Firebase private key), sessions.json
+  # (live owner session tokens) and daemon/backups/*.db (a full sqlite backup,
+  # the exclude was "!*.db" which is NOT recursive so a nested backups/*.db
+  # slipped past it) all shipped in a public installer because nobody had
+  # added them to the list. Only source/doc extensions can ever leave the
+  # `daemon/` tree this way, structurally, regardless of what new runtime
+  # file a future feature drops next to its .py.
+  - from: ../../daemon
+    to: daemon
+    filter:
+      - "!**/*"
+      - "**/*.py"
+      - "**/*.md"
+      - "requirements.txt"
+  # spine/ and cells/ live at the REPO ROOT since the two-mains split
+  # (2026-08-24); daemon/ is only the thin launcher + runtime-data home. Same
+  # allowlist discipline as above - source extensions only, never state.
+  - from: ../../spine
+    to: spine
+    filter:
+      - "!**/*"
+      - "**/*.py"
+      - "**/*.md"
+  - from: ../../cells
+    to: cells
+    filter:
+      - "!**/*"
+      - "**/*.py"
+      - "**/*.md"
+  # ops/harness = the agent briefs + settings layers (POLICY AS DATA). Shipping
+  # it is what lets the code hold NO copy of any role text (the 17 KB
+  # board-copilot constant rotted ~1.9k chars behind the file before this): a
+  # packaged install resolves the same files a git checkout does, and the
+  # in-code floors are true emergency stubs. Only current *.md/*.json ship -
+  # .versions/ (machine-local undo history) stays out via the allowlist shape.
+  - from: ../../ops/harness
+    to: ops/harness
+    filter:
+      - "!**/*"
+      - "!.versions/**"
+      - "agents/*.md"
+      - "settings/*.json"
+      - "schema/*.json"
+  # the single Expo web export (static SPA) that main.js serves locally - one
+  # codebase for phone/web/desktop, replacing the old Next.js standalone server.
+  - from: ../app/dist
+    to: app-dist
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "HelmDeck-Setup-${version}-${arch}.${ext}"
+  # the fanned-card mark (ops/tools/make_icon.py) - same glyph as the phone launcher
+  icon: assets/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: HelmDeck
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+mac:
+  # BOTH architectures as SEPARATE artifacts, not one universal binary: a
+  # universal build ships two whole Electron runtimes, doubling every user's
+  # download to spare the rarer one an architecture choice. Apple silicon and
+  # Intel each get their own .dmg/.zip instead.
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    # zip is NOT decoration: Squirrel.Mac - what electron-updater drives on
+    # macOS (native-updater.js) - can only apply a ZIPPED .app; it cannot read
+    # a .dmg. So dmg is for humans, zip is for the auto-updater, and the
+    # latest-mac.yml written beside them is the feed pointing at the zip.
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  artifactName: "HelmDeck-${version}-${arch}.${ext}"
+  category: public.app-category.developer-tools
+  # a 1024x1024 PNG on Apple's icon grid (ops/tools/make_icon.py writes it, and
+  # unlike icon.ico it is TRACKED) - electron-builder converts it to .icns at
+  # build time, so a clean CI checkout needs neither Pillow nor iconutil.
+  icon: assets/icon-mac-1024.png
+  # Notarization REQUIRES the hardened runtime, and the hardened runtime denies
+  # by default exactly what this app is: an Electron shell (JIT) that spawns a
+  # system Python interpreter it did not ship and did not sign. Hence the
+  # explicit entitlements - electron-builder's defaults cover the JIT half but
+  # not the "run an interpreter from outside my bundle" half.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # OFF in the committed config so an UNSIGNED build still succeeds (no cert on
+  # the runner: a first CI run, a laptop check). surfaces/desktop/build-mac.sh turns it on
+  # per-build - and only when a signing identity AND an App Store Connect API
+  # key are both present - by passing `-c.mac.notarize.teamId=<team>`. The
+  # object form is deliberate: `-c.mac.notarize=true` arrives from the CLI as
+  # the STRING "true", which is truthy but carries no team id.
+  notarize: false
+dmg:
+  # a plain, predictable window - the .app on the left, the /Applications drop
+  # target on the right. No custom background bitmap to mis-scale on a Retina
+  # runner, and nothing for hdiutil to choke on in CI.
+  artifactName: "HelmDeck-${version}-${arch}.${ext}"
+  contents:
+    # a bare x/y entry IS the app (dmg-builder's documented default shape) - a
+    # `type: file` without a path is what breaks the layout.
+    - x: 140
+      y: 210
+    - x: 400
+      y: 210
+      type: link
+      path: /Applications

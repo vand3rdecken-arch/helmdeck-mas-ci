@@ -1,0 +1,46 @@
+{
+  "_note": "Canonical seed for the full-dynamism decree. ONE source both the Python daemon and the TS app kernel read (app hydrates via GET /policy; see boot/policies.ts + boot/charter.ts which currently hardcode these SAME values and become fetch-on-boot). Change only via policy.swap() so the mutation is mirrored into the append-only events sink. Values here mirror app CHARTER_DEFAULTS + CHARTER_SEED at seed time.",
+  "version": 1,
+  "policies": {
+    "gateBeforeReview": true,
+    "auditAppendOnly": true,
+    "worktreeIsolation": true,
+    "authRequired": true,
+    "measuredEconomics": true,
+    "wipLimit": 3,
+    "agentMaySwap": false,
+    "engineerEnabled": true,
+    "pmEnabled": true,
+    "processEnabled": true,
+    "connectorsEnabled": true,
+    "copilotEnabled": true,
+    "buildLoopEnabled": true,
+    "sod_accept": false,
+    "permissions": {
+      "owner": ["settings.read", "settings.write", "users.manage", "recordings.view",
+                "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate",
+                "cards.admin", "system.introspect", "projects.view", "projects.manage",
+                "pm.view", "pm.manage"],
+      "operator": ["recordings.view", "devices.manage", "devices.use", "chat.use", "cards.admin",
+                   "projects.view", "pm.view"],
+      "client": [],
+      "quality": [],
+      "auditor": ["settings.read", "recordings.view", "audit.read"]
+    }
+  },
+  "charter": {
+    "source": "CLAUDE.md",
+    "laws": [
+      "Nothing mutates untracked: every module/state/rule change appends a TrackEntry.",
+      "Rules are seeded (not deleted) and swappable; every swap is reversible.",
+      "Load-bearing state is derived and verified from runtime signals, folded in at event time, mutated at exactly one owner (generalized NO-MONKEY-PATCH).",
+      "Secrets (settings.json, users.json, helmdeck.db, tokens) are git-ignored, never committed.",
+      "UI changes are screenshot-and-JUDGED, not just confirmed to render."
+    ]
+  },
+  "capability_charter": {
+    "_note": "DISTINCT from the instruction charter above. This is the connector sandbox (daemon/charter.py): what user-built code may do. It is a SECURITY boundary, not agent-editable prose. Represented here as a seed module for trackability, but swap authority is human-only: agentMaySwap does NOT gate it; capabilitySwapRequiresHuman does, and defaults true.",
+    "capabilitySwapRequiresHuman": true,
+    "source": "daemon/charter.py"
+  }
+}

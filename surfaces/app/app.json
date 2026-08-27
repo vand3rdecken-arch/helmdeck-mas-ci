@@ -1,0 +1,119 @@
+{
+  "expo": {
+    "name": "HelmDeck",
+    "slug": "helmdeck",
+    "version": "1.0.22",
+    "orientation": "default",
+    "icon": "./assets/images/icon.png",
+    "scheme": "helmdeck",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "url": "https://relay.helmdeck.de/updates/manifest",
+      "checkAutomatically": "ON_LOAD",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
+    },
+    "ios": {
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "app.helmdeck",
+      "runtimeVersion": "1.0.5",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleDevelopmentRegion": "de"
+      }
+    },
+    "android": {
+      "package": "app.helmdeck",
+      "versionCode": 63,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "relay.helmdeck.de",
+              "pathPrefix": "/pair"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-updates",
+      [
+        "./plugins/withLanCleartext",
+        {
+          "hosts": []
+        }
+      ],
+      "./plugins/withGlassVoice",
+      "./plugins/withMetaDat",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ],
+      "expo-secure-store",
+      "expo-image",
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a0ea8905-52a1-4223-b102-1dfd9e98d561"
+      }
+    },
+    "owner": "tienduyvo"
+  }
+}

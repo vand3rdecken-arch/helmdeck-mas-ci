@@ -1,0 +1,267 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+
+import { api, ApiError } from "@/data/client";
+import { useT } from "@/i18n";
+import { useTheme } from "@/theme";
+import { Inline, Section } from "./sign_off";
+
+// numberOfLines=1 truncates from the END, which for a filesystem path hides
+// exactly the part that tells two repos apart (the trailing folder name) -
+// found live screenshotting this dialog. Truncate from the START instead,
+// so "C:\...\helmdeck-release" and "C:\...\helmdeck-main" stay distinguishable.
+function shortPath(p: string, max = 44): string {
+  return p.length <= max ? p : "…" + p.slice(-(max - 1));
+}
+
+// GxP-mode activation (ops/docs/backlog/rbac-gxp card 6; ops/docs/
+// gxp-mode-design.md §2.7's own text: "Einschalten: Owner-Aktion, selbst
+// signiert, in der Ereignissenke"). Deliberately built as a sibling of
+// sign_off.tsx, not a copy: same modal shell, same Section/Inline, same
+// t.human "a person did this" token, same four house rules (select-never-
+// sends is moot here - there's no meaning selector - but never Alert.alert,
+// white-not-accentTxt on the filled button, and t.human as the one place a
+// human action gets the app's primary color, all still apply).
+//
+// Deactivating is NOT a feature of this dialog, on purpose - it stays
+// host-filesystem + daemon-restart only (spine/auth/gxp.py's own RESIDUAL
+// RISK section explains why: this UI path is only as trustworthy as the
+// daemon process serving it, and the whole point of gxp.lock living outside
+// policy_live.json is that turning the mode OFF needs a stronger bar than a
+// password over that same daemon).
+export function GxpActivate({ onClose, onActivated }: {
+  onClose: () => void;
+  onActivated: (msg: string) => void;
+}) {
+  const t = useTheme();
+  const tr = useT();
+  const qc = useQueryClient();
+  const { data: st, refetch } = useQuery({ queryKey: ["gxpState"], queryFn: api.gxpState });
+  // Picker, not a freeform box (found live: a hand-typed path that doesn't
+  // EXACTLY match a card's own repo field silently never gates anything -
+  // spine/auth/gxp.py's _norm() is a strict compare, no fuzzy match). Two
+  // sources feed the same `repos` list the server widens scope with:
+  // `picked` = known repos (settings.pm.repos + repo_hooks keys +
+  // default_repo, server-computed in st.known_repos) toggled on/off, and
+  // `newPaths` = brand-new repos to create + git-init server-side
+  // (spine.git.gitutil.init_repo) so a fresh repo has real commit history
+  // to be an audit trail over, not just an empty folder.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [newPathText, setNewPathText] = useState("");
+  const [newPaths, setNewPaths] = useState<string[]>([]);
+  const [fourEyes, setFourEyes] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function togglePicked(path: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path); else next.add(path);
+      return next;
+    });
+  }
+  function addNewPath() {
+    const p = newPathText.trim();
+    if (!p || newPaths.includes(p)) return;
+    setNewPaths((prev) => [...prev, p]);
+    setNewPathText("");
+  }
+  function removeNewPath(p: string) {
+    setNewPaths((prev) => prev.filter((x) => x !== p));
+  }
+
+  const totalCount = picked.size + newPaths.length;
+  // Empty selection = workspace-wide scope (both omitted, not []) - gxp.py
+  // treats an explicit empty list and "no list at all" differently
+  // (repos=None means the whole workspace), so this must not send [] by
+  // accident.
+  const repos = picked.size ? Array.from(picked) : undefined;
+  const newRepos = newPaths.length ? newPaths : undefined;
+  const canSubmit = !!password && !busy;
+
+  async function submit() {
+    if (!canSubmit) return;
+    setBusy(true); setErr(null);
+    try {
+      const rec = await api.activateGxp(repos, newRepos, fourEyes, password);
+      qc.invalidateQueries({ queryKey: ["gxpState"] });
+      onActivated(rec.scope === "workspace"
+        ? tr("gxp.activatedWorkspace", { who: rec.activated_by ?? "" })
+        : tr("gxp.activatedRepos", { who: rec.activated_by ?? "", n: rec.repos?.length ?? 0 }));
+      onClose();
+    } catch (e) {
+      const ae = e as ApiError;
+      setErr(ae?.status === 401 ? tr("sign.errBadPassword") : String((e as Error).message));
+      setPassword("");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal transparent animationType="fade" visible statusBarTranslucent onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "center", padding: 16 }}>
+        <View style={{ backgroundColor: t.surface1, borderColor: t.human + "66", borderWidth: 1,
+          borderRadius: 16, maxHeight: "92%", overflow: "hidden" }}>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, padding: 16, paddingBottom: 10 }}>
+            <Ionicons name="shield-checkmark" size={17} color={t.human} />
+            <Text style={{ color: t.human, fontSize: 12, fontWeight: "700", letterSpacing: 0.8, flex: 1 }}>
+              {tr("gxp.title").toUpperCase()}
+            </Text>
+            <Pressable onPress={onClose} hitSlop={10} accessibilityLabel={tr("ui.cancel")}>
+              <Ionicons name="close" size={19} color={t.txtTertiary} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 18 }}>
+            <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>
+              {tr("gxp.explain")}
+            </Text>
+
+            <Section title={tr("gxp.currentState")}>
+              {st?.active ? (
+                <Text style={{ color: t.ok, fontSize: 12.5 }}>
+                  {st.scope === "workspace"
+                    ? tr("gxp.activeWorkspace", { who: st.activated_by ?? "?" })
+                    : tr("gxp.activeRepos", { who: st.activated_by ?? "?", n: st.repos?.length ?? 0 })}
+                </Text>
+              ) : (
+                <Text style={{ color: t.txtTertiary, fontSize: 12.5 }}>{tr("gxp.inactive")}</Text>
+              )}
+            </Section>
+
+            <Section title={tr("gxp.scope")}>
+              <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: -2 }}>
+                {tr("gxp.scopeHint")}
+              </Text>
+
+              {st?.known_repos?.length ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "600", letterSpacing: 0.4 }}>
+                    {tr("gxp.knownRepos").toUpperCase()}
+                  </Text>
+                  {st.known_repos.map((p) => (
+                    <Pressable key={p} onPress={() => togglePicked(p)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                      <Ionicons name={picked.has(p) ? "checkbox" : "square-outline"} size={18}
+                        color={picked.has(p) ? t.human : t.txtTertiary} />
+                      <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1, fontFamily: "monospace" }}
+                        numberOfLines={1}>{shortPath(p)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "600", letterSpacing: 0.4 }}>
+                  {tr("gxp.createNew").toUpperCase()}
+                </Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: -2 }}>
+                  {tr("gxp.createNewHint")}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <TextInput
+                    value={newPathText} onChangeText={setNewPathText}
+                    placeholder={tr("gxp.reposPh")} placeholderTextColor={t.txtPlaceholder}
+                    autoCapitalize="none" onSubmitEditing={addNewPath}
+                    style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2,
+                      borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8,
+                      padding: 10, fontSize: 13, fontFamily: "monospace" }}
+                  />
+                  <Pressable onPress={addNewPath} disabled={!newPathText.trim()}
+                    style={{ justifyContent: "center", alignItems: "center", width: 38, borderRadius: 8,
+                      backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+                      opacity: newPathText.trim() ? 1 : 0.4 }}>
+                    <Ionicons name="add" size={18} color={t.txtSecondary} />
+                  </Pressable>
+                </View>
+                {newPaths.length ? (
+                  <View style={{ gap: 4 }}>
+                    {newPaths.map((p) => (
+                      <View key={p} style={{ flexDirection: "row", alignItems: "center", gap: 8,
+                        backgroundColor: t.surface2, borderRadius: 6, padding: 8 }}>
+                        <Ionicons name="git-branch-outline" size={14} color={t.human} />
+                        <Text style={{ color: t.txtSecondary, fontSize: 12, flex: 1, fontFamily: "monospace" }}
+                          numberOfLines={1}>{shortPath(p)}</Text>
+                        <Pressable onPress={() => removeNewPath(p)} hitSlop={8}>
+                          <Ionicons name="close" size={15} color={t.txtTertiary} />
+                        </Pressable>
+                      </View>
+                    ))}
+                    <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontStyle: "italic" }}>
+                      {tr("gxp.createNewNote")}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
+                {totalCount ? tr("gxp.scopeRepos", { n: totalCount }) : tr("gxp.scopeWorkspace")}
+              </Text>
+              {/* scope only ever grows (spine/auth/gxp.py) - said explicitly so
+                  a returning owner isn't surprised a previously-listed repo is
+                  still there even though this box shows only the NEW ones. */}
+              {st?.active ? (
+                <Text style={{ color: t.txtTertiary, fontSize: 11, fontStyle: "italic" }}>
+                  {tr("gxp.scopeGrowsOnly")}
+                </Text>
+              ) : null}
+            </Section>
+
+            <Section title={tr("gxp.fourEyes")}>
+              <Pressable onPress={() => setFourEyes((v) => !v)}
+                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Ionicons name={fourEyes ? "checkbox" : "square-outline"} size={19}
+                  color={fourEyes ? t.human : t.txtTertiary} />
+                <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1 }}>
+                  {tr("gxp.fourEyesLabel")}
+                </Text>
+              </Pressable>
+            </Section>
+
+            <Section title={tr("sign.signature")}>
+              <TextInput
+                value={password} onChangeText={(v) => { setPassword(v); setErr(null); }}
+                placeholder={tr("sign.passwordPh")} placeholderTextColor={t.txtPlaceholder}
+                secureTextEntry autoCapitalize="none"
+                onSubmitEditing={submit}
+                style={{ color: t.txtPrimary, backgroundColor: t.surface2,
+                  borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8,
+                  padding: 10, fontSize: 14 }}
+              />
+              <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 15 }}>
+                {tr("gxp.legal")}
+              </Text>
+            </Section>
+
+            {err ? <Inline t={t} text={err} onRetry={refetch} /> : null}
+          </ScrollView>
+
+          <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8,
+            padding: 14, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+            <Pressable onPress={onClose} style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+              <Text style={{ color: t.txtSecondary, fontWeight: "500", fontSize: 13.5 }}>
+                {tr("ui.cancel")}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={submit}
+              disabled={!canSubmit}
+              accessibilityState={{ disabled: !canSubmit }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 8,
+                paddingVertical: 10, paddingHorizontal: 18, borderRadius: 10,
+                backgroundColor: t.human, opacity: canSubmit ? 1 : 0.45 }}>
+              {busy ? <ActivityIndicator size="small" color="#fff" /> : null}
+              {/* white, NOT t.accentTxt - see sign_off.tsx's note on this exact trap */}
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13.5 }}>
+                {busy ? tr("gxp.activating") : tr("gxp.activate")}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}

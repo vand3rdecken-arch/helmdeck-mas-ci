@@ -7,7 +7,7 @@
 # The build is designed to SUCCEED WITH NO SECRETS AT ALL: no certificate ->
 # an unsigned .dmg/.zip, still a complete app, still proof the target builds.
 # Add the signing secrets later and the same workflow starts signing and
-# notarizing without a line changing (desktop/build-mac.sh decides).
+# notarizing without a line changing (surfaces/desktop/build-mac.sh decides).
 #
 # Optional repository secrets:
 #   MAC_CSC_LINK          base64 of the Developer ID Application .p12
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to stamp (blank = desktop/package.json)"
+        description: "Version to stamp (blank = surfaces/desktop/package.json)"
         required: false
         default: ""
       release_tag:
@@ -32,14 +32,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "desktop/**"
-      - "app/**"
+      - "surfaces/desktop/**"
+      - "surfaces/app/**"
       - "daemon/**"
       - ".github/workflows/desktop-mac.yml"
   pull_request:
     paths:
-      - "desktop/**"
-      - "app/**"
+      - "surfaces/desktop/**"
+      - "surfaces/app/**"
       - "daemon/**"
       - ".github/workflows/desktop-mac.yml"
 
@@ -74,8 +74,8 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
-            app/package-lock.json
-            desktop/package-lock.json
+            surfaces/app/package-lock.json
+            surfaces/desktop/package-lock.json
 
       # electron + the mac zip/dmg tooling are ~200 MB per run otherwise.
       - name: Cache electron-builder downloads
@@ -84,13 +84,13 @@ jobs:
           path: |
             ~/Library/Caches/electron
             ~/Library/Caches/electron-builder
-          key: ${{ runner.os }}-electron-${{ hashFiles('desktop/package-lock.json') }}
+          key: ${{ runner.os }}-electron-${{ hashFiles('surfaces/desktop/package-lock.json') }}
           restore-keys: ${{ runner.os }}-electron-
 
       - name: Install app + desktop dependencies
         run: |
-          (cd app && npm ci)
-          (cd desktop && npm ci)
+          (cd surfaces/app && npm ci)
+          (cd surfaces/desktop && npm ci)
 
       # Written to a file because notarytool wants a path, not a blob. Skipped
       # entirely when the secret is absent - build-mac.sh then just doesn't
@@ -107,14 +107,14 @@ jobs:
           echo "ASC_API_KEY_PATH=$key" >> "$GITHUB_ENV"
 
       - name: Build (dmg + zip, arm64 + x64)
-        run: bash desktop/build-mac.sh ${{ inputs.version && format('--version {0}', inputs.version) || '' }}
+        run: bash surfaces/desktop/build-mac.sh ${{ inputs.version && format('--version {0}', inputs.version) || '' }}
 
       # Proof the target really produced what it claims, before anything is
       # published: both arches, both formats, plus the auto-update feed. A
       # silently missing x64 slice would otherwise only surface on a user's Mac.
       - name: Verify the artifact set
         run: |
-          cd desktop/release
+          cd surfaces/desktop/release
           ls -la
           missing=0
           for pat in "*-arm64.dmg" "*-x64.dmg" "*-arm64.zip" "*-x64.zip" "latest-mac.yml"; do
@@ -140,18 +140,18 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            desktop/release/*.dmg
-            desktop/release/*.zip
-            desktop/release/*.blockmap
-            desktop/release/latest-mac.yml
+            surfaces/desktop/release/*.dmg
+            surfaces/desktop/release/*.zip
+            surfaces/desktop/release/*.blockmap
+            surfaces/desktop/release/latest-mac.yml
 
       # Opt-in, never automatic: publishing is the owner's call (the same
-      # discipline deploy/release_desktop.sh keeps for Windows).
+      # discipline ops/deploy/release_desktop.sh keeps for Windows).
       - name: Attach to a release
         if: inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ inputs.release_tag }}" --clobber \
-            desktop/release/*.dmg desktop/release/*.zip \
-            desktop/release/latest-mac.yml desktop/release/*.blockmap
+            surfaces/desktop/release/*.dmg surfaces/desktop/release/*.zip \
+            surfaces/desktop/release/latest-mac.yml surfaces/desktop/release/*.blockmap

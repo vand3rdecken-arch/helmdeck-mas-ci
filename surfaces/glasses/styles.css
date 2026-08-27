@@ -1,0 +1,171 @@
+/* HelmDeck Glance — Meta Ray-Ban Display (600x600 additive waveguide).
+   Black = transparent (real world shows through); UI surfaces are dark gray so
+   they read as opaque. White text at high contrast. D-pad focus states. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 600px; height: 600px; overflow: hidden;
+  background: #000;                 /* transparent on the additive display */
+  color: #fff;
+  font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { width: 600px; height: 600px; position: relative; }
+
+/* every screen fills the safe zone (8dp margins) */
+.screen {
+  position: absolute; inset: 0;
+  padding: 8px; display: flex; flex-direction: column;
+}
+.hidden { display: none !important; }
+
+/* header: 24dp from top, 64dp tall */
+.header {
+  height: 64px; margin-top: 16px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px;
+}
+.header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
+.header-meta { margin-left: auto; font-size: 12px; color: #B0B3B8; }
+#conn-dot { font-size: 20px; color: #B0B3B8; }
+#conn-dot.ok { color: #31C46B; }
+#conn-dot.err { color: #FF5A5F; }
+
+.back-btn {
+  width: 56px; height: 56px; flex-shrink: 0; font-size: 26px;
+  background: #1C1E21; border: none; border-radius: 14px; color: #fff;
+}
+
+.content { flex: 1; overflow-y: auto; padding: 8px 0; }
+.content::-webkit-scrollbar { display: none; }
+
+/* hero glance number */
+.hero { text-align: center; padding: 18px 0 10px; }
+.hero-num { font-size: 96px; font-weight: 700; line-height: 1; }
+.hero-label { font-size: 22px; font-weight: 700; color: #E4E6EB; margin-top: 4px; }
+/* how old the number is, plus work only the owner can start - both are
+   context for the hero, never competition with it */
+.hero-sub { font-size: 14px; color: #B0B3B8; margin-top: 8px; min-height: 18px; }
+
+/* stat row */
+.statrow { display: flex; gap: 8px; margin-top: 12px; }
+.stat {
+  flex: 1; background: #1C1E21; border-radius: 14px; padding: 12px 8px;
+  text-align: center;
+}
+.stat-v { display: block; font-size: 26px; font-weight: 700; }
+.stat-l { display: block; font-size: 12px; color: #B0B3B8; margin-top: 2px; }
+
+/* lists */
+.list-container { display: flex; flex-direction: column; gap: 8px; }
+.list-item {
+  display: block; width: 100%; text-align: left; color: #fff; font: inherit;
+  background: #1C1E21; border-radius: 14px; padding: 14px 16px;
+  border: 2px solid transparent; opacity: 0.8;
+  transition: transform .12s ease-out, opacity .12s ease-out, border-color .12s ease-out;
+}
+.list-item .li-task { font-size: 16px; font-weight: 600; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.li-sub { font-size: 12px; color: #B0B3B8; margin-top: 4px; }
+.li-margin { float: right; font-weight: 700; }
+.li-margin.pos { color: #31C46B; }
+.li-margin.neg { color: #FF5A5F; }
+/* a card the owner cannot just accept - red gate, unlandable branch, dead
+   dispatch. Same red as a negative margin: bad news reads bad at a glance. */
+.li-sub.neg, .detail-meta .neg { color: #FF5A5F; }
+.empty { text-align: center; color: #B0B3B8; font-size: 16px; padding: 40px 12px; }
+/* the "only you can start" group: present, but visibly quieter than a blocker
+   and not focusable - there is nothing to open, it is a reminder */
+.group-label { font-size: 13px; font-weight: 700; color: #B0B3B8;
+  text-transform: uppercase; letter-spacing: .06em; margin: 18px 0 8px 2px; }
+/* quieter than a blocker, but not faint: on an ADDITIVE display dimmer means
+   more transparent, so ambient light eats the difference - 0.65 keeps the
+   hierarchy while staying readable outdoors (base .list-item is 0.8). */
+.list-item.muted { opacity: 0.65; }
+
+/* detail */
+.detail-task { font-size: 22px; font-weight: 700; line-height: 1.35; }
+.detail-meta { margin-top: 14px; font-size: 16px; color: #E4E6EB; line-height: 1.7; }
+/* WHY the card is stuck - the failing assertion, the conflict, the question.
+   It is the most actionable text on the screen, so it gets body size and a
+   readable grey: 12px #B0B3B8 (the list's caption style) is thin enough to
+   disappear on an additive waveguide, which is where this is read. */
+.detail-why { display: block; margin-top: 10px; font-size: 15px;
+  color: #CFD2D6; line-height: 1.5; }
+
+/* GLASS MODE: the decision. The question is the most important text on this
+   screen, so it gets detail-task weight; the options below carry the same
+   list-item styling every other tappable row uses, so focus behaves identically
+   under the D-pad. Colours stay in the never-pure-black band the waveguide
+   needs (#0a0a0f-#1C1E21 surfaces, bright text) - a dark fill would simply not
+   reach the eye. */
+.decide-q { font-size: 19px; font-weight: 650; line-height: 1.35;
+  color: #F2F3F5; margin-bottom: 14px; }
+
+/* the board agent's prose. Body size, not caption: it is read at a glance on an
+   additive waveguide, where 12px grey disappears. */
+.talk-reply { font-size: 18px; line-height: 1.4; color: #F2F3F5; margin-bottom: 14px; }
+/* "the agent tried to change the board and I blocked it" is a HONESTY signal,
+   not a caption - the one thing that must not quietly vanish. The default
+   header-meta (12px #B0B3B8) is precisely the weight this document's own trap
+   register says disappears on the waveguide, so it gets warn colour and bold. */
+.header-meta.warn { color: #FFB020; font-weight: 700; }
+
+/* settings fields */
+.field-label { display: block; font-size: 12px; color: #B0B3B8; margin: 10px 2px 4px; }
+.field {
+  width: 100%; height: 48px; background: #1C1E21; border: 2px solid transparent;
+  border-radius: 12px; color: #fff; font-size: 16px; padding: 0 14px;
+}
+.field-hint { font-size: 12px; color: #B0B3B8; margin: 10px 2px; }
+
+/* bottom nav */
+.nav-bar {
+  flex-shrink: 0; display: flex; gap: 8px; padding-top: 8px;
+}
+.nav-item {
+  position: relative;
+  flex: 1; height: 88px; min-height: 88px;
+  background: #1C1E21; border: 2px solid transparent; border-radius: 16px;
+  color: #fff; font-size: 18px; font-weight: 600; opacity: 0.8;
+  transition: transform .12s ease-out, opacity .12s ease-out, border-color .12s ease-out;
+}
+.nav-item.primary { background: #2A6DF4; }
+.nav-item.danger { color: #FF5A5F; }
+
+/* a new needs_you blocker landed since the owner last opened the list - same
+   red as every other "bad news" signal in this app (li-margin.neg, #conn-dot
+   err), so it reads as urgency without a second color to learn. */
+.badge-dot {
+  position: absolute; top: 10px; right: 10px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #FF5A5F; border: 2px solid #1C1E21;
+}
+
+/* focus state: scale up slightly, full opacity, white ring */
+.focusable:focus {
+  outline: none; opacity: 1; transform: scale(1.03);
+  border-color: #FFFFFF;
+}
+.list-item.focusable:focus { transform: translateX(4px) scale(1.01); }
+
+/* toast */
+.toast {
+  position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%);
+  background: #1C1E21; color: #fff; font-size: 14px; padding: 8px 16px;
+  border-radius: 999px; border: 1px solid #3A3B3C; white-space: nowrap;
+}
+
+/* proactive notification banner - deliberately distinct from .toast (which is
+   feedback-only, bottom-anchored). Positioned per the platform's own toast
+   spec: 24dp from top, centered, max-width 536dp, radius 24. */
+.notify-banner {
+  position: absolute; left: 50%; top: 24px; transform: translateX(-50%);
+  max-width: 536px; background: #1C1E21; color: #fff; font-size: 14px;
+  font-weight: 600; padding: 10px 20px; border-radius: 24px;
+  border: 1px solid #3A3B3C; white-space: nowrap; text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focusable:focus, .list-item, .nav-item { transition: none; transform: none; }
+}

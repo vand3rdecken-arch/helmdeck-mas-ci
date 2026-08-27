@@ -1,0 +1,9 @@
+{
+  "name": "demo",
+  "extends": ["store"],
+  "plugins": [],
+  "patch": {
+    "engines.claude": { "demo": true },
+    "surfaces.settings": { "readOnly": true }
+  }
+}

@@ -1,0 +1,61 @@
+// LOCAL Expo module - raw-microphone capture + VAD for the LIVE voice mode.
+// Same deliberately-tiny shape as modules/surfaces/glasses/android/build.gradle (see
+// there for why defaultConfig must stay and minSdk is inherited).
+//
+// SHERPA-ONNX (on-device STT option, owner A/B 2026-08-23). AGP forbids a
+// local .aar dependency INSIDE a library module ("Direct local .aar file
+// dependencies are not supported when building an AAR"), so the split is:
+//   - HERE: classes.jar extracted from the official AAR, compileOnly - the
+//     Kotlin compiles against the real types but nothing is bundled.
+//   - APP MODULE: the full AAR (classes + JNI libs), applied by
+//     app/plugins/withSherpaOnnx.js exactly like withMetaDat wires mwdat.
+// Both halves download the same pinned release artifact on demand; the files
+// live in git-ignored libs/ so no 30 MB binary ever enters the repo.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.helmdeck'
+version = '0.1.0'
+
+def sherpaVersion = "1.13.6"
+def sherpaAar = file("libs/sherpa-onnx-${sherpaVersion}.aar")
+def sherpaJar = file("libs/sherpa-classes-${sherpaVersion}.jar")
+
+tasks.register("fetchSherpaClasses") {
+  outputs.file(sherpaJar)
+  doLast {
+    sherpaAar.parentFile.mkdirs()
+    if (!sherpaAar.exists() || sherpaAar.length() == 0) {
+      def url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${sherpaVersion}/sherpa-onnx-${sherpaVersion}.aar"
+      logger.lifecycle("[livemic] downloading ${url}")
+      new URL(url).withInputStream { i -> sherpaAar.withOutputStream { o -> o << i } }
+    }
+    if (!sherpaJar.exists()) {
+      copy {
+        from(zipTree(sherpaAar)) { include "classes.jar" }
+        into sherpaJar.parentFile
+      }
+      if (!file("${sherpaJar.parentFile}/classes.jar").renameTo(sherpaJar)) {
+        throw new GradleException("[livemic] classes.jar extraction failed")
+      }
+    }
+  }
+}
+
+android {
+  namespace "app.helmdeck.livemic"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+afterEvaluate {
+  tasks.named("preBuild") { dependsOn("fetchSherpaClasses") }
+}
+
+dependencies {
+  compileOnly files(sherpaJar)
+}
