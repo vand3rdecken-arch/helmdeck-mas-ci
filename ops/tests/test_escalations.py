@@ -21,11 +21,20 @@ from spine.storage import events
 
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-esc-")
-    saved = (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings, events.emit)
+    saved = (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings,
+             events.emit, hb._HENRY_REPO_ROOT)
     try:
         esc.ESC_PATH = os.path.join(tmp, "escalations.jsonl")
         events.settings = lambda: {}
         events.emit = lambda *a, **k: None
+        # Defense in depth (found live 2026-08-27: stubbing only hb._ask was
+        # not enough - card-less escalations are privileged, so _decide
+        # calls _hands_on_ask, which calls the REAL _baseline_commit() unless
+        # _HENRY_REPO_ROOT also points somewhere throwaway. This is the SAME
+        # real-repo-commit risk test_henry_privilege_gate.py already guards
+        # against; a future scenario in this file that forgets to stub
+        # _hands_on_ask must still be safe, not just correctly-remembered.
+        hb._HENRY_REPO_ROOT = tmp
         notified = []
         hb._notify_owner = lambda text, t: notified.append(text)
 
@@ -113,7 +122,8 @@ def main():
 
         print("ALL PASS")
     finally:
-        (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings, events.emit) = saved
+        (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings,
+         events.emit, hb._HENRY_REPO_ROOT) = saved
 
 
 if __name__ == "__main__":
