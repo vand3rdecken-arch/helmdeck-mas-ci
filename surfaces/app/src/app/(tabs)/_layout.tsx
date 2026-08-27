@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { Tabs } from "expo-router";
+import { withLayoutContext, type Tabs as ExpoTabs } from "expo-router";
 import { type ColorValue, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CellInfo } from "@/data/client";
@@ -14,6 +14,24 @@ import { NAV, TAB_FALLBACK, type NavItem as FallbackNavItem, type TabItem as Fal
 
 const t = tokens.dark;
 const LOGO = require("../../../assets/images/icon.png");
+
+// expo-router's own <Tabs> hardcodes useOnlyUserDefinedScreens=false (see its
+// TabsClient.js), so it ALWAYS merges every file-system-discovered route in
+// this directory into the tab bar on top of whatever we declare below -
+// platform-independent, same on web and native. That merge is what turned a
+// stray non-screen data file into a crashing phantom tab (2026-08-27, fixed
+// by moving it out of app/ - see nav_fallback.ts's own note), and separately
+// let 7 explicitly `desktopOnly`-hidden screens (history/modules/sessions/
+// settings/automation/connectors/recordings) leak onto the phone tab bar the
+// same day: hiding relies on getSortedChildren() MATCHING our tabItems entry
+// to the auto-discovered node by route name, and that match isn't reliable
+// enough here to trust. This is a 1-flag-different copy of what expo-router's
+// Tabs builds internally (createBottomTabNavigator + withLayoutContext, both
+// exported from expo-router itself) with that flag flipped to true: ONLY the
+// <Tabs.Screen> entries explicitly rendered below ever reach the navigator,
+// full stop - no file-system merge left to get wrong.
+const { createBottomTabNavigator } = require("expo-router/build/react-navigation/bottom-tabs");
+const Tabs = withLayoutContext(createBottomTabNavigator().Navigator, undefined, true) as unknown as typeof ExpoTabs;
 
 type IconName = keyof typeof Ionicons.glyphMap;
 // NAV/TAB_FALLBACK data lives in @/nav/nav_fallback.ts - split out so a
@@ -177,9 +195,14 @@ export default function TabsLayout() {
     .filter((s) => s.route && s.nav && !isSurfaceCellDisabled(s, disabledCells))
     .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly, cap: s.nav!.cap }));
   const tabItems: TabItem[] = (fromRegistry.length ? fromRegistry : (TAB_FALLBACK as TabItem[])).filter((item) => can(me, item.cap));
-  // Hiding a screen from the phone bottom bar uses href:null (see TAB_FALLBACK /
-  // the map below). A null tabBarButton still reserves a flex slot, so the real
-  // tabs would be sized to 1/11 of the width and clip to "Bo…", "Da…".
+  // Hiding a screen from the phone bottom bar: tabBarItemStyle:{display:'none'}
+  // removes it from the flex layout (a bare tabBarButton:null alone still
+  // reserves a flex slot, sizing the real tabs to 1/11 of the width and
+  // clipping labels to "Bo…", "Da…" - the style is what actually collapses
+  // the slot); tabBarButton:null on top is belt-and-suspenders so a stray tap
+  // can't land on a zero-size button. (Used to read `href:null` and rely on
+  // expo-router's own Tabs to expand that shortcut into the same two options -
+  // dropped along with stock <Tabs> above, see its own note.)
   const icon = (n: IconName) => ({ color, size }: { color: ColorValue; size: number }) =>
     <Ionicons name={n} color={color as string} size={size} />;
   return (
@@ -207,7 +230,9 @@ export default function TabsLayout() {
           The set below is registry-driven (nav.tabs) with a 1:1 fallback. */}
       {tabItems.map((item) => {
         const hide =
-          (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly) ? { href: null } : {};
+          (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly)
+            ? { tabBarItemStyle: { display: "none" as const }, tabBarButton: () => null }
+            : {};
         return (
           <Tabs.Screen
             key={item.name}
