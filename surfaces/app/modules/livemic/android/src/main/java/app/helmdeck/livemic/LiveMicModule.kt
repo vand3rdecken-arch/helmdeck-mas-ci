@@ -111,7 +111,17 @@ class LiveMicModule : Module() {
             c.connectTimeout = 20000
             c.readTimeout = 600000
             c.instanceFollowRedirects = true
-            c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
+            // A truncated model file (dropped connection mid-transfer) must never be
+            // accepted as complete: sherpa-onnx's native ONNX parser crashes the whole
+            // process on a malformed file - not a Kotlin exception, unrecoverable - and
+            // the old length>0 check below would then treat the corpse as "already
+            // downloaded" forever. Verify against Content-Length before the rename.
+            val expected = c.contentLengthLong
+            val written = c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
+            if (expected > 0 && written != expected) {
+              tmp.delete()
+              throw RuntimeException("truncated download: $name ($written/$expected bytes)")
+            }
             if (!tmp.renameTo(dst)) throw RuntimeException("rename failed: $name")
           }
           promise.resolve(base.absolutePath)
