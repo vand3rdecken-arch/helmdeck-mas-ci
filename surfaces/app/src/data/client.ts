@@ -454,11 +454,13 @@ export const api = {
   gxpState: () => req<GxpState>("GET", "/gxp/state"),
   // Same re-auth shape as sign() above: skipAuthGate=true so a wrong password
   // answers 401 inline instead of bouncing the whole app to the login screen.
-  // `repos` omitted/undefined = workspace-wide scope (spine/auth/gxp.py).
-  activateGxp: (repos: string[] | undefined, fourEyes: boolean, password: string) => {
-    track("gxp_activate", { scope: repos?.length ? "repos" : "workspace" });
+  // `repos` = picked from the known-repos list; `newRepos` = paths to create
+  // + git-init server-side (spine.git.gitutil.init_repo) before being folded
+  // into scope. Both omitted/empty = workspace-wide (spine/auth/gxp.py).
+  activateGxp: (repos: string[] | undefined, newRepos: string[] | undefined, fourEyes: boolean, password: string) => {
+    track("gxp_activate", { scope: (repos?.length || newRepos?.length) ? "repos" : "workspace" });
     return req<GxpState>(
-      "POST", "/gxp/activate", { repos, four_eyes: fourEyes, password }, undefined, true);
+      "POST", "/gxp/activate", { repos, new_repos: newRepos, four_eyes: fourEyes, password }, undefined, true);
   },
 
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),

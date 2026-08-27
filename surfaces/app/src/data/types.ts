@@ -48,6 +48,13 @@ export interface GxpState {
   scope?: "workspace" | "repos";
   repos?: string[];
   disabled?: string[];
+  /** GET-only: repos the server already knows about (settings.pm.repos +
+   *  repo_hooks keys + default_repo) and aren't in scope yet - the picker's
+   *  "known repos" checkbox list. Absent from the POST /gxp/activate reply. */
+  known_repos?: string[];
+  /** POST-only: which of the activated repos were freshly `git init`'d by
+   *  this same call (the picker's "create new" option). */
+  created_repos?: string[];
 }
 
 export interface Track {

@@ -20,6 +20,12 @@ What this pins down:
      docstring warns policy.swap() is vulnerable to)
   5. the activation is audited: an events.emit("gxp", op="activate", ...)
      row exists, readable via events.query_audit (card 5's shared filter)
+  6. the picker follow-up: GET /gxp/state's known_repos surfaces
+     settings.pm.repos + repo_hooks keys + default_repo (minus whatever is
+     already in scope), and POST /gxp/activate's new_repos creates + git
+     init's a brand-new path (spine.git.gitutil.init_repo) before folding
+     it into scope - and is idempotent against a path that is already a
+     git repo, per init_repo's own contract
 
 Run: py -3.12 ops/tests/test_gxp_activate.py
 """
@@ -143,6 +149,43 @@ def main():
                             cookie=owner_sid)
         ok(resp2.get("activated_by") == "duy",
            "a spoofed activated_by in the body is ignored - still 'duy', not 'henry'")
+
+        # -- 6a: known_repos surfaces already-known paths, not the active one --
+        os.remove(gxp.LOCK)
+        orig_settings = events.settings
+        events.settings = lambda: {"pm": {"repos": [REPO_A]},
+                                   "repo_hooks": {REPO_B: {"deploy": "x"}},
+                                   "default_repo": REPO_A}
+        try:
+            status, resp = req("GET", "/gxp/state", cookie=owner_sid)
+            known = set(resp.get("known_repos") or [])
+            ok({REPO_A, REPO_B} <= known, "known_repos surfaces pm.repos + repo_hooks keys (%r)" % known)
+            gxp.activate(repos=[REPO_A], activated_by="duy")
+            status, resp = req("GET", "/gxp/state", cookie=owner_sid)
+            known2 = set(resp.get("known_repos") or [])
+            ok(REPO_A not in known2 and REPO_B in known2,
+               "an already-in-scope repo is dropped from known_repos, not re-offered (%r)" % known2)
+        finally:
+            events.settings = orig_settings
+        os.remove(gxp.LOCK)
+
+        # -- 6b: new_repos creates + git-inits a brand-new path -----------------
+        NEW_REPO = os.path.join(tmp, "created-by-picker")
+        ok(not os.path.isdir(NEW_REPO), "path does not exist yet")
+        status, resp = req("POST", "/gxp/activate",
+                           {"new_repos": [NEW_REPO], "password": "a-real-password"},
+                           cookie=owner_sid)
+        ok(status == 200, "activation with only new_repos succeeds (got %d)" % status)
+        ok(os.path.isdir(os.path.join(NEW_REPO, ".git")), "the path is now a real git repo")
+        rc = __import__("subprocess").run(["git", "-C", NEW_REPO, "log", "--oneline"],
+                                          capture_output=True, text=True)
+        ok(rc.returncode == 0 and rc.stdout.strip(),
+           "it has a seed commit, not an empty init (audit trail needs history)")
+        ok(resp.get("created_repos") == [os.path.abspath(NEW_REPO)],
+           "the route reports which repos it created (%r)" % resp.get("created_repos"))
+        ok(os.path.abspath(NEW_REPO) in (resp.get("repos") or []),
+           "the newly-created repo landed in scope, not just on disk")
+        os.remove(gxp.LOCK)
     finally:
         httpd.shutdown()
 
@@ -151,6 +194,22 @@ def main():
     rows = events.query_audit(kind="gxp")
     ok(any(r.get("op") == "activate" and r.get("actor") == "duy" for r in rows),
        "an activate event exists, actor=duy")
+
+    # ------------------------------------------------------------------ 6c --
+    print("\ngitutil.init_repo() is idempotent on an already-git path")
+    from spine.git import gitutil
+    already = os.path.join(tmp, "already-a-repo")
+    os.makedirs(already)
+    __import__("subprocess").run(["git", "-C", already, "init", "-q"])
+    __import__("subprocess").run(["git", "-C", already, "-c", "user.email=a@a.a",
+                                  "-c", "user.name=a", "commit", "--allow-empty", "-qm", "x"])
+    head_before = __import__("subprocess").run(["git", "-C", already, "rev-parse", "HEAD"],
+                                               capture_output=True, text=True).stdout.strip()
+    rec = gitutil.init_repo(already, actor="duy")
+    ok(rec["git_initialized"] is False, "an already-git path is reported untouched")
+    head_after = __import__("subprocess").run(["git", "-C", already, "rev-parse", "HEAD"],
+                                              capture_output=True, text=True).stdout.strip()
+    ok(head_before == head_after, "no new commit was added to an existing repo (%s -> %s)" % (head_before, head_after))
 
     print()
     if _fails:

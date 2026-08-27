@@ -14,7 +14,14 @@ export const gxp: Dict = {
   "gxp.activeRepos": { de: "An - {n} Repo(s), aktiviert von {who}.", en: "On - {n} repo(s), activated by {who}." },
 
   "gxp.scope": { de: "GELTUNGSBEREICH", en: "SCOPE" },
-  "gxp.scopeHint": { de: "Ein Pfad pro Zeile. Leer = der ganze Workspace.", en: "One path per line. Empty = the whole workspace." },
+  "gxp.scopeHint": { de: "Wähle bekannte Repos aus oder lege neue an. Nichts ausgewählt = der ganze Workspace.", en: "Pick known repos or create new ones. Nothing selected = the whole workspace." },
+  "gxp.knownRepos": { de: "Bekannte Repos", en: "Known repos" },
+  "gxp.createNew": { de: "Neues Repo anlegen", en: "Create a new repo" },
+  "gxp.createNewHint": {
+    de: "Pfad, der noch kein Repo ist - wird beim Aktivieren angelegt und mit git init versehen (Startcommit, damit ein Audit-Trail existiert).",
+    en: "A path that isn't a repo yet - created and git-init'd on activation (with a seed commit, so an audit trail exists).",
+  },
+  "gxp.createNewNote": { de: "Wird beim Aktivieren erstellt und initialisiert.", en: "Will be created and initialized on activation." },
   "gxp.reposPh": { de: "C:/pfad/zum/repo", en: "C:/path/to/repo" },
   "gxp.scopeRepos": { de: "{n} Repo(s) werden hinzugefügt", en: "{n} repo(s) will be added" },
   "gxp.scopeWorkspace": { de: "Der ganze Workspace wird reguliert", en: "The whole workspace will be regulated" },
