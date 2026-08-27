@@ -13,9 +13,18 @@ Schwesterdokumente, bewusst im selben Format: `ops/docs/ios-watch-feasibility.md
 Pflichtlektüre vorab: `ops/docs/glasses-reference.md` — die Uhr ist die **zweite
 Wearable-Fläche**, und jede Regel, die dort für die Linse gilt, gilt hier erneut.
 
-**Status: RECHERCHE FERTIG, ENTSCHEIDUNG OFFEN.** Kein Produktionscode in diesem
-Kartenlauf. Was der Owner entscheiden muss, steht in §9 — und Phase W1 ist
-bewusst so geschnitten, dass sie sich **auch ohne Uhr** rechnet.
+**Status (aktualisiert 2026-08-27, selbe Karte):** Phase **W1a+W1b sind jetzt
+CODE** — `spine/comms/notify.py` (data-only FCM statt der generischen Hülle),
+`surfaces/app/src/data/push.ts` (`BACKGROUND_NOTIFICATION_TASK`, 3 feste
+Aktionen + Diktat), `app.json`/`package.json` (`expo-task-manager`,
+`version` 1.0.22→1.0.23 für die OTA-Sperre gegen alte APKs). **Ungetestet**:
+dieser Karten-Worktree kann weder ein APK bauen (`DEPLOY.md:508-515`, NDK-
+Pfadlänge) noch eine echte FCM-Zustellung auslösen (`fcm_service_account.json`
+ist ein Secret, hier nicht erreichbar) noch `tsc` laufen lassen (kein
+`node_modules` in diesem Worktree). Verifikation braucht den Accept-Pfad /
+eine kurze reale Maschinenkarte + ein echtes Gerät — siehe §4.3/§9.1 für die
+genauen offenen Punkte. **W2 (native Wear-App) ist weiterhin nur Recherche**;
+was der Owner dafür entscheiden muss, steht in §9.
 
 > **Warum die Studie als Backlog-Karte liegt und nicht neben ihren
 > Schwesterdokumenten:** `.gitignore:88` (`ops/docs/**`) hält **neue** Dokumente
@@ -233,14 +242,17 @@ background handler, **which we don't ship**"*. Folge, Kette sauber durchgezogen:
 4. **Keine Categories, keine Action-Buttons, kein `RemoteInput`** — repoweit
    null Treffer.
 
-⚠ **Doku-Drift, hier bezahlt:** der Docstring von `presentDecrypted`
-(`push.ts:45`) sagt *„the background data-message task (Android) is
-device-verified separately"*. **Diesen Task gibt es nicht** — repoweite Suche
-nach `TaskManager` / `registerTaskAsync` / `BackgroundFetch` ergibt null Treffer,
-und `expo-task-manager` fehlt in `package.json`. Wer nur den Docstring liest,
-hält W1a für erledigt. (Zweite Drift derselben Klasse: mehrere Kommentare
-verweisen noch auf `daemon/notify.py` — die Datei heißt seit dem
-Vier-Ordner-Umbau `spine/comms/notify.py`.)
+⚠ **Doku-Drift, hier gefunden UND behoben, in derselben Karte:** der Docstring
+von `presentDecrypted` (`push.ts:45`, Stand vor diesem Commit) behauptete *„the
+background data-message task (Android) is device-verified separately"*.
+Diesen Task gab es zu dem Zeitpunkt nicht — repoweite Suche nach
+`TaskManager` / `registerTaskAsync` / `BackgroundFetch` ergab null Treffer, und
+`expo-task-manager` fehlte in `package.json`. **Seit diesem Commit existiert er
+wirklich** (§4.3), der Docstring wurde entsprechend neu geschrieben — aber
+„existiert im Code" ≠ „geräteverifiziert"; siehe §9.1 für das, was noch offen
+ist. (Zweite Drift derselben Klasse, unverändert: mehrere Kommentare verweisen
+noch auf `daemon/notify.py` — die Datei heißt seit dem Vier-Ordner-Umbau
+`spine/comms/notify.py`.)
 
 **Das ist kein Wear-OS-Problem. Das ist ein Telefon-Defekt, den die Uhr nur
 sichtbar macht** — auf dem Sperrbildschirm des Telefons steht heute exakt
@@ -266,6 +278,16 @@ ein: Telefon-Lockscreen, Uhr, und (später) jede weitere gebridgete Fläche.
    `POST /tracks/<id>/steer {text}` bzw.
    `POST /tracks/<id>/answer {answers, request_id}`
    (`cells/engineer/routes_track_actions.py:71-119`).
+
+✅ **1–3 sind jetzt Code** (dieselbe Karte, 2026-08-27):
+`spine/comms/notify.py` (data-only) + `surfaces/app/src/data/push.ts`
+(`BACKGROUND_NOTIFICATION_TASK`, Kategorie `helmdeck.card` mit den drei
+Aktionen). „Stopp" ruft `POST /tracks/<id>/cancel`, nicht nur einen
+Steer-Text — ein präziserer Rückweg, als dieser Absatz ursprünglich annahm.
+„Weiter"/Diktat rufen `steer`. **Bewusst NICHT gebaut:** echte Options-Buttons
+(`answer` + `request_id`) — siehe die Grenze direkt darunter, unverändert
+gültig; diese Karte hat den Umfang der Apple-Watch-Studie übernommen, nicht
+erweitert.
 
 ⚠ **Grenze, die man kennen muss:** die versiegelte Nutzlast ist heute exakt
 `{title, body, track, kind}` (`notify.py:90-93`) — **die Optionen und die
@@ -443,10 +465,10 @@ gerätegebunden.
 | # | Schritt | Aufwand | Anmerkung |
 |---|---|---|---|
 | 0 | **Wahrheitstest**: Glance-Worker deployen (`cloudflare_tunnel.sh` + `push_glance.sh`), Wear-AVD mit Telefon koppeln, bestehendes APK installieren, `adb exec-out screencap` — *was bridged heute wirklich?* | **0,5 T** | bestätigt §4.2 am Gerät statt am Code; deployt nebenbei die Linse |
-| 1 | **W1a** — Background-Entschlüsselung + reiche lokale Notification (`NotificationCompat`) | **2–3 T** | nativ ⇒ APK-Rebuild, kein OTA; **behebt zugleich den Telefon-Lockscreen** |
-| 2 | **W1b** — Categories/Actions + `RemoteInput`-Diktat → `steer`/`answer` | **1,5–2 T** | Rückweg-API existiert vollständig; Killed-State am Gerät verifizieren |
-| 3 | **W1c** *(optional)* — Optionen + `request_id` in die versiegelte Nutzlast, echte Options-Buttons | **1 T** | kleine Änderung an `notify.py:90-93`; ohne sie nur generische Aktionen |
-| | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **≈ 4–6 T** | rechnet sich schon ohne Uhr |
+| 1 | ~~**W1a** — Background-Entschlüsselung + reiche lokale Notification~~ **CODE GESCHRIEBEN** 2026-08-27 (`notify.py` data-only, `push.ts` `BACKGROUND_NOTIFICATION_TASK`) | ~~2–3 T~~ **verbleibt: Build+Gerätetest** | nativ ⇒ APK-Rebuild, kein OTA aus diesem Worktree möglich (§7.1); **behebt zugleich den Telefon-Lockscreen** |
+| 2 | ~~**W1b** — Categories/Actions + `RemoteInput`-Diktat~~ **CODE GESCHRIEBEN** 2026-08-27 (3 feste Aktionen, „Stopp"→`cancel`) | ~~1,5–2 T~~ **verbleibt: Killed-State-Test** | Rückweg-API existiert vollständig; Diktat-Rückweg zum Telefon **[MED]**, nicht wörtlich dokumentiert (§9.1) |
+| 3 | **W1c** *(weiterhin offen, bewusst ausgelassen)* — Optionen + `request_id` in die versiegelte Nutzlast, echte Options-Buttons | **1 T** | kleine Änderung an `notify.py:90-93`; ohne sie bleibt es bei den 3 generischen Aktionen |
+| | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **Code: 0 T (fertig) · Verifikation: ≈ 1–2 T** | rechnet sich schon ohne Uhr; **Build/Gerätetest kann diese Karte selbst nicht ausführen** (§9.1) |
 | 4 | **W2a** — `withWearApp.js` + `:wear`-Modul, leere Compose-App baut und startet | **1,5–2,5 T** | Muster steht 6× im Baum; Build **nicht** aus dem Worktree (§7.1) |
 | 5 | **W2b** — Uhr-UI gegen `/glance` + `/glance/answer`: Blocker-Liste, Frage, Optionen antippen | **3–4 T** | **null Daemon-Code**; WO-V13/V16-Konformität einpreisen |
 | 6 | **W2c** — Sprache: `ACTION_RECOGNIZE_SPEECH` → `/glance/talk` → MP3 abspielen | **1,5–2 T** | billig, weil der Vertrag steht (§5.1) |
@@ -488,6 +510,37 @@ wo `ACTION_RECOGNIZE_SPEECH` reicht (§5.1); ein Wake-Word (existiert nicht).
 4. Zuverlässigkeit der Notification-Aktionen aus dem **Killed-State** — dieselbe
    Unbekannte, die `ios-watch-feasibility.md` §3.1 offenlässt.
 5. Die genaue Deprecation-Liste von `NotificationCompat.WearableExtender`.
+
+### Zusätzlich, seit W1a/W1b als Code existieren (2026-08-27)
+
+Dieser Karten-Worktree hat weder `node_modules` noch die Secrets, die diese
+Punkte selbst schließen könnten — sie sind mit bestem Wissen aus den
+versionierten Expo-57-Docs geschrieben, nicht am echten Paket verifiziert:
+
+6. **Die exakte Form von `NotificationTaskPayload`** — `push.ts`s
+   `BACKGROUND_NOTIFICATION_TASK` liest `data.data.dataString` (JSON-String
+   des FCM-`data`-Objekts) für den "Nachricht angekommen"-Zweig. Das stammt aus
+   einer Doku-Zusammenfassung, nicht aus dem installierten `.d.ts`
+   (`expo-notifications@~57.0.8`) — **gegen die echten Typen prüfen, sobald
+   `node_modules` existiert** (Build-Umgebung / Maschinenkarte). Der Code fällt
+   defensiv auf die alte generische Meldung zurück, falls der Zugriffspfad
+   nicht passt — kein Crash, aber ggf. stumm die falsche (leere) Meldung.
+7. **`expo-task-manager@~57.0.14`** — Versionsnummer aus
+   `github.com/expo/expo` Branch `sdk-57`, `packages/expo/bundledNativeModules.json`
+   (Primärquelle, nicht geraten) — aber nie gegen `npm ci` in diesem Repo
+   getestet.
+8. **OTA-Sperre**: `app.json`s `version` wurde 1.0.22→1.0.23 gebumpt, damit
+   `runtimeVersion.policy: appVersion` alte APKs (ohne Background-Task) von
+   diesem JS-Bundle fernhält (`relay.py`s `_bundle_rtv`-Check). Die LOGIK ist
+   dieselbe, die `push_update.sh`/`build_apk.sh` heute schon fahren — aber
+   **nicht an einem echten Manifest-Round-Trip verifiziert**, weil dafür ein
+   laufender Relay + zwei echte App-Versionen nötig wären.
+9. **Rollout-Reihenfolge ist eine Betriebsanweisung, kein Code-Gate**: Punkt 8
+   schützt den JS/OTA-Kanal; sie schützt NICHT davor, dass ein Daemon-Neustart
+   auf dem neuen `notify.py` VOR einem APK-Rebuild die aktuell installierte
+   (alte) App auf data-only Pushes umstellt, für die sie keinen Handler hat
+   (§4.3-Kommentar in `notify.py`). Der Owner muss die Reihenfolge einhalten;
+   nichts im Code erzwingt sie.
 
 ---
 
