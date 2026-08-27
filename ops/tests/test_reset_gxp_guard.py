@@ -53,6 +53,21 @@ def main():
     reset.ROOT = tmp
     reset.DAEMON = tmp   # daemon/ files (users.json etc.) also sandboxed here
 
+    # REC must be sandboxed too - the incident this guards against is REAL
+    # (2026-08-27): clear_recordings() used to read sessions.REC at call time,
+    # which this test never patched, so every suite run emptied the LIVE
+    # daemon/recordings/ (102 cards' transcripts/actionlogs, unrecoverable)
+    # while everything else stayed sandboxed and green. reset.py now derives
+    # the path from its own patched DAEMON; the patches below are the
+    # belt-and-suspenders half so even a regression in reset.py cannot reach
+    # the real folder from here.
+    from spine.ops import runs
+    from cells.engineer import sessions as _sessions_mod
+    REC = os.path.join(tmp, "recordings")
+    os.makedirs(REC, exist_ok=True)
+    runs.REC = REC
+    _sessions_mod.REC = REC
+
     subprocess.run(["git", "-C", tmp, "init", "-q"], capture_output=True, text=True)
 
     events.emit("gate", "t-1", ok=True)

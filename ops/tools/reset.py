@@ -18,7 +18,12 @@ reset is reversible: restore the db files and `git bundle unbundle` to recover.
 import argparse, os, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+# HERE = <repo>/ops/tools since the four-folder split (298decc); ROOT is the
+# REPO root, two levels up - one dirname() was the pre-split derivation and
+# left DAEMON pointing at a nonexistent <repo>/ops/daemon, so backup()/
+# clear_chat()/--factory silently operated on nothing while clear_recordings
+# (which read sessions.REC instead) kept hitting the real data.
+ROOT = os.path.dirname(os.path.dirname(HERE))
 DAEMON = os.path.join(ROOT, "daemon")
 sys.path.insert(0, ROOT)
 
@@ -89,8 +94,14 @@ def log_reset(bdir, removed, total, a):
 
 
 def clear_recordings():
-    from cells.engineer import sessions
-    rec = sessions.REC
+    # Derive from THIS module's DAEMON, not sessions.REC: a sandboxed caller
+    # patches reset.DAEMON but cannot know every module holding its own REC
+    # copy. Found live 2026-08-27: test_reset_gxp_guard.py sandboxed db/events/
+    # DAEMON but not sessions.REC, so every suite run silently emptied the REAL
+    # daemon/recordings/ (102 cards' flight recorders) while the DB survived -
+    # the "Karte leer trotz 10 Turns" incident. All of reset.py's other wipes
+    # already go through its own patched globals; this was the one exception.
+    rec = os.path.join(DAEMON, "recordings")
     if os.path.isdir(rec):
         for n in os.listdir(rec):
             p = os.path.join(rec, n)
