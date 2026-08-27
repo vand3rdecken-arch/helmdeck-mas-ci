@@ -143,56 +143,6 @@ def state():
             "disabled": sorted(doc.get("disable") or _DEFAULT_DISABLE)}
 
 
-def activate(repos=None, four_eyes=False, activated_by="owner"):
-    """Turn GxP mode on, or widen its scope - card 6 (ops/docs/backlog/
-    rbac-gxp): the UI-triggered counterpart to hand-editing gxp.lock on the
-    host. Called ONLY from routes_gxp.py, which re-authenticates the caller
-    with a real password (auth.verify_password) before this ever runs, and
-    gates on the `gxp.activate` capability (owner-only in the seeded
-    matrix) - this is deliberately NOT a policy.swap()-style write, for the
-    exact reason this module's own docstring gives: an actor string is
-    spoofable, a verified password is not.
-
-    Scope only ever grows, same rule as the per-card `gxp: true` flag
-    (module docstring): once workspace-wide (repos=None), stays
-    workspace-wide; otherwise the new repos list UNIONS with whatever was
-    already in scope, never replaces it.
-
-    Deactivation is deliberately NOT a function here - it stays host-
-    filesystem + daemon-restart only (see RESIDUAL RISK above). Widening
-    scope through this function does not weaken that: turning the mode OFF
-    is still unreachable from any HTTP path."""
-    import time
-    prev = _read() or {}
-    was_active = bool(prev.get("enabled"))
-    if was_active and prev.get("repos") is None:
-        new_repos = None
-    elif repos is None:
-        new_repos = None
-    elif was_active and prev.get("repos"):
-        new_repos = sorted(set(prev["repos"]) | {os.path.abspath(r) for r in repos})
-    else:
-        new_repos = [os.path.abspath(r) for r in repos]
-    doc = {
-        "enabled": True,
-        "activated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "activated_by": activated_by,
-        "repos": new_repos,
-        "four_eyes": bool(four_eyes),
-    }
-    tmp = LOCK + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(doc, f, indent=2)
-    os.replace(tmp, LOCK)
-    try:
-        from spine.storage import events
-        events.emit("gxp", "-", op="activate", actor=activated_by,
-                    repos=new_repos, four_eyes=doc["four_eyes"], widened=was_active)
-    except Exception:
-        pass
-    return state()
-
-
 def is_human(actor):
     """Does `actor` name a real account?
 

@@ -362,28 +362,6 @@ def _run_action(a, actor, role="operator"):
             if not p["steps"][i].get("track"):
                 p = processes.accept_step(p["id"], i, repo, actor=actor)
         return "accepted all steps of %s into cards" % p["id"]
-    if kind == "audit_query":
-        # Card 5 (ops/docs/backlog/rbac-gxp): Henry can answer questions about
-        # the append-only audit trail - "wer hat GxP aktiviert", "letzte
-        # Ablehnungen diese Woche". Read-only, gated on the REAL chatting
-        # user's role (never a standing capability Henry itself holds - see
-        # spine/auth/permissions.py's own warning against exactly that).
-        from spine.auth import permissions
-        if not permissions.can({"role": role}, "audit.read"):
-            allowed = sorted(r for r, caps in permissions.matrix().items() if "audit.read" in caps)
-            return _denied("audit_query", role, allowed, "spine/auth/permissions.py's permission matrix")
-        rows = events.query_audit(kind=a.get("kind"), track=a.get("track"), actor=a.get("actor"),
-                                  since=a.get("since"), until=a.get("until"), q=a.get("q"))
-        limit = max(1, min(int(a.get("limit") or 20), 200))
-        tail = rows[-limit:]
-        if not tail:
-            return "audit: keine Eintraege fuer diese Filter."
-        lines = ["%s  %-10s actor=%s%s" % (
-            e.get("at_utc", "?"), e.get("kind", "?"), e.get("actor", "-"),
-            ("  " + e.get("reason", "")) if e.get("reason") else "")
-            for e in tail]
-        more = "" if len(rows) <= limit else " (+%d weitere, aeltere)" % (len(rows) - limit)
-        return "audit (%d Treffer%s):\n%s" % (len(rows), more, "\n".join(lines))
     # NEVER DROP THE REQUEST: an unimplemented action type is almost always the
     # model reaching for a capability the board has no verb for (open an app,
     # fix the printer, tidy a folder). That is what a machine task is - route it

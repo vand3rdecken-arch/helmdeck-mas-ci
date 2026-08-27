@@ -28,6 +28,8 @@ import tempfile
 
 
 def devices_register_post(self, user, body):
+    if user["role"] not in ("owner", "operator"):
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.auth import devices
     label = (body.get("label") or "").strip()
     billing_scope = (body.get("billing_scope") or "external").strip()
@@ -40,6 +42,8 @@ def devices_register_post(self, user, body):
 
 
 def devices_mine_get(self, user):
+    if user["role"] not in ("owner", "operator"):
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.auth import devices
     out = [{k: v for k, v in d.items() if k != "token_id"}
            for d in devices.list_devices(user["name"])]
@@ -47,6 +51,8 @@ def devices_mine_get(self, user):
 
 
 def devices_revoke_post(self, user, body, did):
+    if user["role"] not in ("owner", "operator"):
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.auth import devices
     if not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
@@ -63,11 +69,11 @@ def devices_queue_get(self, user, did):
     import time as _t
     from spine.auth import devices
     from cells.engineer import dispatch
-    # Role gate is now the central permission guard (cap devices.use, PATTERNS
-    # in permissions.py) - a user demoted to client after registering a
-    # device loses access at the next request, same as before. This check is
-    # the resource-ownership half only: does THIS device belong to THIS user.
-    if not devices.resolve(user, did):
+    # Registration already keeps a client from ever OWNING a device
+    # (devices_register_post is owner/operator only) - this re-checks role
+    # at USE time too, so a user demoted to client after registering a
+    # device loses access to it immediately rather than on next re-auth.
+    if user["role"] == "client" or not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
     devices.touch(did)
     deadline = _t.time() + 20
@@ -85,7 +91,7 @@ def devices_card_status_get(self, user, did, tid):
     # THIS, not /queue) still counts as alive to sweep_stale_device_claims.
     from spine.auth import devices
     from cells.engineer import dispatch
-    if not devices.resolve(user, did):
+    if user["role"] == "client" or not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
     devices.touch(did)
     return self._send(200, json.dumps(dispatch.device_card_status(did, tid)))
@@ -99,7 +105,7 @@ def devices_stream_post(self, user, body, did):
     # turn.
     from spine.auth import devices
     from cells.engineer import dispatch
-    if not devices.resolve(user, did):
+    if user["role"] == "client" or not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
     devices.touch(did)
     tid = body.get("track")
@@ -116,8 +122,8 @@ def devices_stream_post(self, user, body, did):
 def devices_submit_post(self, user, body, did):
     from spine.auth import devices
     from cells.engineer import dispatch
-    # Resource-ownership check only - see devices_queue_get's comment.
-    if not devices.resolve(user, did):
+    # Same role re-check as devices_queue_get - see its comment.
+    if user["role"] == "client" or not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
     tid = body.get("track")
     bundle_b64 = body.get("bundle_b64")
@@ -157,6 +163,8 @@ def devices_submit_post(self, user, body, did):
 
 
 def devices_reassign_post(self, user, body):
+    if user["role"] not in ("owner", "operator"):
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.engineer import dispatch
     tid = body.get("track")
     to_device = (body.get("to_device") or "").strip()
@@ -176,15 +184,3 @@ POST_ROUTES = {
     "/devices/register": devices_register_post,
     "/devices/reassign": devices_reassign_post,
 }
-GET_CAPS = {
-    "/devices/mine": "devices.manage",
-}
-POST_CAPS = {
-    "/devices/register": "devices.manage",
-    "/devices/reassign": "devices.manage",
-}
-# devices_revoke_post (/devices/<id>/revoke), devices_queue_get (/devices/<id>/
-# queue), devices_card_status_get (/devices/<id>/card/<tid>), devices_stream_post
-# (/devices/<id>/stream) and devices_submit_post (/devices/<id>/submit) are
-# path-param routes - their capability entries live in permissions.PATTERNS,
-# not here, since these dicts only cover exact-match table-dispatched routes.

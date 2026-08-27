@@ -9,7 +9,7 @@ The economic model (owner decision): humans are a FIXED-capacity resource
 (hired anyway - no per-minute billing), AI is the variable cost. Human work is
 counted in touch units against a daily budget; margin per card = value - AI cost;
 the human question is utilization/headroom, not dollars."""
-import json, os, re, secrets, time
+import json, os, secrets, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 EV = os.path.join(ROOT, "events.jsonl")
@@ -161,22 +161,6 @@ def settings():
 # (Connector installs/rollbacks checkpoint via their own path in sessions.py.)
 SIGNIFICANT_SETTINGS = {"drivers", "policy", "registration", "default_repo", "connectors"}
 
-# Any key whose NAME matches this (at any nesting depth) is masked before it
-# ever reaches the audit trail - card 5 (ops/docs/backlog/rbac-gxp), same "no
-# secret in the log" discipline as spine/auth/auth.py's _audit. Matched on the
-# key name, not the value shape, so a not-yet-invented secret field is caught
-# by naming convention rather than by remembering to list it here.
-_SECRET_KEY_RE = re.compile(r"(token|password|secret|api[_-]?key|\bpw\b)", re.I)
-
-def _masked(v, key=""):
-    if isinstance(v, dict):
-        return {k: _masked(vv, k) for k, vv in v.items()}
-    if isinstance(v, list):
-        return [_masked(x, key) for x in v]
-    if v and _SECRET_KEY_RE.search(key or ""):
-        return "***"
-    return v
-
 def save_settings(patch, actor="system", reason=""):
     significant = bool(reason) or (patch and any(k in SIGNIFICANT_SETTINGS for k in patch))
     if patch and significant:
@@ -186,7 +170,6 @@ def save_settings(patch, actor="system", reason=""):
                                reason=reason or ("changed: " + ", ".join(sorted(patch))))
         except Exception as e:
             print("checkpoint failed:", e)
-    before = settings()
     s = settings()
     for k, v in (patch or {}).items():
         if isinstance(v, dict) and isinstance(s.get(k), dict):
@@ -200,18 +183,6 @@ def save_settings(patch, actor="system", reason=""):
     try:
         from spine.storage import db
         db.bump()
-    except Exception:
-        pass
-    # Audit trail (card 5): one event per write, old->new per CHANGED top-level
-    # key only (unmodified keys stay silent - the diff is the point, not the
-    # whole blob), secrets masked by name. Best-effort, same contract as every
-    # other emit() call site - a sink hiccup must never block the save itself
-    # (the file write above already happened and is the durable state).
-    try:
-        changed = {k: {"before": _masked(before.get(k), k), "after": _masked(s.get(k), k)}
-                   for k in (patch or {}) if before.get(k) != s.get(k)}
-        if changed:
-            emit("settings", "-", op="save", actor=actor, changed=changed)
     except Exception:
         pass
     return s
@@ -261,38 +232,6 @@ def log(kind, msg):
 def read_events():
     from spine.storage import db
     return db.events_all()
-
-def query_audit(kind=None, track=None, actor=None, since=None, until=None, q=None):
-    """Every event matching these filters, oldest first (read_events()'s own
-    order) - unlimited, unpaginated. The ONE filter implementation shared by
-    GET /audit (routes_audit.py - JSON preview caps+tails this, CSV export
-    doesn't) and Henry's `audit_query` chat action (cells/copilot/
-    copilot_actions.py, card 5) - "who activated GxP" and "what changed in
-    /audit last week" answer from the same filtered set, not two.
-
-    `kind` accepts a comma-separated string (as query params arrive) or an
-    iterable of kinds. All filters are optional; no filters = everything."""
-    kinds = ({k for k in kind.split(",") if k} if isinstance(kind, str)
-             else set(kind or ()))
-    text = (q or "").lower()
-
-    def _match(e):
-        if kinds and e.get("kind") not in kinds:
-            return False
-        if track and e.get("track") != track:
-            return False
-        if actor and e.get("actor") != actor:
-            return False
-        at = e.get("at_utc") or ""
-        if since and at < since:
-            return False
-        if until and at >= until:
-            return False
-        if text and text not in json.dumps(e, ensure_ascii=False, sort_keys=True).lower():
-            return False
-        return True
-
-    return [e for e in read_events() if _match(e)]
 
 def consecutive_gate_fails(track, ev=None):
     """How many times this track's gate has failed in a row, most recent first.
