@@ -42,7 +42,7 @@ export const TABS: NavSurface[] = [
   // modules(policy): GET /policy is owner/operator (routes_policy.py, not yet
   // migrated) - team-only via the interim stand-in, same caveat as /history.
   { id: "tab.modules", title: "", path: "modules", route: "modules", nav: { group: "more", order: 10, icon: "cube-outline", labelKey: "nav.modules", sectionKey: "nav.sectionSetup", cap: TEAM_MEMBER_CAP, desktopOnly: true } },
-  { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 11, icon: "ellipsis-horizontal", phoneOnly: true } },
+  { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 11, icon: "ellipsis-horizontal", labelKey: "nav.more", phoneOnly: true } },
 ];
 
 export const tabsNav: Plugin = {
