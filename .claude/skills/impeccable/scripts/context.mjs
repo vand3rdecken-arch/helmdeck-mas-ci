@@ -11,7 +11,7 @@
  *      --target selects the active project: the workspace child in a
  *      monorepo, or the nearest directory around the target carrying
  *      canonical context files in an ordinary repo (issue #376).
- *   2. Active project .agents/context/ then docs/
+ *   2. Active project .agents/context/ then ops/docs/
  *   3. Repo root context, using the same order, as a per-file fallback
  *      whenever the active project is nested below it (a repo counts as a
  *      monorepo when a package manager declares workspaces, or

@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""HelmDeck daemon CLI.
+"""HelmDeck daemon CLI. Run as a package from the REPO ROOT (daemon/ is a
+real Python package now, not a sys.path trick):
 
-  python swarm.py wincap-test           5s desktop capture -> recordings/<id>/screen.mp4
-  python swarm.py browser-demo          scripted, audited browser run (video + timeline)
-  python swarm.py teach "task name"     record YOUR demo; Ctrl+Esc stops
-  python swarm.py distill <run-id>      demo -> editable playbook (claude -p)
-  python swarm.py list                  runs + step counts
-  python swarm.py serve [port]          local review/index server (APK + browser pull this)
+  python -m daemon.swarm wincap-test    5s desktop capture -> recordings/<id>/screen.mp4
+  python -m daemon.swarm browser-demo   scripted, audited browser run (video + timeline)
+  python -m daemon.swarm teach "task name"   record YOUR demo; Ctrl+Esc stops
+  python -m daemon.swarm distill <run-id>    demo -> editable playbook (claude -p)
+  python -m daemon.swarm list           runs + step counts
+  python -m daemon.swarm serve [port]   local review/index server (APK + browser pull this)
 """
 import sys, time
 
@@ -19,9 +20,9 @@ for _s in (sys.stdout, sys.stderr):
     except Exception: pass
 
 def wincap_test():
-    import wincap
-    from runs import new_run, finish_run
-    from actionlog import ActionLog
+    from spine.media import wincap
+    from spine.ops.runs import new_run, finish_run
+    from spine.ops.actionlog import ActionLog
     rid, d = new_run("test", "wincap 5s smoke")
     log = ActionLog(d)
     log.log("note", "wincap smoke start")
@@ -33,8 +34,8 @@ def wincap_test():
     print("run:", rid)
 
 def browser_demo():
-    from browsercap import AgentBrowser
-    from runs import new_run, finish_run
+    from spine.media.browsercap import AgentBrowser
+    from spine.ops.runs import new_run, finish_run
     rid, d = new_run("agent", "browser demo: example.com walk")
     b = AgentBrowser(d)
     try:
@@ -55,22 +56,22 @@ def main():
     if cmd == "wincap-test": wincap_test()
     elif cmd == "browser-demo": browser_demo()
     elif cmd == "teach":
-        from teach import record_demo
+        from spine.ops.teach import record_demo
         record_demo(sys.argv[2] if len(sys.argv) > 2 else "unnamed task")
     elif cmd == "distill":
-        from distill import distill
+        from spine.ops.distill import distill
         distill(sys.argv[2])
     elif cmd == "list":
-        from runs import list_runs
-        from actionlog import read_timeline
+        from spine.ops.runs import list_runs
+        from spine.ops.actionlog import read_timeline
         import os
-        from runs import REC
+        from spine.ops.runs import REC
         for m in list_runs():
             n = len(read_timeline(os.path.join(REC, m["id"])))
             print("%s  %-6s %-8s %3d steps  %s" %
                   (m["id"], m["kind"], m["status"], n, m["title"]))
     elif cmd == "serve":
-        import server
+        from spine.http import server
         server.serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8140)
     else:
         print(__doc__)

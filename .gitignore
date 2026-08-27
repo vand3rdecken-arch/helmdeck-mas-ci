@@ -1,57 +1,101 @@
 __pycache__/
 *.pyc
+# GENERIC log net (2026-08-24 data-hygiene audit): every log is runtime
+# output, wherever a future feature drops one - the named entries further
+# down predate this rule and stay as documentation of what writes where.
+# Verified before adding: zero tracked *.log/*.err existed.
+*.log
+*.err
 daemon/recordings/
-apk/local.properties
-apk/.gradle/
-apk/build/
-apk/app/build/
 .idea/
 *.keystore
 push.env
 
-# built APK is committed as a release artifact at repo root; ignore build intermediates
-apk/gradle/wrapper/dists/
+# Local expo modules ARE tracked (surfaces/app/modules/glasses is real source), but a
+# native build drops gradle output inside them - first seen 2026-08-21, when
+# assembleRelease left surfaces/app/modules/glasses/android/build/ as ~700 untracked
+# files. Ignore the output, keep the source.
+surfaces/app/modules/*/android/build/
 daemon/tracks.json
 daemon/settings.json
 daemon/plane_links.json
 daemon/plane_credentials.txt
 daemon/events.jsonl
-daemon/tracks.json
 daemon/users.json
 daemon/sessions.json
 daemon/processes.json
 daemon/copilot_sessions.json
-web/node_modules/
-web/.next/
+# GxP signing keys (spine/auth/signkeys.py): per-user GPG keyrings whose
+# passphrase is the user's password. Private keys are secrets like users.json
+# above; the PUBLIC keys an auditor needs are exported per signature, and even
+# those stay out of git - they belong to an installation, not the source.
+daemon/signkeys/
+# rendered speech clips (voice.py): regenerated on demand, content-addressed
+daemon/voice_cache/
 daemon/checkpoints/
 daemon/swarmdeck.db
 daemon/helmdeck.db
 daemon/*.imported
+daemon/*.imported.*
+daemon/**/*.imported
 daemon/tracks.json.imported
+# events.jsonl sync/import runtime markers - a *.imported (no numbered
+# suffix) is already covered above; *.imported.<n> and *.synced are the
+# same class of daemon-regenerated marker and were missing (surfaced by a
+# throwaway verification daemon run leaving events.jsonl.imported.2 /
+# events.jsonl.synced as untracked noise).
+daemon/*.synced
+daemon/**/*.synced
+# ad-hoc one-off diagnostic scripts left by a session with direct hands on
+# the live tree (Henry) - disposable scratch, never source. Generalized
+# twice: root-level _*.py, and _henry*/_inspect* anywhere (he drops them
+# next to whatever he is inspecting, measured 2026-08-24 in ops/tools/).
+/_*.py
+**/_henry*.py
+**/_inspect*.py
 .loop/
 daemon/copilot_log.json
 daemon/copilot_stats.json
 daemon/driver_pids.json
 daemon/recorder_pids.json
-daemon/nightshift/state.json
+# nightshift output is RUNTIME data, all of it - plans/reports were once
+# committed (jul-28 artifacts, untracked in the data-hygiene sweep) like the
+# early APK; the whole dir is machine-local now.
+daemon/nightshift/
 daemon/restart_stdout.log
 daemon/restart_stderr.log
 daemon/daemon.out.log
-app/dist-desktop/
-web/devserver.log
+surfaces/app/dist-desktop/
+surfaces/app/web_dev.log
+# tsc emit output for the zero-dependency self-tests (src/kernel/__selftest__.ts,
+# src/kernel/__caps_selftest__.ts) - compiled JS, not source.
+surfaces/app/.kernel-out/
+surfaces/app/.capstest-out/
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 daemon/helmdeck.db-wal
 daemon/helmdeck.db-shm
-plane-selfhost/.env
-plane-selfhost/*.env
 backups/
-docs
+# NOT an accident (owner decision 2026-08-16, "you work local so just don't
+# publish docs"): already-tracked docs STAY tracked so card worktrees see them;
+# this only keeps NEW docs out of git by default. The public mirror strips
+# the whole tree - see the private-path check in ops/deploy/publish_source.sh.
+# `ops/docs/**` (contents) instead of bare `docs` (the dir) since the root-
+# minimization sweep: an ignored DIRECTORY cannot have children re-included,
+# and ops/docs/backlog/ - the card queue, moved here 2026-08-24 - MUST track new
+# cards or the dispatch workflow silently loses them. Everything else under
+# ops/docs/ behaves exactly as before.
+ops/docs/**
+!ops/docs/backlog/
+!ops/docs/backlog/**
+# the re-include above overrides the global __pycache__/ rule for anything
+# under backlog (later pattern wins) - a card's judge script run drops caches
+ops/docs/backlog/**/__pycache__/
 
 # local credentials - never commit
 # App Store Connect API key. Apple serves the .p8 exactly ONCE - there is no
 # re-download - and it can mint iOS signing certificates, so treat it like the
-# Android keystore. deploy/ios_credentials.sh additionally REFUSES to run when
+# Android keystore. ops/deploy/ios_credentials.sh additionally REFUSES to run when
 # the key lives anywhere under this repo; this line is only the second net.
 *.p8
 daemon/certs/
@@ -62,19 +106,61 @@ google-services.json
 fcm_service_account.json
 daemon/models_cache.json
 daemon/pm/
-tests/banner_offline.png
+ops/tests/banner_offline.png
 
-# UI-judging screenshots (regenerate with tests/uifix_shoot.py)
-tests/_shots/
+# UI-judging screenshots (regenerate with ops/tests/uifix_shoot.py)
+ops/tests/_shots/
 
-# deploy artifacts (generated by deploy/ship.sh): native fingerprint state +
+# chat attachments the owner uploads (phone screenshots of his own board, etc).
+# Runtime user data, exactly like daemon/recordings/ and daemon/checkpoints/ -
+# electron-builder.yml already refuses to ship .attachments/** for the same
+# reason. Ignoring it protects only the FUTURE: five of these were committed
+# before this line existed and are still reachable in history, which is what
+# ops/deploy/publish_source.sh's privacy check is there to catch before a push
+# makes them public.
+.attachments/
+daemon/.attachments/
+daemon/.copilot_attachments/
+
+# deploy artifacts (generated by ops/deploy/ship.sh): native fingerprint state +
 # the emulator smoke screenshot - machine-local, regenerated each ship
-deploy/.native_fp
-deploy/last_apk_smoke.png
-# deploy/asc_guide.py's screenshot of App Store Connect: regenerated on every
+ops/deploy/.native_fp
+ops/deploy/last_apk_smoke.png
+# ops/deploy/asc_guide.py's screenshot of App Store Connect: regenerated on every
 # `shot`, and once logged in it shows the owner's Apple ID and app list.
-shots/asc.png
+# (shots/ lives under ops/docs/ since the root-minimization sweep - ops/docs/ is also
+# what the public mirror filters, closing the board-screenshot gap.)
+ops/docs/shots/asc.png
+# same reason: ops/deploy/meta_wearables_guide.py's screenshot shows the owner's
+# Meta org/project details once logged in.
+ops/docs/shots/meta_wearables.png
 daemon/daemon.pid
-desktop/_probe_setup.js
-desktop/python/
+surfaces/desktop/_probe_setup.js
+surfaces/desktop/python/
 copilot_runs/
+# ops/harness/.versions: every /harness write archives the file it replaced so a bad
+# edit is revertable. Machine-local undo history, not shipped policy - the
+# CURRENT ops/harness/agents/*.md and ops/harness/settings/*.json are what's tracked.
+ops/harness/.versions/
+
+# surfaces/glasses/worker/public is GENERATED by ops/deploy/push_glance.sh from the three
+# real files in surfaces/glasses/ (index.html, styles.css, app.js). Tracking it would
+# mean two copies of the app that can silently disagree; the sync is a build
+# step, exactly like glass-crud-harness's apps/ -> worker/public/.
+surfaces/glasses/worker/public/
+surfaces/glasses/worker/node_modules/
+# stray stdout/stderr redirects from a backgrounded `wrangler dev` - local run
+# artifacts, not source. Two of these leaked into a commit once; never again.
+surfaces/glasses/worker/dev.log
+surfaces/glasses/worker/dev.err
+.wrangler/
+# .dev.vars holds DAEMON_URL for `wrangler dev` - a route into the owner's
+# machine. Same rule as push.env: never committed.
+*.dev.vars
+.dev.vars
+daemon/policy_live.json
+daemon/escalations.jsonl
+daemon/settings.json.tmp
+daemon/copilot_stats.json.tmp
+daemon/models_stt/
+surfaces/app/modules/livemic/android/libs/

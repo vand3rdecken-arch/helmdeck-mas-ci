@@ -1,0 +1,9 @@
+{
+  "name": "phase2",
+  "plugins": [
+    "engines.claude",
+    "engines.copilot",
+    "engines.deepseek",
+    "surfaces.board"
+  ]
+}

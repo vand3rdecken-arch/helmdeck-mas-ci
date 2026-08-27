@@ -1,3 +1,10 @@
 playwright>=1.40
 imageio-ffmpeg>=0.4.9
 pynput>=1.7
+# voice.py: the agent's answer SPOKEN on the glasses (the lens has no
+# speechSynthesis but plays audio). OPTIONAL - voice.render() returns None
+# without it and every surface degrades to text, so a box that never installs
+# this still works. Needs network at render time (Microsoft neural voices);
+# clips are content-addressed and cached, so repeats cost nothing.
+edge-tts>=7.0
+faster-whisper

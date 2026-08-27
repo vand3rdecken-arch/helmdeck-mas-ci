@@ -1,0 +1,14 @@
+{
+  "name": "app",
+  "plugins": [
+    "engines.claude",
+    "engines.copilot",
+    "engines.deepseek",
+    "nav.tabs",
+    "surfaces.board",
+    "surfaces.pm",
+    "surfaces.processes",
+    "surfaces.connectors",
+    "surfaces.chat"
+  ]
+}

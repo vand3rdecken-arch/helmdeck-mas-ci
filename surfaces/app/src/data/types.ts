@@ -1,0 +1,258 @@
+// Daemon data shapes — ported verbatim from web/lib/api.ts (the Python daemon
+// serves the same JSON to every client). Keep in sync with daemon/events.py.
+
+// ---- GxP sign-off -----------------------------------------------------------
+// 21 CFR 11.50(a)(3): a signature has to carry its MEANING. "reviewed" is what
+// makes a two-person flow possible (A reviews, B approves) without a second
+// mechanism.
+export type SignMeaning = "approved" | "reviewed" | "rejected";
+
+export interface Signature {
+  seq: number;
+  actor: string; actor_role: string;
+  meaning: SignMeaning; reason: string;
+  signed_at: string;                       // UTC, not host-local
+  subject: { card: string; branch: string; head: string; base: string;
+             commits: number; shortstat: string; files: string[] };
+  auth: { method: string; components: string[] };
+  git: { tag: string | null; tag_sha: string | null; merge_sha: string | null };
+  consumed_by: { lane: string; at?: string } | null;
+}
+
+/** GET /sign/subject/<id> - what signing this card would commit to.
+ *  `blocked` is set (and `subject` null) when the card cannot be signed at
+ *  all - most often uncommitted work, because a signature has to name a commit
+ *  that exists. */
+export interface SignSubject {
+  card: string;
+  in_scope: boolean; four_eyes: boolean;
+  dispatched_by?: string | null;
+  signer: { name: string; role: string };
+  subject: Signature["subject"] | null;
+  blocked: string | null;
+  signatures: Signature[];
+}
+
+export interface SignBatchItem { card: string; meaning: SignMeaning; reason: string }
+/** One card's outcome in a batch. A card that drifted fails on its own without
+ *  taking the others down - the result is a list, not all-or-nothing. */
+export interface SignBatchResult { card: string; ok: boolean; error?: string; signature?: Signature }
+
+/** GxP mode state (spine/auth/gxp.py's state(), card 6). `active: false` is
+ *  the whole shape when the mode is off - never leaks the lock file's other
+ *  fields (see gxp.py's own docstring on `state()`). */
+export interface GxpState {
+  active: boolean;
+  activated_at?: string; activated_by?: string;
+  four_eyes?: boolean;
+  scope?: "workspace" | "repos";
+  repos?: string[];
+  disabled?: string[];
+  /** GET-only: repos the server already knows about (settings.pm.repos +
+   *  repo_hooks keys + default_repo) and aren't in scope yet - the picker's
+   *  "known repos" checkbox list. Absent from the POST /gxp/activate reply. */
+  known_repos?: string[];
+  /** POST-only: which of the activated repos were freshly `git init`'d by
+   *  this same call (the picker's "create new" option). */
+  created_repos?: string[];
+}
+
+export interface Track {
+  id: string; repo: string; branch: string; worktree: string; task: string;
+  description?: string; attachments?: string[];
+  billing?: "fixed" | "tm" | "none"; rate?: number | null; project_id?: string | null;
+  client: string; session_id: string | null; perm: string; lane: string;
+  status: string; turns: number; last_reply: string;
+  value: number; driver: string; priority?: string; due?: string; rank?: number | null;
+  ai_cost: number; tokens_in: number; tokens_out: number; models: string[];
+  ctx_tokens?: number;   // current context-window size (last turn's input side) - for the meter
+  /** the model's context WINDOW, derived daemon-side from the model id ([1m] =
+   *  1M) and from evidence (a successful call proves a lower bound). The meter
+   *  divides by this - hardcoded 200k showed 97% on a 1M card really at 23%. */
+  ctx_window?: number;
+  created: string; updated: string;
+  mode?: string; process?: string; process_title?: string;
+  up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;
+  merge_failed?: boolean; merge_kind?: string; merge_report?: string;
+  review_preview?: boolean; review_report?: string;
+  archived?: boolean; autopilot?: boolean; fast_track?: boolean;
+  // GxP, DERIVED server-side per read (lifecycle._present_gxp), never stored.
+  // Absent entirely for a card outside the regulated scope, so `gxp_scope` is
+  // the one flag the board branches on. `gxp_signed` is the cheap question
+  // ("an unconsumed approved signature exists") - whether it still matches git
+  // is checked when the dialog opens and again before the merge, because that
+  // costs git calls the board's polling must not pay.
+  gxp?: boolean; gxp_scope?: boolean; gxp_signed?: boolean; dispatched_by?: string;
+  /** remote device execution (ops/docs/backlog/remote-device-execution): a card
+   *  a team member's own PC runs. "local:<device-id>" when set; absent for a
+   *  daemon-executed card. `device_stale` is DERIVED server-side per read
+   *  (lifecycle._present_device) - true when a working device card has been
+   *  claimed longer than the sweep's TTL, i.e. its device may be offline. Just
+   *  a badge hint; dispatch.sweep_stale_device_claims is the authority. */
+  exec_site?: string; device_stale?: boolean;
+  forked_from?: string; forked_ref?: string; adopted?: boolean;
+  question?: PendingQuestion;
+  waiting_on?: "you" | "background";
+  background?: BackgroundWait;
+  /** Paseo ProviderSubagentStore: one descriptor per background task the worker
+   *  launched, with an explicit lifecycle status - so the card can show what the
+   *  worker is doing and how each task ended (clickable), not just a count. Keyed
+   *  by the launching tool_use id. */
+  bg_tasks?: Record<string, BgTask>;
+}
+export interface BgTask {
+  title: string;
+  status: "running" | "completed" | "failed" | "canceled";
+  since?: number;      // epoch seconds it was launched
+  updated?: number;    // epoch seconds of the last state change
+  detail?: string;     // the command / prompt that launched it
+  result?: string;     // the task-notification output, or why it was canceled
+}
+/** A worker's typed multiple-choice question (daemon/ask.py). Present only
+ *  while the card is actually waiting on the owner's decision; answering it
+ *  (POST /tracks/<id>/answer) continues the SAME session, so the worker picks
+ *  up where it stopped instead of the card parking on unanswerable prose. */
+export interface PendingQuestion {
+  /** echoed back when answering, so a stale panel can't answer a question the
+   *  worker has already moved past */
+  id: string;
+  kind: "tool" | "plan" | "question" | "mode";
+  asked: string;
+  ta?: number;
+  questions: AskQuestion[];
+}
+export interface AskQuestion {
+  question: string;
+  /** short chip label, also the answer key */
+  header: string;
+  options: AskOption[];
+  multiSelect: boolean;
+  idx?: number;
+}
+export interface AskOption { label: string; description?: string }
+/** What a parked card is waiting on, when it is NOT the owner: a background
+ *  task the worker launched and is still running (Phase 2.5). */
+export interface BackgroundWait { n: number; names?: string[]; since?: number }
+/** POST /tracks/<id>/lane. ->backlog still returns the finished Track;
+ *  ->working/review/done are backgrounded by the daemon (gate subprocess +
+ *  merge + deploy hook) and answer {started, gating} right away. The card then
+ *  carries status "gating" until the real verdict lands on it. */
+// gxp_refused: the daemon declined the landing (no signature, drifted, or
+// the actor is not a real account). Carries the reason, ready to show.
+export type LaneMove = Partial<Track> & { started?: string; gating?: boolean; gxp_refused?: string };
+export interface EconCard {
+  id: string; task: string; branch: string; lane: string; ai_cost: number;
+  touches: number; value: number; mode: string | null; models: string[];
+  tokens_in: number; tokens_out: number;
+  billing?: "fixed" | "tm" | "none"; rate?: number | null;
+  billed?: number; margin?: number; time_seconds?: number;
+  /** flat plan only: this card's share of the subscription, in percent of a
+   *  weekly quota. null when the daemon can't calibrate → fall back to tokens. */
+  plan_pct?: number | null;
+}
+export interface Sow {
+  id: string; name: string; client: string; status?: string; due?: string;
+  cards: number; done: number; hours: number; billed: number;
+  ai_cost: number; margin: number; all_done: boolean; plan_pct?: number | null;
+}
+/** How the daemon converted tokens into "% of the plan". source "measured" =
+ *  calibrated against the live weekly quota window (an estimate — it divides
+ *  OUR tokens by the ACCOUNT's utilization); "configured" = owner-set
+ *  settings.pm.plan_tokens_week. Absent/null = not calibratable right now. */
+export interface PlanCalibration {
+  tokens_per_pct: number; source: "measured" | "configured"; window: string;
+  used_pct?: number | null; observed_tokens?: number | null; resets_at?: string;
+}
+export interface Metrics {
+  settings?: {
+    currency: string; value_per_card: number; default_repo: string;
+    capacity: { wip_limit: number; touch_budget_day: number;
+      tariff: { steer: number; review: number; bounce: number } };
+    drivers?: Record<string, { type: string; record?: boolean }>;
+    registration?: { open: boolean; invite_code: string; default_role: string };
+    policy?: { lane_labels?: Record<string, string>; auto_dispatch_modes?: string[];
+      auto_accept_green?: boolean; auto_dispatch_priority?: string; chat_configure_roles?: string[] };
+    jira?: { base: string; email: string; api_token: string; default_jql: string };
+    relay?: { url?: string; room?: string; phone_pub?: string };
+    dashboard?: { tiles?: string[]; panels?: string[] };
+    appearance?: { backdrop?: string };
+  };
+  /** flat = Max subscription: ai_cost/ai_spend are API-equivalent references,
+   *  not spend, and margins already exclude them daemon-side. */
+  ai_billing?: "flat" | "metered";
+  plan_calibration?: PlanCalibration | null;
+  cards: EconCard[];
+  sows: Sow[];
+  capacity: { wip: number; wip_limit: number; touches_today: number;
+    touch_budget_day: number; headroom: number; actors?: Record<string, number> };
+  yield_first_pass: [number, number];
+  automation: [number, number];
+  gate_failures: [string, number][];
+  ai_by_model?: Record<string, { turns: number; cost: number; tok_in: number; tok_out: number;
+    avg_cost_per_turn: number; plan_pct_per_turn?: number | null }>;
+  totals: { value_delivered: number; ai_spend: number; margin: number; leverage_per_touch: number;
+    ai_tokens?: number; plan_pct?: number | null };
+}
+export interface Step {
+  title: string; desc: string; mode: string; days: number; status: string;
+  track: string | null; due: string; state?: string; lane?: string | null;
+  ready?: boolean; done?: boolean;
+}
+export interface Process {
+  id: string; request: string; client: string; due: string; status: string;
+  steps: Step[]; cost: number; created: string; error?: string;
+}
+/** `ui` is the PUBLIC slice of policy every role may see (language + lane
+ *  labels). The full settings blob stays owner-only on /settings. */
+export interface Me {
+  name: string; role: string;
+  /** Effective capabilities for this role (spine/auth/permissions.py CAPS),
+   *  derived live server-side - never recompute this client-side from
+   *  `role`, that's exactly the drift rbac-gxp card 4 closes. See
+   *  src/kernel/caps.ts's `can()`. */
+  caps?: string[];
+  ui?: { lang?: string; lane_labels?: Record<string, string>;
+    /** flat = Max subscription (quota, not cash) → cost surfaces show tokens;
+     *  metered = API pay-per-token → $ amounts are real spend. */
+    ai_billing?: "flat" | "metered" };
+}
+export interface HistoryRow { kind: string; detail: string; ts?: string; t?: number }
+export interface Run { id: string; title: string; kind: string; status: string; steps?: number }
+export interface UserRow {
+  name: string; role: string; created?: string;
+  // No `token`: the daemon hashes device tokens at rest and never hands the
+  // plaintext back. `id` is the revoke handle, `tail` the last six characters
+  // so a human can tell two devices apart. The full value exists exactly once,
+  // in the response to issueToken.
+  // last_used/expires/stale: card 5 debt (rbac-audit-hardening-partial) -
+  // access-review signal. `stale` is computed server-side (auth._token_stale,
+  // >90d unused), never recomputed client-side from a cached timestamp.
+  tokens: { label: string; id: string; tail: string; created?: string;
+    last_used?: string | null; expires?: string | null; stale?: boolean }[];
+}
+
+// A registered remote-execution device (ops/docs/backlog/remote-device-
+// execution). Same "no token" rule as UserRow: the plaintext exists once, in
+// the register response. `billing_scope` = whose Claude account pays
+// ("external" = the device's own; "shared" = the daemon's).
+export interface DeviceRow {
+  id: string; owner: string; label: string;
+  billing_scope?: "external" | "shared";
+  created?: string; last_seen?: string | null;
+}
+
+// Claude subscription usage (from /usage) - the 5h + weekly rate-limit windows.
+export type UsageTone = "ok" | "warning" | "danger" | "default";
+export interface UsagePacing {
+  elapsed_pct: number; ahead_pct: number; projected_pct: number | null;
+  exhaust_at: string | null; reset_hours_left: number;
+  exhaust_before_reset: boolean; flag: boolean;
+}
+export interface UsageWindow {
+  id: string; label: string; usedPct: number | null; remainingPct: number | null;
+  resetsAt: string | null; tone: UsageTone; pacing?: UsagePacing;
+}
+export interface Usage {
+  status: "ok" | "unavailable" | "error"; plan: string | null;
+  windows: UsageWindow[]; fetchedAt?: string; error?: string;
+}
