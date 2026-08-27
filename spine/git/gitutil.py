@@ -83,6 +83,37 @@ def is_git_repo(path):
     return r.returncode == 0
 
 
+def init_repo(path, actor):
+    """Create `path` if missing and `git init` it with one seed commit
+    (ops/docs/backlog/rbac-gxp card 6 follow-up: the GxP activation picker's
+    "create new" option). A bare `git init` alone is not enough for either
+    consumer: HelmDeck's own dispatch refuses a base branch with zero
+    commits (`_base_ref` above, "make an initial commit first"), and GxP's
+    whole premise is an audit trail built ON git history - a repo with none
+    yet has nothing for `signatures.drift()` to anchor against. Idempotent:
+    an already-git repo is left completely untouched, just resolved and
+    returned, so calling this on a path someone already git-initialized by
+    hand is a safe no-op.
+
+    `actor` is recorded in the seed commit's MESSAGE (who asked), never as
+    the commit author - AGENT_IDENT stays the author, same rule this
+    module's docstring gives for every harness-made commit."""
+    path = os.path.abspath(path)
+    if is_git_repo(path):
+        return {"path": path, "created_dir": False, "git_initialized": False}
+    created_dir = not os.path.isdir(path)
+    os.makedirs(path, exist_ok=True)
+    _git(path, "init", "-q")
+    readme = os.path.join(path, "README.md")
+    if not os.path.exists(readme):
+        with open(readme, "w", encoding="utf-8") as f:
+            f.write("# %s\n\nCreated by HelmDeck.\n" % os.path.basename(path))
+    _git_try(path, *AGENT_IDENT, "add", "-A")
+    _git_try(path, *AGENT_IDENT, "commit", "-m",
+             "helmdeck: initial commit (repo created via %s)" % actor)
+    return {"path": path, "created_dir": created_dir, "git_initialized": True}
+
+
 def _current_branch(repo):
     """Name of the checked-out branch, with Paseo's rebase-HEAD guard
     (checkout-git.ts getRebaseHeadBranch): during a rebase `rev-parse

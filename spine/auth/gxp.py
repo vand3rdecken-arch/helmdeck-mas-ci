@@ -143,7 +143,7 @@ def state():
             "disabled": sorted(doc.get("disable") or _DEFAULT_DISABLE)}
 
 
-def activate(repos=None, four_eyes=False, activated_by="owner"):
+def activate(repos=None, four_eyes=False, activated_by="owner", created_repos=None):
     """Turn GxP mode on, or widen its scope - card 6 (ops/docs/backlog/
     rbac-gxp): the UI-triggered counterpart to hand-editing gxp.lock on the
     host. Called ONLY from routes_gxp.py, which re-authenticates the caller
@@ -161,7 +161,13 @@ def activate(repos=None, four_eyes=False, activated_by="owner"):
     Deactivation is deliberately NOT a function here - it stays host-
     filesystem + daemon-restart only (see RESIDUAL RISK above). Widening
     scope through this function does not weaken that: turning the mode OFF
-    is still unreachable from any HTTP path."""
+    is still unreachable from any HTTP path.
+
+    `created_repos`, when given, is purely audit-event enrichment (which of
+    `repos` were freshly `git init`'d by this same call, via
+    spine.git.gitutil.init_repo, rather than pre-existing) - it does not
+    change the lock file's shape at all, so `state()` never has to know
+    about it."""
     import time
     prev = _read() or {}
     was_active = bool(prev.get("enabled"))
@@ -187,7 +193,8 @@ def activate(repos=None, four_eyes=False, activated_by="owner"):
     try:
         from spine.storage import events
         events.emit("gxp", "-", op="activate", actor=activated_by,
-                    repos=new_repos, four_eyes=doc["four_eyes"], widened=was_active)
+                    repos=new_repos, four_eyes=doc["four_eyes"], widened=was_active,
+                    created_repos=created_repos or [])
     except Exception:
         pass
     return state()

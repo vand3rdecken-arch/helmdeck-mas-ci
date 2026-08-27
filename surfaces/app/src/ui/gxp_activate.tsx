@@ -31,24 +31,54 @@ export function GxpActivate({ onClose, onActivated }: {
   const tr = useT();
   const qc = useQueryClient();
   const { data: st, refetch } = useQuery({ queryKey: ["gxpState"], queryFn: api.gxpState });
-  const [reposText, setReposText] = useState("");
+  // Picker, not a freeform box (found live: a hand-typed path that doesn't
+  // EXACTLY match a card's own repo field silently never gates anything -
+  // spine/auth/gxp.py's _norm() is a strict compare, no fuzzy match). Two
+  // sources feed the same `repos` list the server widens scope with:
+  // `picked` = known repos (settings.pm.repos + repo_hooks keys +
+  // default_repo, server-computed in st.known_repos) toggled on/off, and
+  // `newPaths` = brand-new repos to create + git-init server-side
+  // (spine.git.gitutil.init_repo) so a fresh repo has real commit history
+  // to be an audit trail over, not just an empty folder.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [newPathText, setNewPathText] = useState("");
+  const [newPaths, setNewPaths] = useState<string[]>([]);
   const [fourEyes, setFourEyes] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const repoLines = reposText.split("\n").map((s) => s.trim()).filter(Boolean);
-  // Empty box = workspace-wide scope (undefined, not []) - gxp.py treats an
-  // explicit empty list and "no list at all" differently (repos=None means
-  // the whole workspace), so this must not send [] by accident.
-  const repos = repoLines.length ? repoLines : undefined;
+  function togglePicked(path: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path); else next.add(path);
+      return next;
+    });
+  }
+  function addNewPath() {
+    const p = newPathText.trim();
+    if (!p || newPaths.includes(p)) return;
+    setNewPaths((prev) => [...prev, p]);
+    setNewPathText("");
+  }
+  function removeNewPath(p: string) {
+    setNewPaths((prev) => prev.filter((x) => x !== p));
+  }
+
+  const totalCount = picked.size + newPaths.length;
+  // Empty selection = workspace-wide scope (both omitted, not []) - gxp.py
+  // treats an explicit empty list and "no list at all" differently
+  // (repos=None means the whole workspace), so this must not send [] by
+  // accident.
+  const repos = picked.size ? Array.from(picked) : undefined;
+  const newRepos = newPaths.length ? newPaths : undefined;
   const canSubmit = !!password && !busy;
 
   async function submit() {
     if (!canSubmit) return;
     setBusy(true); setErr(null);
     try {
-      const rec = await api.activateGxp(repos, fourEyes, password);
+      const rec = await api.activateGxp(repos, newRepos, fourEyes, password);
       qc.invalidateQueries({ queryKey: ["gxpState"] });
       onActivated(rec.scope === "workspace"
         ? tr("gxp.activatedWorkspace", { who: rec.activated_by ?? "" })
@@ -98,16 +128,69 @@ export function GxpActivate({ onClose, onActivated }: {
               <Text style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: -2 }}>
                 {tr("gxp.scopeHint")}
               </Text>
-              <TextInput
-                value={reposText} onChangeText={setReposText}
-                placeholder={tr("gxp.reposPh")} placeholderTextColor={t.txtPlaceholder}
-                multiline autoCapitalize="none"
-                style={{ color: t.txtPrimary, backgroundColor: t.surface2,
-                  borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8,
-                  padding: 10, fontSize: 13, minHeight: 60, maxHeight: 110, fontFamily: "monospace" }}
-              />
+
+              {st?.known_repos?.length ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "600", letterSpacing: 0.4 }}>
+                    {tr("gxp.knownRepos").toUpperCase()}
+                  </Text>
+                  {st.known_repos.map((p) => (
+                    <Pressable key={p} onPress={() => togglePicked(p)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                      <Ionicons name={picked.has(p) ? "checkbox" : "square-outline"} size={18}
+                        color={picked.has(p) ? t.human : t.txtTertiary} />
+                      <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1, fontFamily: "monospace" }}
+                        numberOfLines={1}>{p}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "600", letterSpacing: 0.4 }}>
+                  {tr("gxp.createNew").toUpperCase()}
+                </Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: -2 }}>
+                  {tr("gxp.createNewHint")}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <TextInput
+                    value={newPathText} onChangeText={setNewPathText}
+                    placeholder={tr("gxp.reposPh")} placeholderTextColor={t.txtPlaceholder}
+                    autoCapitalize="none" onSubmitEditing={addNewPath}
+                    style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2,
+                      borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8,
+                      padding: 10, fontSize: 13, fontFamily: "monospace" }}
+                  />
+                  <Pressable onPress={addNewPath} disabled={!newPathText.trim()}
+                    style={{ justifyContent: "center", alignItems: "center", width: 38, borderRadius: 8,
+                      backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+                      opacity: newPathText.trim() ? 1 : 0.4 }}>
+                    <Ionicons name="add" size={18} color={t.txtSecondary} />
+                  </Pressable>
+                </View>
+                {newPaths.length ? (
+                  <View style={{ gap: 4 }}>
+                    {newPaths.map((p) => (
+                      <View key={p} style={{ flexDirection: "row", alignItems: "center", gap: 8,
+                        backgroundColor: t.surface2, borderRadius: 6, padding: 8 }}>
+                        <Ionicons name="git-branch-outline" size={14} color={t.human} />
+                        <Text style={{ color: t.txtSecondary, fontSize: 12, flex: 1, fontFamily: "monospace" }}
+                          numberOfLines={1}>{p}</Text>
+                        <Pressable onPress={() => removeNewPath(p)} hitSlop={8}>
+                          <Ionicons name="close" size={15} color={t.txtTertiary} />
+                        </Pressable>
+                      </View>
+                    ))}
+                    <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontStyle: "italic" }}>
+                      {tr("gxp.createNewNote")}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
               <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
-                {repos ? tr("gxp.scopeRepos", { n: repos.length }) : tr("gxp.scopeWorkspace")}
+                {totalCount ? tr("gxp.scopeRepos", { n: totalCount }) : tr("gxp.scopeWorkspace")}
               </Text>
               {/* scope only ever grows (spine/auth/gxp.py) - said explicitly so
                   a returning owner isn't surprised a previously-listed repo is
