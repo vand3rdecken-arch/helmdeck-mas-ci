@@ -14,11 +14,15 @@ from spine.http.apimeta import _loop_machine, _config_schema
 
 def settings_get(self, user):
     from spine.storage import events
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
     return self._send(200, json.dumps(events.settings()))
 
 
 def nightshift_get(self, user):
     from cells.pm import pm
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
     return self._send(200, json.dumps(pm.status()))
 
 
@@ -26,6 +30,8 @@ def usage_get(self, user):
     # Claude subscription usage (5h + weekly rate-limit windows) with pacing,
     # from the same source as Paseo's usage tab. Owner-only: it's the owner's
     # account. Cached in usage.py so a poll doesn't hammer the endpoint.
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.ops import usage
     return self._send(200, json.dumps(usage.snapshot()))
 
@@ -37,6 +43,8 @@ def automation_get(self, user):
     # it currently sits - so the UI can expose "what is the harness doing".
     from spine.storage import events
     from cells.pm import pm
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
     s = events.settings(); pol = s.get("policy") or {}
     # ONE definition, shared with /loop/map (see _loop_machine). The
     # hand-written list that used to sit here had drifted: it still
@@ -63,6 +71,8 @@ def automation_get(self, user):
 
 def settings_post(self, user, body):
     from spine.storage import events
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
     rel = body.get("relay")
     if isinstance(rel, dict) and rel.get("url"):
         from spine.comms import relay_client
@@ -82,15 +92,4 @@ GET_ROUTES = {
 }
 POST_ROUTES = {
     "/settings": settings_post,
-}
-# Capability declarations (spine/auth/permissions.py) - the central guard in
-# server.py enforces these BEFORE the handler runs; every check that used to
-# be inline above is now here instead, one place, matched 1:1 to GET_ROUTES/
-# POST_ROUTES.
-GET_CAPS = {
-    "/settings": "settings.read", "/nightshift": "settings.read",
-    "/usage": "settings.read", "/automation": "settings.read",
-}
-POST_CAPS = {
-    "/settings": "settings.write",
 }

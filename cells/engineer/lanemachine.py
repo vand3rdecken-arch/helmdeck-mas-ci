@@ -720,29 +720,6 @@ def lane_active(tid):
     return _LANE_LIVE.get(tid, 0) > 0
 
 
-def _sod_block_reason(actor, t):
-    """Why `actor` may not accept THIS card under Separation of Duties, or None.
-
-    Off by default (policy.sod_accept) - a one-person shop cannot dispatch AND
-    approve as two different people, same reasoning as gxp.four_eyes(). On,
-    per ops/docs/backlog/rbac-gxp: acceptance requires the `quality` role AND
-    actor != the card's own dispatched_by - stricter than four-eyes (any other
-    human), because SoD is specifically the approver-role separation, not just
-    "someone else looked at it"."""
-    from spine.auth import policy
-    if not policy.get_policies().get("sod_accept", False):
-        return None
-    from spine.auth import auth
-    u = auth.get_user(actor)
-    role = (u or {}).get("role")
-    if role != "quality":
-        return ("SoD: accepting requires the quality role (actor '%s' is %s)"
-                % (actor, role or "not a real account"))
-    if t.get("dispatched_by") == actor:
-        return "SoD: %s dispatched this card and may not also accept it" % actor
-    return None
-
-
 def move_lane(tid, lane, actor="owner", _autopark=True):
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
@@ -796,21 +773,6 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
                 from spine.ops.actionlog import ActionLog as _AL
                 _AL(t["run_dir"]).log("note", "GxP: Abnahme abgelehnt - " + _blocked)
             return dict(t, gxp_refused=_blocked)
-        # ---- SoD: separate chokepoint, same shape (card 3) -----------------
-        # policy.sod_accept, default OFF (solo-owner operation unchanged): when
-        # on, only the `quality` role may accept, and never the card's own
-        # dispatcher (t["dispatched_by"], captured at intake in dispatch.py's
-        # new_track - the same field ops/docs/gxp-mode-design.md's four-eyes
-        # design already relies on). A separate check from gxp's, on purpose:
-        # a repo can be GxP-regulated without SoD, or run SoD without GxP.
-        _sod = _sod_block_reason(actor, t)
-        if _sod:
-            events.emit("sod", tid, outcome="accept_refused", actor=actor,
-                        lane_from=prev, reason=_sod)
-            if t.get("run_dir"):
-                from spine.ops.actionlog import ActionLog as _AL
-                _AL(t["run_dir"]).log("note", "SoD: Abnahme abgelehnt - " + _sod)
-            return dict(t, sod_refused=_sod)
     # record the human's board move in the card's own feed (chat), so a drag to
     # Review/Done/Working/Backlog reads alongside the agent's work, not just in the
     # global event log. The lane-specific handlers below add the outcome detail.
