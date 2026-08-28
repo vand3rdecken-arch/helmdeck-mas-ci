@@ -72,6 +72,26 @@ def chat_post(self, user, body):
     text = body.get("text", "").strip()
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
+    # IDEMPOTENCY, CLAIMED HERE - the earliest point in the daemon that has the
+    # message. Everything below this line (turn, log append, actions) can take
+    # minutes, and three transport layers give up long before that and replay
+    # the POST; claiming at the END of the turn would leave exactly the window
+    # the duplicate arrives in (measured: a replay was already blocked on the
+    # turn lock 43ms after turn one's last message). See chat_dedupe's docstring
+    # for the evidence this was reconstructed from.
+    from cells.copilot import chat_dedupe
+    mine, original = chat_dedupe.claim(
+        user["name"], text, body.get("card"), body.get("attachments"),
+        mid=body.get("mid") or "")
+    if original is not None:
+        # A replay. No turn, no second `you` entry in the chat log - just the
+        # answer the ORIGINAL turn produced (that is what the replaying client
+        # was missing). Still running after the bounded wait -> say so and let
+        # the client's /chat/history poll deliver it.
+        done = chat_dedupe.await_result(original)
+        out = dict(done or {"reply": "", "actions": []})
+        out["duplicate"] = True
+        return self._send(200, json.dumps(out))
     # "stream" = speak sentence by sentence WHILE the turn runs and collect the
     # clips off /chat/live; True = the original one-shot clip in this response.
     # Two modes rather than one because the choice is the CLIENT's: only a
@@ -114,8 +134,17 @@ def chat_post(self, user, body):
             if clip:
                 out = dict(out)
                 out["voice"] = clip
+        # Settle BEFORE the response is written: a replay may already be waiting
+        # on this claim, and it must be released with the answer rather than
+        # sitting out its full timeout behind a turn that is done.
+        chat_dedupe.settle(mine, out)
         return self._send(200, json.dumps(out))
     except Exception as e:
+        # Never SETTLE a failed turn - drop the claim, so the owner re-sending
+        # after an error gets a real turn instead of a 10-minute hole. Harmless
+        # if the turn actually succeeded and it was `self._send` that raised
+        # (a client that hung up): fail() refuses to drop a settled claim.
+        chat_dedupe.fail(mine)
         return self._send(500, json.dumps({"error": str(e)[:300]}))
 
 

@@ -94,7 +94,16 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
       // any - React Query's unmount-abort) so both cancellation and timeout
       // still fire the fetch's own AbortError, then tell them apart below.
       const timeoutCtl = new AbortController();
-      const timer = setTimeout(() => timeoutCtl.abort(), 8000);
+      // 8s is the right bound for a PROBE (an unreachable host must not hang
+      // the dashboard). It is the wrong bound for an endpoint that runs a model
+      // turn: POST /chat regularly takes 2-3 minutes (measured 176s on
+      // 2026-08-28), so an 8s abort guaranteed the client abandoned every real
+      // turn and left the send unacked — which is the state a lower layer
+      // answers by REPLAYING the POST (see cells/copilot/chat_dedupe.py for the
+      // duplicate-message evidence). The composer's Stop button, not a
+      // stopwatch, is what bounds a turn.
+      const timer = setTimeout(() => timeoutCtl.abort(),
+        path === "/chat" ? 900_000 : 8000);
       if (signal) {
         if (signal.aborted) timeoutCtl.abort();
         else signal.addEventListener("abort", () => timeoutCtl.abort(), { once: true });
@@ -165,7 +174,13 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
    *  which seals one request/response and offers no second binary channel
    *  (spine/media/voice.py render_b64). Absent when speech was
    *  unavailable, which is a soft failure: the text reply is still here. */
-  voice?: VoiceClip | null }
+  voice?: VoiceClip | null;
+  /** The daemon recognised this POST as a REPLAY of a message it already has
+   *  (cells/copilot/chat_dedupe.py) and did not run a second turn. `reply` then
+   *  carries the ORIGINAL turn's answer; it is empty only when that turn was
+   *  still running when the daemon gave up waiting, in which case the answer
+   *  arrives through the /chat/history poll like any other persisted turn. */
+  duplicate?: boolean }
 
 // `attachments` was dropped when the archived web composer (SendOpts, which had
 // it) was ported to RN - the daemon has accepted it the whole time. Both /steer
@@ -513,7 +528,18 @@ export const api = {
   // copilot chat
   chat: (text: string, o: SteerOpts & { card?: string } = {}) => {
     track("chat_message", { scope: o.card ? "card" : "board" });
-    return req<ChatReply>("POST", "/chat", { text, ...o });
+    // `mid` is minted HERE, once per call, and travels inside the body - which
+    // is precisely what makes it a replay detector. A chat turn runs for
+    // minutes while three layers below this line (OkHttp's connection retry,
+    // the relay's 120s REPLY_TIMEOUT, the daemon's own 115s urlopen) are
+    // willing to resend an unacked POST; a resend replays these same bytes, so
+    // it carries this same id and the daemon drops it (cells/copilot/
+    // chat_dedupe.py). A genuine second send is a new call and mints a new id,
+    // so repeating yourself on purpose still works. Minting it inside req()
+    // would be wrong for the same reason - the relay path seals the body once,
+    // per call, and that is the granularity we need.
+    const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return req<ChatReply>("POST", "/chat", { text, mid, ...o });
   },
   chatCancel: () => req("POST", "/chat/cancel", {}),
   /** LIVE voice pipeline STT: one VAD-cut utterance (WAV, base64) -> text.
