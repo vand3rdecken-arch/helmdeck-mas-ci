@@ -82,7 +82,13 @@ class H(BaseHTTPRequestHandler):
     # endpoints are public; every data/control route needs a logged-in
     # session (cookie) or a per-user device token.
     OPEN = ("/auth/state", "/auth/login", "/auth/logout",
-            "/auth/setup", "/auth/register", "/glance")
+            "/auth/setup", "/auth/register", "/glance",
+            # W2b device-code pairing (relay_client.py's own header has the
+            # rationale): the claiming device has no session yet by
+            # definition, so this must be reachable before auth - same class
+            # as /glance, self-gated by its own single-use code instead of a
+            # token/cookie.
+            "/relay/pair/claim")
 
     def _sid(self):
         for part in (self.headers.get("Cookie") or "").split(";"):
@@ -184,6 +190,8 @@ class H(BaseHTTPRequestHandler):
                     return _handler(self, user)
             if p in routes_glance.GET_ROUTES:
                 return routes_glance.GET_ROUTES[p](self, user)
+            if p in routes_relay.GET_ROUTES:
+                return routes_relay.GET_ROUTES[p](self, user)
             if p not in self.OPEN and not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             # Cell gate: a path owned by a DISABLED agentic system 404s cleanly
