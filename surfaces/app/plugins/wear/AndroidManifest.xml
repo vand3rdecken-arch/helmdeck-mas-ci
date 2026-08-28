@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HelmDeck Wear OS module manifest (W2a). Two facts here are cited from
+  developer.android.com/training/wearables/apps/standalone-apps (checked
+  2026-08-28), quoted verbatim, not paraphrased from memory:
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+  with NO android:required attribute - the doc's own example omits it, and
+  the platform default when omitted is required="true". The Wear-OS-
+  Machbarkeitsstudie (README.md §6.2) calls out setting required="false" as
+  the wrong choice for a real watch app, so this intentionally matches the
+  doc's own unqualified form rather than adding an attribute nobody asked
+  for.
+
+    <meta-data android:name="com.google.android.wearable.standalone"
+               android:value="true" />
+
+  T2 in the study (§6.1/§6.2): the watch talks to the glance-worker over its
+  own HTTPS, never through the phone, so it IS standalone by that doc's own
+  definition, not merely declared so.
+
+  No android:icon - no launcher icon asset exists for this module yet
+  (nothing in this card worktree can generate one). AGP does not require one;
+  the OS falls back to a system default. Add a real one before this ever
+  reaches a device the owner looks at day to day.
+
+  2026-08-29 additions (the pairing screen):
+
+    INTERNET - the empty W2a screen made no network call, so it needed none.
+    The pairing/claim flow does.
+
+    <queries> for android.speech.RecognitionService - EXACT same trap as the
+    phone's withGlassVoice.js already paid for and documented: Android 11+
+    hides other packages by default, and ACTION_RECOGNIZE_SPEECH's recognizer
+    is IMPLEMENTED BY ANOTHER APP. Without this the APK builds clean and
+    `resolveActivity()` finds nothing - "correct code, silent dead
+    microphone", not a crash. Copied verbatim (query action + the named
+    Google-app package as belt-and-braces), not re-derived, because it is
+    already a measured fact in this repo, not a fresh guess for the watch.
+    No RECORD_AUDIO here: ACTION_RECOGNIZE_SPEECH launches a SEPARATE
+    recognizer activity that captures its own audio in its own process - the
+    calling app never touches the microphone directly, so it needs no
+    microphone permission of its own (standard Android delegated-intent
+    behaviour, not watch-specific).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <queries>
+        <package android:name="com.google.android.googlequicksearchbox" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <application
+        android:allowBackup="true"
+        android:label="HelmDeck"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

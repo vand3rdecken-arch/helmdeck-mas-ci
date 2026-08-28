@@ -1,0 +1,9 @@
+{
+  "name": "helmdeck-pair-worker",
+  "private": true,
+  "type": "module",
+  "description": "The only public door to GET /relay/pair/claim - lets a keyboard-less/camera-less device (Wear OS watch) claim a spoken pairing code without exposing the daemon's raw HTTP surface.",
+  "devDependencies": {
+    "wrangler": "^4.127.0"
+  }
+}

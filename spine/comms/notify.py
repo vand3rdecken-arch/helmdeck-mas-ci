@@ -67,8 +67,62 @@ def _quiet_now(s):
     return (now >= a or now < b) if a > b else (a <= now < b)
 
 
-def push_fcm(title, body, track_id="", urgent=False, kind=""):
-    """Sealed data message to the paired phone. Best-effort like push()."""
+# Android renders at most THREE notification action buttons ("A notification can
+# offer up to three action buttons", developer.android.com build-notification), so
+# sealing more than three option labels would spend payload bytes on buttons
+# nobody can tap. Wear OS bridges whatever the phone posts, so three is also what
+# reaches the wrist.
+PUSH_MAX_OPTIONS = 3
+# FCM rejects a data message larger than 4 KB. The sealed cipher is base64 of
+# (nonce + box), i.e. ~4/3 of the plaintext plus overhead, so this keeps the ask
+# well inside the budget - and it is CHECKED below, not assumed.
+PUSH_MAX_PAYLOAD = 3000
+
+
+def ask_payload(track):
+    """The card's pending question reduced to what a NOTIFICATION can act on,
+    or None when a single tap could not settle it.
+
+    Deliberately narrow - a wrist button may only be offered when one tap is a
+    COMPLETE, valid answer:
+      * exactly one question: ask.validate_answers demands an answer for EVERY
+        question, so a two-question ask can never be settled by one button;
+      * not multiSelect: one tap cannot express "these two".
+    In both excluded cases the push keeps the 3 generic actions and the owner
+    opens the app, which is the same floor as before this function existed.
+
+    Option labels ride VERBATIM and are never clipped: validate_answers matches
+    a label by EQUALITY, so a truncated label would silently stop being a preset
+    pick and arrive as `custom` free text - the worker would then read a
+    button press as the owner's own typed words. Clipping for display is the
+    notification UI's job, not the payload's.
+    """
+    q_all = track.get("question") or {}
+    qs = q_all.get("questions") or []
+    if len(qs) != 1:
+        return None
+    q = qs[0]
+    if q.get("multiSelect"):
+        return None
+    labels = [o.get("label") for o in (q.get("options") or []) if o.get("label")]
+    if len(labels) < 2:
+        return None
+    # Everything fits, or we keep the last slot for dictation - ask.py accepts
+    # free text as the owner's own answer, so a truncated list is never a dead
+    # end at the wrist.
+    opts = labels if len(labels) <= PUSH_MAX_OPTIONS else labels[:PUSH_MAX_OPTIONS - 1]
+    return {"id": q_all.get("id") or "", "header": q.get("header") or "",
+            "options": opts, "more": len(labels) > len(opts)}
+
+
+def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
+    """Sealed data message to the paired phone. Best-effort like push().
+
+    `ask` is the optional ask_payload() block: it turns the phone's (and the
+    bridged watch's) notification buttons into the worker's OWN options. It
+    rides INSIDE the sealed box like everything else, so Google still learns
+    nothing, and it is optional on both ends - an older app JSON-parses the
+    payload and simply ignores a key it does not know."""
     from spine.storage import events
     from spine.comms import e2ee
     s = events.settings()
@@ -87,10 +141,19 @@ def push_fcm(title, body, track_id="", urgent=False, kind=""):
         return False
     try:
         sa = _json.load(open(_SA, encoding="utf-8"))
+        payload = {"title": title, "body": body, "track": track_id, "kind": kind}
+        if ask:
+            payload["ask"] = ask
+        raw = _json.dumps(payload).encode("utf-8")
+        if ask and len(raw) > PUSH_MAX_PAYLOAD:
+            # An oversized ask must never cost the owner the NOTIFICATION - drop
+            # the buttons, keep the news. He can still open the card and pick.
+            print("notify: ask dropped - payload %d B over the %d B budget"
+                  % (len(raw), PUSH_MAX_PAYLOAD))
+            payload.pop("ask")
+            raw = _json.dumps(payload).encode("utf-8")
         cipher = e2ee.seal_b64(
-            _json.dumps({"title": title, "body": body, "track": track_id,
-                         "kind": kind}).encode("utf-8"),
-            e2ee.import_sec(rel["sk"]), e2ee.import_pub(rel["phone_pub"]))
+            raw, e2ee.import_sec(rel["sk"]), e2ee.import_pub(rel["phone_pub"]))
         # DATA-ONLY on purpose (no `notification` block). Android's FCM SDK only
         # invokes an in-app handler for messages shaped this way; a message that
         # ALSO carries a `notification` block auto-displays that block from the
@@ -216,14 +279,20 @@ def card_event(track, status):
         print("notify: %s/%s suppressed - %s" % (track.get("id", "?"), status, why))
         return
     body = "%s  [%s]" % (track.get("task", "")[:80], track.get("id", ""))
+    ask_block = None
     if status == "question":
         from spine.ops import ask
         q = ask.summary(track.get("question"))
         if q:
             body = "%s\n%s" % (q[:120], track.get("task", "")[:60])
+        # The worker's own options become the notification's buttons (W1c), so
+        # a single-question ask is answerable from the lockscreen or the watch
+        # without opening the app. None when one tap could not settle it.
+        ask_block = ask_payload(track)
     # an URGENT-priority card's ask may pierce quiet hours; the rest waits.
     # `kind` rides in the sealed payload so a tap on a DONE push can open the
     # voice mode and have Henry SPEAK the result (owner 2026-08-22) instead of
     # deep-linking into the card.
     push_fcm(i18n.t(keys[status]), body, track.get("id", ""),
-             urgent=(track.get("priority") == "urgent"), kind=status)
+             urgent=(track.get("priority") == "urgent"), kind=status,
+             ask=ask_block)

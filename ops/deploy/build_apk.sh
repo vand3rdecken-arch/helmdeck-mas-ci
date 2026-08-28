@@ -158,6 +158,22 @@ fi
 node surfaces/app/plugins/withUpdateUrl.js surfaces/app/android \
   || { echo "[build_apk] update-url manifest apply FAILED"; exit 1; }
 
+# Seventh re-apply, same rule, DIFFERENT SHAPE: this one does not patch the
+# phone module, it lays down a whole SEPARATE one (:wear, W2a - Wear OS
+# companion). Same reason it has to happen here: android/ is regenerated from
+# nothing on --clean, so a module that lives only in the git-ignored tree
+# vanishes on the next prebuild unless something re-creates it every time.
+# UNVERIFIED beyond this script's own text-patching (no Android SDK/Gradle
+# reachable from the card worktree that wrote it - see
+# ops/docs/backlog/wear-os-integration/README.md §9.1). This is also why the
+# gradlew invocation below is scoped to `:app:assembleRelease` explicitly -
+# :wear now exists in settings.gradle the moment this line runs, and the
+# PHONE release pipeline's tested behaviour (single APK, ~10-15 min, one
+# output path) must not silently start building a second, unsigned,
+# never-built module as a side effect of this addition.
+node surfaces/app/plugins/withWearApp.js surfaces/app/android \
+  || { echo "[build_apk] wear-module wiring apply FAILED"; exit 1; }
+
 # Sync the hand-managed native version from app.json BEFORE building. The bump
 # automation (ship.sh) only touches app.json version + versionCode, but the
 # git-ignored surfaces/app/android is hand-managed and does NOT regenerate: build.gradle's
@@ -191,7 +207,14 @@ echo "[build_apk] gradle assembleRelease (native, ~10 min first time)"
 # scoped around: arm64-v8a covers virtually every real Android phone sold
 # since ~2020, so this is a real (if temporary) device-support narrowing,
 # not a free workaround. Tracked as debt - see spine/registry/debt.py.
-( cd surfaces/app/android && ./gradlew assembleRelease -x lint --console=plain \
+#
+# `:app:assembleRelease`, NOT the bare `assembleRelease` this line used before
+# the :wear module existed - a bare task name builds EVERY module in
+# settings.gradle, which would now silently pull in :wear (no release
+# signingConfig, never built once) as a side effect of a phone-only release.
+# Scoping to :app keeps this exact command's tested behaviour unchanged; the
+# watch module is built on demand by ops/deploy/build_wear_apk.sh instead.
+( cd surfaces/app/android && ./gradlew :app:assembleRelease -x lint --console=plain \
     -PreactNativeArchitectures=arm64-v8a ) \
   || { echo "[build_apk] APK BUILD FAILED"; exit 1; }
 APK="surfaces/app/android/app/build/outputs/apk/release/app-release.apk"
