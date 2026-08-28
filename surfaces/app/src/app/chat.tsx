@@ -256,6 +256,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     try {
       const r = await api.chat(q, opts);
       if (turn.current !== id) return;   // cancelled/superseded — drop this reply
+      if (r.duplicate && !r.reply) {
+        // A transport layer replayed this POST and the daemon refused to run a
+        // second turn (cells/copilot/chat_dedupe.py) while the original was
+        // still going. There is no answer to render HERE — appending
+        // "chat.noReply" would put a phantom empty turn in the chat, which is
+        // the cosmetic half of the very bug this path exists to stop. The
+        // history poll below delivers the real turn when it lands.
+        qc.invalidateQueries({ queryKey: ["chatHistory"] });
+        return;
+      }
       const actions = (r.actions ?? []).map((a) => a.detail || a.tool).filter(Boolean).join("\n");
       appendReply(id, { cls: r.error ? "error" : "bot",
         text: [actions && "⚙ " + actions.replace(/\n/g, "\n⚙ "), r.reply || r.error || tr("chat.noReply")].filter(Boolean).join("\n\n") });
