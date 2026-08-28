@@ -13,7 +13,17 @@ Schwesterdokumente, bewusst im selben Format: `ops/docs/ios-watch-feasibility.md
 Pflichtlektüre vorab: `ops/docs/glasses-reference.md` — die Uhr ist die **zweite
 Wearable-Fläche**, und jede Regel, die dort für die Linse gilt, gilt hier erneut.
 
-**Status (aktualisiert 2026-08-27, selbe Karte):** Phase **W1a+W1b sind jetzt
+**Status (aktualisiert 2026-08-28, Folgekarte „Phase 2"):** **W1c ist jetzt
+ebenfalls CODE** — die versiegelte Nutzlast trägt die Frage
+(`notify.ask_payload()`), und die Notification-Buttons SIND die Optionen, die
+der Worker selbst geschrieben hat (`push.ts`, dynamische Kategorie je Karte).
+Damit ist **W1 komplett**; §9.3 ist unten beantwortet. Wichtiger Unterschied zu
+W1a/b: W1c bringt **keine neue native Abhängigkeit** mit, ist also ein reines
+**OTA** auf das vorhandene 1.0.24-APK — die `version` wurde deshalb bewusst
+NICHT gebumpt (ein Bump würde `runtimeVersion` verschieben und das Update vom
+installierten APK gerade fernhalten). Details in §4.4.
+
+**Status (2026-08-27, Vorgängerkarte):** Phase **W1a+W1b sind jetzt
 CODE** — `spine/comms/notify.py` (data-only FCM statt der generischen Hülle),
 `surfaces/app/src/data/push.ts` (`BACKGROUND_NOTIFICATION_TASK`, 3 feste
 Aktionen + Diktat), `app.json`/`package.json` (`expo-task-manager`,
@@ -284,16 +294,58 @@ ein: Telefon-Lockscreen, Uhr, und (später) jede weitere gebridgete Fläche.
 (`BACKGROUND_NOTIFICATION_TASK`, Kategorie `helmdeck.card` mit den drei
 Aktionen). „Stopp" ruft `POST /tracks/<id>/cancel`, nicht nur einen
 Steer-Text — ein präziserer Rückweg, als dieser Absatz ursprünglich annahm.
-„Weiter"/Diktat rufen `steer`. **Bewusst NICHT gebaut:** echte Options-Buttons
-(`answer` + `request_id`) — siehe die Grenze direkt darunter, unverändert
-gültig; diese Karte hat den Umfang der Apple-Watch-Studie übernommen, nicht
-erweitert.
+„Weiter"/Diktat rufen `steer`. ~~**Bewusst NICHT gebaut:** echte Options-Buttons
+(`answer` + `request_id`)~~ — **in der Folgekarte am 2026-08-28 nachgezogen,
+siehe §4.4.** Das Diktat ruft auf einer offenen Frage jetzt `answer` (Freitext
+ist laut `ask.py` eine gültige Antwort) statt `steer`, sonst hinge die Frage
+neben einer losen Bemerkung weiter offen.
 
-⚠ **Grenze, die man kennen muss:** die versiegelte Nutzlast ist heute exakt
-`{title, body, track, kind}` (`notify.py:90-93`) — **die Optionen und die
-`request_id` sind nicht drin**. Echte Options-Buttons am Handgelenk verlangen
-deshalb eine kleine Erweiterung der Nutzlast. Ohne sie bleibt es bei generischen
-Aktionen + Diktat — was die Apple-Watch-Studie aus demselben Grund empfohlen hat.
+~~⚠ **Grenze, die man kennen muss:** die versiegelte Nutzlast ist heute exakt
+`{title, body, track, kind}`~~ — **diese Grenze ist mit W1c gefallen** (§4.4).
+
+### 4.4 W1c — die Optionen des Workers werden die Buttons (2026-08-28)
+
+Die Nutzlast heißt jetzt `{title, body, track, kind, ask?}`. `ask` ist der
+Block, den `notify.ask_payload()` aus der anstehenden Frage baut:
+`{id, header, options[], more}` — er reist **im versiegelten Kasten**, Google
+lernt also weiterhin nichts, und er ist auf **beiden** Seiten optional (eine
+ältere App parst die Nutzlast und ignoriert einen unbekannten Key; ein älterer
+Daemon schickt kein `ask`, die App fällt auf die 3 generischen Aktionen zurück).
+
+Vier Entscheidungen, die nicht offensichtlich sind:
+
+1. **Buttons nur, wenn EIN Tipp die Frage wirklich schließt.** `ask_payload()`
+   liefert `None` bei mehr als einer Frage (`ask.validate_answers` verlangt eine
+   Antwort auf **jede**, ein Button könnte sie also gar nicht settlen) und bei
+   `multiSelect` (ein Tipp kann „diese beiden" nicht ausdrücken). In beiden
+   Fällen bleibt es exakt beim bisherigen Verhalten.
+2. **Labels reisen WÖRTLICH, niemals gekürzt.** `validate_answers` vergleicht
+   das Label per **Gleichheit**; ein gekürztes Label wäre still kein
+   Preset-Pick mehr, sondern `custom`-Freitext — der Worker läse einen
+   Button-Druck als die eigenen Worte des Owners. Kürzen fürs Display ist Sache
+   der Notification-UI, nicht der Nutzlast. *(Gegenprobe unten mitgetestet.)*
+3. **Höchstens 3 Buttons**, weil Android genau so viele anzeigt (*„A
+   notification can offer up to three action buttons"*). Bei mehr Optionen
+   reisen die ersten **zwei** plus ein Diktat-Slot — Freitext ist laut `ask.py`
+   eine gültige Antwort, eine gekürzte Liste ist am Handgelenk also nie eine
+   Sackgasse.
+4. **Kategorie je KARTE (`helmdeck.q.<track>`), nicht je Frage.** Zwei Karten
+   können gleichzeitig auf den Owner warten; ein Schlüssel je Frage hätte bei
+   jeder neuen Frage die noch sichtbaren Buttons der *anderen* Karte gelöscht.
+   Das Label wird beim Tippen aus den Daten **dieser** Notification gelesen, nie
+   aus der Kategorie — die kann längst die Optionen einer neueren Frage tragen.
+
+Zwei Defekte aus W1b fallen dabei mit:
+
+- **Eine fehlgeschlagene Aktion war unsichtbar.** Die Aktionen laufen mit
+  `opensAppToForeground:false`; ein 409 („Frage schon beantwortet/ersetzt") oder
+  ein totes Relay verschwand ins Leere, und die Karte lief weiter, als hätte der
+  Owner nie getippt. Jetzt meldet sich der Fehler als eigene Notification —
+  dieselbe Fläche, auf der getippt wurde, und sie bridged wie jede andere.
+- **Die beantwortete Notification blieb stehen** und lud zum zweiten Tipp ein,
+  den der Daemon zu Recht mit 409 abgelehnt hätte — eine erfolgreiche Antwort
+  hätte sich also selbst als Fehlschlag gemeldet. Sie wird nach einer
+  akzeptierten Aktion verworfen (`dismissNotificationAsync`).
 
 ⚠ **Falle:** `setOngoing(true)`-Notifications **bridgen nie**. Ein künftiger
 „Agent arbeitet"-Dauerindikator erreicht die Uhr nicht. Ebenso wenig
@@ -467,8 +519,8 @@ gerätegebunden.
 | 0 | **Wahrheitstest**: Glance-Worker deployen (`cloudflare_tunnel.sh` + `push_glance.sh`), Wear-AVD mit Telefon koppeln, bestehendes APK installieren, `adb exec-out screencap` — *was bridged heute wirklich?* | **0,5 T** | bestätigt §4.2 am Gerät statt am Code; deployt nebenbei die Linse |
 | 1 | ~~**W1a** — Background-Entschlüsselung + reiche lokale Notification~~ **CODE GESCHRIEBEN** 2026-08-27 (`notify.py` data-only, `push.ts` `BACKGROUND_NOTIFICATION_TASK`) | ~~2–3 T~~ **verbleibt: Build+Gerätetest** | nativ ⇒ APK-Rebuild, kein OTA aus diesem Worktree möglich (§7.1); **behebt zugleich den Telefon-Lockscreen** |
 | 2 | ~~**W1b** — Categories/Actions + `RemoteInput`-Diktat~~ **CODE GESCHRIEBEN** 2026-08-27 (3 feste Aktionen, „Stopp"→`cancel`) | ~~1,5–2 T~~ **verbleibt: Killed-State-Test** | Rückweg-API existiert vollständig; Diktat-Rückweg zum Telefon **[MED]**, nicht wörtlich dokumentiert (§9.1) |
-| 3 | **W1c** *(weiterhin offen, bewusst ausgelassen)* — Optionen + `request_id` in die versiegelte Nutzlast, echte Options-Buttons | **1 T** | kleine Änderung an `notify.py:90-93`; ohne sie bleibt es bei den 3 generischen Aktionen |
-| | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **Code: 0 T (fertig) · Verifikation: ≈ 1–2 T** | rechnet sich schon ohne Uhr; **Build/Gerätetest kann diese Karte selbst nicht ausführen** (§9.1) |
+| 3 | ~~**W1c** — Optionen + `request_id` in die versiegelte Nutzlast, echte Options-Buttons~~ **CODE GESCHRIEBEN** 2026-08-28 (`notify.ask_payload()`, dynamische Kategorie je Karte, §4.4) | ~~1 T~~ **verbleibt: Gerätetest** | **kein natives Delta ⇒ reines OTA**, kein APK-Rebuild, kein `version`-Bump |
+| | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **Code: 0 T (komplett) · Verifikation: ≈ 1–2 T** | rechnet sich schon ohne Uhr; **Build/Gerätetest kann diese Karte selbst nicht ausführen** (§9.1) |
 | 4 | **W2a** — `withWearApp.js` + `:wear`-Modul, leere Compose-App baut und startet | **1,5–2,5 T** | Muster steht 6× im Baum; Build **nicht** aus dem Worktree (§7.1) |
 | 5 | **W2b** — Uhr-UI gegen `/glance` + `/glance/answer`: Blocker-Liste, Frage, Optionen antippen | **3–4 T** | **null Daemon-Code**; WO-V13/V16-Konformität einpreisen |
 | 6 | **W2c** — Sprache: `ACTION_RECOGNIZE_SPEECH` → `/glance/talk` → MP3 abspielen | **1,5–2 T** | billig, weil der Vertrag steht (§5.1) |
@@ -495,8 +547,13 @@ wo `ACTION_RECOGNIZE_SPEECH` reicht (§5.1); ein Wake-Word (existiert nicht).
    (einfach, aber Verlust der Uhr rotiert die Linse mit) — oder die
    Valet-Tickets aus `glasses-reference.md` §2.1 wiederbeleben, deren
    Vorbedingung mit einem zweiten Gerät wieder erfüllt wäre (§6.3).
-3. **W1c**: Optionen in die Push-Nutzlast? Das ist der Unterschied zwischen
-   „Diktat + generische Aktionen" und „echte Entscheidung am Handgelenk".
+3. ~~**W1c**: Optionen in die Push-Nutzlast?~~ **Gebaut am 2026-08-28** (§4.4) —
+   die Folgekarte war ausdrücklich beauftragt, „Notification-Actions zu
+   verfeinern", und W1c war der einzige Schritt des Plans, der ohne Hardware,
+   Emulator oder Secrets aus einem Karten-Worktree überhaupt baubar ist. Die
+   Entscheidung, die *offen bleibt*, ist damit nicht mehr „ob", sondern nur
+   noch: **Reicht das?** Genau dafür ist der Zwei-Wochen-Alltagstest aus §8
+   gedacht — er ist jetzt vollständig durchführbar, weil W1 komplett ist.
 
 ## 9.1 Nicht verifiziert — was ein Bau erst schließt
 
@@ -541,6 +598,58 @@ versionierten Expo-57-Docs geschrieben, nicht am echten Paket verifiziert:
    (alte) App auf data-only Pushes umstellt, für die sie keinen Handler hat
    (§4.3-Kommentar in `notify.py`). Der Owner muss die Reihenfolge einhalten;
    nichts im Code erzwingt sie.
+
+### Was W1c dagegen WIRKLICH verifiziert hat (2026-08-28)
+
+Die Daemon-Hälfte ist aus dem Worktree heraus vollständig ausführbar, und sie
+wurde ausgeführt — kein „sieht richtig aus": echte `ask.parse()`-Ausgabe durch
+`ask_payload()` und dann durch `ask.validate_answers()` zurück, also exakt der
+Vertrag, den ein Wrist-Button erfüllen muss. Bestätigt: 2/3/6 Optionen ergeben
+2/3/2+Diktat Buttons; `multiSelect` und Mehrfachfragen werden verweigert; jeder
+gesendete Label validiert als **Preset-Pick** (`labels`, nicht `custom`); die
+`request_id` entspricht der Frage-ID; ein Diktat auf gekürzter Liste ist eine
+gültige Freitext-Antwort; die Worst-Case-Nutzlast (6 maximal lange Labels) liegt
+bei **509 B** gegen ein Budget von 3000 B (FCM-Grenze 4 KB). Als **Gegenprobe**
+mitgeprüft: ein *gekürztes* Label fällt tatsächlich auf `custom` zurück — die
+Wörtlichkeit aus §4.4/2 ist damit gemessen, nicht behauptet. Der Test war
+bewusst ein Wegwerf-Lauf und wurde nicht eingecheckt (Beschluss „das Gate ist
+LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
+
+### Offen, seit W1c als Code existiert (2026-08-28)
+
+10. **Die App-Hälfte ist weiterhin nur syntaktisch geprüft.** `node
+    --experimental-strip-types --check push.ts` läuft sauber, das ist aber ein
+    Parser, **kein Typechecker** — `npx tsc` braucht `node_modules`, die es in
+    diesem Worktree nicht gibt (Zugriff auf einen Baum außerhalb der Karte wird
+    vom Tool-Guard blockiert, also auch die `C:\hd\app`-Junction aus dem
+    App-Verify-Rezept). Die Action-Liste ist deshalb mit
+    `Parameters<typeof setNotificationCategoryAsync>[1][number]` typisiert
+    statt mit einem benannten Export: so kann die Annotation nicht an einem
+    Typnamen scheitern, den hier niemand nachschlagen kann.
+11. **Ob ein Options-Button vom Handgelenk aus wirklich `answer` auslöst** —
+    dieselbe Klasse offener Punkt wie Nr. 2 (der `RemoteInput`-Rückweg), nur
+    für gebridgete Action-Buttons. Plattformseitig zugesagt, hier nicht am
+    Gerät gesehen.
+12. **Ob Wear OS mehr als drei Buttons zeigt.** Die Drei-Button-Grenze ist die
+    des **Telefons**; die Uhr listet Aktionen scrollbar und könnte mehr
+    vertragen. Wir senden bewusst höchstens drei, weil das die einzige Zahl
+    ist, die für beide Flächen belegt ist. Falls der Gerätetest zeigt, dass die
+    Uhr mehr darstellt, ist `PUSH_MAX_OPTIONS` die eine Stellschraube.
+13. **Kategorie-Rückstand.** Eine Karten-Kategorie wird bei der *erfolgreichen*
+    Antwort gelöscht (Event-Zeit, ein Owner). Eine Frage, die nie am
+    Handgelenk beantwortet wird, lässt ihre Kategorie stehen — begrenzt durch
+    die Zahl der Karten, die je gefragt haben, also klein. Bewusst **kein**
+    periodischer Sweep: der müsste raten, welche Kategorie tot ist, und das
+    wäre genau die heuristische Rekonstruktion, die `CLAUDE.md` („NO MONKEY
+    PATCHES") verbietet.
+14. **Rollout: W1c ist ein reines OTA** (`bash ops/deploy/push_update.sh`),
+    weil keine native Abhängigkeit dazukommt. **Nicht** die `version` bumpen —
+    `runtimeVersion.policy` ist `appVersion`, ein Bump würde das Update vom
+    installierten 1.0.24-APK gerade fernhalten. Die Daemon-Seite (`notify.py`)
+    und die App-Seite gehören trotzdem zusammen ausgerollt: ein neuer Daemon
+    mit alter App schickt `ask`, das die alte App ignoriert (harmlos,
+    generische Aktionen) — die Reihenfolge ist hier also unkritisch, anders als
+    bei W1a/b (Punkt 9).
 
 ---
 
