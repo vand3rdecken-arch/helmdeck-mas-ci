@@ -72,13 +72,24 @@ function tsLabel(s: TStep): string {
 // actually overflows a threshold (mirrors web transcript Collapsible).
 const COLLAPSE_LINES = 24;
 const COLLAPSE_CHARS = 1600;
-function clampText(text: string): { clamped: string; overflow: boolean } {
+// The char cut lands on a WORD boundary, never inside a word. A raw slice() is
+// what makes a clamped message read as corrupted rather than folded - the owner
+// reported Henry's chat "ending mid-word" (2026-08-28), and a cut that can only
+// ever fall in whitespace is the half of that fix the client owns.
+export function clampText(text: string): { clamped: string; overflow: boolean } {
   const t = text || "";
   const lines = t.split("\n");
   const overflow = lines.length > COLLAPSE_LINES || t.length > COLLAPSE_CHARS;
   if (!overflow) return { clamped: t, overflow };
   let clamped = lines.slice(0, COLLAPSE_LINES).join("\n");
-  if (clamped.length > COLLAPSE_CHARS) clamped = clamped.slice(0, COLLAPSE_CHARS);
+  if (clamped.length > COLLAPSE_CHARS) {
+    const cut = clamped.slice(0, COLLAPSE_CHARS);
+    // back off to the last whitespace; if the "word" is longer than a quarter of
+    // the budget (a URL, a hash, a minified blob) there is no sensible boundary
+    // to find and the hard cut is the honest one.
+    const sp = cut.search(/\s\S*$/);
+    clamped = sp > COLLAPSE_CHARS * 0.75 ? cut.slice(0, sp) : cut;
+  }
   return { clamped, overflow };
 }
 function Collapsible({ text, style, color }: {
@@ -107,7 +118,9 @@ function CollapsibleMarkdown({ text, color }: { text: string; color: string }) {
   const { clamped, overflow } = clampText(text);
   return (
     <View>
-      <Markdown>{open || !overflow ? text : clamped}</Markdown>
+      {/* the "…" is not decoration: without it a folded assistant message is
+          indistinguishable from a complete one that happens to stop there. */}
+      <Markdown>{open || !overflow ? text : clamped + "\n\n…"}</Markdown>
       {overflow ? (
         <Pressable hitSlop={6} onPress={() => setOpen((o) => !o)} style={{ marginTop: 2 }}>
           <Text style={{ color, fontSize: 11.5, fontWeight: "600" }}>{tr(open ? "transcript.showLess" : "transcript.showMore")}</Text>

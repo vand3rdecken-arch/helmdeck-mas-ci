@@ -393,16 +393,23 @@ def _decide(esc):
     if not _execute(action, card, lane, text, esc):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why)
+    # Full text here too: _audit lands as a `note` in the card's ActionLog, and
+    # the card chat RENDERS notes (card_transcript.tsx kind === "note") - so a
+    # cut here is a mid-word chat message on the card surface as well.
     _audit(card, "HENRY entschieden (%s): %s - %s" % (
         esc["kind"], action,
-        (text[:200] + (" | " + why if why else "")) if action == "did" else (why or text[:120])))
+        (text + (" | " + why if why else "")) if action == "did" else (why or text)))
     # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
     # is done he doesn't report back") - notify_owner/give-up already push; the
     # quiet successes (did/move/rerun/steer) were invisible until now.
     if action in ("did", "move", "rerun_deploy", "steer"):
+        # FULL text - the 180-char cut that used to live here was a PUSH budget
+        # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
+        # 52033b6 this same string is also the board/card CHAT message, and a
+        # chat has no length budget: _notify_owner truncates for FCM alone.
         _notify_owner("Henry (%s): %s%s - %s" % (
             esc["kind"], action, (" -> " + lane) if action == "move" else "",
-            (text or why)[:180]), None if action == "did" else _find_track(card))
+            text or why), None if action == "did" else _find_track(card))
     return True
 
 
@@ -528,7 +535,7 @@ def _execute(action, card, lane, text, esc):
             return False           # stays open (2-attempt cap), next attempt gets fresh eyes
         return True
     if action == "notify_owner":
-        _notify_owner("Henry (%s): %s" % (esc["kind"], text or (esc.get("detail") or "")[:200]), t)
+        _notify_owner("Henry (%s): %s" % (esc["kind"], text or esc.get("detail") or ""), t)
         return True
     return False
 
@@ -536,7 +543,7 @@ def _execute(action, card, lane, text, esc):
 def _give_up(esc):
     escalations.record_decision(esc["id"], "escalated",
                                 why="no safe automatic decision after %d attempts" % _MAX_ATTEMPTS)
-    _notify_owner("Henry gibt ab (%s): %s" % (esc["kind"], (esc.get("detail") or "")[:200]), None)
+    _notify_owner("Henry gibt ab (%s): %s" % (esc["kind"], esc.get("detail") or ""), None)
 
 
 def _audit(card, note):
@@ -553,6 +560,11 @@ def _audit(card, note):
 
 
 def _notify_owner(text, t):
+    """`text` arrives WHOLE. Exactly one consumer has a length budget - the FCM
+    push - and it truncates here, at its own edge. The chat and the card audit
+    get the full message: callers must never pre-truncate for the push, or the
+    notification's limit silently becomes the chat's (owner report 2026-08-28,
+    "Nachrichten enden mitten im Wort")."""
     try:
         from spine.comms import notify
         from spine.registry import i18n as _i18n
