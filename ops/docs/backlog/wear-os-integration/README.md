@@ -1180,6 +1180,43 @@ i18n_lint.py` lief ECHT und bestätigte: keine neuen unübersetzten Literale
 aus dieser Änderung, 1158 Keys total (+2). `run_gate.py`: PASS (3 Checks).
 Kein Gerätetest — dieselbe Grenze wie überall in diesem Modul.
 
+### 4.11 Die Adresse verschwindet aus dem Diktat — Owner: „a URL address… feels very painful" (2026-08-29)
+
+Der Owner wies zurecht darauf hin, dass ein längerer Code kein Problem wäre,
+aber eine URL zu diktieren schon — nicht weil der Code zu kurz ist, sondern
+weil `cloudflare_tunnel.sh` ohne Domain-Argument bei JEDEM Lauf eine NEUE,
+zufällige `trycloudflare.com`-Adresse vergibt. Das eigentliche Problem war
+also nicht die Feldlänge, sondern dass es nichts Stabiles zum Merken gab.
+
+**Lösung, keine neue Infrastruktur:** `cloudflare_tunnel.sh` unterstützt
+bereits einen NAMED Tunnel (`bash ops/deploy/cloudflare_tunnel.sh
+<domain>`), der dieselbe Adresse bei jedem Lauf vergibt. Der Owner hat
+`pair.helmdeck.de` als feste, diesem Zweck gewidmete Subdomain gewählt.
+`PairingScreen.kt`s `claimBaseUrl`-Feld startet jetzt mit
+`DEFAULT_CLAIM_BASE_URL = "https://pair.helmdeck.de"` vorausgefüllt — bleibt
+aber vollständig editierbar/diktierbar, falls je ein anderer Tunnel gebraucht
+wird. Bildschirm-Reihenfolge getauscht: **Code zuerst**, „Adresse (meist
+unnötig)" darunter — im Regelfall muss der Owner jetzt nur noch den Code
+diktieren, exakt der Wunsch aus der Owner-Nachricht.
+
+**Sicherheitsnote, ehrlich benannt:** die zufällige Tunnel-Adresse war
+zufällig eine ZWEITE Verdunklungsschicht über dem Code. Eine feste, bekannte
+Adresse nimmt diese Schicht weg — ändert aber nichts an der eigentlichen
+Sicherheitsgrenze: der Code selbst (6 Zeichen, 32-Symbol-Alphabet, ≈10⁹
+Kombinationen, 15 Minuten TTL, einmal verwendbar, §4.6) war nie durch die
+URL geschützt, nur durch sich selbst.
+
+**Voraussetzung, die der Owner selbst erfüllen muss** (außerhalb dieser
+Karte, keine Zeile Code kann das): `pair.helmdeck.de` muss auf den
+Named-Tunnel zeigen (DNS/Cloudflare-Konfiguration) und
+`ops/deploy/cloudflare_tunnel.sh pair.helmdeck.de` muss während des
+Koppelns laufen — sonst läuft die Uhr gegen einen vorausgefüllten, aber
+toten Standardwert.
+
+**Verifiziert:** balancierte Klammern/Parens (bestanden) — dieselbe
+schwächste-verfügbare Prüfung wie bei jeder Kotlin-Datei dieser Session,
+kein Compiler vorhanden. `run_gate.py`: PASS (3 Checks).
+
 ---
 
 ## 10. Quellen (Plattform, abgerufen 2026-08-27)
