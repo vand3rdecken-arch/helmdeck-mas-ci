@@ -353,6 +353,10 @@ export const settings: Dict = {
   "pm.consolidatedTitle": { de: "Konsolidiert", en: "Consolidated" },
   "pm.consolidatedMsg": { de: "{created} Stream-Karten, {archived} Tickets archiviert.",
                           en: "{created} stream cards, {archived} tickets archived." },
+  // Members the roll-up REFUSED to archive because they were not in backlog
+  // (pm.apply_consolidation) - stated, never silently dropped.
+  "pm.consolidatedRefused": { de: "{n} nicht archiviert (nicht im Backlog — aktive Karten bleiben auf dem Board).",
+                              en: "{n} not archived (not in backlog — active cards stay on the board)." },
   "pm.asOf": { de: "Stand: {when}", en: "As of: {when}" },
   "pm.noPlan": {
     de: "Noch kein Plan. Ziel setzen und „Aktualisieren\" — der PM erstellt Milestones, Timeline und Prioritäten.",

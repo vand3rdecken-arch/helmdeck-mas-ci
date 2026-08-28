@@ -220,8 +220,18 @@ def _run_action(a, actor, role="operator"):
             sessions.delete_track(t["id"], actor=actor)
             return "deleted card %s (%s)" % (t["branch"], t["id"])
         if kind == "archive":
-            sessions.archive_track(t["id"], on=True, actor=actor)
-            return "archived card %s" % t["branch"]
+            # on:false is the way BACK. _snapshot marks archived cards
+            # " ARCHIVED" precisely so the owner can ask for one back - but
+            # this hardcoded on=True meant chat had no verb for that, and the
+            # app only ever archived either, so "hol die Karte zurück" had no
+            # route at all. Accept the model's stringy booleans too ("false"),
+            # rather than silently archiving again on a restore request.
+            on = a.get("on", True)
+            if isinstance(on, str):
+                on = on.strip().lower() not in ("false", "0", "no", "nein", "off")
+            on = bool(on)
+            sessions.archive_track(t["id"], on=on, actor=actor)
+            return ("archived card %s" if on else "unarchived card %s (back on the board)") % t["branch"]
         from spine.ops import bgthread
         bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
             t["id"], a["text"], actor=actor, source="board copilot"))

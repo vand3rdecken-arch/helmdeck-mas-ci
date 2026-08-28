@@ -800,6 +800,23 @@ export default function CardScreen() {
       if (res?.id) router.push(`/card/${res.id}` as never);
     } catch (e) { showToast(String((e as Error).message), false); }
   }
+  // Archive is a TOGGLE, not a one-way door. The daemon has accepted
+  // {on:false} since archive_track was written ("Reversible: hides the card
+  // from work views"), and copilot._snapshot even tells the owner a card is
+  // ARCHIVED so he "can ask for it back" - but no surface ever sent it, so
+  // there was nothing to ask. Unarchiving stays ON the card (the board is
+  // still showing the Archive scope behind it, and leaving would just drop
+  // him into a list the card is no longer part of); archiving leaves, because
+  // the card is now hidden from the view he came from.
+  async function toggleArchive() {
+    if (!k) return;
+    const on = !k.archived;
+    try {
+      await api.archive(k.id, on);
+      await qc.invalidateQueries({ queryKey: ["tracks"] });
+      if (on) router.back(); else showToast(tr("card.menu.unarchived"));
+    } catch (e) { showToast(String((e as Error).message), false); }
+  }
   function menu() {
     if (!k) return;
     sheet.show({
@@ -828,7 +845,7 @@ export default function CardScreen() {
           : []),
         ...(k.session_id ? [{ label: tr("card.menu.forkChat"), onPress: forkChat }] : []),
         { label: tr("card.menu.fork"), onPress: forkCode },
-        { label: tr("card.menu.archive"), onPress: () => api.archive(k.id).then(() => router.back()) },
+        { label: tr(k.archived ? "card.menu.unarchive" : "card.menu.archive"), onPress: toggleArchive },
         { label: tr("ui.delete"), destructive: true, onPress: () => api.del(k.id).then(() => router.back()) },
       ],
     });

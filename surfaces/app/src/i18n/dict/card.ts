@@ -153,6 +153,11 @@ export const card: Dict = {
   "card.menu.fork": { de: "Code forken", en: "Fork code" },
   "card.menu.forkChat": { de: "Konversation forken", en: "Fork conversation" },
   "card.menu.archive": { de: "Archivieren", en: "Archive" },
+  // shown instead of the above once the card IS archived - the round trip back
+  // out of the archive (api.archive(id, false)).
+  "card.menu.unarchive": { de: "Aus dem Archiv holen", en: "Restore from archive" },
+  "card.menu.unarchived": { de: "Karte ist zurück auf dem Board",
+                            en: "Card is back on the board" },
 
   // move toasts
   "card.toast.gateMerge": { de: "Gate + Merge laufen… Ergebnis erscheint hier",
