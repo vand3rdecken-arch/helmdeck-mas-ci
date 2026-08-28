@@ -109,11 +109,14 @@ function Sidebar({ state, navigation }: any) {
   ).sort((a, b) => a[0].localeCompare(b[0]));
 
   const FilterRow = ({ label, value, count }: { label: string; value: string; count?: number }) => {
-    const active = activeName === "index" && filter === value;
+    // "board", not "index": the filter drives BoardList, which lives on the
+    // Board tab. Navigating to the Dashboard set the filter and then showed a
+    // screen the filter does not affect - picking "Archiv" looked like a no-op.
+    const active = activeName === "board" && filter === value;
     const color = active ? t.txtPrimary : t.txtSecondary;
     return (
       <Pressable
-        onPress={() => { setFilter(value); navigation.navigate("index"); }}
+        onPress={() => { setFilter(value); navigation.navigate("board"); }}
         style={[styles.navitem, { backgroundColor: active ? t.accent + "1F" : "transparent" }]}
       >
         {active ? <View style={[styles.accentBar, { backgroundColor: t.accent }]} /> : null}

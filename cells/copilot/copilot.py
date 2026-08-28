@@ -221,8 +221,14 @@ def _snapshot():
             tail = (" outcome=" + o[:150].replace("\n", " ")) if o else ""
         else:
             tail = ""
-        lines.append("- id=%s repo=%s branch=%s lane=%s status=%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
-            t["id"], repo, t["branch"], t.get("lane"), t.get("status"), t.get("priority", "-"),
+        # ARCHIVED is stated, never silently omitted. The board hides archived
+        # cards (surfaces/app/src/ui/board.tsx `shown`), this snapshot lists
+        # every track - so an archived card reported here as if it were on the
+        # board sent the owner looking for a card no board view could show.
+        # Telling him it is archived is what lets him ask for it back.
+        arch = " ARCHIVED" if t.get("archived") else ""
+        lines.append("- id=%s repo=%s branch=%s lane=%s status=%s%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
+            t["id"], repo, t["branch"], t.get("lane"), t.get("status"), arch, t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "), tail))
     try:
