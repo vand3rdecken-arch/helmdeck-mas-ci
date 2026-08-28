@@ -314,6 +314,74 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
   );
 }
 
+/** Basename of a card's `repo`. Machine cards carry a plain FOLDER there (a
+ *  machine task's workplace is any directory, e.g. C:\Users\<name>), not a git
+ *  repo, so this is a display label only - the filter value stays the full path
+ *  because two projects can share a basename. */
+const repoName = (p?: string) =>
+  (p ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "—";
+
+function ScopeChip({ label, count, active, onPress }: {
+  label: string; count: number; active: boolean; onPress: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable onPress={onPress}
+      accessibilityRole="button" accessibilityState={{ selected: active }}
+      style={{ flexDirection: "row", alignItems: "center", gap: 6,
+        backgroundColor: active ? t.accent + "29" : t.surface2,
+        borderColor: active ? t.accent + "80" : t.borderSubtle,
+        borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+      <Text numberOfLines={1} style={{ color: active ? t.accent : t.txtSecondary,
+        fontSize: 12, fontWeight: "500", maxWidth: 170 }}>{label}</Text>
+      <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600" }}>{count}</Text>
+    </Pressable>
+  );
+}
+
+/** Which slice of the cards the lanes render. Lives ON THE BOARD, not only in
+ *  the desktop sidebar: that sidebar mounts only when `useResponsive().wide`,
+ *  which is `isWeb && width >= 900`, so on the PHONE `useBoardFilter` was
+ *  permanently "all" and an archived card had no reachable view at all.
+ *
+ *  That is the actual reason machine cards read as "missing": the board hides
+ *  archived cards (correctly), while Henry's snapshot lists every track
+ *  (cells/copilot/copilot.py _snapshot) - so a card the owner had been told
+ *  about showed up nowhere, and the repo shown next to it made it look like a
+ *  "project" the board was filtered to. There is NO server-side repo filter
+ *  (GET /tracks filters on auth.owns_card only) and this does not add one: the
+ *  scopes are derived from the cards already in hand.
+ *
+ *  Hides itself when there is nothing to choose between - a single-repo board
+ *  with no archive gets no chrome. */
+function ScopeBar({ rows, filter, onSet }: { rows: Track[]; filter: string; onSet: (v: string) => void }) {
+  const tr = useT();
+  const live = rows.filter((k) => !k.archived);
+  const archived = rows.filter((k) => !!k.archived).length;
+  const byRepo = new Map<string, number>();
+  for (const k of live) byRepo.set(k.repo ?? "", (byRepo.get(k.repo ?? "") ?? 0) + 1);
+  // Keep the selected repo listed even after its last live card is archived,
+  // otherwise the board goes empty with no chip marked and no way back.
+  if (filter.startsWith("repo:") && !byRepo.has(filter.slice(5))) byRepo.set(filter.slice(5), 0);
+  const repos = [...byRepo.entries()].sort((a, b) => repoName(a[0]).localeCompare(repoName(b[0])));
+  if (repos.length < 2 && archived === 0) return null;
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ flexDirection: "row", gap: 6, paddingVertical: 1 }}>
+      <ScopeChip label={tr("board.scope.all")} count={live.length}
+        active={filter === "all"} onPress={() => onSet("all")} />
+      {repos.length > 1 ? repos.map(([path, n]) => (
+        <ScopeChip key={path} label={repoName(path)} count={n}
+          active={filter === "repo:" + path} onPress={() => onSet("repo:" + path)} />
+      )) : null}
+      {archived > 0 ? (
+        <ScopeChip label={tr("board.scope.archived")} count={archived}
+          active={filter === "archived"} onPress={() => onSet("archived")} />
+      ) : null}
+    </ScrollView>
+  );
+}
+
 function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) => void }) {
   const t = useTheme();
   const tr = useT();
@@ -577,8 +645,11 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   }, []);
 
   // Needs tab passes filter="needs_you" (flat list). The Board tab (no prop)
-  // takes its filter from the sidebar store: all / archived / client:<name>.
+  // takes its filter from the shared store: all / archived / client:<name> /
+  // repo:<path> - written by the desktop sidebar AND by ScopeBar, which is the
+  // only writer the phone has (the sidebar is web-and-wide-only).
   const storeFilter = useBoardFilter((s) => s.filter);
+  const setStoreFilter = useBoardFilter((s) => s.setFilter);
   const eff = filter ?? storeFilter;
   // Normally Track[]. Over the relay a hiccup or a pairing/pin mismatch
   // (the daemon's 409 "another phone is paired…") comes back as an {error}
@@ -600,6 +671,9 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     if (eff === "needs_you") return (k.status === "needs_you" || k.status === "bounced") && !k.archived;
     if (eff === "archived") return !!k.archived;
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
+    // repo scope: the card's own workplace path (machine cards carry a plain
+    // folder here). Client-side only - /tracks never filtered by repo.
+    if (eff.startsWith("repo:")) return (k.repo ?? "") === eff.slice(5) && !k.archived;
     return !k.archived; // "all"
   });
   function onMove(k: Track) {
@@ -619,7 +693,11 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     });
   }
 
-  const nextUp = (data ?? [])
+  // `rows`, not `data`: over the relay a hiccup answers with an {error} OBJECT,
+  // and `data ?? []` does not catch that - .filter on it white-screened the
+  // board, the very crash the `rows` guard above was added for. This list
+  // deliberately ignores the scope chips: "what needs you" is board-wide.
+  const nextUp = rows
     .filter((k) => k.lane !== "done" && !k.archived && (k.status === "needs_you" || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
@@ -698,6 +776,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
           })}
         </View>
       ) : null}
+      {!filter ? <ScopeBar rows={rows} filter={eff} onSet={setStoreFilter} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && nextUp.length > 0 ? (
         <NextUp items={nextUp} onDone={async (k) => {
