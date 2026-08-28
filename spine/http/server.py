@@ -20,16 +20,26 @@ _ctl = {"teach": None, "busy": []}   # current TeachSession + background job nam
 _ctl_lock = threading.Lock()
 
 def _bg(name, fn):
-    """Run a control job in the background; the phone polls /control/state."""
-    def wrap():
-        try: fn()
+    """Run a control job in the background; the phone polls /control/state.
+
+    THE choke point for every backgrounded card action (steer/answer/dispatch/
+    gate - see cells/engineer/routes_track_actions.py's `name` convention
+    "track:<verb>:<tid>"). Crash reporting itself lives in spine.ops.bgthread
+    (shared with the OTHER bare `threading.Thread` call sites that had the
+    same blind spot - see that module's docstring); this wrapper only adds
+    the /control/state busy-list bookkeeping on top."""
+    from spine.ops import bgthread
+
+    def _tracked():
+        try:
+            fn()
         finally:
             with _ctl_lock:
                 if name in _ctl["busy"]:
                     _ctl["busy"].remove(name)
     with _ctl_lock:
         _ctl["busy"].append(name)
-    threading.Thread(target=wrap, daemon=True).start()
+    bgthread.spawn(name, _tracked)
 
 
 def _active_live():

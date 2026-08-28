@@ -10,7 +10,6 @@ copilot.py re-imports everything. Not monkeypatched."""
 import json
 import os
 import re
-import threading
 
 _ACTIONS_FENCE = re.compile(r"```actions\s*(.*?)```", re.S)
 
@@ -223,10 +222,27 @@ def _run_action(a, actor, role="operator"):
         if kind == "archive":
             sessions.archive_track(t["id"], on=True, actor=actor)
             return "archived card %s" % t["branch"]
-        import threading
-        threading.Thread(target=sessions.steer, args=(t["id"], a["text"]),
-                         kwargs={"actor": actor, "source": "board copilot"}, daemon=True).start()
+        from spine.ops import bgthread
+        bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
+            t["id"], a["text"], actor=actor, source="board copilot"))
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "follow_up":
+        # The honest replacement for "schau ich mir gleich an" (board-copilot.md
+        # forbids that prose now - it promised a check nothing ever performs,
+        # since a chat turn ends and nothing wakes Henry up again except the
+        # owner's next message). This files a real escalation the BROKER loop
+        # picks up within _INTERVAL_S seconds with full tool access (Read/Bash/
+        # Grep) and judges like any other - so "ich schau's mir an" becomes a
+        # promise the harness itself tracks, not one only the model remembers.
+        from spine.registry import escalations
+        text = (a.get("text") or "").strip()
+        if not text:
+            return "follow_up: sag mir in einem Satz, was ich pruefen soll"
+        card = a.get("card")
+        ct = _find_card(card) if card else None
+        card_id = ct["id"] if ct and not isinstance(ct, list) else None
+        escalations.emit("henry-followup", card=card_id, detail=text)
+        return "notiert - ich pruef das in der naechsten Runde (bis zu 90s) und meld mich"
     if kind == "resolve_blocker":
         # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
         # the shared repo checkout - a cross-cutting fix the sandboxed worker

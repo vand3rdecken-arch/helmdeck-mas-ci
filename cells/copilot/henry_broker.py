@@ -445,15 +445,40 @@ def _execute(action, card, lane, text, esc):
         # (owner decree 2026-08-21: "he doesn't push the card through the
         # gates"). backlog/working moves stay out of the verb - regressing a
         # card is steering, not landing.
+        #
+        # SYNCHRONOUS + VERIFIED, on purpose (was fire-and-forget on a bare
+        # thread until 2026-08-28): the old code returned True the instant the
+        # thread STARTED, so `_decide` closed the escalation and told the owner
+        # "done" before move_lane had done anything - a bounce, a conflict, or
+        # (measured live) a crashed thread all looked identical to success.
+        # move_lane's own terminal write is the ground truth: it sets
+        # tt["lane"] = lane ONLY on the pipeline's successful tail (_land) -
+        # every bounce/conflict/blocked path returns early with the lane
+        # untouched (see cells/engineer/lanemachine.py's _move_lane). Reading
+        # that back after the call is therefore a real verification, not an
+        # optimistic assumption - same evidence-over-flag discipline as
+        # drivers.resume_detached. The broker loop tolerates the wait (moves
+        # are rare; this just delays the SAME tick's other escalations by one
+        # gate's worth of seconds, same trade sessions.py already made moving
+        # gate off the HTTP request thread).
         from cells.engineer import sessions
-        threading.Thread(target=sessions.move_lane, args=(t["id"], lane),
-                         kwargs={"actor": "henry"}, daemon=True).start()
+        try:
+            r = sessions.move_lane(t["id"], lane, actor="henry")
+        except Exception as e:
+            escalations.record_note(esc["id"], "move fehlgeschlagen: %s" % str(e)[:200])
+            return False
+        if (r or {}).get("lane") != lane:
+            reason = (r or {}).get("merge_report") or (r or {}).get("gate_report") or "unbekannt"
+            escalations.record_note(esc["id"],
+                "move nach %s kam nicht an (blieb auf %s) - Grund: %s"
+                % (lane, (r or {}).get("lane"), str(reason)[:300]))
+            return False           # stays open - the next attempt sees the real state fresh
         return True
     if action == "steer" and t and text:
         from cells.engineer import sessions
-        threading.Thread(target=sessions.steer, args=(t["id"], text),
-                         kwargs={"actor": "henry", "source": "henry-escalation"},
-                         daemon=True).start()
+        from spine.ops import bgthread
+        bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
+            t["id"], text, actor="henry", source="henry-escalation"))
         return True
     if action == "rerun_deploy":
         from cells.engineer.lanemachine import _repo_hook
@@ -483,7 +508,8 @@ def _execute(action, card, lane, text, esc):
                 "rerun_deploy: kein settings.repo_hooks['%s']['deploy'] konfiguriert "
                 "(oder der Repo-Pfad passt nicht exakt) - kein Deploy ausgeloest." % t["repo"])
             return False
-        threading.Thread(target=_repo_hook, args=(dict(t), "deploy"), daemon=True).start()
+        from spine.ops import bgthread
+        bgthread.spawn("henry:rerun_deploy:" + t["id"], lambda: _repo_hook(dict(t), "deploy"))
         return True
     if action == "notify_owner":
         _notify_owner("Henry (%s): %s" % (esc["kind"], text or (esc.get("detail") or "")[:200]), t)

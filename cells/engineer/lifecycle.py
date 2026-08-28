@@ -320,7 +320,81 @@ def sweep_zombies(min_idle_s=0):
     return swept
 
 
-def start_zombie_reconciler(interval=20, min_idle_s=45):
+def check_landed_not_closed():
+    """Board-vs-git reconciliation for the OTHER half of the accept race (the
+    live-turn guard in lanemachine._move_lane stops new occurrences; this
+    catches any that already happened, including ones from before that fix -
+    e.g. a daemon restart landing squarely between the merge and the
+    _accepted mutate). A card resting on Review/needs_you whose branch is
+    ALREADY fully merged into its base (git ahead-count, not a stored flag -
+    same evidence _merge_to_main itself uses to call something 'already_merged')
+    is a board that forgot a real merge happened.
+
+    SELF-HEALS, deliberately, rather than only reporting: closing this gap is
+    a MECHANICAL fact-check ("did the branch already land? yes/no"), not a
+    judgement call, so it does not belong on Henry's desk (CLAUDE.md: hard
+    invariants live in code; Henry judges what code cannot decide). The
+    resume is just a normal move_lane("done") retry - _merge_to_main's own
+    ahead==0 'already_merged' branch makes this call idempotent by
+    construction (same durable-execution shape as an outbox retry: the
+    pipeline's terminal write is the only thing that changes, nothing lands
+    twice). Escalates ONLY when the retry itself does not reach lane=="done"
+    (a real conflict appeared meanwhile, gate turned red, etc.) - THAT is a
+    judgement call, and Henry gets it with the retry's own report attached
+    instead of a guess. Measured 2026-08-28: chat-wear-os-integration-phas
+    landed on main at 11:35:47 but a concurrently-finishing turn overwrote the
+    track back to review/needs_you seven seconds later - nothing before this
+    would ever have told the board (or Henry) the two had split."""
+    from spine.storage.trackstore import _load as _load_t
+    from spine.git.gitutil import _git_try
+    from spine.agent import drivers
+    from cells.engineer import lanemachine
+    from spine.registry import escalations
+    open_kinds = {(e.get("kind"), e.get("card")) for e in escalations.list_open()}
+    for t in _load_t():
+        if t.get("lane") != "review" or t.get("status") != "needs_you":
+            continue
+        tid = t["id"]
+        if t.get("question") or drivers.turn_active(tid) or lanemachine.lane_active(tid):
+            continue                    # not settled yet - not this check's business
+        repo, branch = t.get("repo"), t.get("branch")
+        if not repo or not branch or not os.path.isdir(repo):
+            continue
+        try:
+            cur = _git_try(repo, "rev-parse", "--abbrev-ref", "HEAD")[1]
+            if not cur or cur == branch:
+                continue                 # repo mid-something else - not our call to make
+            ahead = int(_git_try(repo, "rev-list", "--count", "%s..%s" % (cur, branch))[1] or "0")
+        except Exception:
+            continue
+        if ahead != 0:
+            continue                     # real unlanded work - Review is correct
+        try:
+            r = lanemachine.move_lane(tid, "done", actor="reconciler")
+        except Exception as e:
+            escalations.emit("landed-not-closed", card=tid,
+                             detail="Karte '%s': Branch ist bereits vollstaendig in %s "
+                                    "(0 Commits Unterschied), aber der automatische "
+                                    "Nachhol-Versuch (move -> done) crashte: %s"
+                                    % ((t.get("task") or "")[:80], cur, str(e)[:250]))
+            continue
+        if (r or {}).get("lane") == "done":
+            print("RECONCILER: closed landed-but-not-closed card %s (already in %s)"
+                  % (tid, cur), flush=True)
+            continue
+        if ("landed-not-closed", tid) in open_kinds:
+            continue                     # already reported, Henry hasn't judged yet
+        escalations.emit("landed-not-closed", card=tid,
+                         detail="Karte '%s': Branch ist bereits vollstaendig in %s "
+                                "(0 Commits Unterschied), aber der automatische "
+                                "Nachhol-Versuch (move -> done) blieb auf Review "
+                                "(%s) - braucht einen Blick: %s"
+                                % ((t.get("task") or "")[:80], cur, (r or {}).get("lane"),
+                                    str((r or {}).get("merge_report")
+                                        or (r or {}).get("gate_report") or "")[:300]))
+
+
+def start_zombie_reconciler(interval=20, min_idle_s=45, landed_check_every=6):
     """Reconcile status vs the live session CONTINUOUSLY (Paseo-parity), not just at
     boot. HelmDeck's `status` is a STORED field a thread must remember to clear; if
     that thread dies or races (a daemon restart mid-turn, overlapping Stop presses
@@ -329,11 +403,18 @@ def start_zombie_reconciler(interval=20, min_idle_s=45):
     next restart. Paseo derives lifecycle from the live run and sweeps every 15s, so
     it self-heals; this background pass gives HelmDeck the same - a stuck card is
     caught within ~`interval`s. The idle guard skips the steer-start window so a
-    legitimately-spawning turn is never falsely reaped. Idempotent."""
+    legitimately-spawning turn is never falsely reaped. Idempotent.
+
+    landed_check_every: check_landed_not_closed() runs one git ahead-count per
+    open Review card, so it rides along every Nth tick instead of every tick -
+    the mismatch it looks for is rare and never urgent-fast (the card is
+    already merged, just not visibly closed)."""
     import threading
     def _loop():
+        n = 0
         while True:
             time.sleep(interval)
+            n += 1
             try:
                 swept = sweep_zombies(min_idle_s=min_idle_s)
                 if swept:
@@ -341,6 +422,11 @@ def start_zombie_reconciler(interval=20, min_idle_s=45):
                           % (len(swept), ", ".join(swept)), flush=True)
             except Exception as e:
                 print("zombie reconciler error: %s" % e, flush=True)
+            if n % landed_check_every == 0:
+                try:
+                    check_landed_not_closed()
+                except Exception as e:
+                    print("landed-not-closed check error: %s" % e, flush=True)
     threading.Thread(target=_loop, daemon=True).start()
 
 
