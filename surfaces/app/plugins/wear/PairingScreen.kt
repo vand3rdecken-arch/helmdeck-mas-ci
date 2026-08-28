@@ -35,15 +35,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Owner decision (README.md §4.10-follow-up, 2026-08-29): a STABLE named
+ *  tunnel (`bash ops/deploy/cloudflare_tunnel.sh pair.helmdeck.de`), not the
+ *  ephemeral `trycloudflare.com` form - the address stops rotating, so it
+ *  can be a fixed default here instead of something dictated every single
+ *  pairing. Still just a default, not a hardcoded requirement: the "Adresse"
+ *  field stays fully editable/dictatable for a different tunnel setup. */
+private const val DEFAULT_CLAIM_BASE_URL = "https://pair.helmdeck.de"
+
 /**
  * The device-code pairing screen (W2b groundwork, README.md §4.6/§9.1
  * item 21). Two fields because there is no camera to scan the phone's QR
  * and no keyboard to comfortably type either: the origin the daemon is
- * reachable at right now (the owner's ops/deploy/cloudflare_tunnel.sh URL -
- * a NAMED tunnel is strongly recommended over the ephemeral one specifically
- * because a short, memorable domain dictates far more reliably than a random
- * trycloudflare.com string), and the six-character code the owner reads off
- * POST /relay/pair/code's response on the phone/desktop.
+ * reachable at right now (defaults to the owner's fixed pairing subdomain,
+ * see DEFAULT_CLAIM_BASE_URL above), and the six-character code the owner
+ * reads off POST /relay/pair/code's response on the phone/desktop. With the
+ * address pre-filled, dictating the CODE is the only step left in the
+ * common case - which is the whole point: the owner explicitly rejected
+ * dictating a URL as "very painful" and asked for exactly this fix.
  *
  * Both fields offer ACTION_RECOGNIZE_SPEECH dictation (the documented Wear
  * OS voice-input path, developer.android.com/training/wearables/user-input/
@@ -53,7 +62,7 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun PairingScreen(context: Context, onPaired: () -> Unit) {
-    var claimBaseUrl by remember { mutableStateOf("") }
+    var claimBaseUrl by remember { mutableStateOf(DEFAULT_CLAIM_BASE_URL) }
     var code by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -134,16 +143,19 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
         Box(modifier = Modifier.fillMaxSize()) {
             TransformingLazyColumn(state = columnState) {
                 item { Text(text = "HelmDeck koppeln", modifier = Modifier.padding(8.dp)) }
-                item {
-                    FieldRow(
-                        label = "Adresse", value = claimBaseUrl,
-                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
-                    )
-                }
+                // Code first: with the address defaulted (DEFAULT_CLAIM_BASE_URL),
+                // this is the only field the owner needs to touch in the
+                // common case - the whole reason that default exists.
                 item {
                     FieldRow(
                         label = "Code", value = code,
                         onDictate = { codeLauncher.launch(speechIntent("Code")) },
+                    )
+                }
+                item {
+                    FieldRow(
+                        label = "Adresse (meist unnötig)", value = claimBaseUrl,
+                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
                     )
                 }
                 item {
