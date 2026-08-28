@@ -1236,29 +1236,65 @@ wie bei jeder Kotlin-Datei dieser Session, kein Compiler vorhanden.
 
 ### 4.12 „Do you need desktop access. I can grant it" (2026-08-29)
 
-Nein — nicht in dem Sinn, den die Frage nahelegt, und das ist eine
-strukturelle Grenze dieser Karte, keine Zurückhaltung:
+**Vorhersage zum Zeitpunkt der Frage — teilweise widerlegt, korrigiert statt
+stehen gelassen:** Punkt 1 (Cloudflare-Login ist Identität, kein Agent kann
+für den Owner klicken) stimmte und bestätigte sich exakt. Punkt 2/3 (diese
+Karte sei strukturell ohne Zugriff auf den echten Desktop, brauche dafür
+eine andere Kartenform) stimmte NICHT — das Bash-Tool dieser Session hatte
+tatsächlich echten Zugriff auf diese physische Maschine: `cloudflared`,
+`winget` und ein laufender echter Daemon auf `:8140` waren direkt erreichbar,
+geprüft statt angenommen (`command -v`, `curl localhost:8140/auth/state`).
+Der `card_tool_guard` blockiert nur Befehle, die einen Pfad AUSSERHALB des
+Worktrees explizit im Kommandotext nennen — kein umfassendes Desktop-Sandbox.
 
-1. **`cloudflared tunnel login` ist ein interaktiver Browser-OAuth-Flow**,
-   an die Cloudflare-Identität des Owners gebunden (`cloudflare_tunnel.sh`
-   öffnet den Browser selbst, Zeile „opens the browser: you approve"). Das
-   kann kein Agent für den Owner klicken — „Desktop-Zugriff" gewähren würde
-   daran nichts ändern, weil es keine Berechtigungsfrage ist, sondern eine
-   Identitätsfrage: der Login-Screen verlangt DIE Person, deren Konto es
-   ist.
-2. **Diese Karte ist ein Git-Worktree, keine Maschinen-Karte.** Der
-   HelmDeck-eigene Mechanismus für „Chat steuert den echten Desktop" ist ein
-   ANDERER Kartentyp (`daemon.hub`-Machine-Tasks, s. `helmdeck-machine-
-   tasks`-Memory-Eintrag) — ein Karten-Worktree wie dieser hat strukturell
-   keinen Zugriff auf den laufenden Daemon, das echte Terminal oder einen
-   dauerhaften Hintergrundprozess des Owners, unabhängig von irgendeiner
-   Berechtigung, die für DIESE Session erteilt würde.
-3. **Was tatsächlich zu tun ist, ist kurz genug, um es selbst auszuführen**
-   (oder einer Maschinen-Karte zu geben, falls gewünscht — das wäre eine
-   neue, andere Karte): einmalig
-   `bash ops/deploy/cloudflare_tunnel.sh helmdeck.de pair.helmdeck.de`
-   laufen lassen, im Browser bestätigen, fertig — der Tunnel-Prozess muss
-   danach nur noch laufen, während tatsächlich gekoppelt wird.
+**Owner-Weisung** (nachdem die erste Antwort das noch offenließ): *„mach das
+für mich... führ die nötigen Kommandos/Tests selbständig aus... Melde dich
+erst wieder, wenn du wirklich nicht weiterkommst ohne Owner-Zugriff."*
+Befolgt — tatsächlich ausgeführt, nicht an den Owner zurückgereicht:
+
+1. `cloudflared tunnel login` gestartet (Hintergrundprozess) — druckte die
+   echte Login-URL, wartete. Das ist die EINE echte Grenze aus Punkt 1: nur
+   der Owner konnte den Link öffnen und `helmdeck.de` auf der
+   Cloudflare-Autorisierungsseite auswählen (Dashboard-Login allein reicht
+   NICHT — das Cert kommt erst nach der Zonen-Autorisierung, live beobachtet:
+   der Prozess blieb nach dem bloßen Login mehrere Minuten bei „Waiting for
+   login…" hängen, bis die Zone tatsächlich autorisiert wurde).
+2. Vor jeder Änderung geprüft, nicht angenommen: `nslookup -type=NS
+   helmdeck.de` bestätigte Cloudflare-Nameserver (nicht IONOS — hätte den
+   ganzen Plan gekippt); `nslookup pair.helmdeck.de` bestätigte, dass die
+   Subdomain noch nicht existierte; der bestehende, AKTIVE Tunnel
+   `helmdeck-relay` (echte Verbindungen) wurde identifiziert und bewusst
+   NICHT angerührt.
+3. `cloudflared tunnel create helmdeck` → `cloudflared tunnel route dns
+   helmdeck pair.helmdeck.de` → `cloudflared tunnel run --url
+   http://localhost:8140 helmdeck` (Hintergrund) — alle drei Schritte
+   selbständig, kein weiterer Owner-Klick nötig.
+4. **Ende-zu-Ende verifiziert, nicht nur „Befehl lief ohne Fehler":** lokaler
+   DNS-Resolver hatte das anfängliche NXDOMAIN gecacht — via `1.1.1.1`
+   nachgeprüft, echte Cloudflare-Proxy-IPs bestätigt; `curl --resolve` (IP
+   gepinnt, lokaler Cache umgangen) gegen `https://pair.helmdeck.de/auth/state`
+   lieferte BYTE-IDENTISCHES JSON zu `localhost:8140`. Zusätzlich:
+   `GET /relay/pair/claim?code=ZZZZZZ` lokal UND über den Tunnel ergab
+   identisch `{"error":"auth required"}` — das beweist zugleich den
+   Tunnel als treuen Pass-Through UND dass der LAUFENDE Daemon noch auf
+   `main` steht (meine Route ist dort noch nicht registriert) — Kopplung
+   kann also erst funktionieren, nachdem diese Karte akzeptiert ist.
+5. **Baustellen-Check statt Bau-Versuch:** JDK ist 21 (nicht die von
+   `build_apk.sh` geforderte 17), `adb` fehlt im PATH, kein `android/`
+   (braucht `expo prebuild`), kein `node_modules` — der APK-Bau selbst blieb
+   also die reale, erwartete Grenze (fehlende Werkzeuge, nicht fehlender
+   Zugriff).
+6. **Nach Rückfrage des Owners** („Shouldn't it only be turn on when some
+   tries to pair?") — zutreffend: Tunnel wieder gestoppt (`TaskStop`), per
+   `curl` verifiziert (öffentliches `502` statt der Daemon-Antwort — beweist
+   „wirklich down", nicht nur „als gestoppt gemeldet"). DNS-Eintrag und
+   Tunnel-Definition BLEIBEN bestehen (kein `tunnel delete`, keine
+   `route dns`-Rücknahme) — Neustart ist genau EIN Befehl, keine erneute
+   Anmeldung/Erstellung nötig:
+
+```
+cloudflared tunnel run --url http://localhost:8140 helmdeck
+```
 
 ---
 
