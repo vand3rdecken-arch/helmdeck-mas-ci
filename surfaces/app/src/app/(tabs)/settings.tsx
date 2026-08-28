@@ -246,6 +246,11 @@ export default function Settings() {
   const [pairBusy, setPairBusy] = useState(false);
   const [pairTtlMin, setPairTtlMin] = useState(15);
   const [relayUrl, setRelayUrl] = useState("");
+  // ---- watch pairing (spoken device-code, POST /relay/pair/code) ----
+  const [wearLabel, setWearLabel] = useState("");
+  const [wearCode, setWearCode] = useState("");
+  const [wearTtlMin, setWearTtlMin] = useState(15);
+  const [wearBusy, setWearBusy] = useState(false);
 
   // ---- add user (door: team) ----
   const [uName, setUName] = useState(""); const [uPw, setUPw] = useState(""); const [uRole, setURole] = useState("operator");
@@ -337,6 +342,23 @@ export default function Settings() {
       setPairLink(link);
       setQr(await qrDataUrl(link));
     } catch (e) { fail(e); } finally { setPairBusy(false); }
+  }
+  async function pairWatch() {
+    // Same guard as pairPhone() - checked, not assumed: relay_client.py's
+    // insecure_url() only rejects PLAIN-http; an EMPTY relay URL parses to
+    // scheme "" (not "http"), so pairing_payload() would happily mint a
+    // payload with url:"" server-side. pairPhone() already compensates for
+    // this client-side rather than relying on the daemon to catch it -
+    // pairWatch() mirrors that instead of reintroducing the gap.
+    if (!relayUrl.trim()) { Alert.alert(tr("settings.pair.noRelayTitle"), tr("settings.pair.noRelayMsg")); return; }
+    setWearBusy(true);
+    try {
+      const r = await api.post<{ code?: string; expires_in?: number; error?: string }>(
+        "/relay/pair/code", { label: wearLabel.trim() || "Watch" });
+      if (r.error) { Alert.alert(tr("ui.error"), r.error); return; }
+      setWearCode(r.code ?? "");
+      setWearTtlMin(Math.round((r.expires_in ?? 900) / 60));
+    } catch (e) { fail(e); } finally { setWearBusy(false); }
   }
   async function saveRelay() {
     try { await api.saveSettings({ relay: { url: relayUrl.trim() } }); await invalidate(); ok(tr("settings.saved.relay")); }
@@ -643,6 +665,28 @@ export default function Settings() {
                   <Text selectable numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{pairCode}</Text>
                 </View>
                 <Btn label={tr("settings.pair.copyCode")} kind="ghost" onPress={async () => { await Clipboard.setStringAsync(pairCode); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.codeCopied")); }} />
+              </View>
+            ) : null}
+          </Panel>
+
+          <Panel>
+            <SectionLabel text={tr("settings.sec.wearPair")} />
+            <Hint text={tr("settings.wearPair.hint")} />
+            <TextInput value={wearLabel} onChangeText={setWearLabel} autoCapitalize="words"
+              placeholder={tr("settings.wearPair.label")} placeholderTextColor={t.txtPlaceholder} style={field} />
+            <View style={{ height: 10 }} />
+            <Btn label={wearBusy ? "…" : tr("settings.wearPair.pairWatch")} onPress={pairWatch} disabled={wearBusy} />
+            {wearCode ? (
+              <View style={{ marginTop: 10, gap: 8 }}>
+                <Hint text={tr("settings.wearPair.ttl", { min: wearTtlMin })} />
+                <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 14, alignItems: "center" }}>
+                  <Text selectable style={{ color: t.accent, fontSize: 22, letterSpacing: 4,
+                    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{wearCode}</Text>
+                </View>
+                <Btn label={tr("settings.wearPair.copyCode")} kind="ghost" onPress={async () => {
+                  await Clipboard.setStringAsync(wearCode);
+                  Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.wearPair.codeCopied"));
+                }} />
               </View>
             ) : null}
           </Panel>
