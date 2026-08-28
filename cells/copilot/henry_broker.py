@@ -508,8 +508,24 @@ def _execute(action, card, lane, text, esc):
                 "rerun_deploy: kein settings.repo_hooks['%s']['deploy'] konfiguriert "
                 "(oder der Repo-Pfad passt nicht exakt) - kein Deploy ausgeloest." % t["repo"])
             return False
-        from spine.ops import bgthread
-        bgthread.spawn("henry:rerun_deploy:" + t["id"], lambda: _repo_hook(dict(t), "deploy"))
+        # SYNCHRONOUS + VERIFIED (was fire-and-forget until 2026-08-28, same
+        # blind spot the "move" verb had): _repo_hook can run for many minutes
+        # (a native APK build) and returns True/False/None on its OWN thread's
+        # local dict - closing the escalation the instant the thread STARTED
+        # meant a SECOND red build (measured live: card
+        # chat-wear-os-integration-phas failed again at 13:20 with an
+        # unrelated Gradle-daemon error) had nowhere to go - the escalation
+        # was already "decided", so nobody was told. Runs to completion here
+        # and checks the hook's own verdict before deciding whether to close.
+        try:
+            hk = _repo_hook(dict(t), "deploy")
+        except Exception as e:
+            escalations.record_note(esc["id"], "rerun_deploy crashed: %s" % str(e)[:250])
+            return False
+        if hk is False:
+            escalations.record_note(esc["id"],
+                "rerun_deploy: Deploy-Hook wieder rot - bleibt offen fuer den naechsten Versuch.")
+            return False           # stays open (2-attempt cap), next attempt gets fresh eyes
         return True
     if action == "notify_owner":
         _notify_owner("Henry (%s): %s" % (esc["kind"], text or (esc.get("detail") or "")[:200]), t)
