@@ -51,15 +51,30 @@ function patchSettingsGradle(text, isKts) {
  * (README.md §7.1): "das Compose-Compiler-Plugin gehört in die ROOT
  * build.gradle, nicht ins Modul". Kotlin 2.0+ ships the Compose compiler as
  * its own versioned Gradle plugin, released in lockstep with the Kotlin
- * compiler itself - so it rides the SAME `$kotlinVersion` ext property the
- * Expo/RN template's own `buildscript.ext` block already declares (rather
- * than a separately-tracked version), which is also why this only needs a
- * classpath entry, not a new `ext` value.
+ * compiler itself.
+ *
+ * PINNED, not `$kotlinVersion` (measured 2026-08-28, deploy-red on card
+ * chat-wear-os-integration-phas): this Expo/RN template (Expo 57,
+ * expo-modules-autolinking's ExpoRootProjectPlugin) sets `rootProject.ext.
+ * kotlinVersion` from `apply plugin: "expo-root-project"` - which runs as
+ * part of the build SCRIPT BODY, after `buildscript {}` has already been
+ * evaluated. Gradle special-cases `buildscript {}` to configure before
+ * anything else in the file regardless of textual position, so the property
+ * does not exist yet when this classpath entry resolves -> "Could not get
+ * unknown property 'kotlinVersion'". The actual Kotlin Gradle plugin version
+ * this build resolves is 2.1.20, pinned in
+ * node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml (which
+ * is what backs the version-less `kotlin-gradle-plugin` classpath entry via
+ * settings.gradle's composite-build substitution) - confirmed against
+ * voice-interaction-design.md:475's independently measured version. Re-check
+ * this pin if RN's gradle-plugin bumps its own Kotlin version.
  *
  * Anchored on `buildscript` -> the FIRST `dependencies {` after it, which in
  * every Expo/RN classic-style root build.gradle is the buildscript's own
  * (there is no nested buildscript, so this cannot land in the wrong block).
  */
+const PINNED_KOTLIN_VERSION = "2.1.20";
+
 function patchRootGradleForCompose(text) {
   if (!text || text.includes(MARKER_ROOT)) return text;
   const bsIdx = text.indexOf("buildscript");
@@ -68,7 +83,7 @@ function patchRootGradleForCompose(text) {
   if (depIdx < 0) return text;
   const braceIdx = text.indexOf("{", depIdx);
   if (braceIdx < 0) return text;
-  const line = `\n        // ${MARKER_ROOT}\n        classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:$kotlinVersion")`;
+  const line = `\n        // ${MARKER_ROOT}\n        classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:${PINNED_KOTLIN_VERSION}")`;
   return text.slice(0, braceIdx + 1) + line + text.slice(braceIdx + 1);
 }
 

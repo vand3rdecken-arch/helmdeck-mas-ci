@@ -452,12 +452,17 @@ Neu im Baum:
    developer.android.com/training/wearables/apps/standalone-apps es zeigt —
    der Plattform-Default ist dann `true`, was §6.2 explizit verlangt („NICHT
    `required=\"false\"`").
-3. **`compose-compiler-gradle-plugin:$kotlinVersion`** in der ROOT
+3. **`compose-compiler-gradle-plugin:2.1.20`** in der ROOT
    `buildscript.dependencies`, nicht im Modul — die dokumentierte Falle
-   (§7.1) wörtlich vermieden; die Version reitet auf demselben
-   `kotlinVersion`, den das Template schon für den Kotlin-Compiler selbst
-   trägt (2.1.20, gemessen in `voice-interaction-design.md:475`), statt eine
-   zweite, separat zu pflegende Versionsnummer einzuführen.
+   (§7.1) wörtlich vermieden. PINNED, nicht `$kotlinVersion`: real gemessen
+   2026-08-28 (deploy-red) — `expo-root-project` setzt `ext.kotlinVersion`
+   erst beim Anwenden des Plugins (Skript-Body), also NACH der Auswertung
+   von `buildscript {}` (Gradle wertet `buildscript` immer zuerst aus, egal
+   an welcher Textposition es steht) — `$kotlinVersion` ist zum Zeitpunkt der
+   Classpath-Auflösung schlicht unbekannt. Der literale Wert 2.1.20 ist der
+   real aufgelöste Kotlin-Gradle-Plugin-Wert (`@react-native/gradle-plugin`s
+   eigener `libs.versions.toml`, per Composite-Build-Substitution), identisch
+   mit dem unabhängig in `voice-interaction-design.md:475` gemessenen Wert.
 4. **`applicationId "app.helmdeck.wear"`**, NICHT dieselbe wie das
    Telefon-Modul (`app.helmdeck`). Play verlangt gleichen Package-Namen +
    gleichen Signing-Key nur für den gebündelten Wear-Track (WO-G7, §7.2) —
