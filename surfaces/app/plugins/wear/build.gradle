@@ -56,15 +56,38 @@ android {
 
 dependencies {
     // Every version below except activity-compose was fetched from
-    // developer.android.com this session (checked 2026-08-28), not recalled:
+    // developer.android.com / central.sonatype.com this session (checked
+    // 2026-08-28/29), not recalled:
     //   - androidx.wear.compose:compose-foundation:1.6.2 (stable, 2026-05-19)
     //   - androidx.wear.compose:compose-material3:1.5.0 (stable, 2025-08-27)
+    //   - com.goterl:lazysodium-android:5.2.0 (Maven Central "latest stable")
+    //   - net.java.dev.jna:jna:5.17.0 (lazysodium's own documented JNA pin)
     // activity-compose is the one unverified pin in this file - no fetch this
     // session confirmed it against Kotlin 2.1.20 (voice-interaction-
     // design.md:475's measured version for this app). Recheck against
     // Android Studio's own Wear OS Compose template before a real build.
     implementation "androidx.core:core-ktx:1.13.1"
     implementation "androidx.activity:activity-compose:1.9.3"
+    // Explicit rather than relying on Compose's transitive pull-in of
+    // coroutines - PairingScreen.kt uses Dispatchers.IO/Default directly.
+    // Same confidence tier as activity-compose above (not freshly fetched
+    // this session; 1.9.x was the broadly-adopted line for Kotlin 2.0/2.1).
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
     implementation "androidx.wear.compose:compose-foundation:1.6.2"
     implementation "androidx.wear.compose:compose-material3:1.5.0"
+
+    // NaCl box (crypto/HelmDeckBox.kt) - an established libsodium JNI binding,
+    // NOT hand-rolled primitives. This is the ONE dependency in this file
+    // whose exact METHOD SURFACE (not just its version) is unverified this
+    // session - see crypto/HelmDeckBox.kt's own header for what that means in
+    // practice and why it is still the responsible choice.
+    implementation "com.goterl:lazysodium-android:5.2.0@aar"
+    implementation "net.java.dev.jna:jna:5.17.0@aar"
+
+    // EncryptedSharedPreferences - Android Jetpack's own credential-at-rest
+    // story (the Wear equivalent of expo-secure-store on the phone). Version
+    // is the well-known 1.1.0-alpha06, the last release before this artifact
+    // was folded into Credential Manager guidance; not re-fetched this
+    // session, same confidence tier as activity-compose above.
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
 }

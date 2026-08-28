@@ -81,11 +81,21 @@ function installWearModule(androidDir) {
   const fs = require("fs");
   const path = require("path");
   const srcRoot = path.join(__dirname, "wear");
+  const JAVA = ["wear", "src", "main", "java", "app", "helmdeck", "wear"];
   const files = [
     ["build.gradle", ["wear", "build.gradle"]],
     ["AndroidManifest.xml", ["wear", "src", "main", "AndroidManifest.xml"]],
-    ["MainActivity.kt",
-      ["wear", "src", "main", "java", "app", "helmdeck", "wear", "MainActivity.kt"]],
+    ["MainActivity.kt", [...JAVA, "MainActivity.kt"]],
+    // 2026-08-29 (device-code pairing, README.md §4.6/§9.1 item 20-23):
+    // PairingScreen shares MainActivity's package (app.helmdeck.wear);
+    // HelmDeckBox and DeviceStore/RelayClient get their own sub-packages
+    // (crypto/, data/) matching their `package` declarations exactly - a
+    // mismatched directory here is a compile error, not a silent bug, but
+    // still worth getting right the first time.
+    ["PairingScreen.kt", [...JAVA, "PairingScreen.kt"]],
+    ["HelmDeckBox.kt", [...JAVA, "crypto", "HelmDeckBox.kt"]],
+    ["DeviceStore.kt", [...JAVA, "data", "DeviceStore.kt"]],
+    ["RelayClient.kt", [...JAVA, "data", "RelayClient.kt"]],
   ];
   let wrote = 0;
   for (const [rel, dstParts] of files) {
