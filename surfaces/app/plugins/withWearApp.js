@@ -93,6 +93,11 @@ function installWearModule(androidDir) {
     // mismatched directory here is a compile error, not a silent bug, but
     // still worth getting right the first time.
     ["PairingScreen.kt", [...JAVA, "PairingScreen.kt"]],
+    // 2026-08-29 (board view, README.md §4.7/§9.1): the owner decree that
+    // wearables talk to Henry, never the worker, lives in CardScreen.kt.
+    ["BoardModel.kt", [...JAVA, "BoardModel.kt"]],
+    ["BoardScreen.kt", [...JAVA, "BoardScreen.kt"]],
+    ["CardScreen.kt", [...JAVA, "CardScreen.kt"]],
     ["HelmDeckBox.kt", [...JAVA, "crypto", "HelmDeckBox.kt"]],
     ["DeviceStore.kt", [...JAVA, "data", "DeviceStore.kt"]],
     ["RelayClient.kt", [...JAVA, "data", "RelayClient.kt"]],

@@ -61,6 +61,7 @@ from cells.pm import routes_pm
 from spine.http.routes import routes_misc
 from spine.http.routes import routes_control
 from spine.http.routes import routes_relay
+from spine.http.routes import routes_wear
 from cells.connectors import routes_connectors
 from spine.http.routes import routes_audit
 from spine.http.routes import routes_checkpoints
@@ -246,6 +247,9 @@ class H(BaseHTTPRequestHandler):
             # --- company instrumentation: settings + CEO dashboard ---
             if p in routes_copilot.GET_ROUTES:
                 return routes_copilot.GET_ROUTES[p](self, user)
+            # --- Wear OS watch: board summary (README.md §4.7) ---
+            if p in routes_wear.GET_ROUTES:
+                return routes_wear.GET_ROUTES[p](self, user)
             if p == "/stream/wait":
                 # Board PUSH over the sealed relay (SSE can't tunnel): long-poll
                 # the data version. Blocks until it passes `v` or ~22s, then
@@ -405,6 +409,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
             if p in routes_copilot.POST_ROUTES:
                 return routes_copilot.POST_ROUTES[p](self, user, body)
+            if p in routes_wear.POST_ROUTES:
+                return routes_wear.POST_ROUTES[p](self, user, body)
             if p in routes_tracks.POST_ROUTES:
                 return routes_tracks.POST_ROUTES[p](self, user, body)
             if p in routes_relay.POST_ROUTES:
