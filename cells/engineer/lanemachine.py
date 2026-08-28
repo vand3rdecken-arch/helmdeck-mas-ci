@@ -123,7 +123,7 @@ def _admit_heavy(t, kind, log=None):
                 if log:
                     log.log("note", "Box weiterhin ausgelastet (CPU %.0f%%) - starte "
                                     "trotzdem nach %ds Wartezeit" % (cpu, int(wait_cap)))
-                events.emit("load_wait", t.get("id"), kind=kind, cpu_pct=cpu,
+                events.emit("load_wait", t.get("id"), op=kind, cpu_pct=cpu,
                             wait_s=wait_cap, gave_up=True)
                 # Load that outlasts the whole wait window is no longer a
                 # scheduling detail - it is an EXCEPTION, and judging it (is
@@ -151,7 +151,7 @@ def _admit_heavy(t, kind, log=None):
                 if log:
                     log.log("note", "wartet: Box ausgelastet durch %s (CPU %.0f%%) - "
                                     "warte bis zu %ds" % (who, cpu, int(wait_cap)))
-                events.emit("load_wait", t.get("id"), kind=kind, cpu_pct=cpu, wait_s=wait_cap)
+                events.emit("load_wait", t.get("id"), op=kind, cpu_pct=cpu, wait_s=wait_cap)
                 noted = True
             time.sleep(poll_s)
     token = "%s:%s:%f" % (t.get("id"), kind, time.time())
@@ -857,6 +857,24 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
     if t.get("machine") and lane in ("review", "done"):
         # no branch, no merge - the owner's accept IS the gate (see _accept_machine)
         return sessions._accept_machine(t, lane, actor, log)
+    if lane == "done":
+        # A LIVE turn writes to this same track (session_id, last_reply, status)
+        # the instant it ends, on its own thread, racing whatever this call is
+        # about to do. Measured 2026-08-28 (chat-wear-os-integration-phas): the
+        # merge landed on main at 11:35:47 while a worker turn begun at 11:27:50
+        # was still in flight; that turn's own _finish_turn then overwrote the
+        # just-accepted track back to status=needs_you/lane=review at 11:36:54 -
+        # the merge was real (git proves it) but the BOARD forgot it happened.
+        # turn_active() is the runtime's own signal (Paseo: never a stored
+        # flag), so this bounces on ground truth, not a guess. REVIEW's preview
+        # branch below is read-only (classify, no merge) and stays safe to run
+        # even mid-turn.
+        from spine.agent import drivers as _drivers_ta
+        if _drivers_ta.turn_active(tid):
+            log.log("note", "Karte hat noch einen laufenden Turn - Abnahme wartet, "
+                    "bis er fertig ist (sonst ueberschreibt der Turn-Abschluss den "
+                    "gerade gelandeten Merge).")
+            return _find(_load(), tid) or dict(t)
     if lane in ("review", "done"):
         # Two verbs sharing one prep: clean up + commit, then the gate. REVIEW then
         # CLASSIFIES the merge (dry-run) and RESTS on Review showing the verdict -
