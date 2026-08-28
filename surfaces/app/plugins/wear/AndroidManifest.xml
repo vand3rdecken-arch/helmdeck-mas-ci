@@ -24,8 +24,36 @@
   (nothing in this card worktree can generate one). AGP does not require one;
   the OS falls back to a system default. Add a real one before this ever
   reaches a device the owner looks at day to day.
+
+  2026-08-29 additions (the pairing screen):
+
+    INTERNET - the empty W2a screen made no network call, so it needed none.
+    The pairing/claim flow does.
+
+    <queries> for android.speech.RecognitionService - EXACT same trap as the
+    phone's withGlassVoice.js already paid for and documented: Android 11+
+    hides other packages by default, and ACTION_RECOGNIZE_SPEECH's recognizer
+    is IMPLEMENTED BY ANOTHER APP. Without this the APK builds clean and
+    `resolveActivity()` finds nothing - "correct code, silent dead
+    microphone", not a crash. Copied verbatim (query action + the named
+    Google-app package as belt-and-braces), not re-derived, because it is
+    already a measured fact in this repo, not a fresh guess for the watch.
+    No RECORD_AUDIO here: ACTION_RECOGNIZE_SPEECH launches a SEPARATE
+    recognizer activity that captures its own audio in its own process - the
+    calling app never touches the microphone directly, so it needs no
+    microphone permission of its own (standard Android delegated-intent
+    behaviour, not watch-specific).
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <queries>
+        <package android:name="com.google.android.googlequicksearchbox" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <uses-feature android:name="android.hardware.type.watch" />
 

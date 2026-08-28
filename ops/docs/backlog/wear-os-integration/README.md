@@ -898,23 +898,57 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
 
 ### Offen, seit die Claim-Code-Kopplung (§4.6) als Code existiert (2026-08-28)
 
-20. **Der Kotlin-Client für die Kopplung fehlt noch vollständig** — bewusst
-    NICHT diese Karte, mit voller Absicht: NaCl-Crypto in Kotlin
-    (`crypto_box`/curve25519-xsalsa20-poly1305, kompatibel zu `e2ee.py`/
-    `e2ee.ts`) ist genau die Klasse Code, bei der „sieht plausibel aus" und
-    „ist richtig" auseinanderfallen können, ohne dass es beim Bauen auffällt
-    — ein Nonce-Wiederverwendungs-Fehler oder eine falsche Byte-Reihenfolge
-    kompiliert genauso sauber wie korrekter Code. Ihn ungeprüft zu schreiben,
-    ohne jedes Kotlin-Werkzeug in diesem Worktree (§9.1 Punkt 15), wäre
-    fahrlässig auf eine andere Art als eine ungetestete UI-Seite. Empfehlung
-    für den nächsten Schritt: `lazysodium-android` (etablierte, auditierte
-    libsodium-JNI-Bindung) statt eigener Primitive — dieselbe Regel, die
-    dieses Repo schon auf der Telefonseite befolgt (tweetnacl-artige
-    Bibliothek statt Marke-Eigenbau).
-21. **Die diktierte Code-Eingabe auf der Uhr ist nicht gebaut.** §4.6 nennt
-    `ACTION_RECOGNIZE_SPEECH` als Weg (in §5 bereits plattformseitig belegt),
-    aber die MainActivity aus §4.5 hat noch keinen Pairing-Screen — sie zeigt
-    zwei statische Textzeilen.
+20. ~~**Der Kotlin-Client für die Kopplung fehlt noch vollständig**~~ **CODE
+    GESCHRIEBEN 2026-08-29** — auf Nachfrage des Owners, warum das nicht
+    gebaut wird: die ursprüngliche Zurückhaltung verwechselte zwei
+    verschiedene Risikoklassen. Eigene Krypto-Primitive hand-rollen wäre
+    fahrlässig gewesen; `crypto_box` über `lazysodium-android`
+    (`HelmDeckBox.kt`) aufzurufen ist etwas anderes — eine falsche
+    Methodensignatur ist dort ein KOMPILIERFEHLER, kein stiller Bug.
+    **Was das nicht abdeckt:** ob Nonce/Schlüssel-Reihenfolge (my_sk,
+    peer_pk — nie vertauscht) tatsächlich stimmt, prüft der Compiler nicht;
+    das braucht einen echten Rundlauf gegen den Daemon. Gebaut + geprüft in
+    dieser Karte, ohne jedes Kotlin-Werkzeug hier verfügbar:
+    - `HelmDeckBox.kt` — `crypto_box`/curve25519-xsalsa20-poly1305 über
+      `lazysodium-android:5.2.0`, Frame-Format `nonce(24) || ciphertext`
+      base64-kodiert, **gegengeprüft gegen `e2ee.py`s eigenes Docstring UND
+      `e2ee.ts`** (beide diese Session gelesen, nicht aus dem Gedächtnis).
+    - `DeviceStore.kt` — `EncryptedSharedPreferences` für relayUrl/room/
+      daemonPub/eigenes Schlüsselpaar/Device-Token (das Kotlin-Äquivalent zu
+      `expo-secure-store` auf dem Telefon).
+    - `RelayClient.kt` — `claim()` (unverschlüsselter Aufruf gegen
+      `/relay/pair/claim`) + `authedCall()`/`completePairing()`, die exakt
+      dieselbe Umschlag-Form wie `relayReq()` in `client.ts` bauen (diese
+      Session gelesen, nicht angenommen) und `GET /me` als
+      Pairing-Abschluss-Probe nutzen — dieselbe Route, die
+      `pairing_gate.tsx` selbst nach `applyPairing()` aufruft.
+    - `PairingScreen.kt` — zwei Felder (Adresse, Code), je mit
+      Diktier-Button (`ACTION_RECOGNIZE_SPEECH`, `<queries>`-Falle aus
+      `withGlassVoice.js` wortwörtlich übernommen statt neu hergeleitet).
+    - `MainActivity.kt` — zeigt `PairingScreen` bis `DeviceStore.load()`
+      etwas liefert, danach den alten W2a-Platzhaltertext.
+
+    **Neu entdeckt beim Bauen, nicht vorher gesehen:** `/relay/pair/claim`
+    ist NICHT über den bestehenden Glance-Worker erreichbar — dessen eigener
+    Test (`ops/tests/test_glance_worker.py`) erzwingt explizit
+    `("/relay/pair", "POST", None)`, und der Worker STRIPT Cookie/
+    Authorization vor dem Weiterreichen, was `/relay/pair/code` (Owner-Session)
+    ohnehin unmöglich machen würde. Den Worker zu erweitern hätte eine
+    bewusst gezogene Grenze verletzt. Empfehlung stattdessen: den
+    ohnehin schon vorhandenen `ops/deploy/cloudflare_tunnel.sh` (voller
+    Daemon-Zugriff) nur für die paar Minuten der Kopplung laufen lassen —
+    kein neuer Worker-Code nötig. `PairingScreen.kt` fragt die Basis-URL
+    deshalb bewusst ab, statt sie fest zu verdrahten.
+
+    **Verifiziert, nicht nur geschrieben:** Paket-Pfad jeder `.kt`-Datei
+    gegen `withWearApp.js`s Installer-Liste geprüft (ein Mismatch wäre ein
+    Compile-Fehler); das Krypto-Schema in `HelmDeckBox.kt`s Kommentar gegen
+    `e2ee.py`s Docstring verglichen (Curve25519, `crypto_box`, 24-Byte-Nonce,
+    UND dass `crypto_box_seal` — die falsche, anonyme Variante — explizit
+    ausgeschlossen wird). Kein Kotlin-Compiler verfügbar — das bleibt die
+    reale Grenze, siehe §9.1 Punkt 15.
+21. ~~**Die diktierte Code-Eingabe auf der Uhr ist nicht gebaut.**~~ **CODE
+    GESCHRIEBEN** — `PairingScreen.kt`, siehe Punkt 20.
 22. **Kein Rate-Limit auf `/relay/pair/claim`.** Der Sicherheitsanker ist
     bewusst derselbe wie beim Vorbild (glass-crud-harness' Device-Code-Pattern,
     §2.2 der Referenz, dort zitiert und hier übernommen): 6 Zeichen aus einem
@@ -925,6 +959,23 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
 23. **`/relay/pair/code` hat keinen UI-Aufruf.** Ein Endpunkt ohne Bildschirm,
     der ihn zeigt — die Telefon/Desktop-Seite, die den Code für den Owner
     anzeigt (Pendant zu `scan.tsx`/`qrgen.web.ts`), ist noch nicht gebaut.
+24. **`lazysodium-android`s exakte Methodensignatur ist unverifiziert.** Nur
+    die Gradle-Koordinate (`5.2.0`) und das allgemeine Box-API-Schema sind
+    belegt — die Wiki-Codebeispiele lieferten diese Session keinen
+    verwertbaren Quelltext. `HelmDeckBox.kt`s eigener Kommentar nennt das
+    explizit als „erstes zu prüfen, falls die Datei nicht kompiliert".
+25. **Kein Rundlauf-Test.** `HelmDeckBox.kt`s `sealB64`/`openB64` wurden nie
+    gegen ein echtes NaCl-Testvektor oder gegen `e2ee.py`/`e2ee.ts` selbst
+    laufen gelassen — das braucht entweder einen Kotlin-Compiler oder ein
+    echtes Gerät, beides hier nicht vorhanden.
+26. **Kein Board, keine `/glance`-Ansicht.** `MainActivity` zeigt nach der
+    Kopplung nur „Gekoppelt. Board folgt." — die Kopplung ist jetzt real,
+    das Board dahinter noch nicht (W2b im eigentlichen Sinn, §8 Zeile 5).
+27. **`FieldRow` hat kein echtes Text-Eingabefeld**, nur Diktat + Anzeige der
+    zuletzt diktierten Zeichenkette — Wear Compose Material3s
+    Text-Eingabe-Komponenten wurden diese Session nicht bestätigt (§9.1
+    Punkt 15 gilt hier verschärft). Ein getippter Fallback fehlt bewusst
+    dokumentiert, nicht still weggelassen.
 
 ---
 
