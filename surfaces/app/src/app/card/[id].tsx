@@ -478,14 +478,15 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         ) : null}
       </View>
 
-      {/* What the parked card is waiting on. Three distinct cases, because
-          "the turn ended" alone was ambiguous enough that cards looked stuck:
+      {/* What the parked card is waiting on. Two distinct cases:
             - a typed question  -> real option buttons; answering CONTINUES the
               same session (Phase 2.4), so it replaces the generic cue entirely
             - a background task -> not your move at all; the compact task line
               below carries that (Paseo parity: ONE line, not pill + list) -
               the pill stays only for pre-registry cards with no bg_tasks
-            - otherwise         -> the plain "your move, steering resumes" cue */}
+          The plain "your move, steering resumes" cue was dropped (owner
+          feedback): it's redundant with the status badge above and the
+          background-tasks line below, and just added clutter. */}
       {!running && !streaming && k.question ? (
         <QuestionPanel cardId={k.id} question={k.question}
           onAnswered={async () => {
@@ -495,19 +496,15 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
             await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
           }} />
       ) : !running && !streaming && (k.status === "needs_you" || k.status === "bounced")
-          && !(k.waiting_on === "background" && k.bg_tasks && Object.keys(k.bg_tasks).length > 0) ? (
+          && k.waiting_on === "background"
+          && !(k.bg_tasks && Object.keys(k.bg_tasks).length > 0) ? (
         <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
-            backgroundColor: (k.waiting_on === "background" ? t.ai : t.warn) + "1A",
-            borderColor: (k.waiting_on === "background" ? t.ai : t.warn) + "66",
-            borderWidth: 1, borderRadius: 10,
+            backgroundColor: t.ai + "1A", borderColor: t.ai + "66", borderWidth: 1, borderRadius: 10,
             paddingHorizontal: 12, paddingVertical: 7 }}>
-            <Ionicons name={k.waiting_on === "background" ? "hourglass-outline" : "hand-left-outline"}
-              size={14} color={k.waiting_on === "background" ? t.ai : t.warn} />
+            <Ionicons name="hourglass-outline" size={14} color={t.ai} />
             <Text style={{ color: t.txtSecondary, fontSize: 12 }}>
-              {k.waiting_on === "background"
-                ? tr("card.chat.awaitingBackground", { n: k.background?.n ?? 1 })
-                : tr("card.chat.awaitingYou")}
+              {tr("card.chat.awaitingBackground", { n: k.background?.n ?? 1 })}
             </Text>
           </View>
         </View>
