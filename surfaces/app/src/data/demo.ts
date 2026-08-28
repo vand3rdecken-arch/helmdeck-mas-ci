@@ -360,7 +360,17 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       bump();
       return {};
     }
-    if (sub === "/archive" || sub === "/delete") {
+    // Archive is a reversible FLAG on the daemon (cardadmin.archive_track,
+    // on=true/false), not a delete - the card stays, hidden everywhere except
+    // the board's Archive scope. Answering it with a delete made the sample
+    // board disagree with the product on the one thing a tester would check
+    // ("where did my card go?"), and left the Archive scope unreachable in
+    // demo. Restore is the same call with on:false.
+    if (sub === "/archive") {
+      k.archived = b.on === undefined ? true : Boolean(b.on);
+      k.updated = now(); bump(); return materialize(k);
+    }
+    if (sub === "/delete") {
       rows = rows.filter((r) => r.id !== id); bump(); return {};
     }
     if (sub === "/cancel") { k.status = "idle"; bump(); return {}; }

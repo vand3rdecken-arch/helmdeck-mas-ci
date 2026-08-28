@@ -156,8 +156,14 @@ export function PMControls() {
                const res = await api.pmConsolidateApply(repos);
                qc.invalidateQueries({ queryKey: ["tracks"] });
                qc.invalidateQueries({ queryKey: ["pmPlan"] });
-               Alert.alert(tr("pm.consolidatedTitle"), tr("pm.consolidatedMsg",
-                 { created: res.created?.length || 0, archived: res.archived?.length || 0 }));
+               // The daemon refuses to archive members that are not in backlog
+               // (an active card must never be swept off the board) - say so,
+               // otherwise the count silently disagreeing with the proposal
+               // reads as "all of it landed".
+               const refused = res.refused?.length || 0;
+               Alert.alert(tr("pm.consolidatedTitle"),
+                 tr("pm.consolidatedMsg", { created: res.created?.length || 0, archived: res.archived?.length || 0 })
+                 + (refused ? "\n" + tr("pm.consolidatedRefused", { n: String(refused) }) : ""));
              } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
            } }]);
     } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
