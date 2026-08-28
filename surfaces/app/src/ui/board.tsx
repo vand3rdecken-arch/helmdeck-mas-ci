@@ -364,7 +364,13 @@ function ScopeBar({ rows, filter, onSet }: { rows: Track[]; filter: string; onSe
   // otherwise the board goes empty with no chip marked and no way back.
   if (filter.startsWith("repo:") && !byRepo.has(filter.slice(5))) byRepo.set(filter.slice(5), 0);
   const repos = [...byRepo.entries()].sort((a, b) => repoName(a[0]).localeCompare(repoName(b[0])));
-  if (repos.length < 2 && archived === 0) return null;
+  // Same rule for the archive chip, and for the same reason: restoring the LAST
+  // archived card while the Archive scope is selected used to make this whole
+  // bar disappear - leaving an empty board, no chip marked, and nothing to tap
+  // to get out of a scope that now matches nothing. Measured on the real board
+  // (ops/tests/shot_archive_scope.py), not reasoned about.
+  const onArchive = filter === "archived";
+  if (repos.length < 2 && archived === 0 && !onArchive) return null;
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ flexDirection: "row", gap: 6, paddingVertical: 1 }}>
@@ -374,9 +380,9 @@ function ScopeBar({ rows, filter, onSet }: { rows: Track[]; filter: string; onSe
         <ScopeChip key={path} label={repoName(path)} count={n}
           active={filter === "repo:" + path} onPress={() => onSet("repo:" + path)} />
       )) : null}
-      {archived > 0 ? (
+      {archived > 0 || onArchive ? (
         <ScopeChip label={tr("board.scope.archived")} count={archived}
-          active={filter === "archived"} onPress={() => onSet("archived")} />
+          active={onArchive} onPress={() => onSet("archived")} />
       ) : null}
     </ScrollView>
   );
@@ -693,17 +699,29 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     });
   }
 
+  // The Archive chip is not a scope like the repo chips - it is the OTHER
+  // half of the board (the slice every other view hides). So it is the one
+  // filter under which the board-wide live sections must go quiet: NextUp and
+  // the sign-off bar both read `rows` directly and both exclude archived
+  // cards, so under "Archiv" they rendered ACTIVE cards (a needs_you machine
+  // card sat in the NextUp strip right above the archived lanes) - which reads
+  // as "my live card is in the archive", and no lane move could clear it
+  // because neither section ever looked at the lane. Owner report 2026-08-27,
+  // card 20260827-224828-machine. Repo scopes keep their old behaviour on
+  // purpose: "what needs you" IS board-wide across projects.
+  const archiveView = !filter && eff === "archived";
+
   // `rows`, not `data`: over the relay a hiccup answers with an {error} OBJECT,
   // and `data ?? []` does not catch that - .filter on it white-screened the
   // board, the very crash the `rows` guard above was added for. This list
-  // deliberately ignores the scope chips: "what needs you" is board-wide.
+  // deliberately ignores the repo/client scope chips (see above).
   const nextUp = rows
     .filter((k) => k.lane !== "done" && !k.archived && (k.status === "needs_you" || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
   // Cards a batch sign-off could cover: in the regulated scope, resting on
   // review, not signed yet.
-  const signable = rows.filter((k) => k.gxp_scope && !k.gxp_signed
+  const signable = rows.filter((k) => !archiveView && k.gxp_scope && !k.gxp_signed
     && k.lane === "review" && !k.archived);
   const picked = signable.filter((k) => picking?.has(k.id));
 
@@ -778,7 +796,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       ) : null}
       {!filter ? <ScopeBar rows={rows} filter={eff} onSet={setStoreFilter} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
-      {!filter && nextUp.length > 0 ? (
+      {!filter && !archiveView && nextUp.length > 0 ? (
         <NextUp items={nextUp} onDone={async (k) => {
           if (gateDone(k, "done")) return;
           try { const res = await api.moveLane(k.id, "done"); showToast(laneVerdict(res, "done") ?? tr("board.stepDone")); await qc.invalidateQueries({ queryKey: ["tracks"] }); }

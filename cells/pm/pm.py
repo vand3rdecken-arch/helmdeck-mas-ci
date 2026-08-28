@@ -533,17 +533,30 @@ def consolidation_proposal(model=""):
 
 def apply_consolidation(repos, actor="owner"):
     """Non-destructive: create each stream card, then REVERSIBLY archive its
-    members (their titles roll into the stream card's description). Returns what
+    BACKLOG members (their titles roll into the stream card's description).
+    Members that are not in backlog are refused and reported, never archived -
+    a roll-up may not sweep a card somebody is actually working. Returns what
     changed so the caller can show/undo it."""
     from cells.engineer import sessions
     tracks = {t["id"]: t for t in sessions.list_tracks()}
-    created, archived = [], []
+    created, archived, refused = [], [], []
     for rp in repos or []:
         repo = rp.get("repo") or ""
         if not repo:
             continue
         for st in rp.get("streams", []):
-            members = [m for m in (st.get("members") or []) if m in tracks]
+            # _CONSOLIDATE_ASK says "Leave working/review/done cards alone" -
+            # but that was only ever a PROMPT, and this loop archived whatever
+            # ids came back. One slipped active card is invisible afterwards:
+            # archiving hides it from every board view but the Archive scope,
+            # and it stays needs_you forever because nothing works an archived
+            # card (turn/blockers.py skips them). The rule the proposal is
+            # asked to follow is enforced here instead of hoped for.
+            wanted = [m for m in (st.get("members") or []) if m in tracks]
+            members = [m for m in wanted
+                       if (tracks[m].get("lane") or "backlog") == "backlog"
+                       and not tracks[m].get("archived")]
+            refused += [m for m in wanted if m not in members]
             if not members:
                 continue
             rolled = "\n".join("- " + (tracks[m].get("task") or "") for m in members)
@@ -561,7 +574,9 @@ def apply_consolidation(repos, actor="owner"):
                     archived.append(m)
                 except Exception:
                     pass
-    return {"created": created, "archived": archived}
+    # `refused` is reported, never silently dropped - a roll-up that quietly
+    # left cards out would read as "all of it landed".
+    return {"created": created, "archived": archived, "refused": refused}
 
 
 # ============================================================================
