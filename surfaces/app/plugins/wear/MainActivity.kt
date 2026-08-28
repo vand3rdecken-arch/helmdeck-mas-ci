@@ -7,6 +7,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.MaterialTheme
 import app.helmdeck.wear.data.DeviceStore
 
 /**
@@ -32,20 +34,36 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            var paired by remember { mutableStateOf(DeviceStore.load(this) != null) }
-            if (!paired) {
-                PairingScreen(context = this, onPaired = { paired = true })
-            } else {
-                var screen by remember { mutableStateOf<WearScreen>(WearScreen.Board) }
-                when (val s = screen) {
-                    is WearScreen.Board -> BoardScreen(
-                        context = this,
-                        onOpenCard = { c -> screen = WearScreen.Card(c) },
-                    )
-                    is WearScreen.Card -> CardScreen(
-                        context = this, card = s.card,
-                        onBack = { screen = WearScreen.Board },
-                    )
+            // AppScaffold is the APP-level half of the Wear scaffold pair
+            // (ScreenScaffold, used inside each screen, is the other): it owns
+            // the TimeText shown across every screen and the transitions
+            // between them. Added 2026-08-28 after the first look at a real
+            // watch - without it the app drew into a bare rectangle with no
+            // clock, which is not what a Wear app looks like.
+            MaterialTheme {
+                AppScaffold {
+                    // `this@MainActivity`, NOT a bare `this`: AppScaffold's
+                    // content lambda is a BoxScope receiver, so inside it a
+                    // plain `this` is the BoxScope, not the Activity. The
+                    // first compile of this change said exactly that -
+                    // "actual type is 'BoxScope', but 'Context' was expected".
+                    val ctx = this@MainActivity
+                    var paired by remember { mutableStateOf(DeviceStore.load(ctx) != null) }
+                    if (!paired) {
+                        PairingScreen(context = ctx, onPaired = { paired = true })
+                    } else {
+                        var screen by remember { mutableStateOf<WearScreen>(WearScreen.Board) }
+                        when (val s = screen) {
+                            is WearScreen.Board -> BoardScreen(
+                                context = ctx,
+                                onOpenCard = { c -> screen = WearScreen.Card(c) },
+                            )
+                            is WearScreen.Card -> CardScreen(
+                                context = ctx, card = s.card,
+                                onBack = { screen = WearScreen.Board },
+                            )
+                        }
+                    }
                 }
             }
         }
