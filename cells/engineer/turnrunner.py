@@ -380,8 +380,21 @@ def _finish_turn(tid, sid, result, meta, log):
         else:
             tt["session_id"] = sid or tt.get("session_id")
         tt["turns"] = tt.get("turns", 0) + 1
+        # A concurrent accept (move_lane -> done) may have landed and closed
+        # this very card WHILE this turn was still running (the merge and the
+        # turn are two independent writers with no ordering between them).
+        # Recording the reply is still correct - it is what the worker said -
+        # but resetting status to needs_you would erase the accept the instant
+        # after it happened, leaving a real merge on main with a board that
+        # never learned about it (measured 2026-08-28, chat-wear-os-
+        # integration-phas: gate+merge landed at 11:35:47, this same overwrite
+        # fired seven seconds later). lane is the one owner-only field move_lane
+        # sets under its own _mutate right after the merge, so it is the
+        # ground-truth witness here - not a stored "done" flag being trusted,
+        # a write that already happened being not undone.
+        _already_landed = tt.get("lane") == "done"
         box["reason"] = _settle_reply_apply(tt, question, cleaned, bg, log)
-        tt["status"] = "needs_you"
+        tt["status"] = "accepted" if _already_landed else "needs_you"
         # A successful turn makes any stale interrupt/zombie note obsolete -
         # otherwise the card keeps reading "daemon restarted mid-turn" from a
         # PAST bounce when the turn just ended cleanly.
