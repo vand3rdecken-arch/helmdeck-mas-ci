@@ -1207,15 +1207,58 @@ Kombinationen, 15 Minuten TTL, einmal verwendbar, §4.6) war nie durch die
 URL geschützt, nur durch sich selbst.
 
 **Voraussetzung, die der Owner selbst erfüllen muss** (außerhalb dieser
-Karte, keine Zeile Code kann das): `pair.helmdeck.de` muss auf den
-Named-Tunnel zeigen (DNS/Cloudflare-Konfiguration) und
-`ops/deploy/cloudflare_tunnel.sh pair.helmdeck.de` muss während des
-Koppelns laufen — sonst läuft die Uhr gegen einen vorausgefüllten, aber
-toten Standardwert.
+Karte, keine Zeile Code kann das — Cloudflare-Login ist ein interaktiver
+Browser-Flow, an die Owner-eigene Identität gebunden, siehe §4.12) —
+**und korrigiert, bevor es committet wurde**: `bash ops/deploy/
+cloudflare_tunnel.sh pair.helmdeck.de` allein hätte NICHT funktioniert.
+`cloudflare_tunnel.sh` hängt bei einem Named Tunnel fest ein `helmdeck.`
+vor das übergebene Argument (`route dns helmdeck "helmdeck.$DOMAIN"`) —
+`pair.helmdeck.de` als `$1` hätte also `helmdeck.pair.helmdeck.de`
+geroutet, nicht `pair.helmdeck.de`. Gefunden beim Nachlesen des Skripts,
+nicht angenommen; behoben (§4.12): das Skript nimmt jetzt ein optionales
+ZWEITES Argument als exakten Hostnamen. Der richtige Befehl ist:
 
-**Verifiziert:** balancierte Klammern/Parens (bestanden) — dieselbe
-schwächste-verfügbare Prüfung wie bei jeder Kotlin-Datei dieser Session,
-kein Compiler vorhanden. `run_gate.py`: PASS (3 Checks).
+```
+bash ops/deploy/cloudflare_tunnel.sh helmdeck.de pair.helmdeck.de
+```
+
+(`$1` bleibt die Cloudflare-Zone, die `tunnel route dns` kennen muss;
+`$2` überschreibt nur den `helmdeck.$1`-Standard.) UND `pair.helmdeck.de`
+muss vorher als DNS-Eintrag auf diese Zone zeigen (Cloudflare-Konfiguration,
+läuft normalerweise automatisch über `cloudflared tunnel route dns` mit,
+sobald `cloudflared tunnel login` durchlaufen ist).
+
+**Verifiziert:** `cloudflare_tunnel.sh` mit `bash -n` (echter Bash-
+Syntax-Check, kein schwaches Netz) — bestanden. Balancierte Klammern/Parens
+für die Kotlin-Seite (unverändert) — dieselbe schwächste-verfügbare Prüfung
+wie bei jeder Kotlin-Datei dieser Session, kein Compiler vorhanden.
+`run_gate.py`: PASS (3 Checks).
+
+### 4.12 „Do you need desktop access. I can grant it" (2026-08-29)
+
+Nein — nicht in dem Sinn, den die Frage nahelegt, und das ist eine
+strukturelle Grenze dieser Karte, keine Zurückhaltung:
+
+1. **`cloudflared tunnel login` ist ein interaktiver Browser-OAuth-Flow**,
+   an die Cloudflare-Identität des Owners gebunden (`cloudflare_tunnel.sh`
+   öffnet den Browser selbst, Zeile „opens the browser: you approve"). Das
+   kann kein Agent für den Owner klicken — „Desktop-Zugriff" gewähren würde
+   daran nichts ändern, weil es keine Berechtigungsfrage ist, sondern eine
+   Identitätsfrage: der Login-Screen verlangt DIE Person, deren Konto es
+   ist.
+2. **Diese Karte ist ein Git-Worktree, keine Maschinen-Karte.** Der
+   HelmDeck-eigene Mechanismus für „Chat steuert den echten Desktop" ist ein
+   ANDERER Kartentyp (`daemon.hub`-Machine-Tasks, s. `helmdeck-machine-
+   tasks`-Memory-Eintrag) — ein Karten-Worktree wie dieser hat strukturell
+   keinen Zugriff auf den laufenden Daemon, das echte Terminal oder einen
+   dauerhaften Hintergrundprozess des Owners, unabhängig von irgendeiner
+   Berechtigung, die für DIESE Session erteilt würde.
+3. **Was tatsächlich zu tun ist, ist kurz genug, um es selbst auszuführen**
+   (oder einer Maschinen-Karte zu geben, falls gewünscht — das wäre eine
+   neue, andere Karte): einmalig
+   `bash ops/deploy/cloudflare_tunnel.sh helmdeck.de pair.helmdeck.de`
+   laufen lassen, im Browser bestätigen, fertig — der Tunnel-Prozess muss
+   danach nur noch laufen, während tatsächlich gekoppelt wird.
 
 ---
 

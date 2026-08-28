@@ -3,14 +3,26 @@
 # No relay, no VM, no credit card. cloudflared dials OUT from this PC, so no
 # port-forwarding and nothing inbound on your router.
 #
-#   bash ops/deploy/cloudflare_tunnel.sh              # quick tunnel (ephemeral URL)
-#   bash ops/deploy/cloudflare_tunnel.sh example.com  # named tunnel (stable URL)
+#   bash ops/deploy/cloudflare_tunnel.sh                          # quick tunnel (ephemeral URL)
+#   bash ops/deploy/cloudflare_tunnel.sh example.com              # named tunnel -> helmdeck.example.com
+#   bash ops/deploy/cloudflare_tunnel.sh example.com sub.example.com  # named tunnel -> EXACT hostname (2nd arg)
+#
+# The 2nd arg exists because the DEFAULT naming (helmdeck.$1) is not always
+# the hostname you want to route (e.g. a fixed pairing subdomain for a
+# second device - ops/docs/backlog/wear-os-integration/README.md §4.11):
+# `cloudflare_tunnel.sh helmdeck.de pair.helmdeck.de` routes exactly
+# pair.helmdeck.de, not the double-prefixed helmdeck.helmdeck.de a bare
+# `cloudflare_tunnel.sh pair.helmdeck.de` would have silently produced -
+# $1 is still the ZONE Cloudflare manages (needed for `tunnel route dns`
+# regardless of which hostname within it you're routing), $2 is the exact
+# hostname, only overriding the DEFAULT of helmdeck.$1 when given.
 #
 # You must be signed in to a free Cloudflare account for the named variant
 # (the script opens the browser login for you).
 set -o pipefail
 PORT="${HELMDECK_PORT:-8140}"
 DOMAIN="${1:-}"
+HOSTNAME_OVERRIDE="${2:-}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -39,8 +51,9 @@ if [ -z "$DOMAIN" ]; then
   exec cloudflared tunnel --url "http://localhost:$PORT"
 fi
 
-echo "==> named tunnel for $DOMAIN (stable URL)"
+HOST="${HOSTNAME_OVERRIDE:-helmdeck.$DOMAIN}"
+echo "==> named tunnel for $HOST (stable URL, zone $DOMAIN)"
 cloudflared tunnel login                                    # opens the browser: you approve
 cloudflared tunnel create helmdeck 2>/dev/null || true
-cloudflared tunnel route dns helmdeck "helmdeck.$DOMAIN"
+cloudflared tunnel route dns helmdeck "$HOST"
 exec cloudflared tunnel run --url "http://localhost:$PORT" helmdeck
