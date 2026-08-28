@@ -608,6 +608,35 @@ DEBT = [
         "order": 0,
     },
     {
+        "id": "chat-dedupe-window-in-memory",
+        "title": "POST /chat idempotency window lives in daemon memory, and the relay still abandons a long turn at 120s",
+        "status": "open",
+        "what": "cells/copilot/chat_dedupe.py keeps its 10-minute claim ledger "
+                "in a module-level list, so a daemon restart forgets every "
+                "in-flight and recently-settled message. Separately, the fix "
+                "closes the DUPLICATE but not the thing that provokes one: "
+                "surfaces/relay/relay.py's REPLY_TIMEOUT (120s) and "
+                "spine/comms/relay_client.py's _local() urlopen (115s) both "
+                "still give up on a chat turn that runs longer than that, so "
+                "the phone still sees a failed send on a 3-minute turn - it "
+                "just no longer gets a second turn out of it.",
+        "why_it_bites": "Restart inside the window -> one message can still be "
+                        "answered twice (the exact bug this module exists to "
+                        "stop). And a turn longer than ~2 minutes still ends "
+                        "in a transport error on the phone, which is a bad "
+                        "surface even when it is now harmless.",
+        "trigger": "a daemon restart within 10 minutes of a chat send; or any "
+                   "chat turn over ~2 minutes on the relay path",
+        "fix": "Ledger: persist claims next to copilot_log.json (or in "
+               "helmdeck.db) - cheap, the write is once per message. Timeout: "
+               "make POST /chat return a turn id IMMEDIATELY (202) and let the "
+               "existing /chat/live + /chat/history polling deliver the "
+               "answer, so no transport layer is ever asked to hold a "
+               "connection open for a model turn. That is the real ack fix; "
+               "this commit only made the replay harmless.",
+        "order": 1,
+    },
+    {
         "id": "turn-locks",
         "title": "No per-track turn locks",
         "status": "paid",
