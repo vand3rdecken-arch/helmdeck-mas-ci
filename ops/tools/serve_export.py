@@ -1,43 +1,41 @@
 # -*- coding: utf-8 -*-
-"""Serve an `expo export --platform web` build so CLIENT-SIDE ROUTES RESOLVE.
+"""Serve an `expo export --platform web` output for screenshotting.
 
-Plain `http.server` cannot host this build: the export writes one file per route
-(`chat.html`), but expo-router matches on the URL PATH, so fetching `/chat.html`
-loads the bundle and then renders "Unmatched Route" because `/chat.html` is not
-a route the app declares. This maps `/chat` -> `chat.html` (and falls back to
-`index.html`) so the path the router sees is the path it was built for.
+The Expo DEV server is interactive and needs a TTY, which Git-Bash/MinTTY does
+not give node (see ops/docs traps) - it binds the port and then never bundles.
+A static export plus this server is the non-interactive path to the same UI.
+
+Falls back to index.html for unknown paths so expo-router's client routes
+(/chat, /card/<id>) resolve the way they do in the dev server.
 
 Usage:  py -3.12 ops/tools/serve_export.py <dir> <port>
 """
 import os
 import sys
-from functools import partial
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+root = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "dist-shot")
+port = int(sys.argv[2] if len(sys.argv) > 2 else "3560")
 
 
-class RouteHandler(SimpleHTTPRequestHandler):
-    def translate_path(self, path):
-        p = super().translate_path(path.split("?")[0].split("#")[0])
-        if os.path.isdir(p):
-            idx = os.path.join(p, "index.html")
-            if os.path.exists(idx):
-                return idx
-        if not os.path.exists(p):
-            html = p + ".html"
-            if os.path.exists(html):
-                return html
-            # SPA fallback: unknown deep link still boots the app
-            return os.path.join(self.directory, "index.html")
-        return p
+class SPA(SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, directory=root, **kw)
+
+    def send_head(self):
+        path = self.translate_path(self.path)
+        if not os.path.exists(path):
+            # try <route>.html first (expo-router emits static route files),
+            # then the SPA shell
+            for cand in (path + ".html", os.path.join(root, "index.html")):
+                if os.path.exists(cand):
+                    self.path = "/" + os.path.relpath(cand, root).replace(os.sep, "/")
+                    break
+        return super().send_head()
 
     def log_message(self, *a):
-        pass
+        pass            # quiet - the screenshot tool is the only consumer
 
 
-if __name__ == "__main__":
-    root = sys.argv[1]
-    port = int(sys.argv[2])
-    os.chdir(root)
-    print("serving %s on %d" % (root, port), flush=True)
-    HTTPServer(("127.0.0.1", port),
-               partial(RouteHandler, directory=root)).serve_forever()
+print("serving %s on http://localhost:%d" % (root, port), flush=True)
+ThreadingHTTPServer(("127.0.0.1", port), SPA).serve_forever()
