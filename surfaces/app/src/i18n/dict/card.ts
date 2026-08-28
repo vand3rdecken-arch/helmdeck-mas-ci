@@ -87,8 +87,6 @@ export const card: Dict = {
   "card.chat.henryThinking": { de: "Henry denkt…", en: "Henry is thinking…" },
   "card.chat.context": { de: "Kontext {k}k · {pct}%", en: "Context {k}k · {pct}%" },
   "card.chat.contextFull": { de: "Kontext fast voll — bei Überlauf startet eine frische Session, der Verlauf bleibt sichtbar", en: "Context nearly full — on overflow a fresh session starts, the history stays visible" },
-  "card.chat.awaitingYou": { de: "Turn beendet — Worker wartet auf dich. Steuern setzt fort.",
-                             en: "Turn ended — the worker is waiting for you. Steer to continue." },
   "card.chat.awaitingBackground": { de: "Worker wartet auf {n} Hintergrund-Task — nicht auf dich.",
                                     en: "The worker is waiting on {n} background task — not on you." },
   "card.bg.line": { de: "Hintergrund-Tasks: {n}", en: "Background tasks: {n}" },
