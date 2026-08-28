@@ -1441,6 +1441,77 @@ diesem Repo: reproduzierbares Tooling statt stiller Versions-Drift.
 `run_gate.py`: PASS. `test_pair_worker.py`: PASS (33). `test_glance_worker.py`
 erneut gelaufen als Regressionstest (unverändert, 49 Checks, 0 Fehler).
 
+### 4.14 Handoff an eine Maschinen-Karte — Shell in diesem Worktree blockiert (2026-08-29)
+
+**Bestätigt, per Owner-Nachricht, nicht durch eigene Prüfung (kein Shell mehr
+verfügbar in dieser Session — jeder Bash-/PowerShell-Aufruf verlangt jetzt
+Approval, bis hin zu einem einzelnen atomaren Befehl ohne Pipe/`&&`):** die
+alte CNAME für `pair.helmdeck.de` (aus §4.11, zeigte auf den rohen Tunnel)
+ist im Cloudflare-Dashboard gelöscht.
+
+**Genau EIN Befehl steht noch aus, dann ist die Custom-Domain-Zuweisung aus
+§4.13 Punkt 4 fertig:**
+
+```bash
+cd surfaces/relay/pair_worker
+PAIR_WORKER_ORIGIN=https://pair.helmdeck.de bash ../../../ops/deploy/push_pair_worker.sh
+```
+
+(`push_pair_worker.sh` deployt UND verifiziert mit Retry — 5 Versuche à 6s,
+genau das Muster, das `push_glance.sh` für die Linse schon nutzt. Ohne
+`PAIR_WORKER_ORIGIN` würde es nur deployen, ohne die neue Domain zu prüfen.)
+
+**Erwartung, nicht Tatsache:** da die blockierende CNAME jetzt weg ist,
+sollte `wrangler deploy` die Custom Domain diesmal erfolgreich anlegen
+(kein Fehlercode `100117` mehr) und `https://pair.helmdeck.de/health` sollte
+`{"ok":true,"service":"helmdeck-pair","daemon":true}` liefern — dieselbe
+Antwort, die `https://helmdeck-pair.van-d3r-decken.workers.dev/health` schon
+liefert (§4.13, verifiziert). **Falls stattdessen ein Fehler oder eine
+andere Antwort kommt, NICHT den nächsten Schritt ausführen** — das wäre ein
+neuer, echter Befund, kein Grund, `PairingScreen.kt` trotzdem umzustellen.
+
+**Erst NACH bestätigtem Erfolg, genau diese eine Konstante ändern** —
+`surfaces/app/plugins/wear/PairingScreen.kt`, aktuell (Zeile 38–54):
+
+```kotlin
+/** README.md §4.13: die Adresse ist ein dauerhafter Cloudflare Worker
+ *  (...) NOT `pair.helmdeck.de` (...) */
+private const val DEFAULT_CLAIM_BASE_URL = "https://helmdeck-pair.van-d3r-decken.workers.dev"
+```
+
+wird zu:
+
+```kotlin
+/** README.md §4.13/§4.14: die Adresse ist ein dauerhafter Cloudflare Worker
+ *  (surfaces/relay/pair_worker), der GENAU GET /relay/pair/claim proxyt -
+ *  nie ein roher cloudflared-Tunnel-Origin, der die gesamte HTTP-Oberfläche
+ *  des Daemons (inkl. /auth/login) offenlegen würde. Seit 2026-08-29 die
+ *  ECHTE, dauerhafte Adresse - die alte CNAME-Blockade (§4.13 Punkt 4) ist
+ *  behoben, Ende-zu-Ende verifiziert (Maschinen-Karte, `push_pair_worker.sh`
+ *  mit gesetztem `PAIR_WORKER_ORIGIN`). `helmdeck-pair.van-d3r-decken.
+ *  workers.dev` bleibt als Fallback-Adresse in `wrangler.jsonc` erreichbar
+ *  (`workers_dev: true`), ist aber nicht mehr der Standard. */
+private const val DEFAULT_CLAIM_BASE_URL = "https://pair.helmdeck.de"
+```
+
+**Danach, in dieser Reihenfolge, nicht davor:**
+
+1. `py -3.12 ops/tools/run_gate.py` — muss PASS bleiben (reine
+   Python-Prüfung, von der Kotlin-Änderung strukturell nicht berührt, aber
+   nie übersprungen).
+2. Diesen Absatz (§4.14) und §4.13 Punkt 4 im selben Commit als erledigt
+   markieren — `~~durchgestrichen~~` wie an jeder anderen Stelle in diesem
+   Dokument, nicht gelöscht.
+3. EIN Commit für: `surfaces/app/plugins/wear/PairingScreen.kt` (die eine
+   Konstante + der Kommentar) + diese Doku-Korrektur. Kein Code sonst ändert
+   sich — `surfaces/relay/pair_worker/wrangler.jsonc`s `routes`-Eintrag war
+   bereits korrekt vorbereitet (§4.13), nur nie erfolgreich angewendet.
+
+**Was NICHT Teil dieses Handoffs ist, bewusst unverändert gelassen:**
+`workers_dev: true` in `wrangler.jsonc` bleibt bestehen (kein Grund, die
+Fallback-Adresse zu entfernen, sobald die Custom Domain lebt — kostet
+nichts, erlaubt einen schnellen Health-Check ohne DNS-Auflösung).
+
 ---
 
 ## 10. Quellen (Plattform, abgerufen 2026-08-27)
