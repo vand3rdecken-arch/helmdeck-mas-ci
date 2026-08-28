@@ -489,7 +489,14 @@ export const api = {
   reorder: (ids: string[]) => req("POST", "/tracks/reorder", { ids }),
   newTrack: (b: Record<string, unknown>) => { track("card_new"); return req("POST", "/tracks/new", b); },
   update: (id: string, patch: Record<string, unknown>) => req("POST", `/tracks/${id}/update`, patch),
-  archive: (id: string) => { track("card_archive"); return req("POST", `/tracks/${id}/archive`); },
+  // Archiving is REVERSIBLE server-side (cardadmin.archive_track takes on=,
+  // and the route reads body.on) - but this call sent no body at all, so the
+  // app could only ever archive. An archived card was reachable only through
+  // the board's Archive scope, with no way back from anywhere in the UI.
+  archive: (id: string, on = true) => {
+    track(on ? "card_archive" : "card_unarchive");
+    return req("POST", `/tracks/${id}/archive`, { on });
+  },
   fork: (id: string, from = "") => { track("card_fork"); return req("POST", `/tracks/${id}/fork`, { from }); },
   // Split the CONVERSATION into a new card (keeps context) - distinct from
   // fork() above, which forks the code at a ref with a fresh session.
@@ -610,7 +617,8 @@ export const api = {
   pmConfig: (patch: Record<string, unknown>) => req<PmConfig>("POST", "/pm/config", patch),
   pmConsolidatePropose: () => req<ConsolidationProposal>("POST", "/pm/consolidate", { mode: "propose" }),
   pmConsolidateApply: (repos: ConsolidationRepo[]) =>
-    req<{ created: { id: string }[]; archived: string[] }>("POST", "/pm/consolidate", { mode: "apply", repos }),
+    req<{ created: { id: string }[]; archived: string[]; refused?: string[] }>(
+      "POST", "/pm/consolidate", { mode: "apply", repos }),
   automation: () => req<Record<string, unknown>>("GET", "/automation"),
 
   // Phase 2 section lists
