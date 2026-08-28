@@ -39,6 +39,15 @@ export const net: Dict = {
     en: "Direct connection is not answering (timeout) – is HelmDeck running on the desktop?",
   },
 
+  // ---- outbox (ui/outbox_strip.tsx): messages that never reached the daemon.
+  // They are kept on disk instead of vanishing with the screen, so "offline"
+  // costs a tap, not the message. ----
+  "outbox.notSent": { de: "Nicht gesendet", en: "Not sent" },
+  "outbox.tries": { de: "{n} Versuche", en: "{n} attempts" },
+  "outbox.retry": { de: "Erneut senden", en: "Send again" },
+  "outbox.discard": { de: "Verwerfen", en: "Discard" },
+  "outbox.more": { de: "+{n} weitere nicht gesendet", en: "+{n} more not sent" },
+
   // pairing codes
   "pair.empty": { de: "Kein Code eingegeben.", en: "No code entered." },
   "pair.badFormat": {

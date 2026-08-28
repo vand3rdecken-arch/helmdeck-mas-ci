@@ -8,7 +8,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type SteerOpts } from "@/data/client";
+import { api, neverDelivered, type SteerOpts } from "@/data/client";
+import * as outbox from "@/data/outbox";
 import { usePresence } from "@/data/presence";
 import { useModels } from "@/data/use_models";
 import type { Track, Me, EconCard } from "@/data/types";
@@ -22,6 +23,7 @@ import { BackgroundTasks } from "@/ui/card_background";
 import { ContextMeter } from "@/ui/context_meter";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { UnsentStrip } from "@/ui/outbox_strip";
 import { SignOff } from "@/ui/sign_off";
 import { useActionSheet } from "@/ui/action_sheet";
 import { isWeb, useResponsive } from "@/ui/responsive";
@@ -425,7 +427,8 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   };
 
   const hhmm = () => new Date().toTimeString().slice(0, 5);
-  async function handleSend(text: string, o: SteerOpts) {
+  // `retryOf` = the outbox row being re-attempted (see ui/outbox_strip.tsx).
+  async function handleSend(text: string, o: SteerOpts, retryOf?: string) {
     const to = o.to ?? defaultTo;
     // echo instantly, then send; retract the echo if it throws. baseline =
     // this occurrence's rank among same-text messages already in feed +
@@ -440,9 +443,19 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       setHenryBusy(true);
       try {
         await api.chat(text, { ...o, card: k.id });
-      } catch {
-        setPending((p) => p.filter((e) => e !== echo));
-        Alert.alert(tr("ui.error"), tr("card.chat.sendFailed"));
+        if (retryOf) await outbox.settle(retryOf);
+      } catch (e) {
+        // Retract the echo (it was never sent) but keep the TEXT - parked on
+        // disk, where closing the card can't take it with it. An Alert alone
+        // left the owner with a dismissed dialog and no message anywhere.
+        setPending((p) => p.filter((x) => x !== echo));
+        const msg = String((e as Error).message) || tr("card.chat.sendFailed");
+        if (neverDelivered(e)) {
+          if (retryOf) await outbox.retried(retryOf, msg);
+          else await outbox.park(`card:${k.id}`, text, o, msg, Date.now());
+        } else {
+          Alert.alert(tr("ui.error"), msg);   // the daemon answered - just report it
+        }
       } finally {
         setHenryBusy(false);
       }
@@ -453,8 +466,22 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       await qc.invalidateQueries({ queryKey: ["tracks"] });
       return;
     }
-    try { await onSend(text, o); }
-    catch { setPending((p) => p.filter((e) => e !== echo)); }
+    // Worker branch. `onSend` (the screen's send) RETHROWS, so this rollback is
+    // live code again - it used to be unreachable because send swallowed the
+    // error into an Alert, leaving a ghost message that had never been sent.
+    try {
+      await onSend(text, o);
+      if (retryOf) await outbox.settle(retryOf);
+    } catch (e) {
+      setPending((p) => p.filter((x) => x !== echo));
+      const msg = String((e as Error).message) || tr("card.chat.sendFailed");
+      if (neverDelivered(e)) {
+        if (retryOf) await outbox.retried(retryOf, msg);
+        else await outbox.park(`card:${k.id}`, text, o, msg, Date.now());
+      } else {
+        Alert.alert(tr("ui.error"), msg);   // the daemon answered - just report it
+      }
+    }
   }
 
   return (
@@ -536,6 +563,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window} />
       </View>
 
+      <UnsentStrip scope={`card:${k.id}`} onRetry={(m) => handleSend(m.text, m.opts, m.id)} />
       <Composer onSend={handleSend} busy={running} onStop={onStop} models={models} modeOptions={modeOptions}
         slashCommands={slashCommands(tr)} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
         recipients={recipients} defaultTo={defaultTo}
@@ -688,13 +716,15 @@ export default function CardScreen() {
     catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
   }
 
+  // RETHROWS. handleSend is the only caller and it owns the failure (retract the
+  // echo, park the text in the outbox) - swallowing here made that rollback dead
+  // code, so a failed worker send left a ghost message in the transcript that had
+  // never been sent (owner report 2026-08-28).
   async function send(text: string, o: SteerOpts) {
     if (!id) return;
-    try {
-      await api.steer(id, text, o);
-      await qc.invalidateQueries({ queryKey: ["transcript", id] });
-      await qc.invalidateQueries({ queryKey: ["tracks"] });
-    } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); }
+    await api.steer(id, text, o);
+    await qc.invalidateQueries({ queryKey: ["transcript", id] });
+    await qc.invalidateQueries({ queryKey: ["tracks"] });
   }
 
   async function stop() {
