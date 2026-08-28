@@ -736,7 +736,7 @@ gerätegebunden.
 | 3 | ~~**W1c** — Optionen + `request_id` in die versiegelte Nutzlast, echte Options-Buttons~~ **CODE GESCHRIEBEN** 2026-08-28 (`notify.ask_payload()`, dynamische Kategorie je Karte, §4.4) | ~~1 T~~ **verbleibt: Gerätetest** | **kein natives Delta ⇒ reines OTA**, kein APK-Rebuild, kein `version`-Bump |
 | | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **Code: 0 T (komplett) · Verifikation: ≈ 1–2 T** | rechnet sich schon ohne Uhr; **Build/Gerätetest kann diese Karte selbst nicht ausführen** (§9.1) |
 | 4 | ~~**W2a** — `withWearApp.js` + `:wear`-Modul, leere Compose-App baut und startet~~ **CODE GESCHRIEBEN** 2026-08-28 (Modul + Manifest + `MainActivity.kt`, §4.5) | ~~1,5–2,5 T~~ **verbleibt: erster echter Gradle-Lauf** | Muster steht jetzt 7× im Baum; Build **weiterhin nicht** aus dem Worktree (§7.1) |
-| 5 | **W2b** — Uhr-UI gegen `/glance` + `/glance/answer`: Blocker-Liste, Frage, Optionen antippen | **3–4 T** | **null Daemon-Code**; WO-V13/V16-Konformität einpreisen |
+| 5 | ~~**W2b** — Uhr-UI gegen `/glance` + `/glance/answer`~~ **CODE GESCHRIEBEN** 2026-08-29 — gegen NEUE, Bearer-authentifizierte `/wear/board`+`/wear/talk` (nicht `/glance`, §4.6 verwarf den glance_token für die Uhr), Blocker-Liste + Frage-Buttons + Henry-Diktat (§4.8) | ~~3–4 T~~ **verbleibt: echter Gerätetest** | War NICHT „null Daemon-Code" — `routes_wear.py` ist neu, aber klein und wiederverwendet `glance_payload()`; WO-V13/V16-Konformität weiterhin ungeprüft |
 | 6 | **W2c** — Sprache: `ACTION_RECOGNIZE_SPEECH` → `/glance/talk` → MP3 abspielen | **1,5–2 T** | billig, weil der Vertrag steht (§5.1) |
 | 7 | **W2d** — Complication („N Karten warten"), FCM-Weckruf auf die Uhr | **1,5–2 T** | **kein Tile** (§7.2) |
 | | **Summe W2 — native Wear-App** | **≈ 8–11 T** | plus dauerhafte Pflege-Steuer (Arvo: ~1 Monat Parität-Rückstand) |
@@ -1002,14 +1002,85 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
     gegen ein echtes NaCl-Testvektor oder gegen `e2ee.py`/`e2ee.ts` selbst
     laufen gelassen — das braucht entweder einen Kotlin-Compiler oder ein
     echtes Gerät, beides hier nicht vorhanden.
-26. **Kein Board, keine `/glance`-Ansicht.** `MainActivity` zeigt nach der
-    Kopplung nur „Gekoppelt. Board folgt." — die Kopplung ist jetzt real,
-    das Board dahinter noch nicht (W2b im eigentlichen Sinn, §8 Zeile 5).
+26. ~~**Kein Board, keine `/glance`-Ansicht.**~~ **CODE GESCHRIEBEN
+    2026-08-29** (§4.8) — `MainActivity` zeigt nach der Kopplung jetzt das
+    echte Board, kein Platzhalter mehr.
 27. **`FieldRow` hat kein echtes Text-Eingabefeld**, nur Diktat + Anzeige der
     zuletzt diktierten Zeichenkette — Wear Compose Material3s
     Text-Eingabe-Komponenten wurden diese Session nicht bestätigt (§9.1
     Punkt 15 gilt hier verschärft). Ein getippter Fallback fehlt bewusst
     dokumentiert, nicht still weggelassen.
+28. **Kein Navigation-Zurück über die System-Geste/Krone** — `CardScreen`s
+    „Zurück"-Button ist ein normaler Button in der Liste, kein systemeigenes
+    Swipe-to-dismiss (Play-Qualitätsregel WO-V2, §7.2). Funktioniert, ist aber
+    nicht die plattformübliche Geste.
+29. **`items(count) { }` bewusst vermieden, nicht bestätigt.** `BoardScreen`/
+    `CardScreen` bauen ihre Listen aus einzelnen `item { }`-Aufrufen in
+    normalen Kotlin-Schleifen statt der `items(count) { }`-Sammelform — Letztere
+    wurde diese Session nie gegen `TransformingLazyColumnScope` geprüft, Ersteres
+    schon (§4.5). Funktional identisch, nur mehr Zeilen.
+30. **Henrys vorgeschlagene Optionen (`henrySuggestions`) senden beim Tippen
+    das Label als NÄCHSTE Nachricht an Henry** — bewusst NICHT
+    `/tracks/answer`, weil Henrys eigener `<helmdeck-ask>`-Block keine
+    `request_id` einer echten Worker-Frage trägt, nur seine eigene beratende
+    Empfehlung ist. Dieselbe Unterscheidung, die §4.7 zwischen
+    „Options-Buttons auf der Worker-Frage" und „Henry-Chips" trifft.
+31. **`GET /wear/board` und `POST /wear/talk` sind neu, Bearer-authentifiziert,
+    nie am echten Relay-Kanal geprüft** — nur an echtem Python
+    (`routes_wear.py`s Komposition mit `glance_payload()`/`ask.parse()`,
+    Rollen-Check, Dispatch-Verdrahtung), nicht Ende-zu-Ende über einen
+    gekoppelten Uhr-Client. Das braucht ein reales Gerät.
+
+### 4.8 W2b — das echte Board auf der Uhr (2026-08-29, „start building")
+
+Auf Owner-Anfrage „Do you need any other info. Else start building" gebaut,
+nachdem §4.7 die Henry-nicht-Worker-Entscheidung geklärt hatte:
+
+- `spine/http/routes/routes_wear.py` — `GET /wear/board` (ruft
+  `glance_payload()` UNVERÄNDERT auf, nur Bearer- statt glance_token-gated)
+  und `POST /wear/talk` (spiegelt `glance_talk` fast wörtlich:
+  `allow_actions=False`, dieselbe `ask.parse()`-Extraktion, damit die Uhr nie
+  selbst einen `<helmdeck-ask>`-Block parsen muss — nur ein eigener
+  `WEAR_BRIEF` statt `GLASS_BRIEF`, weil dessen Text linsenspezifische
+  Tatsachen behauptet, die für die Uhr schlicht falsch wären).
+- `BoardModel.kt` — Kotlin-Spiegel von `_glance_question()`s Form, EIN Parser
+  für beide Aufrufer (`/wear/board` pro Karte, `/wear/talk`s eigene
+  Henry-Vorschläge).
+- `BoardScreen.kt` — Liste der `needs_you`-Karten, Tap öffnet `CardScreen`.
+- `CardScreen.kt` — genau die Grenze aus §4.7 im Code: Options-Buttons auf
+  der WORKER-Frage rufen `/tracks/<id>/answer` (die eine erlaubte Ausnahme —
+  strukturierte Auswahl, keine Autorenschaft); Henrys eigene Vorschläge
+  senden nur die nächste Chat-Nachricht. Diktier-Button für freie Fragen an
+  Henry, exakt dasselbe `ACTION_RECOGNIZE_SPEECH`-Muster wie `PairingScreen`.
+- `MainActivity.kt` — lokale `WearScreen`-Zustandsmaschine (Board/Card),
+  bewusst ohne `androidx.navigation` — drei Bildschirme rechtfertigen keine
+  weitere unverifizierte Abhängigkeit obendrauf.
+
+**Zwei echte Bugs beim Schreiben gefunden und behoben, nicht erst beim
+(nicht vorhandenen) Compiler:** `mutableStateMapOf()` liefert die
+beobachtbare Map direkt (`SnapshotStateMap`), keinen `MutableState<T>` — ein
+`var picks by remember { mutableStateMapOf(...) }` hätte nicht kompiliert,
+korrigiert zu `val picks = remember { ... }`. Und `JSONObject(Map)` wurde
+durch eine Schleife aus `.put()`-Aufrufen ersetzt, weil Androids
+mitgeliefertes `org.json` eine abgespeckte Teilmenge der Referenz-
+Implementierung ist und dieser Konstruktor diese Session nicht bestätigt
+wurde — `.put()` ist dagegen im ganzen Modul bereits erwiesen funktionierend.
+
+**Verifiziert, ohne jedes Kotlin-Werkzeug:** `routes_wear.py` lief gegen
+echten Python-Code — `wear_board_get` mit einer Fixture, die
+`sessions.owner_blockers`/`manual_backlog`/`events.metrics` ersetzt (die
+Optionen der Worker-Frage kommen UNVERÄNDERT durch, `glance_payload()` wird
+wiederverwendet, nicht neu erfunden), `client`-Rolle wird abgelehnt;
+`wear_talk_post` mit einem gefälschten `copilot.chat`, der PRÜFT, dass
+`allow_actions=False` und der Brief „WATCH" erwähnt, UND dass der
+`<helmdeck-ask>`-Block aus der Antwort verschwindet, bevor sie den
+Client erreicht. Zusätzlich: jede `.kt`-Datei-`package`-Zeile gegen
+`withWearApp.js`s Installer-Pfad geprüft, UND Cross-File-Aufrufe
+(`CardScreen` → `BoardModel.parseQuestionBlock`, `→ RelayClient.authedCall`,
+die exakten `/wear/talk`- und `/tracks/<id>/answer`-Pfade) als reine
+String-Übereinstimmung — kein Kotlin-Compiler, aber mehr als „importiert
+sauber". `run_gate.py`: PASS (3 Checks). Kein echter Rundlauf über den
+Relay-Kanal — das bleibt die reale Grenze (§9.1 Punkt 31).
 
 ---
 
