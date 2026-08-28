@@ -56,6 +56,8 @@ export const settings: Dict = {
   "settings.sec.night": { de: "Nachtschicht", en: "night-shift" },
   "settings.sec.mobile": { de: "Mobil – Telefon koppeln (E2E-verschlüsselt)",
                            en: "mobile - pair a phone (e2e encrypted)" },
+  "settings.sec.wearPair": { de: "Wearable – Uhr koppeln (Diktier-Code)",
+                             en: "wearable - pair a watch (spoken code)" },
   "settings.sec.users": { de: "Nutzer ({n})", en: "users ({n})" },
   "settings.sec.devices": { de: "Geräte ({n})", en: "devices ({n})" },
   "settings.sec.registration": { de: "Registrierung", en: "registration" },
@@ -179,6 +181,22 @@ export const settings: Dict = {
   },
   "settings.pair.copyCode": { de: "Code kopieren", en: "Copy code" },
   "settings.pair.codeCopied": { de: "Pairing-Code in der Zwischenablage.", en: "Pairing code in the clipboard." },
+
+  // ---- watch pairing (spoken device-code, no camera/keyboard on most
+  // Wear OS watches - ops/docs/backlog/wear-os-integration/README.md §4.6) ----
+  "settings.wearPair.hint": {
+    de: "Für die Uhr muss dieser Daemon kurz von außen erreichbar sein: `bash ops/deploy/cloudflare_tunnel.sh` laufen lassen, solange du koppelst. Der Code unten ist NICHT die Adresse - die tippst/diktierst du separat auf der Uhr aus deinem Terminal ab.",
+    en: "Pairing a watch needs this daemon briefly reachable from outside: run `bash ops/deploy/cloudflare_tunnel.sh` while you pair. The code below is NOT the address - dictate/type that separately on the watch from your own terminal.",
+  },
+  "settings.wearPair.label": { de: "Name (z. B. \"Xiaomi Watch 5\")", en: "Label (e.g. \"Xiaomi Watch 5\")" },
+  "settings.wearPair.pairWatch": { de: "Uhr koppeln", en: "Pair watch" },
+  "settings.wearPair.failed": { de: "Konnte keinen Code erzeugen.", en: "Could not generate a code." },
+  "settings.wearPair.ttl": {
+    de: "Der Code ist {min} Min gültig, einmal verwendbar. Auf der Uhr: Tunnel-Adresse + diesen Code diktieren oder eintippen.",
+    en: "The code is valid for {min} min, single-use. On the watch: dictate or type the tunnel address + this code.",
+  },
+  "settings.wearPair.copyCode": { de: "Code kopieren", en: "Copy code" },
+  "settings.wearPair.codeCopied": { de: "Uhr-Code in der Zwischenablage.", en: "Watch code in the clipboard." },
 
   // ---- users ----
   "settings.users.touchesToday": { de: "{n}t heute", en: "{n}t today" },

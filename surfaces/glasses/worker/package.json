@@ -2,5 +2,8 @@
   "name": "helmdeck-glance-worker",
   "private": true,
   "type": "module",
-  "description": "Hosts the Ray-Ban Display webapp and proxies the four /glance routes to the HelmDeck daemon."
+  "description": "Hosts the Ray-Ban Display webapp and proxies the four /glance routes to the HelmDeck daemon.",
+  "devDependencies": {
+    "wrangler": "^4.127.0"
+  }
 }

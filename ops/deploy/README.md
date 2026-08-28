@@ -21,8 +21,9 @@ directly (HelmDeck's own login/device-token auth still applies).
 **Then run:**
 
 ```bash
-bash ops/deploy/cloudflare_tunnel.sh            # quick tunnel: instant, URL changes on restart
-bash ops/deploy/cloudflare_tunnel.sh mydomain.com   # named tunnel: stable URL (domain on Cloudflare)
+bash ops/deploy/cloudflare_tunnel.sh                          # quick tunnel: instant, URL changes on restart
+bash ops/deploy/cloudflare_tunnel.sh mydomain.com             # named tunnel: stable URL -> helmdeck.mydomain.com
+bash ops/deploy/cloudflare_tunnel.sh mydomain.com sub.mydomain.com  # named tunnel: EXACT hostname (2nd arg overrides the helmdeck.* default)
 ```
 
 The script installs `cloudflared`, starts the tunnel to `localhost:8140`, and

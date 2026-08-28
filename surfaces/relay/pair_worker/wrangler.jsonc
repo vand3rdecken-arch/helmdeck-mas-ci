@@ -1,0 +1,34 @@
+// HelmDeck Pair worker - the ONLY public door to GET /relay/pair/claim.
+// See src/index.js for the security model and README.md for setup.
+//
+// Deploy:  bash ops/deploy/push_pair_worker.sh
+// Secret:  npx wrangler secret put DAEMON_URL
+//          (the tunnel's own <tunnel-id>.cfargotunnel.com origin - NOT a
+//          customer-facing hostname; nothing ever dictates this value)
+{
+  "name": "helmdeck-pair",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  // pair.helmdeck.de is INTENDED as a Workers Custom Domain here, replacing
+  // the raw cloudflared tunnel CNAME that used to live on that hostname
+  // (exposed the WHOLE daemon, including /auth/login). BLOCKED, not done:
+  // Cloudflare refuses to attach a Custom Domain to a hostname that already
+  // has an externally-managed DNS record - error code 100117, hit for real
+  // on 2026-08-29 - and neither `cloudflared` (no route-delete subcommand,
+  // only route-dns which ADDS/overwrites with another tunnel) nor this
+  // wrangler token (scoped `zone:read`, not `zone:write` - checked via
+  // `wrangler whoami`, not assumed) can remove the old record. One manual,
+  // one-time step closes this: Cloudflare dashboard -> helmdeck.de -> DNS ->
+  // delete the CNAME for `pair` -> re-run `bash ops/deploy/
+  // push_pair_worker.sh`. Until then this `routes` entry sits here
+  // documenting the intended end state; the worker is fully live and safe
+  // at its own address regardless (see workers_dev below).
+  "routes": [
+    { "pattern": "pair.helmdeck.de", "custom_domain": true }
+  ],
+  // Kept alive explicitly (wrangler disables this by default once `routes`
+  // is present) so the worker has a WORKING public address right now,
+  // independent of the pair.helmdeck.de custom-domain step above ever
+  // happening - PairingScreen.kt's default points here today.
+  "workers_dev": true
+}

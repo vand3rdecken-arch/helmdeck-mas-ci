@@ -1,0 +1,93 @@
+// HelmDeck Wear OS module (W2a) - a SEPARATE installable app, not a build
+// variant of the phone module. Classic (non-Kotlin-DSL) syntax to match how
+// this hand-managed tree already writes build.gradle - see withMetaDat.js's
+// patchAppGradle/patchRootGradle, which both target this exact dialect.
+//
+// kotlin-android needs no version suffix here because it is ALREADY on the
+// root buildscript classpath - the phone module ships hand-installed Kotlin
+// (GlassCameraService.kt, GlassesDevice.kt, GlassesRadio.kt, all built into
+// production APKs by ops/deploy/build_apk.sh), so the Kotlin Gradle plugin is
+// proven wired, not assumed. org.jetbrains.kotlin.plugin.compose is the ONE
+// new classpath entry this card adds to the ROOT build.gradle (withWearApp.js
+// patchRootGradleForCompose) - the documented trap (README.md §7.1): the
+// Compose compiler plugin must be declared at the ROOT, applied per-module.
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "org.jetbrains.kotlin.plugin.compose"
+
+android {
+    namespace "app.helmdeck.wear"
+    // 34 is the one number with a citation (developer.android.com/training/
+    // wearables/apps/standalone-apps, checked 2026-08-28: "For new apps, the
+    // target API level must be 34 or higher"). compileSdk matches it rather
+    // than guessing higher - raise both together if a real build demands a
+    // newer Wear Compose API.
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "app.helmdeck.wear"
+        // Wear OS 3.0 (API 30) is the platform floor Google documents for a
+        // Compose-based standalone app. NOT tied to the phone module's own
+        // minSdk 24 - this is a different installable unit for different
+        // hardware.
+        minSdkVersion 30
+        targetSdkVersion 34
+        // Independent of app.json's `version`/`versionCode` on purpose: the
+        // watch is not part of the phone's OTA/runtimeVersion contract
+        // (README.md §4.4 chose this same independence for the push payload).
+        // A dev placeholder until this ships anywhere real.
+        versionCode 1
+        versionName "0.1.0-dev"
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    // Every version below except activity-compose was fetched from
+    // developer.android.com / central.sonatype.com this session (checked
+    // 2026-08-28/29), not recalled:
+    //   - androidx.wear.compose:compose-foundation:1.6.2 (stable, 2026-05-19)
+    //   - androidx.wear.compose:compose-material3:1.5.0 (stable, 2025-08-27)
+    //   - com.goterl:lazysodium-android:5.2.0 (Maven Central "latest stable")
+    //   - net.java.dev.jna:jna:5.17.0 (lazysodium's own documented JNA pin)
+    // activity-compose is the one unverified pin in this file - no fetch this
+    // session confirmed it against Kotlin 2.1.20 (voice-interaction-
+    // design.md:475's measured version for this app). Recheck against
+    // Android Studio's own Wear OS Compose template before a real build.
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.activity:activity-compose:1.9.3"
+    // Explicit rather than relying on Compose's transitive pull-in of
+    // coroutines - PairingScreen.kt uses Dispatchers.IO/Default directly.
+    // Same confidence tier as activity-compose above (not freshly fetched
+    // this session; 1.9.x was the broadly-adopted line for Kotlin 2.0/2.1).
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+    implementation "androidx.wear.compose:compose-foundation:1.6.2"
+    implementation "androidx.wear.compose:compose-material3:1.5.0"
+
+    // NaCl box (crypto/HelmDeckBox.kt) - an established libsodium JNI binding,
+    // NOT hand-rolled primitives. This is the ONE dependency in this file
+    // whose exact METHOD SURFACE (not just its version) is unverified this
+    // session - see crypto/HelmDeckBox.kt's own header for what that means in
+    // practice and why it is still the responsible choice.
+    implementation "com.goterl:lazysodium-android:5.2.0@aar"
+    implementation "net.java.dev.jna:jna:5.17.0@aar"
+
+    // EncryptedSharedPreferences - Android Jetpack's own credential-at-rest
+    // story (the Wear equivalent of expo-secure-store on the phone). Version
+    // is the well-known 1.1.0-alpha06, the last release before this artifact
+    // was folded into Credential Manager guidance; not re-fetched this
+    // session, same confidence tier as activity-compose above.
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
+}
