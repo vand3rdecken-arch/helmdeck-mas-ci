@@ -6,7 +6,7 @@ import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, View } from 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
-import { api, type ChatMsg, type SteerOpts } from "@/data/client";
+import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
@@ -14,6 +14,8 @@ import { useTheme } from "@/theme";
 import { planLabel, useAiFlat } from "@/ui/billing";
 import { Composer } from "@/ui/card_composer";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { UnsentStrip } from "@/ui/outbox_strip";
+import * as outbox from "@/data/outbox";
 import { ContextMeter } from "@/ui/context_meter";
 import { Empty } from "@/ui/kit";
 import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
@@ -247,7 +249,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const appendReply = (id: number, msg: ChatMsg) =>
     setPending((p) => p.map((tn) => tn.id === id ? { ...tn, msgs: [...tn.msgs, msg] } : tn));
 
-  async function send(raw: string, opts: SteerOpts) {
+  // `retryOf` = the outbox row this send is re-attempting, so a success settles
+  // THAT row instead of leaving a duplicate parked, and a second failure counts
+  // the attempt instead of parking the same text twice.
+  async function send(raw: string, opts: SteerOpts, retryOf?: string) {
     const q = raw.trim();
     if (!q) return;
     setBusy(true);
@@ -255,6 +260,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     queueTurn(id, q);
     try {
       const r = await api.chat(q, opts);
+      // Past the await = the daemon answered. THAT is the proof a retried
+      // message is delivered; nothing earlier is (a dispatched request is not
+      // a received one).
+      if (retryOf) await outbox.settle(retryOf);
       if (turn.current !== id) return;   // cancelled/superseded — drop this reply
       if (r.duplicate && !r.reply) {
         // A transport layer replayed this POST and the daemon refused to run a
@@ -272,8 +281,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       qc.invalidateQueries({ queryKey: ["tracks"] });
       qc.invalidateQueries({ queryKey: ["chatHistory"] });   // pull the persisted turn (+ any PM msgs)
     } catch (e) {
+      const msg = String((e as Error).message);
+      // Park BEFORE any UI work and REGARDLESS of supersession: the optimistic
+      // bubble is component state and dies with the screen, so the outbox is the
+      // only thing standing between a failed send and a lost message.
+      if (neverDelivered(e)) {
+        if (retryOf) await outbox.retried(retryOf, msg);
+        else await outbox.park("board", q, opts, msg, Date.now());
+      }
       if (turn.current !== id) return;
-      appendReply(id, { cls: "error", text: String((e as Error).message) });
+      appendReply(id, { cls: "error", text: msg });
     } finally {
       if (turn.current === id) { setBusy(false); setTimeout(() => scroll.current?.scrollToEnd(), 50); }
     }
@@ -448,6 +465,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
               })}
             </Text>
           ) : null}
+          <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
           <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"
             onVoice={canVoice ? () => setVoiceOpen(true) : undefined}
