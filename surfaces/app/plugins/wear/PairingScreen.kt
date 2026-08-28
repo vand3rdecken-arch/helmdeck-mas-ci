@@ -6,9 +6,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -16,7 +14,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -27,6 +28,7 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 // citation. Recheck alongside everything else in §9.1 item 15.
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import app.helmdeck.wear.crypto.HelmDeckBox
 import app.helmdeck.wear.data.DeviceStore
@@ -150,9 +152,29 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
-        Box(modifier = Modifier.fillMaxSize()) {
-            TransformingLazyColumn(state = columnState) {
-                item { Text(text = "HelmDeck koppeln", modifier = Modifier.padding(8.dp)) }
+        // ScreenScaffold, NOT a bare Box: it supplies the scroll indicator and
+        // - the part that matters here - computes the screen's content padding
+        // itself and hands it to this lambda. That padding is a PERCENTAGE of
+        // the screen (androidx.wear.compose.material3.PaddingDefaults
+        // .verticalContentPaddingPercentage / horizontalContentPaddingPercentage,
+        // read off the 1.6.2 artifact, not assumed), so it adapts to any watch
+        // size and shape on its own. The previous code passed no contentPadding
+        // at all, which is why the first and last rows sat hard against the
+        // bezel on a real device. Nothing here is measured or hardcoded for one
+        // specific watch - that would be the opposite of responsive.
+        ScreenScaffold(columnState) { contentPadding ->
+            TransformingLazyColumn(
+                state = columnState,
+                contentPadding = contentPadding,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item {
+                    Text(
+                        text = "HelmDeck koppeln",
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
                 // Code first: with the address defaulted (DEFAULT_CLAIM_BASE_URL),
                 // this is the only field the owner needs to touch in the
                 // common case - the whole reason that default exists.
@@ -165,6 +187,12 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                 item {
                     FieldRow(
                         label = "Adresse (meist unnötig)", value = claimBaseUrl,
+                        // The default URL is long enough to wrap over three
+                        // lines and swallow the screen, for a field this
+                        // screen's own doc calls "meist unnötig". One line,
+                        // ellipsised - it is confirmation, not something to
+                        // read character by character.
+                        maxLines = 1,
                         onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
                     )
                 }
@@ -175,7 +203,13 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                     }
                 }
                 if (status != null) {
-                    item { Text(text = status ?: "", modifier = Modifier.padding(8.dp)) }
+                    item {
+                        Text(
+                            text = status ?: "",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(8.dp),
+                        )
+                    }
                 }
             }
         }
@@ -191,9 +225,26 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
  *  through Android's own text-selection long-press on the value text - not
  *  wired here explicitly, tracked as a gap, not silently dropped. */
 @Composable
-private fun FieldRow(label: String, value: String, onDictate: () -> Unit) {
-    Column(modifier = Modifier.padding(8.dp)) {
-        Text(text = "$label: ${value.ifBlank { "–" }}")
+private fun FieldRow(
+    label: String,
+    value: String,
+    onDictate: () -> Unit,
+    maxLines: Int = 2,
+) {
+    // Centred, not start-aligned: a watch screen is widest through its middle,
+    // so left-aligned text is the first thing a round bezel eats. The
+    // horizontal inset comes from ScreenScaffold's contentPadding on the list
+    // above, so this only adds the spacing BETWEEN rows.
+    Column(
+        modifier = Modifier.padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "$label: ${value.ifBlank { "–" }}",
+            textAlign = TextAlign.Center,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+        )
         Button(onClick = onDictate) { Text("Diktieren") }
     }
 }

@@ -1,8 +1,6 @@
 package app.helmdeck.wear
 
 import android.content.Context
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -11,12 +9,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import app.helmdeck.wear.data.DeviceStore
 import app.helmdeck.wear.data.RelayClient
@@ -71,11 +72,30 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit) {
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
-        Box(modifier = Modifier.fillMaxSize()) {
-            TransformingLazyColumn(state = columnState) {
-                item { Text(text = "HelmDeck", modifier = Modifier.padding(8.dp)) }
+        // Same reasoning as PairingScreen: ScreenScaffold computes the
+        // screen-size-relative content padding and passes it in, instead of a
+        // bare Box that leaves the first and last row against the bezel.
+        ScreenScaffold(columnState) { contentPadding ->
+            TransformingLazyColumn(
+                state = columnState,
+                contentPadding = contentPadding,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item {
+                    Text(
+                        text = "HelmDeck",
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
                 if (status.isNotEmpty()) {
-                    item { Text(text = status, modifier = Modifier.padding(8.dp)) }
+                    item {
+                        Text(
+                            text = status,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(8.dp),
+                        )
+                    }
                 }
                 for (c in cards) {
                     item {
