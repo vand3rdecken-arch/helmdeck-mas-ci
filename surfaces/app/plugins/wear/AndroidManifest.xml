@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HelmDeck Wear OS module manifest (W2a). Two facts here are cited from
+  developer.android.com/training/wearables/apps/standalone-apps (checked
+  2026-08-28), quoted verbatim, not paraphrased from memory:
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+  with NO android:required attribute - the doc's own example omits it, and
+  the platform default when omitted is required="true". The Wear-OS-
+  Machbarkeitsstudie (README.md §6.2) calls out setting required="false" as
+  the wrong choice for a real watch app, so this intentionally matches the
+  doc's own unqualified form rather than adding an attribute nobody asked
+  for.
+
+    <meta-data android:name="com.google.android.wearable.standalone"
+               android:value="true" />
+
+  T2 in the study (§6.1/§6.2): the watch talks to the glance-worker over its
+  own HTTPS, never through the phone, so it IS standalone by that doc's own
+  definition, not merely declared so.
+
+  No android:icon - no launcher icon asset exists for this module yet
+  (nothing in this card worktree can generate one). AGP does not require one;
+  the OS falls back to a system default. Add a real one before this ever
+  reaches a device the owner looks at day to day.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <application
+        android:allowBackup="true"
+        android:label="HelmDeck"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

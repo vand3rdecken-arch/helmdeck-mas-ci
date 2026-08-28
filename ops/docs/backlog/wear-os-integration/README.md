@@ -23,6 +23,16 @@ W1a/b: W1c bringt **keine neue native Abhängigkeit** mit, ist also ein reines
 NICHT gebumpt (ein Bump würde `runtimeVersion` verschieben und das Update vom
 installierten APK gerade fernhalten). Details in §4.4.
 
+**Status (2026-08-28, selbe Folgekarte, zweiter Auftrag „ich will W2"):** Der
+Owner hat den 2026-08-16-Beschluss gegen eine zweite Fläche für die Uhr
+AUFGEHOBEN (§6.3) und W2 direkt beauftragt. **W2a ist jetzt CODE** —
+`withWearApp.js` + das `:wear`-Gradle-Modul + eine leere Compose-Seite, die
+laut Plan startet und nichts sonst tut (§4.5). **Ungetestet, anders als bei
+W1**: kein Android-SDK/Gradle in diesem Worktree erreichbar, also KEIN
+Gradle-Lauf, nicht einmal ein Syntax-Check des Kotlin. **W2b blockiert jetzt
+auf einer echten Owner-Entscheidung** (§9 Punkt 2, Token-Modell), nicht mehr
+nur hypothetisch — siehe §9.1 Punkte 15–19 für die vollständige offene Liste.
+
 **Status (2026-08-27, Vorgängerkarte):** Phase **W1a+W1b sind jetzt
 CODE** — `spine/comms/notify.py` (data-only FCM statt der generischen Hülle),
 `surfaces/app/src/data/push.ts` (`BACKGROUND_NOTIFICATION_TASK`, 3 feste
@@ -351,6 +361,81 @@ Zwei Defekte aus W1b fallen dabei mit:
 „Agent arbeitet"-Dauerindikator erreicht die Uhr nicht. Ebenso wenig
 Full-Screen-Intents; `RemoteViews` werden auf Text+Icon eingedampft.
 
+### 4.5 W2a — der native Uhr-Modul-Rumpf (2026-08-28, Owner-Beschluss „ich will W2")
+
+Der Owner hat den 2026-08-16-Beschluss („no second surface") am 2026-08-28
+ausdrücklich für die Uhr aufgehoben. Damit ist §6.3 beantwortet; der einzige
+Teil von W2, der aus einem Karten-Worktree ohne Android-SDK/Gradle überhaupt
+entstehen kann, ist der Modul-**Rumpf** — Gradle-Verdrahtung, Manifest, eine
+leere Compose-Seite, die laut Plan (§8 Zeile 4) startet und nichts sonst tut.
+Neu im Baum:
+
+- `surfaces/app/plugins/withWearApp.js` — siebter Eintrag in dieselbe Liste
+  wie `withMetaDat.js` & Co. (§7.1), aber ANDERER Fall: die sechs bestehenden
+  Plugins PATCHEN das vorhandene `app`-Modul; dieses ERZEUGT ein komplett
+  neues, separat installierbares (`:wear`). Folgerichtig NICHT in
+  `app.json`s `plugins`-Array registriert — keines der sechs Vorbilder ist
+  das (geprüft), sie laufen ausschließlich über die CLI in `build_apk.sh`.
+  Dieselbe Konvention übernommen statt eine ungeprüfte zweite Hälfte
+  (`withDangerousMod`, `expo prebuild`) dazuzuerfinden, die aus diesem
+  Worktree ohnehin nicht auszuführen wäre.
+- `surfaces/app/plugins/wear/{build.gradle,AndroidManifest.xml,MainActivity.kt}`
+  — die statischen Quellen, die die CLI in den generierten Baum kopiert.
+- `ops/deploy/build_apk.sh` ruft das Plugin jetzt als siebten Schritt auf
+  (immer, wenn `android/` neu entsteht — sonst verschwindet `:wear` beim
+  nächsten `--clean`-Prebuild wieder, dieselbe Logik wie bei den anderen
+  sechs). **Der bestehende Telefon-Build ist bewusst UNVERÄNDERT**: die
+  `gradlew assembleRelease`-Zeile wurde auf `:app:assembleRelease` verengt,
+  weil ein nackter `assembleRelease`-Task ab jetzt sonst STILLSCHWEIGEND auch
+  `:wear` mitbauen würde (kein Release-Keystore dafür, nie gebaut) — exakt
+  die „Build geht grün, Artefakt ist falsch"-Klasse, die dieses Repo schon
+  mehrfach getroffen hat.
+- `ops/deploy/build_wear_apk.sh` — NEUES, eigenständiges Skript für den
+  Uhr-Build (`:wear:assembleDebug` + `adb install`). Bewusst NICHT in
+  `ship.sh`/den Fast-Track verdrahtet: anders als das Telefon-Modul ist
+  `:wear` noch nie durch Gradle gelaufen, darf also nie unbeaufsichtigt vom
+  Accept-Hook losgeschickt werden. Owner-Handlauf.
+
+**Vier Entscheidungen, mit Zitat, nicht aus dem Gedächtnis:**
+
+1. **`TransformingLazyColumn` statt `ScalingLazyColumn`** — aktuell
+   empfohlene Wear-Compose-Liste, Material 3, Krone-scrollbar
+   (developer.android.com/training/wearables/compose/lists, geprüft
+   2026-08-28). §3 dieses Dokuments nennt beide als Compose-für-Wear-only;
+   dies ist die, die Google heute empfiehlt.
+2. **`<uses-feature>` ohne `required`-Attribut**, exakt wie
+   developer.android.com/training/wearables/apps/standalone-apps es zeigt —
+   der Plattform-Default ist dann `true`, was §6.2 explizit verlangt („NICHT
+   `required=\"false\"`").
+3. **`compose-compiler-gradle-plugin:$kotlinVersion`** in der ROOT
+   `buildscript.dependencies`, nicht im Modul — die dokumentierte Falle
+   (§7.1) wörtlich vermieden; die Version reitet auf demselben
+   `kotlinVersion`, den das Template schon für den Kotlin-Compiler selbst
+   trägt (2.1.20, gemessen in `voice-interaction-design.md:475`), statt eine
+   zweite, separat zu pflegende Versionsnummer einzuführen.
+4. **`applicationId "app.helmdeck.wear"`**, NICHT dieselbe wie das
+   Telefon-Modul (`app.helmdeck`). Play verlangt gleichen Package-Namen +
+   gleichen Signing-Key nur für den gebündelten Wear-Track (WO-G7, §7.2) —
+   bei Sideload (die für den Eigenbedarf vorgesehene Verteilung, §7.2) gilt
+   das nicht, und ein eigener Name hält die Uhr strukturell von den
+   Telefon-Build-Artefakten (Signing, versionCode-Fortlauf) getrennt, bis
+   das wirklich gebraucht wird.
+
+**Was das NICHT ist:** ein Build-Beweis. Kein Android-SDK, kein Gradle, kein
+`expo`-CLI ist aus diesem Karten-Worktree erreichbar (derselbe Tool-Guard, der
+schon `C:\hd\app` blockiert). Geprüft wurde, was hier prüfbar war: die
+Text-Patch-Funktionen in `withWearApp.js` gegen synthetische Fixtures, die
+der REALEN `settings.gradle`/Root-`build.gradle`-Form dieses Baums
+nachempfunden sind (Anker, Idempotenz, „landet in `buildscript.dependencies`,
+nicht in `allprojects.repositories`" — die Falle aus Punkt 3, als Gegenprobe
+mitgetestet); die generierte `AndroidManifest.xml` gegen einen echten
+XML-Parser (wohlgeformt, exakt die beiden zitierten Zeilen). Für
+`MainActivity.kt`/`build.gradle` gibt es in diesem Worktree **kein**
+Kotlin-/Gradle-Werkzeug — nicht einmal einen Syntax-Check wie
+`node --experimental-strip-types --check` bei der TS-Hälfte von W1c. Der
+einzige Netz, der lief (balancierte Klammern), ist bewusst NICHT als
+Verifikation gezählt. Alles Weitere in §9.1, Punkte 15–19.
+
 ---
 
 ## 5. Sprachsteuerung auf der Uhr
@@ -437,7 +522,7 @@ Zwei Auflagen aus der Plattform, die das Design festlegen:
 `required="false"`) plus `com.google.android.wearable.standalone`. Bei T2 ist die
 App echt standalone. Weiteres in §7.
 
-### 6.3 ⚠ Die Entscheidung, die dieses Dokument nicht treffen darf
+### 6.3 ⚠ Die Entscheidung, die dieses Dokument nicht treffen durfte — **am 2026-08-28 vom Owner selbst getroffen: „ich will W2"**
 
 Am **2026-08-16** hat der Owner die Companion-App gestrichen
 (`glasses-reference.md:833-846`):
@@ -454,20 +539,27 @@ ohne Widerruf und ohne Geräte-Identität (`glasses-reference.md` §2.1). Linse
 **und** Uhr auf demselben Token heißt: Uhr verloren ⇒ Token rotieren ⇒ Linse
 stirbt mit.
 
-**Das ist eine Owner-Entscheidung, keine technische.** Sie steht in §9.
+~~**Das ist eine Owner-Entscheidung, keine technische.** Sie steht in §9.~~ —
+**Entschieden am 2026-08-28.** Die Vorbedingung, die 2026-08-16 die Ticket-
+Frage schloss, ist damit tatsächlich wieder offen: **Punkt 2 unten
+(Token-Modell) ist jetzt eine ECHTE, blockierende Entscheidung für W2b** (die
+`/glance`-UI selbst, die einen Netzwerk-Call braucht) — W2a (dieser Commit)
+umgeht sie vollständig, weil eine leere Compose-Seite noch keine Anfrage an
+den Daemon stellt.
 
 ---
 
 ## 7. Bau- und Ausliefer-Weg
 
-### 7.1 Ein `withWearApp.js` — das Muster steht schon sechsmal im Baum
+### 7.1 `withWearApp.js` — das Muster steht jetzt siebenmal im Baum
 
 `surfaces/app/android` ist **git-ignoriert** (`surfaces/app/.gitignore:41-43`)
 und wird bei jedem Build von `expo prebuild --platform android --clean`
-neu erzeugt (`ops/deploy/build_apk.sh:63`). Danach setzen **sechs** Plugin-CLIs
-die nativen Fakten wieder ein (`:75-158`): `withLanCleartext`,
+neu erzeugt (`ops/deploy/build_apk.sh:63`). Danach setzen **sieben** Plugin-CLIs
+die nativen Fakten wieder ein (`:75-170`): `withLanCleartext`,
 `withReleaseSigning`, `withGlassVoice`, `withMetaDat`, `withSherpaOnnx`,
-`withUpdateUrl`.
+`withUpdateUrl`, seit 2026-08-28 auch `withWearApp` (§4.5) — als einziges der
+sieben kein Patch auf `app`, sondern ein komplett neues Modul (`:wear`).
 
 Ein `:wear`-Gradle-Modul ist damit **kein Sonderfall, sondern der siebte
 Eintrag derselben Liste**: `settings.gradle` erweitern, Compose-Compiler-Plugin
@@ -521,16 +613,22 @@ gerätegebunden.
 | 2 | ~~**W1b** — Categories/Actions + `RemoteInput`-Diktat~~ **CODE GESCHRIEBEN** 2026-08-27 (3 feste Aktionen, „Stopp"→`cancel`) | ~~1,5–2 T~~ **verbleibt: Killed-State-Test** | Rückweg-API existiert vollständig; Diktat-Rückweg zum Telefon **[MED]**, nicht wörtlich dokumentiert (§9.1) |
 | 3 | ~~**W1c** — Optionen + `request_id` in die versiegelte Nutzlast, echte Options-Buttons~~ **CODE GESCHRIEBEN** 2026-08-28 (`notify.ask_payload()`, dynamische Kategorie je Karte, §4.4) | ~~1 T~~ **verbleibt: Gerätetest** | **kein natives Delta ⇒ reines OTA**, kein APK-Rebuild, kein `version`-Bump |
 | | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **Code: 0 T (komplett) · Verifikation: ≈ 1–2 T** | rechnet sich schon ohne Uhr; **Build/Gerätetest kann diese Karte selbst nicht ausführen** (§9.1) |
-| 4 | **W2a** — `withWearApp.js` + `:wear`-Modul, leere Compose-App baut und startet | **1,5–2,5 T** | Muster steht 6× im Baum; Build **nicht** aus dem Worktree (§7.1) |
+| 4 | ~~**W2a** — `withWearApp.js` + `:wear`-Modul, leere Compose-App baut und startet~~ **CODE GESCHRIEBEN** 2026-08-28 (Modul + Manifest + `MainActivity.kt`, §4.5) | ~~1,5–2,5 T~~ **verbleibt: erster echter Gradle-Lauf** | Muster steht jetzt 7× im Baum; Build **weiterhin nicht** aus dem Worktree (§7.1) |
 | 5 | **W2b** — Uhr-UI gegen `/glance` + `/glance/answer`: Blocker-Liste, Frage, Optionen antippen | **3–4 T** | **null Daemon-Code**; WO-V13/V16-Konformität einpreisen |
 | 6 | **W2c** — Sprache: `ACTION_RECOGNIZE_SPEECH` → `/glance/talk` → MP3 abspielen | **1,5–2 T** | billig, weil der Vertrag steht (§5.1) |
 | 7 | **W2d** — Complication („N Karten warten"), FCM-Weckruf auf die Uhr | **1,5–2 T** | **kein Tile** (§7.2) |
 | | **Summe W2 — native Wear-App** | **≈ 8–11 T** | plus dauerhafte Pflege-Steuer (Arvo: ~1 Monat Parität-Rückstand) |
 
-**Reihenfolge, falls „jetzt":** 0 → 1 → 2, dann **zwei Wochen Alltag**, dann
-entscheiden, ob W2 überhaupt noch fehlt. Genau dieselbe Beweislast-Regel, die
-`ios-watch-feasibility.md` §4.2 für W2 aufgestellt hat: *erst wenn Mirroring +
-Aktionen im Alltag nachweislich zu wenig sind.*
+~~**Reihenfolge, falls „jetzt":** 0 → 1 → 2, dann **zwei Wochen Alltag**, dann
+entscheiden, ob W2 überhaupt noch fehlt.~~ **Überholt durch den
+2026-08-28-Beschluss** — der Owner hat W2 direkt beauftragt, ohne den
+Alltagstest abzuwarten. W2a (§4.5) ist der Teil davon, der ohne Owner-Gerät
+entstehen konnte; W2b braucht jetzt zuerst §9 Punkt 2 (Token-Modell), dann
+einen echten Gradle-Lauf (§9.1 Punkt 15) — beides außerhalb dessen, was ein
+Karten-Worktree entscheiden oder ausführen kann. Die Beweislast-Regel aus
+`ios-watch-feasibility.md` §4.2 (*„erst wenn Mirroring + Aktionen im Alltag
+nachweislich zu wenig sind"*) war die Empfehlung DIESES Dokuments, nicht eine
+Vorbedingung, die der Owner einhalten muss — seine Entscheidung sticht.
 
 **Gar nicht bauen:** Vollboard auf der Uhr (falscher Formfaktor); RN/Expo auf
 der Uhr (§3); Data-Layer als Primärtransport (§6.1); Long-Poll auf der Uhr
@@ -541,12 +639,18 @@ wo `ACTION_RECOGNIZE_SPEECH` reicht (§5.1); ein Wake-Word (existiert nicht).
 
 ## 9. Offene Entscheidungen (Owner)
 
-1. **Zweite Fläche überhaupt?** Der Beschluss vom 2026-08-16 („no second
-   surface") ist gegen eine Uhr zu prüfen, nicht stillschweigend zu umgehen.
-2. **Token-Modell**, falls ja: Uhr und Linse auf **einem** `glance_token`
-   (einfach, aber Verlust der Uhr rotiert die Linse mit) — oder die
-   Valet-Tickets aus `glasses-reference.md` §2.1 wiederbeleben, deren
-   Vorbedingung mit einem zweiten Gerät wieder erfüllt wäre (§6.3).
+1. ~~**Zweite Fläche überhaupt?**~~ **Entschieden: JA, am 2026-08-28** („ich
+   will W2"). Der Beschluss vom 2026-08-16 („no second surface") ist damit für
+   die Uhr ausdrücklich aufgehoben, nicht stillschweigend umgangen — siehe §6.3.
+2. **Token-Modell — BLOCKIERT W2b jetzt wirklich, nicht mehr hypothetisch**:
+   Uhr und Linse auf **einem** `glance_token` (einfach, aber Verlust der Uhr
+   rotiert die Linse mit) — oder die Valet-Tickets aus `glasses-reference.md`
+   §2.1 wiederbeleben, deren Vorbedingung mit einem zweiten Gerät jetzt
+   tatsächlich erfüllt ist (§6.3). W2a (§4.5) brauchte diese Antwort nicht — die
+   leere Compose-Seite stellt keinen Netzwerk-Call. **W2b (Blocker-Liste,
+   Frage, Optionen antippen — der nächste sinnvolle Schritt) kann ohne diese
+   Antwort nicht beginnen**, weil sie entscheidet, WAS die Uhr überhaupt als
+   Credential mitträgt.
 3. ~~**W1c**: Optionen in die Push-Nutzlast?~~ **Gebaut am 2026-08-28** (§4.4) —
    die Folgekarte war ausdrücklich beauftragt, „Notification-Actions zu
    verfeinern", und W1c war der einzige Schritt des Plans, der ohne Hardware,
@@ -650,6 +754,48 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
     mit alter App schickt `ask`, das die alte App ignoriert (harmlos,
     generische Aktionen) — die Reihenfolge ist hier also unkritisch, anders als
     bei W1a/b (Punkt 9).
+
+### Offen, seit W2a als Code existiert (2026-08-28)
+
+15. **Nullter Gradle-Lauf steht noch aus.** Jede Zeile Kotlin/Gradle in
+    `surfaces/app/plugins/wear/` ist entweder aus developer.android.com
+    zitiert (siehe die Kommentare in `build.gradle`/`MainActivity.kt` für
+    die genauen, an diesem Tag geprüften Fundstellen) oder aus vorhandener
+    Repo-Evidenz gefolgert (Kotlin ist am Root verdrahtet, weil das
+    Telefon-Modul schon produktiv Kotlin-Dateien enthält) — aber KEIN Teil
+    davon ist je durch Gradle gelaufen. Geprüft wurde nur, was ohne
+    Android-SDK prüfbar war: `withWearApp.js`s Text-Patch-Funktionen gegen
+    Fixtures, die der echten `settings.gradle`/Root-`build.gradle`-Form
+    dieses Baums nachempfunden sind (Anker, Idempotenz, korrekte
+    Ziel-Block-Auswahl — inkl. Gegenprobe, dass die Falle aus §4.5 Punkt 3
+    tatsächlich vermieden wird), und die generierte `AndroidManifest.xml`
+    gegen einen echten XML-Parser. `ops/deploy/build_wear_apk.sh` ist der
+    Weg zum ersten echten Lauf, sobald Android Studio + ein Wear-Emulator
+    bereitstehen (§8: unter Windows vollständig verfügbar).
+16. **`androidx.activity:activity-compose:1.9.3` ist der einzige unzitierte
+    Versions-Pin** in `wear/build.gradle` — keine Doku-Abfrage diese Sitzung
+    hat ihn gegen Kotlin 2.1.20 bestätigt. Vor dem ersten Gradle-Lauf gegen
+    Android Studios eigene Wear-OS-Compose-Vorlage prüfen.
+17. **Kein Launcher-Icon.** Das Manifest deklariert bewusst keins — in
+    diesem Worktree existiert kein Bild-Werkzeug, das eins erzeugen könnte.
+    Android fällt auf ein System-Icon zurück; das reicht für „startet und
+    zeigt Text", nicht für ein Gerät, das der Owner täglich ansieht.
+18. **Kein Release-Signing für `:wear`.** `ops/deploy/build_wear_apk.sh` baut
+    bewusst nur `assembleDebug` — es gibt noch keinen Keystore-Pfad für das
+    Uhr-Modul (anders als `app`, siehe `withReleaseSigning.js`). Für
+    Sideload auf das eigene Gerät reicht ein Debug-Build; eine Play-Wear-Track-
+    Verteilung bräuchte WO-G7 (gleicher Signing-Key wie das Telefon-Modul,
+    §7.2) und ist hier nicht vorgesehen.
+19. **`build_apk.sh`s Telefon-Pfad wurde ABSICHTLICH mitgeändert** (`gradlew
+    assembleRelease` → `gradlew :app:assembleRelease`), obwohl diese Karte
+    nur die Uhr bauen sollte — nicht optional: sobald `:wear` in
+    `settings.gradle` steht, hätte der alte, unscoped Task-Name beim
+    NÄCHSTEN Telefon-Release-Build stillschweigend versucht, `:wear`
+    mitzubauen (kein Release-Keystore dafür — Bruch oder falsches Artefakt,
+    beides schlimmer als die Scope-Änderung selbst). Nicht am Gerät
+    geprüft, nur an der Gradle-Task-Semantik (ein qualifizierter Task-Name
+    baut exakt ein Modul) — aber das ist dieselbe Art Beleg, auf der auch
+    die anderen sechs Plugins in dieser Datei beruhen.
 
 ---
 
