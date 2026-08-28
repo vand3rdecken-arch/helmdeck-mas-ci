@@ -149,6 +149,9 @@ ops/harness/.versions/
 # step, exactly like glass-crud-harness's apps/ -> worker/public/.
 surfaces/glasses/worker/public/
 surfaces/glasses/worker/node_modules/
+# surfaces/relay/pair_worker - same rule, no public/ (no webapp to host, just
+# the one allowlisted API route).
+surfaces/relay/pair_worker/node_modules/
 # stray stdout/stderr redirects from a backgrounded `wrangler dev` - local run
 # artifacts, not source. Two of these leaked into a commit once; never again.
 surfaces/glasses/worker/dev.log

@@ -1296,6 +1296,107 @@ Befolgt — tatsächlich ausgeführt, nicht an den Owner zurückgereicht:
 cloudflared tunnel run --url http://localhost:8140 helmdeck
 ```
 
+**Überholt durch §4.13, nicht mehr die ganze Geschichte:** derselbe Befehl
+bedient jetzt zwei Hostnamen gleichzeitig (`daemon-origin.helmdeck.de`, NEU,
+der einzige unterstützte Weg — und weiterhin `pair.helmdeck.de`, ALT, bis der
+Owner den einen manuellen DNS-Schritt aus §4.13 erledigt). Roher Tunnel-Zugriff
+auf `pair.helmdeck.de` bleibt bis dahin technisch möglich, ist aber NICHT mehr
+der Weg, den `PairingScreen.kt` verwendet oder den irgendjemand nutzen sollte.
+
+### 4.13 Vom rohen Tunnel zur echten Gateway-Architektur — „What the clean architecture for this. How do professional and clean repos do this" (2026-08-29)
+
+Berechtigte Rückfrage statt einer A/B-Wahl (§4.12s „Auto start/stop" vs.
+„Check + guide"): ein roher `cloudflare_tunnel.sh`-Origin, ob manuell oder
+automatisch gestartet, exponiert IMMER den GANZEN Daemon — inklusive
+`/auth/login` — sobald er läuft. Das ist die eigentliche Schwäche, die keine
+der beiden Optionen behoben hätte.
+
+**Das Muster, industriestandard:** OAuth Device Authorization Grant
+(RFC 8628) — ein Gerät ohne Browser/Tastatur pollt einen STABILEN,
+IMMER-ERREICHBAREN, eng begrenzten Endpunkt mit einem kurzen Code; ein
+separater, bereits authentifizierter Client (das Telefon) mintet diesen Code.
+**Dieses Repo hat die Hälfte davon schon einmal gebaut** —
+`surfaces/glasses/worker` ist exakt dasselbe „schmales Gateway vor dem Daemon,
+Secret hält die echte Adresse"-Muster, nur für die Linse. Die Lücke war nicht
+Architektur-Unwissen, sondern dass die Uhr-Kopplung diesen eigenen
+Präzedenzfall nicht wiederverwendet hat.
+
+**Gebaut: `surfaces/relay/pair_worker`** — ein NEUER, eigener Cloudflare
+Worker (bewusst NICHT der Linsen-Worker erweitert: dessen eigener Test
+erzwingt `/relay/pair` als unerreichbar, und er entfernt Cookie/Authorization,
+was die session-authentifizierte `/relay/pair/code`-Route ohnehin unmöglich
+gemacht hätte). Erlaubt exakt EINEN Pfad — `GET /relay/pair/claim` — und
+nichts sonst. `ops/tests/test_pair_worker.py` (33 Checks, spiegelt
+`test_glance_worker.py`s Disziplin) beweist das inklusive Traversal-,
+Prefix-Confusion- und Sibling-Route-Fällen (`/relay/pair/code` wird
+ausdrücklich mitgetestet und verweigert).
+
+**Drei echte Fehler beim Bauen getroffen, nicht vorhergesehen — jeder einzeln
+verifiziert, nicht angenommen behoben:**
+
+1. **`npm install` schlug fehl** mit `'node' is not recognized` — derselbe
+   Bug, den `build_apk.sh`s eigener Kommentar schon für `npx` dokumentiert
+   (Leerzeichen in „Program Files" bricht `cmd.exe`-Subshells, die `npm`s
+   Postinstall-Skripte startet). Behoben mit demselben Muster, das
+   `build_apk.sh` bereits nutzt: `node`s Verzeichnis explizit vor `npm`
+   auf den PATH gesetzt.
+2. **Der Worker konnte `<tunnel-id>.cfargotunnel.com` nicht direkt fetchen**
+   — Cloudflare-Fehler 1102 („DNS points to local or disallowed IPv6
+   address"), live beobachtet. Diese Adresse ist nur über Cloudflares
+   eigene Tunnel-Routing-Schicht erreichbar, nicht per gewöhnlichem
+   `fetch()`. Behoben mit einer ECHTEN, DNS-gerouteten Origin-Adresse
+   (`daemon-origin.helmdeck.de`) statt der internen Tunnel-Adresse.
+3. **`pair.helmdeck.de` konnte nicht direkt als `DAEMON_URL` wiederverwendet
+   werden**, obwohl es schon (aus §4.11/§4.12) auf denselben Tunnel
+   zeigte — das hätte, sobald die Custom-Domain-Zuweisung (Punkt 4 unten)
+   irgendwann klappt, eine Selbstreferenz erzeugt (der Worker würde sich
+   selbst als Origin befragen). Ein eigener, dauerhaft interner Hostname
+   (`daemon-origin.helmdeck.de`) trennt „was der Worker als Origin nutzt"
+   sauber von „was der Worker öffentlich ist".
+4. **`pair.helmdeck.de` als Custom Domain des Workers ist BLOCKIERT, nicht
+   erledigt** — Cloudflare verweigert das mit Fehlercode `100117`, weil die
+   Hostname schon einen externen DNS-Eintrag trägt (die ALTE Tunnel-CNAME
+   aus §4.11). Weder `cloudflared` (kein Route-Lösch-Unterbefehl) noch der
+   `wrangler`-Token dieses Repos (Scope `zone:read`, geprüft per
+   `wrangler whoami`, nicht `zone:write`) können den alten Eintrag
+   entfernen. **Der eine verbleibende manuelle Owner-Schritt:**
+   Cloudflare-Dashboard → `helmdeck.de` → DNS → CNAME für `pair` löschen →
+   `bash ops/deploy/push_pair_worker.sh` erneut laufen lassen.
+
+**Bis dahin funktioniert alles bereits, an der eigenen, dauerhaften
+Worker-Adresse** — `PairingScreen.kt`s `DEFAULT_CLAIM_BASE_URL` zeigt bewusst
+NICHT auf `pair.helmdeck.de` (das heute noch der ALTE, unsichere rohe
+Tunnel ist), sondern auf `https://helmdeck-pair.van-d3r-decken.workers.dev`,
+die schon jetzt sicher und dauerhaft ist.
+
+**Ende-zu-Ende verifiziert, nicht nur „Befehl lief ohne Fehler":** Tunnel kurz
+gestartet, `curl` durch den Worker gegen `GET /relay/pair/claim?code=ZZZZZZ`
+lieferte `{"error": "auth required"}` — dasselbe unterscheidende Signal wie
+in §4.12: beweist, dass die Anfrage wirklich den echten Daemon erreichte
+(401, weil der laufende Daemon noch auf `main` steht, meine Route dort noch
+nicht kennt — nicht 404 vom Worker). `GET /auth/login` durch den Worker
+lieferte 404 — der schmale Allowlist hält live, nicht nur im Test. Danach
+Tunnel wieder gestoppt (`TaskStop`) und per `curl` bestätigt: echtes 502 von
+Cloudflares Edge (`daemon-origin.helmdeck.de`, „Host: Error"), nicht nur ein
+gemeldeter Stopp.
+
+**Kleiner, bewusst nicht behobener Schönheitsfehler:** wenn der Tunnel down
+ist, reicht der Worker Cloudflares rohe 502-HTML-Fehlerseite unverändert
+durch, statt sie in sauberes JSON zu verpacken — `fetch()` wirft bei einem
+Nicht-2xx-Status keine Exception, der `try/catch` im Worker sieht diesen
+Fall also nie. Kein Sicherheits- oder Korrektheitsproblem (der Fehler ist
+ehrlich sichtbar, 502), nur kosmetisch hässlicher als nötig.
+
+**Neu im Baum:** `surfaces/relay/pair_worker/{src/index.js,src/routes.js,
+wrangler.jsonc,package.json,README.md}`, `ops/tests/test_pair_worker.py`,
+`ops/deploy/push_pair_worker.sh`. `surfaces/glasses/worker/package.json`
+bekam `wrangler` als echte, gepinnte devDependency (vorher: `npx`-on-demand,
+auf dieser Maschine unzuverlässig — derselbe PATH-Bug wie oben) —
+`package-lock.json` neu dazu, aus demselben Grund wie überall sonst in
+diesem Repo: reproduzierbares Tooling statt stiller Versions-Drift.
+`run_gate.py`: PASS. `test_pair_worker.py`: PASS (33). `test_glance_worker.py`
+erneut gelaufen als Regressionstest (unverändert, 49 Checks, 0 Fehler).
+
 ---
 
 ## 10. Quellen (Plattform, abgerufen 2026-08-27)

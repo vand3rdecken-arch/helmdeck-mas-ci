@@ -35,20 +35,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Owner decision (README.md §4.10-follow-up, 2026-08-29): a STABLE named
- *  tunnel (`bash ops/deploy/cloudflare_tunnel.sh pair.helmdeck.de`), not the
- *  ephemeral `trycloudflare.com` form - the address stops rotating, so it
- *  can be a fixed default here instead of something dictated every single
- *  pairing. Still just a default, not a hardcoded requirement: the "Adresse"
- *  field stays fully editable/dictatable for a different tunnel setup. */
-private const val DEFAULT_CLAIM_BASE_URL = "https://pair.helmdeck.de"
+/** README.md §4.13: the address is a dedicated, always-on Cloudflare Worker
+ *  (surfaces/relay/pair_worker) that proxies EXACTLY GET /relay/pair/claim -
+ *  never a raw cloudflared tunnel origin, which would expose the daemon's
+ *  entire HTTP surface (including /auth/login) to the open internet. Live
+ *  and verified end-to-end (checked 2026-08-29, real request through the
+ *  worker to the real daemon, not assumed).
+ *
+ *  NOT `pair.helmdeck.de`, even though that is the intended long-term
+ *  hostname (§4.13): as of this commit it still CNAMEs to the OLD raw tunnel
+ *  origin (the very thing this Worker exists to replace) and reassigning it
+ *  needs one manual owner step (delete that CNAME in the Cloudflare
+ *  dashboard - `wrangler` is scoped `zone:read`, not `zone:write`, checked,
+ *  not assumed). Pointing the default there NOW would silently defeat the
+ *  entire fix. `helmdeck-pair.van-d3r-decken.workers.dev` needs no such
+ *  step and is safe today - swap this constant once the dashboard step is
+ *  done, nothing else in this file changes. */
+private const val DEFAULT_CLAIM_BASE_URL = "https://helmdeck-pair.van-d3r-decken.workers.dev"
 
 /**
  * The device-code pairing screen (W2b groundwork, README.md §4.6/§9.1
  * item 21). Two fields because there is no camera to scan the phone's QR
  * and no keyboard to comfortably type either: the origin the daemon is
- * reachable at right now (defaults to the owner's fixed pairing subdomain,
- * see DEFAULT_CLAIM_BASE_URL above), and the six-character code the owner
+ * reachable at right now (defaults to the dedicated pairing Worker's own
+ * address, see DEFAULT_CLAIM_BASE_URL above), and the six-character code the owner
  * reads off POST /relay/pair/code's response on the phone/desktop. With the
  * address pre-filled, dictating the CODE is the only step left in the
  * common case - which is the whole point: the owner explicitly rejected
