@@ -6,6 +6,7 @@ import { ApiError, TransportError, api } from "./client";
 import { useConfig } from "./config";
 import { open } from "./e2ee";
 import { speak } from "./voice";
+import { t } from "@/i18n/core";
 
 // Foreground presentation of the local notifications we raise from decrypted
 // data messages.
@@ -152,10 +153,10 @@ export async function presentDecrypted(data?: Record<string, string>) {
  *  watch like any other. Silence here was the one place W1b could lie. */
 async function reportActionFailure(e: unknown) {
   const msg = (e instanceof ApiError || e instanceof TransportError)
-    ? e.message : "Konnte nicht gesendet werden.";
+    ? e.message : t("push.actionFailedGeneric");
   try {
     await Notifications.scheduleNotificationAsync({
-      content: { title: "HelmDeck – nicht ausgeführt", body: msg, data: {} },
+      content: { title: t("push.actionFailedTitle"), body: msg, data: {} },
       trigger: null,
     });
   } catch { /* nothing left to try */ }

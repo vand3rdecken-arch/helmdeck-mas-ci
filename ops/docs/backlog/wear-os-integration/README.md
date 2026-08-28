@@ -990,9 +990,9 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
     verwendbar. Dieser leichte Daemon hat repoweit KEIN Rate-Limiting — sollte
     das je gebraucht werden, ist es kein Sonderfall dieser Route, sondern eine
     Infrastrukturfrage.
-23. **`/relay/pair/code` hat keinen UI-Aufruf.** Ein Endpunkt ohne Bildschirm,
-    der ihn zeigt — die Telefon/Desktop-Seite, die den Code für den Owner
-    anzeigt (Pendant zu `scan.tsx`/`qrgen.web.ts`), ist noch nicht gebaut.
+23. ~~**`/relay/pair/code` hat keinen UI-Aufruf.**~~ **CODE GESCHRIEBEN
+    2026-08-29** (§4.10) — Settings → Team → „Wearable – Uhr koppeln"
+    ruft jetzt `POST /relay/pair/code` auf und zeigt den Code.
 24. **`lazysodium-android`s exakte Methodensignatur ist unverifiziert.** Nur
     die Gradle-Koordinate (`5.2.0`) und das allgemeine Box-API-Schema sind
     belegt — die Wiki-Codebeispiele lieferten diese Session keinen
@@ -1133,6 +1133,52 @@ ungefragt das Mikrofon-UI öffnen, sobald Henry fertig gesprochen hat — ohne
 Gerätetest zu riskant einzuschätzen, ob das als hilfreich oder als
 Überraschung ankommt. Der Owner tippt „Diktieren" für jede neue Frage; das
 Hören der Antwort ist jetzt trotzdem echt, nicht nur Text.
+
+### 4.10 Die fehlende UI für den Kopplungs-Code — Owner-Entscheidung „Build it now" (2026-08-29)
+
+Auf die Frage „Baue ich den fehlenden Bildschirm für `/relay/pair/code`, bevor
+du den Bau-und-Kopplungs-Weg selbst ausprobierst?" antwortete der Owner
+direkt: **„Build it now."**
+
+`surfaces/app/src/app/(tabs)/settings.tsx`, Door „team": ein neues `<Panel>`
+direkt unter dem bestehenden Telefon-Pairing, exakt demselben Muster
+folgend (`pairPhone()`/State/Fehlerbehandlung studiert, nicht neu erfunden):
+Label-Eingabe (z. B. „Xiaomi Watch 5"), Button „Uhr koppeln" →
+`POST /relay/pair/code`, zeigt den 6-Zeichen-Code groß + monospace + TTL-Hinweis.
+
+**Ein echter Fehler beim Kopieren des Musters gefunden und korrigiert, bevor
+er auslieferungsreif wurde:** `pairPhone()`s eigener Client-Guard
+(`if (!relayUrl.trim())`) existiert, WEIL `relay_client.py`s
+`insecure_url()` nur **explizites** `http://` ablehnt — eine LEERE
+Relay-URL parst zu Schema `""` (nicht `"http"`) und würde
+`pairing_payload()` unbehelligt durchlaufen lassen. Das stand nicht im
+Kommentar, den ich zuerst schrieb („der Daemon lehnt das schon ab") — beim
+Nachlesen von `insecure_url()` selbst als falsch erkannt und korrigiert,
+bevor es committet wurde. `pairWatch()` bekam denselben Guard wie
+`pairPhone()`, nicht die (falsche) Annahme, ihn nicht zu brauchen.
+
+**Nebenfund beim Verifizieren, nicht Teil des Auftrags, aber meine eigene
+Session-Regression:** `ops/tools/i18n_lint.py` (existiert, vorher diese
+Session nie gegen die eigenen Änderungen laufen gelassen) fand 9 unübersetzte
+deutsche Literale — **2 davon aus `reportActionFailure` in W1c** (Commit
+`677dc5a`, dieselbe Karte). Behoben (`push.actionFailedGeneric`/
+`push.actionFailedTitle` in `net.ts`, `push.ts` nutzt jetzt `t()`), weil es
+eine eigene, unbemerkte Regression war, nicht fremde Altlast. Die
+verbleibenden 7 Treffer liegen in Dateien, die diese Session nie berührt hat
+(`_layout.tsx`, `stt_local.ts`, `voice_mode.tsx`) — bewusst nicht angefasst,
+außerhalb des Auftrags.
+
+**Verifiziert, ohne echten Metro/tsc-Lauf möglich:** `node
+--experimental-strip-types --check` funktioniert NUR für reines `.ts`
+(bestätigt an `push.ts`) — eine `.tsx`-Datei mit echtem JSX braucht eine
+JSX-Transformation, die reines Type-Stripping nicht liefert; das ist eine
+schwächere Prüfung als bei den anderen TS-Dateien dieser Session, nicht
+verschwiegen. Für `settings.tsx` blieb nur das schwächste Netz
+(balancierte Klammern/Parens/Brackets — bestanden) plus sorgfältiges
+manuelles Nachlesen des Diffs gegen das kopierte Muster. `ops/tools/
+i18n_lint.py` lief ECHT und bestätigte: keine neuen unübersetzten Literale
+aus dieser Änderung, 1158 Keys total (+2). `run_gate.py`: PASS (3 Checks).
+Kein Gerätetest — dieselbe Grenze wie überall in diesem Modul.
 
 ---
 
