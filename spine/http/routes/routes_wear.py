@@ -81,16 +81,35 @@ def wear_talk_post(self, user, body):
     from spine.ops import ask
     from spine.ops.glances import _glance_question
     q, prose = ask.parse(reply)
-    return self._send(200, json.dumps({
+    spoken = (prose or reply)[:600]
+    resp = {
         # the prose WITHOUT the block - ask.parse already strips it, so the
         # watch renders `reply` as plain text and never sees raw JSON
-        "reply": (prose or reply)[:600],
+        "reply": spoken,
         # the tappable half; None when the agent ignored the brief, which the
         # watch must show as a dead end rather than hide (same rule
         # glance_talk already applies for the glasses)
         "question": _glance_question({"question": q}) if q else None,
         "refused": out.get("refused") or [],
-    }))
+    }
+    # ALWAYS render voice, no opt-in flag - unlike /chat (which has a screen
+    # worth reading), the watch is a small round display with no keyboard;
+    # there is no case where making the owner read Henry's reply there beats
+    # hearing it. Same unconditional choice glance_talk already makes for
+    # the glasses, for the identical reason.
+    #
+    # render_b64, NOT render()+a URL: the watch talks through the SEALED
+    # RELAY (RelayClient.kt's authedCall), exactly like the phone's own
+    # /chat - one JSON request/response, no second channel for a client to
+    # fetch a binary from, and a URL pointing at localhost means nothing
+    # across the internet anyway. voice.py's own docstring says this
+    # explicitly for the phone; it applies to the watch for the identical
+    # reason, not a new one.
+    from spine.media import voice as _voice
+    clip = _voice.render_b64(spoken)
+    if clip:
+        resp["voice"] = clip
+    return self._send(200, json.dumps(resp))
 
 
 GET_ROUTES = {"/wear/board": wear_board_get}

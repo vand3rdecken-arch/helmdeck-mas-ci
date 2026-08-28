@@ -1082,6 +1082,58 @@ String-Übereinstimmung — kein Kotlin-Compiler, aber mehr als „importiert
 sauber". `run_gate.py`: PASS (3 Checks). Kein echter Rundlauf über den
 Relay-Kanal — das bleibt die reale Grenze (§9.1 Punkt 31).
 
+### 4.9 Henry SPRICHT auf der Uhr — Owner-Korrektur 2026-08-29: „the Henry chat already has a voice option"
+
+§4.8 baute `wear_talk_post` bewusst OHNE Sprachausgabe — als Verzicht auf
+etwas, das laut Studie sowieso ein eigener Schritt (W2c) ist. Der Owner wies
+das zurück: die Telefon-Chat hat SCHON eine Sprachausgabe, die Uhr sollte sie
+sofort mitbekommen, nicht auf W2c warten. Nachgeprüft statt angenommen:
+
+- `cells/copilot/routes_copilot.py`s `chat_post` (die Telefon-Chat-Route)
+  rendert bei `voice: true` bereits `voice.render_b64()` und hängt den Clip
+  **inline als Base64** an die Antwort — nicht `render()` + eine URL wie bei
+  der Linse. `voice.py`s eigenes Docstring sagt wörtlich, warum: das Telefon
+  geht durch den versiegelten Relay (EIN JSON-Request/-Response, kein
+  zweiter Kanal für einen Binary-Fetch, und eine `localhost`-URL bedeutet auf
+  einem Telefon übers Internet gar nichts). **Exakt dieselbe Begründung gilt
+  für die Uhr** — `RelayClient.authedCall` ist strukturell derselbe
+  versiegelte Ein-Request-Kanal.
+- `glance_talk` (die Linse) rendert Sprache **unbedingt**, ohne Opt-in-Flag —
+  dieselbe Logik übernommen für `wear_talk_post`: eine kleine runde Uhr ohne
+  Tastatur hat keinen Fall, in dem Lesen besser ist als Hören.
+
+**Gebaut:** `routes_wear.py`s `wear_talk_post` hängt jetzt `voice.render_b64(spoken)`
+an die Antwort (`resp["voice"] = clip`, nur wenn TTS verfügbar ist —
+degradiert sonst geräuschlos zu reinem Text, nie ein Fehler). Neu:
+`VoicePlayer.kt` — `MediaPlayer`-Wiedergabe der Base64-Bytes. Bewusst NICHT
+über eine `data:`-URI in `MediaPlayer.setDataSource(Uri)` (das Telefon nutzt
+das, `voice.ts`s `speak()` bestätigt es diese Session — aber `MediaPlayer`s
+`data:`-URI-Unterstützung ist über Android-Versionen hinweg uneinheitlich und
+wurde diese Session nicht geprüft): die Bytes werden erst in eine
+Cache-Datei geschrieben, dann `setDataSource(String)` — der einzige
+eindeutig dokumentierte Weg. `CardScreen.kt`s `askHenry` spielt den Clip ab,
+sobald die Antwort da ist; „Zurück" stoppt die Wiedergabe.
+
+**Verifiziert, ohne jedes Kotlin-Werkzeug:** `wear_talk_post` lief gegen
+echten Python-Code mit gefälschtem `copilot.chat` UND gefälschtem
+`voice.render_b64` — geprüft, dass der Text VOR dem `<helmdeck-ask>`-Block
+an `render_b64` geht (nicht die rohe JSON), dass der Clip unverändert
+durchgereicht wird (kein manuelles Feld-Renaming), dass Frage UND Stimme
+GLEICHZEITIG da sind (kein Entweder-Oder), und dass ein `None`-Ergebnis
+(TTS nicht verfügbar) zu 200 OHNE `voice`-Schlüssel führt statt zu einem
+Fehler oder einem `null`-Wert. Cross-File: `CardScreen.kt` liest exakt die
+Feldnamen (`mime`, `b64`), die `voice.py`s `render_b64()` tatsächlich
+erzeugt, als reine String-Prüfung bestätigt. `run_gate.py`: PASS (3 Checks).
+Was bleibt: kein echtes Gerät, das den Clip tatsächlich hörbar abspielt —
+dieselbe Grenze wie überall sonst in diesem Modul.
+
+**Bewusst NICHT gebaut:** ein automatischer Diktier-Neustart nach der
+Wiedergabe (durchgehendes Hin-und-Her ohne erneutes Antippen). Das würde
+ungefragt das Mikrofon-UI öffnen, sobald Henry fertig gesprochen hat — ohne
+Gerätetest zu riskant einzuschätzen, ob das als hilfreich oder als
+Überraschung ankommt. Der Owner tippt „Diktieren" für jede neue Frage; das
+Hören der Antwort ist jetzt trotzdem echt, nicht nur Text.
+
 ---
 
 ## 10. Quellen (Plattform, abgerufen 2026-08-27)

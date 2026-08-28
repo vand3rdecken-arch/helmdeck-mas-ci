@@ -101,6 +101,10 @@ function installWearModule(androidDir) {
     ["HelmDeckBox.kt", [...JAVA, "crypto", "HelmDeckBox.kt"]],
     ["DeviceStore.kt", [...JAVA, "data", "DeviceStore.kt"]],
     ["RelayClient.kt", [...JAVA, "data", "RelayClient.kt"]],
+    // 2026-08-29: Henry's spoken reply (/wear/talk's voice.render_b64 clip,
+    // README.md §4.9) - MediaPlayer playback, own file since neither
+    // CardScreen nor RelayClient owns audio concerns.
+    ["VoicePlayer.kt", [...JAVA, "data", "VoicePlayer.kt"]],
   ];
   let wrote = 0;
   for (const [rel, dstParts] of files) {
