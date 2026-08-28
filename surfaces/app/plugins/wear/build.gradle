@@ -17,12 +17,23 @@ apply plugin: "org.jetbrains.kotlin.plugin.compose"
 
 android {
     namespace "app.helmdeck.wear"
-    // 34 is the one number with a citation (developer.android.com/training/
-    // wearables/apps/standalone-apps, checked 2026-08-28: "For new apps, the
-    // target API level must be 34 or higher"). compileSdk matches it rather
-    // than guessing higher - raise both together if a real build demands a
-    // newer Wear Compose API.
-    compileSdkVersion 34
+    // targetSdk 34 is the number with a citation (developer.android.com/
+    // training/wearables/apps/standalone-apps, checked 2026-08-28: "For new
+    // apps, the target API level must be 34 or higher") and stays at 34.
+    // compileSdk USED to match it; the first real Gradle run of this module
+    // (2026-08-28) demanded higher, exactly as the old comment anticipated:
+    // `:wear:checkDebugAarMetadata` failed with 19 issues, all of the form
+    // "requires ... compile against version 35 or later" - from
+    // androidx.wear.compose:compose-material3/compose-material-core 1.6.2,
+    // androidx.core:core(-ktx) 1.15.0 and lifecycle-runtime-compose 2.9.0.
+    // Raised to 36 to match the phone module rather than to the bare minimum
+    // 35, so both surfaces compile against one platform.
+    // Deliberately NOT raising targetSdk with it: compileSdk only widens the
+    // APIs available at compile time, while targetSdk opts into new RUNTIME
+    // behaviour that nothing has ever exercised on a real watch. Gradle's own
+    // message says the two can move separately, and 34 still satisfies the
+    // cited Wear requirement.
+    compileSdkVersion 36
 
     defaultConfig {
         applicationId "app.helmdeck.wear"
