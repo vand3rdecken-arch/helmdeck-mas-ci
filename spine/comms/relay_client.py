@@ -276,6 +276,73 @@ def pairing_payload():
             "expires_in": PAIR_TTL}
 
 
+
+# -- Claim codes: pairing for a device with no camera and no keyboard -------
+#
+# The existing pairing_payload() -> QR flow assumes the new device can SCAN
+# (a camera) and, per applyPairing() in config.ts, decode a base64 JSON blob
+# from a link. A Wear OS watch commonly has NEITHER: most models ship no
+# camera at all, and WO-P6 (Play's own quality bar) forbids a password/text
+# prompt on the wrist anyway. What it DOES have, established and cited
+# elsewhere in this card (ops/docs/backlog/wear-os-integration/README.md
+# §5): a microphone, via ACTION_RECOGNIZE_SPEECH.
+#
+# So this is glasses-reference.md §2.1/§2.2's device-code pattern, imported
+# for real this time (the doc's own words: "the confusable-free alphabet and
+# the single-use hand-over are the details worth importing" - never actually
+# built until now). The owner reads a short SPOKEN code off the phone/desktop
+# and dictates it to the watch; GET /relay/pair/claim (routes_relay.py,
+# deliberately UNAUTHENTICATED - the claiming device has no session yet,
+# same as pair_pending already accepts for the QR path) trades it in exactly
+# once for the SAME payload shape /relay/pair already returns.
+#
+# In-memory only, never settings.json: the stashed payload carries a LIVE
+# bearer token (auth.issue_token's plaintext, same one the QR embeds), and
+# unlike rel.sk this has no reason to survive a daemon restart - an
+# unclaimed code just expires, the same degradation PAIR_TTL already accepts
+# for the QR flow.
+CLAIM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no I/O/0/1/L - a spoken
+# or misheard code must never resolve to a DIFFERENT valid one, only to no
+# code at all (glasses-reference.md §2.2, quoted verbatim in this repo).
+CLAIM_CODE_LEN = 6
+CLAIM_TTL = PAIR_TTL  # same 15-minute window as the QR path - one policy
+
+_claim_lock = threading.Lock()
+_claims = {}  # code -> {"payload": {...}, "expires": ts}
+
+
+def mint_claim_code(payload):
+    """Stash a full pairing payload behind a short, speakable code. Returns
+    (code, ttl_seconds). The caller (routes_relay.py) builds `payload` -
+    this function does not know or care that it contains a device token,
+    exactly like relay_client otherwise knows nothing about auth.py."""
+    import random
+    with _claim_lock:
+        now = time.time()
+        for c in [c for c, v in _claims.items() if v["expires"] < now]:
+            del _claims[c]  # opportunistic sweep; this map is never large
+        code = "".join(random.SystemRandom().choice(CLAIM_ALPHABET)
+                       for _ in range(CLAIM_CODE_LEN))
+        _claims[code] = {"payload": payload, "expires": now + CLAIM_TTL}
+        return code, CLAIM_TTL
+
+
+def claim_code(code):
+    """Single-use: the payload comes back exactly once, then the code is
+    gone - same hand-over discipline _admit() already applies to
+    pair_pending. Unknown, expired, and already-claimed all return None
+    INDISTINGUISHABLY on purpose: unlike the QR path (where a device has
+    already proven it holds a pinned key before it sees a detailed reason),
+    this route is reachable by anyone who can guess a 6-character code, so it
+    must not become an oracle that confirms which codes ever existed."""
+    code = (code or "").strip().upper()
+    with _claim_lock:
+        rec = _claims.pop(code, None)
+    if not rec or rec["expires"] < time.time():
+        return None
+    return rec["payload"]
+
+
 def unpair():
     """Revoke mobile access outright: forget every pinned device AND rotate
     room + keypair, so every pairing code/QR/link ever issued is dead - a

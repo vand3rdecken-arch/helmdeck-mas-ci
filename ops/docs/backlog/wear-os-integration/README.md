@@ -29,9 +29,24 @@ AUFGEHOBEN (§6.3) und W2 direkt beauftragt. **W2a ist jetzt CODE** —
 `withWearApp.js` + das `:wear`-Gradle-Modul + eine leere Compose-Seite, die
 laut Plan startet und nichts sonst tut (§4.5). **Ungetestet, anders als bei
 W1**: kein Android-SDK/Gradle in diesem Worktree erreichbar, also KEIN
-Gradle-Lauf, nicht einmal ein Syntax-Check des Kotlin. **W2b blockiert jetzt
-auf einer echten Owner-Entscheidung** (§9 Punkt 2, Token-Modell), nicht mehr
-nur hypothetisch — siehe §9.1 Punkte 15–19 für die vollständige offene Liste.
+Gradle-Lauf, nicht einmal ein Syntax-Check des Kotlin. Siehe §9.1 Punkte 15–19
+für die vollständige offene Liste.
+
+**Status (2026-08-28, dritter Schritt derselben Karte):** Die vermeintlich
+blockierende Token-Entscheidung (§9 Punkt 2) war eine FALSCH GESTELLTE FRAGE
+— der Owner wies richtig darauf hin, dass HelmDeck schon ein Pro-Gerät-Modell
+hat. Am Code verifiziert (§4.6): `relay.phone_pubs[]` + `auth.issue_token`/
+`revoke_token` sind bereits das, was die Uhr braucht — kein neues
+Auth-Konzept nötig. Die Prüfung deckte die WIRKLICH offene Lücke auf: der
+einzige Kopplungsweg heute ist QR-Scan, und die meisten Wear-OS-Uhren haben
+keine Kamera. **Neu, verifiziert, in derselben Karte:** ein
+Diktier-Code-Kopplungspfad (`spine/comms/relay_client.py`s
+`mint_claim_code`/`claim_code`, `POST /relay/pair/code`,
+`GET /relay/pair/claim` — Details + Testabdeckung in §4.6). Reiner
+Daemon-Code, vollständig aus diesem Worktree heraus prüfbar und geprüft
+(`run_gate.py`: PASS). **Noch offen:** der Kotlin-Pairing-Client selbst
+(NaCl-Krypto + Diktier-UI) — bewusst NICHT blind geschrieben, siehe §9.1
+Punkte 20–23 für die Begründung und die Empfehlung (`lazysodium-android`).
 
 **Status (2026-08-27, Vorgängerkarte):** Phase **W1a+W1b sind jetzt
 CODE** — `spine/comms/notify.py` (data-only FCM statt der generischen Hülle),
@@ -436,6 +451,79 @@ Kotlin-/Gradle-Werkzeug — nicht einmal einen Syntax-Check wie
 einzige Netz, der lief (balancierte Klammern), ist bewusst NICHT als
 Verifikation gezählt. Alles Weitere in §9.1, Punkte 15–19.
 
+### 4.6 Die Token-Frage war falsch gestellt — der Owner hatte recht (2026-08-28)
+
+Auf die Rückfrage „Uhr: geteilter `glance_token` oder Valet-Tickets?" kam vom
+Owner zurück: *„Isn't each device desktop, android etc. each gets a
+token?"* — eine Prämisse, die zuerst am Code geprüft wurde, nicht einfach
+übernommen. Sie stimmt, und sie ist der bessere Entwurf:
+
+- `spine/comms/relay_client.py`: `settings.relay.phone_pubs[]` ist bereits
+  eine LISTE gepinnter Geräte-Schlüssel, kein einzelnes Feld — *„No cap on
+  TOTAL paired devices"* (Kommentar im Code, `:24-29`). Jedes Gerät bringt
+  sein eigenes NaCl-Schlüsselpaar mit; ein einmaliger Pairing-Code (`POST
+  /relay/pair`, `PAIR_TTL` = 15 min) lässt genau ein neues Gerät zu.
+- `spine/auth/auth.py`: `issue_token`/`revoke_token` vergeben und widerrufen
+  **pro Gerät** einen eigenen, benannten Bearer-Token. Verlust eines Geräts
+  = ein `revoke_token`-Aufruf für GENAU dieses Gerät; alle anderen bleiben
+  unberührt — exakt die Eigenschaft, die die Valet-Ticket-Idee aus
+  `glasses-reference.md` §2.1 für `glance_token` einforderte, hier für das
+  Telefon **bereits existiert**.
+- `glance_token` ist folglich kein allgemeines HelmDeck-Geräte-Modell,
+  sondern ein Sonderfall NUR für die Linse — gebaut, weil die Ray-Ban-WebView
+  keine echte NaCl-Client-Krypto ausführen kann (`glasses-reference.md`,
+  wiederholt betont). Ein natives Kotlin-Programm wie `:wear` unterliegt
+  dieser Einschränkung nicht.
+
+**Entscheidung:** Die Uhr koppelt als **echtes, eigenständiges Gerät** über
+den bestehenden `/relay/pair`-Mechanismus — eigener NaCl-Schlüssel in
+`phone_pubs[]`, eigener benannter Token. Kein neues Backend-Auth-Konzept,
+kein geteiltes Geheimnis, keine Valet-Tickets als Neubau.
+
+**Die eine echte Lücke, die diese Prüfung aufdeckte** (nicht die, die zuerst
+vermutet wurde): der einzige heute existierende Kopplungsweg ist ein
+QR-Scan (`surfaces/app/src/app/scan.tsx`, `config.ts`s `applyPairing()`
+decodiert `base64({u,r,k,t})` — ein Live-Bearer-Token sitzt direkt im Code).
+Das setzt eine Kamera voraus. **Die meisten Wear-OS-Uhren haben keine**, und
+eine Tastatur zum Abtippen des Links hat keine. Import daher (statt des
+Token-Themas) das, was `glasses-reference.md` §2.2 schon empfahl, aber nie
+gebaut wurde — wörtlich zitiert dort: *„the confusable-free alphabet and the
+single-use hand-over are the details worth importing"*:
+
+- `spine/comms/relay_client.py`: `mint_claim_code(payload)` /
+  `claim_code(code)` — ein sechsstelliges, aussprechbares Code (Alphabet
+  ohne I/O/0/1/L, damit ein verhörter/verschriebener Code nie in einen ANDEREN
+  gültigen kippt, sondern höchstens ins Leere läuft), 15 Minuten TTL, einmal
+  verwendbar, **rein im Speicher** (nie `settings.json` — die Nutzlast trägt
+  einen Live-Token, der keinen Neustart überleben muss).
+- `POST /relay/pair/code` (owner-only, wie `/relay/pair`) — mintet dieselbe
+  Nutzlast, gibt aber den Code zurück statt des rohen Krypto-Blobs. Der
+  Owner liest den Code vom Telefon/Desktop ab.
+- `GET /relay/pair/claim?code=` — **bewusst unauthentifiziert**
+  (`server.py`s `OPEN`-Tupel, dieselbe Klasse wie `/glance`), weil das
+  koppelnde Gerät per Definition noch keine Session hat. Tauscht den Code
+  GENAU EINMAL gegen dieselbe Nutzlast, die `/relay/pair` sonst direkt
+  zurückgäbe.
+- Unbekannt/abgelaufen/schon eingelöst antworten **ununterscheidbar** mit
+  404 — anders als der QR-Pfad (wo das Gerät bereits einen gepinnten
+  Schlüssel bewiesen hat), ist dieser Pfad für jeden erreichbar, der einen
+  6-Zeichen-Code errät; ein Fehlertext, der „falsch" von „abgelaufen"
+  unterscheidet, wäre ein Orakel.
+
+Die Uhr würde den Code über ihr eigenes Mikrofon diktieren
+(`ACTION_RECOGNIZE_SPEECH`, bereits in §5 belegt) — noch nicht gebaut, siehe
+§9.1 Punkt 20.
+
+**Verifiziert, nicht nur geschrieben:** `mint_claim_code`/`claim_code` liefen
+gegen echten Python-Code — Rundlauf, Einmaligkeit (zweiter Claim liefert
+`None`), Ablauf, Groß-/Kleinschreibung (ein diktierter Code muss nicht
+exakt treffen), Alphabet-Grenzen, UND die tatsächliche `server.py`-Verdrahtung
+(`routes_relay.GET_ROUTES`/`POST_ROUTES` exportieren die neuen Pfade,
+`server.H.OPEN` enthält `/relay/pair/claim`, `do_GET` ruft
+`routes_relay.GET_ROUTES` wirklich auf — nicht nur „die Datei importiert
+sauber"). `run_gate.py`: PASS (3 Checks). Wegwerf-Testdatei, nicht
+eingecheckt (Gate ist LEICHT).
+
 ---
 
 ## 5. Sprachsteuerung auf der Uhr
@@ -642,15 +730,26 @@ wo `ACTION_RECOGNIZE_SPEECH` reicht (§5.1); ein Wake-Word (existiert nicht).
 1. ~~**Zweite Fläche überhaupt?**~~ **Entschieden: JA, am 2026-08-28** („ich
    will W2"). Der Beschluss vom 2026-08-16 („no second surface") ist damit für
    die Uhr ausdrücklich aufgehoben, nicht stillschweigend umgangen — siehe §6.3.
-2. **Token-Modell — BLOCKIERT W2b jetzt wirklich, nicht mehr hypothetisch**:
-   Uhr und Linse auf **einem** `glance_token` (einfach, aber Verlust der Uhr
-   rotiert die Linse mit) — oder die Valet-Tickets aus `glasses-reference.md`
-   §2.1 wiederbeleben, deren Vorbedingung mit einem zweiten Gerät jetzt
-   tatsächlich erfüllt ist (§6.3). W2a (§4.5) brauchte diese Antwort nicht — die
-   leere Compose-Seite stellt keinen Netzwerk-Call. **W2b (Blocker-Liste,
-   Frage, Optionen antippen — der nächste sinnvolle Schritt) kann ohne diese
-   Antwort nicht beginnen**, weil sie entscheidet, WAS die Uhr überhaupt als
-   Credential mitträgt.
+2. ~~**Token-Modell**: `glance_token` teilen oder Valet-Tickets?~~ **Falsch
+   gestellte Frage — vom Owner selbst korrigiert** (*„Isn't each device
+   desktop, android etc. each gets a token?"*), am Code verifiziert, am
+   2026-08-28 gebaut. **Keins von beiden.** `glance_token` ist ein
+   Spezialfall, gebaut NUR weil die Ray-Ban-Linse eine WebView ohne echte
+   NaCl-Client-Krypto ist (`routes_glance.py`: ein einzelnes geteiltes Secret
+   im Query-String). Das ist NICHT HelmDecks allgemeines Geräte-Modell.
+   Tatsächlich existiert das schon — geprüft an `spine/comms/relay_client.py`
+   und `spine/auth/auth.py`, nicht aus dem Gedächtnis behauptet:
+   `settings.relay.phone_pubs[]` pinnt beliebig viele eigene Geräte-Schlüssel
+   (kein Cap, jedes Gerät sein eigenes NaCl-Schlüsselpaar), und
+   `auth.issue_token`/`revoke_token` vergibt/widerruft **pro Gerät** einen
+   eigenen, benannten Bearer-Token — Verlust eines Geräts widerruft NUR
+   dessen Token, Telefon/Desktop bleiben unberührt. Die Uhr ist ein natives
+   Kotlin-Programm, keine WebView — sie unterliegt der Linsen-Einschränkung
+   gar nicht und kann als **echtes drittes Gerät** über den bestehenden
+   `/relay/pair`-Mechanismus koppeln. Kein neues Backend-Konzept nötig.
+   Details, inkl. der EINEN echten Lücke, die das aufdeckte (Kopplung
+   braucht heute eine Kamera, die die meisten Wear-OS-Uhren nicht haben), in
+   §4.6.
 3. ~~**W1c**: Optionen in die Push-Nutzlast?~~ **Gebaut am 2026-08-28** (§4.4) —
    die Folgekarte war ausdrücklich beauftragt, „Notification-Actions zu
    verfeinern", und W1c war der einzige Schritt des Plans, der ohne Hardware,
@@ -796,6 +895,36 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
     geprüft, nur an der Gradle-Task-Semantik (ein qualifizierter Task-Name
     baut exakt ein Modul) — aber das ist dieselbe Art Beleg, auf der auch
     die anderen sechs Plugins in dieser Datei beruhen.
+
+### Offen, seit die Claim-Code-Kopplung (§4.6) als Code existiert (2026-08-28)
+
+20. **Der Kotlin-Client für die Kopplung fehlt noch vollständig** — bewusst
+    NICHT diese Karte, mit voller Absicht: NaCl-Crypto in Kotlin
+    (`crypto_box`/curve25519-xsalsa20-poly1305, kompatibel zu `e2ee.py`/
+    `e2ee.ts`) ist genau die Klasse Code, bei der „sieht plausibel aus" und
+    „ist richtig" auseinanderfallen können, ohne dass es beim Bauen auffällt
+    — ein Nonce-Wiederverwendungs-Fehler oder eine falsche Byte-Reihenfolge
+    kompiliert genauso sauber wie korrekter Code. Ihn ungeprüft zu schreiben,
+    ohne jedes Kotlin-Werkzeug in diesem Worktree (§9.1 Punkt 15), wäre
+    fahrlässig auf eine andere Art als eine ungetestete UI-Seite. Empfehlung
+    für den nächsten Schritt: `lazysodium-android` (etablierte, auditierte
+    libsodium-JNI-Bindung) statt eigener Primitive — dieselbe Regel, die
+    dieses Repo schon auf der Telefonseite befolgt (tweetnacl-artige
+    Bibliothek statt Marke-Eigenbau).
+21. **Die diktierte Code-Eingabe auf der Uhr ist nicht gebaut.** §4.6 nennt
+    `ACTION_RECOGNIZE_SPEECH` als Weg (in §5 bereits plattformseitig belegt),
+    aber die MainActivity aus §4.5 hat noch keinen Pairing-Screen — sie zeigt
+    zwei statische Textzeilen.
+22. **Kein Rate-Limit auf `/relay/pair/claim`.** Der Sicherheitsanker ist
+    bewusst derselbe wie beim Vorbild (glass-crud-harness' Device-Code-Pattern,
+    §2.2 der Referenz, dort zitiert und hier übernommen): 6 Zeichen aus einem
+    32-Symbol-Alphabet (≈10^9 Kombinationen), 15 Minuten TTL, einmal
+    verwendbar. Dieser leichte Daemon hat repoweit KEIN Rate-Limiting — sollte
+    das je gebraucht werden, ist es kein Sonderfall dieser Route, sondern eine
+    Infrastrukturfrage.
+23. **`/relay/pair/code` hat keinen UI-Aufruf.** Ein Endpunkt ohne Bildschirm,
+    der ihn zeigt — die Telefon/Desktop-Seite, die den Code für den Owner
+    anzeigt (Pendant zu `scan.tsx`/`qrgen.web.ts`), ist noch nicht gebaut.
 
 ---
 
