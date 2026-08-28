@@ -25,6 +25,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import app.helmdeck.wear.data.DeviceStore
 import app.helmdeck.wear.data.RelayClient
+import app.helmdeck.wear.data.VoicePlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,7 +104,12 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
         Box(modifier = Modifier.fillMaxSize()) {
             TransformingLazyColumn(state = columnState) {
                 item { Text(text = card.task.ifBlank { card.id }, modifier = Modifier.padding(8.dp)) }
-                item { Button(onClick = onBack, modifier = Modifier.padding(4.dp)) { Text("Zurück") } }
+                item {
+                    Button(
+                        onClick = { VoicePlayer.stop(); onBack() },
+                        modifier = Modifier.padding(4.dp),
+                    ) { Text("Zurück") }
+                }
 
                 val q = card.question
                 if (q != null) {
@@ -207,5 +213,17 @@ private fun askHenry(
         val reply = o?.optString("reply") ?: ""
         val q = parseQuestionBlock(o?.optJSONObject("question"))
         onReply(reply.ifBlank { "(keine Antwort)" }, q)
+        // /wear/talk ALWAYS renders voice when TTS is available
+        // (routes_wear.py) - the whole point of bringing the owner into
+        // chat on a keyboard-less watch is to LISTEN to Henry, not read
+        // tiny text on a round screen. `voice` is simply absent (not null)
+        // when rendering failed - text is already shown either way, so
+        // there is nothing to degrade here beyond "no sound this time".
+        val voice = o?.optJSONObject("voice")
+        if (voice != null) {
+            val mime = voice.optString("mime", "audio/mpeg")
+            val b64 = voice.optString("b64")
+            if (b64.isNotEmpty()) VoicePlayer.play(context, mime, b64)
+        }
     }
 }
