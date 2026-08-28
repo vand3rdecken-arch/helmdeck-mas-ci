@@ -357,6 +357,15 @@ def check_landed_not_closed():
         tid = t["id"]
         if t.get("question") or drivers.turn_active(tid) or lanemachine.lane_active(tid):
             continue                    # not settled yet - not this check's business
+        if not t.get("turns") and not t.get("session_id"):
+            # Never dispatched: ahead==0 here means "no work was ever done",
+            # not "the work already landed" - closing it would archive a
+            # backlog-shaped card, and even attempting the move produced a
+            # confusing "Gate ist rot - never dispatched" chat line (measured
+            # 2026-08-28 12:44, card req-worktree-base-sync). Same evidence
+            # rule as everywhere: turns/session are the runtime's own record
+            # that an agent actually worked this card.
+            continue
         repo, branch = t.get("repo"), t.get("branch")
         if not repo or not branch or not os.path.isdir(repo):
             continue

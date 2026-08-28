@@ -543,6 +543,18 @@ def _notify_owner(text, t):
         notify.push_fcm(_i18n.t("push.henry"), text[:230])
     except Exception:
         pass
+    # ALSO into the board chat (owner observation 2026-08-28, "warum nichts im
+    # Chat"): the push is suppressed exactly when the owner is LOOKING at the
+    # app (notify's owner-presence dedup) and held in quiet hours, and the
+    # audit note lives on the card - so the one surface the owner actually
+    # reads while watching Henry work, the Henry chat, showed none of the
+    # broker's decisions. copilot.say is the same line the lane pipeline's
+    # _say_card uses; best-effort like the push.
+    try:
+        from cells.copilot import copilot
+        copilot.say(text, cls="pm", card=(t or {}).get("id") or None)
+    except Exception:
+        pass
     if t:
         _audit(t["id"], text)
 
