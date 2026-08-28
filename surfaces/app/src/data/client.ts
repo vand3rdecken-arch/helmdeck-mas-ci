@@ -24,6 +24,14 @@ export class ApiError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
 
+/** True when the daemon never PROCESSED the request: the transport never got
+ *  there, or the session was refused before any work happened. Only these two
+ *  classes mean an owner message is still undelivered and belongs in the outbox
+ *  (data/outbox.ts) - an ApiError means the daemon did receive it and answered,
+ *  and a turn the owner cancelled with Stop must not come back as "not sent". */
+export const neverDelivered = (e: unknown) =>
+  e instanceof TransportError || e instanceof AuthRequired;
+
 function authHeaders(): Record<string, string> {
   const { token } = useConfig.getState();
   const h: Record<string, string> = { "Content-Type": "application/json" };
