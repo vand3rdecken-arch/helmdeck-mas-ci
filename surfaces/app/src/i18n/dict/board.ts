@@ -83,6 +83,10 @@ export const board: Dict = {
   "board.markDone": { de: "erledigt", en: "done" },
   "board.more": { de: "+{n} weitere", en: "+{n} more" },
 
+  // ---- scope bar (board.tsx ScopeBar) --------------------------------------
+  "board.scope.all": { de: "Alle", en: "All" },
+  "board.scope.archived": { de: "Archiv", en: "Archive" },
+
   // ---- layout toggle --------------------------------------------------------
   "board.layout.board": { de: "Board", en: "Board" },
   "board.layout.timeline": { de: "Timeline", en: "Timeline" },
