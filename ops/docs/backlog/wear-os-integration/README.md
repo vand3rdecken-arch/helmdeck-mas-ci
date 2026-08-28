@@ -524,9 +524,43 @@ exakt treffen), Alphabet-Grenzen, UND die tatsächliche `server.py`-Verdrahtung
 sauber"). `run_gate.py`: PASS (3 Checks). Wegwerf-Testdatei, nicht
 eingecheckt (Gate ist LEICHT).
 
----
+### 4.7 Wearables sprechen mit Henry, nie mit dem Worker — Owner-Entscheidung 2026-08-29, für die Uhr, die Linse erfüllt sie schon
 
-## 5. Sprachsteuerung auf der Uhr
+Owner-Vorgabe: auf Uhr UND Linse soll ein Tap direkt zu **Henry** führen,
+nicht zum Worker-Tab, den `card/[id].tsx` auf dem Telefon standardmäßig
+zeigt, wenn eine Karte gerade eine laufende Session hat.
+
+**Die Linse erfüllt das bereits, seit `glance_talk` existiert — keine
+Änderung nötig, nur geprüft:** `routes_glance.py:167-170` ruft
+`cells.copilot.copilot.chat(..., allow_actions=False, ...)` — denselben
+Agenten, den die Board-Chat-Ansicht auch nutzt (**Henry**), mit
+`allow_actions=False` fest verdrahtet. Es gibt auf der Linse gar keinen
+Umschalter „Worker oder Henry" — `/glance/talk` erreicht den Worker
+strukturell nie. `/glance/answer` ist etwas anderes und bleibt bewusst
+unverändert: es beantwortet eine PENDING QUESTION, die der Worker selbst
+gestellt hat (die einzige Aktion, die zwangsläufig zu SEINER Session
+zurückmuss, kein „Default-Tab", sondern eine eigene, engere Handlung).
+
+**Für die Uhr ist das eine Design-Entscheidung, kein Code-Fix** — es gibt
+noch keine Board-/Karten-Ansicht dort (§9.1 Punkt 26: „Gekoppelt. Board
+folgt." ist alles, was `MainActivity` zeigt). Festgehalten für den Bau von
+W2b: die Uhr bekommt **dasselbe Muster wie die Linse**, nicht das Tab-Paar
+des Telefons —
+- ein „mit Henry sprechen"-Pfad (Text/Diktat → Henry, beratend, keine
+  Board-Aktionen), analog zu `/glance/talk`;
+- Options-Buttons zum Beantworten einer offenen Frage (analog
+  `/glance/answer`), weil das strukturell zum Worker zurückmuss;
+- **kein** Worker-Live-Session-Tab. Das deckt sich mit der Hausregel aus
+  `glasses-reference.md` §1, die schon für die Linse galt und für ein
+  zweites Wearable genauso gilt: „Freitext-Autorenschaft, Code,
+  Gate-Reports" gehören nicht auf ein Wearable — nur das Worker-`answer`
+  selbst (eine strukturierte Auswahl, keine Autorenschaft) ist die
+  Ausnahme, die schon in W1c gebaut ist.
+
+Da die Uhr (anders als die Linse) über die volle, per-Gerät authentifizierte
+Relay-Verbindung geht (§4.6), KÖNNTE sie technisch auch `/tracks/<id>/steer`
+direkt gegen den Worker aufrufen — die Owner-Entscheidung hier ist, das
+bewusst NICHT zu tun, auch wenn es technisch ginge.
 
 Quelle: [Wear OS Voice input](https://developer.android.com/training/wearables/user-input/voice).
 
