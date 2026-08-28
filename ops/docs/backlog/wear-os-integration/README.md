@@ -13,6 +13,36 @@ Schwesterdokumente, bewusst im selben Format: `ops/docs/ios-watch-feasibility.md
 Pflichtlektüre vorab: `ops/docs/glasses-reference.md` — die Uhr ist die **zweite
 Wearable-Fläche**, und jede Regel, die dort für die Linse gilt, gilt hier erneut.
 
+**Status (2026-08-29, Abschluss dieser Karte — der Kopf war stale):** Die drei
+Blöcke unten enden bei W2a/Daemon-Pairing und behaupten teils, was inzwischen
+GEBAUT ist. Tatsächlicher Stand des Branches, am Baum verifiziert, nicht aus
+den Blöcken abgeschrieben:
+- **W2b ist CODE** — `BoardScreen.kt`/`CardScreen.kt`/`BoardModel.kt` gegen
+  neue, Bearer-authentifizierte `GET /wear/board` + `POST /wear/talk`
+  (`spine/http/routes/routes_wear.py`, reusest `glance_payload()`), §4.7/§4.8.
+- **W2c ist CODE** — und war damit billiger als die 1,5–2 T in §8: die
+  Diktier-Kette lag durch W2b schon, es fehlte nur die Wiedergabe.
+  `ACTION_RECOGNIZE_SPEECH` (`CardScreen.kt:158`) → `/wear/talk` → `VoicePlayer.kt`
+  spielt den inline `render_b64()`-Clip (`routes_wear.py:109`), §4.9. Abweichung
+  zum Plan: gegen `/wear/talk`, **nicht** `/glance/talk` (§4.6 verwarf den
+  `glance_token` für die Uhr).
+- **Der Kotlin-Pairing-Client ist CODE** — `PairingScreen.kt` + `HelmDeckBox.kt`
+  (NaCl) + `DeviceStore.kt`; der „Noch offen"-Satz im dritten Block unten ist
+  damit überholt.
+- **Der Pair-Worker ist CODE und live geprüft** — `surfaces/relay/pair_worker/`
+  lässt genau einen Pfad durch (§4.13), `ops/tests/test_pair_worker.py` PASS.
+
+**Einzige unGEBAUTE Phase ist damit W2d** (Complication + FCM-Weckruf) — im
+Baum ist dafür nichts (`grep -i complication|FirebaseMessaging` über
+`plugins/wear/` = 0 Treffer). Alles andere Offene ist **Verifikation**, nicht
+Code: der nullte Gradle-/APK-Lauf auf einem echten Wear-Gerät (§9.1 Punkte
+15–19, 24–25, 31) und der eine manuelle Cloudflare-DNS-Schritt (§4.13 Punkt 4).
+Aus diesem Worktree heraus geprüft, was prüfbar war: `run_gate.py` **PASS**
+(3 Checks) und `test_pair_worker` / `test_pairing_lifecycle` / `test_glance_worker`
+/ `test_glance_completeness` / `test_ota_relay` / `test_presence_notify`
+**alle PASS**. Kein Kotlin-Compiler und kein `node_modules` im Worktree, also
+weiterhin **keine Zeile Kotlin je durch Gradle**.
+
 **Status (aktualisiert 2026-08-28, Folgekarte „Phase 2"):** **W1c ist jetzt
 ebenfalls CODE** — die versiegelte Nutzlast trägt die Frage
 (`notify.ask_payload()`), und die Notification-Buttons SIND die Optionen, die
@@ -511,8 +541,9 @@ single-use hand-over are the details worth importing"*:
   unterscheidet, wäre ein Orakel.
 
 Die Uhr würde den Code über ihr eigenes Mikrofon diktieren
-(`ACTION_RECOGNIZE_SPEECH`, bereits in §5 belegt) — noch nicht gebaut, siehe
-§9.1 Punkt 20.
+(`ACTION_RECOGNIZE_SPEECH`, bereits in §5 belegt) — ~~noch nicht gebaut, siehe
+§9.1 Punkt 20~~ **gebaut am 2026-08-29**: `PairingScreen.kt` diktiert beide
+Felder (`speechIntent()`, Zeile 106).
 
 **Verifiziert, nicht nur geschrieben:** `mint_claim_code`/`claim_code` liefen
 gegen echten Python-Code — Rundlauf, Einmaligkeit (zweiter Claim liefert
@@ -541,10 +572,12 @@ unverändert: es beantwortet eine PENDING QUESTION, die der Worker selbst
 gestellt hat (die einzige Aktion, die zwangsläufig zu SEINER Session
 zurückmuss, kein „Default-Tab", sondern eine eigene, engere Handlung).
 
-**Für die Uhr ist das eine Design-Entscheidung, kein Code-Fix** — es gibt
+**Für die Uhr ist das eine Design-Entscheidung, kein Code-Fix** — ~~es gibt
 noch keine Board-/Karten-Ansicht dort (§9.1 Punkt 26: „Gekoppelt. Board
-folgt." ist alles, was `MainActivity` zeigt). Festgehalten für den Bau von
-W2b: die Uhr bekommt **dasselbe Muster wie die Linse**, nicht das Tab-Paar
+folgt." ist alles, was `MainActivity` zeigt)~~ **überholt am 2026-08-29**: die
+Ansicht steht (`BoardScreen.kt`, `MainActivity.kt` zeigt das echte Board).
+Festgehalten für den Bau von
+W2b — und genau so gebaut: die Uhr bekommt **dasselbe Muster wie die Linse**, nicht das Tab-Paar
 des Telefons —
 - ein „mit Henry sprechen"-Pfad (Text/Diktat → Henry, beratend, keine
   Board-Aktionen), analog zu `/glance/talk`;
@@ -663,8 +696,11 @@ stirbt mit.
 
 ~~**Das ist eine Owner-Entscheidung, keine technische.** Sie steht in §9.~~ —
 **Entschieden am 2026-08-28.** Die Vorbedingung, die 2026-08-16 die Ticket-
-Frage schloss, ist damit tatsächlich wieder offen: **Punkt 2 unten
-(Token-Modell) ist jetzt eine ECHTE, blockierende Entscheidung für W2b** (die
+Frage schloss, ist damit tatsächlich wieder offen: ~~**Punkt 2 unten
+(Token-Modell) ist jetzt eine ECHTE, blockierende Entscheidung für W2b**~~ —
+**aufgelöst am 2026-08-28 in §4.6**: die Frage war falsch gestellt, HelmDeck
+hat mit `relay.phone_pubs[]` + `issue_token` bereits ein Pro-Gerät-Modell. W2b
+ist inzwischen gegen `/wear/board` gebaut, Punkt 2 blockiert nichts mehr. (Die
 `/glance`-UI selbst, die einen Netzwerk-Call braucht) — W2a (dieser Commit)
 umgeht sie vollständig, weil eine leere Compose-Seite noch keine Anfrage an
 den Daemon stellt.
@@ -737,17 +773,20 @@ gerätegebunden.
 | | **Summe W1 — Uhr ohne eine Zeile Uhr-Code** | **Code: 0 T (komplett) · Verifikation: ≈ 1–2 T** | rechnet sich schon ohne Uhr; **Build/Gerätetest kann diese Karte selbst nicht ausführen** (§9.1) |
 | 4 | ~~**W2a** — `withWearApp.js` + `:wear`-Modul, leere Compose-App baut und startet~~ **CODE GESCHRIEBEN** 2026-08-28 (Modul + Manifest + `MainActivity.kt`, §4.5) | ~~1,5–2,5 T~~ **verbleibt: erster echter Gradle-Lauf** | Muster steht jetzt 7× im Baum; Build **weiterhin nicht** aus dem Worktree (§7.1) |
 | 5 | ~~**W2b** — Uhr-UI gegen `/glance` + `/glance/answer`~~ **CODE GESCHRIEBEN** 2026-08-29 — gegen NEUE, Bearer-authentifizierte `/wear/board`+`/wear/talk` (nicht `/glance`, §4.6 verwarf den glance_token für die Uhr), Blocker-Liste + Frage-Buttons + Henry-Diktat (§4.8) | ~~3–4 T~~ **verbleibt: echter Gerätetest** | War NICHT „null Daemon-Code" — `routes_wear.py` ist neu, aber klein und wiederverwendet `glance_payload()`; WO-V13/V16-Konformität weiterhin ungeprüft |
-| 6 | **W2c** — Sprache: `ACTION_RECOGNIZE_SPEECH` → `/glance/talk` → MP3 abspielen | **1,5–2 T** | billig, weil der Vertrag steht (§5.1) |
-| 7 | **W2d** — Complication („N Karten warten"), FCM-Weckruf auf die Uhr | **1,5–2 T** | **kein Tile** (§7.2) |
+| 6 | ~~**W2c** — Sprache: `ACTION_RECOGNIZE_SPEECH` → `/glance/talk` → MP3 abspielen~~ **CODE GESCHRIEBEN** 2026-08-29 — gegen `/wear/talk` statt `/glance/talk` (§4.6), `CardScreen.kt:158` diktiert, `VoicePlayer.kt` spielt den inline `render_b64()`-Clip (§4.9) | ~~1,5–2 T~~ **verbleibt: Gerätetest** | war billig wie vorhergesagt — die Diktier-Kette lag durch W2b schon, es fehlte nur die Wiedergabe; Auto-Neustart des Diktats nach Playback bewusst NICHT gebaut (braucht Geräte-Urteil, §4.9) |
+| 7 | **W2d** — Complication („N Karten warten"), FCM-Weckruf auf die Uhr | **1,5–2 T** | **kein Tile** (§7.2); **die einzige noch unGEBAUTE Phase** — im Baum kein `Complication`/`FirebaseMessaging` unter `plugins/wear/` (2026-08-29 geprüft) |
 | | **Summe W2 — native Wear-App** | **≈ 8–11 T** | plus dauerhafte Pflege-Steuer (Arvo: ~1 Monat Parität-Rückstand) |
 
 ~~**Reihenfolge, falls „jetzt":** 0 → 1 → 2, dann **zwei Wochen Alltag**, dann
 entscheiden, ob W2 überhaupt noch fehlt.~~ **Überholt durch den
 2026-08-28-Beschluss** — der Owner hat W2 direkt beauftragt, ohne den
 Alltagstest abzuwarten. W2a (§4.5) ist der Teil davon, der ohne Owner-Gerät
-entstehen konnte; W2b braucht jetzt zuerst §9 Punkt 2 (Token-Modell), dann
+entstehen konnte; ~~W2b braucht jetzt zuerst §9 Punkt 2 (Token-Modell), dann
 einen echten Gradle-Lauf (§9.1 Punkt 15) — beides außerhalb dessen, was ein
-Karten-Worktree entscheiden oder ausführen kann. Die Beweislast-Regel aus
+Karten-Worktree entscheiden oder ausführen kann.~~ **Überholt am 2026-08-29:**
+Punkt 2 ist in §4.6 aufgelöst, und W2b **und** W2c sind gebaut. Was ein
+Karten-Worktree nicht kann, bleibt exakt eines: der echte Gradle-/Gerätelauf
+(§9.1 Punkt 15) — er ist jetzt der einzige Blocker vor W2d. Die Beweislast-Regel aus
 `ios-watch-feasibility.md` §4.2 (*„erst wenn Mirroring + Aktionen im Alltag
 nachweislich zu wenig sind"*) war die Empfehlung DIESES Dokuments, nicht eine
 Vorbedingung, die der Owner einhalten muss — seine Entscheidung sticht.
@@ -968,10 +1007,15 @@ LEICHT", `ops/docs/…` / `run_gate.py`). `run_gate.py`: PASS (3 Checks).
     `("/relay/pair", "POST", None)`, und der Worker STRIPT Cookie/
     Authorization vor dem Weiterreichen, was `/relay/pair/code` (Owner-Session)
     ohnehin unmöglich machen würde. Den Worker zu erweitern hätte eine
-    bewusst gezogene Grenze verletzt. Empfehlung stattdessen: den
+    bewusst gezogene Grenze verletzt. ~~Empfehlung stattdessen: den
     ohnehin schon vorhandenen `ops/deploy/cloudflare_tunnel.sh` (voller
     Daemon-Zugriff) nur für die paar Minuten der Kopplung laufen lassen —
-    kein neuer Worker-Code nötig. `PairingScreen.kt` fragt die Basis-URL
+    kein neuer Worker-Code nötig.~~ **Verworfen am 2026-08-29, siehe §4.13:**
+    der rohe Tunnel legt den ganzen Daemon offen; gebaut wurde stattdessen ein
+    EIGENER, schmaler Worker (`surfaces/relay/pair_worker/`), der genau einen
+    Pfad durchlässt (`GET /relay/pair/claim`) — der bestehende Glance-Worker
+    blieb dabei unangetastet, die Grenze oben also gewahrt.
+    `PairingScreen.kt` fragt die Basis-URL
     deshalb bewusst ab, statt sie fest zu verdrahten.
 
     **Verifiziert, nicht nur geschrieben:** Paket-Pfad jeder `.kt`-Datei
