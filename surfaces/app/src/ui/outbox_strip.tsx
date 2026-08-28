@@ -14,6 +14,8 @@ import { useTheme } from "@/theme";
 // the screen - so "keine Nachricht, kein Fehler" was the whole experience. Now a
 // send that never reached the daemon stays here, on disk, until the owner sends
 // it or throws it away.
+const MAX_ROWS = 3;
+
 export function UnsentStrip({ scope, onRetry }: {
   scope: string;
   onRetry: (m: Outbound) => void;
@@ -34,9 +36,15 @@ export function UnsentStrip({ scope, onRetry }: {
   }, [refresh]);
 
   if (!rows.length) return null;
+  // Bounded on purpose: this strip sits between the transcript and the composer,
+  // so an unbounded queue would push the input off a phone screen - the owner
+  // could no longer type, which is a worse failure than the one being reported.
+  // The overflow is COUNTED, never silently dropped.
+  const shown = rows.slice(0, MAX_ROWS);
+  const hidden = rows.length - shown.length;
   return (
     <View style={{ gap: 6, paddingHorizontal: 12, paddingBottom: 6 }}>
-      {rows.map((m) => (
+      {shown.map((m) => (
         <View key={m.id} style={{
           flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10,
           borderWidth: 1, borderColor: t.warn + "66", backgroundColor: t.warn + "12",
@@ -59,6 +67,11 @@ export function UnsentStrip({ scope, onRetry }: {
           </Pressable>
         </View>
       ))}
+      {hidden > 0 ? (
+        <Text style={{ color: t.txtTertiary, fontSize: 10.5, paddingLeft: 4 }}>
+          {tr("outbox.more", { n: hidden })}
+        </Text>
+      ) : null}
     </View>
   );
 }

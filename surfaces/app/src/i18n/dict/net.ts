@@ -46,6 +46,7 @@ export const net: Dict = {
   "outbox.tries": { de: "{n} Versuche", en: "{n} attempts" },
   "outbox.retry": { de: "Erneut senden", en: "Send again" },
   "outbox.discard": { de: "Verwerfen", en: "Discard" },
+  "outbox.more": { de: "+{n} weitere nicht gesendet", en: "+{n} more not sent" },
 
   // pairing codes
   "pair.empty": { de: "Kein Code eingegeben.", en: "No code entered." },
