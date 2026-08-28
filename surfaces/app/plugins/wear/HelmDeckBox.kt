@@ -67,7 +67,12 @@ object HelmDeckBox {
     /** plaintext -> base64(nonce || ciphertext), matching e2ee.py's seal_b64()
      *  and e2ee.ts's seal(). */
     fun sealB64(plaintext: String, mySecretKeyB64: String, peerPublicKeyB64: String): String {
-        val nonce = ByteArray(NONCE_SIZE).also { sodium.randomBytesBuf(it, NONCE_SIZE) }
+        // Was `ByteArray(NONCE_SIZE).also { sodium.randomBytesBuf(it, NONCE_SIZE) }`,
+        // guessing libsodium's C fill-a-buffer shape. The first real Kotlin
+        // compile (2026-08-28) rejected it and printed the true signature:
+        // `fun randomBytesBuf(p0: Int): ByteArray!` - it ALLOCATES and returns,
+        // there is no two-argument overload. Same 24 CSPRNG bytes either way.
+        val nonce = sodium.randomBytesBuf(NONCE_SIZE)
         val message = plaintext.toByteArray(Charsets.UTF_8)
         val mySk = Key.fromBase64String(mySecretKeyB64).asBytes
         val peerPk = Key.fromBase64String(peerPublicKeyB64).asBytes
