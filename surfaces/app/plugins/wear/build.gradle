@@ -101,4 +101,17 @@ dependencies {
     // was folded into Credential Manager guidance; not re-fetched this
     // session, same confidence tier as activity-compose above.
     implementation "androidx.security:security-crypto:1.1.0-alpha06"
+
+    // W2d (2026-08-29): the watch's own FCM receiver (PushService.kt). Version
+    // is NOT a guess - 25.0.1 is what the phone module already resolves to and
+    // what is already in this machine's Gradle cache, so :wear and :app agree
+    // on one Firebase line instead of dragging in a second.
+    // The com.google.gms:google-services CLASSPATH already exists at the root
+    // (android/build.gradle:11, 4.4.4) because :app uses it; only the per-module
+    // `apply plugin` below is new. The plugin reads wear/google-services.json,
+    // which now carries an app.helmdeck.wear client (registered 2026-08-29) -
+    // without that entry it fails the build with "No matching client found".
+    implementation "com.google.firebase:firebase-messaging:25.0.1"
 }
+
+apply plugin: 'com.google.gms.google-services'

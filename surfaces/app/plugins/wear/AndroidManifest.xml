@@ -20,10 +20,12 @@
   own HTTPS, never through the phone, so it IS standalone by that doc's own
   definition, not merely declared so.
 
-  No android:icon - no launcher icon asset exists for this module yet
-  (nothing in this card worktree can generate one). AGP does not require one;
-  the OS falls back to a system default. Add a real one before this ever
-  reaches a device the owner looks at day to day.
+  android:icon / android:roundIcon (added 2026-08-29, the gap the line above
+  used to describe). withWearApp.js copies the SAME three brand PNGs app.json
+  gives the phone into wear/res/mipmap-xxhdpi and lays down an adaptive-icon
+  wrapper - one product, one mark. Until then the module shipped with NO icon:
+  it did appear in the drawer, but as a blank system placeholder, so the only
+  way to find it was reading the word "HelmDeck".
 
   2026-08-29 additions (the pairing screen):
 
@@ -48,6 +50,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- W2d (2026-08-29): the watch receives its own sealed FCM push instead of
+         relying on the phone being in range to bridge one. POST_NOTIFICATIONS is
+         a RUNTIME permission from API 33 on (this watch is API 36) - declaring it
+         here is necessary but NOT sufficient, MainActivity must also ask. A
+         missing grant makes NotificationManager.notify() do nothing at all, with
+         no exception, which is indistinguishable from "push is broken" unless
+         someone checks: PushService logs that case rather than failing silently. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <queries>
         <package android:name="com.google.android.googlequicksearchbox" />
         <intent>
@@ -60,11 +71,24 @@
     <application
         android:allowBackup="true"
         android:label="HelmDeck"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.DeviceDefault">
 
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
+
+        <!-- Data-only messages reach onMessageReceived in every app state
+             (including killed) ONLY through a registered service - the same
+             reason notify.py sends no `notification` block. -->
+        <service
+            android:name=".PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name=".MainActivity"
