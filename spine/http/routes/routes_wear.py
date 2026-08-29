@@ -399,11 +399,24 @@ def wear_talk_post(self, user, body):
     from cells.copilot import chat_dedupe
     mine, original = chat_dedupe.claim(user["name"], msg, body.get("card"), None)
     if original is not None:
+        # The watch RETRIES on this (RelayClient.talk): its first POST died on
+        # a timeout layer (client 20s, relay REPLY_TIMEOUT 120s) while the turn
+        # kept running, and the replay is how it collects the answer. So the
+        # replay must carry the SAME shape as a live reply - question included,
+        # or the retry that finally lands would show prose with the buttons
+        # missing. reply=""+duplicate=true means "still running, ask again";
+        # the client keys its retry loop on exactly that pair. No voice on a
+        # replay: settle() ran before render_b64, and the text is on screen.
+        from spine.ops import ask as _ask
+        from spine.ops.glances import _glance_question as _gq
         done = chat_dedupe.await_result(original)
-        out = dict(done or {"reply": "", "actions": []})
-        out["duplicate"] = True
+        out = dict(done or {"reply": ""})
+        q = out.get("question")
+        if not q:
+            q, _prose = _ask.parse(out.get("reply") or "")
         return self._send(200, json.dumps(
-            {"reply": out.get("reply") or "", "question": None,
+            {"reply": out.get("reply") or "",
+             "question": _gq({"question": q}) if q else None,
              "refused": out.get("refused") or [], "duplicate": True}))
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],

@@ -290,13 +290,13 @@ private fun askHenry(
     onBusy(true)
     scope.launch {
         val body = JSONObject().apply { put("message", message); put("card", cardId) }.toString()
+        // talk() = long timeout + dedupe-safe retries (see RelayClient) -
+        // a Henry turn outliving one HTTP request is normal, not an error.
         val result = withContext(Dispatchers.IO) {
-            runCatching {
-                RelayClient.authedCall(
-                    device.relayUrl, device.room, device.daemonPubB64,
-                    device.myPublicKeyB64, device.mySecretKeyB64, device.deviceToken,
-                    "POST", "/wear/talk", body)
-            }.getOrNull()
+            RelayClient.talk(
+                device.relayUrl, device.room, device.daemonPubB64,
+                device.myPublicKeyB64, device.mySecretKeyB64, device.deviceToken,
+                body)
         }
         onBusy(false)
         if (result == null || result.first !in 200..299) {

@@ -82,6 +82,7 @@ object RelayClient {
         relayUrl: String, room: String, daemonPubB64: String,
         myPublicKeyB64: String, mySecretKeyB64: String, deviceToken: String,
         method: String, path: String, bodyStr: String = "",
+        readTimeoutMs: Int = 20_000,
     ): Pair<Int, String> {
         val inner = JSONObject().apply {
             put("method", method)
@@ -103,7 +104,7 @@ object RelayClient {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 15_000
-            readTimeout = 20_000
+            readTimeout = readTimeoutMs
             setRequestProperty("Content-Type", "application/json")
         }
         try {
@@ -129,6 +130,56 @@ object RelayClient {
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** POST /wear/talk with the phone's patience, not a probe's.
+     *
+     *  "Henry nicht erreichbar" was mostly a STOPWATCH, not an outage: a Henry
+     *  turn regularly runs 20-180s (176s measured on the phone, client.ts),
+     *  while this client's single authedCall gave up at readTimeout=20s and the
+     *  relay itself answers 504 at REPLY_TIMEOUT=120s - the daemon finished the
+     *  turn either way, and the watch reported a dead Henry over a live one.
+     *
+     *  The phone survives the same layers by RESENDING the unacked POST and
+     *  letting the daemon's chat_dedupe collapse the replays into one turn
+     *  (client.ts documents this exact stack). /wear/talk claims the same
+     *  dedupe since 2026-08-29, which is what makes this loop SAFE: a retry can
+     *  never run a second turn or replay a board action - it either waits on
+     *  the original claim or collects its settled answer.
+     *
+     *  Retry semantics come from the route: reply=""+duplicate=true means "the
+     *  original turn is still running, ask again"; anything else with a 2xx is
+     *  the answer. readTimeout 150s > the relay's 120s REPLY_TIMEOUT, so the
+     *  relay's own 504 (a clean "still working" signal here) is what paces the
+     *  loop rather than a client-side abort racing it. 4 attempts ~ 8-10 min
+     *  worst case, the same order as the phone's 900s chat bound.
+     *
+     *  Blocking sleep, not delay(): every caller already runs this on
+     *  Dispatchers.IO around a blocking HttpURLConnection - same thread
+     *  discipline, no new suspend surface on a stdlib-style client. */
+    fun talk(
+        relayUrl: String, room: String, daemonPubB64: String,
+        myPublicKeyB64: String, mySecretKeyB64: String, deviceToken: String,
+        bodyStr: String,
+    ): Pair<Int, String>? {
+        var last: Pair<Int, String>? = null
+        for (attempt in 1..4) {
+            val r = runCatching {
+                authedCall(
+                    relayUrl, room, daemonPubB64, myPublicKeyB64, mySecretKeyB64,
+                    deviceToken, "POST", "/wear/talk", bodyStr,
+                    readTimeoutMs = 150_000)
+            }.getOrNull()
+            if (r != null && r.first in 200..299) {
+                val o = runCatching { JSONObject(r.second) }.getOrNull()
+                val stillRunning = o?.optBoolean("duplicate") == true &&
+                    (o.optString("reply").isBlank())
+                if (!stillRunning) return r
+            }
+            last = r
+            if (attempt < 4) Thread.sleep(2_000)
+        }
+        return last
     }
 
     /** GET /me over the sealed relay - the exact call config.ts's onboarding
