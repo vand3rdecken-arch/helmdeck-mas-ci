@@ -56,6 +56,12 @@ export const composer: Dict = {
   "chat.teamOnly": { de: "Henry ist nur für das Team.", en: "Henry is for the team only." },
   "chat.thinking": { de: "denkt nach", en: "thinking" },
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },
+  // the event mirror's label half ("Frage · <Kartenname>"): a mirrored card
+  // message's sender line composes kind + card short name from these
+  "chat.mirror.question": { de: "Frage", en: "Question" },
+  "chat.mirror.result": { de: "Ergebnis", en: "Result" },
+  "chat.mirror.blocker": { de: "Blocker", en: "Blocker" },
+  "chat.mirror.card": { de: "Karte", en: "Card" },
   "chat.glassesTalk": { de: "Mit Henry über die Brille sprechen", en: "Talk to Henry through the glasses" },
   "chat.glassesUnconfigured": {
     de: "Brillen-Modus nicht eingerichtet: glance_origin + glance_token in den Daemon-Einstellungen setzen (Glance-Worker deployen: ops/deploy/push_glance.sh).",

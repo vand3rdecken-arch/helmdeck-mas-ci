@@ -33,9 +33,18 @@ DEBT = [
                 "to a daemon older than this change. Paseo carries the same "
                 "shim for the same reason (packages/app/src/timeline/"
                 "session-stream-reducers.ts, matchesLocalUserMessageIdentity).",
-        "why": "Deleting it today would strand optimistic bubbles on any "
-               "surface still talking to a pre-2026-08-29 daemon - the same "
-               "class of stuck copy this change exists to remove.",
+        "why_it_bites": "Text-count matching is a heuristic where the mid is "
+                        "an identity: send the same sentence twice against an "
+                        "old daemon and the count can retire the WRONG copy "
+                        "or none, and the bubble sticks to the bottom of the "
+                        "chat - exactly the defect this change removed. "
+                        "Deleting the shim today is no better: it would "
+                        "strand every optimistic bubble on a surface still "
+                        "talking to a pre-2026-08-29 daemon.",
+        "trigger": "An app one OTA ahead of its daemon (the shim's reason to "
+                   "exist), or repeated identical texts inside one turn "
+                   "window (its failure mode). Revisit once every daemon in "
+                   "use echoes client_msg_id - grep COMPAT(chatClientMsgId).",
         "fix": "Remove the COMPAT(chatClientMsgId) branch in chat.tsx's "
                "reconcile effect once every daemon in use echoes "
                "client_msg_id. One grep for COMPAT(chatClientMsgId) is the "

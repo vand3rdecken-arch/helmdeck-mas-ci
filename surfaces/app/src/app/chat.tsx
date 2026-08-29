@@ -43,18 +43,22 @@ export const useCopilotPanel = create<CopilotPanel>((set) => ({
 // daemon, because each surface lays it out differently - the watch draws it as
 // a TitleCard title, this draws it as the transcript's sender line. The daemon
 // therefore ships the PARTS (kind + cardName), never a rendered string.
-const CARD_KIND_LABEL: Record<string, string> = {
-  question: "Frage", result: "Ergebnis", blocker: "Blocker",
+// `tr` is threaded in (module function, no hooks) so the label follows the app
+// language like every other string - the first screenshot judge caught it as
+// hardcoded "Frage" inside an otherwise English UI.
+const CARD_KIND_KEY: Record<string, string> = {
+  question: "chat.mirror.question", result: "chat.mirror.result",
+  blocker: "chat.mirror.blocker",
 };
 
-function toStep(m: ChatMsg, me?: string): TStep {
+function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   const mine = m.cls === "user" || m.cls === "you";
   // A mirrored card event is the WORKER speaking, not Henry. Attributing it to
   // Henry would be a lie the owner acts on: he would read a card waiting on a
   // decision as Henry's advice, and keeping those two apart is the entire job
   // of the transcript's sender model.
   if (m.cls === "card") {
-    const label = CARD_KIND_LABEL[m.kind ?? ""] ?? "Karte";
+    const label = tr?.(CARD_KIND_KEY[m.kind ?? ""] ?? "chat.mirror.card") ?? "";
     return {
       role: "assistant", kind: "text", cls: m.cls, text: m.text, ts: m.ts,
       by: `${label} · ${m.cardName || m.card || "?"}`, byKind: "worker",
@@ -559,7 +563,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           {msgs.length === 0 && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
             : <Transcript me={me?.name} steps={(() => {
-                const s = msgs.map((m) => toStep(m, me?.name));
+                const s = msgs.map((m) => toStep(m, me?.name, tr));
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
                 if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true, by: "Henry", byKind: "henry" });
