@@ -108,8 +108,17 @@ object DeviceStore {
      *  or for one the daemon sent without a stamp. The chat simply omits the
      *  time in that case; inventing one would put a wrong minute on a real
      *  message, which is worse than showing none. */
+     *
+     *  `label` is the mirrored card event's "Frage · Kartenname" (empty on an
+     *  ordinary line). Cached along with the text because the alternative is
+     *  worse than losing it: a card line restored WITHOUT its label renders
+     *  under Henry's name, so for the moment before the server transcript
+     *  arrives the owner would read a worker waiting on a decision as Henry
+     *  talking. The card id and its option buttons are deliberately NOT cached
+     *  - they are live interaction state, and offering a tap on a question
+     *  whose current state we have not re-read is how a stale answer happens. */
     data class ChatLine(val mine: Boolean, val text: String, val ts: String,
-                        val date: String = "")
+                        val date: String = "", val label: String = "")
 
     /** Cached messages, oldest first. Empty when nothing is stored or the blob
      *  is unreadable - a corrupt cache must cost the history, never the
@@ -126,7 +135,11 @@ object DeviceStore {
                 // case above. An old cache stays readable; it just shows no
                 // times until the server history replaces it a second later.
                 out.add(ChatLine(o.optBoolean("m"), o.optString("t"),
-                                 o.optString("s"), o.optString("d")))
+                                 o.optString("s"), o.optString("d"),
+                                 // "l" absent in a blob written before the card
+                                 // mirror existed -> "" -> an ordinary line,
+                                 // which is exactly what those all were.
+                                 o.optString("l")))
             }
             out
         } catch (_: Exception) {
@@ -140,7 +153,7 @@ object DeviceStore {
         for (line in kept) {
             arr.put(org.json.JSONObject()
                 .put("m", line.mine).put("t", line.text).put("s", line.ts)
-                .put("d", line.date))
+                .put("d", line.date).put("l", line.label))
         }
         prefs(context).edit().putString(K_CHAT, arr.toString()).apply()
     }
