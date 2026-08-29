@@ -7,7 +7,7 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
-import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow,
+import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow, PendingQuestion,
   SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult, GxpState } from "./types";
 import type { VoiceClip } from "./voice";
 
@@ -167,7 +167,22 @@ export interface Step {
  *  by the daemon on the persisted `you` entry. It is what lets the chat retire
  *  an optimistic copy by IDENTITY instead of by comparing text — optional
  *  because older daemons, the watch and the glasses do not send one. */
-export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string }
+export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
+  /** `cls: "card"` — the EVENT MIRROR (cells/copilot/card_mirror.py). A working
+   *  card's question, result or blocker, folded into the Henry chat at event
+   *  time so the owner has ONE inbox instead of one transcript per card.
+   *  `card` is the binding an inline reply is routed by — never the text; see
+   *  routes_copilot._route_to_card for why guessing is ruled out. `cardName` is
+   *  the short label, `kind` which of the three this is. `question` carries the
+   *  whole ask block when the card is asking, so the EXISTING QuestionPanel can
+   *  offer the real options and answer with a request_id.
+   *  All optional: absent on every other `cls`, and absent entirely from an
+   *  older daemon — the chat must render such a message as ordinary text. */
+  card?: string; cardName?: string; kind?: "question" | "result" | "blocker";
+  question?: PendingQuestion;
+  /** "YYYY-MM-DD", stamped by copilot._append_log since 2026-08-29 and absent on
+   *  everything written before it — which means "not recorded", not "today". */
+  date?: string }
 /** The PM session's measured economics (daemon: copilot._fold_stats) — the
  *  board chat's card-parity context meter + usage line read this. ctx_tokens/
  *  ctx_window mirror a card's fields (window derived from model evidence, not
@@ -192,7 +207,13 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
    *  carries the ORIGINAL turn's answer; it is empty only when that turn was
    *  still running when the daemon gave up waiting, in which case the answer
    *  arrives through the /chat/history poll like any other persisted turn. */
-  duplicate?: boolean }
+  duplicate?: boolean;
+  /** Present when the message was routed to a CARD instead of answered by
+   *  Henry (`reply_to_card`). `as` says which door it went through: "answer"
+   *  settled the card's pending question, "steer" was a plain instruction.
+   *  `reply` is empty in both cases — the card's response arrives in its own
+   *  turn, mirrored back into this chat when it ends. */
+  routed?: { card: string; as: "answer" | "steer" } }
 
 // `attachments` was dropped when the archived web composer (SendOpts, which had
 // it) was ported to RN - the daemon has accepted it the whole time. Both /steer
@@ -545,8 +566,14 @@ export const api = {
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 
   // copilot chat
-  chat: (text: string, o: SteerOpts & { card?: string; mid?: string } = {}) => {
-    track("chat_message", { scope: o.card ? "card" : "board" });
+  // `reply_to_card` is deliberately NOT `card`. `card` means "the owner is
+  // looking at this card, resolve 'it' against it" and still reaches Henry;
+  // `reply_to_card` means "do not ask Henry at all, this belongs to that
+  // card's worker" and is routed to steer/answer server-side. Two meanings on
+  // one field would have silently turned the card chat's Henry tab into a
+  // steer at the worker, with nothing in the UI to show why.
+  chat: (text: string, o: SteerOpts & { card?: string; reply_to_card?: string; mid?: string } = {}) => {
+    track("chat_message", { scope: o.reply_to_card ? "card_reply" : o.card ? "card" : "board" });
     // `mid` is minted HERE, once per call, and travels inside the body - which
     // is precisely what makes it a replay detector. A chat turn runs for
     // minutes while three layers below this line (OkHttp's connection retry,

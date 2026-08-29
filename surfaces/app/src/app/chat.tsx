@@ -12,7 +12,8 @@ import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { planLabel, useAiFlat } from "@/ui/billing";
-import { Composer } from "@/ui/card_composer";
+import { Composer, type Recipient } from "@/ui/card_composer";
+import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import * as outbox from "@/data/outbox";
@@ -38,8 +39,27 @@ export const useCopilotPanel = create<CopilotPanel>((set) => ({
 // differs (api.chat here vs api.steer on a card), so there is ONE chat UI to
 // maintain, not two. The board's flat ChatMsg log is mapped onto the transcript
 // step model below.
+// The mirrored-card label: "Frage · Kartenname". Composed HERE, not on the
+// daemon, because each surface lays it out differently - the watch draws it as
+// a TitleCard title, this draws it as the transcript's sender line. The daemon
+// therefore ships the PARTS (kind + cardName), never a rendered string.
+const CARD_KIND_LABEL: Record<string, string> = {
+  question: "Frage", result: "Ergebnis", blocker: "Blocker",
+};
+
 function toStep(m: ChatMsg, me?: string): TStep {
   const mine = m.cls === "user" || m.cls === "you";
+  // A mirrored card event is the WORKER speaking, not Henry. Attributing it to
+  // Henry would be a lie the owner acts on: he would read a card waiting on a
+  // decision as Henry's advice, and keeping those two apart is the entire job
+  // of the transcript's sender model.
+  if (m.cls === "card") {
+    const label = CARD_KIND_LABEL[m.kind ?? ""] ?? "Karte";
+    return {
+      role: "assistant", kind: "text", cls: m.cls, text: m.text, ts: m.ts,
+      by: `${label} · ${m.cardName || m.card || "?"}`, byKind: "worker",
+    };
+  }
   return {
     role: mine ? "user" : "assistant",
     kind: "text",
@@ -52,6 +72,28 @@ function toStep(m: ChatMsg, me?: string): TStep {
     byKind: mine ? "human" : (m.cls !== "error" ? "henry" : undefined),
     agent: m.cls === "pm",   // legacy flag, superseded by byKind above
   };
+}
+
+/** The card question this chat is currently offering to answer, or null.
+ *
+ *  The NEWEST mirrored question that nothing later has settled. "Later" is
+ *  positional, not temporal: the log is append-ordered, so an entry bound to
+ *  the same card AFTER the question means the owner already replied or the
+ *  card already moved on (a newer question, a result). Answering a superseded
+ *  request_id is exactly the 409 the daemon raises, so not offering it is the
+ *  honest UI for a state the server would reject anyway.
+ *
+ *  Deliberately ONE at a time. Two cards can wait at once, and a panel per card
+ *  would turn the composer into a form; the owner answers the newest, and the
+ *  next surfaces as soon as that one is settled. */
+function openCardQuestion(msgs: ChatMsg[]): ChatMsg | null {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.cls !== "card" || m.kind !== "question" || !m.card || !m.question) continue;
+    const settled = msgs.slice(i + 1).some((later) => later.card === m.card);
+    return settled ? null : m;
+  }
+  return null;
 }
 
 // A live "thinking" row while the board agent works: pulsing dots + an elapsed
@@ -269,6 +311,24 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     return out;
   }, [server, pending]);
 
+  // THE INBOX'S OPEN CARD QUESTION, and therefore the composer's routing
+  // target. Derived from the transcript on every render rather than stored:
+  // the answer can arrive from another device, from the watch, or from the
+  // notification's own buttons, and a remembered target would keep offering to
+  // answer a question that is already settled - the stale-flag class this repo
+  // keeps out (CLAUDE.md: derived, not stored).
+  const openQ = useMemo(() => openCardQuestion(msgs), [msgs]);
+  const cardRecipients = useMemo<Recipient[]>(() => openQ?.card ? [
+    { id: "henry", label: tr("transcript.boardAgent"), color: t.accent2,
+      icon: "sparkles-outline", hint: tr("card.chat.mentionHenry") },
+    { id: `card:${openQ.card}`, label: openQ.cardName || openQ.card, color: t.accent,
+      icon: "construct-outline", hint: tr("card.chat.mentionWorker") },
+  ] : [], [openQ, tr, t]);
+  // undefined, not "henry", when nothing is waiting: the Composer hides the
+  // whole recipient affordance on a single-target surface, which is what the
+  // board chat has always been and must stay when no card is asking.
+  const replyTarget = openQ?.card ? `card:${openQ.card}` : undefined;
+
   // auto-pin to newest (incl. the PM's proactive messages) when already near the
   // bottom - same pattern as the card chat, so opening lands you at the latest.
   useEffect(() => {
@@ -308,8 +368,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     // minted itself; passing it in only moves the minting one step earlier.
     const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     queueTurn(id, q, mid);
+    // Routed to a CARD when the composer's target is one (`card:<id>`), so the
+    // words reach that worker instead of starting a Henry turn. The id comes
+    // from the chip the owner can see, which in turn comes from the `card` the
+    // mirror stamped on the message - at no point is it inferred from the text.
+    const to = opts.to ?? replyTarget;
+    const replyCard = to?.startsWith("card:") ? to.slice("card:".length) : "";
     try {
-      const r = await api.chat(q, { ...opts, mid });
+      const r = await api.chat(q, {
+        ...opts, mid, ...(replyCard ? { reply_to_card: replyCard } : {}) });
       // Past the await = the daemon answered. THAT is the proof a retried
       // message is delivered; nothing earlier is (a dispatched request is not
       // a received one).
@@ -322,6 +389,17 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         // "chat.noReply" would put a phantom empty turn in the chat, which is
         // the cosmetic half of the very bug this path exists to stop. The
         // history poll below delivers the real turn when it lands.
+        qc.invalidateQueries({ queryKey: ["chatHistory"] });
+        return;
+      }
+      if (r.routed) {
+        // The message went to a card, not to Henry. There is no reply to
+        // render: the worker answers in its own turn, and that turn's END is
+        // what comes back here as a mirrored `result`. Appending
+        // "chat.noReply" would put a phantom empty Henry turn under the
+        // owner's own message - the same cosmetic defect the `duplicate`
+        // branch above exists to avoid.
+        qc.invalidateQueries({ queryKey: ["tracks"] });
         qc.invalidateQueries({ queryKey: ["chatHistory"] });
         return;
       }
@@ -519,10 +597,25 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
               })}
             </Text>
           ) : null}
+          {/* The SAME QuestionPanel the card screen pins above its composer -
+              not a second one built for this surface. It already answers via
+              POST /tracks/<id>/answer with the request_id, which is exactly
+              what a mirrored question needs, so the board chat gets real
+              option buttons without a second answer path to keep in sync. */}
+          {openQ?.card && openQ.question ? (
+            <QuestionPanel cardId={openQ.card} question={openQ.question}
+              onAnswered={() => qc.invalidateQueries({ queryKey: ["chatHistory"] })} />
+          ) : null}
           <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
           <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"
             onVoice={canVoice ? () => setVoiceOpen(true) : undefined}
+            // The routing target, made VISIBLE and switchable rather than
+            // inferred. The decree allows "the next message, when it clearly
+            // answers the card question" - a chip the owner can see and change
+            // is what makes that "clearly": he is never guessing where his
+            // words went, and a remark meant for Henry is one tap away.
+            recipients={cardRecipients} defaultTo={replyTarget}
             bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
         </View>
         {kb > 0 ? <View style={{ height: kb }} /> : null}

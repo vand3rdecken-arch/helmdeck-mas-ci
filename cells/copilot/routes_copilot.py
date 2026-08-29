@@ -8,6 +8,7 @@ already holds, for the proactive-blocker voice path - see below). Bodies
 are byte-identical to the inline blocks they replace.
 """
 import json
+import time
 from urllib.parse import parse_qs, urlparse
 
 
@@ -65,6 +66,72 @@ def chat_cancel_post(self, user, body):
     return self._send(200, json.dumps({"cancelled": copilot.cancel(user["name"])}))
 
 
+def _route_to_card(self, user, text, tid, mid=""):
+    """The owner answered a MIRRORED card message in the Henry chat: send it to
+    that card instead of running a Henry turn (owner decree 2026-08-29).
+
+    Bound by the `card` id the mirror stamped on the chat entry, NEVER by
+    reading the text. Guessing which card a reply belongs to is the one design
+    this decree rules out by name, and rightly: the failure mode is silent and
+    unrecoverable - a steer delivered to the wrong worker is already executing
+    by the time anyone can notice.
+
+    Two destinations, because a card that ASKED is in a different state from one
+    that merely reported:
+      * a single pending question -> POST-equivalent of /tracks/<id>/answer, so
+        the question is SETTLED. ask.validate_answers takes free text as the
+        owner's own words (the 'Other' escape hatch), which is exactly what a
+        typed chat reply is. Without this the question would stay open next to a
+        loose remark and the card would ask again.
+      * anything else (no question, or a multi-question ask one line cannot
+        settle) -> a plain steer.
+    Falling back rather than erroring matters: the owner typed a sentence at his
+    inbox, and "that was not a valid answer" is not a useful thing to say to a
+    person who just answered.
+
+    Backgrounded exactly like the REST routes it stands in for - both RUN a turn
+    on the card, and holding the HTTP request would block the chat for its
+    length."""
+    from cells.engineer import sessions
+    from spine.auth import auth
+    from spine.http import server
+    t = sessions.get_track(tid)
+    if not t:
+        return self._send(404, json.dumps({"error": "no such card"}))
+    if not auth.owns_card(user, t):
+        return self._send(403, json.dumps({"error": "not your card"}))
+    actor = user["name"]
+    # ONE rule for which door, shared with /wear/talk - see sessions.reply_door.
+    routed, answers, rid = sessions.reply_door(t, text)
+    if routed == "answer":
+        server._bg("track:answer:" + tid, lambda: sessions.answer_question(
+            # this route logs the owner's words itself, verbatim and with the
+            # app's `mid` - see answer_question's echo_chat note
+            tid, answers, request_id=rid, actor=actor, echo_chat=False))
+    else:
+        server._bg("track:steer:" + tid, lambda: sessions.steer(
+            tid, text, actor=actor))
+    # The Henry transcript must still show what the owner said and where it
+    # went, or the inbox would swallow his own message: he types into the board
+    # chat, the words execute on a card, and the surface he typed at shows
+    # nothing. `card` rides on the `you` entry too, so a follow-up reply keeps
+    # the same binding without the client having to re-send it.
+    from cells.copilot import copilot, card_mirror
+    try:
+        copilot._append_log(user["name"], [dict(
+            {"cls": "you", "text": text, "ts": time.strftime("%H:%M"),
+             "card": tid, "to": "worker"},
+            **({"client_msg_id": mid[:64]} if mid else {}))])
+        card_mirror.say_card(
+            t, card_mirror.KIND_RESULT,
+            ("Antwort an '%s' geschickt." if routed == "answer"
+             else "Anweisung an '%s' geschickt.") % card_mirror.short_name(t))
+    except Exception:
+        pass
+    return self._send(200, json.dumps(
+        {"reply": "", "actions": [], "routed": {"card": tid, "as": routed}}))
+
+
 def chat_post(self, user, body):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -72,6 +139,17 @@ def chat_post(self, user, body):
     text = body.get("text", "").strip()
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
+    # INLINE ANSWER (owner decree 2026-08-29). Deliberately a DIFFERENT field
+    # from `card` below: `card` means "the owner is looking at this card, so
+    # resolve 'it' against it" and must keep reaching Henry, while this means
+    # "do not ask Henry at all, this belongs to the worker". Overloading the one
+    # field would have silently turned every card-scoped Henry question into a
+    # steer at the worker - the card chat's Henry tab would have stopped
+    # existing, with nothing in the UI to show why.
+    reply_to = str(body.get("reply_to_card") or "").strip()
+    if reply_to:
+        return _route_to_card(self, user, text, reply_to,
+                              mid=str(body.get("mid") or ""))
     # IDEMPOTENCY, CLAIMED HERE - the earliest point in the daemon that has the
     # message. Everything below this line (turn, log append, actions) can take
     # minutes, and three transport layers give up long before that and replay

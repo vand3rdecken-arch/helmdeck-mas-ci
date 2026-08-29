@@ -262,6 +262,7 @@ def wear_chat_get(self, user):
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.copilot import copilot
     from spine.ops import ask
+    from spine.ops.glances import _glance_question
     msgs = (copilot.history(user["name"]) or {}).get("messages") or []
     out = []
     for m in msgs:
@@ -274,7 +275,19 @@ def wear_chat_get(self, user):
         if not isinstance(m, dict):
             continue
         cls = (m or {}).get("cls") or ""
-        if cls not in ("you", "bot", "error"):
+        # "card" and "pm" JOINED the allowlist on 2026-08-29 (the one-inbox
+        # decree). "card" is the event mirror - a card's question, result or
+        # blocker - and it is the entire reason the watch has a chat: card
+        # navigation does not exist on the wrist, so a mirrored line the watch
+        # filtered out would be unreachable there by construction.
+        #
+        # "pm" came in with it, and that was a latent defect rather than a new
+        # feature. This filter's own docstring justifies dropping only "act"
+        # (action receipts, genuine chrome); "pm" is Henry's proactive VOICE -
+        # every lane outcome, every broker decision, every PM alert - and it was
+        # being discarded as chrome alongside it. The watch has been showing a
+        # conversation with Henry's half of it missing.
+        if cls not in ("you", "bot", "error", "card", "pm"):
             continue
         text = ((m or {}).get("text") or "").strip()
         if not text:
@@ -295,9 +308,30 @@ def wear_chat_get(self, user):
         # copilot._append_log started stamping it (2026-08-29). "" therefore
         # means "not recorded", not "today" - the watch draws no separator above
         # such a line rather than filing it under a day it cannot know.
-        out.append({"mine": cls == "you", "text": text[:WEAR_CHAT_LINE_MAX],
-                    "ts": (m or {}).get("ts") or "",
-                    "date": (m or {}).get("date") or ""})
+        # _wear_text, not a bare slice: it strips markdown and fenced blocks and
+        # says " ..." when it cut. The scrollback used to slice raw, so the
+        # markdown the board chat renders as formatting arrived on the wrist as
+        # literal '**' and '###' - the exact defect d243545 fixed for
+        # /wear/board while this route kept its own, weaker clip. One wrist-text
+        # policy, one function.
+        row = {"mine": cls == "you", "text": _wear_text(text, WEAR_CHAT_LINE_MAX),
+               "ts": (m or {}).get("ts") or "",
+               "date": (m or {}).get("date") or ""}
+        if cls == "card":
+            # The LABEL the watch draws instead of a sender name ("Frage ·
+            # Kartenname"). Sent as its parts, not as a rendered string: the
+            # wrist composes it into a TitleCard title, and a pre-rendered label
+            # would have to guess that layout from the server.
+            row["kind"] = (m or {}).get("kind") or ""
+            row["cardName"] = (m or {}).get("cardName") or ""
+            row["card"] = (m or {}).get("card") or ""
+            q = (m or {}).get("question")
+            if q:
+                # Same trimming the glasses and /wear/talk already use, so the
+                # watch has exactly ONE shape of question to render whether it
+                # came from a live talk or from the mirrored inbox.
+                row["question"] = _glance_question({"question": q})
+        out.append(row)
     return self._send(200, json.dumps({"messages": out[-WEAR_CHAT_MAX:]}))
 
 
@@ -307,6 +341,40 @@ def wear_talk_post(self, user, body):
     msg = (body.get("message") or "").strip()[:400]
     if not msg:
         return self._send(400, json.dumps({"error": "message required"}))
+    # INLINE REPLY from the wrist (one-inbox decree). The watch now shows
+    # MIRRORED card questions in the Henry transcript, and tapping one of a
+    # card's options has to reach THAT card - without this it would arrive as a
+    # bare "A" in Henry's advisory session, which cannot settle the question and
+    # reads to Henry as a non-sequitur, while the card goes on waiting.
+    #
+    # This is the one thing the watch sends that is NOT advisory, and it is the
+    # same exception §4.7 of the Wear study already carved out for
+    # /glance/answer: a structured answer to a question the worker itself asked
+    # is a decision, not the free-text authorship that stays off a wearable.
+    reply_to = str(body.get("reply_to_card") or "").strip()
+    if reply_to:
+        from cells.engineer import sessions
+        from spine.auth import auth
+        from spine.http import server
+        t = sessions.get_track(reply_to)
+        if not t:
+            return self._send(404, json.dumps({"error": "no such card"}))
+        if not auth.owns_card(user, t):
+            return self._send(403, json.dumps({"error": "not your card"}))
+        actor = user["name"]
+        routed, answers, rid = sessions.reply_door(t, msg)
+        if routed == "answer":
+            server._bg("track:answer:" + reply_to, lambda: sessions.answer_question(
+                reply_to, answers, request_id=rid, actor=actor))
+        else:
+            server._bg("track:steer:" + reply_to,
+                       lambda: sessions.steer(reply_to, msg, actor=actor))
+        # No voice clip and no Henry turn: nothing was said TO the owner here.
+        # The card's own answer comes back as a mirrored result on the next
+        # /wear/chat poll, which is the surface he is already looking at.
+        return self._send(200, json.dumps(
+            {"reply": "", "question": None, "refused": [],
+             "routed": {"card": reply_to, "as": routed}}))
     from cells.copilot import copilot
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],
