@@ -562,6 +562,18 @@ eingecheckt (Gate ist LEICHT).
 
 ### 4.7 Wearables sprechen mit Henry, nie mit dem Worker — Owner-Entscheidung 2026-08-29, für die Uhr, die Linse erfüllt sie schon
 
+> **Teilweise überholt (Owner-Dekret 2026-08-29, später am Tag): „one single
+> source of truth, watch oder Handy."** Auslöser: „Setz das auf Land und
+> deploy" per Diktat von der Uhr → Henry sagte „Mach ich", der emittierte
+> `move` wurde aber als advisory verworfen (`advisory surface: 1 board
+> action(s) NOT run`), die Karte blieb auf Abnahme. Neue Linie: die Uhr
+> authentifiziert als echter Per-Device-Client wie das Telefon, also läuft
+> `/wear/talk` jetzt mit `allow_actions=True` auf denselben Schienen wie
+> `/chat` (inkl. `chat_dedupe`-Claim vor dem Turn). **Advisory bleibt nur die
+> Linse** (`/glance/talk`, shared `glance_token` statt User-Session — das war
+> der eigentliche Grund der Regel). Der Rest dieses Abschnitts beschreibt den
+> Stand davor.
+
 Owner-Vorgabe: auf Uhr UND Linse soll ein Tap direkt zu **Henry** führen,
 nicht zum Worker-Tab, den `card/[id].tsx` auf dem Telefon standardmäßig
 zeigt, wenn eine Karte gerade eine laufende Session hat.

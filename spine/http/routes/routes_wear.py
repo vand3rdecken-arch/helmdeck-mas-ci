@@ -10,12 +10,18 @@ GET /wear/board reuses glance_payload() UNCHANGED (spine/ops/glances.py) -
 the same small, curated, wearable-safe board read the glasses already get,
 reached through a different door rather than re-derived.
 
-POST /wear/talk mirrors routes_glance.py's glance_talk almost exactly
-(allow_actions=False, the same ask.parse() extraction so the CLIENT never
-has to parse a <helmdeck-ask> block itself) but enforces the owner decree
-recorded in the wear-os-integration card §4.7 (2026-08-29): wearables talk
-to Henry, ADVISORY ONLY, never the worker directly - imported from the
-glasses' own proven pattern, not re-decided per surface.
+POST /wear/talk mirrors routes_glance.py's glance_talk for the RENDERING
+half (the same ask.parse() extraction so the CLIENT never has to parse a
+<helmdeck-ask> block itself) but NOT for authority. Owner decree 2026-08-29
+("one single source of truth, watch or phone") supersedes the §4.7
+advisory-only rule for the WATCH: the watch authenticates as a real
+per-device client, exactly like the phone, so a board action Henry emits
+here runs on the same rails as the phone's /chat - the same copilot.chat
+allow_actions=True path, the same chat_dedupe idempotency claim. The
+§4.7 rule stays TRUE where it came from: routes_glance.py keeps
+allow_actions=False, because the glasses authenticate with one shared
+glance_token, not a user session - that boundary was the reason for the
+rule, and the watch was never on the wrong side of it.
 """
 import json
 import re
@@ -42,9 +48,9 @@ WEAR_BRIEF = (
     "Ending without that block strands him - it is a defect, not a hand-off. "
     "Always include a way to go wider (e.g. 'Something else') so a wrong "
     "guess is never a trap.\n"
-    "- This surface is ADVISORY: any actions block you emit is DROPPED, not "
-    "run. Never claim you changed the board. To actually move work, offer it "
-    "as an option and say it will run from the phone."
+    "- Board actions you emit here RUN, exactly as on the phone - the watch "
+    "and the phone are one source of truth. They run in the background after "
+    "your reply, so say what will happen, not that it is already done."
 )
 
 
@@ -254,9 +260,9 @@ def wear_chat_get(self, user):
     resumes. Only the READING half was missing, which is why the watch looked
     like a separate, amnesiac chat.
 
-    Trimmed to the shape a round screen can use: `cls` collapses to who spoke,
-    and the internal classes the board chat renders as chrome ("act" =
-    action receipts) are dropped rather than shown as if Henry had said them.
+    Trimmed to the shape a round screen can use: `cls` collapses to who spoke;
+    unknown internal classes are dropped rather than shown as if Henry had
+    said them.
     """
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -287,7 +293,13 @@ def wear_chat_get(self, user):
         # every lane outcome, every broker decision, every PM alert - and it was
         # being discarded as chrome alongside it. The watch has been showing a
         # conversation with Henry's half of it missing.
-        if cls not in ("you", "bot", "error", "card", "pm"):
+        # "act" joined when /wear/talk gained allow_actions=True (owner decree
+        # 2026-08-29, one source of truth): an action receipt is the only proof
+        # a watch-issued move actually ran - and "action failed: ..." lands in
+        # the same class. Filtering it out here would recreate the exact defect
+        # this decree closed: the owner commands from the wrist and the outcome
+        # is only visible on the phone.
+        if cls not in ("you", "bot", "error", "card", "pm", "act"):
             continue
         text = ((m or {}).get("text") or "").strip()
         if not text:
@@ -376,9 +388,25 @@ def wear_talk_post(self, user, body):
             {"reply": "", "question": None, "refused": [],
              "routed": {"card": reply_to, "as": routed}}))
     from cells.copilot import copilot
+    # SAME IDEMPOTENCY as the phone's /chat (chat_dedupe). Advisory turns could
+    # afford a relay retry running twice - the worst case was a duplicate
+    # sentence. With allow_actions=True (owner decree 2026-08-29, one source of
+    # truth) a replayed POST would replay a MOVE, so the claim moves in front of
+    # the turn here exactly as routes_copilot.chat_post does. The watch sends no
+    # mid; claim() falls back to the content key + time window for id-less
+    # clients, which is precisely the relay-retry shape.
+    from cells.copilot import chat_dedupe
+    mine, original = chat_dedupe.claim(user["name"], msg, body.get("card"), None)
+    if original is not None:
+        done = chat_dedupe.await_result(original)
+        out = dict(done or {"reply": "", "actions": []})
+        out["duplicate"] = True
+        return self._send(200, json.dumps(
+            {"reply": out.get("reply") or "", "question": None,
+             "refused": out.get("refused") or [], "duplicate": True}))
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],
-                           allow_actions=False, extra_system=WEAR_BRIEF,
+                           allow_actions=True, extra_system=WEAR_BRIEF,
                            # This response IS the delivery: the reply comes back
                            # in `resp` below and is ALWAYS spoken (see the voice
                            # note further down). A notification would buzz the
@@ -392,7 +420,9 @@ def wear_talk_post(self, user, body):
                            # the phone's own card-scoped Henry tab.
                            card=body.get("card"))
     except Exception as e:                       # noqa: BLE001
+        chat_dedupe.fail(mine)
         return self._send(502, json.dumps({"error": str(e)[:200]}))
+    chat_dedupe.settle(mine, out)
     reply = out.get("reply") or ""
     from spine.ops import ask
     from spine.ops.glances import _glance_question
