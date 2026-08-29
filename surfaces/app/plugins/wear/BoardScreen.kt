@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: () -> Unit) {
     var status by remember { mutableStateOf("Ladeâ€¦") }
     var cards by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
+    var yours by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
     var summary by remember { mutableStateOf<BoardSummary?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -73,6 +74,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
             // rejects everywhere else.
             val parsed = runCatching { parseBoardCards(result.second) }
             cards = parsed.getOrDefault(emptyList())
+            yours = parseYours(result.second)
             summary = parseBoardSummary(result.second)
             status = when {
                 parsed.isFailure -> "Antwort nicht lesbar"
@@ -124,16 +126,29 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // an all-clear with no evidence behind it. `yours` is unstarted
                 // work only the owner can begin; wip is what the machine is
                 // doing right now; the age says whether any of it is still true.
-                summary?.let { s ->
-                    if (s.yours > 0) {
+                // The `yours` bucket, listed rather than counted - a number tells
+                // him work exists without telling him which. Lower emphasis than
+                // the blocked cards above (OutlinedButton, not filled): glances.py
+                // separates the two buckets so a red gate is never buried under a
+                // backlog, and the visual weight has to say the same thing.
+                if (yours.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Nur von dir startbar",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                        )
+                    }
+                    for (c in yours) {
                         item {
-                            Text(
-                                text = "Nur von dir startbar: ${s.yours}",
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-                            )
+                            OutlinedButton(onClick = { onOpenCard(c) },
+                                modifier = Modifier.padding(4.dp)) {
+                                Text(text = c.task.ifBlank { c.id })
+                            }
                         }
                     }
+                }
+                summary?.let { s ->
                     if (s.wipLimit > 0) {
                         item {
                             Text(
