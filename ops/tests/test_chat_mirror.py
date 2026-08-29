@@ -141,6 +141,13 @@ check("der Mirror haengt" in (cs[0].get("text") or ""),
 reset()
 notify.card_event(card(last_reply="   "), "needs_you")
 check(not cards(), "a turn end with no reply text writes NOTHING (no empty bubble)")
+# ...and must not have BURNED the dedup key doing it. Claiming the key before
+# knowing there is anything to print would swallow the next real message under
+# that key as a repeat of one that was never written.
+notify.card_event(card(last_reply="jetzt habe ich doch etwas zu sagen"), "needs_you")
+check(len(cards()) == 1,
+      "a silent transition does not consume the dedup key - the next real "
+      "message under the same key still prints")
 
 # a long reply is cut on a word boundary and SAYS it was cut
 reset()
