@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ChildButton
 import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -43,6 +44,8 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
     var status by remember { mutableStateOf("Ladeâ€¦") }
     var cards by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
     var yours by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
+    var working by remember { mutableStateOf(BoardSection(emptyList(), 0)) }
+    var backlog by remember { mutableStateOf(BoardSection(emptyList(), 0)) }
     var summary by remember { mutableStateOf<BoardSummary?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -75,6 +78,9 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
             val parsed = runCatching { parseBoardCards(result.second) }
             cards = parsed.getOrDefault(emptyList())
             yours = parseYours(result.second)
+            val pipe = parsePipeline(result.second)
+            working = pipe.first
+            backlog = pipe.second
             summary = parseBoardSummary(result.second)
             status = when {
                 parsed.isFailure -> "Antwort nicht lesbar"
@@ -148,16 +154,49 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         }
                     }
                 }
-                summary?.let { s ->
-                    if (s.wipLimit > 0) {
+                // IN ARBEIT and BACKLOG, in that order, both BELOW the two
+                // buckets that want something from the owner. Order is the whole
+                // point (owner: "Karten die mich brauchen als erstes?"): these
+                // two are context, not a to-do list - nothing here is his move,
+                // so they carry the lowest emphasis (ChildButton) and never
+                // compete with a red gate for attention.
+                if (working.total > 0) {
+                    item {
+                        Text(
+                            text = if (summary?.let { it.wipLimit > 0 } == true)
+                                       "In Arbeit: ${working.total} von ${summary!!.wipLimit}"
+                                   else "In Arbeit: ${working.total}",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                        )
+                    }
+                    for (c in working.cards) {
                         item {
-                            Text(
-                                text = "Läuft: ${s.wip} von ${s.wipLimit}",
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-                            )
+                            ChildButton(onClick = { onOpenCard(c) },
+                                modifier = Modifier.padding(2.dp)) {
+                                Text(text = c.task.ifBlank { c.id })
+                            }
                         }
                     }
+                }
+                if (backlog.total > 0) {
+                    item {
+                        Text(
+                            text = "Backlog: ${backlog.total}",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                        )
+                    }
+                    for (c in backlog.cards) {
+                        item {
+                            ChildButton(onClick = { onOpenCard(c) },
+                                modifier = Modifier.padding(2.dp)) {
+                                Text(text = c.task.ifBlank { c.id })
+                            }
+                        }
+                    }
+                }
+                summary?.let { s ->
                     val age = freshness(s.tsEpochSec, System.currentTimeMillis() / 1000L)
                     if (age.isNotEmpty()) {
                         item {
