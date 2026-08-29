@@ -94,6 +94,27 @@ fun freshness(tsEpochSec: Long, nowEpochSec: Long): String {
     }
 }
 
+/** The `yours` bucket as real, tappable cards - not just a number.
+ *
+ *  glances.py keeps these separate from needs_you on purpose ("merging them
+ *  would bury a red gate under a backlog"), and the watch keeps that order:
+ *  blocked work first, unstarted-only-you work after. But a count alone tells
+ *  the owner there IS work without telling him which, which on a wrist is the
+ *  same as not telling him. They carry no question (nothing has run yet), so
+ *  `question` is null by construction. */
+fun parseYours(boardJson: String): List<BoardCard> {
+    val o = runCatching { JSONObject(boardJson) }.getOrNull() ?: return emptyList()
+    val arr = o.optJSONArray("yours") ?: return emptyList()
+    val out = mutableListOf<BoardCard>()
+    for (i in 0 until arr.length()) {
+        val c = arr.optJSONObject(i) ?: continue
+        out.add(BoardCard(
+            id = c.optString("id"), task = c.optString("task"),
+            reason = "yours", question = null))
+    }
+    return out
+}
+
 fun parseBoardCards(boardJson: String): List<BoardCard> {
     val o = JSONObject(boardJson)
     val ny = o.optJSONArray("needs_you") ?: return emptyList()
