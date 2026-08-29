@@ -175,11 +175,17 @@
       <tbody id="presets"></tbody>
     </table>
     <p class="why" style="margin:14px 0 0;padding-top:12px;border-top:1px solid var(--borderSubtle)">
-      <b style="color:var(--warn)">Der Haken, ehrlich markiert:</b> die orange „global“-Zeilen gelten heute
-      für den GESAMTEN Workspace, nicht pro Repo &mdash; es gibt bis jetzt <b>keinen Repo-Datensatz</b>
-      (keine repos-Tabelle, kein <code>register_repo</code>; ein Repo ist nur ein Pfad-String auf einer Karte).
-      Zwei Vorlagen nebeneinander würden sich diese Werte gegenseitig überschreiben.
-      Der Repo-Scope muss vor dem Katalog kommen. Details und Vorschlag im Design-Doc.
+      <b style="color:var(--warn)">Der Haken, ehrlich markiert:</b> die orange „global“-Zeilen gelten
+      <b>heute</b> für den GESAMTEN Workspace, nicht pro Repo &mdash; es gibt bis jetzt keinen
+      Repo-Datensatz (keine repos-Tabelle, kein <code>register_repo</code>; ein Repo ist nur ein
+      Pfad-String auf einer Karte). Zwei Vorlagen nebeneinander würden sich gegenseitig überschreiben.
+      <br><br>
+      <b style="color:var(--ok)">Entschieden (Owner, 2026-08-30):</b> pro Repo &mdash; jedes Repo ist
+      ein eigenes Projekt mit eigenem Git. Phase-2-Karte 1 macht den bestehenden
+      <b>Projekt-Datensatz</b> zum Repo-Datensatz (statt einer zweiten Registratur). Danach sind
+      diese Zeilen wirklich pro Repo. Ebenfalls entschieden: die Vorlage setzt den Startwert,
+      der Autonomie-Regler darf ihn später ändern &mdash; die Karte markiert das dann sichtbar
+      als „vom Standard abgewichen“.
     </p>
   </div>
 

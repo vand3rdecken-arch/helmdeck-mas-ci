@@ -1,7 +1,9 @@
 # Repo-Onboarding mit Harness-Templates — Design (Phase 1)
 
-**Status:** Entwurf zur Abnahme. Kein Produktivcode. Phase 2 = eigene Karten.
-**Owner-Decree:** 2026-08-29 (Neuausrichtung + Nachtrag „U-Bahn-Karte, Chat als Änderungsweg").
+**Status:** Design **abgenommen** 2026-08-30, offene Kernfragen entschieden (§8).
+Phase 2 = eigene Karten, Reihenfolge in §6.
+**Owner-Decree:** 2026-08-29 (Neuausrichtung + Nachtrag „U-Bahn-Karte, Chat als Änderungsweg"),
+2026-08-30 (Repo = eigenes Projekt = eigenes Git; Vorrangregel Vorlage/Regler).
 **Mockup:** [`repo-templates-mockup.html`](repo-templates-mockup.html) (klickbar, im Browser öffnen).
 
 Antwort auf: *„Settings zu komplex, muss idiot-proof sein."*
@@ -228,41 +230,67 @@ Karte. Ohne Repo-Scope ist die Vorlage ein Etikett ohne Wirkung.
 
 ## 4. Der Bauplan
 
-### 4.1 Repo-Scope zuerst (Voraussetzung für alles andere)
+### 4.1 Repo-Scope zuerst (Voraussetzung für alles andere) — ENTSCHIEDEN
 
-Ein Repo-Dokument nach dem Vorbild von `gxp.lock` — **außerhalb** von
-`settings.json`, weil `HARNESS.md:229-233` unmissverständlich ist:
+**Owner 2026-08-30:** *„Pro Repo. Jedes Repo ist eigenes Projekt und eigenes
+Git. Diese Architektur sollte klar sein."*
 
-> *„… the chat path whitelists **top-level keys only** — so any `policy.*`
-> sub-key is reachable from chat once `policy` is listed. **If your knob must
-> not be chat-editable, it does not belong under `policy`.**"*
+Damit ist die Einheit gesetzt: **ein Repo = ein Projekt = ein Git.**
 
-Alles unter `policy` ist per Konstruktion chat-schreibbar. Der Repo-Datensatz
-gehört also **nicht** dorthin, sonst kann ein Satz im Chat die Vorlage eines
-fremden Repos umschreiben.
+Zwei harte Randbedingungen:
 
-Vorschlag `daemon/repos.json`:
+1. Der Datensatz darf **nicht unter `policy`** liegen. `HARNESS.md:229-233`:
+   > *„… the chat path whitelists **top-level keys only** — so any `policy.*`
+   > sub-key is reachable from chat once `policy` is listed. **If your knob must
+   > not be chat-editable, it does not belong under `policy`.**"*
+
+   Sonst könnte ein Satz im Chat die Vorlage eines *fremden* Repos umschreiben.
+2. **Keine zweite Registratur.** Bindendes Nicht-Ziel der Settings-IA-Karte:
+   „kein zweiter Edit-Ort für irgendeinen Key".
+
+**Empfehlung (revidiert):** *nicht* eine neue Datei `daemon/repos.json`, sondern
+den **bestehenden Projekt-Datensatz** zum Repo-Datensatz machen —
+`spine/ops/projects.py:42-47`, gespeichert über `db.project_put`
+(`spine/storage/db.py:250`), Karten hängen bereits per `project_id` daran.
+
+Warum ich von meinem eigenen ersten Vorschlag abrücke: Ein `repos.json` neben
+der `projects`-Tabelle wäre genau die zweite Registratur, die der Decree
+verbietet — und HelmDeck hat heute schon eine *dritte*, unechte: `known_repos`
+in `routes_gxp.py:32-39` synthetisiert bei jedem Aufruf eine Repo-Liste aus
+`pm.repos ∪ repo_hooks.keys() ∪ {default_repo}`. Die Entscheidung „Repo =
+Projekt" macht diese Krücke überflüssig, statt eine vierte danebenzustellen.
+
+Der Projekt-Datensatz bekommt dazu:
 
 ```jsonc
 {
-  "C:/pfad/zum/repo": {
-    "template": "software-dev",
-    "applied_at": "2026-08-29T…Z",
-    "applied_by": "owner",
-    "overrides": { "policy.auto_accept_green": true }
-  }
+  "id": "20260830-…-helmdeck",       // existiert
+  "name": "HelmDeck", "client": "…",  // existiert
+  "billing": "fixed", "rate": …,      // existiert
+  "repo":      "C:/pfad/zum/repo",    // NEU - der Git-Ordner, 1:1
+  "template":  "software-dev",        // NEU
+  "applied_at": "…", "applied_by": "owner",
+  "overrides": { "policy.auto_accept_green": true }
 }
 ```
 
-- Gelesen über **eine** Zugriffsfunktion (`repos.for_path(p)`), gemischt als
+- Liegt in `helmdeck.db`, also **außerhalb** von `settings.json` — Bedingung 1
+  automatisch erfüllt, ohne eine neue Datei zu erfinden.
+- **Ein** Leser (`projects.for_repo(path)`), Auflösung
   `Default → Vorlage → overrides`.
-- Geschrieben über **einen** Mutator (`repos.apply_template` /
-  `repos.set_override`), der auditiert — dasselbe Ein-Eigentümer-Muster wie
-  `policy.swap`.
+- **Ein** Mutator (`projects.apply_template`), auditiert — dasselbe
+  Ein-Eigentümer-Muster wie `policy.swap`.
 - **Vorsicht** (`events.py:152`, `:192-194`): `events.settings()` **überschreibt
-  Top-Level-Keys, es merged nicht tief**, und `save_settings` merged nur eine
-  Ebene. Deshalb eine eigene Datei statt eines verschachtelten Blocks im
-  Settings-Blob.
+  Top-Level-Keys, es merged nicht tief**, `save_settings` merged nur eine Ebene.
+  Ein weiterer Grund, den Datensatz *nicht* in den Settings-Blob zu legen.
+
+**Migration, ehrlich benannt:** heute sind Projekt (Abrechnungs-Container) und
+Repo (Pfad-String auf der Karte) zwei getrennte Achsen — eine Karte trägt
+`project_id` *und* `repo`. Die Entscheidung führt sie zusammen. Bestehende
+Karten müssen ihr Repo auf ein Projekt abgebildet bekommen; Projekte ohne Repo
+und Repos ohne Projekt sind der Übergangsfall, den die erste Phase-2-Karte
+sauber behandeln muss (Vorschlag: beim ersten Sehen eines unbekannten Repos
+automatisch ein Projekt anlegen, Vorlage abfragen).
 
 ### 4.2 Die U-Bahn-Karte: reine Anzeige, abgeleitet
 
@@ -333,9 +361,19 @@ Das Muster ist identisch, nur eine Ebene höher: der **Autonomie-Dial** (Karte 4
 fasst mehrere Keys zu *einer* verständlichen Stufe zusammen — die **Repo-Vorlage**
 tut dasselbe für einen ganzen Repo-Typ.
 
-⚠ **Konflikt, der entschieden werden muss:** Dial *und* Vorlage schreiben beide
-`policy.auto_accept_green` und `policy.auto_dispatch_*`. Ohne Vorrangregel
-überschreiben sie sich gegenseitig. Siehe §8 Frage 2.
+**Vorrangregel — ENTSCHIEDEN (Owner 2026-08-30):** Dial *und* Vorlage schreiben
+beide `policy.auto_accept_green` und `policy.auto_dispatch_*`.
+
+> **Die Vorlage setzt den Ausgangswert beim Onboarding. Der Regler darf ihn
+> danach überschreiben. Die U-Bahn-Karte kennzeichnet jede so entstandene
+> Abweichung sichtbar als „vom Standard abgewichen".**
+
+Das Sichtbarmachen ist der tragende Teil, nicht die Reihenfolge: der Grund für
+den ganzen Umbau war „ich verstehe nicht, was dahinter ist". Ein still
+überschriebener Wert wäre genau dieser Fehler in neuer Form. Umsetzung: der
+Projekt-Datensatz merkt sich in `overrides`, was vom Vorlagen-Wert abweicht —
+damit ist die Abweichung **Daten, nicht Rekonstruktion durch Vergleich**
+(NO-MONKEY-PATCHES: an genau einem Ort geschrieben, beim Setzen).
 
 Bindendes Nicht-Ziel von dort, das hier weiter gilt:
 > „Keine zweite Chat-UI, kein zweiter Edit-Ort für irgendeinen Key (Decree)."
@@ -346,8 +384,9 @@ Die U-Bahn-Karte als **reine Anzeige** erfüllt das exakt.
 
 ## 6. Empfehlung
 
-1. **Repo-Scope zuerst bauen** (`daemon/repos.json` + ein Leser + ein Mutator,
-   Muster `gxp.lock`). Ohne ihn ist jede Vorlage Kosmetik.
+1. **Repo-Scope zuerst bauen** — der Projekt-Datensatz wird der Repo-Datensatz
+   (`repo` + `template` + `overrides`), ein Leser, ein Mutator, auditiert.
+   Ohne ihn ist jede Vorlage Kosmetik. **Entschieden, §4.1.**
 2. **Genau zwei Vorlagen** ausliefern (`software-dev`, `documents`). Ein dritter
    Typ ist erst sinnvoll, wenn die ersten beiden im Alltag getragen haben.
 3. **Karte aus `/loop/map` ableiten**, `?repo=` ergänzen. Keine Stationsliste im
@@ -359,9 +398,14 @@ Die U-Bahn-Karte als **reine Anzeige** erfüllt das exakt.
    sie setzt, verspricht Wirkung, die es nicht gibt. Entweder erst die
    Durchsetzung bauen — oder die Finger davon lassen. Ich empfehle: Finger weg.
 
-**Vorgeschlagene Phase-2-Karten:** `repo-scope-record` → `repo-templates-catalog`
-→ `loopmap-per-repo` → `chat-template-verb`. Reihenfolge zwingend: 1 vor allem
-anderen.
+**Phase-2-Karten** (Reihenfolge zwingend, 1 vor allem anderen):
+
+| # | Karte | Inhalt | Akzeptanz |
+|---|---|---|---|
+| 1 | `repo-project-record` | `projects` bekommt `repo`/`template`/`overrides`; ein Leser `for_repo()`, ein Mutator `apply_template()`, auditiert; unbekanntes Repo legt beim ersten Sehen ein Projekt an; `known_repos` (`routes_gxp.py:32-39`) liest ab jetzt daraus statt zu synthetisieren | zwei Repos tragen gleichzeitig verschiedene Vorlagen, ohne sich zu überschreiben |
+| 2 | `repo-templates-catalog` | `ops/harness/templates/*.md` mit mtime-Reload + Fallback (Muster `agents/*.md`); die zwei Vorlagen aus §3 | kaputte Vorlagen-Datei kann keine Karte am Starten hindern |
+| 3 | `loopmap-per-repo` | `/loop/map?repo=` filtert Knoten über die Vorlage (Muster: `modes`-Filter in `loop_state.machine()`); inaktive Station gestrichelt statt versteckt; `gating` in `statusTokens` ergänzen (`gen_tokens.py`) | Karte zeigt für beide Repo-Typen den richtigen Verlauf, abgeleitet aus `/loop/map` |
+| 4 | `chat-template-verb` | `apply_template` im Copilot, Rollen über `policy.chat_configure_roles`, Ablehnung mit Route wie `copilot_actions.py:122-126` | die Sätze aus §4.3 wirken; „Gate weg" / „Review aus" werden mit Route abgelehnt |
 
 ---
 
@@ -375,26 +419,31 @@ anderen.
 
 ---
 
-## 8. Offene Fragen an den Owner
+## 8. Entscheidungen des Owners (2026-08-30)
 
-**1 — Repo-Scope: eigene Datei oder erst mal global?**
-Empfehlung: eigene Datei `daemon/repos.json` (Muster `gxp.lock`), weil alles
-unter `policy` per Konstruktion chat-schreibbar ist. Alternative: Vorlagen
-vorerst nur global (ein Workspace = ein Repo-Typ) — deutlich billiger, aber
-zwei Repos unterschiedlichen Typs sind dann nicht möglich.
+| # | Frage | Entscheidung |
+|---|---|---|
+| 1 | Repo-Scope: eigene Datei, oder erst mal global? | **Pro Repo.** *„Jedes Repo ist eigenes Projekt und eigenes Git."* → §4.1 |
+| 2 | Vorrang Autonomie-Regler vs. Repo-Vorlage | **Vorlage setzt den Startwert, der Regler darf ändern**, Abweichung wird sichtbar markiert → §5 |
+| 3 | Die drei Produktivcode-Fixes am First-Run-Screen | **Behalten** — bleiben auf diesem Branch und gehen mit der Abnahme live |
 
-**2 — Vorrang zwischen Autonomie-Dial und Repo-Vorlage.**
-Beide schreiben dieselben Keys. Wer gewinnt? Vorschlag: Vorlage setzt den
-Ausgangswert beim Onboarding, der Dial darf ihn danach pro Workspace
-überschreiben, und die Karte zeigt „vom Standard abgewichen".
+Die Architektur-Aussage aus Entscheidung 1 hat meinen eigenen Vorschlag
+korrigiert: weil ein Repo ein Projekt IST, wird der bestehende
+Projekt-Datensatz erweitert, statt eine zweite Registratur (`daemon/repos.json`)
+danebenzustellen. Begründung in §4.1.
 
-**3 — Darf eine Vorlage `capacity.wip_limit` überhaupt anfassen?**
+## 9. Noch offen (blockiert Phase 2 nicht)
+
+**A — Darf eine Vorlage `capacity.wip_limit` anfassen?**
 Das ist eine Eigenschaft der *Maschine* (wie viel Last der PC verträgt), nicht
-des Repo-Typs. Ich neige zu **nein** — raus aus der Vorlage.
+des Repo-Typs. Ich neige klar zu **nein** und habe es in der Vorlagen-Tabelle
+(§3) vorerst stehen lassen, damit die Frage sichtbar bleibt. Wenn beim Bau
+nichts dagegen spricht: raus aus der Vorlage, rein in den Regler.
 
-**4 — Paseo-Quelle.**
+**B — Paseo-Quelle gegenprüfen.**
 `~/Downloads/_paseo_src` ist vom Worktree-Guard dieser Karte **blockiert**; ich
 konnte die Quelle nicht wie beauftragt lesen. Das Paseo-Material hier stammt
-aus dem bereits recherchierten Abschnitt der Settings-IA-Karte (Drei Scopes:
-app-lokal / pro Host / **pro Projekt-Datei** — was §4.1 stützt) und ist damit
-**zweiter Hand**. Soll eine Folgekarte ohne diesen Guard das gegenprüfen?
+aus dem recherchierten Abschnitt der Settings-IA-Karte (drei Scopes: app-lokal /
+pro Host / **pro Projekt-Datei** — was §4.1 stützt) und ist damit **zweiter
+Hand**. Eine Folgekarte ohne diesen Guard sollte das bestätigen, bevor Phase 2
+sich darauf beruft.
