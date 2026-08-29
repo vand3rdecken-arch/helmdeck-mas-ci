@@ -92,23 +92,22 @@ out = W._wear_text("viele      Spalten\tund   Tabs")
 check(out == "viele Spalten und Tabs",
       "whitespace inside a line is collapsed (a 240dp line has no columns)")
 
-# -- 5. the cap, and WHERE it cuts -----------------------------------------
+# -- 5. NO cap on the body/chat text (owner decree 2026-08-29: "kein Zeichen
+# cap" - the watch and the phone are one source of truth). _wear_clip keeps
+# its cut-honestly behaviour for callers that still pass a bound (`detail`).
 out = W._wear_text("x" * 5000)
-check(len(out) <= W.WEAR_BODY_MAX + 4,
-      "the body is capped at WEAR_BODY_MAX (%d) - it rides sealed through the "
-      "relay, once per listed card" % W.WEAR_BODY_MAX)
-
-# The owner's report: "Message abgeschnitten". A raw slice ended mid-word and
-# read as a broken message rather than as a bounded screen.
+check(len(out) == 5000 and W.WEAR_BODY_MAX is None,
+      "the body is NOT capped - WEAR_BODY_MAX is None and 5000 chars survive")
 long_words = ("wort " * 400).strip()
-out = W._wear_text(long_words)
-check(out.endswith(" ..."), "a cut body SAYS it was cut")
-check(not out.replace(" ...", "").endswith("wor"),
-      "and it never ends mid-word")
-sentences = ("Erster Satz. " * 200).strip()
-out = W._wear_text(sentences)
+check(W._wear_text(long_words) == long_words,
+      "a long body arrives whole, no ellipsis")
+check(W.WEAR_CHAT_LINE_MAX is None,
+      "the chat scrollback line cap is gone too")
+out = W._wear_clip(("Erster Satz. " * 200).strip(), 100)
 check(out.endswith(". ..."),
-      "a sentence end is preferred over a bare word boundary")
+      "a CAPPED caller still cuts at a sentence end and says it cut")
+check(W._wear_clip("egal wie lang", None) == "egal wie lang",
+      "cap=None means untouched, whatever the length")
 check(W._wear_clip("kurz", 100) == "kurz",
       "text that fits is returned untouched - no ellipsis on a complete message")
 check(W._wear_clip("a" * 50, 10) == "a" * 10 + "...",

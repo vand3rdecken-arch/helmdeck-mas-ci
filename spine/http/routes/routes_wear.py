@@ -58,16 +58,15 @@ WEAR_BRIEF = (
 # totals ride alongside so "3 von 12" stays honest without sending 12 rows.
 WEAR_LIST_MAX = 5
 
-# How much of a card's own text the watch may carry. The CARD SCREEN scrolls
-# (TransformingLazyColumn), unlike the glasses' one-card lens, so this is far
-# above glance_payload's 160-char `detail` - but still a payload bound: it rides
-# sealed through the relay inside the board response, once per listed card.
-#
-# Raised 700 -> 1200 after the owner read a real turn report on the watch and
-# said "Message abgeschnitten": a DELIVERED summary is the thing he opens a card
-# to read, and 700 lost it mid-thought. Scrolling costs him a flick; a missing
-# half costs him the answer.
-WEAR_BODY_MAX = 1200
+# NO body cap (owner decree 2026-08-29, second half of "one single source of
+# truth": "kein Zeichen cap"). This walked 700 -> 1200 -> gone, each step after
+# the owner read a real turn report on the watch and found it cut ("Message
+# abgeschnitten"): a DELIVERED summary is the thing he opens a card to read,
+# and any bound loses it mid-thought eventually. The CARD SCREEN scrolls
+# (TransformingLazyColumn); scrolling costs him a flick, a missing half costs
+# him the answer. The payload stays bounded upstream anyway - `last_reply` is
+# storage-capped and the board lists at most WEAR_LIST_MAX rows per section.
+WEAR_BODY_MAX = None
 
 # The `detail` line the watch shows above the body. Same number glance_payload
 # already caps it at, so this only ever re-cuts text that arrived at the wall.
@@ -94,7 +93,7 @@ def _wear_clip(text, cap):
     single early full stop would throw away most of what fits.
     """
     text = text or ""
-    if len(text) <= cap:
+    if cap is None or len(text) <= cap:
         return text
     head = text[:cap]
     end = -1
@@ -244,9 +243,11 @@ def wear_board_get(self, user):
 # reads back a long conversation, and every line rides through the sealed relay
 # in ONE response - so this is a payload bound as much as a UI one.
 WEAR_CHAT_MAX = 30
-# Per-line cap for the scrollback. 240 chars is roughly six lines of readable
-# text on a 240dp round screen - past that the owner is scrolling, not reading.
-WEAR_CHAT_LINE_MAX = 240
+# Per-line cap for the scrollback: NONE (same decree as WEAR_BODY_MAX). The
+# old 240 meant a watch-read conversation and a phone-read one disagreed about
+# what was said - the exact discrepancy the one-source-of-truth decree closes.
+# _wear_text still strips ask-blocks, fences and markdown; only the CUT is gone.
+WEAR_CHAT_LINE_MAX = None
 
 
 def wear_chat_get(self, user):
@@ -313,9 +314,9 @@ def wear_chat_get(self, user):
             # not something anyone reads.
             _q, prose = ask.parse(text)
             text = (prose or "").strip() or text
-        # A scrollback line, not the live answer: long enough to recognise the
-        # turn, short enough that 30 of them stay a conversation instead of a
-        # wall. The full text is always one tap away on the phone.
+        # The FULL text, not a teaser (owner decree 2026-08-29: "kein Zeichen
+        # cap") - "one tap away on the phone" was the discrepancy, not a
+        # feature. The transcript stays bounded by WEAR_CHAT_MAX lines.
         # `date` is "YYYY-MM-DD" and is ABSENT on every entry written before
         # copilot._append_log started stamping it (2026-08-29). "" therefore
         # means "not recorded", not "today" - the watch draws no separator above
@@ -434,11 +435,15 @@ def wear_talk_post(self, user, body):
     q, prose = out.get("question"), reply
     if not q:
         q, prose = ask.parse(reply)
-    spoken = (prose or reply)[:600]
+    # The TEXT goes out whole (kein-Zeichen-cap decree); only the VOICE keeps a
+    # bound. 600 chars is ~45s of TTS - past that a clip is a podcast, and the
+    # full text is on the screen he is already looking at.
+    full = prose or reply
+    spoken = full[:600]
     resp = {
         # the prose WITHOUT the block - ask.parse already strips it, so the
         # watch renders `reply` as plain text and never sees raw JSON
-        "reply": spoken,
+        "reply": full,
         # the tappable half; None when the agent ignored the brief, which the
         # watch must show as a dead end rather than hide (same rule
         # glance_talk already applies for the glasses)
