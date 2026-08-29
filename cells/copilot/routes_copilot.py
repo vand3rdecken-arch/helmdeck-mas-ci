@@ -132,11 +132,50 @@ def _route_to_card(self, user, text, tid, mid=""):
         {"reply": "", "actions": [], "routed": {"card": tid, "as": routed}}))
 
 
+def _answer_text(user, request_id, answers):
+    """(text, error, status) - the owner's next chat message, rendered from an
+    answer he TAPPED on one of Henry's own <helmdeck-ask> questions.
+
+    The tap does not get a private channel: it is turned into a message here and
+    then walks the ordinary chat path - dedupe, turn, log - so an answer is the
+    owner's next message in every sense, exactly as a typed one is. That is also
+    why the wording is rendered on THIS side: the app would otherwise have to
+    own a second copy of it, and the two would drift the first time either
+    changed (ask.chat_answer_text's docstring has the rest).
+
+    The two 409s are the same guards /tracks/<id>/answer and /glance/answer
+    apply, for the same reason: a panel left open on a phone in a pocket must
+    not be able to answer a question the conversation has already moved past."""
+    from spine.ops import ask
+    from cells.copilot import copilot
+    q = copilot.open_question(user["name"])
+    if not q:
+        return "", "no pending question", 409
+    if request_id != (q.get("id") or ""):
+        return "", "this question was already answered or replaced", 409
+    picks, err = ask.validate_answers(q, answers)
+    if err:
+        return "", err, 400
+    text = ask.chat_answer_text(picks).strip()
+    if not text:
+        return "", "empty answer", 400
+    return text, "", 0
+
+
 def chat_post(self, user, body):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.copilot import copilot
     text = body.get("text", "").strip()
+    # TAPPED ANSWER to one of HENRY's questions. `answer_to` is the question id,
+    # so this cannot be confused with `reply_to_card` below (that one routes a
+    # message to a WORKER and never runs a Henry turn); this one is a Henry turn
+    # whose text the daemon writes.
+    answer_to = str(body.get("answer_to") or "").strip()
+    if answer_to:
+        text, err, code = _answer_text(user, answer_to, body.get("answers") or {})
+        if err:
+            return self._send(code, json.dumps({"error": err}))
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))
     # INLINE ANSWER (owner decree 2026-08-29). Deliberately a DIFFERENT field

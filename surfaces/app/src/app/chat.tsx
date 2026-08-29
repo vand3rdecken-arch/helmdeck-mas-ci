@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
+import type { PendingQuestion } from "@/data/types";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
@@ -78,24 +79,43 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   };
 }
 
-/** The card question this chat is currently offering to answer, or null.
+/** The question this chat is currently offering to answer, or null.
  *
- *  The NEWEST mirrored question that nothing later has settled. "Later" is
- *  positional, not temporal: the log is append-ordered, so an entry bound to
- *  the same card AFTER the question means the owner already replied or the
- *  card already moved on (a newer question, a result). Answering a superseded
- *  request_id is exactly the 409 the daemon raises, so not offering it is the
- *  honest UI for a state the server would reject anyway.
+ *  TWO kinds arrive here and both are answerable, which is the whole point of
+ *  one inbox:
+ *    * `cls:"card"` — a WORKER's question, mirrored in (card_mirror.py). Bound
+ *      to a card, settled through POST /tracks/<id>/answer.
+ *    * `cls:"bot"`  — HENRY's own, parsed off his reply at event time
+ *      (cells/copilot/copilot.chat). Settled by POST /chat with `answer_to`,
+ *      i.e. the choice becomes the owner's next message.
+ *  Only the door differs; the panel and this selector are shared. Henry's used
+ *  to be invisible here — his reply still carried the block as TEXT, so the
+ *  transcript printed raw `<helmdeck-ask>` JSON at the owner (screenshot
+ *  2026-08-29 17:56) and there was nothing to tap.
  *
- *  Deliberately ONE at a time. Two cards can wait at once, and a panel per card
- *  would turn the composer into a form; the owner answers the newest, and the
- *  next surfaces as soon as that one is settled. */
-function openCardQuestion(msgs: ChatMsg[]): ChatMsg | null {
+ *  The NEWEST question that nothing later has settled. "Later" is positional,
+ *  not temporal: the log is append-ordered. For a card that means any entry
+ *  bound to the SAME card (the owner replied, or the card moved on); for Henry
+ *  it means anyone speaking at all, since his questions live in the one
+ *  conversation rather than beside it. Answering a superseded request_id is
+ *  exactly the 409 both daemon doors raise, so not offering it is the honest UI
+ *  for a state the server would reject anyway.
+ *
+ *  Deliberately ONE at a time. Several can wait at once, and a panel per
+ *  question would turn the composer into a form; the owner answers the newest,
+ *  and the next surfaces as soon as that one is settled. */
+function openChatQuestion(msgs: ChatMsg[]): ChatMsg | null {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
-    if (m.cls !== "card" || m.kind !== "question" || !m.card || !m.question) continue;
-    const settled = msgs.slice(i + 1).some((later) => later.card === m.card);
-    return settled ? null : m;
+    if (!m.question) continue;
+    const later = msgs.slice(i + 1);
+    if (m.cls === "card" && m.kind === "question" && m.card) {
+      return later.some((x) => x.card === m.card) ? null : m;
+    }
+    if (m.cls === "bot") {
+      return later.some((x) => x.cls === "you" || x.cls === "user" || x.cls === "bot")
+        ? null : m;
+    }
   }
   return null;
 }
@@ -321,7 +341,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // notification's own buttons, and a remembered target would keep offering to
   // answer a question that is already settled - the stale-flag class this repo
   // keeps out (CLAUDE.md: derived, not stored).
-  const openQ = useMemo(() => openCardQuestion(msgs), [msgs]);
+  const openQ = useMemo(() => openChatQuestion(msgs), [msgs]);
   const cardRecipients = useMemo<Recipient[]>(() => openQ?.card ? [
     { id: "henry", label: tr("transcript.boardAgent"), color: t.accent2,
       icon: "sparkles-outline", hint: tr("card.chat.mentionHenry") },
@@ -362,7 +382,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // `retryOf` = the outbox row this send is re-attempting, so a success settles
   // THAT row instead of leaving a duplicate parked, and a second failure counts
   // the attempt instead of parking the same text twice.
-  async function send(raw: string, opts: SteerOpts, retryOf?: string) {
+  // `opts.answer_to`/`opts.answers` mark a TAPPED answer to one of Henry's own
+  // questions: they ride through to POST /chat, where the daemon validates the
+  // choice and writes the message text itself. `raw` is then only the optimistic
+  // preview (see sendAnswer) - the daemon's wording replaces it on the next
+  // history poll. Should the send fail and land in the outbox, retrying it drops
+  // back to sending that preview as an ordinary message, which still reads as
+  // the owner's answer and still settles the question.
+  async function send(raw: string, opts: SteerOpts & {
+    answer_to?: string; answers?: Record<string, string | string[]>;
+  }, retryOf?: string) {
     const q = raw.trim();
     if (!q) return;
     setBusy(true);
@@ -426,6 +455,38 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     } finally {
       if (turn.current === id) { setBusy(false); setTimeout(() => scroll.current?.scrollToEnd(), 50); }
     }
+  }
+
+  /** The owner TAPPED an option on one of Henry's own questions.
+   *
+   *  It runs the ORDINARY send path - same turn, same session, same optimistic
+   *  bubble, same outbox - because the decree is that the choice becomes the
+   *  owner's next message, not that it gets a private channel. Two consequences
+   *  fall out of that for free: the panel disappears the instant the optimistic
+   *  `you` bubble lands (openChatQuestion sees someone spoke after the question),
+   *  and answering is undoable in exactly the way any other message is.
+   *
+   *  Not awaited: `send` resolves only when the whole turn is DONE, and the
+   *  panel spins while its submit promise is pending. Waiting here would pin a
+   *  dead panel over the transcript for the length of Henry's answer. */
+  function sendAnswer(q: PendingQuestion,
+                      answers: Record<string, string | string[]>, rid: string) {
+    // The optimistic bubble's text only. The daemon renders the authoritative
+    // wording from the SAME answers (spine/ops/ask.chat_answer_text) and its
+    // version replaces this one on the next history poll - retired by
+    // client_msg_id, so the two never have to agree character for character.
+    // The shape is mirrored here purely so the bubble does not visibly reword
+    // itself a second later.
+    const one = (h: string) => {
+      const v = answers[h];
+      return (Array.isArray(v) ? v : [v]).filter(Boolean).join(", ");
+    };
+    const qs = q.questions ?? [];
+    const preview = qs.length === 1
+      ? one(qs[0].header)
+      : qs.map((x) => `${x.header}: ${one(x.header)}`).join("; ");
+    void send(preview, { answer_to: rid, answers });
+    return Promise.resolve();
   }
 
   function stop() {
@@ -602,12 +663,20 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
             </Text>
           ) : null}
           {/* The SAME QuestionPanel the card screen pins above its composer -
-              not a second one built for this surface. It already answers via
-              POST /tracks/<id>/answer with the request_id, which is exactly
-              what a mirrored question needs, so the board chat gets real
-              option buttons without a second answer path to keep in sync. */}
-          {openQ?.card && openQ.question ? (
-            <QuestionPanel cardId={openQ.card} question={openQ.question}
+              not a second one built for this surface. Both kinds of question
+              render through it (see openChatQuestion); only the DOOR differs, so
+              the board chat gets real option buttons either way and there is no
+              second answer path - or second chat UI - to keep in sync. */}
+          {openQ?.question ? (
+            <QuestionPanel question={openQ.question}
+              onSubmit={openQ.card
+                // a WORKER's question: settle it on the card, which resumes the
+                // session it parked - the owner's words belong to that worker.
+                ? (answers, rid) => api.answer(openQ.card as string, answers, rid)
+                // HENRY's own: the choice becomes the owner's next message.
+                : (answers, rid) => sendAnswer(openQ.question as PendingQuestion, answers, rid)}
+              // ...and the promise made to the owner has to match the door.
+              hint={openQ.card ? undefined : tr("card.q.hintChat")}
               onAnswered={() => qc.invalidateQueries({ queryKey: ["chatHistory"] })} />
           ) : null}
           <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />

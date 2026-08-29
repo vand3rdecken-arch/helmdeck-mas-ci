@@ -12,6 +12,7 @@ CHATLOG = os.path.join(ROOT, "copilot_log.json")
 from cells.copilot.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.copilot_actions import _strip_actions_live, _parse_reply_actions
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
+from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip)
 
 
 # Appended ONLY on voice turns (routes_copilot.chat_post): a spoken answer has
@@ -457,9 +458,75 @@ def history(user):
     if st:
         st = dict(st)
         st["plan_pct"] = _plan_share(st)
-    return {"messages": _log().get(user, []),
+    return {"messages": [_readable(m) for m in _log().get(user, [])],
             "session_id": _sessions().get(user),
             "stats": st}
+
+
+def open_question(user):
+    """Henry's OWN open question in this chat, or None.
+
+    DERIVED from the log every time it is asked - there is no `pending_question`
+    field anywhere, and there must not be one. The chat log is the single record
+    of what was said; a second stored flag beside it is a copy that can disagree
+    with it (the class of bug the no-monkey-patches decree names), and it would
+    need clearing on every path that ends a question: an answer, a fresh message,
+    a cancel, a session rotation. Reading it back costs nothing and cannot drift.
+
+    "Open" = the newest `cls:"bot"` entry carrying a question, with NOTHING said
+    since. Anyone speaking after it settles it: the owner moved on, or Henry did.
+    This mirrors openCardQuestion() in the app - same rule, and the app's panel
+    disappearing is then the truth rather than a guess, because answering a
+    superseded question is a 409 here anyway.
+
+    Note this is Henry's question only. A mirrored CARD question belongs to that
+    card and is answered through sessions.answer_question (see _route_to_card)."""
+    log = _log().get(user, [])
+    for i in range(len(log) - 1, -1, -1):
+        m = log[i]
+        if m.get("cls") != "bot" or not m.get("question"):
+            continue
+        if any(x.get("cls") in ("you", "user", "bot") for x in log[i + 1:]):
+            return None
+        return m["question"]
+    return None
+
+
+def _readable(m):
+    """BACKSTOP for entries written before chat() learned to clean the reply.
+
+    Every turn from here on stores prose + a typed `question` (see chat()), so
+    this is a no-op on new entries - `strip` returns the text untouched when the
+    sentinel is absent. But the owner's log already HOLDS raw blocks from every
+    wear/glasses turn taken until now, and those are exactly the lines his
+    screenshot shows. They are cleaned on READ rather than rewritten in place:
+    the chat log is an append-only record of what was said, and a display defect
+    is not a reason to edit history.
+
+    The block is dropped, not resurrected as a panel. A question from a past
+    turn has already been answered or has gone stale, and offering dead buttons
+    for it would be a worse lie than the JSON was."""
+    if m.get("cls") != "bot":
+        return m
+    text = m.get("text") or ""
+    # strip_stream, not strip: strip() needs a COMPLETE block and returns a
+    # TRUNCATED one untouched - which put the raw JSON straight back on screen
+    # for exactly the malformed case this function exists to hide (caught by
+    # ops/tests/test_chat_question_channel.py). strip_stream also cuts from an
+    # unclosed opening tag, so a reply that was cut off mid-block is covered.
+    cleaned = ask.strip_stream(text)
+    if cleaned == text:
+        return m
+    m = dict(m)
+    # A legacy reply that was ONLY a block still has to say something:
+    # summary() reads the question back as its first line. If even that fails
+    # (a MALFORMED block - truncated JSON, a bad label type), the entry is left
+    # with EMPTY text and the app skips the bubble entirely. Falling back to the
+    # raw text here would put the JSON back on screen, which is the whole defect
+    # - an unreadable block is hidden, never shown "just in case".
+    q, _ = ask.parse(text)
+    m["text"] = cleaned.strip() or (ask.summary(q) if q else "")
+    return m
 
 
 def say(text, cls="pm", card=None, extra=None):
@@ -597,7 +664,15 @@ def live(user):
                 return f.read()
         except OSError:
             return ""
-    return {"text": _rd("live_partial.txt"), "thinking": _rd("live_thinking.txt"),
+    # strip_stream, not strip: while the block is still being typed its CLOSING
+    # tag has not arrived, so strip() (which needs a complete block) would let
+    # the JSON appear character by character in the live bubble and only tidy
+    # itself once the turn settled. Cutting from the opening tag - and from a
+    # half-typed one - is the same thing the card's readers do
+    # (spine/agent/claude_sessions.py: read_transcript_live/_store); the board
+    # chat was simply the one live feed that never got it.
+    return {"text": ask.strip_stream(_rd("live_partial.txt")),
+            "thinking": _rd("live_thinking.txt"),
             "running": user in _running}
 
 
@@ -927,6 +1002,32 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         sess[user] = sid_final
         _save_sessions(sess)
     reply_prose, acts_parsed = _parse_reply_actions(txt)
+    # THE ASK BLOCK, folded in HERE - at event time, at the protocol's one owner.
+    #
+    # _parse_reply_actions strips the ```actions fence and nothing else, so a
+    # <helmdeck-ask> block used to survive into `out["reply"]` AND into the
+    # persisted `cls:"bot"` log entry verbatim. The watch papered over that on
+    # READ (routes_wear._wear_text / wear_chat_get); the phone's /chat/history
+    # did not, so the board chat rendered a screenful of '{"label": ...' JSON -
+    # the owner's screenshot, 2026-08-29 17:56.
+    #
+    # The block reaches THIS log even though board-copilot.md sets
+    # ask_protocol:false, because /wear/talk and /glance/talk run WEAR_BRIEF /
+    # GLASS_BRIEF through this same copilot.chat on the SAME session - and both
+    # of those briefs REQUIRE the block. One session, one log, three surfaces.
+    #
+    # So it is parsed once, where the reply is produced, and both halves are
+    # carried as typed state: `reply_prose` is the prose every surface renders,
+    # `question` the tappable half every surface offers. No surface re-derives
+    # it from text, and no second parser exists (the phone must never own a
+    # copy of this grammar - spine/ops/ask.py is the only one).
+    question, reply_prose = ask.parse(reply_prose)
+    # A reply that is ONLY a block (the watch/glasses briefs invite exactly
+    # that: "end every reply with a <helmdeck-ask> block") would otherwise leave
+    # an EMPTY bubble in the chat with the content hidden in the panel. The
+    # question's own first line is the honest text for it - never the raw block.
+    if question and not reply_prose.strip():
+        reply_prose = ask.summary(question)
     # FILLER GUARD (speech-to-speech's provisional-generation lesson, adapted).
     # Measured 2026-08-23 on the owner's PM session: at ~94% context fill the
     # fast voice model answered two real questions with the session's
@@ -949,6 +1050,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     # already went wrong once.
                     client_msg_id=client_msg_id, _retried=True)
     out = {"reply": reply_prose, "actions": acts_parsed}
+    # The tappable half rides the response as TYPED state, so /wear/talk and
+    # /glance/talk keep getting a question after the prose was cleaned here
+    # (they used to re-parse `reply` themselves - see their call sites) and the
+    # phone gets one for the first time.
+    if question:
+        out["question"] = question
     d = result                                       # for cost/usage below
     u = d.get("usage") or {}
     usage = {"in": (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
@@ -992,8 +1099,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
         if client_msg_id:
             you["client_msg_id"] = client_msg_id
-        entries = [you,
-                   {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
+        bot = {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}
+        # PERSISTED beside the prose, exactly as card_mirror.say_card stamps a
+        # worker's question onto a `cls:"card"` entry. The panel is therefore
+        # still there after a reload, on any device reading this log - a
+        # question that only lived in the POST response would vanish on the
+        # next poll, which is the one thing an open decision must not do.
+        if question:
+            bot["question"] = question
+        entries = [you, bot]
         if rotate_note:
             entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
         _append_log(user, entries)
