@@ -220,11 +220,39 @@ function resolveClaudeSpawn(claude) {
   return { cmd: claude.cmd, prefixArgs: [], useShell: win };
 }
 
+/** Quote one argument for the shell we are about to hand a joined string to.
+ *  Only needed on the resolveClaudeSpawn FALLBACK path (shim we cannot see
+ *  through): Node does NOT escape argv when `shell` is set - it joins on spaces
+ *  and hands the result to cmd.exe - so anything with a space or a colon must
+ *  carry its own quotes or it arrives as several arguments. */
+const shellQuote = (a) => (win
+  ? `"${String(a).replace(/"/g, '\\"')}"`
+  : `'${String(a).replace(/'/g, "'\\''")}'`);
+
+/** spawnSync for `claude`, going through resolveClaudeSpawn like claudeTask
+ *  already does. This is not cosmetic: `runQ(claude.cmd, ["-p", "reply with: ok"])`
+ *  reaches cmd.exe as `claude.cmd -p reply with: ok`, so the prompt splits into
+ *  three arguments, claude exits non-zero on the junk, and the caller concludes
+ *  "not logged in" on a perfectly healthy, authenticated install - onboarding
+ *  then opens a login terminal nobody needs and waits out its full five-minute
+ *  poll. Exactly the loss realClaudeExe documents above (fixed for the daemon in
+ *  ea09780), reached through the one call site that still used the shell. */
+function runClaude(claude, args, opts = {}) {
+  const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
+  const argv = [...prefixArgs, ...args];
+  try {
+    return spawnSync(cmd, useShell ? argv.map(shellQuote) : argv,
+      { shell: useShell, windowsHide: true, encoding: "utf8", timeout: 20000, env: hydratedEnv(), ...opts });
+  } catch (e) {
+    return { status: 1, stdout: "", stderr: String(e && e.message) };
+  }
+}
+
 /** Authenticated == a trivial non-interactive prompt returns without an auth
  *  error. `claude -p` exits non-zero and says so when the user is logged out. */
 function claudeAuthed(claude) {
   if (!claude) return false;
-  const r = runQ(claude.cmd, ["-p", "reply with: ok"], { timeout: 60000 });
+  const r = runClaude(claude, ["-p", "reply with: ok"], { timeout: 60000 });
   const out = ((r.stdout || "") + (r.stderr || "")).toLowerCase();
   if (/not logged in|unauthor|authenticate|login|invalid api key|no api key/.test(out)) return false;
   return r.status === 0;
@@ -289,7 +317,14 @@ function npmInstallGlobal(npmCmd, pkgName, displayName) {
 function openClaudeLoginTerminal(claude) {
   try {
     if (win) {
-      spawn("cmd.exe", ["/c", "start", "\"Claude Code Login\"", "cmd", "/k", claude.cmd],
+      // Prefer the real executable over the .cmd shim (same reason as
+      // resolveClaudeSpawn), and let Node do the quoting: with shell:false it
+      // quotes any argument containing spaces, so the title stays a title and
+      // a path like C:\Program Files\nodejs\claude.cmd survives. Pre-quoting
+      // the title by hand produced a doubly-quoted token, and the unquoted
+      // ProgramFiles path made `cmd /k` try to run "C:\Program".
+      const { cmd, prefixArgs } = resolveClaudeSpawn(claude);
+      spawn("cmd.exe", ["/c", "start", "Claude Code Login", "cmd", "/k", cmd, ...prefixArgs],
         { shell: false, windowsHide: false, detached: true, stdio: "ignore", env: hydratedEnv() }).unref();
       return true;
     }
@@ -463,9 +498,27 @@ function startSetupServer(ctx) {
   // un-install mid-run; a MISSING one is re-probed (so installing Python
   // while the setup screen is open is still picked up on the next poll).
   let _pyProbe = null, _claudeProbe = null, _engineProbeCache = {};
+  // A MISS is retried - installing Python while this screen is open has to be
+  // noticed - but no more often than MISS_TTL. Both halves matter: on a fresh
+  // machine every probe misses BY DEFINITION, and findPython/findClaude shell
+  // out per candidate SYNCHRONOUSLY, so an unthrottled retry re-ran up to six
+  // blocking spawns per request while two independent hooks poll /setup/state
+  // about twice a second - the control plane spent provisioning blocked on its
+  // own probes. Positive results still stick forever (below).
+  const MISS_TTL = 5000;
+  const _missAt = {};
+  const cachedProbe = (key, probe) => {
+    const now = Date.now();
+    if (now - (_missAt[key] || 0) < MISS_TTL) return null;
+    const r = probe();
+    if (!r) _missAt[key] = now;
+    return r;
+  };
+  const probePython = () => _pyProbe || (_pyProbe = cachedProbe("python", () => findPython(ctx.resourcesDir)));
+  const probeClaude = () => _claudeProbe || (_claudeProbe = cachedProbe("claude", () => findClaude()));
   const state = async () => {
-    const py = _pyProbe || (_pyProbe = findPython(ctx.resourcesDir));
-    const claude = _claudeProbe || (_claudeProbe = findClaude());
+    const py = probePython();
+    const claude = probeClaude();
     return {
       python: !!py, pythonBundled: !!(py && py.bundled),
       claude: !!claude, claudeVersion: claude ? claude.version : "",
@@ -474,17 +527,22 @@ function startSetupServer(ctx) {
     };
   };
 
-  // Same cache-once-positive reasoning as _pyProbe/_claudeProbe above (a found
-  // CLI doesn't uninstall itself mid-run; a missing one is re-probed so an
-  // install that just happened elsewhere is picked up on the next poll).
+  // Same cache-once-positive / throttle-the-miss reasoning as probePython above,
+  // and for the same reason: this list is five CLIs, all of them missing on a
+  // fresh machine, probed on every poll. The cache holds HITS only, so a null
+  // entry is simply "not found yet" and re-probes on the next tick past MISS_TTL.
   const engineStatuses = () => ENGINES.map((eng) => {
     if (eng.id === "claude") {
-      const c = _claudeProbe || (_claudeProbe = findClaude());
+      const c = probeClaude();
       return { id: eng.id, label: eng.label, tier: eng.tier, installed: !!c, version: c ? c.version : "" };
     }
-    const cached = _engineProbeCache[eng.id];
-    const status = (cached && cached.installed) ? cached : (_engineProbeCache[eng.id] = probeCliVersion(eng.id));
-    return { id: eng.id, label: eng.label, tier: eng.tier, installed: status.installed, version: status.version };
+    const hit = _engineProbeCache[eng.id]
+      || (_engineProbeCache[eng.id] = cachedProbe("eng:" + eng.id, () => {
+        const s = probeCliVersion(eng.id);
+        return s.installed ? s : null;
+      }));
+    return { id: eng.id, label: eng.label, tier: eng.tier,
+      installed: !!hit, version: hit ? hit.version : "" };
   });
 
   async function provision(selected) {
@@ -605,8 +663,13 @@ function startSetupServer(ctx) {
     if (url.pathname === "/setup/engines") return send(200, { engines: engineStatuses() });
     if (url.pathname === "/setup/provision") {
       const raw = (url.searchParams.get("engines") || "claude").split(",").map((s) => s.trim()).filter(Boolean);
+      // Report whether THIS call started a run. A reload mid-provision re-posts
+      // here, and provision() correctly ignores the second one - but answering
+      // `started: true` to a call that started nothing is the kind of small lie
+      // that later reads as "it ran twice" when debugging a re-entrant flow.
+      const already = running;
       provision(raw);
-      return send(200, { started: true });
+      return send(200, { started: !already, alreadyRunning: already });
     }
     return send(404, { error: "not found" });
   });
