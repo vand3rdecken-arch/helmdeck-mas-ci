@@ -21,7 +21,10 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.OutlinedCard
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import app.helmdeck.wear.data.DeviceStore
@@ -118,11 +121,79 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                         modifier = Modifier.padding(8.dp),
                     )
                 }
+                // "Zurück" stays directly under the title, ABOVE the content:
+                // this screen is reached from a manual `when(screen)` in
+                // MainActivity, not a SwipeDismissableNavHost, so the swipe-back
+                // gesture does not return to the board here. Putting the only
+                // way out below a scrolling wall of text would strand him on a
+                // long card.
                 item {
                     Button(
                         onClick = { VoicePlayer.stop(); onBack() },
                         modifier = Modifier.padding(4.dp),
                     ) { Text("Zurück") }
+                }
+                // THE CARD'S OWN CONTENT - the whole reason this screen exists
+                // and the one thing it used to be missing. Owner, 2026-08-29:
+                // "wenn ich auf Karte gehe ist nichts da." It was literally
+                // true: title, Zurück, Henry fragen, and nothing in between.
+                //
+                // Two lines, in the order a triage read wants them:
+                //   1. WHY it wants him (blocker reason + detail), coloured by
+                //      the card's own status through WearSemantics - the same
+                //      table the phone's statusColor() uses, so red means red
+                //      on both. Absent for a pipeline card, which is not stuck.
+                //   2. WHAT last happened (body): the machine's last reply.
+                val label = reasonLabel(card.reason)
+                if (label.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = label,
+                            color = WearSemantics.status(
+                                card.status.ifBlank { card.reason }),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                // ...but NOT when `detail` is just the top of `body`. For the
+                // reasons 'delivered' and 'failed', blockers.blocker() builds
+                // detail FROM last_reply (blockers.py:70,80) - it is literally
+                // the first 160 chars of the card below it, and rendering both
+                // prints the same sentence twice on a screen with no room for
+                // it once. Probed on the text rather than on the reason name so
+                // a new reason with the same shape cannot reintroduce it.
+                val detailEchoesBody = card.body.replace('\n', ' ')
+                    .startsWith(card.detail.take(40))
+                if (card.detail.isNotBlank() && !detailEchoesBody) {
+                    item {
+                        OutlinedCard(
+                            onClick = {},
+                            modifier = Modifier.padding(vertical = 3.dp),
+                        ) {
+                            Text(text = card.detail, textAlign = TextAlign.Start)
+                        }
+                    }
+                }
+                if (card.body.isNotBlank()) {
+                    item {
+                        // Same neutral surface HenryScreen gives Henry's own
+                        // messages (`layer2` from WearTokens, i.e. from
+                        // ops/tools/gen_tokens.py) - because it is the same
+                        // thing: the machine talking. Start-aligned; a centred
+                        // paragraph has a ragged left edge and the eye loses
+                        // the line it was on.
+                        Card(
+                            onClick = {},
+                            colors = CardDefaults.cardColors(
+                                containerColor = WearTokens.layer2,
+                                contentColor = WearTokens.txtPrimary,
+                            ),
+                            modifier = Modifier.padding(vertical = 3.dp),
+                        ) {
+                            Text(text = card.body, textAlign = TextAlign.Start)
+                        }
+                    }
                 }
 
                 val q = card.question
