@@ -46,7 +46,16 @@ store = {}          # tid -> track dict (THE board)
 chat = []           # copilot.say() -> what the owner would read
 pushed = []         # notify.card_event() transitions
 
-copilot.say = lambda text, cls="pm": chat.append(text)
+# MUST stay at least as WIDE as copilot.say's real signature. It did not: `card`
+# was added to say() and not here, and _say_card's best-effort
+# `except Exception: pass` swallowed the resulting TypeError - so all six chat
+# assertions below silently tested nothing while this file still reported PASS.
+# A stub narrower than the function it stands in for does not weaken a test, it
+# DELETES it, and does so invisibly.
+# `**kw` rather than a copied parameter list, because copying is what failed:
+# the capture here only ever cares about `text`, so every other argument is
+# noise this stub should absorb instead of re-declare.
+copilot.say = lambda text, cls="pm", card=None, **kw: chat.append(text)
 notify.card_event = lambda t, status: pushed.append(status)
 notify.push_fcm = lambda *a, **k: None
 

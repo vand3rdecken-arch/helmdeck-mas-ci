@@ -438,8 +438,14 @@ export function Transcript({ steps, onRewind, me }: { steps: TStep[]; onRewind?:
         const senderKey = mine ? "me" : byKind + ":" + (s.by || "");
         const showHeader = !mine && senderKey !== lastTextSender;
         lastTextSender = senderKey;
+        // A worker step normally has no `by` (drivers.py only stamps it on the
+        // human's steer) and falls back to the generic "Worker". When one DOES
+        // carry it - the board chat's mirrored card events, labelled
+        // "Frage · <Kartenname>" - that label must win, or every card in the
+        // inbox reads as the same anonymous "Worker" and the owner cannot tell
+        // WHICH card is asking.
         const senderLabel = byKind === "henry" ? tr("transcript.boardAgent")
-          : byKind === "worker" ? tr("transcript.worker") : (s.by || "?");
+          : byKind === "worker" ? (s.by || tr("transcript.worker")) : (s.by || "?");
         const senderIcon = byKind === "henry" ? "sparkles-outline"
           : byKind === "worker" ? "construct-outline" : "person-outline";
         if (mine) return (

@@ -684,18 +684,31 @@ def _repo_hook(t, kind):
 from spine.registry import i18n as _i18n  # owner-facing prose only; the audit trail stays English
 
 
-def _say_card(t, text):
+def _say_card(t, text, kind=None):
     """Report a lane OUTCOME in the owner's board chat, in plain language.
 
     The lane pipeline is otherwise mute toward the chat: it writes the flight
     recorder, the event log and a push, none of which is the surface the owner
     actually reads. A drag to Done could run the gate, hit a conflict and
     bounce with nothing to show for it. Best-effort by design - reporting an
-    outcome must never break the work that produced it."""
+    outcome must never break the work that produced it.
+
+    Routed through card_mirror.say_card since 2026-08-29 so a lane outcome is
+    the SAME kind of object as a mirrored question or turn end - labelled with
+    the card's short name, bound to its id, and visible on the watch. It used
+    to be a bare cls="pm" line, which meant the two halves of the same inbox
+    looked and behaved differently: a turn end was answerable and reached the
+    wrist, an accept or a red gate was neither. This function stays the ONE
+    owner of lane-outcome messages (card_mirror.REASONS deliberately omits
+    done/bounced) - the mirror is where it writes, not a second voice.
+
+    `kind` splits the outcomes that STOP the card (red gate, conflict, drift,
+    failed landing) from the ones that merely report progress. Both are lane
+    outcomes; only the first is a blocker, and the owner filters his inbox on
+    exactly that difference."""
     try:
-        from cells.copilot import copilot
-        title = (t.get("task") or "").replace("\n", " ")[:60]
-        copilot.say("'%s': %s" % (title, text), cls="pm", card=t.get("id"))
+        from cells.copilot import card_mirror
+        card_mirror.say_card(t, kind or card_mirror.KIND_RESULT, text)
     except Exception:
         pass
 
@@ -905,7 +918,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             t = _mutate(tid, _markers) or t
             from spine.comms import notify
             notify.card_event(t, "bounced")
-            _say_card(t, _i18n.t("say.conflictMarkers", detail=msg))
+            _say_card(t, _i18n.t("say.conflictMarkers", detail=msg), kind="blocker")
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
             return t
         if ac is True:
@@ -936,7 +949,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             t = _mutate(tid, _basefail) or t
             from spine.comms import notify
             notify.card_event(t, "bounced")
-            _say_card(t, _i18n.t("say.baseDrifted", detail=msg))
+            _say_card(t, _i18n.t("say.baseDrifted", detail=msg), kind="blocker")
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = "conflict"
             return t
         if sync.startswith("synced"):
@@ -970,7 +983,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             # a gate failure's actual output (which test, which assertion) lives
             # on the lines after the header, and the chat is where the owner
             # reads the reason. `punch` stays for the card's compact report.
-            _say_card(t, _i18n.t("say.gateRed", detail="\n".join(problems)[:800]))
+            _say_card(t, _i18n.t("say.gateRed", detail="\n".join(problems)[:800]), kind="blocker")
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)
@@ -1059,7 +1072,11 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             t = _mutate(tid, _mergefail) or t
             from spine.comms import notify
             notify.card_event(t, "bounced")
-            _say_card(t, _i18n.t("say.cannotLand", kind=kind, detail=mergemsg[:400]))
+            # NB the two `kind=` here are different things: the inner one is the
+            # merge outcome the message interpolates, the outer one is this
+            # message's INBOX class. A failed landing stops the card.
+            _say_card(t, _i18n.t("say.cannotLand", kind=kind, detail=mergemsg[:400]),
+                      kind="blocker")
             t = dict(t); t["merge_failed"] = True; t["merge_kind"] = kind
             return t
         _NOTE = {"merged": "MERGED -> main", "already_merged": "REDUNDANT (bereits in main) - geschlossen",

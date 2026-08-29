@@ -44,9 +44,19 @@ import org.json.JSONObject
  *  clock for one that was just sent or just answered - /wear/talk returns no
  *  stamp, and the moment the line appears is the honest answer for it. Empty
  *  when neither is available; the chat then shows the name without a time
- *  rather than inventing a minute. */
+ *  rather than inventing a minute.
+ *
+ *  `label`, `card` and `options` are set only on a MIRRORED CARD EVENT (cls
+ *  "card" server-side, cells/copilot/card_mirror.py). `label` is the composed
+ *  "Frage · Kartenname" that replaces the sender name, so the owner can tell a
+ *  worker waiting on a decision from Henry talking; `card` is the id an answer
+ *  goes back to; `options` are the worker's own choices when one tap settles
+ *  it. All three are empty on an ordinary line, and an older daemon omits them
+ *  from the payload entirely - which degrades to exactly the previous
+ *  behaviour, never to a blank. */
 private data class Line(val mine: Boolean, val text: String, val ts: String = "",
-                        val date: String = "")
+                        val date: String = "", val label: String = "",
+                        val card: String = "", val options: List<String> = emptyList())
 
 /** "HH:mm", 24h, matching the daemon's time.strftime("%H:%M") exactly - a
  *  locale-defaulted pattern would render some watches as 12h and the two halves
@@ -77,8 +87,20 @@ private fun dayLabel(date: String): String {
     }.getOrDefault(date)
 }
 
-/** Who is speaking, as a chat shows it. */
-private fun senderOf(mine: Boolean) = if (mine) "Du" else "Henry"
+/** Who is speaking, as a chat shows it.
+ *
+ *  A mirrored card event carries its own label ("Frage · Kartenname") and uses
+ *  it INSTEAD of a name: the message is a card waiting on the owner, not Henry
+ *  speaking, and calling it "Henry" would be a lie he acts on - he would read a
+ *  pending decision as advice. */
+private fun senderOf(line: Line): String =
+    if (line.label.isNotBlank()) line.label else if (line.mine) "Du" else "Henry"
+
+/** The mirror's three kinds, as the wrist names them. Mirrors
+ *  cells/copilot/card_mirror.py's KIND_* constants; an unknown kind falls back
+ *  to "Karte" rather than rendering a raw identifier at the owner. */
+private val KIND_LABEL = mapOf(
+    "question" to "Frage", "result" to "Ergebnis", "blocker" to "Blocker")
 
 /**
  * Henry as a TEXT CHAT, and the first thing the app shows.
@@ -111,7 +133,12 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // conversation instead of starting at a blank screen every time.
     val lines = remember {
         mutableStateListOf<Line>().apply {
-            addAll(DeviceStore.loadChat(context).map { Line(it.mine, it.text, it.ts, it.date) })
+            // `label` is restored so a cached card event keeps its "Frage ·
+            // Kartenname" header; `card`/`options` deliberately are not, so no
+            // button is offered against a question whose current state has not
+            // been re-read from the server (see DeviceStore.ChatLine).
+            addAll(DeviceStore.loadChat(context).map {
+                Line(it.mine, it.text, it.ts, it.date, it.label) })
         }
     }
     // Every append goes through here so no path can add a line and forget to
@@ -120,12 +147,18 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     fun record(line: Line) {
         lines.add(line)
         DeviceStore.saveChat(
-            context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date) })
+            context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date, it.label) })
     }
     var busy by remember { mutableStateOf(false) }
     var loadingHistory by remember { mutableStateOf(false) }
     var voiceOn by remember { mutableStateOf(DeviceStore.loadVoiceOn(context)) }
     var suggestions by remember { mutableStateOf<QuestionBlock?>(null) }
+    // Cards answered from THIS screen since it opened. The server transcript is
+    // the truth, but it is a poll behind: without this the buttons would stay
+    // on screen after a tap until the next /wear/chat load, and a second tap is
+    // a certain 409. Derived state, never persisted - a restart re-reads the
+    // real answer from the transcript rather than trusting a remembered flag.
+    var answered by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val columnState = rememberTransformingLazyColumnState()
 
@@ -164,6 +197,48 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             val v = o?.optJSONObject("voice")
             if (voiceOn && v != null) {
                 VoicePlayer.play(context, v.optString("mime"), v.optString("b64"))
+            }
+        }
+    }
+
+    /** Answer a MIRRORED card question from the wrist.
+     *
+     *  Same POST as `ask`, plus `reply_to_card` - which is what makes it reach
+     *  that card's worker (routes_wear routes it through sessions.reply_door)
+     *  instead of Henry's advisory session. Sending it as an ordinary message
+     *  would put a bare "A" in front of Henry, who cannot settle another
+     *  agent's question, while the card went on waiting.
+     *
+     *  `answered` clears the buttons immediately: the daemon rejects a second
+     *  answer to the same request_id with a 409, so leaving them tappable would
+     *  invite a guaranteed error. */
+    fun answerCard(card: String, label: String) {
+        val device = DeviceStore.load(context)
+        if (device == null) {
+            record(Line(false, "Nicht gekoppelt.", nowHm(), nowDate()))
+            return
+        }
+        record(Line(true, label, nowHm(), nowDate()))
+        answered = answered + card
+        busy = true
+        scope.launch {
+            val body = JSONObject()
+                .put("message", label).put("reply_to_card", card).toString()
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    RelayClient.authedCall(
+                        device.relayUrl, device.room, device.daemonPubB64,
+                        device.myPublicKeyB64, device.mySecretKeyB64,
+                        device.deviceToken, "POST", "/wear/talk", body)
+                }.getOrNull()
+            }
+            busy = false
+            if (result == null || result.first !in 200..299) {
+                // Say so, and put the buttons BACK: an answer that never landed
+                // must not look like one that did, or the owner walks away from
+                // a card still waiting on him.
+                answered = answered - card
+                record(Line(false, "Antwort nicht angekommen.", nowHm(), nowDate()))
             }
         }
     }
@@ -214,7 +289,32 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val text = o.optString("text")
-            if (text.isNotBlank()) fresh.add(Line(o.optBoolean("mine"), text, o.optString("ts"), o.optString("date")))
+            if (text.isBlank()) continue
+            // A mirrored card event ships its label as PARTS (kind + cardName),
+            // never pre-rendered: the phone draws them as a transcript sender
+            // line and the watch as a TitleCard title, and a server that had
+            // guessed one layout would be wrong on the other surface.
+            val kind = o.optString("kind")
+            val label = if (kind.isBlank()) "" else
+                (KIND_LABEL[kind] ?: "Karte") + " · " +
+                    o.optString("cardName").ifBlank { o.optString("card") }
+            // Only a QUESTION gets buttons. A result or a blocker is news, and
+            // offering a tap on it would invite an answer to nothing.
+            val opts = ArrayList<String>()
+            if (kind == "question") {
+                val qs = o.optJSONObject("question")?.optJSONArray("questions")
+                val first = qs?.optJSONObject(0)
+                val oa = first?.optJSONArray("options")
+                if (oa != null) for (j in 0 until oa.length()) {
+                    val lbl = oa.optJSONObject(j)?.optString("label") ?: ""
+                    // VERBATIM: validate_answers matches a label by equality, so
+                    // trimming one here would turn a button press into free text
+                    // and the worker would read it as the owner's own words.
+                    if (lbl.isNotBlank()) opts.add(lbl)
+                }
+            }
+            fresh.add(Line(o.optBoolean("mine"), text, o.optString("ts"),
+                           o.optString("date"), label, o.optString("card"), opts))
         }
         // An EMPTY server history is a real answer (fresh session) - but never
         // let it wipe a cache the owner can still read if the trim above threw
@@ -222,7 +322,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         if (fresh.isNotEmpty() || lines.isEmpty()) {
             lines.clear()
             lines.addAll(fresh)
-            DeviceStore.saveChat(context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date) })
+            DeviceStore.saveChat(context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date, it.label) })
         }
     }
 
@@ -325,7 +425,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                     item {
                         TitleCard(
                             onClick = {},
-                            title = { Text(senderOf(line.mine)) },
+                            title = { Text(senderOf(line)) },
                             // Omitted, not blanked, when there is no stamp: an
                             // empty `time` slot would still reserve its space
                             // and leave a gap where a time should be. A line
@@ -341,6 +441,22 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             modifier = Modifier.padding(vertical = 3.dp),
                         ) {
                             Text(text = line.text, textAlign = TextAlign.Start)
+                        }
+                    }
+                    // The worker's OWN options, right under the question that
+                    // offered them - not collected at the bottom of the screen
+                    // like Henry's follow-up suggestions below. Two cards can be
+                    // waiting at once, and a pooled list would give the owner no
+                    // way to see which card a button belongs to.
+                    if (line.card.isNotBlank() && line.card !in answered) {
+                        for (opt in line.options) {
+                            item {
+                                Button(onClick = { answerCard(line.card, opt) },
+                                    enabled = !busy,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
+                                    Text(text = opt)
+                                }
+                            }
                         }
                     }
                 }
