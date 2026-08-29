@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HelmDeck - Repo-Vorlagen &amp; U-Bahn-Karte (Entwurf)</title>
+<style>
+  /* Palette = the REAL app tokens (surfaces/app/src/theme/tokens.ts, dark).
+     Deliberately NOT the older mint docs palette: this mockup depicts the app
+     UI, so it has to be judged against the colours the app actually renders. */
+  :root{
+    --canvas:#0E0F10; --surface1:#141515; --surface2:#181A1B; --layer2:#1D1F20;
+    --borderSubtle:#222425; --borderStrong:#36393A; --glassBorder:rgba(255,255,255,.13);
+    --txt:#E4E6E6; --txt2:#CACDCE; --txt3:#AFB3B6;
+    --accent:#2396E5; --accent2:#967AF0;
+    --ok:#5CB572; --warn:#E59C4B; --danger:#EA6A66;
+    --ai:#3D9BD6; --human:#9B87E8;
+    --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--txt);font:15px/1.55 var(--sans);
+       padding:34px 22px 70px}
+  .wrap{max-width:1060px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:.2px}
+  h1 b{color:var(--accent)}
+  .sub{color:var(--txt3);margin:0 0 8px;font-size:14px}
+  .warnbar{background:rgba(229,156,75,.10);border:1px solid rgba(229,156,75,.42);
+           border-radius:10px;padding:10px 14px;color:var(--warn);font-size:13px;margin:14px 0 26px}
+  .lead{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--txt3);
+        margin:34px 0 12px;border-top:1px solid var(--borderSubtle);padding-top:14px}
+  .card{background:var(--surface1);border:1px solid var(--glassBorder);border-radius:14px;padding:16px}
+
+  /* ---- step 1: template picker ---- */
+  .picker{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .tpl{background:var(--surface1);border:1px solid var(--glassBorder);border-radius:14px;
+       padding:16px;cursor:pointer;transition:border-color .15s,background .15s}
+  .tpl:hover{border-color:var(--borderStrong)}
+  .tpl.on{border-color:var(--accent);background:rgba(35,150,229,.10)}
+  .tpl h3{margin:0 0 3px;font-size:16px}
+  .tpl .who{color:var(--txt3);font-size:12.5px;margin:0 0 10px}
+  .tpl ul{margin:0;padding-left:17px;color:var(--txt2);font-size:13px}
+  .tpl li{margin-bottom:3px}
+  .tick{float:right;color:var(--accent);font-weight:700;opacity:0;transition:opacity .15s}
+  .tpl.on .tick{opacity:1}
+
+  /* ---- the subway map ---- */
+  .mapwrap{background:var(--surface1);border:1px solid var(--glassBorder);border-radius:16px;
+           padding:22px 18px 16px;overflow-x:auto}
+  .line{display:flex;align-items:flex-start;min-width:660px}
+  .stop{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+  .dot{width:34px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center;
+       border:2px solid var(--borderStrong);background:var(--surface2);transition:all .2s}
+  .dot i{width:12px;height:12px;border-radius:6px;background:var(--borderStrong);display:block;transition:all .2s}
+  .stop.on .dot i{background:var(--canvas)}
+  .stop .lbl{font-size:12.5px;font-weight:700;color:var(--txt3);transition:color .2s}
+  .stop.on .lbl{color:var(--txt)}
+  .stop .note{font-size:11px;color:var(--txt3);max-width:120px;line-height:1.35}
+  .stop.off{opacity:.34}
+  .stop.off .dot{border-style:dashed}
+  .rail{flex:0 0 46px;height:2px;background:var(--borderStrong);margin-top:16px;border-radius:1px}
+  .rail.off{background:transparent;border-top:2px dashed var(--borderStrong);height:0}
+  /* The gate gets a distinct SHAPE, not just a colour. accent2 (#967AF0) and
+     human (#9B87E8) are near-identical in the real token set, so Gate and
+     Abnahme - the two stations the owner most needs to tell apart - read as
+     twins if colour is the only signal. A shield ring + check does the work
+     that hue cannot. (Same reason loopmap.tsx draws the gate as an icon.) */
+  .stop.gate .dot{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(150,122,240,.18)}
+  .stop.gate.on .dot{background:var(--accent2)}
+  .stop.gate .dot i{width:auto;height:auto;background:none;border-radius:0;
+    font:800 15px/1 var(--sans);color:var(--canvas)}
+  .stop.gate.off .dot i{color:var(--borderStrong)}
+  .badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:2px}
+  .b{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;
+     padding:2px 7px;border:1px solid var(--borderStrong);color:var(--txt3)}
+  .b.fixed{border-color:var(--borderStrong);color:var(--txt3)}
+  .b.policy{border-color:var(--accent);color:var(--accent)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:16px;padding-top:13px;
+          border-top:1px solid var(--borderSubtle);font-size:12px;color:var(--txt3)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:11px;height:11px;border-radius:6px;display:inline-block}
+
+  /* ---- preset table ---- */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--borderSubtle);vertical-align:top}
+  th{color:var(--txt3);font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+  td.k{font-family:var(--mono);font-size:12px;color:var(--accent);white-space:nowrap}
+  td.v{font-family:var(--mono);font-size:12px;color:var(--txt)}
+  .why{color:var(--txt3);font-size:12.5px}
+  .fixedrow td.k{color:var(--txt3)}
+
+  /* ---- chat ---- */
+  .chatgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  .chat{background:var(--surface1);border:1px solid var(--glassBorder);border-radius:14px;padding:14px;
+        display:flex;flex-direction:column;gap:9px}
+  .msg{border-radius:11px;padding:9px 12px;font-size:13.5px;max-width:92%}
+  .me{background:var(--accent);color:#fff;align-self:flex-end}
+  .henry{background:var(--surface2);border:1px solid var(--borderSubtle);color:var(--txt2);align-self:flex-start}
+  .henry b{color:var(--txt)}
+  .henry code{font-family:var(--mono);font-size:11.5px;color:var(--accent)}
+  .try{display:flex;flex-direction:column;gap:7px}
+  .try button{background:var(--surface2);border:1px solid var(--borderStrong);color:var(--txt2);
+      border-radius:10px;padding:9px 12px;font:13px var(--sans);text-align:left;cursor:pointer}
+  .try button:hover{border-color:var(--accent);color:var(--txt)}
+  .try .hint{color:var(--txt3);font-size:12px;margin-bottom:2px}
+  .audit{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--txt3);
+         background:var(--layer2);border:1px solid var(--borderSubtle);border-radius:9px;padding:9px 11px;
+         max-height:120px;overflow:auto}
+  .audit div{margin-bottom:3px}
+  .blocked{border-color:rgba(234,106,102,.45)!important}
+  .blocked b{color:var(--danger)}
+  .foot{color:var(--txt3);font-size:12.5px;margin-top:28px;border-top:1px solid var(--borderSubtle);padding-top:14px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Repo-Onboarding: <b>Vorlagen</b> &amp; U-Bahn-Karte</h1>
+  <p class="sub">Phase-1-Entwurf zum Abnicken &mdash; Vorlagen-Katalog, Prozess-Karte als reine Anzeige,
+     Chat als einziger Änderungsweg.</p>
+  <div class="warnbar">
+    <b>Mockup, kein Produktivcode.</b> Klickbar, aber ohne Daemon: alle Werte sind Attrappen.
+    Die Farben sind die echten App-Tokens (<code>theme/tokens.ts</code>, dark), damit die Beurteilung trägt.
+  </div>
+
+  <!-- ============ 1. template picker ============ -->
+  <div class="lead">1 &middot; Beim Repo-Anlegen: eine Vorlage statt zwanzig Schalter</div>
+  <div class="picker">
+    <div class="tpl on" data-tpl="dev" onclick="pick('dev')">
+      <span class="tick">&#10003;</span>
+      <h3>Software-Entwicklung</h3>
+      <p class="who">Code-Repos. Alles läuft, nichts landet ungeprüft.</p>
+      <ul>
+        <li>Isolierter Worktree pro Karte</li>
+        <li>Gate (Compile + Wiring) vor der Review</li>
+        <li>Deine Abnahme merged nach main</li>
+        <li>Deploy-Hook nach der Abnahme</li>
+      </ul>
+    </div>
+    <div class="tpl" data-tpl="docs" onclick="pick('docs')">
+      <span class="tick">&#10003;</span>
+      <h3>Dokumente &amp; Inhalte</h3>
+      <p class="who">Texte, Angebote, Freigaben. Kein Build, leichte Review.</p>
+      <ul>
+        <li>Direkt im Ordner, kein Worktree</li>
+        <li>Kein Build-Gate &mdash; es gibt nichts zu kompilieren</li>
+        <li>Deine Abnahme bleibt Pflicht</li>
+        <li>Kein Deploy</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ 2. the subway map ============ -->
+  <div class="lead">2 &middot; Die Prozess-Karte &mdash; sehen statt konfigurieren</div>
+  <div class="mapwrap">
+    <div class="line" id="line"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:transparent;border:1.5px dashed var(--borderStrong)"></i>
+        Station aus (Vorlage)</span>
+      <span><i class="sw" style="background:var(--accent2);box-shadow:0 0 0 2.5px rgba(150,122,240,.22)"></i>
+        Gate &mdash; fest, nicht abschaltbar</span>
+      <span><i class="sw" style="background:var(--human)"></i> Deine Abnahme</span>
+      <span><span class="b fixed">fest</span> Charter, nur per Code-Karte änderbar</span>
+      <span><span class="b policy">policy</span> per Chat änderbar</span>
+    </div>
+  </div>
+
+  <!-- ============ 3. what the template presets ============ -->
+  <div class="lead">3 &middot; Was die Vorlage vorbelegt</div>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:30%">Settings-Key</th><th style="width:16%">Wert</th>
+        <th style="width:11%">Geltung</th><th>Warum</th></tr></thead>
+      <tbody id="presets"></tbody>
+    </table>
+    <p class="why" style="margin:14px 0 0;padding-top:12px;border-top:1px solid var(--borderSubtle)">
+      <b style="color:var(--warn)">Der Haken, ehrlich markiert:</b> die orange „global“-Zeilen gelten heute
+      für den GESAMTEN Workspace, nicht pro Repo &mdash; es gibt bis jetzt <b>keinen Repo-Datensatz</b>
+      (keine repos-Tabelle, kein <code>register_repo</code>; ein Repo ist nur ein Pfad-String auf einer Karte).
+      Zwei Vorlagen nebeneinander würden sich diese Werte gegenseitig überschreiben.
+      Der Repo-Scope muss vor dem Katalog kommen. Details und Vorschlag im Design-Doc.
+    </p>
+  </div>
+
+  <!-- ============ 4. chat is the only way to change it ============ -->
+  <div class="lead">4 &middot; Ändern geht nur über den Chat &mdash; die Karte bestätigt</div>
+  <div class="chatgrid">
+    <div class="chat" id="chat">
+      <div class="msg henry">Sag mir in normalen Worten, wie das Repo laufen soll.
+        Ich übersetze es in Einstellungen &mdash; und die Karte oben zeigt dir sofort das Ergebnis.</div>
+    </div>
+    <div class="try">
+      <div class="hint">Beispielsätze &mdash; anklicken:</div>
+      <button onclick="say('docs')">„Repo Y soll wie ein Doku-Repo laufen“</button>
+      <button onclick="say('noreview')">„Schalt die Review für dieses Repo aus“</button>
+      <button onclick="say('nodeploy')">„Kein automatischer Deploy mehr“</button>
+      <button onclick="say('gate')">„Lass das Gate weg, ich prüfe selbst“</button>
+      <div class="audit" id="audit"><div>audit &mdash; noch keine Änderung</div></div>
+    </div>
+  </div>
+
+  <p class="foot">
+    Entwurf zu <a href="repo-onboarding-templates.md">repo-onboarding-templates.md</a>.
+    Stationen und Farben stammen aus <code>sessions.py LANE_FLOW</code> bzw.
+    <code>theme/tokens.ts</code>; die Karte rendert im Echtbetrieb aus <code>/loop/map</code>,
+    sie beschreibt den Ablauf nicht selbst.
+  </p>
+</div>
+
+<script>
+/* Stations mirror the REAL lane flow (cells/engineer/sessions.py LANE_FLOW):
+   backlog -> working -> [gate] -> review -> done, where the gate is a fixed
+   node BETWEEN working and review, and deploy is a STEP inside the accept
+   transition (lanemachine.py _repo_hook(t,"deploy")), not a lane of its own.
+   It is drawn as a station because the owner has to see it; it is marked as a
+   step in its note so the picture does not lie about the data model. */
+const STATIONS = [
+  {id:"karte",  lbl:"Karte",   note:"liegt im Backlog",        kind:"policy", color:"var(--txt3)"},
+  {id:"arbeit", lbl:"Arbeit",  note:"Agent arbeitet",          kind:"fixed",  color:"var(--ai)"},
+  {id:"gate",   lbl:"Gate",    note:"Compile + Wiring",        kind:"fixed",  color:"var(--accent2)"},
+  {id:"abnahme",lbl:"Abnahme", note:"Review = deine Freigabe", kind:"fixed",  color:"var(--human)"},
+  {id:"deploy", lbl:"Deploy",  note:"Hook nach der Abnahme",   kind:"policy", color:"var(--ok)"},
+];
+
+/* Every row below is a key that was verified to EXIST in the code, or is
+   explicitly marked "neu". scope tells the uncomfortable truth: almost
+   everything a template wants to set is GLOBAL today (one settings.json blob),
+   so per-repo templating needs a scope layer before it needs a catalog. */
+const TPL = {
+  dev: {
+    active: ["karte","arbeit","gate","abnahme","deploy"],
+    presets: [
+      ["repo_hooks.&lt;repo&gt;.deploy", "Build-Befehl", "repo", "ok",
+       "Die Abnahme soll wirklich ausliefern. Der Daemon führt ihn aus - er hält die Secrets, nicht der Agent."],
+      ["policy.auto_accept_green",   "false", "global", "warn",
+       "Grün heißt geprüft, nicht abgenommen - du bleibst die Freigabe."],
+      ["policy.auto_dispatch_modes", "[\"do\"]", "global", "warn",
+       "Nur voll automatisierbare Schritte starten von selbst."],
+      ["capacity.wip_limit",         "3",     "global", "warn",
+       "Wie viele Karten gleichzeitig laufen dürfen."],
+      ["Kartenart: Worktree",        "new_track", "-", "new",
+       "Isolierter Worktree je Karte. Heute pro Karte beim Dispatch entschieden, nicht pro Repo - das ist neu."],
+      ["Gate",                       "immer", "fest", "fixed",
+       "gate-before-review ist Harness-Gesetz. Keine Vorlage und kein Chat-Satz schaltet es ab."],
+    ],
+  },
+  docs: {
+    active: ["karte","arbeit","abnahme"],
+    presets: [
+      ["repo_hooks.&lt;repo&gt;.deploy", "leer",  "repo", "ok",
+       "Nichts zu deployen. Leerer Hook = der Schritt passiert schlicht nicht (lanemachine.py:648)."],
+      ["policy.auto_accept_green",   "false", "global", "warn",
+       "Auch ohne Build bleibt die Freigabe bei dir."],
+      ["policy.auto_dispatch_modes", "[\"do\",\"prepare\"]", "global", "warn",
+       "Entwürfe darf der Agent allein anfangen, senden nicht."],
+      ["capacity.wip_limit",         "5",     "global", "warn",
+       "Textarbeit blockiert keine Build-Maschine."],
+      ["Kartenart: direkt im Ordner", "new_direct_task", "-", "new",
+       "Kein Worktree, kein Branch. Existiert (policy.machine), ist aber keine Repo-Eigenschaft - das ist neu."],
+      ["Gate",                       "läuft leer", "fest", "fixed",
+       "Das Gate wird NICHT abgeschaltet: es findet nichts zu kompilieren und meldet PASS (run_gate.py:68)."],
+    ],
+  },
+};
+
+let cur = "dev";
+
+function drawMap(){
+  const act = TPL[cur].active;
+  const el = document.getElementById("line");
+  let html = "";
+  STATIONS.forEach((s,i) => {
+    const on = act.includes(s.id);
+    html += `<div class="stop ${on?"on":"off"} ${s.id==="gate"?"gate":""}">
+        <div class="dot" style="${on?`border-color:${s.color};background:${s.color}`:""}"><i>${s.id==="gate"?"&#10003;":""}</i></div>
+        <div class="lbl">${s.lbl}</div>
+        <div class="note">${on?s.note:"nicht aktiv"}</div>
+        <div class="badges"><span class="b ${s.kind}">${s.kind==="fixed"?"fest":"policy"}</span></div>
+      </div>`;
+    if(i < STATIONS.length-1){
+      const nextOn = act.includes(STATIONS[i+1].id);
+      html += `<div class="rail ${(on&&nextOn)?"":"off"}"></div>`;
+    }
+  });
+  el.innerHTML = html;
+
+  const SCOPE = {
+    ok:   ['<span class="b" style="border-color:var(--ok);color:var(--ok)">pro Repo</span>',   ""],
+    warn: ['<span class="b" style="border-color:var(--warn);color:var(--warn)">global</span>', "fixedrow"],
+    new:  ['<span class="b" style="border-color:var(--accent);color:var(--accent)">neu</span>', ""],
+    fixed:['<span class="b fixed">fest</span>', "fixedrow"],
+  };
+  const tb = document.getElementById("presets");
+  tb.innerHTML = TPL[cur].presets.map(([k,v,_scope,tag,w]) => {
+    const [badge, cls] = SCOPE[tag];
+    return `<tr class="${cls}">
+      <td class="k">${k}</td><td class="v">${v}</td>
+      <td style="white-space:nowrap">${badge}</td><td class="why">${w}</td></tr>`;
+  }).join("");
+}
+
+function pick(t){
+  cur = t;
+  document.querySelectorAll(".tpl").forEach(e =>
+    e.classList.toggle("on", e.dataset.tpl === t));
+  drawMap();
+  audit(`template.apply repo=&lt;repo&gt; template=${t} actor=owner`);
+}
+
+const REPLIES = {
+  docs: {
+    me: "Repo Y soll wie ein Doku-Repo laufen",
+    ok: true,
+    henry: "Alles klar - ich stelle Repo Y auf <b>Dokumente &amp; Inhalte</b> um: kein Worktree, kein Deploy-Hook. Deine Abnahme bleibt. <br><code>configure {\"template\":\"docs\"}</code>",
+    apply: () => pick("docs"),
+    log: "config actor=owner patch={\"template\":\"docs\"} reason=\"via chat\"",
+  },
+  noreview: {
+    me: "Schalt die Review für dieses Repo aus",
+    ok: false,
+    henry: "<b>Das geht nicht.</b> Die Review IST deine Abnahme - gate-before-review ist Charter-Gesetz, kein Schalter. <br>Was ich stattdessen kann: grüne Karten automatisch durchwinken (<code>policy.auto_accept_green</code>). Dann wartet nichts mehr auf dich, geprüft wird trotzdem. Soll ich?",
+    apply: null,
+    log: "config DENIED key=review reason=charter-fixed -> route: card",
+  },
+  nodeploy: {
+    me: "Kein automatischer Deploy mehr",
+    ok: true,
+    henry: "Erledigt - der Deploy-Hook für dieses Repo ist leer. Die Station ist aus der Karte verschwunden.<br><code>configure {\"repo_hooks.&lt;repo&gt;.deploy\":\"\"}</code>",
+    apply: () => { TPL[cur].active = TPL[cur].active.filter(s => s !== "deploy"); drawMap(); },
+    log: "config actor=owner patch={\"repo_hooks\":{\"deploy\":\"\"}} reason=\"via chat\"",
+  },
+  gate: {
+    me: "Lass das Gate weg, ich prüfe selbst",
+    ok: false,
+    henry: "<b>Das Gate ist fest.</b> Es gehört zum Harness (Auth/Audit/Gate/Driver), nicht zur Policy - per Chat nicht schaltbar. Wenn es wirklich weg soll, ist das eine Code-Änderung: sag „leg eine Karte dafür an“, dann baut ein Agent es mit Gate und deiner Abnahme.",
+    apply: null,
+    log: "config DENIED key=gate reason=harness-not-policy -> route: card",
+  },
+};
+
+function say(k){
+  const r = REPLIES[k], c = document.getElementById("chat");
+  c.insertAdjacentHTML("beforeend", `<div class="msg me">${r.me}</div>`);
+  c.insertAdjacentHTML("beforeend",
+    `<div class="msg henry ${r.ok?"":"blocked"}">${r.henry}</div>`);
+  if(r.apply) r.apply();
+  audit(r.log);
+  c.scrollTop = c.scrollHeight;
+}
+
+function audit(line){
+  const a = document.getElementById("audit");
+  if(a.dataset.used !== "1"){ a.innerHTML = ""; a.dataset.used = "1"; }
+  a.insertAdjacentHTML("beforeend", `<div>${line}</div>`);
+  a.scrollTop = a.scrollHeight;
+}
+
+drawMap();
+</script>
+</body>
+</html>
