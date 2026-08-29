@@ -10,12 +10,18 @@ GET /wear/board reuses glance_payload() UNCHANGED (spine/ops/glances.py) -
 the same small, curated, wearable-safe board read the glasses already get,
 reached through a different door rather than re-derived.
 
-POST /wear/talk mirrors routes_glance.py's glance_talk almost exactly
-(allow_actions=False, the same ask.parse() extraction so the CLIENT never
-has to parse a <helmdeck-ask> block itself) but enforces the owner decree
-recorded in the wear-os-integration card §4.7 (2026-08-29): wearables talk
-to Henry, ADVISORY ONLY, never the worker directly - imported from the
-glasses' own proven pattern, not re-decided per surface.
+POST /wear/talk mirrors routes_glance.py's glance_talk for the RENDERING
+half (the same ask.parse() extraction so the CLIENT never has to parse a
+<helmdeck-ask> block itself) but NOT for authority. Owner decree 2026-08-29
+("one single source of truth, watch or phone") supersedes the §4.7
+advisory-only rule for the WATCH: the watch authenticates as a real
+per-device client, exactly like the phone, so a board action Henry emits
+here runs on the same rails as the phone's /chat - the same copilot.chat
+allow_actions=True path, the same chat_dedupe idempotency claim. The
+§4.7 rule stays TRUE where it came from: routes_glance.py keeps
+allow_actions=False, because the glasses authenticate with one shared
+glance_token, not a user session - that boundary was the reason for the
+rule, and the watch was never on the wrong side of it.
 """
 import json
 import re
@@ -42,9 +48,9 @@ WEAR_BRIEF = (
     "Ending without that block strands him - it is a defect, not a hand-off. "
     "Always include a way to go wider (e.g. 'Something else') so a wrong "
     "guess is never a trap.\n"
-    "- This surface is ADVISORY: any actions block you emit is DROPPED, not "
-    "run. Never claim you changed the board. To actually move work, offer it "
-    "as an option and say it will run from the phone."
+    "- Board actions you emit here RUN, exactly as on the phone - the watch "
+    "and the phone are one source of truth. They run in the background after "
+    "your reply, so say what will happen, not that it is already done."
 )
 
 
@@ -52,40 +58,15 @@ WEAR_BRIEF = (
 # totals ride alongside so "3 von 12" stays honest without sending 12 rows.
 WEAR_LIST_MAX = 5
 
-# How much of a card's own text the watch may carry. The CARD SCREEN scrolls
-# (TransformingLazyColumn), unlike the glasses' one-card lens, so this is far
-# above glance_payload's 160-char `detail` - but still a payload bound: it rides
-# sealed through the relay inside the board response, once per listed card.
-#
-# Raised 700 -> 1200 after the owner read a real turn report on the watch and
-# said "Message abgeschnitten": a DELIVERED summary is the thing he opens a card
-# to read, and 700 lost it mid-thought. Scrolling costs him a flick; a missing
-# half costs him the answer.
-#
-# 1200 -> 2000 on 2026-08-29, same complaint, same screen, one step further: the
-# owner photographed a card whose report stopped after ~10 lines on " ...". 1200
-# was still a GUESS at how much of a reply is worth carrying, and it was cutting
-# real ones.
-#
-# 2000 is not a bigger guess - it is the ceiling the reply ALREADY has upstream.
-# turnrunner._settle_reply_apply stores `t["last_reply"] = cleaned[:2000]`
-# (cells/engineer/turnrunner.py:247; dispatch.py:113 caps a dispatch error the
-# same way), so 2000 chars is the entire text that exists on a card. Matching it
-# means _wear_clip can no longer cut a stored reply at all - the ellipsis this
-# module adds now only ever appears on the `description` fallback below, which
-# has no upstream cap of its own.
-#
-# The wire bound therefore does not become open-ended by raising this; it becomes
-# EXPLICIT. The worst case is bounded by construction (rows per response x the
-# storage cap), not by hoping replies stay short. _wear_text only ever removes
-# characters (ask block, fenced blocks, markdown markers), so the value on the
-# wire is <= this number, never above it.
-#
-# No watch rebuild is implied: CardScreen.kt renders `body` verbatim into a
-# scrolling TransformingLazyColumn with no maxLines and no overflow ellipsis
-# (surfaces/app/plugins/wear/CardScreen.kt:203), so an ALREADY INSTALLED build
-# shows whatever this sends. The truncation was only ever here.
-WEAR_BODY_MAX = 2000
+# NO body cap (owner decree 2026-08-29, second half of "one single source of
+# truth": "kein Zeichen cap"). This walked 700 -> 1200 -> gone, each step after
+# the owner read a real turn report on the watch and found it cut ("Message
+# abgeschnitten"): a DELIVERED summary is the thing he opens a card to read,
+# and any bound loses it mid-thought eventually. The CARD SCREEN scrolls
+# (TransformingLazyColumn); scrolling costs him a flick, a missing half costs
+# him the answer. The payload stays bounded upstream anyway - `last_reply` is
+# storage-capped and the board lists at most WEAR_LIST_MAX rows per section.
+WEAR_BODY_MAX = None
 
 # The `detail` line the watch shows above the body. Same number glance_payload
 # already caps it at, so this only ever re-cuts text that arrived at the wall.
@@ -112,7 +93,7 @@ def _wear_clip(text, cap):
     single early full stop would throw away most of what fits.
     """
     text = text or ""
-    if len(text) <= cap:
+    if cap is None or len(text) <= cap:
         return text
     head = text[:cap]
     end = -1
@@ -262,9 +243,11 @@ def wear_board_get(self, user):
 # reads back a long conversation, and every line rides through the sealed relay
 # in ONE response - so this is a payload bound as much as a UI one.
 WEAR_CHAT_MAX = 30
-# Per-line cap for the scrollback. 240 chars is roughly six lines of readable
-# text on a 240dp round screen - past that the owner is scrolling, not reading.
-WEAR_CHAT_LINE_MAX = 240
+# Per-line cap for the scrollback: NONE (same decree as WEAR_BODY_MAX). The
+# old 240 meant a watch-read conversation and a phone-read one disagreed about
+# what was said - the exact discrepancy the one-source-of-truth decree closes.
+# _wear_text still strips ask-blocks, fences and markdown; only the CUT is gone.
+WEAR_CHAT_LINE_MAX = None
 
 
 def wear_chat_get(self, user):
@@ -278,9 +261,9 @@ def wear_chat_get(self, user):
     resumes. Only the READING half was missing, which is why the watch looked
     like a separate, amnesiac chat.
 
-    Trimmed to the shape a round screen can use: `cls` collapses to who spoke,
-    and the internal classes the board chat renders as chrome ("act" =
-    action receipts) are dropped rather than shown as if Henry had said them.
+    Trimmed to the shape a round screen can use: `cls` collapses to who spoke;
+    unknown internal classes are dropped rather than shown as if Henry had
+    said them.
     """
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -311,7 +294,13 @@ def wear_chat_get(self, user):
         # every lane outcome, every broker decision, every PM alert - and it was
         # being discarded as chrome alongside it. The watch has been showing a
         # conversation with Henry's half of it missing.
-        if cls not in ("you", "bot", "error", "card", "pm"):
+        # "act" joined when /wear/talk gained allow_actions=True (owner decree
+        # 2026-08-29, one source of truth): an action receipt is the only proof
+        # a watch-issued move actually ran - and "action failed: ..." lands in
+        # the same class. Filtering it out here would recreate the exact defect
+        # this decree closed: the owner commands from the wrist and the outcome
+        # is only visible on the phone.
+        if cls not in ("you", "bot", "error", "card", "pm", "act"):
             continue
         text = ((m or {}).get("text") or "").strip()
         if not text:
@@ -325,9 +314,9 @@ def wear_chat_get(self, user):
             # not something anyone reads.
             _q, prose = ask.parse(text)
             text = (prose or "").strip() or text
-        # A scrollback line, not the live answer: long enough to recognise the
-        # turn, short enough that 30 of them stay a conversation instead of a
-        # wall. The full text is always one tap away on the phone.
+        # The FULL text, not a teaser (owner decree 2026-08-29: "kein Zeichen
+        # cap") - "one tap away on the phone" was the discrepancy, not a
+        # feature. The transcript stays bounded by WEAR_CHAT_MAX lines.
         # `date` is "YYYY-MM-DD" and is ABSENT on every entry written before
         # copilot._append_log started stamping it (2026-08-29). "" therefore
         # means "not recorded", not "today" - the watch draws no separator above
@@ -400,9 +389,25 @@ def wear_talk_post(self, user, body):
             {"reply": "", "question": None, "refused": [],
              "routed": {"card": reply_to, "as": routed}}))
     from cells.copilot import copilot
+    # SAME IDEMPOTENCY as the phone's /chat (chat_dedupe). Advisory turns could
+    # afford a relay retry running twice - the worst case was a duplicate
+    # sentence. With allow_actions=True (owner decree 2026-08-29, one source of
+    # truth) a replayed POST would replay a MOVE, so the claim moves in front of
+    # the turn here exactly as routes_copilot.chat_post does. The watch sends no
+    # mid; claim() falls back to the content key + time window for id-less
+    # clients, which is precisely the relay-retry shape.
+    from cells.copilot import chat_dedupe
+    mine, original = chat_dedupe.claim(user["name"], msg, body.get("card"), None)
+    if original is not None:
+        done = chat_dedupe.await_result(original)
+        out = dict(done or {"reply": "", "actions": []})
+        out["duplicate"] = True
+        return self._send(200, json.dumps(
+            {"reply": out.get("reply") or "", "question": None,
+             "refused": out.get("refused") or [], "duplicate": True}))
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],
-                           allow_actions=False, extra_system=WEAR_BRIEF,
+                           allow_actions=True, extra_system=WEAR_BRIEF,
                            # This response IS the delivery: the reply comes back
                            # in `resp` below and is ALWAYS spoken (see the voice
                            # note further down). A notification would buzz the
@@ -416,7 +421,9 @@ def wear_talk_post(self, user, body):
                            # the phone's own card-scoped Henry tab.
                            card=body.get("card"))
     except Exception as e:                       # noqa: BLE001
+        chat_dedupe.fail(mine)
         return self._send(502, json.dumps({"error": str(e)[:200]}))
+    chat_dedupe.settle(mine, out)
     reply = out.get("reply") or ""
     from spine.ops import ask
     from spine.ops.glances import _glance_question
@@ -428,11 +435,15 @@ def wear_talk_post(self, user, body):
     q, prose = out.get("question"), reply
     if not q:
         q, prose = ask.parse(reply)
-    spoken = (prose or reply)[:600]
+    # The TEXT goes out whole (kein-Zeichen-cap decree); only the VOICE keeps a
+    # bound. 600 chars is ~45s of TTS - past that a clip is a podcast, and the
+    # full text is on the screen he is already looking at.
+    full = prose or reply
+    spoken = full[:600]
     resp = {
         # the prose WITHOUT the block - ask.parse already strips it, so the
         # watch renders `reply` as plain text and never sees raw JSON
-        "reply": spoken,
+        "reply": full,
         # the tappable half; None when the agent ignored the brief, which the
         # watch must show as a dead end rather than hide (same rule
         # glance_talk already applies for the glasses)
