@@ -274,17 +274,21 @@ def _apply_icon(icon):
 
 
 # --------------------------------------------------------------- autostart (Run)
-def _autostart_on():
+def _autostart_value():
     if not winreg:
-        return False
+        return None
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
             v, _ = winreg.QueryValueEx(k, RUN_NAME)
-            return bool(v)
+            return v or None
     except FileNotFoundError:
-        return False
+        return None
     except Exception:
-        return False
+        return None
+
+
+def _autostart_on():
+    return _autostart_value() is not None
 
 
 def _autostart_cmd():
@@ -363,7 +367,10 @@ def _menu():
 
 def main():
     # install = run once: register autostart so it's genuinely always-on.
-    if not _autostart_on():
+    # Repair, don't just create: the measured 2026-08-29 outage was an EMPTY
+    # Run value (autostart silently launched nothing), so any value that is
+    # not exactly the current launch command gets rewritten.
+    if _autostart_value() != _autostart_cmd():
         _set_autostart(True)
     icon = pystray.Icon("HelmDeck", _icon_image(False), "HelmDeck", _menu())
     threading.Thread(target=_supervise, args=(icon,), daemon=True).start()
