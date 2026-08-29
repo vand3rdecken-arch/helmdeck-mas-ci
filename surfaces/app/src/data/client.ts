@@ -163,7 +163,11 @@ export interface Step {
   cls?: string; kind?: string; role?: string; text?: string; ts?: string;
   tool?: string; input?: unknown; result?: string; name?: string;
 }
-export interface ChatMsg { cls: string; text: string; ts?: string }
+/** `client_msg_id` is the `mid` the sender minted for this message, echoed back
+ *  by the daemon on the persisted `you` entry. It is what lets the chat retire
+ *  an optimistic copy by IDENTITY instead of by comparing text — optional
+ *  because older daemons, the watch and the glasses do not send one. */
+export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string }
 /** The PM session's measured economics (daemon: copilot._fold_stats) — the
  *  board chat's card-parity context meter + usage line read this. ctx_tokens/
  *  ctx_window mirror a card's fields (window derived from model evidence, not
@@ -541,7 +545,7 @@ export const api = {
   turns: (id: string) => req<unknown[]>("GET", `/tracks/${id}/turns`),
 
   // copilot chat
-  chat: (text: string, o: SteerOpts & { card?: string } = {}) => {
+  chat: (text: string, o: SteerOpts & { card?: string; mid?: string } = {}) => {
     track("chat_message", { scope: o.card ? "card" : "board" });
     // `mid` is minted HERE, once per call, and travels inside the body - which
     // is precisely what makes it a replay detector. A chat turn runs for
@@ -553,8 +557,13 @@ export const api = {
     // so repeating yourself on purpose still works. Minting it inside req()
     // would be wrong for the same reason - the relay path seals the body once,
     // per call, and that is the granularity we need.
-    const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    return req<ChatReply>("POST", "/chat", { text, mid, ...o });
+    // The CALLER may mint it instead, and the board chat now does: it needs the
+    // id on its optimistic message BEFORE the request goes out, so the daemon's
+    // echo can retire exactly that copy later. Minting it here stays the default
+    // for every other caller, and the replay semantics above are unchanged
+    // either way — one id per call, travelling in the body.
+    const mid = o.mid || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return req<ChatReply>("POST", "/chat", { text, ...o, mid });
   },
   chatCancel: () => req("POST", "/chat/cancel", {}),
   /** LIVE voice pipeline STT: one VAD-cut utterance (WAV, base64) -> text.

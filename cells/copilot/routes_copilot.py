@@ -117,6 +117,17 @@ def chat_post(self, user, body):
             thinking="" if want_voice else body.get("thinking", ""),
             attachments=body.get("attachments"),
             card=body.get("card"), voice_stream=streaming,
+            # REUSES `mid`, the id the app already mints once per /chat call
+            # (client.ts) and which chat_dedupe.claim() above already reads as a
+            # replay detector. It is exactly the identity Paseo calls
+            # clientMessageId - minting a SECOND id for the same message would
+            # have been a new field to keep in sync with an existing one, i.e.
+            # the wheel this repo already has. Echoed back on the persisted `you`
+            # entry so the app can retire its optimistic copy by identity rather
+            # than by comparing text.
+            # Truncated because it is an opaque token, not content - a client
+            # sending something huge must not grow every log line.
+            client_msg_id=str(body.get("mid") or "")[:64],
             # spoken turns get the hard brevity overlay - a minute of options
             # read aloud is not an answer (owner report 2026-08-21)
             extra_system=copilot.VOICE_STYLE if want_voice else "")

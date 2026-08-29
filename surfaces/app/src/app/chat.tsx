@@ -119,7 +119,14 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // (card/[id].tsx pending+baseline): a turn is only dropped once the server
   // transcript actually carries its user text PAST the baseline count, so a
   // repeated message ("continue" twice) can't be stripped by its older twin.
-  const [pending, setPending] = useState<{ id: number; key: string; baseline: number; msgs: ChatMsg[] }[]>([]);
+  // `mid`    — the id this turn was SENT with (client.ts's replay token, which
+  //            is also the identity the daemon echoes back on the persisted
+  //            entry). Retiring by this instead of by text is the whole fix.
+  // `anchor` — how long the server list was when this turn was queued, so the
+  //            optimistic bubble is INSERTED where it belongs instead of pinned
+  //            to the very end. Without it a PM message that lands mid-turn
+  //            renders before a message that was sent earlier.
+  const [pending, setPending] = useState<{ id: number; key: string; mid: string; baseline: number; anchor: number; msgs: ChatMsg[] }[]>([]);
   // the board agent's live streaming prose while a turn runs - polled from
   // /chat/live so the board chat STREAMS like a card (one shared surface).
   const [stream, setStream] = useState("");
@@ -217,17 +224,50 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const server = data?.messages;
   useEffect(() => {
     if (!server || !pending.length) return;
+    // IDENTITY FIRST. The daemon echoes the `mid` this turn was sent with back
+    // on the persisted entry (copilot.chat -> client_msg_id), so an exact match
+    // retires exactly this copy — even when the same sentence was sent twice,
+    // and even when the stored text differs by a character.
+    const seenIds = new Set<string>();
     const counts = new Map<string, number>();
     for (const m of server) {
       if (m.cls !== "user" && m.cls !== "you") continue;
+      if (m.client_msg_id) seenIds.add(m.client_msg_id);
       const key = (m.text ?? "").trim();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    setPending((p) => p.filter((tn) => (counts.get(tn.key) ?? 0) <= tn.baseline));
+    setPending((p) => p.filter((tn) => {
+      if (tn.mid && seenIds.has(tn.mid)) return false;
+      // COMPAT(chatClientMsgId): added 2026-08-29, remove once every daemon in
+      // use echoes client_msg_id. Counting same-TEXT occurrences is what this
+      // used to do exclusively, and it is why a copy could stick forever: if the
+      // stored text never matched, the count never rose and the bubble stayed
+      // pinned to the bottom of the chat. Kept only so a turn sent to an older
+      // daemon still clears. Same shim, same reasoning, same dated-cleanup rule
+      // Paseo applies to its own text fallback.
+      return (counts.get(tn.key) ?? 0) <= tn.baseline;
+    }));
   }, [server]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const msgs = useMemo<ChatMsg[]>(
-    () => [...(server ?? []), ...pending.flatMap((tn) => tn.msgs)],
-    [server, pending]);
+  // INSERTED AT ITS ANCHOR, not appended. `[...server, ...pending]` put every
+  // optimistic bubble after the entire server list, so anything that arrived
+  // while a turn was running — a PM watchdog message, another device's turn —
+  // rendered BEFORE a message that had been sent earlier.
+  const msgs = useMemo<ChatMsg[]>(() => {
+    const base = server ?? [];
+    if (!pending.length) return base;
+    const out: ChatMsg[] = [];
+    let cursor = 0;
+    // by anchor, so two turns queued in order stay in order
+    for (const tn of [...pending].sort((a, b) => a.anchor - b.anchor)) {
+      // clamped: the history can be compacted between queue and render, and an
+      // anchor past the end must degrade to "at the end", never throw away rows.
+      const at = Math.min(Math.max(tn.anchor, cursor), base.length);
+      out.push(...base.slice(cursor, at), ...tn.msgs);
+      cursor = at;
+    }
+    out.push(...base.slice(cursor));
+    return out;
+  }, [server, pending]);
 
   // auto-pin to newest (incl. the PM's proactive messages) when already near the
   // bottom - same pattern as the card chat, so opening lands you at the latest.
@@ -241,10 +281,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 
   // baseline = this occurrence's rank among same-text user messages already
   // visible (server + pending) at queue time - see the reconcile effect above.
-  function queueTurn(id: number, q: string) {
+  function queueTurn(id: number, q: string, mid: string) {
     const baseline = (server ?? []).filter((m) => (m.cls === "user" || m.cls === "you") && (m.text ?? "").trim() === q).length
       + pending.filter((tn) => tn.key === q).length;
-    setPending((p) => [...p, { id, key: q, baseline, msgs: [{ cls: "user", text: q }] }]);
+    setPending((p) => [...p, {
+      id, key: q, mid, baseline,
+      // Where this bubble belongs: after everything the server had shown at the
+      // moment it was sent, and BEFORE anything that arrives afterwards.
+      anchor: (server ?? []).length,
+      msgs: [{ cls: "user", text: q, client_msg_id: mid }],
+    }]);
   }
   const appendReply = (id: number, msg: ChatMsg) =>
     setPending((p) => p.map((tn) => tn.id === id ? { ...tn, msgs: [...tn.msgs, msg] } : tn));
@@ -257,9 +303,13 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     if (!q) return;
     setBusy(true);
     const id = ++turn.current;
-    queueTurn(id, q);
+    // Minted HERE, before the request, so the optimistic bubble already carries
+    // the identity the daemon will echo back. Same token client.ts would have
+    // minted itself; passing it in only moves the minting one step earlier.
+    const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    queueTurn(id, q, mid);
     try {
-      const r = await api.chat(q, opts);
+      const r = await api.chat(q, { ...opts, mid });
       // Past the await = the daemon answered. THAT is the proof a retried
       // message is delivered; nothing earlier is (a dispatched request is not
       // a received one).
@@ -311,7 +361,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   async function ask(text: string, onClip?: (c: VoiceClip) => void) {
     setBusy(true);
     const id = ++turn.current;
-    queueTurn(id, text.trim());
+    // Same identity discipline as the typed path: a SPOKEN turn is an ordinary
+    // /chat turn (see the note above), so it must carry a mid too - otherwise
+    // exactly the messages dictated in voice mode fall back to text matching.
+    const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    queueTurn(id, text.trim(), mid);
     // Registering the sink is what switches the daemon from "one clip at the
     // end" to "a sentence at a time" — the two must be decided together, or the
     // owner gets a turn that renders speech nobody collects.
@@ -329,7 +383,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     // moment the new turn's first clip arrives (ct > turn -> seq = 0).
     if (voiceCur.current.turn === 0) voiceCur.current.seq = 0;
     try {
-      const r = await api.chat(text, { voice: onClip ? "stream" : undefined });
+      const r = await api.chat(text, { voice: onClip ? "stream" : undefined, mid });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
       const said = r.reply || r.error || tr("chat.noReply");
       appendReply(id, { cls: r.error ? "error" : "bot", text: said });
