@@ -184,23 +184,31 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                         onDictate = { codeLauncher.launch(speechIntent("Code")) },
                     )
                 }
-                item {
-                    FieldRow(
-                        label = "Adresse (meist unnötig)", value = claimBaseUrl,
-                        // The default URL is long enough to wrap over three
-                        // lines and swallow the screen, for a field this
-                        // screen's own doc calls "meist unnötig". One line,
-                        // ellipsised - it is confirmation, not something to
-                        // read character by character.
-                        maxLines = 1,
-                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
-                    )
-                }
+                // "Koppeln" sits DIRECTLY under the code field, above the
+                // address. It used to be last, which put the screen's whole
+                // point below the fold: dictate the code, then scroll to find
+                // the button (seen on the watch, 2026-08-29). The address is
+                // defaulted and "meist unnötig", so it belongs after the action
+                // it almost never affects, not in front of it.
                 item {
                     Button(onClick = ::submit, enabled = !busy,
                         modifier = Modifier.padding(8.dp)) {
                         Text(if (busy) "…" else "Koppeln")
                     }
+                }
+                item {
+                    FieldRow(
+                        label = "Adresse (meist unnötig)", value = claimBaseUrl,
+                        // Label and value on SEPARATE lines. With both on one
+                        // line the label plus colon ate the whole width and the
+                        // value ellipsised to "..." - a confirmation field that
+                        // confirms nothing. Now the host is at least partly
+                        // readable, still capped at one line so the default URL
+                        // cannot swallow the screen again.
+                        maxLines = 1,
+                        valueOnOwnLine = true,
+                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
+                    )
                 }
                 if (status != null) {
                     item {
@@ -230,6 +238,10 @@ private fun FieldRow(
     value: String,
     onDictate: () -> Unit,
     maxLines: Int = 2,
+    /** Put the value on its OWN line instead of after "label: ". For a long
+     *  value (the claim URL) the single-line form spent the entire width on the
+     *  label and ellipsised the value to nothing. */
+    valueOnOwnLine: Boolean = false,
 ) {
     // Centred, not start-aligned: a watch screen is widest through its middle,
     // so left-aligned text is the first thing a round bezel eats. The
@@ -239,12 +251,23 @@ private fun FieldRow(
         modifier = Modifier.padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = "$label: ${value.ifBlank { "–" }}",
-            textAlign = TextAlign.Center,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (valueOnOwnLine) {
+            Text(text = label, textAlign = TextAlign.Center, maxLines = 1,
+                 overflow = TextOverflow.Ellipsis)
+            Text(
+                text = value.ifBlank { "–" },
+                textAlign = TextAlign.Center,
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                text = "$label: ${value.ifBlank { "–" }}",
+                textAlign = TextAlign.Center,
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Button(onClick = onDictate) { Text("Diktieren") }
     }
 }

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wear launcher icon. Byte-for-byte the SAME adaptive-icon shape the phone
+  module already generates (android/app/src/main/res/mipmap-anydpi-v26/
+  ic_launcher.xml), pointing at the SAME three HelmDeck brand images that
+  app.json feeds Expo (assets/images/android-icon-{background,foreground,
+  monochrome}.png). One product, one mark - the watch must not carry an icon
+  someone invented for it.
+
+  Form adopted from the owner's earlier glasses project
+  (glass-crud-harness/android/app/src/main/res/mipmap-anydpi-v26/
+  ic_launcher.xml), which is where the <monochrome> layer comes from: without
+  it Android 13+ themed icons fall back to a grey blob instead of the app's own
+  silhouette.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+</adaptive-icon>

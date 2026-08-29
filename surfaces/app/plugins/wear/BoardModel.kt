@@ -43,6 +43,57 @@ fun parseQuestionBlock(o: JSONObject?): QuestionBlock? {
     return QuestionBlock(id = o.optString("id"), questions = items)
 }
 
+/**
+ * The rest of glance_payload() - everything the watch used to throw away.
+ *
+ * Owner, 2026-08-29: "Wie funktioniert boards? Es zeigt derzeit nichts an."
+ * The route was never the problem: spine/ops/glances.py returns `needs_you`,
+ * a SECOND bucket `yours` (cards only the owner can ever start - mode
+ * human/teach/cowork, which every auto-dispatch path structurally skips), an
+ * `econ` block with the work-in-progress numbers, and a timestamp. The watch
+ * parsed only `needs_you`, so an empty first bucket rendered as "Alles klar."
+ * while the daemon had just told it how much work was in flight.
+ *
+ * `ts` matters for the same reason glances.py's own comment gives: "a stale
+ * all-clear is the exact failure this endpoint exists to prevent". A watch
+ * screen that says nothing is wrong, without saying WHEN that was true, is
+ * precisely that failure.
+ */
+data class BoardSummary(
+    val yours: Int,
+    val wip: Int,
+    val wipLimit: Int,
+    val tsEpochSec: Long,
+)
+
+fun parseBoardSummary(boardJson: String): BoardSummary? {
+    val o = runCatching { JSONObject(boardJson) }.getOrNull() ?: return null
+    val econ = o.optJSONObject("econ")
+    return BoardSummary(
+        // Prefer econ's counts - glances.py builds the number and the list from
+        // ONE derivation on purpose, "they cannot disagree the way a separately
+        // counted total could". Fall back to the array only if econ is absent.
+        yours = econ?.optInt("yours") ?: (o.optJSONArray("yours")?.length() ?: 0),
+        wip = econ?.optInt("wip") ?: 0,
+        wipLimit = econ?.optInt("wip_limit") ?: 0,
+        tsEpochSec = o.optLong("ts", 0L),
+    )
+}
+
+/** "gerade eben" / "vor 5 min" / "vor 2 h" - so an all-clear can be told apart
+ *  from a stale one at a glance. 0 means the daemon sent no stamp. */
+fun freshness(tsEpochSec: Long, nowEpochSec: Long): String {
+    if (tsEpochSec <= 0L) return ""
+    val age = nowEpochSec - tsEpochSec
+    return when {
+        age < 0L -> ""              // clock skew - say nothing rather than lie
+        age < 90L -> "gerade eben"
+        age < 3600L -> "vor ${age / 60} min"
+        age < 86400L -> "vor ${age / 3600} h"
+        else -> "vor ${age / 86400} d"
+    }
+}
+
 fun parseBoardCards(boardJson: String): List<BoardCard> {
     val o = JSONObject(boardJson)
     val ny = o.optJSONArray("needs_you") ?: return emptyList()
