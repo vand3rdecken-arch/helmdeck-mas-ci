@@ -100,6 +100,12 @@ export const card: Dict = {
   "card.q.title": { de: "ENTSCHEIDUNG NÖTIG", en: "DECISION NEEDED" },
   "card.q.hint": { de: "Deine Wahl geht direkt an den Worker — er macht dort weiter, wo er aufgehört hat.",
                    en: "Your choice goes straight to the worker — it carries on where it stopped." },
+  // Henry's OWN question has no parked worker behind it: the choice is simply
+  // the next thing the owner says to him. Promising it "goes to the worker" was
+  // wrong the moment the panel started serving both doors — caught by judging
+  // the screenshot, not by tsc.
+  "card.q.hintChat": { de: "Deine Wahl geht als deine nächste Nachricht an Henry.",
+                       en: "Your choice goes to Henry as your next message." },
   "card.q.progress": { de: "Frage {n}/{total}", en: "Question {n}/{total}" },
   "card.q.count": { de: "{n} Optionen", en: "{n} options" },
   "card.q.next": { de: "Weiter", en: "Next" },

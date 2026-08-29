@@ -14,7 +14,6 @@ import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api } from "@/data/client";
 import type { AskQuestion, PendingQuestion } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -58,8 +57,23 @@ function Option({ label, description, on, multi, onPress, t }: {
   );
 }
 
-export function QuestionPanel({ cardId, question, onAnswered }: {
-  cardId: string; question: PendingQuestion; onAnswered: () => void;
+/** How the chosen answer is delivered. The panel does NOT know what it is
+ *  answering - a card worker's question and one of Henry's own look identical
+ *  to the owner and are the same JSON, but they settle through different doors
+ *  (POST /tracks/<id>/answer resumes a parked session; POST /chat with
+ *  `answer_to` sends the choice as the owner's next message). Passing the door
+ *  in keeps ONE panel for both instead of a second one per surface - which is
+ *  the same rule the transcript and the composer already follow. */
+export type AnswerFn =
+  (answers: Record<string, string | string[]>, requestId: string) => Promise<unknown>;
+
+export function QuestionPanel({ question, onSubmit, onAnswered, hint }: {
+  question: PendingQuestion; onSubmit: AnswerFn; onAnswered: () => void;
+  /** What happens when he answers, in one line. Defaults to the card wording
+   *  ("goes straight to the worker"), which is a LIE for Henry's own questions -
+   *  nothing is parked waiting on them. The caller owns the door, so the caller
+   *  owns this sentence; everything else about the panel is identical. */
+  hint?: string;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -105,7 +119,7 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
           ? (c ? [...v, c] : v)
           : (c || v[0]);
       }
-      await api.answer(cardId, answers, question.id);
+      await onSubmit(answers, question.id);
       onAnswered();
     } catch (e) {
       Alert.alert(tr("card.q.failedTitle"), String((e as Error).message));
@@ -223,7 +237,7 @@ export function QuestionPanel({ cardId, question, onAnswered }: {
         </View>
 
         <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 15 }}>
-          {tr("card.q.hint")}
+          {hint ?? tr("card.q.hint")}
         </Text>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>

@@ -171,7 +171,12 @@ def glance_talk(self, user, body):
     except Exception as e:                       # noqa: BLE001
         return self._send(502, json.dumps({"error": str(e)[:200]}))
     reply = out.get("reply") or ""
-    q, prose = ask.parse(reply)
+    # copilot.chat parses the block at EVENT TIME and returns both halves, so
+    # `reply` is already prose here; re-parsing it would find no question and
+    # leave the lens with a dead end. Prefer the typed one, parse as a fallback.
+    q, prose = out.get("question"), reply
+    if not q:
+        q, prose = ask.parse(reply)
     spoken = (prose or reply)[:600]
     # SPEAK it. The lens has no speechSynthesis but plays audio, so
     # the answer is rendered here and played there (voice.py). Only
