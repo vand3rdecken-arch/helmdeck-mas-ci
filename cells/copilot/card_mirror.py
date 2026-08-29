@@ -123,31 +123,37 @@ def mirror(track, status):
         tid = (track or {}).get("id") or ""
         if not tid:
             return False
+        # Build the line FIRST, claim the dedup key only once there is something
+        # to say. Claiming up front would let a transition with nothing to print
+        # (a turn that ended silently) burn the key, so the next real message
+        # under the same key - the one the owner actually needs - would be
+        # swallowed as a repeat of a message that was never written.
+        q = None
+        if kind == KIND_QUESTION:
+            from spine.ops import ask
+            q = track.get("question") or {}
+            text = ask.summary(q) or ""
+        else:
+            # KIND_RESULT: the card's own closing words. `last_reply` is already
+            # the ask-block-stripped reply _finish_turn persisted, so a raw
+            # <helmdeck-ask> can never leak into the inbox.
+            text = (track.get("last_reply") or "").strip()
+            if len(text) > RESULT_MAX:
+                cut = text[:RESULT_MAX]
+                sp = cut.rfind(" ")
+                # " ...", not a bare cut: the watch learned this the hard way
+                # (d243545) - a clipped line that does not say it was clipped
+                # reads as the card's complete answer.
+                text = (cut[:sp] if sp > RESULT_MAX // 2 else cut).rstrip() + " …"
+        if not text:
+            return False
         from spine.comms import notify
         key = notify._dedup_key(track, status)
         with _lock:
             if _last.get(tid) == key:
                 return False
             _last[tid] = key
-        if kind == KIND_QUESTION:
-            from spine.ops import ask
-            q = track.get("question") or {}
-            text = ask.summary(q) or ""
-            return say_card(track, kind, text, question=q or None)
-        # KIND_RESULT: the card's own closing words. `last_reply` is already the
-        # ask-block-stripped reply _finish_turn persisted, so this never leaks a
-        # raw <helmdeck-ask> into the inbox.
-        text = (track.get("last_reply") or "").strip()
-        if not text:
-            return False
-        if len(text) > RESULT_MAX:
-            cut = text[:RESULT_MAX]
-            sp = cut.rfind(" ")
-            # " ...", not a bare cut: the watch learned this the hard way
-            # (d243545) - a clipped line that does not say it was clipped reads
-            # as the card's complete answer.
-            text = (cut[:sp] if sp > RESULT_MAX // 2 else cut).rstrip() + " …"
-        return say_card(track, kind, text)
+        return say_card(track, kind, text, question=q or None)
     except Exception:
         return False
 
