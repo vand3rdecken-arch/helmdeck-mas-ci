@@ -18,10 +18,16 @@ Three levels, and the distinction between the first two is the whole point:
   present -> in-app   (he is here but elsewhere; the app can surface it quietly)
   absent  -> push     (only now is a phone buzz the right instrument)
 
-HelmDeck has exactly ONE push recipient by construction (settings.push.fcm_token
-is a single paired device), so Paseo's "pick one of N devices" problem does not
-arise here - but several CLIENTS (phone, desktop, browser) can report presence,
-and any one of them being focused is enough to stay silent.
+HelmDeck used to have exactly ONE push recipient by construction. Since W2d
+(2026-08-28) it can have several - the phone in settings.push.fcm_token plus any
+device that registered its own key in settings.push.devices (the watch). Paseo's
+"pick one of N devices" problem STILL does not arise, but for a different
+reason than before: this module does not pick at all. It decides WHETHER to
+push; notify.recipients() then delivers to every paired device, because the
+owner's wrist and his pocket are the same person and both should buzz.
+
+Unchanged: several CLIENTS (phone, desktop, browser) can report presence, and
+any one of them being focused is enough to stay silent.
 
 State is in memory on purpose: a restarted daemon knows nothing about presence
 and therefore falls back to pushing, which is the safe direction to be wrong in

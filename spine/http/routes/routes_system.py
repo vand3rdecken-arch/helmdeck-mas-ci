@@ -123,7 +123,26 @@ def push_register_post(self, user, body):
     tok = (body.get("token") or "").strip()
     if not tok:
         return self._send(400, json.dumps({"error": "token required"}))
-    events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
+    pub = (body.get("pub") or "").strip()
+    if not pub:
+        # Legacy/phone path, byte-identical to before: the single slot that
+        # notify.py has always sealed to relay.phone_pub. No migration.
+        events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
+        return self._send(200, json.dumps({"registered": True}))
+    # A device that names its OWN key (the watch, W2d) is accepted only if that
+    # key is already pinned by relay_client._admit() - i.e. it genuinely
+    # completed pairing. Taking the body's word for it would let any holder of a
+    # device token open a push slot for a key the daemon never admitted, and
+    # notify.py would then seal real card content to it.
+    from spine.comms import relay_client
+    if pub not in relay_client._pubs_of(events.settings().get("relay") or {}):
+        return self._send(403, json.dumps({"error": "device key is not paired"}))
+    # save_settings merges only ONE level deep (s[k].update(v)), so the whole
+    # devices map must be rewritten - patching {"devices": {pub: ...}} on its
+    # own would silently drop every other registered device.
+    devices = dict((events.settings().get("push") or {}).get("devices") or {})
+    devices[pub] = {"token": tok, "label": (body.get("label") or "device")[:40]}
+    events.save_settings({"push": {"devices": devices}}, actor=user["name"])
     return self._send(200, json.dumps({"registered": True}))
 
 
