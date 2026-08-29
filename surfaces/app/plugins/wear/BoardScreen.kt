@@ -1,6 +1,7 @@
-﻿package app.helmdeck.wear
+package app.helmdeck.wear
 
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -160,6 +161,18 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // two are context, not a to-do list - nothing here is his move,
                 // so they carry the lowest emphasis (ChildButton) and never
                 // compete with a red gate for attention.
+                //
+                // But lowest emphasis is not the same as NO affordance. A bare
+                // ChildButton draws neither fill nor border, so on the real
+                // watch these rows read as plain text - the owner had to be told
+                // they were tappable, and on 2026-08-29 I only reached the card
+                // screen at all by tapping something that looked inert. They now
+                // carry a hairline in `borderSubtle`, one step below the outline
+                // OutlinedButton gives the `yours` bucket above. Three visual
+                // tiers instead of two-and-a-ghost: filled accent (blocked),
+                // outlined (yours), hairline (context) - all three obviously
+                // touchable, still ranked. Both colours come from WearTokens,
+                // i.e. from ops/tools/gen_tokens.py.
                 if (working.total > 0) {
                     item {
                         Text(
@@ -173,6 +186,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     for (c in working.cards) {
                         item {
                             ChildButton(onClick = { onOpenCard(c) },
+                                border = BorderStroke(1.dp, WearTokens.borderSubtle),
                                 modifier = Modifier.padding(2.dp)) {
                                 Text(text = c.task.ifBlank { c.id })
                             }
@@ -190,6 +204,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     for (c in backlog.cards) {
                         item {
                             ChildButton(onClick = { onOpenCard(c) },
+                                border = BorderStroke(1.dp, WearTokens.borderSubtle),
                                 modifier = Modifier.padding(2.dp)) {
                                 Text(text = c.task.ifBlank { c.id })
                             }

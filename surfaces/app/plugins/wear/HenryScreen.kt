@@ -6,6 +6,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -380,8 +381,17 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                         modifier = Modifier.padding(6.dp),
                     ) { Text(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
                 }
+                // Lowest emphasis, but NOT invisible. A bare ChildButton draws
+                // neither fill nor border, and on the real watch this rendered
+                // as the word "Board" floating in black - the only way off the
+                // landing screen, looking like a caption. Same hairline the
+                // board's own context rows now carry, so "tappable but not your
+                // move" looks the same everywhere. borderSubtle is one step
+                // below the outline the voice toggle above uses; both from
+                // WearTokens, i.e. from ops/tools/gen_tokens.py.
                 item {
                     ChildButton(onClick = { VoicePlayer.stop(); onOpenBoard() },
+                        border = BorderStroke(1.dp, WearTokens.borderSubtle),
                         modifier = Modifier.padding(6.dp)) { Text("Board") }
                 }
             }
