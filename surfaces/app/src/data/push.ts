@@ -125,7 +125,12 @@ async function notificationContent(m: { title: string; body: string; track?: str
   const data: Record<string, string> = {
     track: m.track ?? "", kind: m.kind ?? "", body: m.body ?? "",
   };
-  let categoryIdentifier = CARD_CATEGORY;
+  // Every one of the 3 card actions POSTs to a CARD (steer / cancel / answer)
+  // and its handler returns early without a `track` - so on a trackless push
+  // they render as three buttons that silently do nothing. A Henry chat reply
+  // (kind "chat") and a goal-level PM escalation both have no card: they get no
+  // buttons at all, and tapping the notification itself opens the right screen.
+  let categoryIdentifier: string | undefined = m.track ? CARD_CATEGORY : undefined;
   const ask = m.ask;
   if (m.track && ask?.id && ask.header && (ask.options?.length ?? 0) >= 2) {
     data.qid = ask.id;
