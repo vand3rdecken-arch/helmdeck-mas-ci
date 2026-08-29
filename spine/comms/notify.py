@@ -299,6 +299,16 @@ def clear_dedup(track_id):
     Called when a turn STARTS (the owner steered / answered)."""
     with _dedup_lock:
         _last_push.pop(track_id, None)
+    # Re-arm the chat mirror on the SAME signal. The two registries are
+    # deliberately separate (different suppression policies) but they must
+    # re-arm together: if only the push's cleared, a steered card would buzz
+    # about a question the chat had decided was not news, and the owner would
+    # tap that notification into a transcript that never mentioned it.
+    try:
+        from cells.copilot import card_mirror
+        card_mirror.clear_dedup(track_id)
+    except Exception:
+        pass
 
 
 def escalate(title, body, track_id=""):
@@ -331,6 +341,23 @@ def card_event(track, status):
     decision waiting (with the question itself as the body) instead of the
     generic "card finished"."""
     from spine.registry import i18n
+    # THE EVENT MIRROR (owner decree 2026-08-29) runs FIRST and unconditionally.
+    # Everything below this line decides whether to BUZZ; this decides whether
+    # the owner can ever find out at all. The two must not share a gate: a push
+    # is correctly suppressed while the owner is present, in quiet hours, and on
+    # a repeat - and every one of those is a reason the chat line matters MORE,
+    # not less. It is also why this sits above the `keys` check rather than
+    # inside it: the mirror keeps its own reason table (card_mirror.REASONS) so
+    # the inbox's editorial policy and the push's never silently drift into one.
+    try:
+        from cells.copilot import card_mirror
+        card_mirror.mirror(track, status)
+    except Exception as _me:                                    # noqa: BLE001
+        # Best-effort like every other write in this module, but never SILENT:
+        # a mirror that stops working is invisible by construction (the owner
+        # sees a chat with nothing in it, which is what a quiet board looks
+        # like too), so the one place it can announce its own failure is here.
+        print("notify: chat mirror failed -", str(_me)[:200])
     # NB "background" is deliberately absent: a card waiting on its own
     # background task is NOT the owner's move, so it must never buzz his phone.
     # It shows as an in-app cue and auto-continues when the task finishes.

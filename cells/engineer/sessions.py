@@ -849,7 +849,36 @@ def _try_auto_fix_deploy(t, lg):
     steer(tid, instr, actor="fast-track", source="fast-track-deploy-fix")
 
 
-def answer_question(tid, answers, request_id="", actor="owner"):
+def reply_door(t, text):
+    """Which door an owner's free-text reply to a card goes through.
+
+    Returns (kind, answers, request_id): ("answer", {header: text}, id) when the
+    card has ONE pending question that this text validly settles, else
+    ("steer", None, ""). Pure - it decides, it does not dispatch, so a route can
+    answer the HTTP request immediately and background the slow half.
+
+    Lives here, next to the two doors it chooses between, because more than one
+    surface asks the question: the Henry chat on the phone and /wear/talk on the
+    watch both route an inline reply, and a second copy of this rule would be
+    two surfaces that disagree about whether a sentence settled a question.
+
+    Falling back to a steer rather than reporting an error is deliberate. The
+    owner typed a sentence at his inbox; "that was not a valid answer" is not a
+    useful thing to say to a person who just answered, and a multi-question ask
+    (which one line genuinely cannot settle) is the common reason."""
+    q = (t or {}).get("question") or {}
+    qs = q.get("questions") or []
+    if len(qs) != 1:
+        return "steer", None, ""
+    from spine.ops import ask
+    cand = {qs[0]["header"]: text}
+    _picks, err = ask.validate_answers(q, cand)
+    if err:
+        return "steer", None, ""
+    return "answer", cand, q.get("id") or ""
+
+
+def answer_question(tid, answers, request_id="", actor="owner", echo_chat=True):
     """Answer the worker's pending multiple-choice question (Phase 2.4).
 
     The owner's pick becomes the next steer, so the SAME session continues via
@@ -896,6 +925,29 @@ def answer_question(tid, answers, request_id="", actor="owner"):
     from spine.storage import events
     events.emit("answer", tid, actor=actor, qkind=q.get("kind"),
                 picks=[ask._pick_parts(p) for p in picks])
+    # The answer also lands in the owner's Henry chat, bound to this card. THIS
+    # is the one owner of "the question was answered" for the inbox, and it has
+    # to be here rather than at each caller: an answer can arrive from the phone
+    # panel, the watch, the glasses, a notification button or an inline chat
+    # reply, and only this function sees all of them. Without it the mirrored
+    # question would sit in the inbox still offering options it had already
+    # spent - and the owner, seeing an open question, would answer it a second
+    # time into a guaranteed 409.
+    #
+    # `echo_chat=False` for the ONE caller that already wrote it: an inline
+    # reply typed in the Henry chat is logged there verbatim, with the `mid` the
+    # app minted, so the optimistic bubble can retire by identity. Writing a
+    # second, RE-RENDERED copy here (free text comes back quoted from
+    # _pick_parts) would both duplicate the message and leave the owner's
+    # original bubble pinned to the bottom of the chat forever, because it would
+    # never find its own text again.
+    if echo_chat:
+        try:
+            from cells.copilot import copilot
+            copilot.say(", ".join(", ".join(ask._pick_parts(p)) for p in picks),
+                        cls="you", card=tid)
+        except Exception:
+            pass
     # steer() clears the pending question itself and runs the turn under the
     # per-card lock, so the worker continues with the decision.
     return steer(tid, ask.answer_prompt(picks), actor=actor, source="answer")

@@ -97,6 +97,24 @@ export const demo: Dict = {
     de: "Das ist die Demo — ich antworte aus einem festen Datensatz, ohne echten Rechner. Mit gekoppelter HelmDeck-Installation würde hier dein Agent antworten, Karten anlegen und Rückfragen stellen.",
     en: "This is the demo — I answer from a fixed data set, with no real machine. Paired with your own HelmDeck installation, your agent would reply here, file cards and ask you questions.",
   },
+  // the mirrored card question (event mirror, one-inbox decree) - asked by the
+  // d2 sample card, answerable from the chat via the QuestionPanel
+  "demo.chat.mirrorName": { de: "Login: Passwort-Reset", en: "Login: password reset" },
+  "demo.chat.mirrorQ": {
+    de: "Wie lange soll der Reset-Link gültig sein?",
+    en: "How long should the reset link stay valid?",
+  },
+  "demo.chat.mirrorHeader": { de: "Gültigkeit", en: "Validity" },
+  "demo.chat.mirrorOptA": { de: "24 Stunden", en: "24 hours" },
+  "demo.chat.mirrorOptADesc": {
+    de: "Bequem, aber ein abgefangener Link bleibt einen Tag lang scharf.",
+    en: "Convenient, but an intercepted link stays live for a day.",
+  },
+  "demo.chat.mirrorOptB": { de: "1 Stunde", en: "1 hour" },
+  "demo.chat.mirrorOptBDesc": {
+    de: "Sicherer Standard; abgelaufene Links fordern einfach neu an.",
+    en: "The safer default; an expired link just gets re-requested.",
+  },
   "demo.steer.reply": { de: "Verstanden — in der Demo arbeite ich nicht wirklich weiter.",
                         en: "Got it — in the demo I don't actually continue the work." },
   "demo.steer.step": {

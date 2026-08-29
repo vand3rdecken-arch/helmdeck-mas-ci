@@ -167,3 +167,8 @@ daemon/settings.json.tmp
 daemon/copilot_stats.json.tmp
 daemon/models_stt/
 surfaces/app/modules/livemic/android/libs/
+
+# Scratch file for `git commit -F`, which is how a multi-line commit message
+# gets written here (a shell here-string is flattened by the rtk hook into
+# pathspecs). Ignored because `git add -A` swept one into a commit, 2026-08-29.
+.git-commit-msg.tmp
