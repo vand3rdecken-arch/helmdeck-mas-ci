@@ -46,7 +46,11 @@ echo "[build_wear_apk] APK: $(du -h "$APK" | cut -f1)"
 if command -v adb >/dev/null 2>&1 && adb get-state >/dev/null 2>&1; then
   echo "[build_wear_apk] adb install -r"
   adb install -r "$APK" || { echo "[build_wear_apk] adb install FAILED"; exit 1; }
-  echo "[build_wear_apk] installed - open it on the watch (no launcher icon asset yet, see README.md §9.1)"
+  # The "no launcher icon asset yet" note this line used to carry is OBSOLETE
+  # since 2026-08-29: withWearApp.js copies the phone's own brand PNGs into
+  # wear/res/mipmap-xxhdpi plus an adaptive-icon wrapper, verified in the built
+  # APK (`aapt2 dump badging` -> icon='res/mipmap-anydpi-v26/ic_launcher.xml').
+  echo "[build_wear_apk] installed - open it from the watch's app drawer (HelmDeck)"
 else
   echo "[build_wear_apk] no adb device/emulator reachable - built but not installed."
   echo "[build_wear_apk] pair a Wear emulator or device, then: adb install -r $APK"
