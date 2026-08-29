@@ -174,12 +174,14 @@ def _run_action(a, actor, role="operator"):
             t = sessions.new_direct_task(
                 repo, task, actor=actor,
                 priority=a.get("priority", "medium"),
-                dispatch=a.get("dispatch", True) is not False)
+                dispatch=a.get("dispatch", True) is not False,
+                fast_track=a.get("fast_track") is True)
         except RuntimeError as e:
             return "direct_task: %s" % e
-        return ("Direkt-Build gestartet (%s) - der Agent arbeitet OHNE Worktree direkt "
+        return ("Direkt-Build gestartet (%s%s) - der Agent arbeitet OHNE Worktree direkt "
                 "im Baum %s. Kein Gate, kein Merge: was er ändert, ist sofort da."
-                % (t["id"], t.get("worktree")))
+                % (t["id"], ", fast-track" if t.get("fast_track") else "",
+                   t.get("worktree")))
     if kind == "file_card":
         repo = events.settings().get("default_repo")
         if not repo:

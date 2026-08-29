@@ -332,7 +332,8 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
 DIRECT_BRANCH = "(direct)"
 
 def new_direct_task(repo, task, actor="owner", priority="medium", description="",
-                    dispatch=True, value=None, model="", driver="claude"):
+                    dispatch=True, value=None, model="", driver="claude",
+                    fast_track=False):
     """Paseo-style DIRECT build card: the repo working tree ITSELF is the
     workplace - no worktree, no branch, no merge. Rides the machine path end to
     end (machine=True: _start_machine dispatches into the folder, _accept_machine
@@ -367,6 +368,12 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
         tt["machine"] = True         # ride the no-worktree dispatch/accept path
         tt["direct"] = True          # serialized per-tree in _turn; shown as direct
         tt["worktree"] = repo        # the driver's cwd - the LIVE tree, no copy
+        if fast_track:
+            # ship-on-turn-end from birth (sessions._maybe_fast_track_ship_direct):
+            # autocommit + deploy hook, no gate/merge - the quick-fix class the
+            # owner triages in chat (2026-08-29). Same registered debt
+            # fast-track-no-gate as the after-the-fact flag flip.
+            tt["fast_track"] = True
     cur = _mutate(t["id"], _mark) or t
     from spine.ops.actionlog import ActionLog
     ActionLog(cur["run_dir"]).log(
