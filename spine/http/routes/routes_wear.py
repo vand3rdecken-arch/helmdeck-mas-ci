@@ -60,6 +60,60 @@ def wear_board_get(self, user):
         glance_payload(tracks, events.metrics(tracks))))
 
 
+# How many transcript lines the watch may pull. The wrist is not where anyone
+# reads back a long conversation, and every line rides through the sealed relay
+# in ONE response - so this is a payload bound as much as a UI one.
+WEAR_CHAT_MAX = 30
+# Per-line cap for the scrollback. 240 chars is roughly six lines of readable
+# text on a 240dp round screen - past that the owner is scrolling, not reading.
+WEAR_CHAT_LINE_MAX = 240
+
+
+def wear_chat_get(self, user):
+    """The owner's REAL Henry transcript - the same copilot session the phone
+    renders, not a watch-local one.
+
+    Owner, 2026-08-29: "Ich will den Chat Verlauf mit Henry sehen und
+    Nachrichten verschicken." The sending half already worked: wear_talk_post
+    below calls copilot.chat() with the SAME user, so a watch message has
+    always landed in the same Claude session (copilot_sessions.json) the phone
+    resumes. Only the READING half was missing, which is why the watch looked
+    like a separate, amnesiac chat.
+
+    Trimmed to the shape a round screen can use: `cls` collapses to who spoke,
+    and the internal classes the board chat renders as chrome ("act" =
+    action receipts) are dropped rather than shown as if Henry had said them.
+    """
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    from cells.copilot import copilot
+    from spine.ops import ask
+    msgs = (copilot.history(user["name"]) or {}).get("messages") or []
+    out = []
+    for m in msgs:
+        cls = (m or {}).get("cls") or ""
+        if cls not in ("you", "bot", "error"):
+            continue
+        text = ((m or {}).get("text") or "").strip()
+        if not text:
+            continue
+        if cls == "bot":
+            # The STORED text still carries the raw <helmdeck-ask> block; only
+            # the live path strips it (wear_talk_post does `q, prose =
+            # ask.parse(reply)` a few lines below). Reading the log verbatim put
+            # a screenful of '{"label": ...' JSON on the watch - seen on-device
+            # 2026-08-29. Same parse, same reason: the block is an interaction,
+            # not something anyone reads.
+            _q, prose = ask.parse(text)
+            text = (prose or "").strip() or text
+        # A scrollback line, not the live answer: long enough to recognise the
+        # turn, short enough that 30 of them stay a conversation instead of a
+        # wall. The full text is always one tap away on the phone.
+        out.append({"mine": cls == "you", "text": text[:WEAR_CHAT_LINE_MAX],
+                    "ts": (m or {}).get("ts") or ""})
+    return self._send(200, json.dumps({"messages": out[-WEAR_CHAT_MAX:]}))
+
+
 def wear_talk_post(self, user, body):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
@@ -112,5 +166,5 @@ def wear_talk_post(self, user, body):
     return self._send(200, json.dumps(resp))
 
 
-GET_ROUTES = {"/wear/board": wear_board_get}
+GET_ROUTES = {"/wear/board": wear_board_get, "/wear/chat": wear_chat_get}
 POST_ROUTES = {"/wear/talk": wear_talk_post}

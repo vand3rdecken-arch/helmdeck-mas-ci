@@ -1,0 +1,326 @@
+package app.helmdeck.wear
+
+import android.app.Activity.RESULT_OK
+import android.content.Context
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.CardDefaults
+import androidx.wear.compose.material3.ChildButton
+import androidx.wear.compose.material3.OutlinedButton
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import app.helmdeck.wear.data.DeviceStore
+import app.helmdeck.wear.data.RelayClient
+import app.helmdeck.wear.data.VoicePlayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+
+/** One line of the conversation. `mine` decides the prefix, which is the only
+ *  affordance a 240 dp round screen has room for - no bubbles, no avatars. */
+private data class Line(val mine: Boolean, val text: String)
+
+/**
+ * Henry as a TEXT CHAT, and the first thing the app shows.
+ *
+ * Owner, 2026-08-29: "Stelle sicher man sieht Henry chat also text chat when
+ * app offen ist zu erst und dann gibt es eine Taste um voice zu aktivieren."
+ * Two things follow from that, and both reverse an earlier assumption of mine:
+ *
+ *   1. This screen is the LANDING screen (MainActivity), not something reached
+ *      by tapping through the board. The board is one tap away instead.
+ *   2. Voice is OFF by default and switched on with a button. The daemon still
+ *      renders the clip on every reply (routes_wear.py renders it
+ *      unconditionally); this side simply does not play it until asked.
+ *
+ * The transcript is deliberately kept IN MEMORY only. A persisted chat history
+ * would be a second, unencrypted copy of whatever Henry said about the owner's
+ * cards sitting on a device that leaves the house on his wrist - and nothing
+ * about this screen needs yesterday's conversation. It resets when the app
+ * does, which is also the honest signal that Henry has no memory of it either.
+ *
+ * VOICE IS SERVER-RENDERED, never device TTS - the standing owner decision in
+ * ops/docs/glasses-reference.md Â§4, reaffirmed by
+ * ops/docs/voice-interaction-design.md, which allows device TTS only as an
+ * unapproved offline fallback (Â§8.4). The button below plays what the server
+ * already sent; it never synthesises anything locally.
+ */
+@Composable
+fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
+    // Seeded from the encrypted cache, so re-opening the app resumes the
+    // conversation instead of starting at a blank screen every time.
+    val lines = remember {
+        mutableStateListOf<Line>().apply {
+            addAll(DeviceStore.loadChat(context).map { Line(it.first, it.second) })
+        }
+    }
+    // Every append goes through here so no path can add a line and forget to
+    // persist it - the bug that would look like "the cache randomly loses the
+    // last answer".
+    fun record(line: Line) {
+        lines.add(line)
+        DeviceStore.saveChat(context, lines.map { it.mine to it.text })
+    }
+    var busy by remember { mutableStateOf(false) }
+    var loadingHistory by remember { mutableStateOf(false) }
+    var voiceOn by remember { mutableStateOf(DeviceStore.loadVoiceOn(context)) }
+    var suggestions by remember { mutableStateOf<QuestionBlock?>(null) }
+    val scope = rememberCoroutineScope()
+    val columnState = rememberTransformingLazyColumnState()
+
+    fun ask(message: String) {
+        val device = DeviceStore.load(context)
+        if (device == null) {
+            record(Line(false, "Nicht gekoppelt."))
+            return
+        }
+        record(Line(true, message))
+        busy = true
+        suggestions = null
+        scope.launch {
+            val body = JSONObject().put("message", message).toString()
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    RelayClient.authedCall(
+                        device.relayUrl, device.room, device.daemonPubB64,
+                        device.myPublicKeyB64, device.mySecretKeyB64,
+                        device.deviceToken, "POST", "/wear/talk", body)
+                }.getOrNull()
+            }
+            busy = false
+            if (result == null || result.first !in 200..299) {
+                // A network answer the owner can act on, not a blank screen.
+                record(Line(false, "Henry nicht erreichbar."))
+                return@launch
+            }
+            val o = runCatching { JSONObject(result.second) }.getOrNull()
+            val reply = (o?.optString("reply") ?: "").ifBlank { "(keine Antwort)" }
+            record(Line(false, reply))
+            suggestions = parseQuestionBlock(o?.optJSONObject("question"))
+            // `voice` is ABSENT (not null) when server-side rendering failed;
+            // the text is already on screen, so a missing clip is silence and
+            // never an error.
+            val v = o?.optJSONObject("voice")
+            if (voiceOn && v != null) {
+                VoicePlayer.play(context, v.optString("mime"), v.optString("b64"))
+            }
+        }
+    }
+
+    val dictate = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val text = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            if (!text.isNullOrBlank()) ask(text.trim())
+        }
+    }
+
+    fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "Frag Henry")
+    }
+
+    // THE SERVER TRANSCRIPT IS THE TRUTH. GET /wear/chat returns the same
+    // copilot session the phone renders (routes_wear.wear_chat_get), so the
+    // watch shows ONE Henry conversation with the phone instead of a separate,
+    // amnesiac one - which is what it looked like before, even though messages
+    // sent here always did land in that same session.
+    //
+    // The encrypted cache above is NOT the source of truth; it exists so the
+    // screen is already populated while this call is in flight. On success the
+    // server list replaces it wholesale (the daemon may have compacted or
+    // rotated the session) and is written back.
+    LaunchedEffect(Unit) {
+        val device = DeviceStore.load(context) ?: return@LaunchedEffect
+        loadingHistory = lines.isEmpty()
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                RelayClient.authedCall(
+                    device.relayUrl, device.room, device.daemonPubB64,
+                    device.myPublicKeyB64, device.mySecretKeyB64,
+                    device.deviceToken, "GET", "/wear/chat")
+            }.getOrNull()
+        }
+        loadingHistory = false
+        if (result == null || result.first !in 200..299) return@LaunchedEffect
+        val arr = runCatching {
+            JSONObject(result.second).optJSONArray("messages")
+        }.getOrNull() ?: return@LaunchedEffect
+        val fresh = ArrayList<Line>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val text = o.optString("text")
+            if (text.isNotBlank()) fresh.add(Line(o.optBoolean("mine"), text))
+        }
+        // An EMPTY server history is a real answer (fresh session) - but never
+        // let it wipe a cache the owner can still read if the trim above threw
+        // everything away for an unexpected reason.
+        if (fresh.isNotEmpty() || lines.isEmpty()) {
+            lines.clear()
+            lines.addAll(fresh)
+            DeviceStore.saveChat(context, lines.map { it.mine to it.text })
+        }
+    }
+
+    // Follow the conversation instead of making him scroll after every reply -
+    // but ONLY once there is something to follow. The first version keyed on
+    // `busy` as well and scrolled on the very first composition, when the list
+    // was still empty: the title and the "tap Sprechen" hint were pushed up
+    // under the clock and the screen opened half-cut (seen on the watch,
+    // 2026-08-29). An empty chat must open at the TOP.
+    LaunchedEffect(lines.size) {
+        if (lines.isNotEmpty()) {
+            // index 0 is the title, so the newest line sits at lines.size -
+            // but scrollToItem puts the target at the TOP edge, where the
+            // scaffold's TimeText sits on top of it (seen on the watch,
+            // 2026-08-29: the newest line was clipped under the clock). Aiming
+            // one item earlier lands the newest line in clear space, with its
+            // predecessor as context above it.
+            runCatching { columnState.scrollToItem(maxOf(0, lines.size - 1)) }
+        }
+    }
+
+    // No MaterialTheme wrapper here on purpose: MainActivity wraps the whole
+    // app in HelmDeckWearTheme once. A nested `MaterialTheme { }` with no
+    // arguments is exactly how Material's default PURPLE got onto this screen.
+    run {
+        ScreenScaffold(scrollState = columnState) { contentPadding ->
+            TransformingLazyColumn(
+                state = columnState,
+                contentPadding = contentPadding,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item {
+                    Text(text = "Henry", textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp))
+                }
+                if (lines.isEmpty()) {
+                    item {
+                        Text(
+                            // Distinguishable states: still fetching vs. genuinely
+                            // nothing said yet. Showing the invitation while the
+                            // history is still loading would read as "Henry has
+                            // forgotten everything".
+                            text = if (loadingHistory) "Verlauf wird geladenâ€¦"
+                                   else "Tippe auf Sprechen und stelle deine Frage.",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+                // One CARD per message, not one centred line. A wall of centred
+                // text has no turn boundaries - you cannot see where Henry
+                // stops and you start, which is the single thing a chat has to
+                // show. Cards inside a scaling list is the shape Google's own
+                // Wear Compose guidance uses for exactly this.
+                //
+                // Filled card = Henry, outlined card = you. Colour does the job
+                // the "Du:"/"Henry:" prefixes used to do, so the prefixes are
+                // gone and the text gets the whole width.
+                //
+                // Text is START-aligned inside the card: centring is right for a
+                // one-line status, wrong for prose - a centred paragraph has a
+                // ragged left edge and the eye loses the line it was on.
+                for (line in lines) {
+                    item {
+                        Card(
+                            onClick = {},
+                            colors = CardDefaults.cardColors(
+                                // Fill vs. outline was too weak: both sides were
+                                // near-black on black, so the eye had to find the
+                                // border to see whose turn it was (owner,
+                                // 2026-08-29: "Noch zu schwer zu lesen").
+                                //
+                                // Now the two sides differ in HUE, not just in a
+                                // hairline. Your messages carry HelmDeck's own
+                                // blue veil - `glow1` from tokens.ts, the
+                                // translucent accent the design system already
+                                // uses for exactly this "tinted surface" job -
+                                // and Henry stays neutral grey (`layer2`), a
+                                // clear step lighter than the black canvas.
+                                // Nothing invented: both values come from the
+                                // canonical palette.
+                                // Both values come from WearTokens, i.e. from
+                                // ops/tools/gen_tokens.py - not from hex typed
+                                // in here. `glow1` is the translucent accent the
+                                // design system already defines for a tinted
+                                // surface; `layer2` is the neutral one step
+                                // above the canvas.
+                                containerColor = if (line.mine) WearTokens.glow1
+                                                 else WearTokens.layer2,
+                                contentColor = WearTokens.txtPrimary,
+                            ),
+                            modifier = Modifier.padding(vertical = 3.dp),
+                        ) {
+                            Text(text = line.text, textAlign = TextAlign.Start)
+                        }
+                    }
+                }
+                if (busy) {
+                    item {
+                        Text(text = "Henry denktâ€¦", textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(6.dp))
+                    }
+                }
+                // Henry's own follow-up options, when a tap can settle it.
+                suggestions?.questions?.firstOrNull()?.options?.forEach { opt ->
+                    item {
+                        Button(onClick = { ask(opt.label) }, enabled = !busy,
+                            modifier = Modifier.padding(4.dp)) { Text(text = opt.label) }
+                    }
+                }
+                item {
+                    Button(onClick = { dictate.launch(speechIntent()) }, enabled = !busy,
+                        modifier = Modifier.padding(6.dp)) {
+                        Text(if (busy) "â€¦" else "Sprechen")
+                    }
+                }
+                // THREE LEVELS OF EMPHASIS, not three identical blue pills.
+                // "Sprechen" above is the one thing this screen exists for and
+                // keeps the filled accent; the voice switch is a setting
+                // (outlined); leaving for the board is navigation (lowest).
+                // All three shouting equally is how a small screen stops
+                // telling you where to look.
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            voiceOn = !voiceOn
+                            DeviceStore.saveVoiceOn(context, voiceOn)
+                            // Switching off mid-sentence must stop THAT
+                            // sentence, not merely the next one.
+                            if (!voiceOn) VoicePlayer.stop()
+                        },
+                        modifier = Modifier.padding(6.dp),
+                    ) { Text(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
+                }
+                item {
+                    ChildButton(onClick = { VoicePlayer.stop(); onOpenBoard() },
+                        modifier = Modifier.padding(6.dp)) { Text("Board") }
+                }
+            }
+        }
+    }
+}
