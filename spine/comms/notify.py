@@ -331,6 +331,88 @@ def escalate(title, body, track_id=""):
     return push_fcm(title, body, track_id)
 
 
+# How much of a Henry answer becomes the notification body. ~100 chars is what a
+# lockscreen line and a round watch face actually show; the full answer is one
+# tap away in the chat. card_mirror.RESULT_MAX (400) is deliberately larger - an
+# INBOX line may be a paragraph, a notification may not.
+CHAT_BODY_MAX = 100
+
+
+def chat_summary(text):
+    """A Henry reply reduced to ONE notification line.
+
+    Three strippers rather than a slice, and each has a scar behind it:
+      * ask.parse drops a trailing <helmdeck-ask> block - the board agent may end
+        a turn with one, and raw interaction JSON on a lockscreen is not news.
+        The same parse /wear/talk and the voice path already apply to this exact
+        text, so this is the established owner of that cleanup, not a new one;
+      * voice.speakable drops markdown - the model writes '**fertig**' for a
+        surface that renders it and a notification renders nothing (measured for
+        speech 2026-08-21: 'Stern Stern Stern' read aloud; the same glyphs
+        arrive literally in a notification body);
+      * the trailing ' …' says the line was CUT. d243545's lesson on the wrist:
+        a silent cut reads as the complete answer.
+    """
+    from spine.media import voice
+    from spine.ops import ask
+    _q, prose = ask.parse(text or "")
+    # one line, never a layout: a notification collapses newlines anyway, and
+    # the watch draws the body into a fixed box
+    body = " ".join(voice.speakable(prose or "").split())
+    if len(body) <= CHAT_BODY_MAX:
+        return body
+    cut = body[:CHAT_BODY_MAX]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > CHAT_BODY_MAX // 2 else cut).rstrip() + " …"
+
+
+def chat_reply(text):
+    """Henry ANSWERED - the reverse direction of the one-inbox decree.
+
+    card_event carries the board's news INTO the Henry chat; this carries the
+    chat's own news back OUT to the devices. Until now only worker cards could
+    reach the owner at all: Henry finished a turn, wrote it to the transcript,
+    and the owner learned about it by opening the app on the off chance (owner
+    report 2026-08-29 18:09).
+
+    PRESENCE decides, exactly as it does for a card - the same instrument, not a
+    second policy:
+      a client with the app VISIBLE  -> the answer is already on his screen, and
+                                        /chat's own response put it there: silent
+      nothing visible                -> sealed FCM push to every paired device
+    'focused' cannot apply here (there is no card), so the present/absent split
+    is the whole rule - and presence is derived from the human, so an app left
+    open on a desk goes stale and the push resumes.
+
+    urgent=True is NOT a priority claim - it is what tells push_fcm this is
+    SOLICITED. Quiet hours exist so autonomous overnight work does not buzz the
+    phone; an answer to a question the owner typed two minutes ago is precisely
+    what he is demonstrably still awake for, and holding it until morning would
+    silently recreate the defect this closes. He started this turn; nothing here
+    fires on its own.
+
+    No dedup registry: one turn produces one reply, and a replayed POST /chat is
+    already answered from chat_dedupe's stored result WITHOUT re-running the
+    turn - so there is no second event to swallow, and a registry would only be
+    state nobody clears.
+    """
+    body = chat_summary(text)
+    if not body:
+        return False
+    from spine.comms import presence
+    from spine.registry import i18n
+    decision = presence.plan("")
+    if decision != "push":
+        print("notify: chat reply suppressed (%s) - the owner is looking" % decision)
+        return False
+    # kind="chat" with NO track: the app routes a trackless chat push into the
+    # Henry chat instead of the dashboard its trackless branch falls back to
+    # (surfaces/app/src/app/_layout.tsx). The watch needs no change at all -
+    # PushService renders title/body from the same sealed payload and opens the
+    # app; it never looked at `kind`.
+    return push_fcm(i18n.t("push.henry"), body, "", urgent=True, kind="chat")
+
+
 def card_event(track, status):
     """One line per transition the owner must act on. The title follows the
     workspace language (policy.lang); the body is the card's own title, which

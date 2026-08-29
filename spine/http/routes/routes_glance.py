@@ -167,7 +167,12 @@ def glance_talk(self, user, body):
     from cells.copilot import copilot
     try:
         out = copilot.chat("owner", msg, role="owner",
-                           allow_actions=False, extra_system=GLASS_BRIEF)
+                           allow_actions=False, extra_system=GLASS_BRIEF,
+                           # This response IS the delivery - the lens shows the
+                           # reply and plays it aloud (below). Buzzing the phone
+                           # about an answer already in the owner's ear is the
+                           # noise that teaches him to mute the channel.
+                           announce=False)
     except Exception as e:                       # noqa: BLE001
         return self._send(502, json.dumps({"error": str(e)[:200]}))
     reply = out.get("reply") or ""

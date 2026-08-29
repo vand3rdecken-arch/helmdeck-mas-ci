@@ -24,6 +24,7 @@ import { useSilentOta } from "@/data/ota";
 import { usePresenceHeartbeat } from "@/data/presence";
 import { useBlockerVoice } from "@/data/blocker_voice";
 import { announceDecrypted, decryptPush, presentDecrypted, registerForPush } from "@/data/push";
+import { pushRoute } from "@/data/push_route";
 import { t as i18nT } from "@/i18n/core";
 import { ThemeProvider } from "@/theme";
 import { tokens } from "@/theme/tokens";
@@ -154,28 +155,23 @@ function usePushWiring() {
       // tap" must never force-navigate anywhere (bug: was landing on the
       // dashboard even when a real card push had just opened, measured
       // 2026-08-24).
-      let resolved = !!track;
-      if (!track && data?.cipher) {
+      // `kind` counts as resolved too, not just `track`: a Henry chat reply
+      // (kind "chat") is a real, routable push that deliberately carries NO card,
+      // and a local notification carries no cipher to fall back on - so keying
+      // this on the track alone made every trackless tap a no-op. The bundled-
+      // summary case the paragraph above protects is unaffected: it delivers
+      // EMPTY data, so neither field is set and we still return.
+      if (!track && !kind && data?.cipher) {
         await hydration;
         const m = decryptPush(data);
-        if (m) { resolved = true; track = m.track; kind = m.kind; body = m.body; }
+        if (m) { track = m.track; kind = m.kind; body = m.body; }
       }
-      if (!resolved) return;
-      // A finished task speaks (owner 2026-08-22): tap on a DONE push opens
-      // the voice mode and Henry says the result aloud - no reading, no
-      // navigating into the card. Everything else keeps the card deep-link.
-      if (kind === "done" && track) {
-        const task = (body || "").replace(/\s*\[[^[\]]*\]\s*$/, "").trim();
-        router.push({ pathname: "/chat", params: {
-          vq: task ? `Die Aufgabe „${task.slice(0, 90)}“ ist fertig – sag mir kurz das Ergebnis.`
-                   : "Die gerade fertige Aufgabe – sag mir kurz das Ergebnis." } } as never);
-        return;
-      }
-      // A question/needs_you/bounced push is news IN THE CHAT, so land there
-      // directly instead of the overview tab the owner would have to switch
-      // past every time.
-      if (track) router.push({ pathname: "/card/[id]", params: { id: track, tab: "chat" } } as never);
-      else router.push("/(tabs)" as never);   // PM status w/o a card -> the PM summary/overview (dashboard IS the index tab since 2026-08-17)
+      // WHERE it lands is pushRoute's decision, not this listener's: it is pure
+      // and tested (test_push_route.js), and it returns null for exactly the
+      // unreadable tap above. This hook keeps only what needs the runtime -
+      // decrypting and navigating.
+      const dest = pushRoute({ track, kind, body });
+      if (dest) router.push(dest as never);
     });
     return () => { recv.remove(); resp.remove(); };
   }, [router]);

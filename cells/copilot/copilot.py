@@ -740,7 +740,7 @@ def build_argv(cli_model, sid, system):
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
-         client_msg_id="", _retried=False):
+         client_msg_id="", announce=True, _retried=False):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -755,6 +755,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     extra_system is appended to the resolved system brief, for a surface with a
     hard shape requirement (the lens: short prose, always end in tappable
     options) that the shared board brief should not have to carry.
+
+    announce=False silences the finished answer's NOTIFICATION (notify.chat_reply
+    below). For a door whose own response IS the delivery - the watch and the
+    glasses both render the reply and speak it aloud inside this same request -
+    a push would buzz the wrist about a sentence it is reading out. The phone's
+    /chat needs no such flag: its app reports presence, so an answer the owner
+    can see suppresses itself.
 
     voice_stream=True renders the prose to speech SENTENCE BY SENTENCE as it is
     generated, into the per-user chunk list `/chat/live` serves - so voice mode
@@ -1036,7 +1043,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     extra_system=(extra_system + "\n\nDeine letzte Antwort war eine "
                                   "leere Floskel ohne Inhalt. Beantworte jetzt die "
                                   "eigentliche Frage des Owners.").strip(),
-                    voice_stream=voice_stream,
+                    voice_stream=voice_stream, announce=announce,
                     # carried through the retry: dropping it here would log the
                     # message WITHOUT its client id, and the app would silently
                     # fall back to position matching for exactly the turns that
@@ -1104,6 +1111,42 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         if rotate_note:
             entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
         _append_log(user, entries)
+        # THE REVERSE MIRROR (owner report 2026-08-29 18:09: "Henrys Antworten
+        # loesen keine Notification aus"). card_mirror folds a CARD's news into
+        # this chat; this is the other direction - the chat's own news out to the
+        # phone and the wrist. It hangs HERE, at the one line that makes an
+        # answer exist for the owner, rather than in the /chat route: three doors
+        # run a Henry turn (phone, watch, glasses) and all three land on this
+        # persist, so a route-level hook would have been one copy per door with
+        # nothing keeping them in step - and the door that got forgotten would
+        # answer into silence, which is the exact defect being closed.
+        #
+        # Deliberately NOT in the card_run_dir branch above: that reply lands in
+        # a CARD's timeline, not in this transcript, so a notification promising
+        # the Henry chat would open a chat that never mentions it. The card's own
+        # events already reach the owner through notify.card_event.
+        #
+        # OFF the request thread. push_fcm does an OAuth token exchange plus one
+        # HTTPS call PER DEVICE, each with a 15s timeout, and this line sits
+        # INSIDE the owner's /chat request - a slow FCM would be worn as latency
+        # on every single answer, which is the opposite of the voice-speed
+        # decree. server._bg is the repo's choke point for backgrounded work and
+        # carries the crash reporting bare threads kept losing.
+        #
+        # Best-effort, but never SILENT (card_mirror's rule): a reporting channel
+        # that quietly stops working looks exactly like a quiet day.
+        if announce:
+            _said = out.get("reply", "")
+
+            def _announce():
+                try:
+                    from spine.comms import notify
+                    notify.chat_reply(_said)
+                except Exception as _ne:                        # noqa: BLE001
+                    print("copilot: reply notification failed -", str(_ne)[:200])
+
+            from spine.http import server as _srv
+            _srv._bg("chat:notify:" + str(user), _announce)
     _schedule_compact(user)      # background + single-flight, never blocks this reply
     refused = []
     if acts and not allow_actions:
