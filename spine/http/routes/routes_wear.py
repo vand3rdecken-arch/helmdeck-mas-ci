@@ -56,13 +56,50 @@ WEAR_LIST_MAX = 5
 # (TransformingLazyColumn), unlike the glasses' one-card lens, so this is far
 # above glance_payload's 160-char `detail` - but still a payload bound: it rides
 # sealed through the relay inside the board response, once per listed card.
-WEAR_BODY_MAX = 700
+#
+# Raised 700 -> 1200 after the owner read a real turn report on the watch and
+# said "Message abgeschnitten": a DELIVERED summary is the thing he opens a card
+# to read, and 700 lost it mid-thought. Scrolling costs him a flick; a missing
+# half costs him the answer.
+WEAR_BODY_MAX = 1200
+
+# The `detail` line the watch shows above the body. Same number glance_payload
+# already caps it at, so this only ever re-cuts text that arrived at the wall.
+WEAR_DETAIL_MAX = 160
 
 # The markup the phone RENDERS and a watch would show as literal characters.
 # Headings and list bullets are matched per line (re.M); emphasis and code ticks
 # anywhere. Deliberately NOT a markdown parser - this only removes the markers
 # that would otherwise read as '**DELIVERED**' on a 240dp screen.
 _WEAR_MD = re.compile(r"^\s{0,3}#{1,6}\s*|^\s{0,3}[-*+]\s+|\*\*|__|`+", re.M)
+
+
+def _wear_clip(text, cap):
+    """Cut at a boundary, and SAY that it was cut.
+
+    Owner, 2026-08-29, reading a turn report on the watch: "Message
+    abgeschnitten." A plain text[:cap] ends mid-word - the screen showed
+    "... (`wear-debug.apk`, 13:24" and simply stopped, which reads as a bug in
+    the message rather than as a bound on the screen.
+
+    Prefer a sentence end; fall back to a word boundary; the ellipsis is added
+    either way so a cut is never mistaken for the end of the thought. The
+    sentence end is only accepted in the second half of the budget - otherwise a
+    single early full stop would throw away most of what fits.
+    """
+    text = text or ""
+    if len(text) <= cap:
+        return text
+    head = text[:cap]
+    end = -1
+    for mark in (". ", "! ", "? ", ".\n", "!\n", "?\n"):
+        end = max(end, head.rfind(mark))
+    if end >= cap // 2:
+        return head[:end + 1].rstrip() + " ..."
+    sp = head.rfind(" ")
+    if sp <= 0:
+        return head.rstrip() + "..."
+    return head[:sp].rstrip(" ,;:-") + " ..."
 
 
 def _wear_text(raw, cap=WEAR_BODY_MAX):
@@ -99,7 +136,7 @@ def _wear_text(raw, cap=WEAR_BODY_MAX):
             out.append("")
         blank = False
         out.append(line)
-    return "\n".join(out)[:cap].strip()
+    return _wear_clip("\n".join(out).strip(), cap)
 
 
 def _wear_body(t):
@@ -184,6 +221,16 @@ def wear_board_get(self, user):
     for bucket in ("needs_you", "yours"):
         for row in payload.get(bucket) or ():
             row["body"] = _wear_body(by_id.get(row.get("id")))
+            # `detail` reaches the WATCH cleaned. blockers._blocker_text only
+            # collapses whitespace and slices at 160 - it is shaped for a badge
+            # and for the glasses' lens, and it hands markdown straight through.
+            # On the watch that rendered as a literal "## DELIVERED **Auf der
+            # Uhr...**" ending mid-word at "13:24" (owner, on-device
+            # 2026-08-29). Mutating the row here touches THIS response only:
+            # glance_payload builds a fresh dict per call and the glasses go
+            # through routes_glance, which never sees this object.
+            if row.get("detail"):
+                row["detail"] = _wear_text(row["detail"], WEAR_DETAIL_MAX)
     return self._send(200, json.dumps(payload))
 
 

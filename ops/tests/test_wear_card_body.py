@@ -92,11 +92,27 @@ out = W._wear_text("viele      Spalten\tund   Tabs")
 check(out == "viele Spalten und Tabs",
       "whitespace inside a line is collapsed (a 240dp line has no columns)")
 
-# -- 5. the cap ------------------------------------------------------------
+# -- 5. the cap, and WHERE it cuts -----------------------------------------
 out = W._wear_text("x" * 5000)
-check(len(out) <= W.WEAR_BODY_MAX,
+check(len(out) <= W.WEAR_BODY_MAX + 4,
       "the body is capped at WEAR_BODY_MAX (%d) - it rides sealed through the "
       "relay, once per listed card" % W.WEAR_BODY_MAX)
+
+# The owner's report: "Message abgeschnitten". A raw slice ended mid-word and
+# read as a broken message rather than as a bounded screen.
+long_words = ("wort " * 400).strip()
+out = W._wear_text(long_words)
+check(out.endswith(" ..."), "a cut body SAYS it was cut")
+check(not out.replace(" ...", "").endswith("wor"),
+      "and it never ends mid-word")
+sentences = ("Erster Satz. " * 200).strip()
+out = W._wear_text(sentences)
+check(out.endswith(". ..."),
+      "a sentence end is preferred over a bare word boundary")
+check(W._wear_clip("kurz", 100) == "kurz",
+      "text that fits is returned untouched - no ellipsis on a complete message")
+check(W._wear_clip("a" * 50, 10) == "a" * 10 + "...",
+      "one unbroken 50-char token still yields something, cut hard and marked")
 
 # -- 6. fallback for a card that never ran ---------------------------------
 check(W._wear_body({"last_reply": "gelaufen", "description": "beschrieben"})
@@ -181,7 +197,10 @@ glances.glance_payload = lambda tracks, m: {
     # deliberately in a DIFFERENT order than TRACKS: positional matching would
     # hand q-1's text to run-1 and the test would catch it
     "needs_you": [{"id": "q-1", "task": "wartende Karte", "detail": "warum"},
-                  {"id": "run-1", "task": "laufende Karte", "detail": "warum2"}],
+                  # markdown, exactly as blockers._blocker_text hands it over -
+                  # it collapses whitespace and slices, nothing more
+                  {"id": "run-1", "task": "laufende Karte",
+                   "detail": "## DELIVERED **fett** und `code`"}],
     "yours": [{"id": "skip-1", "task": "schon gelistet"}],
     "econ": {}, "ts": 0,
 }
@@ -198,10 +217,17 @@ check(ny.get("q-1", {}).get("body") == "noch nie gelaufen"
       and ny.get("run-1", {}).get("body") == "Zwischenstand aus dem letzten Turn.",
       "each needs_you row gets ITS OWN card's text - matched by id, not position")
 check(ny.get("q-1", {}).get("detail") == "warum",
-      "`detail` is left exactly as glance_payload wrote it - the glasses read "
-      "that same field and must not move")
+      "a `detail` with nothing to clean comes through unchanged")
 check((body.get("yours") or [{}])[0].get("body") == "darf nicht doppelt erscheinen",
       "the `yours` bucket is enriched too")
+# The exact thing the owner photographed: raw '## DELIVERED **fett**' on a
+# 240dp round screen, because `detail` is shaped for a badge and a lens and
+# hands markdown straight through.
+d = ny.get("run-1", {}).get("detail") or ""
+check("#" not in d and "*" not in d and "`" not in d,
+      "the watch's copy of `detail` is FLATTENED - no markdown reaches the wrist")
+check(d == "DELIVERED fett und code",
+      "and the words survive the flattening intact")
 
 print()
 if _fails:
