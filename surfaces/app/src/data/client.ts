@@ -179,6 +179,17 @@ export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id
    *  All optional: absent on every other `cls`, and absent entirely from an
    *  older daemon — the chat must render such a message as ordinary text. */
   card?: string; cardName?: string; kind?: "question" | "result" | "blocker";
+  /** The whole ask block, so the SHARED QuestionPanel can offer the real
+   *  options. It rides TWO kinds of message and they settle through different
+   *  doors (see openChatQuestion in app/chat.tsx):
+   *    * `cls:"card"` — a worker asked; `card` says which one, and the answer
+   *      goes to POST /tracks/<id>/answer with the request_id.
+   *    * `cls:"bot"`  — HENRY asked. Parsed off his reply at event time by
+   *      cells/copilot/copilot.chat and persisted beside the prose, so the
+   *      panel survives a reload and shows on every device. Answered with
+   *      POST /chat `answer_to`, which turns the choice into the owner's next
+   *      message. Before that parse existed the block reached the app as raw
+   *      TEXT and the transcript printed its JSON at the owner. */
   question?: PendingQuestion;
   /** "YYYY-MM-DD", stamped by copilot._append_log since 2026-08-29 and absent on
    *  everything written before it — which means "not recorded", not "today". */
@@ -572,7 +583,15 @@ export const api = {
   // card's worker" and is routed to steer/answer server-side. Two meanings on
   // one field would have silently turned the card chat's Henry tab into a
   // steer at the worker, with nothing in the UI to show why.
-  chat: (text: string, o: SteerOpts & { card?: string; reply_to_card?: string; mid?: string } = {}) => {
+  // `answer_to` + `answers`: the owner TAPPED an option on one of Henry's own
+  // <helmdeck-ask> questions. The daemon validates the choice against the
+  // options Henry actually offered, renders it into the owner's next message
+  // (spine/ops/ask.chat_answer_text) and runs the turn — so a tapped answer and
+  // a typed one are the same message on the same path. `text` may be empty for
+  // these: the daemon writes it. `answer_to` is the question id, rejected with
+  // 409 once the conversation has moved past it.
+  chat: (text: string, o: SteerOpts & { card?: string; reply_to_card?: string; mid?: string;
+    answer_to?: string; answers?: Record<string, string | string[]> } = {}) => {
     track("chat_message", { scope: o.reply_to_card ? "card_reply" : o.card ? "card" : "board" });
     // `mid` is minted HERE, once per call, and travels inside the body - which
     // is precisely what makes it a replay detector. A chat turn runs for
