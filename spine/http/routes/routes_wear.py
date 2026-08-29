@@ -47,6 +47,48 @@ WEAR_BRIEF = (
 )
 
 
+# Per-section cap. The wrist is a triage surface, not a backlog reader; the
+# totals ride alongside so "3 von 12" stays honest without sending 12 rows.
+WEAR_LIST_MAX = 5
+
+
+def _wear_pipeline(tracks, taken_ids):
+    """The two buckets glance_payload deliberately leaves out, added for the
+    WATCH ONLY.
+
+    Owner, 2026-08-29: "macht es mehr Sinn karten im backlog, in arbeit und
+    review zu zeigen bzw. Karten die mich brauchen als erstes?" - yes, and this
+    is the right place for it. glance_payload answers "what wants ME" and is
+    shared with the GLASSES (surfaces/glasses/app.js reads /glance, its worker
+    proxies only /glance*), so widening it would change a payload another
+    surface depends on. /wear/board is the watch's own route and always was -
+    it merely re-served glance_payload unchanged until now.
+
+    REVIEW is deliberately absent as a section: a card resting on Review for an
+    accept is already a blocker (blockers.blocker()), so it is in `needs_you`
+    where it belongs - listing it twice would be the same card shouting twice.
+
+    present() first, for the same reason owner_blockers does: a card whose turn
+    died still says `running` in storage, and calling that "in Arbeit" on a
+    watch would be a lie the owner cannot see through. Anything already in
+    needs_you/yours is skipped so no card appears in two sections.
+    """
+    from cells.engineer import sessions
+    working, backlog = [], []
+    for t in tracks or ():
+        t = sessions.present(t or {})
+        if t.get("archived") or t.get("id") in taken_ids:
+            continue
+        row = {"id": t.get("id"), "task": (t.get("task") or "")[:60]}
+        status = t.get("status")
+        if status == "running":
+            working.append(row)
+        elif status == "queued":
+            backlog.append(row)
+    return {"working": working[:WEAR_LIST_MAX], "working_total": len(working),
+            "backlog": backlog[:WEAR_LIST_MAX], "backlog_total": len(backlog)}
+
+
 def wear_board_get(self, user):
     # Same bar as chat_post's own role check (routes_copilot.py) - a `client`
     # role has no board-wide view to be shown here, on any surface.
@@ -56,8 +98,13 @@ def wear_board_get(self, user):
     from spine.storage import events
     from spine.ops.glances import glance_payload
     tracks = sessions.list_tracks()
-    return self._send(200, json.dumps(
-        glance_payload(tracks, events.metrics(tracks))))
+    payload = glance_payload(tracks, events.metrics(tracks))
+    # ADDITIVE: every existing key keeps its shape and meaning, so an older
+    # installed watch build simply ignores what it does not know.
+    taken = {c.get("id") for c in (payload.get("needs_you") or [])}
+    taken |= {c.get("id") for c in (payload.get("yours") or [])}
+    payload["pipeline"] = _wear_pipeline(tracks, taken)
+    return self._send(200, json.dumps(payload))
 
 
 # How many transcript lines the watch may pull. The wrist is not where anyone

@@ -115,6 +115,34 @@ fun parseYours(boardJson: String): List<BoardCard> {
     return out
 }
 
+/** The pipeline sections /wear/board adds on top of glance_payload: what the
+ *  machine is doing, and what is queued behind it. `total` can exceed the list
+ *  length - the route caps each section at 5 rows for the wire. */
+data class BoardSection(val cards: List<BoardCard>, val total: Int)
+
+private fun sectionOf(o: JSONObject?, listKey: String, totalKey: String): BoardSection {
+    val arr = o?.optJSONArray(listKey)
+    val out = mutableListOf<BoardCard>()
+    if (arr != null) {
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            out.add(BoardCard(id = c.optString("id"), task = c.optString("task"),
+                              reason = listKey, question = null))
+        }
+    }
+    return BoardSection(out, o?.optInt(totalKey, out.size) ?: out.size)
+}
+
+/** (in Arbeit, Backlog). Empty sections when the daemon is older than this
+ *  build and sends no `pipeline` - the screen then simply shows fewer rows
+ *  rather than breaking. */
+fun parsePipeline(boardJson: String): Pair<BoardSection, BoardSection> {
+    val o = runCatching { JSONObject(boardJson) }.getOrNull()
+    val p = o?.optJSONObject("pipeline")
+    return Pair(sectionOf(p, "working", "working_total"),
+                sectionOf(p, "backlog", "backlog_total"))
+}
+
 fun parseBoardCards(boardJson: String): List<BoardCard> {
     val o = JSONObject(boardJson)
     val ny = o.optJSONArray("needs_you") ?: return emptyList()
