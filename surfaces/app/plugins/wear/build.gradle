@@ -79,6 +79,13 @@ dependencies {
     // Android Studio's own Wear OS Compose template before a real build.
     implementation "androidx.core:core-ktx:1.13.1"
     implementation "androidx.activity:activity-compose:1.9.3"
+    // registerForActivityResult (MainActivity.kt, the notification-permission
+    // ask) trips lintVitalRelease's InvalidFragmentVersionForActivityResult
+    // when the classpath's transitive androidx.fragment is < 1.3.0 (measured
+    // 2026-08-29, first release build of this module). Pin it explicitly -
+    // 1.6.2 is the same line the phone module resolves, compileSdk-36-safe;
+    // same confidence tier as activity-compose above (not freshly fetched).
+    implementation "androidx.fragment:fragment-ktx:1.6.2"
     // Explicit rather than relying on Compose's transitive pull-in of
     // coroutines - PairingScreen.kt uses Dispatchers.IO/Default directly.
     // Same confidence tier as activity-compose above (not freshly fetched
