@@ -25,6 +25,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 
@@ -44,6 +45,10 @@ DAEMON_DIR = os.path.join(ROOT, "daemon")
 SETTINGS = os.path.join(DAEMON_DIR, "settings.json")
 PORT = 8140
 HEALTH_URL = "http://127.0.0.1:%d/" % PORT
+# Probe a path that answers DIRECTLY (401, no redirect). "/" 302-redirects to
+# the web UI (:3300), so probing it measured the WEB server's health, not the
+# daemon's - see _health() below for the incident this caused.
+PROBE_URL = "http://127.0.0.1:%d/system/health" % PORT
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_NAME = "HelmDeck"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
@@ -55,9 +60,19 @@ _state = {"daemon": False, "relay": "unbekannt", "update": "prüft …"}
 
 # ---------------------------------------------------------------- daemon health
 def _health():
+    # ANY HTTP reply means a daemon is listening - main.js daemonReachable
+    # parity ("even 401"). The old probe hit "/" (which 302-redirects to the
+    # web UI on :3300, urllib follows it) and demanded a 200 - so it measured
+    # the WEB server, and an auth-gated reply counted as DOWN. A live daemon
+    # thus looked dead whenever :3300 was closed, this supervisor spawned a
+    # rival, and the rival's SINGLETON tree-kill evicted the healthy daemon -
+    # the measured 2026-08-29 eviction war ("HelmDeck dead" with a daemon
+    # running minutes before).
     try:
-        with urllib.request.urlopen(HEALTH_URL, timeout=2) as r:
-            return getattr(r, "status", 200) == 200
+        with urllib.request.urlopen(PROBE_URL, timeout=2):
+            return True
+    except urllib.error.HTTPError:
+        return True                    # the daemon answered (401/404) = alive
     except Exception:
         return False
 

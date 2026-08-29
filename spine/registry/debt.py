@@ -115,8 +115,14 @@ DEBT = [
                         "daemon - any future test that imports henry_broker "
                         "and drives _decide()/_hands_on_ask() without "
                         "sandboxing _HENRY_REPO_ROOT has this exact footgun.",
-        "trigger": "Daemon restart trigger (still open): unconfirmed, "
-                   "tray.py health-check restart is the leading hypothesis. "
+        "trigger": "Daemon restart trigger (CLOSED 2026-08-29, see "
+                   "tray-health-probe-eviction-war): CONFIRMED as tray.py's "
+                   "health check - it probed '/' (which 302-redirects to the "
+                   "web UI on :3300, urllib follows it) and demanded a 200, "
+                   "so it measured the WEB server's health and counted an "
+                   "auth-gated reply as DOWN; every false 'down' spawned a "
+                   "rival daemon whose SINGLETON taskkill /F /T evicted the "
+                   "healthy one. "
                    "Test-sandboxing gap (closed): any ops/tests/*.py that "
                    "imports cells.copilot.henry_broker and calls _decide() "
                    "or _hands_on_ask() on a privileged/card-less escalation "
@@ -124,10 +130,8 @@ DEBT = [
                    "gap (open): any privileged/card-less escalation at all - "
                    "every _ask() call inherits this repo's own build-loop "
                    "hooks via cwd, nothing scopes them to Henry's turn.",
-        "fix": "Daemon-restart half still needs: a boot-time log line in "
-               "daemon/swarm.py or spine/http/server.py's serve() noting the "
-               "previous process's exit reason if determinable, or watching "
-               "tray.py's health-check log across a real recurrence. "
+        "fix": "Daemon-restart half is PAID (2026-08-29, see "
+               "tray-health-probe-eviction-war). "
                "Test-sandboxing half is fixed (this commit). Separately "
                "still worth considering: _baseline_commit() firing on EVERY "
                "hands-on judgement turn (not just ones that edit code) may "
@@ -140,6 +144,41 @@ DEBT = [
                "nothing' by itself - worth re-reading before relying on it "
                "here), or make the build-loop's Stop hook recognize a "
                "workorder it did not itself create and refuse to gate on it.",
+    },
+    {
+        "id": "tray-health-probe-eviction-war",
+        "order": -4,
+        "title": "Tray health probe measured the web UI, not the daemon - false 'down' spawned rival daemons that tree-killed the live one (the 2026-08-29 'HelmDeck dead' incident)",
+        "status": "paid",
+        "what": "surfaces/desktop/tray.py's _health() probed '/' with "
+                "urllib demanding a 200. GET / 302-redirects to the web UI "
+                "(:3300) and urllib FOLLOWS redirects - so the supervisor's "
+                "'daemon health' was actually 'is something serving :3300', "
+                "and an auth-gated direct reply (401) raised HTTPError and "
+                "counted as DOWN. Every false negative made _supervise() "
+                "spawn a fresh daemon, whose _take_singleton_lock() "
+                "(spine/http/startup.py) taskkill /F /T'd the perfectly "
+                "healthy incumbent. With several spawners on the box (tray, "
+                "Electron main.js startDaemon, manual CLI starts, accept-"
+                "path deploys) this became an eviction WAR with windows "
+                "where NO daemon listened - measured live 2026-08-29 "
+                "(pidfile churn 20236->20464->11044->3288->18640, owner-"
+                "visible as 'HelmDeck dead' minutes after a verified-up "
+                "restart). Fixed: _health() now probes /system/health "
+                "(direct answer, no redirect) and treats ANY HTTP reply "
+                "incl. HTTPError (401/404) as alive - byte-for-byte the "
+                "semantics main.js daemonReachable() already had ('even "
+                "401 means one is listening'). This closes the 'daemon "
+                "restart trigger' half of ship-aborted-loop-root-cause-open.",
+        "why_it_bites": "PAID - kept for why the probe looks the way it "
+                        "does. The trap class: a supervisor health check "
+                        "that transits ANY dependency (redirect, auth, "
+                        "another port) will kill healthy processes when "
+                        "that dependency blinks; probe the process itself "
+                        "and count any answer as life.",
+        "trigger": "was: web UI on :3300 not serving (Electron closed, Expo "
+                   "dev server down) while tray.py supervises.",
+        "fix": "shipped in the same commit as this entry.",
     },
     {
         "id": "rbac-audit-hardening-partial",
