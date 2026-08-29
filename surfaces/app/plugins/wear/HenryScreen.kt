@@ -22,12 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.ChildButton
 import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TitleCard
 import app.helmdeck.wear.data.DeviceStore
 import app.helmdeck.wear.data.RelayClient
 import app.helmdeck.wear.data.VoicePlayer
@@ -36,9 +36,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** One line of the conversation. `mine` decides the prefix, which is the only
- *  affordance a 240 dp round screen has room for - no bubbles, no avatars. */
-private data class Line(val mine: Boolean, val text: String)
+/** One line of the conversation: who said it, what, and when.
+ *
+ *  `ts` is the daemon's own "HH:mm" (copilot's log stamp, passed through by
+ *  wear_chat_get) for a message read back from the server, and the WATCH's
+ *  clock for one that was just sent or just answered - /wear/talk returns no
+ *  stamp, and the moment the line appears is the honest answer for it. Empty
+ *  when neither is available; the chat then shows the name without a time
+ *  rather than inventing a minute. */
+private data class Line(val mine: Boolean, val text: String, val ts: String = "")
+
+/** "HH:mm", 24h, matching the daemon's time.strftime("%H:%M") exactly - a
+ *  locale-defaulted pattern would render some watches as 12h and the two halves
+ *  of one conversation would disagree about what 13:05 is called. */
+private fun nowHm(): String =
+    java.text.SimpleDateFormat("HH:mm", java.util.Locale.GERMANY).format(java.util.Date())
+
+/** Who is speaking, as a chat shows it. */
+private fun senderOf(mine: Boolean) = if (mine) "Du" else "Henry"
 
 /**
  * Henry as a TEXT CHAT, and the first thing the app shows.
@@ -71,7 +86,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // conversation instead of starting at a blank screen every time.
     val lines = remember {
         mutableStateListOf<Line>().apply {
-            addAll(DeviceStore.loadChat(context).map { Line(it.first, it.second) })
+            addAll(DeviceStore.loadChat(context).map { Line(it.mine, it.text, it.ts) })
         }
     }
     // Every append goes through here so no path can add a line and forget to
@@ -79,7 +94,8 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // last answer".
     fun record(line: Line) {
         lines.add(line)
-        DeviceStore.saveChat(context, lines.map { it.mine to it.text })
+        DeviceStore.saveChat(
+            context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts) })
     }
     var busy by remember { mutableStateOf(false) }
     var loadingHistory by remember { mutableStateOf(false) }
@@ -91,10 +107,10 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     fun ask(message: String) {
         val device = DeviceStore.load(context)
         if (device == null) {
-            record(Line(false, "Nicht gekoppelt."))
+            record(Line(false, "Nicht gekoppelt.", nowHm()))
             return
         }
-        record(Line(true, message))
+        record(Line(true, message, nowHm()))
         busy = true
         suggestions = null
         scope.launch {
@@ -110,12 +126,12 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             busy = false
             if (result == null || result.first !in 200..299) {
                 // A network answer the owner can act on, not a blank screen.
-                record(Line(false, "Henry nicht erreichbar."))
+                record(Line(false, "Henry nicht erreichbar.", nowHm()))
                 return@launch
             }
             val o = runCatching { JSONObject(result.second) }.getOrNull()
             val reply = (o?.optString("reply") ?: "").ifBlank { "(keine Antwort)" }
-            record(Line(false, reply))
+            record(Line(false, reply, nowHm()))
             suggestions = parseQuestionBlock(o?.optJSONObject("question"))
             // `voice` is ABSENT (not null) when server-side rendering failed;
             // the text is already on screen, so a missing clip is silence and
@@ -173,7 +189,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val text = o.optString("text")
-            if (text.isNotBlank()) fresh.add(Line(o.optBoolean("mine"), text))
+            if (text.isNotBlank()) fresh.add(Line(o.optBoolean("mine"), text, o.optString("ts")))
         }
         // An EMPTY server history is a real answer (fresh session) - but never
         // let it wipe a cache the owner can still read if the trim above threw
@@ -181,7 +197,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         if (fresh.isNotEmpty() || lines.isEmpty()) {
             lines.clear()
             lines.addAll(fresh)
-            DeviceStore.saveChat(context, lines.map { it.mine to it.text })
+            DeviceStore.saveChat(context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts) })
         }
     }
 
@@ -231,44 +247,45 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                         )
                     }
                 }
-                // One CARD per message, not one centred line. A wall of centred
-                // text has no turn boundaries - you cannot see where Henry
-                // stops and you start, which is the single thing a chat has to
-                // show. Cards inside a scaling list is the shape Google's own
-                // Wear Compose guidance uses for exactly this.
+                // ONE MESSAGE = ONE TITLECARD: sender top-left, time top-right,
+                // text below. Owner, 2026-08-29, with a screenshot of the
+                // watch's own SMS app: "Kannst du die Nachrichten genau wie im
+                // sms oder andere Chats bauen. Mit Name und Zeitstempel."
                 //
-                // Filled card = Henry, outlined card = you. Colour does the job
-                // the "Du:"/"Henry:" prefixes used to do, so the prefixes are
-                // gone and the text gets the whole width.
+                // TitleCard is Wear Compose Material3's OWN component for
+                // exactly this shape - it has a `title` slot and a dedicated
+                // `time` slot (verified against the real API in the resolved
+                // AAR, compose-material3 1.6.2, not guessed from docs). Hand-
+                // building a header Row inside a plain Card would re-implement
+                // Google's own messaging card and get its type scale and its
+                // top-right time placement subtly wrong. Same reason the board
+                // uses Button/OutlinedButton/ChildButton rather than three
+                // hand-tinted boxes.
                 //
-                // Text is START-aligned inside the card: centring is right for a
-                // one-line status, wrong for prose - a centred paragraph has a
-                // ragged left edge and the eye loses the line it was on.
+                // The colour split stays as the owner asked for it earlier the
+                // same day ("Noch zu schwer zu lesen"): your messages carry
+                // HelmDeck's translucent accent veil `glow1`, Henry stays
+                // neutral `layer2`. Both come from WearTokens, i.e. from
+                // ops/tools/gen_tokens.py - no hex is typed in here. Name and
+                // time now carry the turn boundary too, so the colour is no
+                // longer the ONLY thing saying whose line this is.
+                //
+                // Text is START-aligned: centring is right for a one-line
+                // status, wrong for prose - a centred paragraph has a ragged
+                // left edge and the eye loses the line it was on.
                 for (line in lines) {
                     item {
-                        Card(
+                        TitleCard(
                             onClick = {},
+                            title = { Text(senderOf(line.mine)) },
+                            // Omitted, not blanked, when there is no stamp: an
+                            // empty `time` slot would still reserve its space
+                            // and leave a gap where a time should be. A line
+                            // cached before timestamps existed simply shows the
+                            // name - see DeviceStore.ChatLine.
+                            time = if (line.ts.isBlank()) null
+                                   else ({ Text(line.ts) }),
                             colors = CardDefaults.cardColors(
-                                // Fill vs. outline was too weak: both sides were
-                                // near-black on black, so the eye had to find the
-                                // border to see whose turn it was (owner,
-                                // 2026-08-29: "Noch zu schwer zu lesen").
-                                //
-                                // Now the two sides differ in HUE, not just in a
-                                // hairline. Your messages carry HelmDeck's own
-                                // blue veil - `glow1` from tokens.ts, the
-                                // translucent accent the design system already
-                                // uses for exactly this "tinted surface" job -
-                                // and Henry stays neutral grey (`layer2`), a
-                                // clear step lighter than the black canvas.
-                                // Nothing invented: both values come from the
-                                // canonical palette.
-                                // Both values come from WearTokens, i.e. from
-                                // ops/tools/gen_tokens.py - not from hex typed
-                                // in here. `glow1` is the translucent accent the
-                                // design system already defines for a tinted
-                                // surface; `layer2` is the neutral one step
-                                // above the canvas.
                                 containerColor = if (line.mine) WearTokens.glow1
                                                  else WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
