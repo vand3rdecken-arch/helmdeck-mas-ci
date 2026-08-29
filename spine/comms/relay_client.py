@@ -358,6 +358,11 @@ def unpair():
                 "phone_pub": "", "phone_pubs": [], "pair_pending": None})
     push = dict(events.settings().get("push") or {})
     push["fcm_token"] = ""
+    # W2d: the watch (and any further device) registers its own push slot under
+    # its pubkey. Unpairing rotates the keys and empties phone_pubs, so
+    # notify.recipients() would already drop them - this clears the now-dead
+    # entries too, so settings.json does not keep stale FCM tokens around.
+    push["devices"] = {}
     events.save_settings({"relay": rel, "push": push})
     try:
         events.log("relay", "unpaired - room + keys rotated, all issued codes revoked")

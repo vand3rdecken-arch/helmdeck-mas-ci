@@ -4,8 +4,15 @@
 Fires exactly at the status transitions where waiting costs real time
 (needs_you, bounced). Single channel: FCM data messages whose payload is
 NaCl-sealed with the pairing keys - Google delivers, the app decrypts.
-The phone's token arrives via POST /push/register (through the E2EE relay)
-and lands in settings.json as push.fcm_token.
+Tokens arrive via POST /push/register (through the E2EE relay).
+
+TWO DEVICE SLOTS, both fed by the same call (W2d, 2026-08-28):
+  * the phone keeps the original settings.push.fcm_token, sealed to
+    relay.phone_pub - unchanged, no migration;
+  * every OTHER device (the watch) registers under its own pubkey in
+    settings.push.devices and is sealed to THAT key.
+recipients() re-checks both against the pinned set at send time, so unpairing
+a device silences it without a second bookkeeping step.
 """
 import json, urllib.request
 
@@ -49,9 +56,11 @@ def _access_token():
 
 
 def fcm_ready():
+    """True when a push could actually land somewhere. Asks recipients() rather
+    than looking at push.fcm_token, so a workspace whose only paired device is
+    the WATCH reads as ready instead of as 'push not set up'."""
     from spine.storage import events
-    return (os.path.exists(_SA)
-            and bool((events.settings().get("push") or {}).get("fcm_token")))
+    return os.path.exists(_SA) and bool(recipients(events.settings()))
 
 
 def _quiet_now(s):
@@ -115,28 +124,69 @@ def ask_payload(track):
             "options": opts, "more": len(labels) > len(opts)}
 
 
-def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
-    """Sealed data message to the paired phone. Best-effort like push().
+def recipients(s):
+    """Every device this push must reach, as a list of (label, token, pub).
 
-    `ask` is the optional ask_payload() block: it turns the phone's (and the
-    bridged watch's) notification buttons into the worker's OWN options. It
-    rides INSIDE the sealed box like everything else, so Google still learns
-    nothing, and it is optional on both ends - an older app JSON-parses the
-    payload and simply ignores a key it does not know."""
+    DERIVED AND VERIFIED AT SEND TIME, never trusted from the stored blob (the
+    Paseo principle, CLAUDE.md): a registered device only stays a recipient
+    while its key is STILL PINNED in relay.phone_pubs. Unpairing therefore
+    silences a device immediately, with no second bookkeeping step that could
+    drift out of sync with the pinned set - the same reason _admit() is the one
+    owner of pinning.
+
+    relay_client._pubs_of is the single source of truth for "what is pinned"
+    (it merges the legacy phone_pub mirror); replicating that merge here would
+    be exactly the kind of drift this repo keeps out.
+    """
+    from spine.comms import relay_client
+    rel = s.get("relay") or {}
+    pinned = set(relay_client._pubs_of(rel))
+    push = s.get("push") or {}
+    out = []
+    # The phone keeps its legacy slot: settings.push.fcm_token + relay.phone_pub
+    # (= phone_pubs[0]). Untouched so an existing install keeps working with no
+    # migration step and no re-registration.
+    phone_pub = rel.get("phone_pub", "") or ""
+    phone_tok = push.get("fcm_token", "") or ""
+    if phone_tok and phone_pub and phone_pub in pinned:
+        out.append(("phone", phone_tok, phone_pub))
+    # Additional devices (the watch, W2d) register under their OWN pubkey and
+    # are sealed to it - NOT to the phone's. A second device must never be able
+    # to open the first device's notifications.
+    for pub, d in (push.get("devices") or {}).items():
+        tok = ((d or {}).get("token") or "").strip()
+        if tok and pub in pinned and pub != phone_pub:
+            out.append(((d or {}).get("label") or "device", tok, pub))
+    return out
+
+
+def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
+    """Sealed data message to EVERY paired device. Best-effort like push().
+
+    Was phone-only until W2d; the watch is a second, independently sealed
+    recipient. Returns True if at least one device took the message - a dead
+    watch must never make a delivered phone push report as failure.
+
+    `ask` is the optional ask_payload() block: it turns each device's
+    notification buttons into the worker's OWN options. It rides INSIDE the
+    sealed box like everything else, so Google still learns nothing, and it is
+    optional on both ends - an older app JSON-parses the payload and simply
+    ignores a key it does not know."""
     from spine.storage import events
     from spine.comms import e2ee
     s = events.settings()
     if not urgent and _quiet_now(s):
         print("notify: fcm held (quiet hours) -", title)
         return False
-    device = (s.get("push") or {}).get("fcm_token", "")
     rel = s.get("relay") or {}
-    if not (device and os.path.exists(_SA) and rel.get("sk") and rel.get("phone_pub")):
+    targets = recipients(s)
+    if not (targets and os.path.exists(_SA) and rel.get("sk")):
         # Say WHICH leg is missing. This used to be a bare False - release.sh's
         # "notify" step then looked identical whether the push was sent, skipped
         # or impossible, and an unnotified phone read as "shipped fine".
-        missing = [n for n, ok in (("fcm_token", device), ("service_account", os.path.exists(_SA)),
-                                   ("relay.sk", rel.get("sk")), ("relay.phone_pub", rel.get("phone_pub"))) if not ok]
+        missing = [n for n, ok in (("a registered+pinned device", targets),
+                                   ("service_account", os.path.exists(_SA)),
+                                   ("relay.sk", rel.get("sk"))) if not ok]
         print("notify: fcm skipped - missing:", ", ".join(missing))
         return False
     try:
@@ -152,8 +202,7 @@ def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
                   % (len(raw), PUSH_MAX_PAYLOAD))
             payload.pop("ask")
             raw = _json.dumps(payload).encode("utf-8")
-        cipher = e2ee.seal_b64(
-            raw, e2ee.import_sec(rel["sk"]), e2ee.import_pub(rel["phone_pub"]))
+        sk = e2ee.import_sec(rel["sk"])
         # DATA-ONLY on purpose (no `notification` block). Android's FCM SDK only
         # invokes an in-app handler for messages shaped this way; a message that
         # ALSO carries a `notification` block auto-displays that block from the
@@ -172,16 +221,31 @@ def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
         # for a data-only push while backgrounded. Ship the new APK (and
         # confirm the background task fires) BEFORE restarting the daemon on
         # this code - see ops/docs/backlog/wear-os-integration/README.md §4.3.
-        msg = {"message": {"token": device,
-                           "data": {"cipher": cipher},
-                           "android": {"priority": "high"}}}
-        req = urllib.request.Request(
-            "https://fcm.googleapis.com/v1/projects/%s/messages:send" % sa["project_id"],
-            data=_json.dumps(msg).encode(), method="POST")
-        req.add_header("Authorization", "Bearer " + _access_token())
-        req.add_header("Content-Type", "application/json")
-        urllib.request.urlopen(req, timeout=15).read()
-        return True
+        url = ("https://fcm.googleapis.com/v1/projects/%s/messages:send"
+               % sa["project_id"])
+        bearer = "Bearer " + _access_token()
+        sent = 0
+        for label, token, pub in targets:
+            # Sealed PER DEVICE, to that device's own pinned key. One shared
+            # ciphertext would mean the watch could open the phone's mail and
+            # vice versa - the pairing keys exist precisely to prevent that.
+            try:
+                cipher = e2ee.seal_b64(raw, sk, e2ee.import_pub(pub))
+                msg = {"message": {"token": token,
+                                   "data": {"cipher": cipher},
+                                   "android": {"priority": "high"}}}
+                req = urllib.request.Request(
+                    url, data=_json.dumps(msg).encode(), method="POST")
+                req.add_header("Authorization", bearer)
+                req.add_header("Content-Type", "application/json")
+                urllib.request.urlopen(req, timeout=15).read()
+                sent += 1
+            except Exception as e:
+                # One dead device must not silence the others - a stale watch
+                # token (uninstalled app, revoked registration) is the normal
+                # case, not an outage. Named per device so the log says WHICH.
+                print("notify: fcm failed for %s: %s" % (label, e))
+        return sent > 0
     except Exception as e:
         print("notify: fcm failed:", e)
         return False
