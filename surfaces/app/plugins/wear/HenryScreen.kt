@@ -173,18 +173,25 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         suggestions = null
         scope.launch {
             val body = JSONObject().put("message", message).toString()
+            // talk() = long timeout + dedupe-safe retries (see RelayClient) -
+            // a Henry turn outliving one HTTP request is normal, not an error.
+            // answerCard below deliberately stays on a single authedCall: its
+            // reply_to_card path has no dedupe claim, and the daemon's own 409
+            // on a doubled answer is its correctness backstop, not a retry.
             val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    RelayClient.authedCall(
-                        device.relayUrl, device.room, device.daemonPubB64,
-                        device.myPublicKeyB64, device.mySecretKeyB64,
-                        device.deviceToken, "POST", "/wear/talk", body)
-                }.getOrNull()
+                RelayClient.talk(
+                    device.relayUrl, device.room, device.daemonPubB64,
+                    device.myPublicKeyB64, device.mySecretKeyB64,
+                    device.deviceToken, body)
             }
             busy = false
             if (result == null || result.first !in 200..299) {
                 // A network answer the owner can act on, not a blank screen.
-                record(Line(false, "Henry nicht erreichbar.", nowHm(), nowDate()))
+                // After talk()'s retries this is a real outage, not a slow
+                // turn. The turn may STILL land server-side - the transcript
+                // poll below is the truth - so promise that instead of a dead
+                // Henry.
+                record(Line(false, "Henry nicht erreichbar - falls die Antwort noch entsteht, erscheint sie gleich im Verlauf.", nowHm(), nowDate()))
                 return@launch
             }
             val o = runCatching { JSONObject(result.second) }.getOrNull()
