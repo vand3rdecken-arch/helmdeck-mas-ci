@@ -384,6 +384,45 @@ function download(url, dest, redirects = 0) {
   });
 }
 
+/** Make an embeddable CPython able to import the daemon package.
+ *
+ * MEASURED, NOT REASONED (2026-08-29, stock 3.12.8 embed extract, the exact
+ * production command from the repo root):
+ *     python.exe -c "import sys; print(sys.path)"
+ *       -> ['...\\python312.zip', '...\\python']          # no cwd, at all
+ *     python.exe -m daemon.swarm
+ *       -> ModuleNotFoundError: No module named 'daemon'
+ *
+ * The embeddable build ships a `python3xx._pth`, which PINS sys.path to the zip
+ * plus its own directory and - by existing at all - also suppresses the working
+ * directory that `-m` normally prepends. It makes PYTHONPATH inert too, so there
+ * is no environment-variable way around it; the _pth is the only lever.
+ *
+ * That lands precisely on the fresh machine this whole fallback exists for:
+ * provisioning would fetch the runtime, report "Python-Laufzeit bereit", and
+ * then fail to start the very instance it had just made possible - with the
+ * traceback in daemon.out.log where the onboarding screen never looks.
+ *
+ * Appending the root the daemon is actually launched from (main.js startDaemon
+ * uses path.dirname(daemonDir) as cwd) is enough; `site` stays disabled. */
+function pinPthToDaemonRoot(pyDir, daemonRoot) {
+  let entries;
+  try { entries = fs.readdirSync(pyDir); } catch { return; }
+  const name = entries.find((f) => /^python\d+\._pth$/i.test(f));
+  if (!name) return;                    // a full install, not an embed - nothing to pin
+  const file = path.join(pyDir, name);
+  try {
+    const body = fs.readFileSync(file, "utf8");
+    // Idempotent: this runs on every provision (which may be re-entered by a
+    // reload or a second press), and a stacked duplicate path is a slow leak.
+    if (body.split(/\r?\n/).some((l) => l.trim().toLowerCase() === daemonRoot.toLowerCase())) return;
+    fs.appendFileSync(file, (body.endsWith("\n") ? "" : "\r\n") + daemonRoot + "\r\n");
+    say("Python-Laufzeit auf HelmDeck ausgerichtet.", "ok");
+  } catch (e) {
+    say("Konnte die Python-Laufzeit nicht ausrichten: " + e.message, "err");
+  }
+}
+
 /** Fetch + unpack the embeddable CPython next to our resources. Only reached
  *  when the installer did not bundle it and the machine has no Python. */
 async function fetchPython(resourcesDir) {
@@ -620,6 +659,10 @@ function startSetupServer(ctx) {
       }
       if (!py) { say("Ohne Python-Laufzeit kann der Daemon nicht starten.", "err"); return; }
       say("Python-Laufzeit bereit.", "ok");
+      // Covers BOTH embeddable runtimes we can end up on - the one fetchPython
+      // just downloaded and one the installer bundled - because they land in the
+      // same directory and carry the same _pth. A system Python needs nothing.
+      if (py.bundled) pinPthToDaemonRoot(path.join(ctx.resourcesDir, "python"), path.dirname(ctx.daemonDir));
 
       // 3) Instance
       if (!(await daemonUp(ctx.daemonPort))) {
@@ -678,4 +721,6 @@ function startSetupServer(ctx) {
   return { port: PORT, nonce, close: () => { try { srv.close(); } catch { /* already down */ } } };
 }
 
-module.exports = { startSetupServer, findPython, findClaude, SETUP_PORT: PORT };
+// pinPthToDaemonRoot is exported alongside the probes so the _pth behaviour it
+// works around stays testable without a full provision run.
+module.exports = { startSetupServer, findPython, findClaude, pinPthToDaemonRoot, SETUP_PORT: PORT };
