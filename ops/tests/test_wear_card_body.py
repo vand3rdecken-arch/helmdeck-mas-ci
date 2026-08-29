@@ -100,12 +100,20 @@ check(len(out) <= W.WEAR_BODY_MAX + 4,
 
 # The owner's report: "Message abgeschnitten". A raw slice ended mid-word and
 # read as a broken message rather than as a bounded screen.
-long_words = ("wort " * 400).strip()
+# Both fixtures are sized FROM the cap, never with a hardcoded repeat count.
+# They used to be "wort " * 400 (1999 chars), which comfortably overflowed the
+# 1200-char cap of the day and then silently stopped overflowing when it rose to
+# 2000 - the check went green-to-red for a reason that had nothing to do with the
+# behaviour it guards. Deriving the length means a future cap change cannot
+# quietly turn these into tests of the un-cut path.
+long_words = ("wort " * (W.WEAR_BODY_MAX // 5 + 50)).strip()
 out = W._wear_text(long_words)
+check(len(long_words) > W.WEAR_BODY_MAX,
+      "the overflow fixture really does exceed the cap it is testing")
 check(out.endswith(" ..."), "a cut body SAYS it was cut")
 check(not out.replace(" ...", "").endswith("wor"),
       "and it never ends mid-word")
-sentences = ("Erster Satz. " * 200).strip()
+sentences = ("Erster Satz. " * (W.WEAR_BODY_MAX // 13 + 20)).strip()
 out = W._wear_text(sentences)
 check(out.endswith(". ..."),
       "a sentence end is preferred over a bare word boundary")
@@ -113,6 +121,27 @@ check(W._wear_clip("kurz", 100) == "kurz",
       "text that fits is returned untouched - no ellipsis on a complete message")
 check(W._wear_clip("a" * 50, 10) == "a" * 10 + "...",
       "one unbroken 50-char token still yields something, cut hard and marked")
+
+# -- 5b. the cap must not cut a REAL reply ----------------------------------
+# Owner, 2026-08-29, photographing a card on the watch: the report stopped after
+# ~10 lines on " ...". The cap was 1200 while the card itself can hold 2000 -
+# so the watch was cutting text that existed, on the one screen he opens to read
+# it. These two checks pin that the wire cap is >= the STORAGE cap and that a
+# maximal stored reply therefore arrives whole.
+STORED_MAX = 2000            # turnrunner._settle_reply_apply: cleaned[:2000]
+check(W.WEAR_BODY_MAX >= STORED_MAX,
+      "WEAR_BODY_MAX (%d) is at least the %d chars a card can actually STORE "
+      "(cells/engineer/turnrunner.py:247) - below that the watch cuts real text"
+      % (W.WEAR_BODY_MAX, STORED_MAX))
+# A reply of exactly the stored maximum, in real words rather than one long
+# token, so _wear_clip's word/sentence search is genuinely exercised.
+full = (("Der Turn ist fertig und hier steht der Bericht. " * 60)[:STORED_MAX]).strip()
+out = W._wear_text(full)
+check(not out.endswith("..."),
+      "a MAXIMAL stored reply (%d chars) reaches the wrist WITHOUT an ellipsis - "
+      "the exact screen the owner photographed" % len(full))
+check(out == full,
+      "and it arrives byte-for-byte complete, not merely un-marked")
 
 # -- 6. fallback for a card that never ran ---------------------------------
 check(W._wear_body({"last_reply": "gelaufen", "description": "beschrieben"})

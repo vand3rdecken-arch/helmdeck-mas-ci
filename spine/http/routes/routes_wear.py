@@ -61,7 +61,31 @@ WEAR_LIST_MAX = 5
 # said "Message abgeschnitten": a DELIVERED summary is the thing he opens a card
 # to read, and 700 lost it mid-thought. Scrolling costs him a flick; a missing
 # half costs him the answer.
-WEAR_BODY_MAX = 1200
+#
+# 1200 -> 2000 on 2026-08-29, same complaint, same screen, one step further: the
+# owner photographed a card whose report stopped after ~10 lines on " ...". 1200
+# was still a GUESS at how much of a reply is worth carrying, and it was cutting
+# real ones.
+#
+# 2000 is not a bigger guess - it is the ceiling the reply ALREADY has upstream.
+# turnrunner._settle_reply_apply stores `t["last_reply"] = cleaned[:2000]`
+# (cells/engineer/turnrunner.py:247; dispatch.py:113 caps a dispatch error the
+# same way), so 2000 chars is the entire text that exists on a card. Matching it
+# means _wear_clip can no longer cut a stored reply at all - the ellipsis this
+# module adds now only ever appears on the `description` fallback below, which
+# has no upstream cap of its own.
+#
+# The wire bound therefore does not become open-ended by raising this; it becomes
+# EXPLICIT. The worst case is bounded by construction (rows per response x the
+# storage cap), not by hoping replies stay short. _wear_text only ever removes
+# characters (ask block, fenced blocks, markdown markers), so the value on the
+# wire is <= this number, never above it.
+#
+# No watch rebuild is implied: CardScreen.kt renders `body` verbatim into a
+# scrolling TransformingLazyColumn with no maxLines and no overflow ellipsis
+# (surfaces/app/plugins/wear/CardScreen.kt:203), so an ALREADY INSTALLED build
+# shows whatever this sends. The truncation was only ever here.
+WEAR_BODY_MAX = 2000
 
 # The `detail` line the watch shows above the body. Same number glance_payload
 # already caps it at, so this only ever re-cuts text that arrived at the wall.
