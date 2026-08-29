@@ -95,7 +95,7 @@ notify.push_fcm('Update verfuegbar', 'Build %d ist bereit - unter Mehr installie
 
 build_windows() {
   echo "==> windows: expo web export + electron-builder (unsigned NSIS installer)"
-  ( cd desktop && npm run dist:win ) || { fail+=("windows"); return 1; }
+  ( cd surfaces/desktop && npm run dist:win ) || { fail+=("windows"); return 1; }
   ok+=("windows: $(ls surfaces/desktop/release/*.exe 2>/dev/null | head -1)")
 }
 
