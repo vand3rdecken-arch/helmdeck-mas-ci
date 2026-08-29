@@ -85,4 +85,75 @@ object DeviceStore {
     fun clear(context: Context) {
         prefs(context).edit().clear().apply()
     }
+
+    // ---- Henry transcript ----------------------------------------------------
+    // Owner, 2026-08-29: "Der chat sollte gecacht sein, nicht dass die Uhr immer
+    // alle Nachrichten jedes Mal laden muss."
+    //
+    // Kept in the ENCRYPTED store above, deliberately NOT in the plain UI file
+    // below: these lines are whatever Henry said about the owner's cards, i.e.
+    // the same class of content the relay is end-to-end encrypted for. Writing
+    // them in cleartext onto a device that leaves the house on a wrist would
+    // quietly undo that. The cache is local only - the watch never re-fetches a
+    // history from the daemon, so this costs no round trip.
+    private const val K_CHAT = "chat"
+    /** Bounded on purpose. EncryptedSharedPreferences rewrites the whole value
+     *  on every save, so an unbounded transcript would make each reply slower
+     *  than the last; 40 lines is far more than a round screen can usefully
+     *  scroll and still trivially small to re-encrypt. */
+    const val CHAT_MAX = 40
+
+    /** Pairs of (mine, text), oldest first. Empty when nothing is stored or the
+     *  blob is unreadable - a corrupt cache must cost the history, never the
+     *  screen. */
+    fun loadChat(context: Context): List<Pair<Boolean, String>> {
+        val raw = prefs(context).getString(K_CHAT, null) ?: return emptyList()
+        return try {
+            val arr = org.json.JSONArray(raw)
+            val out = ArrayList<Pair<Boolean, String>>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                out.add(Pair(o.optBoolean("m"), o.optString("t")))
+            }
+            out
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveChat(context: Context, lines: List<Pair<Boolean, String>>) {
+        val kept = if (lines.size > CHAT_MAX) lines.subList(lines.size - CHAT_MAX, lines.size) else lines
+        val arr = org.json.JSONArray()
+        for ((mine, text) in kept) {
+            arr.put(org.json.JSONObject().put("m", mine).put("t", text))
+        }
+        prefs(context).edit().putString(K_CHAT, arr.toString()).apply()
+    }
+
+    fun clearChat(context: Context) {
+        prefs(context).edit().remove(K_CHAT).apply()
+    }
+
+    // ---- UI preferences (NOT credentials) -----------------------------------
+    // Deliberately a SEPARATE, PLAIN SharedPreferences file. Everything in the
+    // encrypted store above is either a live credential or key material; a
+    // "should Henry speak out loud" toggle is neither, and putting it there
+    // would mean every tap rewrites an AES-GCM blob and unlocks the Android
+    // Keystore for a boolean. Losing this file costs the owner one tap.
+    private const val UI_FILE = "helmdeck_ui"
+    private const val K_VOICE_ON = "voice_on"
+
+    /** Defaults to FALSE (owner, 2026-08-29: "Text chat zuerst, dann gibt es
+     *  eine Taste um voice zu aktivieren"). The daemon renders the clip
+     *  unconditionally either way (routes_wear.py); this only decides whether
+     *  the watch PLAYS it. Starting silent is the safe direction to be wrong
+     *  in: an unexpected voice in a meeting costs more than a tap. */
+    fun loadVoiceOn(context: Context): Boolean =
+        context.getSharedPreferences(UI_FILE, Context.MODE_PRIVATE)
+            .getBoolean(K_VOICE_ON, false)
+
+    fun saveVoiceOn(context: Context, on: Boolean) {
+        context.getSharedPreferences(UI_FILE, Context.MODE_PRIVATE)
+            .edit().putBoolean(K_VOICE_ON, on).apply()
+    }
 }

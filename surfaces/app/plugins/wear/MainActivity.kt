@@ -1,8 +1,12 @@
 package app.helmdeck.wear
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,11 +32,30 @@ import app.helmdeck.wear.data.DeviceStore
 private sealed class WearScreen {
     object Board : WearScreen()
     data class Card(val card: BoardCard) : WearScreen()
+    // 2026-08-29: Henry without a card. He used to live only INSIDE a card, so
+    // an empty board left the owner with nothing to talk to - see
+    // HenryScreen.kt's header.
+    object Henry : WearScreen()
 }
 
 class MainActivity : ComponentActivity() {
+    /** W2d: POST_NOTIFICATIONS is a runtime permission from API 33 on. Asked
+     *  once at launch - a denied grant makes every notify() a silent no-op, so
+     *  push would look "broken" with nothing in the logs to say why. */
+    private val askNotify = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()) { /* result handled by the OS UI */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Push.ensureChannel(this)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) {
+            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // Covers the token that Firebase minted BEFORE this device was paired
+        // (the common case on first launch) and any registration that failed
+        // while the watch was offline. No-op while unpaired.
+        Push.syncToken(this)
         setContent {
             // AppScaffold is the APP-level half of the Wear scaffold pair
             // (ScreenScaffold, used inside each screen, is the other): it owns
@@ -40,7 +63,9 @@ class MainActivity : ComponentActivity() {
             // between them. Added 2026-08-28 after the first look at a real
             // watch - without it the app drew into a bare rectangle with no
             // clock, which is not what a Wear app looks like.
-            MaterialTheme {
+            // ONE theme for the whole app - HelmDeck's canonical palette from
+            // surfaces/app/src/theme/tokens.ts, not Material's purple baseline.
+            HelmDeckWearTheme {
                 AppScaffold {
                     // `this@MainActivity`, NOT a bare `this`: AppScaffold's
                     // content lambda is a BoxScope receiver, so inside it a
@@ -50,17 +75,31 @@ class MainActivity : ComponentActivity() {
                     val ctx = this@MainActivity
                     var paired by remember { mutableStateOf(DeviceStore.load(ctx) != null) }
                     if (!paired) {
-                        PairingScreen(context = ctx, onPaired = { paired = true })
+                        PairingScreen(context = ctx, onPaired = {
+                            paired = true
+                            // Only NOW is there a daemon to send the token to.
+                            Push.syncToken(ctx)
+                        })
                     } else {
-                        var screen by remember { mutableStateOf<WearScreen>(WearScreen.Board) }
+                        // HENRY IS THE LANDING SCREEN (owner, 2026-08-29). The
+                        // board used to be, which meant the thing the watch
+                        // exists for - saying something to Henry - was two taps
+                        // deep and invisible on an empty board. The board is now
+                        // the one tap away, not the other way round.
+                        var screen by remember { mutableStateOf<WearScreen>(WearScreen.Henry) }
                         when (val s = screen) {
                             is WearScreen.Board -> BoardScreen(
                                 context = ctx,
                                 onOpenCard = { c -> screen = WearScreen.Card(c) },
+                                onAskHenry = { screen = WearScreen.Henry },
                             )
                             is WearScreen.Card -> CardScreen(
                                 context = ctx, card = s.card,
                                 onBack = { screen = WearScreen.Board },
+                            )
+                            is WearScreen.Henry -> HenryScreen(
+                                context = ctx,
+                                onOpenBoard = { screen = WearScreen.Board },
                             )
                         }
                     }
