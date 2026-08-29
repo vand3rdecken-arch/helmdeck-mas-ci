@@ -107,7 +107,7 @@ object DeviceStore {
      *  sender - EMPTY, never faked, for a line cached before this field existed
      *  or for one the daemon sent without a stamp. The chat simply omits the
      *  time in that case; inventing one would put a wrong minute on a real
-     *  message, which is worse than showing none. */
+     *  message, which is worse than showing none.
      *
      *  `label` is the mirrored card event's "Frage · Kartenname" (empty on an
      *  ordinary line). Cached along with the text because the alternative is
