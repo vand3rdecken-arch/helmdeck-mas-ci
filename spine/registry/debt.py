@@ -10,6 +10,41 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "wear-push-no-deep-link",
+        "order": -6,
+        "title": "a tapped notification opens the watch app at the BOARD, whatever the push was about",
+        "status": "open",
+        "what": "Shipped 2026-08-29 with the Henry reply push "
+                "(spine/comms/notify.py chat_reply): a finished Henry turn now "
+                "buzzes every paired device, and on the PHONE the tap routes by "
+                "`kind` - kind='chat' lands in the Henry chat, a card push in "
+                "that card's chat (surfaces/app/src/app/_layout.tsx). The WATCH "
+                "reads the same sealed payload but PushService.kt's show() "
+                "builds one fixed Intent to MainActivity and never looks at "
+                "`kind` or `track`, so every notification - card question, card "
+                "result, Henry answer - opens the app at BoardScreen.\n"
+                "Deliberately not fixed in the same card: MainActivity holds "
+                "its screen in Compose state with no intent-extra path, so this "
+                "is real Kotlin plus an onNewIntent story, and it can only be "
+                "judged on the wrist. A wear APK rebuild + install is not "
+                "reachable from a card worktree, and navigation code shipped "
+                "blind is worse than a known extra tap.",
+        "why_it_bites": "The watch is the surface with the LEAST patience: the "
+                        "owner feels the buzz, taps, and lands on a board he "
+                        "did not ask about - then hunts for Henry (or the card) "
+                        "by hand on a round screen. It also silently diverges "
+                        "from the phone, so the two devices answer the same "
+                        "notification differently.",
+        "trigger": "Any Henry answer or card event tapped ON THE WATCH. Costs "
+                   "one extra navigation every time; nothing breaks.",
+        "fix": "Put `kind`/`track` into the PendingIntent as extras in "
+               "PushService.show(), read them in MainActivity (the launch "
+               "intent AND onNewIntent) and set the WearScreen accordingly - "
+               "Henry for kind='chat', the card for a track that resolves. Then "
+               "rebuild and install the wear APK and confirm on the watch, "
+               "which is the only place this can be judged.",
+    },
+    {
         "id": "chat-optimistic-text-match-compat",
         "order": -5,
         "title": "the board chat still falls back to matching optimistic messages by TEXT when the daemon sends no client_msg_id",

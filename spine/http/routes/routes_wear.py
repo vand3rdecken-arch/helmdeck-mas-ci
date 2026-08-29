@@ -379,6 +379,13 @@ def wear_talk_post(self, user, body):
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],
                            allow_actions=False, extra_system=WEAR_BRIEF,
+                           # This response IS the delivery: the reply comes back
+                           # in `resp` below and is ALWAYS spoken (see the voice
+                           # note further down). A notification would buzz the
+                           # wrist about the sentence it is reading out loud.
+                           # The phone door needs no such flag - its app reports
+                           # presence and suppresses itself.
+                           announce=False,
                            # optional: CardScreen passes the card the owner
                            # tapped into, so Henry's advice is scoped to it -
                            # chat_post already supports this same kwarg for
