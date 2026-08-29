@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import React, { memo, useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ASK_OPEN, stripAsk } from "@/data/ask";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -352,9 +353,30 @@ function keyFactory() {
   };
 }
 
-export function Transcript({ steps, onRewind, me }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string }) {
+/** LAST-RESORT RENDER GUARD for the <helmdeck-ask> sentinel, applied to every
+ *  step this transcript draws - so the board chat, the card chat and the
+ *  card-scoped Henry tab are all covered by one pass. The rule and the regex
+ *  live in data/ask.ts, because the voice sheet needs the same net and a second
+ *  hand-written copy is how the first one gets forgotten. */
+function readable(steps: TStep[]): TStep[] {
+  const out: TStep[] = [];
+  for (const s of steps) {
+    const raw = s.text ?? "";
+    const s2 = raw.toLowerCase().includes(ASK_OPEN) ? { ...s, text: stripAsk(raw) } : s;
+    // An empty text row is a blank bubble with a sender line above it. It shows
+    // up when a reply was ONLY a block (the watch/glasses briefs invite exactly
+    // that) and nothing readable survived cleaning - here or on the daemon.
+    // Streaming rows are exempt: theirs is empty for a moment by design.
+    if (s2.kind === "text" && !s2.streaming && !(s2.text ?? "").trim()) continue;
+    out.push(s2);
+  }
+  return out;
+}
+
+export function Transcript({ steps: rawSteps, onRewind, me }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string }) {
   const t = useTheme();
   const tr = useT();
+  const steps = readable(rawSteps);
   const keyFor = keyFactory();
   let lastToolIdx = -1;
   for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }

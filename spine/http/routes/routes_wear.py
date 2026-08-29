@@ -396,7 +396,14 @@ def wear_talk_post(self, user, body):
     reply = out.get("reply") or ""
     from spine.ops import ask
     from spine.ops.glances import _glance_question
-    q, prose = ask.parse(reply)
+    # copilot.chat now parses the block at EVENT TIME and hands back both halves
+    # (`reply` already prose, `question` typed). Re-parsing a cleaned reply here
+    # would find nothing and silently drop the watch's buttons, so prefer what
+    # it computed; ask.parse stays the fallback for a reply that somehow still
+    # carries a block, and is a no-op on one that does not.
+    q, prose = out.get("question"), reply
+    if not q:
+        q, prose = ask.parse(reply)
     spoken = (prose or reply)[:600]
     resp = {
         # the prose WITHOUT the block - ask.parse already strips it, so the

@@ -515,7 +515,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
           feedback): it's redundant with the status badge above and the
           background-tasks line below, and just added clutter. */}
       {!running && !streaming && k.question ? (
-        <QuestionPanel cardId={k.id} question={k.question}
+        <QuestionPanel question={k.question}
+          // the card door: settles the question AND resumes the parked session
+          onSubmit={(answers, rid) => api.answer(k.id, answers, rid)}
           onAnswered={async () => {
             // the answer starts a turn: pull the card (status->running, question
             // cleared) and the feed so the panel gives way to the live turn.
