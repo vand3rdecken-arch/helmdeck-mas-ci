@@ -218,6 +218,14 @@ def wear_chat_get(self, user):
     msgs = (copilot.history(user["name"]) or {}).get("messages") or []
     out = []
     for m in msgs:
+        # The log is a FILE this route only reads; a truncated write or a
+        # hand-edit can leave anything in the array. `(m or {})` below already
+        # reached for that robustness but only covered None - a string entry
+        # still raised AttributeError and cost the watch its whole transcript
+        # for one bad line. Found by ops/tests/test_chat_date_stamp.py, not in
+        # the field.
+        if not isinstance(m, dict):
+            continue
         cls = (m or {}).get("cls") or ""
         if cls not in ("you", "bot", "error"):
             continue
@@ -236,8 +244,13 @@ def wear_chat_get(self, user):
         # A scrollback line, not the live answer: long enough to recognise the
         # turn, short enough that 30 of them stay a conversation instead of a
         # wall. The full text is always one tap away on the phone.
+        # `date` is "YYYY-MM-DD" and is ABSENT on every entry written before
+        # copilot._append_log started stamping it (2026-08-29). "" therefore
+        # means "not recorded", not "today" - the watch draws no separator above
+        # such a line rather than filing it under a day it cannot know.
         out.append({"mine": cls == "you", "text": text[:WEAR_CHAT_LINE_MAX],
-                    "ts": (m or {}).get("ts") or ""})
+                    "ts": (m or {}).get("ts") or "",
+                    "date": (m or {}).get("date") or ""})
     return self._send(200, json.dumps({"messages": out[-WEAR_CHAT_MAX:]}))
 
 

@@ -44,13 +44,37 @@ import org.json.JSONObject
  *  stamp, and the moment the line appears is the honest answer for it. Empty
  *  when neither is available; the chat then shows the name without a time
  *  rather than inventing a minute. */
-private data class Line(val mine: Boolean, val text: String, val ts: String = "")
+private data class Line(val mine: Boolean, val text: String, val ts: String = "",
+                        val date: String = "")
 
 /** "HH:mm", 24h, matching the daemon's time.strftime("%H:%M") exactly - a
  *  locale-defaulted pattern would render some watches as 12h and the two halves
  *  of one conversation would disagree about what 13:05 is called. */
 private fun nowHm(): String =
     java.text.SimpleDateFormat("HH:mm", java.util.Locale.GERMANY).format(java.util.Date())
+
+/** "yyyy-MM-dd", matching copilot._append_log's time.strftime("%Y-%m-%d") - the
+ *  key the separator groups on. Compared as a STRING, never parsed for that
+ *  purpose: two stamps in the same format are equal exactly when the days are. */
+private fun nowDate(): String =
+    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.GERMANY).format(java.util.Date())
+
+/** The separator's caption: "Heute", "Gestern", else "dd.MM.yy" - what every
+ *  chat app does, and what the owner's own SMS app showed ("06.10.24").
+ *  An unparseable stamp is printed verbatim rather than swallowed: seeing the
+ *  raw value is how a format drift gets noticed instead of silently grouping
+ *  every message under one wrong day. */
+private fun dayLabel(date: String): String {
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.GERMANY)
+    val cal = java.util.Calendar.getInstance()
+    if (date == fmt.format(cal.time)) return "Heute"
+    cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+    if (date == fmt.format(cal.time)) return "Gestern"
+    return runCatching {
+        val d = fmt.parse(date) ?: return@runCatching date
+        java.text.SimpleDateFormat("dd.MM.yy", java.util.Locale.GERMANY).format(d)
+    }.getOrDefault(date)
+}
 
 /** Who is speaking, as a chat shows it. */
 private fun senderOf(mine: Boolean) = if (mine) "Du" else "Henry"
@@ -86,7 +110,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // conversation instead of starting at a blank screen every time.
     val lines = remember {
         mutableStateListOf<Line>().apply {
-            addAll(DeviceStore.loadChat(context).map { Line(it.mine, it.text, it.ts) })
+            addAll(DeviceStore.loadChat(context).map { Line(it.mine, it.text, it.ts, it.date) })
         }
     }
     // Every append goes through here so no path can add a line and forget to
@@ -95,7 +119,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     fun record(line: Line) {
         lines.add(line)
         DeviceStore.saveChat(
-            context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts) })
+            context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date) })
     }
     var busy by remember { mutableStateOf(false) }
     var loadingHistory by remember { mutableStateOf(false) }
@@ -107,10 +131,10 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     fun ask(message: String) {
         val device = DeviceStore.load(context)
         if (device == null) {
-            record(Line(false, "Nicht gekoppelt.", nowHm()))
+            record(Line(false, "Nicht gekoppelt.", nowHm(), nowDate()))
             return
         }
-        record(Line(true, message, nowHm()))
+        record(Line(true, message, nowHm(), nowDate()))
         busy = true
         suggestions = null
         scope.launch {
@@ -126,12 +150,12 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             busy = false
             if (result == null || result.first !in 200..299) {
                 // A network answer the owner can act on, not a blank screen.
-                record(Line(false, "Henry nicht erreichbar.", nowHm()))
+                record(Line(false, "Henry nicht erreichbar.", nowHm(), nowDate()))
                 return@launch
             }
             val o = runCatching { JSONObject(result.second) }.getOrNull()
             val reply = (o?.optString("reply") ?: "").ifBlank { "(keine Antwort)" }
-            record(Line(false, reply, nowHm()))
+            record(Line(false, reply, nowHm(), nowDate()))
             suggestions = parseQuestionBlock(o?.optJSONObject("question"))
             // `voice` is ABSENT (not null) when server-side rendering failed;
             // the text is already on screen, so a missing clip is silence and
@@ -189,7 +213,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val text = o.optString("text")
-            if (text.isNotBlank()) fresh.add(Line(o.optBoolean("mine"), text, o.optString("ts")))
+            if (text.isNotBlank()) fresh.add(Line(o.optBoolean("mine"), text, o.optString("ts"), o.optString("date")))
         }
         // An EMPTY server history is a real answer (fresh session) - but never
         // let it wipe a cache the owner can still read if the trim above threw
@@ -197,7 +221,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         if (fresh.isNotEmpty() || lines.isEmpty()) {
             lines.clear()
             lines.addAll(fresh)
-            DeviceStore.saveChat(context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts) })
+            DeviceStore.saveChat(context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date) })
         }
     }
 
@@ -273,7 +297,30 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 // Text is START-aligned: centring is right for a one-line
                 // status, wrong for prose - a centred paragraph has a ragged
                 // left edge and the eye loses the line it was on.
+                // DATE SEPARATORS, exactly where the owner's SMS screenshot has
+                // them: one centred caption above the first message of each day.
+                //
+                // Drawn ONLY from a recorded date. copilot._append_log started
+                // stamping one on 2026-08-29 and everything older has none, so
+                // `date` is "" for the existing transcript - and a line with no
+                // date gets no separator and does not close the previous day
+                // either. Filing an undated message under whatever day happened
+                // to precede it would be a guess rendered as a fact; the whole
+                // point of the forward-only stamp is that we do not do that.
+                var lastDay = ""
                 for (line in lines) {
+                    if (line.date.isNotBlank() && line.date != lastDay) {
+                        lastDay = line.date
+                        item {
+                            Text(
+                                text = dayLabel(line.date),
+                                color = WearTokens.txtTertiary,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(
+                                    horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
                     item {
                         TitleCard(
                             onClick = {},
