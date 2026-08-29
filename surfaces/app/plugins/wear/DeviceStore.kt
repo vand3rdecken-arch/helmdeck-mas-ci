@@ -108,7 +108,8 @@ object DeviceStore {
      *  or for one the daemon sent without a stamp. The chat simply omits the
      *  time in that case; inventing one would put a wrong minute on a real
      *  message, which is worse than showing none. */
-    data class ChatLine(val mine: Boolean, val text: String, val ts: String)
+    data class ChatLine(val mine: Boolean, val text: String, val ts: String,
+                        val date: String = "")
 
     /** Cached messages, oldest first. Empty when nothing is stored or the blob
      *  is unreadable - a corrupt cache must cost the history, never the
@@ -124,7 +125,8 @@ object DeviceStore {
                 // optString then yields "" - which is exactly the "no stamp"
                 // case above. An old cache stays readable; it just shows no
                 // times until the server history replaces it a second later.
-                out.add(ChatLine(o.optBoolean("m"), o.optString("t"), o.optString("s")))
+                out.add(ChatLine(o.optBoolean("m"), o.optString("t"),
+                                 o.optString("s"), o.optString("d")))
             }
             out
         } catch (_: Exception) {
@@ -137,7 +139,8 @@ object DeviceStore {
         val arr = org.json.JSONArray()
         for (line in kept) {
             arr.put(org.json.JSONObject()
-                .put("m", line.mine).put("t", line.text).put("s", line.ts))
+                .put("m", line.mine).put("t", line.text).put("s", line.ts)
+                .put("d", line.date))
         }
         prefs(context).edit().putString(K_CHAT, arr.toString()).apply()
     }

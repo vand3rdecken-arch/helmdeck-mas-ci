@@ -273,6 +273,32 @@ def _log():
         return {}
 
 def _append_log(user, entries):
+    """THE one writer of the chat log - and therefore the one place a DATE is
+    stamped.
+
+    Owner, 2026-08-29, with a screenshot of the watch's SMS app: he wants date
+    separators between days. `ts` has always been "%H:%M" alone, which cannot
+    tell a message sent today from one sent three weeks ago, so a separator was
+    impossible to draw honestly.
+
+    Stamped HERE rather than at the six-plus call sites that build entries (the
+    chat's you/bot pair, the rotate note, the compaction note, _say, the refusal
+    note): a per-site copy is exactly the drift CLAUDE.md's one-owner rule
+    exists to prevent, and whichever site got forgotten would emit messages that
+    silently fall outside every separator.
+
+    FORWARD-ONLY, deliberately. Entries already on disk carry no date and get
+    none - one invented for them would be a guess printed as a fact. A client
+    draws separators from here on and simply omits them above, which is the
+    honest rendering of "this was never recorded".
+    """
+    stamped = []
+    for e in entries:
+        if isinstance(e, dict) and not e.get("date"):
+            e = dict(e)          # never mutate the caller's entry
+            e["date"] = time.strftime("%Y-%m-%d")
+        stamped.append(e)
+    entries = stamped
     d = _log()
     d.setdefault(user, []).extend(entries)
     d[user] = d[user][-80:]
