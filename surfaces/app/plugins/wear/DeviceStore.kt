@@ -103,17 +103,28 @@ object DeviceStore {
      *  scroll and still trivially small to re-encrypt. */
     const val CHAT_MAX = 40
 
-    /** Pairs of (mine, text), oldest first. Empty when nothing is stored or the
-     *  blob is unreadable - a corrupt cache must cost the history, never the
+    /** One cached message. `ts` is the "HH:mm" stamp the chat shows next to the
+     *  sender - EMPTY, never faked, for a line cached before this field existed
+     *  or for one the daemon sent without a stamp. The chat simply omits the
+     *  time in that case; inventing one would put a wrong minute on a real
+     *  message, which is worse than showing none. */
+    data class ChatLine(val mine: Boolean, val text: String, val ts: String)
+
+    /** Cached messages, oldest first. Empty when nothing is stored or the blob
+     *  is unreadable - a corrupt cache must cost the history, never the
      *  screen. */
-    fun loadChat(context: Context): List<Pair<Boolean, String>> {
+    fun loadChat(context: Context): List<ChatLine> {
         val raw = prefs(context).getString(K_CHAT, null) ?: return emptyList()
         return try {
             val arr = org.json.JSONArray(raw)
-            val out = ArrayList<Pair<Boolean, String>>(arr.length())
+            val out = ArrayList<ChatLine>(arr.length())
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                out.add(Pair(o.optBoolean("m"), o.optString("t")))
+                // "s" is absent in a blob written before timestamps existed, and
+                // optString then yields "" - which is exactly the "no stamp"
+                // case above. An old cache stays readable; it just shows no
+                // times until the server history replaces it a second later.
+                out.add(ChatLine(o.optBoolean("m"), o.optString("t"), o.optString("s")))
             }
             out
         } catch (_: Exception) {
@@ -121,11 +132,12 @@ object DeviceStore {
         }
     }
 
-    fun saveChat(context: Context, lines: List<Pair<Boolean, String>>) {
+    fun saveChat(context: Context, lines: List<ChatLine>) {
         val kept = if (lines.size > CHAT_MAX) lines.subList(lines.size - CHAT_MAX, lines.size) else lines
         val arr = org.json.JSONArray()
-        for ((mine, text) in kept) {
-            arr.put(org.json.JSONObject().put("m", mine).put("t", text))
+        for (line in kept) {
+            arr.put(org.json.JSONObject()
+                .put("m", line.mine).put("t", line.text).put("s", line.ts))
         }
         prefs(context).edit().putString(K_CHAT, arr.toString()).apply()
     }
