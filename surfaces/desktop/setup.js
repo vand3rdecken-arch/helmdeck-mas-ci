@@ -646,13 +646,26 @@ function startSetupServer(ctx) {
       let py = findPython(ctx.resourcesDir);
       if (!py) {
         say("Keine Python-Laufzeit gefunden.");
-        try { py = await fetchPython(ctx.resourcesDir); }
-        catch (e) {
-          say("Download fehlgeschlagen: " + e.message, "err");
+        // The embeddable runtime is a WINDOWS artifact (…-embed-amd64.zip) and
+        // unpacking it goes through PowerShell, so on macOS/Linux this would
+        // download 11 MB and then fail at the unzip. Go straight to the hand-off
+        // that can actually succeed there instead of spending the round trip.
+        try {
+          if (!win) throw new Error("kein einbettbares Python für diese Plattform");
+          py = await fetchPython(ctx.resourcesDir);
+        } catch (e) {
+          say(win ? "Download fehlgeschlagen: " + e.message : e.message, "err");
           say("Ich lasse Claude es übernehmen…");
+          // Describe the machine we are ACTUALLY on: this hand-off is now the
+          // only route to a runtime on macOS/Linux, and telling Claude to use
+          // winget on a Mac wastes the one step that can still rescue the run.
           await claudeTask(claude,
-            "Install a Python 3.12 runtime on this Windows machine so that `py -3.12 --version` "
-            + "works, using winget if available. Do not modify anything else. Report what you did.",
+            win
+              ? "Install a Python 3.12 runtime on this Windows machine so that `py -3.12 --version` "
+                + "works, using winget if available. Do not modify anything else. Report what you did."
+              : "Install a Python 3.12 runtime on this " + process.platform + " machine so that "
+                + "`python3 --version` reports 3.12 or newer, using the system package manager "
+                + "(Homebrew on macOS). Do not modify anything else. Report what you did.",
             ctx.daemonDir, "acceptEdits");   // this step must actually change the machine
           py = findPython(ctx.resourcesDir);
         }
