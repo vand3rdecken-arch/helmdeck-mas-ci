@@ -1,4 +1,4 @@
-package app.helmdeck.wear
+﻿package app.helmdeck.wear
 
 import android.content.Context
 import androidx.compose.foundation.layout.padding
@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
@@ -29,18 +30,19 @@ import kotlinx.coroutines.withContext
  * GET /wear/board (routes_wear.py) - reuses glance_payload() UNCHANGED, the
  * same small curated "what needs you" read the glasses already get. Purely
  * a list: tapping a card hands its id/task/question over to CardScreen,
- * which is where the owner decree (README.md §4.7 - Henry, never the
+ * which is where the owner decree (README.md Â§4.7 - Henry, never the
  * worker) actually applies. This screen makes no decisions.
  *
  * Deliberately built with only `item { }` calls, NOT the `items(count) { }`
  * bulk form - the latter was never confirmed to exist on
  * TransformingLazyColumnScope this session (only singular `item` was, in
- * §4.5's own fetch), and a for-loop of `item { }` needs no such assumption.
+ * Â§4.5's own fetch), and a for-loop of `item { }` needs no such assumption.
  */
 @Composable
-fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit) {
-    var status by remember { mutableStateOf("Lade…") }
+fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: () -> Unit) {
+    var status by remember { mutableStateOf("Ladeâ€¦") }
     var cards by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
+    var summary by remember { mutableStateOf<BoardSummary?>(null) }
     val scope = rememberCoroutineScope()
 
     fun reload() {
@@ -49,7 +51,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit) {
             status = "Nicht gekoppelt"
             return
         }
-        status = "Lade…"
+        status = "Ladeâ€¦"
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -63,8 +65,21 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit) {
                 status = "Konnte nicht laden"
                 return@launch
             }
-            cards = runCatching { parseBoardCards(result.second) }.getOrDefault(emptyList())
-            status = if (cards.isEmpty()) "Alles klar." else ""
+            // A PARSE FAILURE MUST NOT LOOK LIKE AN EMPTY BOARD. This used to be
+            // `.getOrDefault(emptyList())`, so a malformed payload produced the
+            // exact same "Alles klar." as a genuinely quiet board - the owner
+            // would be told everything is fine while the watch had in fact
+            // failed to read the answer. Same class of silent failure this repo
+            // rejects everywhere else.
+            val parsed = runCatching { parseBoardCards(result.second) }
+            cards = parsed.getOrDefault(emptyList())
+            summary = parseBoardSummary(result.second)
+            status = when {
+                parsed.isFailure -> "Antwort nicht lesbar"
+                cards.isEmpty() -> "Nichts wartet auf dich"
+                cards.size == 1 -> "1 wartet auf dich"
+                else -> "${cards.size} warten auf dich"
+            }
         }
     }
 
@@ -104,8 +119,57 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit) {
                         }
                     }
                 }
+                // The numbers the daemon already sends and this screen used to
+                // discard. "Nichts wartet auf dich" alone is not a board - it is
+                // an all-clear with no evidence behind it. `yours` is unstarted
+                // work only the owner can begin; wip is what the machine is
+                // doing right now; the age says whether any of it is still true.
+                summary?.let { s ->
+                    if (s.yours > 0) {
+                        item {
+                            Text(
+                                text = "Nur von dir startbar: ${s.yours}",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    if (s.wipLimit > 0) {
+                        item {
+                            Text(
+                                text = "Läuft: ${s.wip} von ${s.wipLimit}",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    val age = freshness(s.tsEpochSec, System.currentTimeMillis() / 1000L)
+                    if (age.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Stand: $age",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
+                // Henry BEFORE "Aktualisieren", and never gated on there being
+                // a card. Until now the only way to reach him was tapping a
+                // card, so an empty board - the normal, healthy state - meant
+                // "Alles klar." and no way to say anything. Talking to Henry
+                // was the point of putting HelmDeck on a wrist; it must not
+                // depend on something being wrong first.
                 item {
-                    Button(onClick = { reload() }, modifier = Modifier.padding(8.dp)) {
+                    Button(onClick = { onAskHenry() }, modifier = Modifier.padding(6.dp)) {
+                        Text("Henry fragen")
+                    }
+                }
+                // "Henry fragen" above keeps the filled accent; refreshing is
+                // maintenance, so it steps back to outlined. Same reasoning as
+                // HenryScreen's own three tiers.
+                item {
+                    OutlinedButton(onClick = { reload() }, modifier = Modifier.padding(8.dp)) {
                         Text("Aktualisieren")
                     }
                 }
