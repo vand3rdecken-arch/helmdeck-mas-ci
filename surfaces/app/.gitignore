@@ -42,6 +42,9 @@ example
 /ios
 /android
 google-services.json
+# dated safety copies made before editing the Firebase config (e.g.
+# google-services.json.bak-20260829) - same secret-bearing content, same rule
+google-services.json.bak*
 .claude/settings.json
 .vscode/settings.json
 dist-ota/
