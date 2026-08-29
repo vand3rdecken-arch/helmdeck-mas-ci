@@ -618,7 +618,7 @@ def build_argv(cli_model, sid, system):
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
-         _retried=False):
+         client_msg_id="", _retried=False):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -888,7 +888,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     extra_system=(extra_system + "\n\nDeine letzte Antwort war eine "
                                   "leere Floskel ohne Inhalt. Beantworte jetzt die "
                                   "eigentliche Frage des Owners.").strip(),
-                    voice_stream=voice_stream, _retried=True)
+                    voice_stream=voice_stream,
+                    # carried through the retry: dropping it here would log the
+                    # message WITHOUT its client id, and the app would silently
+                    # fall back to position matching for exactly the turns that
+                    # already went wrong once.
+                    client_msg_id=client_msg_id, _retried=True)
     out = {"reply": reply_prose, "actions": acts_parsed}
     d = result                                       # for cost/usage below
     u = d.get("usage") or {}
@@ -917,7 +922,23 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
                 {"kind": "note", "text": rotate_note, "byKind": "henry", "ts": _tsv, "ta": _tav})
     else:
-        entries = [{"cls": "you", "text": message, "ts": time.strftime("%H:%M")},
+        # client_msg_id: the id the SENDING CLIENT minted for this message, echoed
+        # back on the persisted entry so the app can retire its optimistic copy by
+        # IDENTITY instead of by comparing text. Text comparison cannot tell two
+        # identical messages apart and silently strands a copy forever when the
+        # stored text differs by a character - the defect the owner reported
+        # 2026-08-29 ("meine Nachricht steht ganz am Ende"). Same decision Paseo
+        # made (packages/app/src/timeline/session-stream-reducers.ts:
+        # matchesLocalUserMessageIdentity prefers clientMessageId and keeps text
+        # matching only as a COMPAT shim with a removal date).
+        #
+        # Absent for older clients and for surfaces that never send one (the
+        # watch, the glasses): the key is simply omitted, and the app falls back
+        # to position. Nothing downstream may require it.
+        you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
+        if client_msg_id:
+            you["client_msg_id"] = client_msg_id
+        entries = [you,
                    {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}]
         if rotate_note:
             entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})

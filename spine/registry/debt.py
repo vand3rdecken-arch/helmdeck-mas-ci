@@ -10,6 +10,38 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "chat-optimistic-text-match-compat",
+        "order": -5,
+        "title": "the board chat still falls back to matching optimistic messages by TEXT when the daemon sends no client_msg_id",
+        "status": "open",
+        "what": "Cause fixed 2026-08-29 (owner: 'meine Nachricht steht ganz am "
+                "Ende im chat obwohl ich zeitlich frueher kam'). "
+                "surfaces/app/src/app/chat.tsx rendered "
+                "[...server, ...pending] - every optimistic bubble appended "
+                "AFTER the whole server list - and retired a pending turn only "
+                "when the server reported the same TEXT more often than at "
+                "queue time. Two defects followed: a PM message landing "
+                "mid-turn rendered before a message sent earlier, and a copy "
+                "whose stored text never matched stuck to the bottom forever. "
+                "Now the daemon echoes the client's own `mid` (the replay "
+                "token client.ts already minted and chat_dedupe.py already "
+                "read) back as client_msg_id, and the app retires by that "
+                "identity and INSERTS each bubble at the anchor position the "
+                "server list had when it was queued.\n"
+                "The remaining debt is the text-count fallback, tagged "
+                "COMPAT(chatClientMsgId): it is what still clears a turn sent "
+                "to a daemon older than this change. Paseo carries the same "
+                "shim for the same reason (packages/app/src/timeline/"
+                "session-stream-reducers.ts, matchesLocalUserMessageIdentity).",
+        "why": "Deleting it today would strand optimistic bubbles on any "
+               "surface still talking to a pre-2026-08-29 daemon - the same "
+               "class of stuck copy this change exists to remove.",
+        "fix": "Remove the COMPAT(chatClientMsgId) branch in chat.tsx's "
+               "reconcile effect once every daemon in use echoes "
+               "client_msg_id. One grep for COMPAT(chatClientMsgId) is the "
+               "whole cleanup.",
+    },
+    {
         "id": "ship-aborted-loop-root-cause-open",
         "order": -4,
         "title": "rerun_deploy no longer silently no-ops on a repo_hooks mismatch; the ACTUAL cause of every ship-aborted recurrence today (wrong hook path, fixed) found and corrected; the daemon-restart trigger itself is still unconfirmed",
