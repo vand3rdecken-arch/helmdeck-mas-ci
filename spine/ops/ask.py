@@ -373,6 +373,31 @@ def answer_prompt(picks):
     return "\n".join(lines)
 
 
+def chat_answer_text(picks):
+    """The owner's next CHAT message, when he answered one of Henry's own
+    questions by tapping (routes_copilot._answer_text).
+
+    Deliberately NOT answer_prompt(): that one is addressed to a parked CARD
+    WORKER - it announces itself as an answer to a Rueckfrage and orders the
+    worker to resume where it stopped, because a card's session has been sitting
+    idle waiting for exactly this. A chat turn has no such state; here the answer
+    IS simply the owner's next message, so it reads as one.
+
+    Free text is unquoted for the same reason: _pick_parts quotes it to show a
+    worker "these are the owner's own words, not one of your options", but in the
+    chat the whole message is already the owner's own words.
+
+    It lives in ask.py rather than in the app so the phone never owns a second
+    copy of this grammar - the same reason parse() is not reimplemented in TS."""
+    def parts(p):
+        return list(p.get("labels", [])) + list(p.get("custom", []))
+    if len(picks) == 1:
+        return ", ".join(parts(picks[0]))
+    # Multi-question: the header tells the two answers apart. Without it
+    # "A, B" is ambiguous about which question each half settled.
+    return "; ".join("%s: %s" % (p["header"], ", ".join(parts(p))) for p in picks)
+
+
 def answer_note(picks):
     """The audit line recorded in the card's flight recorder."""
     return "FRAGE beantwortet: " + "; ".join(

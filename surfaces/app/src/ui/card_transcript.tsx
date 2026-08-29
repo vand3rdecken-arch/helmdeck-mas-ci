@@ -352,9 +352,55 @@ function keyFactory() {
   };
 }
 
-export function Transcript({ steps, onRewind, me }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string }) {
+const ASK_OPEN = "<helmdeck-ask";
+
+/** LAST-RESORT RENDER GUARD for the <helmdeck-ask> sentinel.
+ *
+ *  The block is machine syntax - an interaction, not something anyone reads -
+ *  and it is removed at its ONE owner, at event time, on every path that
+ *  produces it (cells/copilot/copilot.chat for Henry, cells/engineer/turnrunner
+ *  for a card worker, plus the live readers in spine/agent/claude_sessions).
+ *  This is the net under all of them, and it lives in the SHARED transcript so
+ *  every surface is covered by the same three lines: the board chat, the card
+ *  chat, the card-scoped Henry tab. The board chat rendering raw JSON at the
+ *  owner (screenshot 2026-08-29 17:56) is the defect it exists to make
+ *  unrepeatable - a future feed that forgets to clean its text degrades to a
+ *  hidden block instead of a screenful of `{"label": ...`.
+ *
+ *  It STRIPS and never parses. Reading the JSON here to build options would put
+ *  a second copy of the protocol's grammar on the phone, and the two would drift
+ *  the first time either changed; spine/ops/ask.py stays the only one that knows
+ *  this shape. A block that reaches this function is therefore shown as nothing,
+ *  which is also what the brief calls for when the block is malformed - and it
+ *  means the daemon-side owner is what wants fixing, not this. */
+function stripAsk(text: string): string {
+  const out = text.replace(/<helmdeck-ask>[\s\S]*?<\/helmdeck-ask>/gi, "");
+  // An UNCLOSED tag - the model is still typing it, or the reply was truncated
+  // mid-block. Cut from the tag onward: the half a closing tag never arrives for
+  // would otherwise stream in character by character.
+  const i = out.toLowerCase().indexOf(ASK_OPEN);
+  return (i === -1 ? out : out.slice(0, i)).trim();
+}
+
+function readable(steps: TStep[]): TStep[] {
+  const out: TStep[] = [];
+  for (const s of steps) {
+    const raw = s.text ?? "";
+    const s2 = raw.toLowerCase().includes(ASK_OPEN) ? { ...s, text: stripAsk(raw) } : s;
+    // An empty text row is a blank bubble with a sender line above it. It shows
+    // up when a reply was ONLY a block (the watch/glasses briefs invite exactly
+    // that) and nothing readable survived cleaning - here or on the daemon.
+    // Streaming rows are exempt: theirs is empty for a moment by design.
+    if (s2.kind === "text" && !s2.streaming && !(s2.text ?? "").trim()) continue;
+    out.push(s2);
+  }
+  return out;
+}
+
+export function Transcript({ steps: rawSteps, onRewind, me }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string }) {
   const t = useTheme();
   const tr = useT();
+  const steps = readable(rawSteps);
   const keyFor = keyFactory();
   let lastToolIdx = -1;
   for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
