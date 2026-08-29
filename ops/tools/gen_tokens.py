@@ -14,7 +14,21 @@ import math
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(os.path.dirname(HERE), "app", "src", "theme", "tokens.ts")
+# ops/tools -> ops -> REPO ROOT. The second dirname is not cosmetic: this file
+# used to resolve to `<repo>/ops/app/src/theme/tokens.ts`, a path that stopped
+# existing when the owner's 2026-08-24 four-folder decree moved the frontend to
+# `surfaces/app/`. Running the generator therefore CREATED a dead tree under
+# ops/ and left the real palette untouched - the canonical source had been
+# quietly disconnected from its own output (found 2026-08-29 while wiring the
+# watch into it). Anything that "regenerates" the palette must land here.
+REPO = os.path.dirname(os.path.dirname(HERE))
+OUT = os.path.join(REPO, "surfaces", "app", "src", "theme", "tokens.ts")
+# SECOND consumer of the same palette (2026-08-29). The Wear OS module is
+# Kotlin, so it can read neither tokens.ts nor OKLCH - but hand-copying hex into
+# WearTheme.kt is exactly the drift this generator exists to prevent (owner:
+# "Ist Farbe nicht zentralisiert?"). One source, two emitters: change the maps
+# above, re-run, and phone and watch move together or not at all.
+OUT_WEAR = os.path.join(REPO, "surfaces", "app", "plugins", "wear", "WearTokens.kt")
 
 
 def _oklch_to_rgb(L, C, h):
@@ -102,12 +116,121 @@ DARK_ALIAS = dict(COMMON_ALIAS, canvas="neutral-black", surface1="neutral-100", 
                   layer2="neutral-300", layer2Hover="neutral-400")
 
 
+def argb(spec):
+    """spec -> Kotlin `0xAARRGGBB` literal for androidx.compose.ui.graphics.Color.
+
+    Deliberately computed from the SAME primitive spec as css(), not parsed back
+    out of the css string: a second parser would be a second place to be wrong,
+    and the rgba() alpha would have to survive a float round-trip for nothing.
+    """
+    if isinstance(spec, str):
+        return "0xFF" + spec.lstrip("#").upper()
+    r, g, b = _oklch_to_rgb(spec[0], spec[1], spec[2])
+    a = int(round(spec[3] * 255)) if len(spec) == 4 else 255
+    return "0x%02X%02X%02X%02X" % (a, r, g, b)
+
+
+# --- SEMANTIC maps: which TOKEN a domain value is painted with -----------------
+# These used to be hardcoded twice - once in surfaces/app/src/theme/index.tsx
+# (laneColor/statusColor) and, for anything the watch wanted, a third time in
+# Kotlin. They are pure lookup tables, so they belong with the palette: one
+# place decides that a `running` card is AI-blue and a `bounced` one is danger,
+# and every surface inherits that. Values are TOKEN NAMES, never colours - the
+# theme resolves them, which is what keeps a future light theme possible.
+LANE_TOKEN = {"backlog": "txtTertiary", "working": "ai", "review": "human", "done": "ok"}
+STATUS_TOKEN = {
+    "queued": "txtTertiary", "running": "ai", "needs_you": "warn",
+    "submitted": "human", "accepted": "ok", "bounced": "danger",
+    "done": "ok", "failed": "danger",
+}
+SEMANTIC_FALLBACK = "txtTertiary"
+
+# --- Wear Material3 colour ROLES -> brand token --------------------------------
+# The MAPPING is a design decision and lives here rather than in Kotlin, for the
+# same reason the palette does: it was the last hand-written copy of "which
+# HelmDeck colour is the primary action". Roles are Wear Material3's own names
+# (androidx.wear.compose.material3.ColorScheme, read off the 1.6.2 artifact).
+WEAR_ROLE = {
+    "primary": "accent", "primaryDim": "ai", "onPrimary": "neutral100",
+    "primaryContainer": "layer2", "onPrimaryContainer": "brand700",
+    "secondary": "accent2", "secondaryDim": "human", "onSecondary": "neutral100",
+    "secondaryContainer": "layer2", "onSecondaryContainer": "human",
+    "tertiary": "ai", "tertiaryDim": "ai", "onTertiary": "neutral100",
+    "tertiaryContainer": "layer2", "onTertiaryContainer": "ai",
+    # chat-bubble spec, mirroring the phone transcript's surface1 + borderSubtle
+    "surfaceContainerLow": "canvas", "surfaceContainer": "surface1",
+    "surfaceContainerHigh": "surface2",
+    "onSurface": "txtPrimary", "onSurfaceVariant": "txtSecondary",
+    "outline": "borderStrong", "outlineVariant": "borderSubtle",
+    "onBackground": "txtPrimary",
+    "error": "danger", "errorDim": "danger", "onError": "neutral100",
+}
+
+
 def theme(prim, alias):
     return {k: css(prim[p]) for k, p in alias.items()}
 
 
+def theme_argb(prim, alias):
+    return {k: argb(prim[p]) for k, p in alias.items()}
+
+
+def _kt_when(fn, table):
+    """A `when` over the domain values, resolving to WearTokens - the Kotlin
+    twin of index.tsx's laneColor/statusColor, from the same table."""
+    arms = "".join('        "%s" -> WearTokens.%s\n' % (k, v) for k, v in table.items())
+    return ("    fun %s(value: String?): Color = when (value) {\n%s"
+            "        else -> WearTokens.%s\n    }\n" % (fn, arms, SEMANTIC_FALLBACK))
+
+
+def emit_kotlin(dark):
+    """The watch is always dark, so only that theme is emitted - a light Wear
+    palette would be dead code carrying a promise nothing keeps."""
+    lines = "".join("    val %s = Color(%sL)\n" % (k, v) for k, v in dark.items())
+    roles = "".join("        %s = WearTokens.%s,\n" % (r, t) for r, t in WEAR_ROLE.items())
+    extra = (
+        "\n/** Domain value -> brand colour, generated from the SAME table the\n"
+        " *  phone's laneColor()/statusColor() use. No surface re-decides this. */\n"
+        "object WearSemantics {\n"
+        + _kt_when("lane", LANE_TOKEN)
+        + "\n"
+        + _kt_when("status", STATUS_TOKEN)
+        + "}\n\n"
+        "/** The brand palette mapped onto Wear Material3's colour roles. The\n"
+        " *  mapping itself is data in ops/tools/gen_tokens.py (WEAR_ROLE), so\n"
+        " *  \"which HelmDeck colour is the primary action\" is decided in one\n"
+        " *  place for every surface.\n"
+        " *\n"
+        " *  `background` is the one deliberate non-token: pure black, because a\n"
+        " *  watch is OLED and an unlit pixel costs nothing. The brand's dark\n"
+        " *  surfaces still carry the identity - they paint the cards. */\n"
+        "val HelmDeckWearColors = ColorScheme(\n" + roles +
+        "    background = Color(0xFF000000L),\n)\n"
+    )
+    return (
+        "// AUTO-GENERATED by ops/tools/gen_tokens.py (the canonical palette). "
+        "Do not edit by hand.\n"
+        "// The Wear OS module is Kotlin and can read neither tokens.ts nor OKLCH, so the\n"
+        "// SAME generator that writes tokens.ts for the phone writes these Color values\n"
+        "// for the watch. Editing this file by hand re-creates the drift it exists to\n"
+        "// prevent: change ops/tools/gen_tokens.py and re-run\n"
+        "//   py -3.12 ops/tools/gen_tokens.py\n"
+        "// Only the DARK theme is emitted - a watch has no light mode here.\n\n"
+        "package app.helmdeck.wear\n\n"
+        "import androidx.compose.ui.graphics.Color\n"
+        "import androidx.wear.compose.material3.ColorScheme\n\n"
+        "object WearTokens {\n" + lines + "}\n" + extra
+    )
+
+
 def emit(d):
     return "{\n" + "".join("    %s: '%s',\n" % (k, v) for k, v in d.items()) + "  }"
+
+
+def emit_ts_map(d):
+    """Quoted KEYS - unlike the token names above, these are domain values like
+    `needs_you`, which is not a bare JS identifier."""
+    return "{\n" + "".join("  '%s': '%s',\n" % (k, v) for k, v in d.items()) + "}"
 
 
 def main():
@@ -120,10 +243,26 @@ def main():
           "// and re-run it to refresh. (Historical source: archive/web/app/globals.css.)\n\n"
           "export const tokens = {\n  light: %s,\n  dark: %s,\n} as const;\n\n"
           "export type ThemeName = keyof typeof tokens;\n"
-          "export type ThemeTokens = Record<keyof typeof tokens.dark, string>;\n" % (emit(light), emit(dark)))
+          "export type ThemeTokens = Record<keyof typeof tokens.dark, string>;\n\n"
+          "// Domain value -> TOKEN NAME (never a colour: the theme resolves it, which\n"
+          "// is what keeps a light theme possible). theme/index.tsx's laneColor() and\n"
+          "// statusColor() read these instead of carrying their own copy, and\n"
+          "// WearSemantics in WearTokens.kt is generated from the SAME tables.\n"
+          "export const laneTokens: Record<string, keyof ThemeTokens> = %s;\n"
+          "export const statusTokens: Record<string, keyof ThemeTokens> = %s;\n"
+          "export const semanticFallback: keyof ThemeTokens = '%s';\n"
+          % (emit(light), emit(dark), emit_ts_map(LANE_TOKEN),
+             emit_ts_map(STATUS_TOKEN), SEMANTIC_FALLBACK))
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(ts)
     print("wrote", OUT, "(%d tokens/theme)" % len(dark))
+    if os.path.isdir(os.path.dirname(OUT_WEAR)):
+        with open(OUT_WEAR, "w", encoding="utf-8") as f:
+            f.write(emit_kotlin(theme_argb(DARK_PRIM, DARK_ALIAS)))
+        print("wrote", OUT_WEAR, "(%d dark tokens)" % len(dark))
+    else:
+        # The wear module is optional; say so rather than fail the phone palette.
+        print("skipped", OUT_WEAR, "- wear plugin dir not present")
 
 
 if __name__ == "__main__":

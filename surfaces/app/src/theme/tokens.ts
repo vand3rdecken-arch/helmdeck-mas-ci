@@ -84,3 +84,25 @@ export const tokens = {
 
 export type ThemeName = keyof typeof tokens;
 export type ThemeTokens = Record<keyof typeof tokens.dark, string>;
+
+// Domain value -> TOKEN NAME (never a colour: the theme resolves it, which
+// is what keeps a light theme possible). theme/index.tsx's laneColor() and
+// statusColor() read these instead of carrying their own copy, and
+// WearSemantics in WearTokens.kt is generated from the SAME tables.
+export const laneTokens: Record<string, keyof ThemeTokens> = {
+  'backlog': 'txtTertiary',
+  'working': 'ai',
+  'review': 'human',
+  'done': 'ok',
+};
+export const statusTokens: Record<string, keyof ThemeTokens> = {
+  'queued': 'txtTertiary',
+  'running': 'ai',
+  'needs_you': 'warn',
+  'submitted': 'human',
+  'accepted': 'ok',
+  'bounced': 'danger',
+  'done': 'ok',
+  'failed': 'danger',
+};
+export const semanticFallback: keyof ThemeTokens = 'txtTertiary';

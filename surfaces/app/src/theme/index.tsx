@@ -1,5 +1,8 @@
 import React, { createContext, useContext } from "react";
-import { tokens, type ThemeName, type ThemeTokens } from "./tokens";
+import {
+  tokens, laneTokens, statusTokens, semanticFallback,
+  type ThemeName, type ThemeTokens,
+} from "./tokens";
 
 // Dark by default (the product is dark-first, app.json userInterfaceStyle:dark).
 // A provider so we can add the light theme + the 5 backdrop variants later
@@ -14,16 +17,17 @@ export function useTheme(): ThemeTokens {
   return useContext(ThemeContext);
 }
 
-// Lane / status / executor colours — 1:1 with web/lib/store.tsx + board.tsx,
-// resolved against the active theme's tokens.
+// Lane / status colours. The MAPPINGS live in ops/tools/gen_tokens.py and are
+// generated into tokens.ts, because the watch needs the same answers and a
+// second hand-written copy in Kotlin is how "a running card is AI-blue" starts
+// meaning two different things (owner, 2026-08-29: "Theme sollte auch
+// zentralisiert sein"). These functions only RESOLVE a token name against the
+// active theme, which is also what keeps a light theme possible.
 export function laneColor(t: ThemeTokens, lane?: string): string {
-  return { backlog: t.txtTertiary, working: t.ai, review: t.human, done: t.ok }[lane ?? ""] ?? t.txtTertiary;
+  return t[laneTokens[lane ?? ""] ?? semanticFallback];
 }
 export function statusColor(t: ThemeTokens, status?: string): string {
-  return ({
-    queued: t.txtTertiary, running: t.ai, needs_you: t.warn, submitted: t.human,
-    accepted: t.ok, bounced: t.danger, done: t.ok, failed: t.danger,
-  } as Record<string, string>)[status ?? ""] ?? t.txtTertiary;
+  return t[statusTokens[status ?? ""] ?? semanticFallback];
 }
 export function executor(mode?: string): "ai" | "human" | "both" {
   if (mode === "human" || mode === "teach") return "human";
