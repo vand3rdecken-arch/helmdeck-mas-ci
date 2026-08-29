@@ -462,7 +462,7 @@ def history(user):
             "stats": st}
 
 
-def say(text, cls="pm", card=None):
+def say(text, cls="pm", card=None, extra=None):
     """THE harness's voice in the owner's board chat - the one place anything
     non-interactive speaks to the owner (pm._say and the lane pipeline both go
     through here). Without this, work that happens without the owner typing
@@ -473,13 +473,34 @@ def say(text, cls="pm", card=None):
     `card` = a card id this notice is ABOUT (e.g. a lane outcome). When it
     resolves to a live run_dir, the notice ALSO folds into that card's own
     timeline (byKind:henry) - so a proactive nudge about a specific card
-    shows up in its team-chat too, not only the global board chat."""
+    shows up in its team-chat too, not only the global board chat.
+
+    `card` is now also PERSISTED on the chat entry itself (2026-08-29, the
+    one-inbox decree). It was previously used only to pick the timeline to fold
+    into and then thrown away, which left every harness-authored line in the
+    board chat unattributed: the owner could read "Gate ist rot" without the
+    transcript knowing WHICH card said it. Carrying the id is what lets a reply
+    be routed back to that card by IDENTITY instead of by guessing from the
+    text - see routes_copilot.chat_post's `reply_to_card`.
+
+    `extra` merges additional fields into the entry (the card mirror's `kind` /
+    `cardName` / `question`). Kept as one opaque dict rather than a growing
+    parameter list so a new mirror field never needs a signature change here,
+    in _append_log, and in every stub that stands in for this function."""
     try:
         from spine.auth import auth
         owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
         if not owner:
             return
-        _append_log(owner, [{"cls": cls, "text": text, "ts": time.strftime("%H:%M")}])
+        entry = {"cls": cls, "text": text, "ts": time.strftime("%H:%M")}
+        if card:
+            entry["card"] = card
+        if extra:
+            # never let a caller's dict overwrite the three fields above -
+            # a mirror line that lied about its own cls would be unrenderable
+            entry.update({k: v for k, v in extra.items()
+                          if k not in ("cls", "text", "ts")})
+        _append_log(owner, [entry])
         if card:
             ct = _find_card(card)
             run_dir = ct.get("run_dir") if ct and not isinstance(ct, list) else None
