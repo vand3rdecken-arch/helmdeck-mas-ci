@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import React, { memo, useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ASK_OPEN, stripAsk } from "@/data/ask";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -352,36 +353,11 @@ function keyFactory() {
   };
 }
 
-const ASK_OPEN = "<helmdeck-ask";
-
-/** LAST-RESORT RENDER GUARD for the <helmdeck-ask> sentinel.
- *
- *  The block is machine syntax - an interaction, not something anyone reads -
- *  and it is removed at its ONE owner, at event time, on every path that
- *  produces it (cells/copilot/copilot.chat for Henry, cells/engineer/turnrunner
- *  for a card worker, plus the live readers in spine/agent/claude_sessions).
- *  This is the net under all of them, and it lives in the SHARED transcript so
- *  every surface is covered by the same three lines: the board chat, the card
- *  chat, the card-scoped Henry tab. The board chat rendering raw JSON at the
- *  owner (screenshot 2026-08-29 17:56) is the defect it exists to make
- *  unrepeatable - a future feed that forgets to clean its text degrades to a
- *  hidden block instead of a screenful of `{"label": ...`.
- *
- *  It STRIPS and never parses. Reading the JSON here to build options would put
- *  a second copy of the protocol's grammar on the phone, and the two would drift
- *  the first time either changed; spine/ops/ask.py stays the only one that knows
- *  this shape. A block that reaches this function is therefore shown as nothing,
- *  which is also what the brief calls for when the block is malformed - and it
- *  means the daemon-side owner is what wants fixing, not this. */
-function stripAsk(text: string): string {
-  const out = text.replace(/<helmdeck-ask>[\s\S]*?<\/helmdeck-ask>/gi, "");
-  // An UNCLOSED tag - the model is still typing it, or the reply was truncated
-  // mid-block. Cut from the tag onward: the half a closing tag never arrives for
-  // would otherwise stream in character by character.
-  const i = out.toLowerCase().indexOf(ASK_OPEN);
-  return (i === -1 ? out : out.slice(0, i)).trim();
-}
-
+/** LAST-RESORT RENDER GUARD for the <helmdeck-ask> sentinel, applied to every
+ *  step this transcript draws - so the board chat, the card chat and the
+ *  card-scoped Henry tab are all covered by one pass. The rule and the regex
+ *  live in data/ask.ts, because the voice sheet needs the same net and a second
+ *  hand-written copy is how the first one gets forgotten. */
 function readable(steps: TStep[]): TStep[] {
   const out: TStep[] = [];
   for (const s of steps) {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { stripAsk } from "@/data/ask";
 import { api } from "@/data/client";
 import { caps, listen, openSpeech, speak, stopSpeaking, type Listener, type SpeechQueue, type VoiceClip } from "@/data/voice";
 // The OWN pipeline (speech-to-speech shape): raw mic + on-device VAD cut
@@ -578,7 +579,16 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
           <ScrollView ref={scroll} style={{ flex: 1 }}
             contentContainerStyle={{ padding: 16, paddingBottom: 28, gap: 12, maxWidth: 720,
               width: "100%", alignSelf: "center", flexGrow: 1 }}>
-            {turns.map((v, i) => (
+            {/* These bubbles are deliberately NOT the shared <Transcript>: this
+                is a spoken conversation, so it has no tool rows, no timestamps,
+                no copy buttons and no markdown - what was SAID, nothing else.
+                But it is still a transcript of Henry, so it takes the same
+                <helmdeck-ask> guard the shared one applies (data/ask.ts). Its
+                text comes from api.chat's reply, which the daemon already
+                cleans; this is the net for the day that stops being true, and
+                without it this was the one in-tree feed the guard never
+                reached. */}
+            {turns.filter((v) => stripAsk(v.text).trim()).map((v, i) => (
               <View key={i} style={{ alignSelf: v.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
                 <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700", marginBottom: 3,
                   textAlign: v.role === "user" ? "right" : "left" }}>
@@ -587,7 +597,7 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
                 <View style={{ backgroundColor: v.role === "user" ? t.accent + "1F" : t.surface1,
                   borderColor: v.role === "user" ? t.accent + "4D" : t.borderSubtle, borderWidth: 1,
                   borderRadius: 14, paddingHorizontal: 13, paddingVertical: 9 }}>
-                  <Text style={{ color: t.txtPrimary, fontSize: 14.5, lineHeight: 20 }}>{v.text}</Text>
+                  <Text style={{ color: t.txtPrimary, fontSize: 14.5, lineHeight: 20 }}>{stripAsk(v.text)}</Text>
                 </View>
               </View>
             ))}
