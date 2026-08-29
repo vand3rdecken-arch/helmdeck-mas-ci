@@ -163,8 +163,17 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 // prints the same sentence twice on a screen with no room for
                 // it once. Probed on the text rather than on the reason name so
                 // a new reason with the same shape cannot reintroduce it.
-                val detailEchoesBody = card.body.replace('\n', ' ')
-                    .startsWith(card.detail.take(40))
+                // Compared on a WHITESPACE-FLATTENED form of both sides, not on
+                // the raw strings. `detail` arrives with its whitespace already
+                // collapsed to single spaces (blockers._blocker_text) while
+                // `body` keeps its paragraph breaks - so a reply that opens with
+                // a heading produced "DELIVERED  Auf der" against "DELIVERED Auf
+                // der" and the prefix test failed on the double space, printing
+                // the same sentence twice. Flattening both is the comparison the
+                // test always meant to make.
+                fun flat(s: String) = s.replace(Regex("\\s+"), " ").trim()
+                val detailEchoesBody =
+                    flat(card.body).startsWith(flat(card.detail).take(40))
                 if (card.detail.isNotBlank() && !detailEchoesBody) {
                     item {
                         OutlinedCard(
