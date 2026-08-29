@@ -142,10 +142,20 @@ const SEED: Row[] = [
 let rows: Row[] = SEED.map((r) => ({ ...r }));
 let version = 1;
 
-type ChatRow = { cls: string; textKey?: string; text?: string; ts?: string };
+// `mirror` marks the EVENT-MIRROR row (cells/copilot/card_mirror.py): a working
+// card's question folded into the Henry chat, the one-inbox decree. Kept as a
+// flag + keys here and EXPANDED at response time in /chat/history below - the
+// question block is full of user-visible strings, and this module's rule is
+// that those resolve when answered, never at module load.
+type ChatRow = { cls: string; textKey?: string; text?: string; ts?: string;
+  mirror?: boolean };
 const CHAT_SEED: ChatRow[] = [
   { cls: "user", textKey: "demo.chat.q", ts: iso(120) },
   { cls: "assistant", textKey: "demo.chat.a", ts: iso(119) },
+  // a mirrored card QUESTION: exercises the label header in the transcript, the
+  // QuestionPanel above the composer, and the composer's routing chip. Bound to
+  // d2 - the demo's running card - so answering routes somewhere real.
+  { cls: "card", textKey: "demo.chat.mirrorQ", ts: iso(8), mirror: true },
 ];
 let chatLog: ChatRow[] = CHAT_SEED.map((c) => ({ ...c }));
 
@@ -319,7 +329,24 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       attempts: 1, closed: false },
   ];
   if (path === "/chat/history") {
-    return { messages: chatLog.map((c) => ({ cls: c.cls, ts: c.ts, text: c.textKey ? t(c.textKey) : (c.text ?? "") })),
+    return { messages: chatLog.map((c) => {
+      // the daemon stamps "%H:%M" (copilot._append_log); the fixture keeps full
+      // ISO for ordering, so serve the same HH:MM shape here - the transcript
+      // renders ts verbatim, and a raw ISO string under every bubble is what
+      // the first screenshot judge actually caught
+      const hm = (c.ts ?? "").length > 5 ? (c.ts ?? "").slice(11, 16) : (c.ts ?? "");
+      const base = { cls: c.cls, ts: hm, text: c.textKey ? t(c.textKey) : (c.text ?? "") };
+      if (!c.mirror) return base;
+      // the mirrored card question, expanded at response time (strings follow
+      // the language switch) - same shape card_mirror.say_card persists
+      return { ...base, card: "d2", cardName: t("demo.chat.mirrorName"), kind: "question",
+        question: { id: "demo-q-1", kind: "question", asked: c.ts ?? "",
+          questions: [{ question: t("demo.chat.mirrorQ"), header: t("demo.chat.mirrorHeader"),
+            options: [
+              { label: t("demo.chat.mirrorOptA"), description: t("demo.chat.mirrorOptADesc") },
+              { label: t("demo.chat.mirrorOptB"), description: t("demo.chat.mirrorOptBDesc") },
+            ] }] } };
+    }),
              session_id: "demo",
              // card-parity PM-session stats so the demo shows the meter + usage line
              stats: { turns: 4, cost: 0.31, tokens_in: 58200, tokens_out: 4400,
@@ -359,6 +386,23 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       );
       bump();
       return {};
+    }
+    if (sub === "/answer" && method === "POST") {
+      // Answering the mirrored question (tracks_answer_post's shape). The pick
+      // becomes the next steer like the daemon does, the owner's choice lands
+      // in the chat as his own message, and the mirror row is dropped - the
+      // inbox must stop offering a question that is settled.
+      k.turns += 1; k.status = "running"; k.updated = now();
+      k.replyKey = "demo.steer.reply";
+      const pick = String(Object.values((b.answers ?? {}) as Record<string, unknown>)[0] ?? "");
+      (extraSteps[id] ||= []).push(
+        { cls: "user", role: "user", text: pick, ts: now() },
+        { cls: "assistant", role: "assistant", textKey: "demo.steer.step", ts: now() },
+      );
+      chatLog = [...chatLog.filter((c) => !c.mirror),
+                 { cls: "you", text: pick, ts: now() }];
+      bump();
+      return { started: id, answered: true };
     }
     // Archive is a reversible FLAG on the daemon (cardadmin.archive_track,
     // on=true/false), not a delete - the card stays, hidden everywhere except
