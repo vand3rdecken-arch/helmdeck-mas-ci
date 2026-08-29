@@ -18,6 +18,7 @@ to Henry, ADVISORY ONLY, never the worker directly - imported from the
 glasses' own proven pattern, not re-decided per surface.
 """
 import json
+import re
 
 # Wear OS quality bar (README.md §7.2): fits a 192dp circle, no keyboard,
 # tap-to-answer or dictation only - the same CLASS of constraint GLASS_BRIEF
@@ -51,6 +52,68 @@ WEAR_BRIEF = (
 # totals ride alongside so "3 von 12" stays honest without sending 12 rows.
 WEAR_LIST_MAX = 5
 
+# How much of a card's own text the watch may carry. The CARD SCREEN scrolls
+# (TransformingLazyColumn), unlike the glasses' one-card lens, so this is far
+# above glance_payload's 160-char `detail` - but still a payload bound: it rides
+# sealed through the relay inside the board response, once per listed card.
+WEAR_BODY_MAX = 700
+
+# The markup the phone RENDERS and a watch would show as literal characters.
+# Headings and list bullets are matched per line (re.M); emphasis and code ticks
+# anywhere. Deliberately NOT a markdown parser - this only removes the markers
+# that would otherwise read as '**DELIVERED**' on a 240dp screen.
+_WEAR_MD = re.compile(r"^\s{0,3}#{1,6}\s*|^\s{0,3}[-*+]\s+|\*\*|__|`+", re.M)
+
+
+def _wear_text(raw, cap=WEAR_BODY_MAX):
+    """A card's own prose, made readable on a wrist.
+
+    Three things are stripped, each for a reason already established on another
+    surface rather than invented here:
+
+     1. the <helmdeck-ask> block, via the SAME ask.parse() wear_talk_post and
+        wear_chat_get already use. The stored reply keeps the block verbatim, and
+        rendering it raw is exactly the '{"label": ...' screenful the owner
+        photographed on 2026-08-29.
+     2. fenced blocks. ```actions is machine syntax and a code fence is
+        unreadable at this width; taking the EVEN split segments drops the
+        fenced halves and keeps the prose between them.
+     3. markdown markers, which only a renderer makes invisible.
+
+    Blank-line structure is KEPT (collapsed to one), because paragraph breaks are
+    the only thing left telling the eye where a thought ends. Whitespace inside a
+    line is collapsed - a wrapped 240dp line has no use for the phone's columns.
+    """
+    from spine.ops import ask
+    _q, prose = ask.parse(raw or "")
+    text = prose or raw or ""
+    text = "".join(text.split("```")[0::2])
+    text = _WEAR_MD.sub("", text)
+    out, blank = [], False
+    for line in text.splitlines():
+        line = " ".join(line.split())
+        if not line:
+            blank = True
+            continue
+        if out and blank:
+            out.append("")
+        blank = False
+        out.append(line)
+    return "\n".join(out)[:cap].strip()
+
+
+def _wear_body(t):
+    """What this card is ABOUT, for a screen that has room for it.
+
+    The last thing the machine SAID on the card, which for a running card is the
+    previous turn's report and for a finished one is the delivery. Falls back to
+    the card's description for a card that has never run (the `yours` bucket),
+    where there is no reply yet but the owner still needs to know what he is
+    looking at before he starts it.
+    """
+    t = t or {}
+    return _wear_text(t.get("last_reply") or t.get("description") or "")
+
 
 def _wear_pipeline(tracks, taken_ids):
     """The two buckets glance_payload deliberately leaves out, added for the
@@ -79,8 +142,14 @@ def _wear_pipeline(tracks, taken_ids):
         t = sessions.present(t or {})
         if t.get("archived") or t.get("id") in taken_ids:
             continue
-        row = {"id": t.get("id"), "task": (t.get("task") or "")[:60]}
         status = t.get("status")
+        # `body` and `status` ride along because tapping one of these rows opens
+        # the SAME CardScreen a needs_you card opens - and these carry no
+        # blocker, so without them that screen had literally nothing to show but
+        # the title. Owner, 2026-08-29, on the running machine card: "wenn ich
+        # auf Karte gehe ist nichts da."
+        row = {"id": t.get("id"), "task": (t.get("task") or "")[:60],
+               "status": status, "body": _wear_body(t)}
         if status == "running":
             working.append(row)
         elif status == "queued":
@@ -104,6 +173,17 @@ def wear_board_get(self, user):
     taken = {c.get("id") for c in (payload.get("needs_you") or [])}
     taken |= {c.get("id") for c in (payload.get("yours") or [])}
     payload["pipeline"] = _wear_pipeline(tracks, taken)
+    # The card's own text, on EVERY bucket. glance_payload's `detail` is capped
+    # at 160 chars and shaped for the GLASSES' one-line lens (blockers.py
+    # _blocker_text) - it says why a card is stuck, which is not the same thing
+    # as what happened on it. `detail` is left exactly as it is: the glasses read
+    # that payload too, and widening a shared field for one surface is the drift
+    # blockers.py exists to prevent. `body` is the watch's own, added here rather
+    # than in glances.py for the same reason `pipeline` is.
+    by_id = {t.get("id"): t for t in tracks or ()}
+    for bucket in ("needs_you", "yours"):
+        for row in payload.get(bucket) or ():
+            row["body"] = _wear_body(by_id.get(row.get("id")))
     return self._send(200, json.dumps(payload))
 
 

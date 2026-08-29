@@ -13,9 +13,23 @@ data class QuestionItem(
 )
 data class QuestionBlock(val id: String, val questions: List<QuestionItem>)
 
+/**
+ * `detail` and `body` are two DIFFERENT things and the card screen shows both:
+ *
+ *   detail - WHY this card is stuck on the owner (glance_payload's own field,
+ *            160 chars, from blockers.blocker(); empty for a card that is not
+ *            blocked, i.e. every pipeline row).
+ *   body   - WHAT last happened on it: the machine's last reply, ask-block and
+ *            markdown stripped by routes_wear._wear_text.
+ *
+ * Both were on the wire (detail) or trivially derivable (body) all along and the
+ * watch carried neither, which is why an opened card showed only its title -
+ * owner, 2026-08-29: "wenn ich auf Karte gehe ist nichts da."
+ */
 data class BoardCard(
     val id: String, val task: String, val reason: String,
     val question: QuestionBlock?,
+    val detail: String = "", val body: String = "", val status: String = "",
 )
 
 /** Parses a `question` field (routes_wear.py's _glance_question() JSON) into
@@ -110,7 +124,8 @@ fun parseYours(boardJson: String): List<BoardCard> {
         val c = arr.optJSONObject(i) ?: continue
         out.add(BoardCard(
             id = c.optString("id"), task = c.optString("task"),
-            reason = "yours", question = null))
+            reason = "yours", question = null,
+            body = c.optString("body"), status = c.optString("status")))
     }
     return out
 }
@@ -127,7 +142,9 @@ private fun sectionOf(o: JSONObject?, listKey: String, totalKey: String): BoardS
         for (i in 0 until arr.length()) {
             val c = arr.optJSONObject(i) ?: continue
             out.add(BoardCard(id = c.optString("id"), task = c.optString("task"),
-                              reason = listKey, question = null))
+                              reason = listKey, question = null,
+                              body = c.optString("body"),
+                              status = c.optString("status")))
         }
     }
     return BoardSection(out, o?.optInt(totalKey, out.size) ?: out.size)
@@ -143,6 +160,23 @@ fun parsePipeline(boardJson: String): Pair<BoardSection, BoardSection> {
                 sectionOf(p, "backlog", "backlog_total"))
 }
 
+/** The blocker vocabulary (spine/turn/blockers.py BLOCKER_REASONS) plus the two
+ *  watch-only pipeline buckets, in the owner's language. Unknown values fall
+ *  back to "" rather than to a guess: a wrong label on a wrist is worse than
+ *  none, and the body text below it carries the substance either way. */
+fun reasonLabel(reason: String): String = when (reason) {
+    "gate" -> "Gate rot"
+    "conflict" -> "Merge-Konflikt"
+    "failed" -> "Fehlgeschlagen"
+    "question" -> "Frage offen"
+    "review" -> "Wartet auf Abnahme"
+    "delivered" -> "Fertig - abnehmen"
+    "yours" -> "Nur von dir startbar"
+    "working" -> "In Arbeit"
+    "backlog" -> "Backlog"
+    else -> ""
+}
+
 fun parseBoardCards(boardJson: String): List<BoardCard> {
     val o = JSONObject(boardJson)
     val ny = o.optJSONArray("needs_you") ?: return emptyList()
@@ -152,7 +186,9 @@ fun parseBoardCards(boardJson: String): List<BoardCard> {
         out.add(BoardCard(
             id = c.optString("id"), task = c.optString("task"),
             reason = c.optString("reason"),
-            question = parseQuestionBlock(c.optJSONObject("question"))))
+            question = parseQuestionBlock(c.optJSONObject("question")),
+            detail = c.optString("detail"), body = c.optString("body"),
+            status = c.optString("status")))
     }
     return out
 }

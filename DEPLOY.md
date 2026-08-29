@@ -777,6 +777,40 @@ invented.
 
 ---
 
+## 2c) Wear OS module — Gradle compiles COPIES, not the source you edited
+
+`surfaces/app/plugins/wear/*.kt` is the source of truth (it survives
+`expo prebuild --clean`). It is **not** what Gradle reads. The config plugin
+`surfaces/app/plugins/withWearApp.js` copies each file, verbatim, to
+
+```
+surfaces/app/android/wear/src/main/java/app/helmdeck/wear/...
+```
+
+and `:wear:compileReleaseKotlin` compiles those copies. The plugin runs during
+`expo prebuild` — **not** when you call gradle.
+
+⚠ **The failure is silent and reads as success.** Edit a `.kt` under
+`plugins/wear/`, run `./gradlew :wear:assembleRelease`, and you get
+`BUILD SUCCESSFUL` with `assembleRelease UP-TO-DATE` — because from Gradle's
+point of view nothing changed. The APK is the OLD code. Measured 2026-08-29:
+a card-screen change built green twice before the copies were noticed.
+
+So before building the watch app, either run `npx expo prebuild` (lays down
+every file the plugin owns), or lay down just what you changed and **prove** it:
+
+```powershell
+Copy-Item surfaces/app/plugins/wear/<File>.kt `
+          surfaces/app/android/wear/src/main/java/app/helmdeck/wear/<File>.kt -Force
+```
+
+Then check that the build actually recompiled — `:wear:compileReleaseKotlin`
+must NOT say `UP-TO-DATE`. Sub-package files go to `crypto/` and `data/`
+respectively (their `package` declaration decides); `withWearApp.js`'s own
+`files` table is the authority on where each one lands.
+
+---
+
 ## 3) Get the APK onto the phone
 
 - **Relay** (served at `https://<relay>/apk/helmdeck.apk`):
