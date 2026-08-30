@@ -12,6 +12,21 @@ export JAVA_HOME
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/AppData/Local/Android/Sdk}"
 export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
+# ANDROID BUILD MUTEX - taken HERE, before anything below touches shared state.
+# This script is the one every Android build path funnels through (the ship
+# hook's native branch, a machine/direct card, DEPLOY.md's manual recipe), and
+# everything from this line down is machine-global rather than tree-local: the
+# Gradle daemon, ~/.gradle, surfaces/app/android, node_modules, adb.
+# The POSITION matters as much as the lock. The very next block runs
+# `./gradlew --stop`, which stops EVERY Gradle daemon of this user - so a second
+# build starting here used to KILL a first build that was ten minutes into
+# assembleRelease (owner-reported incident 2026-08-30). Acquiring first turns
+# that collision into a queue. Taken AFTER the JDK check above so a box with no
+# JDK still fails in a second instead of queueing behind a 15-minute build to
+# then fail anyway. See ops/deploy/build_lock.sh for the primitive.
+. "$(dirname "$0")/build_lock.sh"
+android_build_lock "build_apk.sh :app:assembleRelease (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
+
 # Nothing else in the ship pipeline runs `npm install` for app/ - a merge that
 # adds/bumps a dependency (exactly what routes here via native_fp) leaves the
 # main repo's node_modules stale, so Metro/gradle autolinking can't resolve

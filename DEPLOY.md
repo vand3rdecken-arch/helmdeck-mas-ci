@@ -496,9 +496,25 @@ a 52-minute build produced an APK stamped **versionName 1.0.2 / versionCode
 38** while `app.json` already said **1.0.8 / 44**, because the version-sync
 step below never ran — precisely the drift the comment there warns about. The
 config plugins (`withLanCleartext`, `withGlassVoice`) are skipped the same way,
-so a permission can be missing from a perfectly successful build. If you do run
-gradle by hand, run the plugin + version-sync steps from `build_apk.sh` first,
-and verify the result rather than trusting it:
+so a permission can be missing from a perfectly successful build.
+
+There is now a THIRD silent skip, and this one damages other people's builds
+rather than your own artifact: `build_apk.sh` takes a machine-global Android
+build mutex (`ops/deploy/build_lock.sh`, lock at
+`~/.helmdeck/locks/android-build`) before it touches anything shared. A second
+build started through any script entrypoint WAITS for the first instead of
+running beside it. Raw gradle takes no lock — and because `build_apk.sh` opens
+with `./gradlew --stop`, which stops *every* Gradle daemon of this user, an
+unlocked build starting mid-flight will **kill a running one ten minutes into
+`assembleRelease`** (measured incident, 2026-08-30: two concurrent Android
+builds blocked each other). A queued build is healthy, not stuck: it prints
+`[build-lock] ... waiting` and a `HOOK-NOTE` line that surfaces on the card, and
+Henry's system snapshot shows `android-build.lock:` with the holder's name. A
+lock whose holder process is dead is taken over automatically, so a crashed
+build never wedges the next one.
+
+If you do run gradle by hand, run the plugin + version-sync steps from
+`build_apk.sh` first, and verify the result rather than trusting it:
 ```bash
 AAPT=$(ls -t "$ANDROID_HOME/build-ops/tools/"*/aapt2.exe | head -1)
 "$AAPT" dump badging app-release.apk | grep versionName   # must match app.json

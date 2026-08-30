@@ -198,6 +198,7 @@ def _snapshot():
     except Exception as e:
         lines.append("(board unreadable: %s)" % e)
     lines.append(_ship_lock_line())
+    lines.append(_android_lock_line())
     lines.append(_box_load_line())
     lines.append(_heavy_procs_line())
     return "\n".join(lines[:40])
@@ -224,6 +225,46 @@ def _ship_lock_pid():
     if not lines:
         return None
     return lines[1] if len(lines) > 1 else lines[0]
+
+
+def _android_lock_line():
+    """The machine-global Android build mutex (ops/deploy/build_lock.sh), read
+    the same way ship.lock is: a LIVE-PID observation, never a stored flag.
+    Henry needs this because "why is my build not starting" and "why did two
+    builds break each other" are the SAME question seen from two sides - a
+    queued build is healthy and must not be judged as a stuck card, which is
+    exactly the misread the 2026-08-30 incident produced."""
+    pid = _android_lock_pid()
+    if pid is None:
+        return "android-build.lock: frei"
+    label = ""
+    try:
+        with open(os.path.join(_ANDROID_LOCK, "label"), encoding="utf-8") as f:
+            label = f.read().strip()[:80]
+    except OSError:
+        pass
+    return "android-build.lock: pid %s (%s)%s" % (
+        pid, "LIVE - ein Build laeuft, weitere warten" if _pid_alive(pid) else "dead/stale",
+        (" | %s" % label) if label else "")
+
+
+# Machine-global on purpose - NOT under the repo, because two checkouts share
+# one Gradle daemon. Mirrors ops/deploy/build_lock.sh's HELMDECK_LOCK_DIR.
+_ANDROID_LOCK = os.path.join(
+    os.environ.get("HELMDECK_LOCK_DIR")
+    or os.path.join(os.path.expanduser("~"), ".helmdeck", "locks"),
+    "android-build")
+
+
+def _android_lock_pid():
+    try:
+        lines = [l.strip() for l in
+                 open(os.path.join(_ANDROID_LOCK, "pid")).read().splitlines() if l.strip()]
+    except OSError:
+        return None
+    if not lines:
+        return None
+    return lines[1] if len(lines) > 1 else lines[0]   # line 2 = real Windows pid
 
 
 def _pid_alive(pid):
