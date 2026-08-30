@@ -48,6 +48,26 @@ Dafür stellt er eine antippbare Rückfrage, und der Owner entscheidet.
 3. Es gibt **keinen Gate-An/Aus-Key**. Das Gate läuft, wenn eine Datei
    `helmdeck.gate` existiert. „Gate abschalten" hat heute kein Ziel.
 
+## Nachtrag UX (Owner-Rückfrage 2026-08-30)
+
+§10–§14 beantworten die UX-Frage und sind eigenständig lesbar. Kurzfassung:
+
+- **§10 Identität — geprüft, wie verlangt.** „project unique = folder unique =
+  git unique" stimmt heute **in keinem der drei Teile**, und in einem Teil darf
+  es nicht stimmen (Monorepo). Gemessen, nicht hergeleitet. Gute Nachricht: die
+  kanonische Git-Identität ist bereits gebaut (`_repo_hash`) und muss nur vom
+  Verzeichnisnamen zum Schlüssel befördert werden. Nebenbefund: die
+  **Projekt-ID-Kollision ist ein Datenverlust-Bug** und gehört in eine
+  eigene Karte.
+- **§11 Onboarding — der Instinkt „Vorschlag aus dem Ordner" ist belegt.**
+  Kein untersuchtes System (Vercel, Netlify, Nx, GitLab) lässt blind auswählen,
+  wenn Erkennung möglich ist. Fünf Schritte, inklusive Erkennungstabelle.
+- **§12 Kanban — fünf Stationen, vier Spalten.** Gate und Deploy sind
+  **Übergänge**, keine Spalten. Das Modell dafür (Spalte = Projektion mehrerer
+  Status) hat HelmDeck bereits, nur unbenannt.
+- **§13 Begriffslexikon** — verbindliche Standardbegriffe EN/DE.
+- **§14 F8–F12** — die zusätzlichen Entscheidungen, die daraus folgen.
+
 ---
 
 # 1. Problem
@@ -606,9 +626,397 @@ Ein Bau gilt als fertig, wenn:
 
 ---
 
-# 10. Quellenregister
+# 10. Identität: project / folder / git — Prüfergebnis
 
-Alles unten wurde in diesem Worktree gegen `96fa973` gelesen.
+Owner-Vorgabe: *„Wichtig project unique zu folder unique zu git unique. Keine
+Überschneidungen."* Auftrag war, das zu **überprüfen**. Alles unten mit
+„gemessen" Markierte wurde auf dieser Maschine ausgeführt, nicht hergeleitet.
+
+## 10.1 Urteil in einem Satz
+
+**Die Absicht ist richtig und notwendig — die Aussage stimmt heute in keinem
+der drei Teile, und in einem Teil *darf* sie gar nicht stimmen.**
+
+| Owner-Aussage | Befund |
+|---|---|
+| „project unique" | **falsch** — Projekt-IDs kollidieren und überschreiben sich still |
+| „folder unique" | **falsch** — ein Ordner hat beliebig viele gültige Schreibweisen |
+| „git unique" | **stimmt bereits** — `_repo_hash` ist kanonisch, wird aber nirgends als Schlüssel benutzt |
+| „project == folder == git" | **darf nicht gelten** — Monorepo-Standard trennt das bewusst (§10.4) |
+| „keine Überschneidungen" | heute gibt es **keinerlei** Constraint, Dedup oder Kanonisierung |
+
+## 10.2 Die gemessenen Brüche
+
+**(1) Projekt-IDs sind nicht eindeutig — mit Datenverlust.**
+`spine/ops/projects.py:41`: `pid = strftime("%Y%m%d-%H%M%S") + "-" + _slug(name)`,
+und `_slug` schneidet bei 32 Zeichen ab (`:21-23`). Gemessen: zwei Projekte,
+in derselben Sekunde angelegt, mit 32-Zeichen-gleichem Präfix ergeben
+**dieselbe ID**. Die Ablage ist `INSERT OR REPLACE` (`spine/storage/db.py:250-254`).
+
+> Gemessene Folge: ein Festpreis-Projekt (5000) wird von einem T&M-Projekt
+> (180/h) **still ersetzt** — eine Zeile überlebt. Jede Karte mit dieser
+> `project_id` wird ab da anders abgerechnet. Kein Event, kein Fehler.
+> Zusatzbefund: Namen ohne lateinische Zeichen sluggen alle zu `"project"`.
+
+**Das ist ein eigenständiger Datenverlust-Bug, unabhängig von Templates.**
+Empfehlung: eigene Fix-Karte, nicht in dieses Feature einwickeln.
+
+**(2) Ein Ordner hat viele gültige Namen.** Gespeichert wird nur
+`os.path.abspath(repo)` (`cells/engineer/dispatch.py:50`). Gemessen:
+`abspath` normalisiert Schrägstriche, `..` und den Schluss-Separator — aber
+**nicht die Groß-/Kleinschreibung**, keine 8.3-Kurznamen und keine Junctions.
+
+**(3) Der Deploy-Hook ist ein exakter String-Vergleich.**
+`lanemachine.py:648`: `(st.get("repo_hooks") or {}).get(t.get("repo") or "", {})`.
+Gemessen: derselbe Ordner in Kleinschreibung → **MISS** → Deploy läuft
+still nicht. Der Code kennt das bereits: `henry_broker.py:502-517` wurde am
+2026-08-27 nachgebessert, damit es wenigstens *laut* fehlschlägt
+(*„oder der Repo-Pfad passt nicht exakt — kein Deploy ausgelöst"*). Der rohe
+String-Schlüssel blieb.
+
+**(4) Ein Unterordner gilt als eigenes Repo.** `is_git_repo` fragt nur
+`git rev-parse --git-dir` (`gitutil.py:76-83`), was aus **jedem** Unterordner
+gelingt. Gemessen: `ops/` und `cells/engineer/` bestehen die Intake-Prüfung bei
+`routes_tracks.py:214`.
+Folge, berechnet aus `_worktree_for` (`gitutil.py:283-288`): der Karten-Worktree
+landet dann **innerhalb** des Repos (`swarmdeck/helmdeck-worktrees/…`), und
+`helmdeck-worktrees` steht **nicht** in `.gitignore` (gemessen) — ein
+vollständiger zweiter Checkout taucht als untracked im Hauptbaum auf, den jedes
+`git add -A` einsammelt.
+
+**(5) Sieben verschiedene Normalisierungen koexistieren.** Roh
+(`repo_hooks`, `worktrees.py:81`), `abspath` (`dispatch.py:50`),
+`normcase+abspath` (`gxp.py:91-97`), `normcase` ohne abspath
+(`pm_resolve.py:101`), `realpath`-Hash (`gitutil.py:219`),
+`normcase+realpath` (Dev-Tools). GxP und `repo_hooks` sind sich deshalb
+uneins darüber, ob zwei Pfade dasselbe Repo sind.
+
+**(6) Ein Umbenennen des Ordners ändert die Identität.** Gemessen:
+`_repo_hash` vorher `2392xg1q`, nachher `071zl0yz`. Alte Worktrees sind danach
+verwaist und werden vom Sweeper still übersprungen (`worktrees.py:94`).
+
+**(7) Es gibt nirgends einen Uniqueness-Constraint.** Kein Repo-Register, keine
+Kanonisierung, kein Dedup. Der einzige `UNIQUE INDEX` im Schema betrifft
+`events(id)`.
+
+## 10.3 Die gute Nachricht: die kanonische Git-Identität existiert schon
+
+`_repo_hash` (`gitutil.py:219-242`) rechnet
+`realpath(dirname(git-common-dir))` → 8 Zeichen base36. Gemessen: **Worktree,
+Haupt-Repo, Kleinschreibung, Schluss-Separator und Unterordner ergeben alle
+denselben Hash** (`1mmjd8p4`).
+
+Das ist genau die gesuchte Eigenschaft „git unique" — sie ist bereits gebaut und
+wird heute **ausschließlich zur Benennung eines Verzeichnisses** benutzt: nie
+als Nachschlage-Schlüssel, nie auf einer Karte gespeichert, nie vom Hook-, GxP-
+oder PM-Pfad konsultiert.
+
+> **Kernempfehlung:** `_repo_hash` vom Verzeichnisnamen zum **Identitätsschlüssel**
+> befördern. `repo_profiles`, `repo_hooks`, `pm.repos` und der GxP-Scope werden
+> über die Repo-ID gekoppelt, nicht über den Pfad-String. Das schließt die
+> Brüche (2), (3) und (5) in einem Zug — mit vorhandenem, erprobtem Code.
+> Bruch (6) bleibt und braucht eine bewusste Entscheidung (F9).
+
+## 10.4 Warum „ein Ordner = ein Repo = ein Projekt" nicht das Ziel sein sollte
+
+Im Monorepo ist die Gleichsetzung **absichtlich falsch**, und zwar bei allen
+untersuchten Systemen:
+
+- **Vercel:** *„You'll create a new project for each directory in your monorepo
+  that you wish to import"* — N Projekte über EINEM Git-Repo, jeweils
+  abgegrenzt durch die Einstellung **Root Directory**.
+- **Nx:** ein *project* wird durch `project.json` bzw. einen `nx`-Eintrag in
+  `package.json` markiert — nicht durch den Ordner.
+- **Bazel:** ein *package* ist sein Verzeichnis **minus** aller Unterordner mit
+  eigener `BUILD`-Datei. Die Ordnergrenze ist ausdrücklich **nicht** die
+  Identitätsgrenze.
+- **Backstage:** trennt sogar dreifach — Entity, `managed-by-location`
+  (wo die Definition liegt) und `source-location` (wo der Code liegt).
+
+Und der Zusammenhang, der die Entscheidung trägt: **genau die Systeme, die
+Projekt- und Repo-Identität verschmelzen (GitHub-/GitLab-Template-Repos), sind
+auch die, die ein Template nicht erneut anwenden und keine Abweichung erkennen
+können.** Wer später „Template aktualisieren" oder „weicht vom Template ab"
+will, braucht einen eigenen Projekt-Datensatz, in dem die Bindung steht.
+
+## 10.5 Vorgeschlagenes Identitätsmodell (drei Ebenen, Standardbegriffe)
+
+Statt einer Gleichung eine **Hierarchie** — jede Ebene für sich eindeutig:
+
+| Ebene | Standardbegriff | Eindeutig durch | Kardinalität |
+|---|---|---|---|
+| 1 | **Repository** | `_repo_hash` = `realpath(dirname(git-common-dir))` | 1 pro Git-Repo, stabil über Worktrees |
+| 2 | **Project** (Vercel-Modell) | `repo_id` + **Root Directory** (relativ) | N pro Repository (Monorepo), Default `.` = 1 |
+| 3 | **Delivery/Billing-Project** | vorhandenes `projects.py` | N:M zu Ebene 2 |
+
+Der **Template-Datensatz hängt an Ebene 2** — dort, wo auch Vercel sein
+Framework-Preset ablegt. Der Schlüssel für `repo_profiles` wird damit
+`"<repo_id>:<root_dir>"` statt eines rohen Pfades.
+
+Erzwungene Eindeutigkeit („keine Überschneidungen" — die Owner-Anforderung, jetzt
+prüfbar):
+- Zwei Ebene-2-Projekte mit gleichem `(repo_id, root_dir)` → beim Anlegen
+  **abgelehnt**, nicht überschrieben.
+- Ein Ebene-2-Projekt, dessen `root_dir` ein anderes enthält → **Warnung**
+  („verschachtelte Projekte"), zugelassen nur mit Bestätigung (Bazel-Regel:
+  das äußere endet, wo das innere beginnt).
+- Ein Ordner, der ein *Worktree* dieses Repos ist → beim Import erkannt und
+  auf das Haupt-Repo umgebogen, statt als neues Projekt angelegt zu werden.
+  (Heute passiert das Gegenteil — Bruch (4).)
+
+---
+
+# 11. Onboarding-UX
+
+Owner-Formulierung: *„User macht App oder wählt neues project/folder aus. Dann
+basierend auf folder Vorschlag wie template aussieht."*
+
+## 11.1 Dieser Instinkt ist durch die Recherche belegt
+
+**Erkennen und vorschlagen** schlägt **blind auswählen lassen** — kein
+untersuchtes System fragt blind, wenn Erkennung möglich ist:
+
+- **Vercel:** *„Vercel automatically detects your project's framework and sets
+  the best settings for you"* — gesetzt werden Framework-Preset, Build Command,
+  Output Directory, Install Command, Dev Command.
+- **Netlify:** füllt Build-Felder automatisch, *„You can update the fields
+  afterwards as needed."*
+- **GitLab:** rät sogar die Umgebungsstufe aus dem Namen (`prod|live` →
+  production) und lässt sie überschreiben.
+- **Nx:** leitet Projekte aus vorhandener Tooling-Konfiguration ab, mit einer
+  expliziten Vorrang-Leiter.
+
+Der Gegenpol ist **Azure DevOps**, das den Prozess bei Anlage *auswählen* lässt
+und dann hart bindet: *„You can't change a project's base process after the
+project is created."* Das ist die Erfahrung, die wir **nicht** wiederholen.
+
+## 11.2 Der Ablauf (fünf Schritte)
+
+```
+1 Ordner wählen  →  2 Identität prüfen  →  3 Erkennen & vorschlagen
+                                                    ↓
+                    5 Anwenden + Antwortdatei  ←  4 Prüfen & ändern
+```
+
+**Schritt 1 — Ordner wählen.** Zwei Einstiege, ein Dialog: „App/Projekt neu
+anlegen" (legt an; `init_repo` in `gitutil.py:86` existiert bereits) oder
+„vorhandenen Ordner aufnehmen".
+
+**Schritt 2 — Identität prüfen (neu, verhindert die Brüche aus §10).** Bevor
+irgendetwas vorgeschlagen wird, wird aufgelöst und *dem Nutzer gezeigt*:
+Repository (Hash + Haupt-Checkout-Pfad), Root Directory, und die Antwort auf
+„kennen wir das schon?". Vier Fälle mit klarer Ansage statt stiller Annahme:
+
+| Fall | Ansage |
+|---|---|
+| unbekanntes Repo | „Neues Repository." → weiter |
+| bereits aufgenommen | „Kennen wir schon als *X*." → öffnen statt anlegen |
+| Unterordner eines bekannten Repos | „Das ist ein Unterordner von *X*. Als eigenes Projekt im Monorepo aufnehmen?" |
+| Worktree eines bekannten Repos | „Das ist ein Arbeitsbaum von *X*." → auf Haupt-Repo umbiegen |
+
+**Schritt 3 — Erkennen und vorschlagen.** Aus dem Ordnerinhalt:
+
+| Signal im Ordner | Vorschlag | Angezeigte Begründung |
+|---|---|---|
+| `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml` | `software-dev` | „Build-Datei gefunden: package.json" |
+| `.github/workflows/`, `Dockerfile`, vorhandene `helmdeck.gate` | `software-dev` | „CI-Konfiguration gefunden" |
+| überwiegend `.md`/`.docx`/`.pdf`, kein Build-Manifest | `docs-process` | „Fast nur Dokumente, keine Build-Datei" |
+| Workspace-Marker (`pnpm-workspace.yaml`, `nx.json`, `turbo.json`, `workspaces`) | `software-dev` **+ Monorepo-Hinweis** | „Monorepo erkannt — eigenes Projekt je Paket?" |
+| nichts davon | **kein Vorschlag** | siehe unten |
+
+**Der Fehlschlag-Fall wird von Vercel wörtlich übernommen:** kein Treffer →
+Preset „Sonstiges", und die Überschreib-Schalter sind **von vornherein
+aufgeklappt**, statt den Nutzer eine falsche Vorauswahl korrigieren zu lassen.
+
+**Schritt 4 — Prüfen und ändern (der eigentliche Bildschirm).** Der Vorschlag
+wird **vollständig und begründet** gezeigt, bevor irgendetwas geschrieben wird:
+die Linie mit ihren Stationen (§4), je Station der gesetzte Key und sein Wert,
+je Zeile die Erkennungsbegründung, und jede Zeile änderbar. Fußzeile: „Diese
+Werte werden geschrieben" mit genau den Keys aus §5.2/§5.3 — nichts geschieht
+unangekündigt.
+
+**Schritt 5 — Anwenden und festhalten.** Geschrieben werden die Keys **plus**
+die Antwortdatei nach Copier-Vorbild: welches Template, welche Version, welche
+Antworten, wer und wann. Ohne diesen Datensatz sind „Template aktualisieren"
+und „weicht ab" später nicht berechenbar, sondern geraten — genau der
+Unterschied zwischen Cookiecutter (kann es nicht) und Copier (kann es).
+
+## 11.3 Was ein Template vorlegt — die vier Kategorien des Owners
+
+Der Owner nennt „states, skills, gates, policies". Ehrlicher Stand je Kategorie:
+
+| Kategorie | Heute abbildbar? | Wie |
+|---|---|---|
+| **States** | teilweise | Lanes sind fix (4, `sessions.py:121`), aber `policy.lane_labels` benennt sie um. Andere *Zustände* pro Repo → F10 |
+| **Skills** | **ja, überraschend gut** | Skills sind Dateien in `.claude/skills/` (verifiziert). Ein Template kann sie ins Repo legen — kein neuer Mechanismus, keine Registry nötig |
+| **Gates** | teilweise | Gate-Kommando = Datei `helmdeck.gate` (setzbar). Gate *abschalten* = kein Key (F2) |
+| **Policies** | **ja** | `policy.*` ist vollständig über `configure` erreichbar (§2.5) |
+
+Skills sind hier der günstigste Gewinn: weil sie schon repo-lokale Dateien sind,
+sind sie **von Natur aus pro Repo** — genau die Eigenschaft, die Cells fehlt (§2.2).
+
+---
+
+# 12. Kanban-Mapping
+
+Owner: *„Ganz wichtig wie wird es zu kanban gemappt. User kann review und ändern."*
+
+## 12.1 Die Regel, die das Problem löst (Jira-Modell)
+
+Jira trennt sauber, und HelmDeck hat dieselbe Trennung bereits — nur unbenannt:
+
+> *„a column describes the current status of a work item"* — eine **Spalte**
+> bildet **eine oder mehrere** Workflow-**Status** ab.
+
+HelmDeck hat exakt diese zwei Achsen:
+- **`lane`** — 4 Werte, `backlog|working|review|done` (`sessions.py:121`) = die **Spalten**
+- **`status`** — 7 Werte, `queued|running|gating|needs_you|bounced|submitted|accepted` = die **Status**
+
+Eine Karte kann `lane=review, status=bounced` (rotes Gate) oder
+`lane=review, status=submitted` (grün, wartet auf Abnahme) sein — **eine
+Spalte, zwei Status**. Das ist bereits das Jira-Modell.
+
+**Damit ist die Antwort auf „wie mappt die U-Bahn auf Kanban" strukturell und
+nicht kosmetisch:** Stationen sind **keine** Spalten. Drei Stationen sind
+Haltepunkte (= Spalten), zwei sind Übergänge (= Gates auf der Kante).
+AWS CodePipeline benutzt dafür dieselben Wörter: **Stage**, **Transition**, und
+Bedingungen heißen dort ausdrücklich *„also referred to as **gates**"*.
+
+## 12.2 Die Mapping-Tabelle
+
+| U-Bahn-Station | Art | Kanban-Spalte | `lane` | `status` in dieser Spalte |
+|---|---|---|---|---|
+| **Karte** | Haltepunkt | Backlog | `backlog` | `queued` |
+| **Arbeit** | Haltepunkt | In Arbeit | `working` | `running`, `needs_you` |
+| **Gate** | **Übergang** | *(keine Spalte — Kante Arbeit→Review)* | — | `gating`, bei Rot `bounced` |
+| **Abnahme** | Haltepunkt | Review | `review` | `submitted`, `bounced` |
+| **Deploy** | **Übergang** | *(keine Spalte — nach dem Merge)* | — | `accepted` |
+| — | Endpunkt | Fertig | `done` | `accepted` |
+
+Fünf Stationen, vier Spalten — weil Gate und Deploy Übergänge sind, an denen
+keine Karte *wohnt*. Sie werden auf dem Board als Zustand der **Kante**
+gerendert (Gate läuft / Gate rot / Deploy läuft / Deploy rot), nicht als Spalte.
+
+## 12.3 Zwei Ansichten, eine Wahrheit
+
+Die U-Bahn-Linie und das Kanban-Board sind **Projektionen desselben Paares
+`(lane, status)`** — nicht zwei Datenmodelle:
+
+- **Board** beantwortet „wo liegt welche Arbeit gerade?" (Spalten, WIP-Limit).
+- **Linie** beantwortet „welchen Weg nimmt Arbeit in diesem Repo?" (inkl. der
+  Übergänge, die auf dem Board unsichtbar sind).
+
+Dass beide aus einer Quelle kommen, ist bereits Hausregel: `/loop/map` erzwingt
+genau eine Definition, und `ops/tests/test_harness_layer.py:240,351` prüft sie
+in beide Richtungen gegen den Client-Vertrag. Die Linie darf **keine** zweite
+Zustandsliste bekommen.
+
+## 12.4 Was der Nutzer ändern darf — und was nicht
+
+| Was | Änderbar? | Wie |
+|---|---|---|
+| Spalten**namen** | **ja** | `policy.lane_labels` — existiert bereits, ist per Chat erreichbar |
+| WIP-Limit je Spalte | teilweise | `capacity.wip_limit` ist heute **global**, nicht pro Spalte (Jira: *column constraint*) → F11 |
+| Reihenfolge / Anzahl der Spalten | **nein** | 4 Lanes sind fix; `board.tsx:27` hat die Liste zusätzlich hartkodiert |
+| Ob Gate/Deploy laufen | ja/teilweise | Deploy heute (§2.4), Gate erst nach F2 |
+| Abnahme automatisch | **ja** | `policy.auto_accept_green` |
+
+**Konkreter Umbau, den „User kann review und ändern" verlangt:**
+`surfaces/app/src/ui/board.tsx:27` hält `const LANES = [...] as const` — eine
+zweite, hartkodierte Kopie der Lane-Liste im Client. Solange die dort steht,
+kann keine Template-Entscheidung das Board beeinflussen. Sie muss aus
+`/loop/map` kommen, wie es der Loopmap-Screen schon tut. Das ist derselbe
+Fehler, den `settings-ia-redesign` für die Cell-Liste beschreibt (keine
+hartkodierten Listen im Client) — und dieselbe Lösung.
+
+---
+
+# 13. Begriffslexikon (Standardbegriffe)
+
+Owner-Vorgabe: *„Benutzt standard Begriffe."* Verbindlich für Code, Keys und
+Prosa. Englisch ist die Schreibweise in Keys/Enums, Deutsch die in der UI.
+
+| Begriff (EN, verbindlich) | Deutsch (UI) | Bedeutung hier | Quelle des Standards |
+|---|---|---|---|
+| **Repository** | Repository | Ebene 1, `_repo_hash` | Git |
+| **Project** | Projekt | Ebene 2, `repo_id` + Root Directory | Vercel, Nx |
+| **Root Directory** | Root Directory | Unterordner, der ein Projekt abgrenzt | Vercel |
+| **Workspace** | Workspace | Repo-Container mehrerer Pakete | pnpm, Bazel |
+| **Template** | Vorlage / Template | Konfigurationsbündel bei Anlage | Backstage, Jira |
+| **Answers file** | Antwortdatei | festgehaltene Template-Wahl + Antworten | Copier |
+| **Drift** | Abweichung | Ist ≠ Template | cruft |
+| **Workflow / state model** | Statusmodell | erlaubte Zustände | Azure DevOps |
+| **State / Status** | Status | `queued`, `running`, … | Jira, Azure DevOps |
+| **Column** | Spalte | Board-Spalte = Projektion mehrerer Status | Jira |
+| **WIP limit** (Jira: *column constraint*) | WIP-Limit | Kappung gleichzeitiger Arbeit | Kanban Guide, Jira |
+| **Pull system** | Pull-System | Start erst bei freier Kapazität | Kanban Guide |
+| **Definition of Done** | Definition of Done | Fertig-Kriterien | Scrum Guide |
+| **Quality gate** | Quality Gate | Bedingungsmenge, die Freigabe entscheidet | SonarQube |
+| **Stage / Transition** | Stage / Übergang | Pipeline-Abschnitt bzw. Kante | GitLab, AWS |
+| **Environment** | Umgebung | `development`/`staging`/`production` | GitLab |
+| **Promotion** | Promotion | Release eine Umgebung höher | Octopus Deploy |
+| **Trunk / main** | Trunk | Integrationszweig | Trunk-Based Development |
+
+**Drei Fallen, die das PRD bewusst vermeidet:**
+1. **„Lead time" vs. „cycle time"** sind zwischen Kanban Guide, Kanban
+   University und DORA **widersprüchlich** belegt. Wenn eines der Wörter
+   auftaucht, muss die Definition danebenstehen.
+2. **„Definition of Ready"** steht **nicht** im Scrum Guide — es ist eine
+   Community-Konvention (Agile Alliance) und darf nicht als Standard zitiert
+   werden.
+3. Es gibt **keine** kanonische Spaltennamen-Liste. Jira-Default für Kanban ist
+   *Backlog / Selected for Development / In Progress / Done*. HelmDecks
+   bestehende Namen bleiben — sie sind über `policy.lane_labels` ohnehin frei.
+
+---
+
+# 14. Weitere offene Fragen aus der UX-Prüfung
+
+**F8 — Wird die Repo-Identität auf `_repo_hash` umgestellt?** *(blockiert §10.5)*
+Betrifft `repo_hooks`, `pm.repos`, GxP-Scope und den neuen `repo_profiles`-Key.
+Migration nötig: bestehende pfadbasierte Einträge einmalig auflösen.
+*Empfehlung:* **ja** — es schließt drei gemessene Brüche mit vorhandenem Code.
+Migration als eigener, rückrollbarer Schritt mit Vorher/Nachher-Liste.
+
+**F9 — Was passiert, wenn ein Repo verschoben/umbenannt wird?** *(gemessen: Identität ändert sich)*
+(a) hinnehmen und beim nächsten Öffnen „Repo neu aufnehmen?" fragen ·
+(b) Identität in einer Datei **im** Repo ablegen (`.helmdeck/repo-id`), dann
+überlebt sie den Umzug — kostet aber eine Datei im Kundenrepo ·
+(c) Reparaturweg „Repo umgezogen: alten Eintrag übernehmen?".
+*Empfehlung:* **(a) + (c)** — keine Datei in fremden Repos, aber ein
+angebotener Reparaturweg statt stiller Verwaisung.
+
+**F10 — Dürfen Templates das Statusmodell ändern, oder nur die Beschriftung?**
+Heute: 4 Lanes fix, `board.tsx:27` zusätzlich hartkodiert. Azure DevOps zeigt,
+wie teuer ein pro-Projekt änderbares Statusmodell ist (nachträglich gar nicht
+mehr änderbar).
+*Empfehlung:* **nur Beschriftung + Stationen an/aus.** Lanes bleiben 4. Das
+deckt beide Templates ab und hält eine Wahrheit im System.
+
+**F11 — WIP-Limit pro Spalte oder global?**
+`capacity.wip_limit` ist global; Kanban-Standard (Jira *column constraint*) ist
+pro Spalte.
+*Empfehlung:* **vertagen.** Global reicht für beide Templates; pro Spalte erst
+bei echtem Bedarf.
+
+**F12 — Bindet die Antwortdatei, oder dokumentiert sie nur?**
+Verschärft F3 mit dem Recherchebefund: Jira bietet **beides als
+Produktentscheidung** an (team-managed = lokal, company-managed = Schemata
+propagieren), Copier kann per Drei-Wege-Merge aktualisieren.
+*Empfehlung:* Phase 1 **nur dokumentieren** (Antwortdatei + Drift-Anzeige),
+`update` später — aber die Datei **von Anfang an schreiben**, sonst ist die
+Historie unwiederbringlich weg.
+
+> **Nicht-Frage, sondern Auftrag:** die Projekt-ID-Kollision (§10.2, Bruch 1)
+> ist ein Datenverlust-Bug mit falscher Abrechnung als Folge. Sie gehört in eine
+> eigene Karte, unabhängig von diesem Feature.
+
+---
+
+# 15. Quellenregister
+
+Alles unten wurde in diesem Worktree gegen `96fa973` gelesen. Externe Quellen
+(§10.4, §11.1, §12.1, §13) sind Primärdokumentation der genannten Produkte.
 
 | Thema | Datei:Zeile |
 |---|---|
@@ -630,3 +1038,10 @@ Alles unten wurde in diesem Worktree gegen `96fa973` gelesen.
 | `direct_task` ohne Gate (Schuld) | `cells/engineer/dispatch.py:334`, `:348-352` |
 | Full-dynamism-Dekret | `ARCHITECTURE.md:28-52`; `spine/registry/debt.py` (`full-dynamism-decree`) |
 | Schwesterkarte Settings-IA | `ops/docs/backlog/settings-ia-redesign/README.md` |
+| **Projekt-ID + Ablage (Kollision)** | `spine/ops/projects.py:21-23`, `:41`, `:42-47`; `spine/storage/db.py:250-254` |
+| **Kanonische Git-Identität** | `spine/git/gitutil.py:219-242` (`_repo_hash`), `:76-83` (`is_git_repo`), `:283-288` (`_worktree_for`) |
+| **Die sieben Normalisierungen** | `dispatch.py:50`; `lanemachine.py:648`; `gxp.py:91-97`; `pm_resolve.py:101`; `worktrees.py:81`, `:94` |
+| **Deploy-Hook-Mismatch, bereits bekannt** | `cells/copilot/henry_broker.py:502-517` |
+| **Kanban: Lane- und Status-Achse** | `cells/engineer/sessions.py:121`; `surfaces/app/src/ui/board.tsx:27`, `:48-52` |
+| **Skills sind repo-lokale Dateien** | `.claude/skills/` (verifiziert) |
+| Externe Standards (§10.4, §11.1, §12.1, §13) | Vercel · Nx · Bazel · Backstage · Copier/cruft · Jira · Azure DevOps · Kanban Guide · Scrum Guide · SonarQube · GitLab · AWS CodePipeline · Octopus |
