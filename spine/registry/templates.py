@@ -62,7 +62,8 @@ _DEFAULTS = {
     "software-dev": {
         "id": "software-dev",
         "label": "Software-Entwicklung",
-        "who": "Code-Repos. Alles laeuft, nichts landet ungeprueft.",
+        "who": "Code-Repos. Alles läuft, nichts landet ungeprüft.",
+        "summary": "Worktree je Karte · Gate vor der Review · Deploy nach deiner Abnahme",
         "stations": ["backlog", "working", "gate", "review", "deploy"],
         "card_kind": "new_track",
         "deploy_hook": "",
@@ -76,6 +77,7 @@ _DEFAULTS = {
         "id": "documents",
         "label": "Dokumente & Inhalte",
         "who": "Texte, Angebote, Freigaben. Kein Build, leichte Review.",
+        "summary": "Direkt im Ordner · Gate läuft leer · kein Deploy · Abnahme bleibt Pflicht",
         # no `deploy`: nothing to ship. The gate stays in the list because it is
         # law - in a text repo it finds nothing to compile and reports PASS
         # (run_gate.py:68-70), which the map labels honestly instead of hiding.
@@ -84,8 +86,8 @@ _DEFAULTS = {
         "deploy_hook": "",
         "settings": {"policy.auto_accept_green": False,
                      "policy.auto_dispatch_modes": ["do", "prepare"]},
-        "notes": {"gate": "Laeuft leer - in einem Text-Repo gibt es nichts zu "
-                          "kompilieren, der Gate meldet PASS.",
+        "notes": {"gate": "Läuft leer - hier gibt es nichts zu kompilieren, "
+                          "der Gate meldet PASS.",
                   "working": "Direkt im Ordner, ohne Worktree."},
         "body": ("Direkt im Ordner statt im Worktree, kein Deploy. Das Gate laeuft "
                  "leer durch - deine Abnahme bleibt Pflicht."),
@@ -96,7 +98,13 @@ _DEFAULTS = {
 # the owner added himself should not silently outrank the two shipped ones.
 _ORDER = ["software-dev", "documents"]
 
-_SCALARS = ("id", "label", "who", "card_kind", "deploy_hook")
+# `summary` is what the PICKER shows. It exists because the first build rendered
+# `body` on the choice card and the screenshot settled it: the whole markdown
+# file, asterisks and backticks and all, buried the pipeline three screens down -
+# on the one screen whose entire point is *sehen statt konfigurieren*. The prose
+# body is reference material for whoever edits the template; the owner choosing a
+# repo type needs one line.
+_SCALARS = ("id", "label", "who", "summary", "card_kind", "deploy_hook")
 
 
 def _coerce(v):

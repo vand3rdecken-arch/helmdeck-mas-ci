@@ -140,6 +140,13 @@ def argb(spec):
 LANE_TOKEN = {"backlog": "txtTertiary", "working": "ai", "review": "human", "done": "ok"}
 STATUS_TOKEN = {
     "queued": "txtTertiary", "running": "ai", "needs_you": "warn",
+    # `gating` is a REAL status the lane machine publishes while the gate
+    # subprocess runs (lanemachine.py:905) and the app already has a label for
+    # it - but it had no colour, so it fell through to the grey of `queued`.
+    # A card being actively checked looked exactly like a card nobody had
+    # touched. accent2 is the gate's own colour on the pipeline map, so the
+    # dot and the station now agree.
+    "gating": "accent2",
     "submitted": "human", "accepted": "ok", "bounced": "danger",
     "done": "ok", "failed": "danger",
 }
