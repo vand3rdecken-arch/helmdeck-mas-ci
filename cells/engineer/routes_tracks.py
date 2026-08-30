@@ -200,15 +200,12 @@ def tracks_new_post(self, user, body):
     repo = body.get("repo") or events.settings().get("default_repo")
     branch = body.get("branch"); task = body.get("task")
     if task and not branch:   # preset flow: task alone is enough
-        # ASCII-ONLY slug. isalnum() alone is Unicode-true, so a task
-        # like "Dashboard zu überfüllt" put umlauts into the git ref;
-        # on Windows (cp1252 consoles, mojibake in tracks.json) that
-        # produced a branch git never created - the card then hit
-        # WinError 267 (worktree cwd invalid) on every steer.
-        _de = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
-        _t = task.lower().translate(_de)
-        branch = "req-" + "".join(
-            ch if (ch.isascii() and ch.isalnum()) else "-" for ch in _t)[:24]
+        # Only the human STEM. new_track owns the actual branch name
+        # (trackstore._card_branch): it de-umlauts, slugs ASCII-only - an
+        # umlaut in a git ref cost every steer a WinError 267 - appends the
+        # card id, and proves the result free. Deriving it here instead is how
+        # two cards with the same opening sentence ended up sharing a worktree.
+        branch = "req-" + task
     if not (repo and branch and task):
         return self._send(400, json.dumps({"error": "task required (+ repo unless default_repo is set in settings)"}))
     if not sessions.is_git_repo(repo):
@@ -243,8 +240,14 @@ def tracks_new_post(self, user, body):
                            description=body.get("description", ""),
                            billing=body.get("billing", "fixed"), rate=body.get("rate"))
     from spine.http import server
-    server._bg("track:new:" + branch, go)
-    return self._send(200, json.dumps({"started": branch}))
+    # `branch` is only the human STEM here (new_track derives the real name and
+    # the card id on the background thread, so neither is knowable yet). Echo a
+    # short label, not the stem: for the preset flow the stem is the whole task
+    # text, and it would otherwise land verbatim in the response AND in the
+    # busy list that /control/state publishes.
+    label = (task or branch)[:60]
+    server._bg("track:new:" + label, go)
+    return self._send(200, json.dumps({"started": label}))
 
 
 def tracks_archive_post(self, user, body, tid):

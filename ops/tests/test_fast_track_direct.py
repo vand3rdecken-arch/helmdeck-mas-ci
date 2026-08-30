@@ -124,7 +124,10 @@ check("direct=True (serialized per tree)", t.get("direct") is True)
 check("workplace IS the live repo tree", os.path.normcase(t.get("worktree"))
       == os.path.normcase(os.path.abspath(repo)))
 check("original branch name preserved (never checked out)",
-      t.get("branch") == "my-feature-branch")
+      # the card keeps ITS OWN branch (stem + card id) rather than being
+      # rewritten to a "(direct)"/"(machine)" marker; new_track appends the
+      # card-id token to every card branch since the 2026-08-30 collision fix.
+      t.get("branch", "").startswith("my-feature-branch-"))
 wt_dir = os.path.join(repo, ".git", "worktrees")
 check("NO git worktree was ever created",
       not os.path.isdir(wt_dir) or not os.listdir(wt_dir))

@@ -42,6 +42,26 @@ def git(repo, *a):
     return r.stdout.strip()
 
 
+def device_work(clone, tmp, card, fname, label):
+    """What the DEVICE does, in the order hd_worker actually does it: read the
+    branch NAME OFF THE CARD (the daemon derives it - the filer only supplies a
+    stem), create it locally, commit, bundle it. Returns the bundle path.
+
+    Building a bundle from a self-chosen ref BEFORE filing the card - as these
+    fixtures used to - is a shape the worker never produces, and it silently
+    assumed the card's branch equals the filer's string."""
+    br = card["branch"]
+    git(clone, "checkout", "-q", "-b", br)
+    with open(os.path.join(clone, fname), "w") as f:
+        f.write(label + "\n")
+    git(clone, "add", "-A")
+    git(clone, "commit", "-qm", label)
+    path = os.path.join(tmp, fname + ".bundle")
+    subprocess.run(["git", "-C", clone, "bundle", "create", path, br],
+                   capture_output=True, text=True)
+    return path
+
+
 class FakeH:
     def __init__(self):
         self.code = None
@@ -121,7 +141,19 @@ def main():
 
     remote_clone = os.path.join(tmp, "alices-own-pc-clone")
     git(tmp, "clone", "-q", central, remote_clone)
-    branch = "device/feature-x"
+    # -- 3: the dispatch flow -------------------------------------------------
+    # Order matters and mirrors hd_worker: the DAEMON names the branch (new_track
+    # derives it from the card id, so the filer's string is a stem, not a ref),
+    # the device reads that name off the queue (hd_worker.py: branch =
+    # task["branch"]), creates it locally and bundles it. Building the bundle
+    # from a self-chosen ref BEFORE filing - as this test used to - is a shape
+    # the worker never produces, and it hid whether the two names agree.
+    print("\ndispatch flow: new_remote_task -> claim -> submit")
+    t = dispatch.new_remote_task(central, "device/feature-x", "feature X", did, actor="alice")
+    branch = t["branch"]
+    ok(branch.startswith("device-feature-x-"),
+       "the card carries a derived, per-card branch (got %s)" % branch)
+
     git(remote_clone, "checkout", "-qb", branch)
     open(os.path.join(remote_clone, "feature.txt"), "w").write("work done on alice's PC\n")
     git(remote_clone, "add", "-A")
@@ -132,9 +164,6 @@ def main():
                        capture_output=True, text=True)
     ok(r.returncode == 0 and os.path.exists(bundle_path), "worker produced a real git bundle")
 
-    # -- 3: the dispatch flow -------------------------------------------------
-    print("\ndispatch flow: new_remote_task -> claim -> submit")
-    t = dispatch.new_remote_task(central, branch, "feature X", did, actor="alice")
     ok(t["lane"] == "backlog", "filed card stays in backlog (nothing to run locally yet)")
     ok(t["exec_site"] == "local:" + did, "exec_site records which device owns it")
     ok(t.get("machine") is not True, "NEVER machine=True - must ride the normal gated path")
@@ -195,16 +224,8 @@ def main():
     h = call(routes_devices.devices_revoke_post, BOB, {}, did2)
     ok(h.code == 404, "bob cannot revoke alice's device (not found, not 403 - no existence leak)")
 
-    branch2 = "device/feature-y"
-    git(remote_clone, "checkout", "-q", "-b", branch2)
-    open(os.path.join(remote_clone, "feature2.txt"), "w").write("second device task\n")
-    git(remote_clone, "add", "-A")
-    git(remote_clone, "commit", "-qm", "second feature")
-    bundle2 = os.path.join(tmp, "submission2.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle2, "device/feature-y"],
-                   capture_output=True, text=True)
-
     t2 = dispatch.new_remote_task(central, "device/feature-y", "feature Y", did2, actor="alice")
+    bundle2 = device_work(remote_clone, tmp, t2, "feature2.txt", "second feature")
     h = call(routes_devices.devices_queue_get, ALICE, did2)
     ok(h.code == 200 and h.body and h.body["id"] == t2["id"],
        "GET /devices/<id>/queue returns the claimed card")
@@ -234,14 +255,8 @@ def main():
 
     # -- 6: idempotent submit (a lost HTTP response after a real landing) ----
     print("\nsubmit_remote_result: idempotent on a branch already landed")
-    branch3 = "device/feature-z"
-    git(remote_clone, "checkout", "-q", "-b", branch3)
-    open(os.path.join(remote_clone, "feature3.txt"), "w").write("idempotency test\n")
-    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "feature z")
-    bundle3 = os.path.join(tmp, "submission3.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle3, branch3],
-                   capture_output=True, text=True)
-    t3 = dispatch.new_remote_task(central, branch3, "feature Z", did, actor="alice")
+    t3 = dispatch.new_remote_task(central, "device/feature-z", "feature Z", did, actor="alice")
+    bundle3 = device_work(remote_clone, tmp, t3, "feature3.txt", "feature z")
     dispatch.claim_remote_task(did)
     r1 = dispatch.submit_remote_result(t3["id"], bundle3, actor="alice", device_id=did)
     ok(r1.get("lane") in ("review", "done"), "first submit lands normally")
@@ -253,14 +268,8 @@ def main():
 
     # -- 7: device-match on submit (device X may not submit device Y's card) -
     print("\nsubmit_remote_result: device-match")
-    branch4 = "device/feature-w"
-    git(remote_clone, "checkout", "-q", "-b", branch4)
-    open(os.path.join(remote_clone, "feature4.txt"), "w").write("device match test\n")
-    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "feature w")
-    bundle4 = os.path.join(tmp, "submission4.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle4, branch4],
-                   capture_output=True, text=True)
-    t4 = dispatch.new_remote_task(central, branch4, "feature W", did, actor="alice")
+    t4 = dispatch.new_remote_task(central, "device/feature-w", "feature W", did, actor="alice")
+    bundle4 = device_work(remote_clone, tmp, t4, "feature4.txt", "feature w")
     dispatch.claim_remote_task(did)
     try:
         dispatch.submit_remote_result(t4["id"], bundle4, actor="alice", device_id=rec_ext["id"])
@@ -353,14 +362,9 @@ def main():
     meta = {"usage": {"input_tokens": 2000, "output_tokens": 1000}, "cost_usd": 0.10,
            "models": ["claude-sonnet-5"]}
 
-    branch7 = "device/feature-econ-ext"
-    git(remote_clone, "checkout", "-q", "-b", branch7)
-    open(os.path.join(remote_clone, "econ_ext.txt"), "w").write("x\n")
-    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "econ ext")
-    bundle7 = os.path.join(tmp, "s7.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle7, branch7],
-                   capture_output=True, text=True)
-    t7 = dispatch.new_remote_task(central, branch7, "econ ext", rec_ext["id"], actor="alice")
+    t7 = dispatch.new_remote_task(central, "device/feature-econ-ext", "econ ext",
+                                  rec_ext["id"], actor="alice")
+    bundle7 = device_work(remote_clone, tmp, t7, "econ_ext.txt", "econ ext")
     dispatch.claim_remote_task(rec_ext["id"])
     r7 = dispatch.submit_remote_result(t7["id"], bundle7, actor="alice",
                                        device_id=rec_ext["id"], usage_meta=meta)
@@ -371,14 +375,9 @@ def main():
     ok(turn_ev7 and turn_ev7.get("external") is True,
        "the turn event for an external-scope device is tagged external=True")
 
-    branch8 = "device/feature-econ-shared"
-    git(remote_clone, "checkout", "-q", "-b", branch8)
-    open(os.path.join(remote_clone, "econ_shared.txt"), "w").write("x\n")
-    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "econ shared")
-    bundle8 = os.path.join(tmp, "s8.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle8, branch8],
-                   capture_output=True, text=True)
-    t8 = dispatch.new_remote_task(central, branch8, "econ shared", rec_shared["id"], actor="alice")
+    t8 = dispatch.new_remote_task(central, "device/feature-econ-shared", "econ shared",
+                                  rec_shared["id"], actor="alice")
+    bundle8 = device_work(remote_clone, tmp, t8, "econ_shared.txt", "econ shared")
     dispatch.claim_remote_task(rec_shared["id"])
     r8 = dispatch.submit_remote_result(t8["id"], bundle8, actor="alice",
                                        device_id=rec_shared["id"], usage_meta=meta)
@@ -390,14 +389,9 @@ def main():
     # a submit with NO usage_meta (worker couldn't parse the CLI output) must
     # still land the card cleanly - cost reporting is best-effort, never a
     # blocker for real work.
-    branch9 = "device/feature-no-usage"
-    git(remote_clone, "checkout", "-q", "-b", branch9)
-    open(os.path.join(remote_clone, "no_usage.txt"), "w").write("x\n")
-    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "no usage")
-    bundle9 = os.path.join(tmp, "s9.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundle9, branch9],
-                   capture_output=True, text=True)
-    t9 = dispatch.new_remote_task(central, branch9, "no usage", rec_ext["id"], actor="alice")
+    t9 = dispatch.new_remote_task(central, "device/feature-no-usage", "no usage",
+                                  rec_ext["id"], actor="alice")
+    bundle9 = device_work(remote_clone, tmp, t9, "no_usage.txt", "no usage")
     dispatch.claim_remote_task(rec_ext["id"])
     r9 = dispatch.submit_remote_result(t9["id"], bundle9, actor="alice",
                                        device_id=rec_ext["id"], usage_meta=None)
@@ -427,14 +421,9 @@ def main():
 
     # a stale submit from the original device is rejected AND logged as a
     # named outcome, not just a bare error
-    branchB = "device/feature-stale-submit"
-    git(remote_clone, "checkout", "-q", "-b", branchB)
-    open(os.path.join(remote_clone, "stale.txt"), "w").write("x\n")
-    git(remote_clone, "add", "-A"); git(remote_clone, "commit", "-qm", "stale")
-    bundleB = os.path.join(tmp, "sB.bundle")
-    subprocess.run(["git", "-C", remote_clone, "bundle", "create", bundleB, branchB],
-                   capture_output=True, text=True)
-    t11 = dispatch.new_remote_task(central, branchB, "stale submit", rec_ext["id"], actor="alice")
+    t11 = dispatch.new_remote_task(central, "device/feature-stale-submit", "stale submit",
+                                   rec_ext["id"], actor="alice")
+    bundleB = device_work(remote_clone, tmp, t11, "stale.txt", "stale")
     dispatch.claim_remote_task(rec_ext["id"])
     dispatch.reassign_remote_task(t11["id"], did, actor="alice")   # moved to `did`
     ev_before = len([e for e in _events.read_events()
