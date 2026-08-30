@@ -97,7 +97,11 @@ chains ("obwohl... und selbst dessen..."). State the fact, stop.
     `blocked_by: "spike: <what to investigate first>"`.
   - **G4 Feasible** — budget/quota AND the calendar allow it (a fixed calendar duration
     like a 14-day test is WAIT time, not effort; a human prerequisite like recruiting N
-    people is a LONG POLE that must start first and gates everything after it).
+    people is a LONG POLE that must start first and gates everything after it). A wait
+    milestone of UNKNOWN length (an approval, a review with no committed SLA) gets
+    `calendar_wait: true` - code will not stamp a target date on it or on anything after
+    it while it's open, so the plan can't claim a date nobody controls. Flip it to
+    `status: "done"` once the wait resolves and dating resumes downstream.
   - **G5 Critical path** — the binding long-pole is Step 1, not buried mid-list.
   Fill `triage` with the three iron-triangle corners - `budget` (quota/cost funds it),
   `timeline` (realistic incl. calendar wait + long-poles), `scope` (bounded, acceptance
@@ -126,7 +130,8 @@ chains ("obwohl... und selbst dessen..."). State the fact, stop.
     "steps": ["...", "..."],
     "est_turns": 3,
     "confidence": "high|medium|low",
-    "blocked_by": "when confidence is not high: the decision/spike/prerequisite blocking a firm estimate (empty when high)"}
+    "blocked_by": "when confidence is not high: the decision/spike/prerequisite blocking a firm estimate (empty when high)",
+    "calendar_wait": false}
  ],
  "next": [ {"title": "...", "reason": "why now", "card": "<id or null>"} ],
  "risks": ["short blocker/risk", ...],
