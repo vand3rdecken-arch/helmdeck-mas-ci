@@ -22,8 +22,17 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "harness")
 
-# (name, viewport, path, [testIDs to click])
+# (name, viewport, path, [testIDs to click], scroll)
+#
+# `scroll` exists because full_page is a LIE here: react-native-web renders
+# <ScrollView> as an inner overflow:auto div, so the document never grows and a
+# full_page capture returns one viewport of wherever that container happens to
+# sit. The nav groups on /more are three screens down - without an explicit
+# scroll the shot photographs the pairing panel and proves nothing.
 SHOTS = [
+    # The way IN. A screen nobody can reach is not shipped, so the nav row that
+    # reaches it is judged too, not assumed.
+    ("repo-nav",     (430, 932),  "/more",    [], "bottom"),
     ("repo-picker",  (430, 932),  "/repo",    []),
     ("repo-docs",    (430, 932),  "/repo",    ["repo-TEXT"]),
     ("repo-code",    (430, 932),  "/repo",    ["repo-CODE"]),
@@ -84,7 +93,8 @@ def main():
         pg.goto("%s/#cfg=%s" % (base, a.cfg), wait_until="load", timeout=120000)
         pg.wait_for_timeout(9000)
 
-        for name, vp, path, clicks in SHOTS:
+        for name, vp, path, clicks, *rest in SHOTS:
+            scroll = rest[0] if rest else "top"
             pg.set_viewport_size({"width": vp[0], "height": vp[1]})
             pg.goto("%s%s#cfg=%s" % (base, path, a.cfg), wait_until="load", timeout=120000)
             pg.wait_for_timeout(2500)
@@ -105,6 +115,13 @@ def main():
                     pg.wait_for_timeout(1400)
                 except Exception as e:                       # noqa: BLE001
                     errors.append("click(%s/%s): %s" % (name, t, str(e)[:160]))
+            if scroll == "bottom":
+                got = pg.evaluate("(fn) => { const el = eval('(' + fn + ')')(); "
+                                  "if (!el) return false; el.scrollTop = el.scrollHeight; "
+                                  "return true; }", FIND_SCROLLER)
+                if not got:
+                    errors.append("scroll(%s): no scroll container found" % name)
+                pg.wait_for_timeout(900)
             p = os.path.join(OUT, "%s.png" % name)
             pg.screenshot(path=p)
             print("wrote", os.path.relpath(p, os.path.dirname(HERE)).replace("\\", "/"))

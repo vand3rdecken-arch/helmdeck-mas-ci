@@ -2,14 +2,13 @@
 id: documents
 label: Dokumente & Inhalte
 who: Texte, Angebote, Freigaben. Kein Build, leichte Review.
-summary: Direkt im Ordner · Gate läuft leer · kein Deploy · Abnahme bleibt Pflicht
+summary: Kein Deploy · Gate läuft leer · Entwürfe allein, Senden nicht · Abnahme bleibt Pflicht
 stations: backlog, working, gate, review
 card_kind: new_direct_task
 deploy_hook: ""
 settings.policy.auto_accept_green: false
 settings.policy.auto_dispatch_modes: ["do", "prepare"]
 note.gate: Läuft leer - hier gibt es nichts zu kompilieren, der Gate meldet PASS.
-note.working: Direkt im Ordner, ohne Worktree.
 ---
 
 Fuer Repos, in denen geschrieben statt gebaut wird: Angebote, Vertraege,
@@ -19,9 +18,12 @@ Dokumentation, Freigabe-Unterlagen.
 weg - ein leerer `repo_hooks.<repo>.deploy` heisst schlicht, dass er nicht
 passiert (`lanemachine.py:648`).
 
-**Direkt im Ordner statt im Worktree.** Ein Worktree pro Karte kostet hier nur
-Umweg: es gibt keinen Merge-Konflikt zwischen zwei Angeboten, und der Owner will
-die Datei da sehen, wo sie hingehoert.
+**Direkt im Ordner statt im Worktree - angemeldet, noch nicht automatisch.**
+`card_kind: new_direct_task` steht als Repo-Default in dieser Vorlage, aber
+gelesen wird er noch von niemandem: ob eine Karte einen Worktree bekommt,
+entscheidet bis heute die Karte, nicht das Repo. Deshalb verspricht die Vorlage
+es hier NICHT - sag es weiter pro Karte, bis die Schuld
+`repo-template-card-kind-unwired` bezahlt ist.
 
 **Das Gate bleibt an - und das ist kein Versehen.** Es laesst sich nicht
 abschalten (Harness-Gesetz), aber es findet in einem Text-Repo nichts zu

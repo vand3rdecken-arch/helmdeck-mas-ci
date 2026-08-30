@@ -3579,6 +3579,67 @@ DEBT = [
                "of only writing the finished reply.",
         "order": 50,
     },
+    {
+        "id": "repo-template-card-kind-unwired",
+        "title": "A repo template declares its card kind, and nothing reads it",
+        "status": "open",
+        "what": "ops/harness/templates/*.md carry `card_kind` (new_track for "
+                "software-dev, new_direct_task for documents) and "
+                "spine/ops/projects.resolve() surfaces it, but no caller "
+                "consumes it: cells/engineer/dispatch.py still decides worktree "
+                "vs live-tree per CARD (new_track / new_direct_task are separate "
+                "entry points), never per repo.",
+        "why_it_bites": "It is the exact failure the templates were written to "
+                        "avoid, and spine/registry/templates.py's own docstring "
+                        "names it: a value that reports success and changes "
+                        "nothing. The PRD's tables (§3.1/§3.2) mark the card "
+                        "kind 'neu als Repo-Default', so this half was always "
+                        "future work - but until it is wired the documents "
+                        "template CANNOT promise 'direkt im Ordner'. Its prose "
+                        "and summary were reworded to stop claiming it. If "
+                        "someone re-adds that claim before wiring this, the "
+                        "screen starts lying again.",
+        "trigger": "the owner onboards a real document repo and expects its "
+                   "cards to skip the worktree without saying so per card.",
+        "fix": "OPEN. Have the card-creation path read "
+               "projects.resolve(repo)['card_kind'] as the DEFAULT entry point "
+               "(dispatch.new_track vs dispatch.new_direct_task) when the "
+               "caller did not pick one explicitly - one reader, at the one "
+               "place a card is born, not a flag copied onto every card.",
+        "order": 51,
+    },
+    {
+        "id": "repo-template-policy-presets-still-global",
+        "title": "A repo template's policy.* presets are workspace-wide, so two "
+                 "repos still overwrite each other",
+        "status": "open",
+        "what": "spine/ops/projects.apply_template() writes the per-repo half "
+                "(repo_hooks.<repo>.deploy) truly per repo, but its `settings` "
+                "presets (policy.auto_accept_green, policy.auto_dispatch_modes) "
+                "go through events.save_settings into the ONE global "
+                "settings.json blob. Applying a template to repo B therefore "
+                "moves those values for repo A too.",
+        "why_it_bites": "The decree is 'pro Repo', and for the stations, the "
+                        "deploy hook and the record itself that now holds - for "
+                        "these two policy keys it does not. It is NOT silent: "
+                        "the deviation is recorded in projects.overrides/applied "
+                        "at write time and the pipeline card renders 'vom "
+                        "Standard abgewichen' (PRD §5 accepted exactly this "
+                        "trade). But visible drift is still drift, and the "
+                        "measured proof is in ops/docs/shots/harness/"
+                        "repo-code.png: the code repo shows two deviations it "
+                        "never asked for, caused by the document repo's template "
+                        "being applied after it.",
+        "trigger": "the owner runs two repos of different types side by side "
+                   "and cares that autonomy differs between them.",
+        "fix": "OPEN. Either resolve these keys through "
+               "projects.resolve(repo)['overrides'] at every READ site (the "
+               "honest per-repo answer, and the reason `overrides` already "
+               "exists), or drop them from the templates and leave autonomy to "
+               "the dial - which is where PRD §9 A already sent "
+               "capacity.wip_limit for the same reason.",
+        "order": 52,
+    },
 ]
 
 def list_debt():
