@@ -58,7 +58,25 @@ def _parse_reply_actions(txt):
 def _find_card(frag):
     from cells.engineer import sessions
     frag = frag.lower()
-    hits = [t for t in sessions.list_tracks()
+    tracks = sessions.list_tracks()
+    # AN EXACT ID IS NOT A GUESS, so it is not put to a vote.
+    #
+    # Card ids are unique by construction: a needle that IS one names exactly
+    # one card, even when other cards happen to QUOTE it in their task text.
+    # Measured on the owner's board (2026-08-30): a FINISHED card whose brief
+    # opened "Kontext: Karte 20260830-081301-direct hat gerade ..." made every
+    # steer at the RUNNING card of that id ambiguous. His watch-dictated
+    # instruction reached Henry, bounced here with "passt auf 2 Karten" and
+    # never reached the card - which from the wrist is indistinguishable from
+    # the message never arriving in the system at all.
+    #
+    # Checked BEFORE the substring sweep, which is the whole fix: that sweep is
+    # a convenience for a human naming a card loosely, and it must never
+    # outrank an identifier that already names one exactly.
+    for t in tracks:
+        if (t.get("id") or "").lower() == frag:
+            return t
+    hits = [t for t in tracks
             if frag in t["id"].lower() or frag in t["branch"].lower()
             or frag in t["task"].lower()]
     return hits[0] if len(hits) == 1 else (hits if hits else None)
