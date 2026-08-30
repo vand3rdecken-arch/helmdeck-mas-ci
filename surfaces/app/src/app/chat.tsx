@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
+import { CHAT_FOCUS, usePresence } from "@/data/presence";
 import type { PendingQuestion } from "@/data/types";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
@@ -176,6 +177,17 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const colMax = wide ? 860 : undefined;
+  // Presence: while this body is mounted the owner is LOOKING at the Henry
+  // transcript, so his own answer must not also buzz his pocket. It hangs on
+  // ChatBody rather than on ChatScreen because BOTH doors render this - the
+  // phone's full-screen route and the desktop CopilotOverlay - and a hook on
+  // the route would have left the desktop reporting no focus at all.
+  // The inverse is the point of the fix: leaving the chat resumes the push, so
+  // an answer that lands while he is on the board or away reaches him.
+  useEffect(() => {
+    usePresence.getState().setFocusedCard(CHAT_FOCUS);
+    return () => usePresence.getState().setFocusedCard(null);
+  }, []);
   const [busy, setBusy] = useState(false);
   // Optimistic turns layered OVER the server transcript, never merged into one
   // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced

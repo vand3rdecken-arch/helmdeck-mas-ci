@@ -376,13 +376,28 @@ def chat_reply(text):
     report 2026-08-29 18:09).
 
     PRESENCE decides, exactly as it does for a card - the same instrument, not a
-    second policy:
-      a client with the app VISIBLE  -> the answer is already on his screen, and
-                                        /chat's own response put it there: silent
-      nothing visible                -> sealed FCM push to every paired device
-    'focused' cannot apply here (there is no card), so the present/absent split
-    is the whole rule - and presence is derived from the human, so an app left
-    open on a desk goes stale and the push resumes.
+    second policy. But it is asked about the CHAT, not about "somewhere":
+
+      focused on the chat -> silent (he is reading this very transcript)
+      anything else       -> sealed FCM push to every paired device
+
+    The first version asked presence.plan("") and stayed quiet on BOTH 'silent'
+    and 'inapp', on the theory that "a client with the app visible" means "the
+    answer is already on his screen". That theory cost the whole feature: 'inapp'
+    means an app is open SOMEWHERE - the desktop shell on the PC, the board tab
+    on another device, the phone showing the card list - and none of those show a
+    Henry answer. Measured 2026-08-30 in daemon.out.log: EVERY chat reply since
+    the fix shipped logged "suppressed (inapp)", i.e. not one push was ever sent,
+    which is the exact defect the reverse mirror was built to close.
+
+    'focused' is not unavailable here - it just needed a name. presence.CHAT is
+    that name: the chat screen reports it the same way a card screen reports its
+    id (surfaces/app/src/app/chat.tsx), so the three-tier instrument is used as
+    designed instead of being collapsed into a present/absent split that cannot
+    tell reading-the-answer from having-a-window-open.
+
+    An older app that never reports it simply never suppresses - the safe
+    direction presence.py names: a missed push is worse than an extra one.
 
     urgent=True is NOT a priority claim - it is what tells push_fcm this is
     SOLICITED. Quiet hours exist so autonomous overnight work does not buzz the
@@ -401,9 +416,15 @@ def chat_reply(text):
         return False
     from spine.comms import presence
     from spine.registry import i18n
-    decision = presence.plan("")
-    if decision != "push":
-        print("notify: chat reply suppressed (%s) - the owner is looking" % decision)
+    decision = presence.plan(presence.CHAT)
+    if decision == "silent":
+        # Named, not counted: "why didn't my phone buzz?" must have a checkable
+        # answer in the log itself. A bare decision word is what let this
+        # suppress 100% of replies for a day without anyone being able to see
+        # WHICH window was doing the suppressing.
+        who = ", ".join("%s/%s" % (c.get("device"), c.get("focused"))
+                        for c in presence.snapshot()["clients"]) or "?"
+        print("notify: chat reply silent - owner is on the chat screen (%s)" % who)
         return False
     # kind="chat" with NO track: the app routes a trackless chat push into the
     # Henry chat instead of the dashboard its trackless branch falls back to

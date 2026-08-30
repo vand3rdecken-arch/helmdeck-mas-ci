@@ -23,6 +23,13 @@ import { useConfig } from "./config";
  *  activity; beat well inside that so a few dropped beats are harmless. */
 const BEAT_MS = 15_000;
 
+/** The Henry chat reports focus like a card screen does, so the daemon can tell
+ *  "he is reading the answer" from "a window is open somewhere" - the
+ *  distinction notify.chat_reply needs and did not have (every Henry reply was
+ *  suppressed as 'inapp' for a day). Must equal presence.CHAT in
+ *  spine/comms/presence.py; no card id can collide, they all start with a date. */
+export const CHAT_FOCUS = "chat";
+
 interface PresenceState {
   focusedCard: string | null;
   lastActivityAt: number;
