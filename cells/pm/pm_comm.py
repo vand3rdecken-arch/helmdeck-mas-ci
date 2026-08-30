@@ -60,13 +60,18 @@ def _say(text):
     One voice: the shared writer in copilot.say, which the lane pipeline uses
     too - so everything non-interactive speaks in the same chat.
 
-    Clipped by _short: this is the LAST gate before the owner's chat, so it is
-    where the two-sentence law is actually enforced. Use it only when the
-    owner has a move to make - a notice with no move belongs in _activity or
-    _to_henry (see the module docstring)."""
+    NOT clipped (2026-08-30, second pass). The two-sentence law is enforced
+    where it belongs - in the AUTHORS, and asserted as such by
+    ops/tests/test_notice_routing.py ("it obeys the length law untouched":
+    notice.short(line) == line, i.e. the clip must never have to fire). A
+    second clip here added nothing for a well-written notice and, for anything
+    else, silently amputated the half that carried the owner's move - which is
+    exactly what the owner photographed on the Henry card the same day it
+    shipped. Use _say only when the owner has a move to make; a notice with no
+    move belongs in _activity or _to_henry (see the module docstring)."""
     try:
         from cells.copilot import copilot
-        copilot.say(_short(text), cls="pm")
+        copilot.say(text, cls="pm")
     except Exception:
         pass
 
@@ -153,11 +158,17 @@ def _ask_owner(text, options, header="", card=None, title=""):
         print("pm: open-question probe failed:", e)
         pending = None
     if pending:
+        # `text`, not `line`: Henry is a machine consumer with no length budget
+        # at all, and handing him the button-panel's clip meant he took over a
+        # question whose second half had been thrown away - then reported back
+        # on it, and THAT report got clipped again (the owner's 2026-08-30 13:13
+        # / 14:04 cards both read "Uebernimm sie: ... vor dem Reset …"). Clip for
+        # the surface that needs it, never for the one that doesn't.
         _to_henry("owner-ask-deferred", card=card,
                   detail=("Diese Frage an den Owner konnte nicht gestellt werden - im Chat "
                           "wartet bereits eine unbeantwortete Frage, und eine zweite waere "
                           "ein totes Panel. Uebernimm sie: %s (Optionen: %s)"
-                          % (line, " / ".join(str(o.get("label") or o)
+                          % (text, " / ".join(str(o.get("label") or o)
                                               for o in (options or [])))),
                   feed="Frage an Owner zurueckgestellt (andere Frage offen): %s" % line[:80])
         return False
@@ -218,15 +229,18 @@ def _escalate(text, tid="", title=""):
     (content hash / level ladder); notify.escalate only decides delivery
     (silent / in-app / push).
 
-    Clipped ONCE here and the SAME line goes to both channels: the push and
-    the chat disagreeing about the same event is the drift the one-owner rule
-    exists to prevent, and the owner already reported the mid-word version of
-    it (2026-08-28, "Nachrichten enden mitten im Wort")."""
-    text = _short(text)
+    The chat gets the line WHOLE; only the push is clipped, at its own edge
+    (2026-08-30). Clipping once up front looked like it kept the two channels
+    in agreement, but what it actually did was give the transcript the
+    notification's length budget - the same inversion henry_broker._notify_owner
+    warns about, and the one the owner reported twice (2026-08-28 "Nachrichten
+    enden mitten im Wort", 2026-08-30 the Henry card ending in "…"). _short is
+    used rather than a raw [:180] so the push cuts on a word boundary and says
+    it was cut; the chat carries the full sentence the push is a pointer to."""
     _say(text)
     try:
         from spine.comms import notify
-        notify.escalate(title or _i18n.t("push.pmAlert"), text[:180],
+        notify.escalate(title or _i18n.t("push.pmAlert"), _short(text, chars=180),
                         tid or _escalation_tid())
     except Exception as e:
         print("pm: escalate push failed:", e)

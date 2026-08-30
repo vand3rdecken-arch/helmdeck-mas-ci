@@ -59,11 +59,25 @@ def short(text, chars=MAX_CHARS, sentences=MAX_SENTENCES):
     """Clip an owner-visible notice to at most `sentences` sentences and
     `chars` characters, on a word boundary, marked as clipped.
 
-    Enforced in the WRITER on purpose. The previous form of this rule was a
-    style request in a prompt plus the good intentions of whoever wrote each
-    format string, and it held for none of them - _goal_budget_text alone
-    concatenated up to five sentences of projections. A cap the caller cannot
-    forget is the only kind that survives the next notice someone adds.
+    FOR CHANNELS THAT CANNOT SCROLL - and ONLY those. An FCM push, a watch
+    line, a question's button header: surfaces where the text that does not fit
+    is text the owner will never see. NOT the board chat. The chat is a
+    transcript with its own honest fold (card_transcript.tsx clampText: past
+    1600 chars it collapses behind a "mehr anzeigen" toggle, nothing lost), so a
+    clip on the way IN throws away what the fold would have kept one tap away.
+    This is not a style preference, it is a measured regression: short() was
+    wired into the two chat writers on 2026-08-30 and the owner photographed the
+    result at 14:08 the same day - a Henry card ending mid-thought in "…"
+    directly beneath intact ordinary bubbles. Both writers are back to whole
+    text (henry_broker._notify_owner, pm_comm._say); a third one is the bug.
+
+    Enforced in the WRITER on purpose - the writer at the UNSCROLLABLE edge. The
+    previous form of this rule was a style request in a prompt plus the good
+    intentions of whoever wrote each format string, and it held for none of them
+    - _goal_budget_text alone concatenated up to five sentences of projections.
+    For the CHAT that discipline lives in the notice AUTHORS instead, and
+    ops/tests/test_notice_routing.py asserts it directly (`short(line) == line`):
+    a notice must be born short enough that the clip never has to fire.
 
     Newlines collapse to one line: a bulleted wall is precisely the shape the
     owner rejected, so a notice that wants a list has to pick its ONE item
@@ -72,14 +86,20 @@ def short(text, chars=MAX_CHARS, sentences=MAX_SENTENCES):
 
     The " …" is not decoration: a clipped line that does not admit it was
     clipped reads as the complete message (the watch learned this the hard
-    way, d243545; card_mirror.RESULT_MAX carries the same marker)."""
+    way, d243545; card_mirror.RESULT_MAX carries the same marker).
+
+    `chars` is a TRUE ceiling - the marker is paid for out of the budget, not
+    added on top of it. It used to return chars+2, which contradicted this
+    docstring and, worse, made the function unusable at a hard edge: a caller
+    with a real byte limit had to write short(text, chars-2) and every one of
+    them would have got that subtraction wrong eventually."""
     t = " ".join((text or "").split())
     if not t:
         return t
     ends = [m.end() for m in _TERMINATOR.finditer(t)]
     out = t[:ends[sentences - 1]].strip() if len(ends) >= sentences else t
     if len(out) > chars:
-        cut = out[:chars]
+        cut = out[:max(chars - 2, 0)]          # 2 = len(" …"), reserved up front
         sp = cut.rfind(" ")
         out = (cut[:sp] if sp > chars // 2 else cut).rstrip(" ,;:-") + " …"
     return out
