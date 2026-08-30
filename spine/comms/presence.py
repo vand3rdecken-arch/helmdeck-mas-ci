@@ -43,6 +43,14 @@ FRESH_S = 180.0
 _clients = {}          # key -> {"focused","visible","activity","device","user"}
 _lock = threading.Lock()
 
+# The Henry CHAT is a focus target like a card (2026-08-30). `focused` is only
+# ever compared for equality, so a screen that is not a card needs nothing but a
+# name no card id can collide with - every card id begins with its YYYYMMDD-
+# filing date. Without a name for it notify.chat_reply could not ask "is he
+# reading the answer right now" and fell back to "is any window open anywhere",
+# which suppressed every chat push for a day (see chat_reply's header).
+CHAT = "chat"
+
 # Everything below is bounded because every field arrives from a client. The
 # store is a dict keyed on client-supplied strings, so without these a buggy
 # (or hostile) client that rotates its `device` on every beat would grow the

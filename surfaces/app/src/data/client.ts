@@ -465,7 +465,11 @@ export const api = {
   // Board PUSH long-poll: blocks until the data version passes `v` (or ~22s),
   // returns the new version. Works over the sealed relay AND direct; the app
   // loops it and invalidates queries on change (replaces the direct-only SSE).
-  boardWait: (v: number) => req<{ v: number }>("GET", `/stream/wait?v=${v}`),
+  // TWO cursors, one hanging request: `v` = board data, `c` = chat transcript.
+  // Sending `c` is what opts this client into chat wake-ups (the daemon answers
+  // board-only when it is absent, so an older bundle keeps working unchanged).
+  boardWait: (v: number, c: number) =>
+    req<{ v: number; c?: number }>("GET", `/stream/wait?v=${v}&c=${c}`),
 
   // board / cards
   tracks: () => req<Track[]>("GET", "/tracks"),

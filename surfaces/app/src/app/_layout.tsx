@@ -18,6 +18,7 @@ import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
+import { useStreamCaps } from "@/data/stream";
 import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
@@ -37,28 +38,55 @@ import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
 
-// Global live updates: LONG-POLL the daemon's data version (api.boardWait). It
-// blocks until the board changes, then we invalidate the active queries so
-// every screen updates near-instantly. Works over BOTH the sealed relay and
-// direct (unlike SSE, which can't tunnel the relay) — the per-screen
-// refetchInterval is now just a slow safety fallback.
+// Global live updates: a HANGING GET on the daemon's cursors (api.boardWait).
+// It blocks until something moves, then we invalidate and re-arm immediately —
+// this is the push channel, not a poll, and it is the ONE event path for every
+// surface this bundle ships (phone, web, desktop shell). Works over BOTH the
+// sealed relay and direct, unlike SSE, which can't tunnel the relay.
+//
+// TWO cursors, because they mean different things:
+//   v — board data (cards, projects, settings). Moving it invalidates
+//       everything, which is right: a card change touches most screens.
+//   c — the Henry transcript, bumped by copilot._append_log. It invalidates
+//       ONLY chatHistory. Before this existed the chat had no event at all and
+//       chat.tsx carried a refetchInterval of 8s; folding it into `v` instead
+//       would have made every Henry sentence refetch the whole board on every
+//       paired device, which is a broadcast, not a fix.
 // Reconnect with EXPONENTIAL backoff (3s→30s, reset on success): a dead relay
-// isn't hammered, a blip recovers in one short pause. Failures land in the
-// health store via client.ts, so the HealthBanner shows them — never silent.
+// isn't hammered, a blip recovers in one short pause. The cursors are NOT reset
+// on failure, so whatever moved while we were away is still reported on the
+// next successful call — the reconnect is the catch-up path, which is why no
+// screen needs a timer. Failures land in the health store via client.ts, so the
+// HealthBanner shows them — never silent.
 function useGlobalStream() {
   useEffect(() => {
     let alive = true;
     let v = 0;
+    let c = 0;
     let delay = 3000;
     (async () => {
       while (alive) {
         try {
-          const r = await api.boardWait(v);
+          const r = await api.boardWait(v, c);
           if (!alive) break;
           delay = 3000;
           if (typeof r?.v === "number") {
             if (r.v !== v) queryClient.invalidateQueries();
             v = r.v;
+          }
+          // Guarded on `typeof`, not on truthiness: a daemon older than this
+          // bundle omits `c` entirely, and treating that as 0 would re-fire the
+          // chat invalidation on every single tick.
+          //
+          // The same check is the CAPABILITY signal (data/stream.ts): an OTA and
+          // a daemon restart are independent events, so this bundle can meet an
+          // older daemon. Recording what the daemon actually answered lets the
+          // chat keep its old 8s fallback in that case instead of going quiet -
+          // derived from the reply at event time, never assumed.
+          useStreamCaps.getState().setChatEvents(typeof r?.c === "number");
+          if (typeof r?.c === "number") {
+            if (r.c !== c) queryClient.invalidateQueries({ queryKey: ["chatHistory"] });
+            c = r.c;
           }
         } catch {
           if (!alive) break;

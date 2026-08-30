@@ -578,6 +578,21 @@ def _notify_owner(text, t):
     # reads while watching Henry work, the Henry chat, showed none of the
     # broker's decisions. copilot.say is the same line the lane pipeline's
     # _say_card uses; best-effort like the push.
+    #
+    # WHOLE, like every other chat message. A notice.short() clip stood here for
+    # one day (2026-08-30) and the owner photographed the result the same
+    # afternoon: his 14:08 chat card ended "... kein Agent-Turn) …" mid-thought,
+    # while the ordinary bot bubbles right above it were intact. The reason it
+    # looked like a rogue widget is that it WAS a rogue clip - but on the write
+    # side, not the render side (see the module note above _decide's report-back).
+    #
+    # The two-sentence law is a law about CHANNELS THAT CANNOT SCROLL - the FCM
+    # push (its own 230 above) and a question's button header. The chat is a
+    # transcript: card_transcript.tsx already folds anything past 1600 chars
+    # behind a "mehr anzeigen" toggle, which gives the decree what it actually
+    # wanted (no wall) without amputating the sentence that carries Henry's
+    # point. Clipping here just moved the push's budget onto the transcript -
+    # precisely what this function's own docstring forbids.
     try:
         from cells.copilot import copilot
         copilot.say(text, cls="pm", card=(t or {}).get("id") or None)

@@ -640,12 +640,14 @@ def make_plan(actor="owner"):
     st["last_plan"] = time.strftime("%Y-%m-%d %H:%M")
     st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     _save_loopstate(st)
-    _activity("planned", ("Geplant: %d neue Aufgabe(n) angelegt." % filed) if filed
+    summary = (brief.get("summary") or "").strip()
+    _activity("planned", (("Geplant: %d neue Aufgabe(n) angelegt." % filed)
+                          + ((" " + summary[:350]) if summary else "")) if filed
               else "Plan geprüft – nichts Neues nötig.")
-    if filed:                                   # only speak up when something changed
-        summary = (brief.get("summary") or "").strip()
-        _say(("Kurzes Update: ich hab %d neue Aufgabe(n) fuer dein Ziel eingeplant." % filed)
-             + (("\n\n" + summary[:350]) if summary else ""))
+    # DASHBOARD ONLY (owner decree 2026-08-30): filing cards is the PM doing its
+    # job, not a decision for the owner - the new cards are on the board and the
+    # line above is in the activity feed. The chat version carried 350 chars of
+    # LLM plan summary on top, which is the "zu viel info" shape exactly.
     print("PM plan: %d Kandidaten, %d neue Karten" % (len(items), filed))
     return {"filed": filed, "candidates": len(items), "brief": brief}
 
@@ -750,7 +752,16 @@ def _usage_checkin(st):
     """Proactive quota pacing: flag when the weekly Claude window burns ahead of pace
     (e.g. 40% by Wednesday, projected over 100% before the Saturday reset). Once per
     weekly window (keyed on its reset), so it's a heads-up, not a nag - the live usage
-    meter carries the running numbers."""
+    meter carries the running numbers.
+
+    TO HENRY, not to the owner (owner decree 2026-08-30). Managing AI usage is
+    the FIRST bullet of Henry's own mandate ("Turns, Quota, Kosten. Verschwende
+    sie nicht"), and he can act on it - throttle dispatch, move routine cards to
+    a cheaper model, hold non-goal work. The owner's chat version was a chain of
+    four projections ending in "sag Bescheid, dann passe ich die Policy an": a
+    number wall whose only ask was permission for something the harness is
+    already allowed to do. The live numbers stay one tap away in the usage
+    meter, which is the surface built for them."""
     try:
         from spine.ops import usage
         flag = usage.weekly_pacing_flag()
@@ -762,7 +773,9 @@ def _usage_checkin(st):
         return
     st["usage_flagged_reset"] = flag.get("resetsAt") or ""
     _save_loopstate(st)
-    _escalate(_usage_flag_text(flag), title=_i18n.t("push.pmQuota"))
+    _to_henry("quota-pacing", _usage_flag_text(flag),
+              feed="Wochenkontingent laeuft voraus (%s%% bei %s%% der Woche) - an Henry"
+                   % (round(flag.get("usedPct") or 0), round(flag.get("elapsed_pct") or 0)))
 
 
 def _clip_prose(text, n):
@@ -806,7 +819,14 @@ def _plan_gate_notice(st):
     """The planning GATE speaks: when the plan isn't 'ready' - a decision, a spike, or a
     prerequisite blocks a confident estimate - the PM says so plainly and holds, instead of
     pretending with a shallow schedule. Deduped on the STABLE state (which corners are
-    red), not the wording - a re-plan that re-describes the same red stays silent."""
+    red), not the wording - a re-plan that re-describes the same red stays silent.
+
+    TO HENRY, not to the owner (owner decree 2026-08-30). The message's own
+    closing move - "sag „prüfe Budget", dann hole ich die echte Evidenz zu der
+    roten Ecke nach" - is work the harness can do without being asked, so
+    routing it through the owner only added a hop and a bulleted issue list to
+    a chat that wanted neither. The hold itself stays visible where a hold
+    belongs: the dashboard's state/state_reason and the feed line below."""
     plan = latest_plan() or {}
     if not get_goal() or _triage_green(plan):     # gate is GREEN (or no goal) -> nothing to say
         _notice_due(st, "plan_gate", None)
@@ -827,11 +847,14 @@ def _plan_gate_notice(st):
     if issues:
         msg += "\n" + "\n".join("• " + i for i in issues[:4])
     if red:
-        # never dead-end: a red corner is ACTIONABLE - offer the evidence check
-        # that can re-derive it (reconcile_corner), not just a hold.
-        msg += ("\nSag „prüfe %s“, dann hole ich die echte Evidenz zu der roten Ecke "
-                "nach und plane damit neu." % corner[red[0]])
-    _say(msg)
+        # never dead-end: a red corner is ACTIONABLE - name the evidence check
+        # that can re-derive it (reconcile_corner), so Henry has the move and
+        # does not have to infer it.
+        msg += ("\nHenry: „prüfe %s“ holt die echte Evidenz zu der roten Ecke nach "
+                "und plant damit neu." % corner[red[0]])
+    _to_henry("plan-gate-red", msg,
+              feed="Plan-Gate ROT (%s) - kein Dispatch, an Henry"
+                   % (", ".join(corner[c] for c in red) or "keine Schätzung"))
 
 
 def _needs_from_owner(st):
@@ -846,11 +869,19 @@ def _needs_from_owner(st):
     # same asks stays silent; a genuinely new question (count grows) speaks.
     if not _notice_due(st, "questions", ("%s|%d" % (get_goal(), len(qs))) if qs else None):
         return
-    body = "\n".join("• " + q for q in qs[:5])
-    msg = ("Mir fehlt Schlüssel-Info — kannst du kurz klären?\n" + body
-           + "\n(Ohne die Antworten starte ich nichts Neues auf Annahmen; "
-             "antworte einfach hier im Chat, dann plane ich sofort neu.)")
-    _say(msg)
+    # ONE question, not a bulleted five (owner decree 2026-08-30). This notice
+    # STAYS in the chat - a missing answer is by definition the owner's move and
+    # nothing else on the board can supply it - but a list of five asks is a form,
+    # not a question, and the owner answered none of them. Asking the first and
+    # re-asking as the set changes (the _notice_due key counts them) walks the
+    # same list one answerable step at a time; the full set stays on the plan.
+    # The question goes in WHOLE - the [:180] that stood here was a raw slice
+    # that could land inside a word, and the chat has no length budget to
+    # justify it (2026-08-30; spine/comms/notice.short's docstring says where a
+    # clip does belong). Brevity here comes from asking ONE question - the line
+    # above - not from cutting it in half.
+    more = (" (%d weitere im Plan.)" % (len(qs) - 1)) if len(qs) > 1 else ""
+    _say("Mir fehlt Info: %s%s" % (qs[0], more))
 
 
 def _triangle_watch(st):
@@ -895,9 +926,18 @@ def _triangle_watch(st):
     kinds = "|".join(sorted(c.split(":", 1)[0] for c in corners)) if corners else None
     if not _notice_due(st, "triangle", kinds):
         return
-    msg = ("⚠ Dreieck schief — Abweichung von der Tages-Baseline:\n" + "\n".join("• " + c for c in corners)
-           + "\nWelche Ecke ist dir heilig (Zeit/Budget/Scope)? Dann steuere ich gegen; sonst entscheidest du.")
-    _escalate(msg, title=_i18n.t("push.pmTriangle"))
+    # TO HENRY (owner decree 2026-08-30). "Welche Ecke ist dir heilig
+    # (Zeit/Budget/Scope)?" is not a decision the owner can make from a bullet
+    # list of drifts - it is the question a PM answers himself from context and
+    # only escalates once he has a concrete trade to propose. Henry has that
+    # context and the hands; if he concludes the owner really must choose, he
+    # wakes him with ONE question, which is what his mandate already says.
+    msg = ("Dreieck schief - Abweichung von der Tages-Baseline:\n"
+           + "\n".join("• " + c for c in corners)
+           + "\nGegensteuern (Prioritäten, Dispatch, Scope) oder dem Owner EINE konkrete "
+             "Trade-off-Frage stellen - keine Statistik weiterreichen.")
+    _to_henry("triangle-tilt", msg,
+              feed="Dreieck schief (%s) - an Henry" % kinds.replace("|", ", "))
 
 
 # -- per-card budget watchdog: extracted to pm_watchdog.py (god-file breakup).
@@ -913,10 +953,27 @@ from cells.pm.pm_goal import (
 
 
 def _stakeholder_update(st):
-    """PMP core: reconcile GOAL vs BUDGET against the LIVE weekly quota and keep the
-    stakeholder (owner) informed - a regular status once a day, plus an immediate
-    escalation the moment the budget first puts the goal at risk this window. Managing
-    goal-vs-budget and informing the stakeholder IS the PM's primary job."""
+    """PMP core: reconcile GOAL vs BUDGET against the LIVE weekly quota. Managing
+    goal-vs-budget IS the PM's primary job - but INFORMING is not the same as
+    INTERRUPTING, and this notice is the one the owner quoted back (2026-08-30):
+
+      "Diese Karte sollte in der Form nicht mehr im Chat sein. Zu viel info..
+       bzw ich weiss nicht was ich dazu machen soll."
+
+    He was right about the whole class. The daily "Ziel vs. Budget" block was
+    five sentences of projections - used%, projected%, reset time, turns open,
+    ETA, pace, feasibility, milestone counts - and on-track or tight there is
+    no move in any of them. So:
+
+      on_track / tight -> the DASHBOARD (activity feed + the PM panel, which
+                          already renders the same numbers as a panel rather
+                          than as prose). Silent in the chat.
+      at_risk          -> ONE line and two BUTTONS. This one IS his call: the
+                          quota runs out before the reset, and only he can say
+                          whether non-goal work gets held or the goal slips.
+
+    The daily/risk dedup below is unchanged - what changed is the CHANNEL, not
+    when the PM considers this news."""
     goal = get_goal()
     if not goal:
         return
@@ -960,7 +1017,23 @@ def _stakeholder_update(st):
         if ps.get("process_due"):
             line += " · Ziel-Deadline %s" % ps["process_due"]
         msg += " " + line + "."
-    _say(msg)
+    # the full block still gets WRITTEN - just to the dashboard feed, where a
+    # status report with no move belongs and where the owner reads it when he
+    # wants it instead of being handed it.
+    _activity("status", msg)
+    if verdict != "at_risk":
+        return
+    # no timestamp in the ASK, deliberately: "~So 30.08. 22:00" is a number the
+    # owner cannot act on differently depending on its value, and a chain of
+    # those is the shape the decree bans. The exact exhaust time is in the
+    # dashboard block written just above, where a number belongs.
+    _ask_owner("⚠ Das Wochenkontingent ist vor dem Reset leer — dann steht „%s“ still. "
+               "Nicht-Ziel-Arbeit bis zum Reset zurückstellen?" % goal[:60],
+               [{"label": "Zurückstellen",
+                 "description": "Nur Ziel-Karten laufen bis zum Reset"},
+                {"label": "Slip akzeptieren",
+                 "description": "Alles läuft weiter, die Ziel-ETA rutscht"}],
+               header="Budget vs. Ziel", title=_i18n.t("push.pmQuota"))
 
 
 def _overview_stale(plan, tracks):
@@ -1098,11 +1171,12 @@ def _dispatch_next(pm, st, day):
             if st.get("quota_held_reset") != key:
                 st["quota_held_reset"] = key; _save_loopstate(st)
                 only = "nur dringende" if floor == 0 else "nur dringende + hohe"
-                msg = ("Quota-Management: das Wochenkontingent läuft voraus, deshalb halte ich "
-                       "nicht-dringende Karten bis zum Reset zurück (%s Priorität wird noch "
-                       "gestartet). Heb die Priorität an oder sag Bescheid, wenn eine trotzdem "
-                       "sofort laufen soll." % only)
-                _say(msg)
+                # DASHBOARD ONLY (owner decree 2026-08-30): the PM already DID the
+                # thing. Raising a card's priority is a board action he takes when
+                # he wants that card, not an answer this message needs - and the
+                # hold is on the dashboard as quota_paused / the feed line.
+                _activity("blocked", "Quota-Management: nicht-dringende Karten bis zum "
+                          "Reset zurueckgestellt (%s Prioritaet startet noch)." % only)
             return
         todo = kept
     t = todo[0]
@@ -1219,7 +1293,7 @@ def status():
 # stays unchanged.
 from cells.pm.pm_comm import (
     PLANS as _COMM_PLANS, _ACTIVITY, _activity, _say, _escalation_tid,
-    _escalate, _read_activity)
+    _escalate, _ask_owner, _to_henry, _short, _read_activity)
 assert _COMM_PLANS == PLANS, "pm_comm.PLANS drifted from pm.PLANS"
 
 

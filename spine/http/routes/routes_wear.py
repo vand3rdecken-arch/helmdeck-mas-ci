@@ -249,6 +249,56 @@ WEAR_CHAT_MAX = 30
 # _wear_text still strips ask-blocks, fences and markdown; only the CUT is gone.
 WEAR_CHAT_LINE_MAX = None
 
+# How much of a mirrored card's task line may become its TITLE on the wrist.
+# Not None like the two above: those bound a message BODY, which scrolls, and
+# this bounds a heading that sits in front of every card line. 42 (the push
+# notification's notice.label) was too short to tell two cards apart - the
+# owner photographed "Frage · UX-FIX (Owner-Besc hwerde 2026-08-30): Die…" and
+# could not - and the raw task is a whole brief. See _wear_card_name.
+WEAR_NAME_MAX = 90
+
+
+def _wear_card_name(card_id, stored, cache):
+    """A mirrored card's name for the wrist - its own task line, whole.
+
+    `stored` is what card_mirror froze into the log entry (a 42-char
+    notice.label with an "…"); it stays the fallback for a card that has since
+    been deleted, because a line labelled with a short name still tells the
+    owner WHICH card spoke, and a blank one does not.
+
+    `cache` is a caller-owned dict so the track list is read at most ONCE per
+    response no matter how many card lines the transcript carries - this route
+    is called on every stream wake, and a per-line storage read would put the
+    board's whole track list behind each one.
+    """
+    if not card_id:
+        return stored
+    if "by_id" not in cache:
+        try:
+            from cells.engineer import sessions
+            cache["by_id"] = {t.get("id"): t for t in sessions.list_tracks() or ()}
+        except Exception:                                   # noqa: BLE001
+            cache["by_id"] = {}
+    t = cache["by_id"].get(card_id) or {}
+    task = (t.get("task") or "").replace("\r", "\n").split("\n")[0].strip()
+    if not task:
+        return stored
+    # WIDER THAN THE NOTIFICATION, NOT UNBOUNDED. Measured on the owner's own
+    # watch (Xiaomi Watch 5, 480x480 @320dpi = 240dp): the title renders about
+    # ten characters per line, so notice.label's 42 already cost five lines -
+    # and the cards in this repo carry whole briefs as their task text, one of
+    # them 1500 characters. Sending the task WHOLE would have put a sixty-line
+    # bold title in front of every mirrored question, which is a worse defect
+    # than the one being fixed.
+    #
+    # No sentence heuristic: tried and rejected against the real transcript,
+    # where "BUG: /compact bzw." named a card after an abbreviation.
+    if len(task) <= WEAR_NAME_MAX:
+        return task
+    cut = task[:WEAR_NAME_MAX]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > WEAR_NAME_MAX // 2 else cut).rstrip(" ,.;:-") + "…"
+
 
 def wear_chat_get(self, user):
     """The owner's REAL Henry transcript - the same copilot session the phone
@@ -272,6 +322,9 @@ def wear_chat_get(self, user):
     from spine.ops.glances import _glance_question
     msgs = (copilot.history(user["name"]) or {}).get("messages") or []
     out = []
+    # Filled on the FIRST card line only, and only if there is one - a
+    # transcript with no mirrored card never touches the track list at all.
+    _names = {}
     for m in msgs:
         # The log is a FILE this route only reads; a truncated write or a
         # hand-edit can leave anything in the array. `(m or {})` below already
@@ -336,8 +389,24 @@ def wear_chat_get(self, user):
             # wrist composes it into a TitleCard title, and a pre-rendered label
             # would have to guess that layout from the server.
             row["kind"] = (m or {}).get("kind") or ""
-            row["cardName"] = (m or {}).get("cardName") or ""
             row["card"] = (m or {}).get("card") or ""
+            # The NAME is DERIVED from the live card, not read back from the
+            # frozen copy card_mirror stamped into the log entry.
+            #
+            # That copy is a notice.label(), capped at 42 chars with an "…"
+            # glued on - the right length for the PUSH NOTIFICATION it was
+            # built for, and the wrong one for a screen that scrolls. The
+            # owner photographed the result on his watch (2026-08-30): a
+            # title that wraps over five lines AND still ends in "Die…",
+            # which is the worst of both. Same decree the message bodies on
+            # this route already follow (WEAR_CHAT_LINE_MAX = None): no
+            # character cap on the wrist.
+            #
+            # Deriving it repairs every line ALREADY in the log, which no
+            # wider cap at write time could do - and it leaves notice.label
+            # alone for the PM notification that genuinely needs 42 chars.
+            row["cardName"] = _wear_card_name(
+                row["card"], (m or {}).get("cardName") or "", _names)
             q = (m or {}).get("question")
             if q:
                 # Same trimming the glasses and /wear/talk already use, so the

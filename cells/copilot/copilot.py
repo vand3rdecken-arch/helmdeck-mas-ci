@@ -307,6 +307,29 @@ def _append_log(user, entries):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(d, f)
     os.replace(tmp, CHATLOG)
+    # THE EVENT, announced from the one place that can honestly announce it.
+    #
+    # Every surface reading this transcript used to discover a new line on a
+    # TIMER (phone 8s, watch 15s) because nothing here ever said "it moved" -
+    # /stream/wait only ever watched db._version, and the chat log is a file, not
+    # a table. This is the missing half: the single writer of the log is also the
+    # single publisher of its cursor, so a waiting client is woken by the write
+    # itself rather than by re-reading the file on a clock.
+    #
+    # AFTER os.replace, never before: the rename is what makes the new line
+    # visible to a reader, so a cursor bumped earlier could wake a client that
+    # then reads the OLD file and concludes nothing changed - a lost event that
+    # would look exactly like the delay this replaces.
+    #
+    # Best-effort and non-fatal, the same contract as every other notify/emit
+    # call site here: the durable state (the file) is already written, and a
+    # storage hiccup must never turn a persisted turn into a failed one. The
+    # clients' reconnect path is the backstop.
+    try:
+        from spine.storage import db
+        db.bump_chat()
+    except Exception as _be:                                    # noqa: BLE001
+        print("copilot: chat cursor bump failed -", str(_be)[:200])
 
 _autocompact_supported = None    # None=unprobed, True/False learned from first /compact
 
@@ -463,8 +486,48 @@ def history(user):
             "stats": st}
 
 
+def owner_name():
+    """WHO the board chat belongs to, or None. Derived from the user registry
+    every time, never cached - the same read say() always did inline, lifted
+    out so it has one owner: pm_comm._ask_owner has to ask "is one of MY
+    questions still unanswered?" before posting another, and that means
+    resolving the same principal say() writes to. Two copies of this lookup
+    would be two answers to "whose chat is this"."""
+    try:
+        from spine.auth import auth
+        return next((u["name"] for u in auth.list_users()
+                     if u.get("role") == "owner"), None)
+    except Exception:
+        return None
+
+
+def chat_question_open():
+    """The owner's currently-open chat question, or None - open_question()
+    with the principal resolved, for callers outside this cell.
+
+    Exists because the chat offers exactly ONE answerable question at a time
+    (see open_question), and a writer that ignores that stacks DEAD PANELS:
+    measured 2026-08-30 12:47, the first live tick after the notice rework
+    posted three asks in one PM pass, and the two earlier ones - both more
+    urgent than the third - were unanswerable the instant the third landed.
+    Anyone about to ask must check here first."""
+    u = owner_name()
+    return open_question(u) if u else None
+
+
 def open_question(user):
-    """Henry's OWN open question in this chat, or None.
+    """The CHAT's own open question (as opposed to a card's), or None.
+
+    "The chat's", not "Henry's", since 2026-08-30: the PM asks through this
+    same channel now - pm_comm._ask_owner writes a cls:"bot" entry carrying a
+    question - because the owner decreed that an automatic notice holding a
+    real decision has to give him a BUTTON instead of a paragraph. Both ends
+    of the channel key on cls "bot" (this function, which routes_copilot.
+    _answer_text checks the tapped request_id against, and the app's
+    openChatQuestion), so a PM question written in any other class would
+    render as prose with buttons nobody can tap. The tapped answer then walks
+    the ordinary chat path into Henry - the right split, since the PM detects
+    and asks while Henry is the one with hands to execute the answer.
 
     DERIVED from the log every time it is asked - there is no `pending_question`
     field anywhere, and there must not be one. The chat log is the single record
@@ -479,8 +542,9 @@ def open_question(user):
     disappearing is then the truth rather than a guess, because answering a
     superseded question is a 409 here anyway.
 
-    Note this is Henry's question only. A mirrored CARD question belongs to that
-    card and is answered through sessions.answer_question (see _route_to_card)."""
+    Note this covers only questions asked IN the chat (Henry's or the PM's). A
+    mirrored CARD question belongs to that card and is answered through
+    sessions.answer_question (see _route_to_card)."""
     log = _log().get(user, [])
     for i in range(len(log) - 1, -1, -1):
         m = log[i]
@@ -506,6 +570,18 @@ def _readable(m):
     The block is dropped, not resurrected as a panel. A question from a past
     turn has already been answered or has gone stale, and offering dead buttons
     for it would be a worse lie than the JSON was."""
+    # NOT every entry is a dict, and the writer says so out loud: _append_log
+    # deliberately passes a non-dict through instead of crashing the log write
+    # (ops/tests/test_chat_date_stamp.py step 6 asserts exactly that). The reader
+    # never honoured the other half of that contract - one stray string in the
+    # log and this raised AttributeError, taking down /chat/history and with it
+    # the transcript on EVERY surface at once, not just the malformed line.
+    #
+    # Returned untouched rather than dropped: this function's whole discipline is
+    # that the log is an append-only record and a display defect is no reason to
+    # edit history. The surfaces already skip what they cannot render.
+    if not isinstance(m, dict):
+        return m
     if m.get("cls") != "bot":
         return m
     text = m.get("text") or ""
@@ -555,8 +631,7 @@ def say(text, cls="pm", card=None, extra=None):
     parameter list so a new mirror field never needs a signature change here,
     in _append_log, and in every stub that stands in for this function."""
     try:
-        from spine.auth import auth
-        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
+        owner = owner_name()
         if not owner:
             return
         entry = {"cls": cls, "text": text, "ts": time.strftime("%H:%M")}

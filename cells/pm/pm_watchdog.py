@@ -22,9 +22,20 @@ at module level to re-export these names unchanged for existing callers, so
 a top-level import back would cycle."""
 from spine.registry import i18n as _i18n
 from cells.pm.pm_state import _save_loopstate
-from cells.pm.pm_comm import _activity, _escalate
+from spine.comms.notice import label as _label
+from cells.pm.pm_comm import _activity, _ask_owner, _to_henry
 
 _WATCH_PRIO = {"urgent": 2.0, "high": 1.5, "medium": 1.0, "low": 0.5}
+
+# The owner's move when a card is over budget. Three buttons, because those are
+# genuinely the only three things he can do about it - the old prose ended in
+# "Stoppen, steuern oder bewusst weiterlaufen lassen?" and then gave him
+# nothing to tap, which is exactly the complaint (owner decree 2026-08-30).
+_OVER_BUDGET_OPTIONS = [
+    {"label": "Stoppen", "description": "Karte anhalten und zurück in die Ablage"},
+    {"label": "Weiterlaufen", "description": "Budget bewusst erhöhen, Karte läuft weiter"},
+    {"label": "Zeig mir die Karte", "description": "Erst ansehen, dann entscheiden"},
+]
 
 
 def _watch_budget_ctx():
@@ -116,6 +127,12 @@ def _cost_watch(st, tracks):
             changed = True
             continue
         task = (t.get("task") or "").replace("\n", " ")[:60]
+        # The OWNER-facing name is not the same string as the log-facing one.
+        # `task` is a raw 60-char slice - fine for the activity feed, wrong in a
+        # question: the first live ask read „UX-FIX (Owner-Beschwerde
+        # 2026-08-30): Die automatischen PM-M“, cut mid-word. notice.label is
+        # the KURZNAME rule the card mirror has used all along.
+        name = _label(t.get("task") or "", fallback=tid)
         prio = t.get("priority") or "medium"
         bac_pct = _watch_bac_pct(base_pct, reserve, prio, weight_sum)
         d_cost = max(0.0, cost - float(w.get("cost") or 0.0))
@@ -138,42 +155,49 @@ def _cost_watch(st, tracks):
                 mult *= 2.0
             w["mult"] = mult; changed = True
             nxt = budget * mult
+            # ONE line + three buttons for the owner. The arithmetic behind the
+            # rung (allocation, priority weight, how many cards crowd the window,
+            # the reserve, the next threshold) is dropped from the OWNER-facing
+            # line deliberately: it never changed what he could DO about it, and
+            # it is the "zu viel info" of the 2026-08-30 decree. It is not lost -
+            # the activity line right above keeps every number for the dashboard,
+            # and the card carries its own live cost.
             if kind == "pct":
-                _activity("blocked", "Budget ueberschritten (%.1f%% von %.1f%% Woche): %s"
-                          % (spent, budget, task), card=tid)
-                _escalate("💸 Budget-Watchdog: „%s“ liegt über Budget: ~%.1f%% vom "
-                          "Wochenkontingent verbraucht, zugeteilt ~%.1f%% (Prio %s, "
-                          "%d Karte(n) im Fenster, %.0f%% Reserve). Stoppen, steuern "
-                          "oder bewusst weiterlaufen lassen? Nächste Meldung bei ~%.1f%%."
-                          % (task, spent, budget, prio, len(working), reserve, nxt),
-                          tid=tid, title=_i18n.t("push.pmCost"))
+                _activity("blocked", "Budget ueberschritten (%.1f%% von %.1f%% Woche, "
+                          "Prio %s, %d Karte(n) im Fenster, %.0f%% Reserve, naechste "
+                          "Meldung ~%.1f%%): %s"
+                          % (spent, budget, prio, len(working), reserve, nxt, task), card=tid)
+                over = "~%.1f%% vom Wochenkontingent statt der zugeteilten ~%.1f%%" % (spent, budget)
             elif kind == "eur":
-                _activity("blocked", "Budget ueberschritten (EUR %.2f von %.2f): %s"
-                          % (spent, budget, task), card=tid)
-                _escalate("💸 Budget-Watchdog: „%s“ liegt über Budget: ~€%.2f verbraucht, "
-                          "zugeteilt ~€%.2f (%.1f%% vom Monats-Cap, Prio %s). Stoppen, "
-                          "steuern oder weiterlaufen lassen? Nächste Meldung bei ~€%.2f."
-                          % (task, spent, budget, bac_pct, prio, nxt),
-                          tid=tid, title=_i18n.t("push.pmCost"))
+                _activity("blocked", "Budget ueberschritten (EUR %.2f von %.2f, %.1f%% vom "
+                          "Monats-Cap, Prio %s, naechste Meldung ~%.2f): %s"
+                          % (spent, budget, bac_pct, prio, nxt, task), card=tid)
+                over = "~€%.2f statt der zugeteilten ~€%.2f" % (spent, budget)
             else:
-                _activity("blocked", "Budget ueberschritten (USD %.2f API-Gegenwert): %s"
-                          % (spent, task), card=tid)
-                _escalate("💸 Kosten-Watchdog: „%s“ hat seit Arbeitsbeginn ~$%.2f "
-                          "API-Gegenwert verbrannt (Kontingent-Kalibrierung noch kalt - "
-                          "kein €-Spend auf dem Abo, aber Kontingent). Stoppen, steuern "
-                          "oder weiterlaufen lassen? Nächste Meldung bei ~$%.2f."
-                          % (task, spent, nxt),
-                          tid=tid, title=_i18n.t("push.pmCost"))
+                _activity("blocked", "Budget ueberschritten (USD %.2f API-Gegenwert, "
+                          "Kalibrierung kalt, naechste Meldung ~%.2f): %s"
+                          % (spent, nxt, task), card=tid)
+                over = "~$%.2f API-Gegenwert" % spent
+            _ask_owner("💸 „%s“ hat %s verbraucht. Weiterlaufen lassen?" % (name, over),
+                       _OVER_BUDGET_OPTIONS, header="Über Budget", card=tid,
+                       title=_i18n.t("push.pmCost"))
         hot = ctx >= ctx_floor
         if hot and not w.get("ctx_hot"):
             w["ctx_hot"] = True; changed = True
-            _activity("blocked", "Kontext-Drift: ~%dk Tokens Fenster - eskaliere: %s"
-                      % (ctx // 1000, task), card=tid)
-            _escalate("🧠 Kontext-Watchdog: „%s“ schleppt ~%dk Tokens Kontext (Schwelle "
-                      "%dk) - jeder weitere Turn zahlt das fast volle Fenster. Karte "
-                      "kompaktieren, aufteilen oder abschliessen."
-                      % (task, ctx // 1000, ctx_floor // 1000),
-                      tid=tid, title=_i18n.t("push.pmCtx"))
+            # TO HENRY, NOT to the owner (owner decree 2026-08-30, quoting this
+            # exact message). It always WAS a work order for Henry - its own text
+            # said "Karte kompaktieren, aufteilen oder abschliessen", and none of
+            # those three is something the owner does while all three are things
+            # Henry has hands for. He was being handed a token count and a chore
+            # list he had no button for.
+            _to_henry("context-bloat", card=tid,
+                      detail=("Karte „%s“ schleppt ~%dk Tokens Kontext (Schwelle %dk) - jeder "
+                              "weitere Turn zahlt das fast volle Fenster. Kompaktieren, "
+                              "aufteilen oder abschliessen; den Owner nur wecken, wenn keine "
+                              "dieser drei sicher moeglich ist."
+                              % (task, ctx // 1000, ctx_floor // 1000)),
+                      feed="Kontext-Drift: ~%dk Tokens Fenster - an Henry: %s"
+                           % (ctx // 1000, task))
         elif not hot and w.get("ctx_hot"):
             w["ctx_hot"] = False; changed = True     # compacted back under - re-armed
     if changed:

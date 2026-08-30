@@ -4,11 +4,13 @@ import android.app.Activity.RESULT_OK
 import android.content.Context
 import android.content.Intent
 import android.speech.RecognizerIntent
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -18,8 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -33,6 +38,7 @@ import app.helmdeck.wear.data.DeviceStore
 import app.helmdeck.wear.data.RelayClient
 import app.helmdeck.wear.data.VoicePlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -276,8 +282,20 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // screen is already populated while this call is in flight. On success the
     // server list replaces it wholesale (the daemon may have compacted or
     // rotated the session) and is written back.
-    LaunchedEffect(Unit) {
-        val device = DeviceStore.load(context) ?: return@LaunchedEffect
+    //
+    // ONE refresh, called from THREE places (owner report 2026-08-30: "Chat
+    // auf der Uhr ist verzoegert - die Antwort kommt spaeter oder gar nicht"):
+    // the first load, every resume, and an idle ticker. Before this it ran
+    // exactly ONCE per composition, so a reply that landed anywhere but in
+    // this one in-flight call was invisible until the app was closed and
+    // reopened - and talk()'s own timeout message PROMISES the opposite
+    // ("falls die Antwort noch entsteht, erscheint sie gleich im Verlauf").
+    // Three real paths reach the wrist only through this:
+    //   - a turn that outlived talk()'s 4x150s patience (the message above),
+    //   - a turn the owner started on the PHONE or the GLASSES,
+    //   - an answer that landed while the watch screen was off.
+    suspend fun refresh() {
+        val device = DeviceStore.load(context) ?: return
         loadingHistory = lines.isEmpty()
         val result = withContext(Dispatchers.IO) {
             runCatching {
@@ -288,10 +306,10 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             }.getOrNull()
         }
         loadingHistory = false
-        if (result == null || result.first !in 200..299) return@LaunchedEffect
+        if (result == null || result.first !in 200..299) return
         val arr = runCatching {
             JSONObject(result.second).optJSONArray("messages")
-        }.getOrNull() ?: return@LaunchedEffect
+        }.getOrNull() ?: return
         val fresh = ArrayList<Line>(arr.length())
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
@@ -333,6 +351,136 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         }
     }
 
+    // RESUMED, not merely composed. A LaunchedEffect keeps running while
+    // the activity is stopped (the composition outlives onStop), so an
+    // unconditional ticker would keep polling the relay from the owner's
+    // wrist with the screen off - a watch has neither the battery nor the
+    // radio budget for that. Read off the Activity's own lifecycle rather
+    // than pulling in lifecycle-runtime-compose for one boolean (§9.1
+    // item 15: no new unverified dependency for something already reachable).
+    val activity = context as? ComponentActivity
+    var resumed by remember { mutableStateOf(true) }
+    DisposableEffect(activity) {
+        val lc = activity?.lifecycle
+        if (lc == null) return@DisposableEffect onDispose { }
+        val obs = LifecycleEventObserver { _, e ->
+            when (e) {
+                Lifecycle.Event.ON_RESUME -> resumed = true
+                Lifecycle.Event.ON_PAUSE -> resumed = false
+                else -> {}
+            }
+        }
+        lc.addObserver(obs)
+        onDispose { lc.removeObserver(obs) }
+    }
+
+    // First load AND every return to the screen. Coming back to the watch
+    // is exactly when the owner expects to see what Henry answered while
+    // his wrist was down, so a resume must not wait for the ticker.
+    LaunchedEffect(resumed) {
+        if (resumed && !busy) refresh()
+    }
+
+    // THE BACKGROUND EVENT PATH. The stream below is the foreground channel and
+    // carries everything while the screen is on; this is the half that survives
+    // the screen going OFF, which is the one thing a hanging GET cannot do on a
+    // watch - Wear suspends the radio and the coroutine dies with the resume.
+    // FCM is the platform's own answer to exactly that, so the two are not
+    // duplicate transports: screen on -> stream, screen off -> push.
+    //
+    // Push.inbound is bumped by PushService the instant a sealed FCM push is
+    // opened on this device, which the daemon sends from the one line that makes
+    // a Henry answer exist (notify.chat_reply, hung off copilot._append_log).
+    // Reading .value here subscribes this composable, so a push that arrives
+    // while the screen is still on refreshes the transcript immediately.
+    //
+    // Nothing new is being sent for this: that push has been arriving at this
+    // watch since the reverse mirror shipped (2026-08-29) and was being spent
+    // entirely on a notification. This just stops throwing the event away.
+    //
+    // Same guards as the stream, and `busy` above all: the owner's own line only
+    // reaches the server log at TURN END, so a refresh mid-turn would wipe his
+    // message off his own screen.
+    val ping = Push.inbound.value
+    LaunchedEffect(ping) {
+        if (ping > 0 && resumed && !busy) refresh()
+    }
+
+    // THE STREAM - the watch on the SAME event channel as the phone and the
+    // desktop, over the SAME sealed relay. The 15s ticker that used to sit here
+    // is gone; this is a HANGING GET, not a poll (owner decree 2026-08-30:
+    // "einheitlich wie Paseo, kein Polling, verschluesselter Transport").
+    //
+    // /stream/wait?v&c blocks on the daemon side until the board (`v`) or the
+    // chat transcript (`c`) moves, or ~22s passes. We re-arm immediately, so an
+    // idle watch holds ONE open sealed request and transmits nothing until there
+    // is genuinely news. That is strictly less radio than a 15s timer, not more.
+    //
+    // Keyed on `resumed`, which is the battery discipline the old ticker only
+    // approximated with a guard: leaving the screen CANCELS this coroutine and
+    // with it the open request, so nothing is held while the wrist is down. The
+    // resume effect above re-reads the transcript, so nothing missed is lost.
+    //
+    // readTimeout 40s > the daemon's 22s wait, deliberately: at the old 20s
+    // default the client would abort every single wait a beat BEFORE the server
+    // answered, turning a working stream into a permanent reconnect loop. Still
+    // far below the relay's own 120s REPLY_TIMEOUT.
+    //
+    // Exponential backoff 3s->30s on failure, same as the phone's loop: a dead
+    // relay is not hammered, a blip recovers in one pause. Cursors are NOT reset
+    // on failure, so whatever moved meanwhile is reported on the next success -
+    // the reconnect IS the catch-up path, which is why no timer is needed.
+    var chatCursor by remember { mutableStateOf(0) }
+    LaunchedEffect(resumed) {
+        if (!resumed) return@LaunchedEffect
+        val device = DeviceStore.load(context) ?: return@LaunchedEffect
+        var v = 0
+        var c = 0
+        var backoff = 3_000L
+        while (true) {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    RelayClient.authedCall(
+                        device.relayUrl, device.room, device.daemonPubB64,
+                        device.myPublicKeyB64, device.mySecretKeyB64,
+                        device.deviceToken, "GET", "/stream/wait?v=$v&c=$c", "",
+                        readTimeoutMs = 40_000)
+                }.getOrNull()
+            }
+            if (r == null || r.first !in 200..299) {
+                delay(backoff)
+                backoff = minOf(backoff * 2, 30_000L)
+                continue
+            }
+            backoff = 3_000L
+            val o = runCatching { JSONObject(r.second) }.getOrNull() ?: continue
+            v = o.optInt("v", v)
+            // A daemon older than this build omits `c` entirely - optInt's
+            // default keeps the cursor still rather than snapping it to 0 and
+            // refreshing on every tick forever.
+            val nc = o.optInt("c", c)
+            if (nc != c) {
+                c = nc
+                chatCursor = nc
+            }
+        }
+    }
+
+    // The cursor moved -> re-read the transcript. `busy` is a KEY, not just a
+    // guard: a turn in flight must not refresh (the owner's own line only
+    // reaches the server log at TURN END, so a mid-turn read would wipe his
+    // message off his own screen), and keying on it means the refresh he was
+    // owed happens the moment the turn ends instead of being dropped.
+    //
+    // The first successful stream reply also lands here, so opening the screen
+    // costs one extra read. Deliberate: priming the cursor silently would open
+    // a window where an answer arriving between the initial load and the first
+    // stream call is adopted as "already seen" and never shown. A duplicate GET
+    // is cheap; a lost answer is the bug this whole change exists to kill.
+    LaunchedEffect(chatCursor, busy) {
+        if (chatCursor > 0 && resumed && !busy) refresh()
+    }
+
     // Follow the conversation instead of making him scroll after every reply -
     // but ONLY once there is something to follow. The first version keyed on
     // `busy` as well and scrolled on the very first composition, when the list
@@ -354,6 +502,26 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // No MaterialTheme wrapper here on purpose: MainActivity wraps the whole
     // app in HelmDeckWearTheme once. A nested `MaterialTheme { }` with no
     // arguments is exactly how Material's default PURPLE got onto this screen.
+    // ROUND SCREEN SIDE INSET. Owner, 2026-08-30, with a photo of
+    // the watch: "Auf dem runden Wear-Screen ist die linke Kante der
+    // Textblase abgeschnitten - es fehlen ganze Buchstaben am
+    // Zeilenanfang."
+    //
+    // The cards fill the column's width and the column is only inset by
+    // ScreenScaffold's own contentPadding, which is what keeps the FIRST
+    // and LAST row off the bezel - it is not a horizontal safe area. On a
+    // ROUND display a full-width card is cut by the circle everywhere
+    // except the vertical middle: at 25% down from the top of a 192dp
+    // screen the chord is only ~154dp wide, so a card spanning the full
+    // 192 loses ~19dp on EACH side - whole letters, exactly as
+    // photographed.
+    //
+    // Screen-relative rather than a fixed dp value: the same 10% is right
+    // on a 192dp small round watch and a 227dp large one, and it is the
+    // only number here that is not a guess about one device. Applied to
+    // the CARDS rather than to the column, so the date separators and the
+    // title stay centred on the full width.
+    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
     run {
         ScreenScaffold(scrollState = columnState) { contentPadding ->
             TransformingLazyColumn(
@@ -445,7 +613,8 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                                  else WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
                             ),
-                            modifier = Modifier.padding(vertical = 3.dp),
+                            modifier = Modifier.padding(
+                                horizontal = sideInset, vertical = 3.dp),
                         ) {
                             Text(text = line.text, textAlign = TextAlign.Start)
                         }

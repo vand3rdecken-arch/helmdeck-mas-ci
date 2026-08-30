@@ -28,13 +28,9 @@ export const onboard: Dict = {
     de: "Kopplung fehlgeschlagen — ist eine Relay-URL in den Einstellungen hinterlegt?",
     en: "Pairing failed — is a relay URL configured in Settings?",
   },
-  // Pairing needs an authenticated account: the desktop shell no longer hands
-  // the UI a free owner token, so this is the normal state right after
-  // provisioning, not an error.
-  "onboard.pairNeedsLogin": {
-    de: "Melde dich zuerst an — danach kannst du dein Telefon koppeln.",
-    en: "Sign in first — then you can pair your phone.",
-  },
+  // No "sign in first" string here on purpose: pairing needing an account is a
+  // STEP, not a message. onboard.tsx hands that step to ui/login_screen.tsx
+  // (its "setup" mode below), which says it properly instead.
 
   // ---- engine picker (setup.js ENGINES; see that file's own docstring for
   // why each tier can only promise what it promises) -----------------------

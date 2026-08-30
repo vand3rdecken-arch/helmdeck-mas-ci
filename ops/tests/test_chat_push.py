@@ -186,6 +186,10 @@ check(notify.chat_summary("") == "" and notify.chat_summary(None) == "",
       "nothing to say pushes nothing (a cancelled turn must not buzz)")
 
 # -- 2. a finished Henry turn pushes -----------------------------------------
+# kept before the first stub so section 3 can put the REAL policy back and drive
+# it with real heartbeats - a stub can only prove chat_reply reads the decision,
+# never that presence.plan produces the right one.
+_REAL_PLAN = presence.plan
 reset("Drei Karten warten auf dich.")
 presence.plan = lambda cid: "push"
 turn()
@@ -225,17 +229,53 @@ check(len(PUSHED) == 1 and "Antwort ueber" in (PUSHED[0][0][1] if PUSHED else ""
 check((req.body or {}).get("reply") == "Antwort ueber die echte Route.",
       "and the route still answers the caller normally")
 
-# -- 3. presence is the whole quiet policy -----------------------------------
-for decision, why in (("inapp", "the app is open, so /chat's own response put "
-                                "the answer on his screen"),
-                      ("silent", "he is looking at the very surface it lands on")):
-    reset()
-    presence.plan = lambda cid, _d=decision: _d
-    turn()
-    check(not PUSHED, "presence '%s' -> no buzz: %s" % (decision, why))
-    check(any(m.get("cls") == "bot" for m in logged()),
-          "...and the answer is still IN the chat (a suppressed buzz must "
-          "never suppress the inbox)")
+# -- 3. presence is the whole quiet policy, and it is asked about the CHAT ----
+# Regression 2026-08-30: this used to pin "inapp -> no buzz" on the theory that
+# an open app means the answer is already on screen. It is not - 'inapp' means a
+# window exists SOMEWHERE (the desktop shell, a board tab, the card list), and
+# the measured cost was that every single Henry reply for a day logged
+# "suppressed (inapp)" and not one push ever left the daemon. Only the client
+# actually FOCUSED on the chat may suppress.
+reset()
+_asked = []
+presence.plan = lambda cid: (_asked.append(cid), "silent")[1]
+turn()
+check(_asked and _asked[0] == presence.CHAT,
+      "chat_reply asks presence about the CHAT screen (%r), not about "
+      "'somewhere' - that is what makes 'focused' usable here" % presence.CHAT)
+check(not PUSHED,
+      "presence 'silent' -> no buzz: he is reading the very transcript it "
+      "lands in")
+check(any(m.get("cls") == "bot" for m in logged()),
+      "...and the answer is still IN the chat (a suppressed buzz must "
+      "never suppress the inbox)")
+
+reset()
+presence.plan = lambda cid: "inapp"
+turn()
+check(PUSHED,
+      "presence 'inapp' DOES buzz - an app open on another screen or another "
+      "device never shows a Henry answer; suppressing there is how the whole "
+      "feature went silent")
+
+# and the same thing end-to-end through the REAL presence module: a client that
+# is visible but NOT on the chat must not be able to eat the push.
+reset()
+presence.plan = _REAL_PLAN
+presence.clear()
+presence.record("owner", "desktop", focused_card=None, app_visible=True)
+turn()
+check(PUSHED,
+      "real presence: a visible desktop parked on the board still buzzes the "
+      "phone (this is the exact live state that suppressed everything)")
+reset()
+presence.clear()
+presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True)
+turn()
+check(not PUSHED,
+      "real presence: the same instrument goes quiet once a client reports the "
+      "chat as its focused screen")
+presence.clear()
 
 # -- 4. quiet hours do NOT hold a solicited answer ---------------------------
 reset()

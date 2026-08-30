@@ -68,10 +68,11 @@ def _goal_process(pm, st):
         return
     st["goal_process"] = {"goal": goal, "pid": p["id"]}
     _save_loopstate(st)
-    msg = ("Ziel-Plan ist getriaged (Budget/Timeline/Scope grün) — ich hab ihn als Prozess (Epic) "
-           "mit %d datierten Schritten aus dem geprüften Plan angelegt (Prozesse-Tab). Justiere/"
-           "akzeptiere die Schritte, dann laufen die Ziel-Karten." % len(steps))
-    _say(msg)
+    # STAYS in the chat (owner decree 2026-08-30): the steps are 'proposed' and
+    # nothing dispatches until he accepts them, so this genuinely is his move -
+    # but as ONE sentence naming that move, not three explaining the triage.
+    _say("Ziel-Plan steht: %d datierte Schritte im Prozesse-Tab warten auf deine "
+         "Abnahme, dann laufen die Ziel-Karten." % len(steps))
 
 
 def _goal_process_status(st):

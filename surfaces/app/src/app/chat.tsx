@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
+import { CHAT_FOCUS, usePresence } from "@/data/presence";
+import { chatFallbackInterval, useStreamCaps } from "@/data/stream";
 import type { PendingQuestion } from "@/data/types";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
@@ -176,6 +178,17 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const colMax = wide ? 860 : undefined;
+  // Presence: while this body is mounted the owner is LOOKING at the Henry
+  // transcript, so his own answer must not also buzz his pocket. It hangs on
+  // ChatBody rather than on ChatScreen because BOTH doors render this - the
+  // phone's full-screen route and the desktop CopilotOverlay - and a hook on
+  // the route would have left the desktop reporting no focus at all.
+  // The inverse is the point of the fix: leaving the chat resumes the push, so
+  // an answer that lands while he is on the board or away reaches him.
+  useEffect(() => {
+    usePresence.getState().setFocusedCard(CHAT_FOCUS);
+    return () => usePresence.getState().setFocusedCard(null);
+  }, []);
   const [busy, setBusy] = useState(false);
   // Optimistic turns layered OVER the server transcript, never merged into one
   // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced
@@ -274,9 +287,30 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const turn = useRef(0);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  // poll the transcript so the PM's proactive messages appear LIVE (the chat
-  // moves on its own); optimistic turns live in `pending`, layered on top.
-  const { data } = useQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory, enabled: me?.role !== "client", refetchInterval: 8000 });
+  // The transcript moves on its own (Henry's answer, the PM's proactive
+  // messages, a mirrored card event) and this query is how that reaches the
+  // screen; optimistic turns live in `pending`, layered on top.
+  //
+  // The 8s poll that used to be hardcoded here was the only reason a Henry
+  // answer ever appeared: the transcript is a JSON file, not a table, so
+  // db._version never moved for it and the global stream never fired.
+  // copilot._append_log now bumps a chat cursor and useGlobalStream
+  // (_layout.tsx) waits on it over the same sealed hanging GET as the board,
+  // invalidating exactly this query - event-driven, with the stream's own
+  // reconnect as the catch-up path.
+  //
+  // The interval is therefore FALSE against any daemon that pushes chat events,
+  // and only falls back to the old 8s against one that provably cannot (an OTA
+  // and a daemon restart are independent events, so this bundle can meet an
+  // older daemon - see data/stream.ts). Not a hedge: a fixed timer left in
+  // "just in case" would keep the defect alive on every current daemon.
+  const chatEvents = useStreamCaps((s) => s.chatEvents);
+  const { data } = useQuery({
+    queryKey: ["chatHistory"],
+    queryFn: api.chatHistory,
+    enabled: me?.role !== "client",
+    refetchInterval: chatFallbackInterval(chatEvents),
+  });
   const { data: models } = useModels(me?.role !== "client");
   // PM-session economics (card parity): context fill + spend, folded by the
   // daemon per finished turn (copilot._fold_stats) and served with the history.

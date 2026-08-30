@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import app.helmdeck.wear.crypto.HelmDeckBox
@@ -54,6 +55,43 @@ object Push {
     const val CHANNEL_ID = "helmdeck_cards_v2"
     private const val CHANNEL_ID_V1 = "helmdeck_cards"
     const val TAG = "HelmDeckPush"
+
+    /**
+     * THE EVENT, finally connected to the SCREEN and not only to the wrist.
+     *
+     * Every push this app opens bumps this counter; HenryScreen reads it during
+     * composition and refreshes the transcript the moment it changes. Until now
+     * an arriving answer raised a notification and told the OPEN chat nothing -
+     * so the owner could be looking straight at the screen while the reply sat
+     * in a notification shade above it, and the transcript only caught up on the
+     * next 15s tick. That gap was the whole of "Chat auf der Uhr ist verzoegert"
+     * that survived 79b3c90.
+     *
+     * This is deliberately NOT a second delivery system. notify.chat_reply
+     * (spine/comms/notify.py) already fires on every finished Henry turn, from
+     * the one owner (cells/copilot/copilot.py _append_log -> _bg), already seals
+     * a copy to THIS device's key, and PushService already opens it. The only
+     * thing missing was a wire from the service to the composable. This is that
+     * wire and nothing else.
+     *
+     * ORDERING IS SAFE, and by construction rather than by luck: copilot.py
+     * persists the turn with _append_log FIRST and only then schedules the
+     * notification on server._bg. A push therefore can never overtake the
+     * transcript it is announcing - the refresh it triggers always finds the
+     * answer already there.
+     *
+     * Bumped for EVERY opened push, not just kind=="chat": notify.card_event
+     * runs card_mirror.mirror(), which folds a card's question or result INTO
+     * this same transcript. A card push that did not refresh would leave that
+     * mirrored line invisible for exactly as long as a chat one did.
+     *
+     * A Compose MutableState rather than a SharedFlow: this module has no Flow
+     * usage anywhere yet, mutableStateOf is its established idiom (every screen
+     * here), snapshot writes are safe from the FCM thread, and a composable
+     * subscribes by simply reading .value - no new dependency and no collector
+     * lifecycle to get wrong.
+     */
+    val inbound = mutableStateOf(0)
 
     /** Android 8+ refuses to post without a channel; creating one that already
      *  exists is a documented no-op, so this is safe to call on every path. */
@@ -141,6 +179,12 @@ class PushService : FirebaseMessagingService() {
             HelmDeckBox.openB64(cipher, device.mySecretKeyB64, device.daemonPubB64)
         }.getOrNull() ?: return          // tampered, or sealed to another device
         val o = runCatching { JSONObject(plain) }.getOrNull() ?: return
+        // BEFORE show(), on purpose. show() bails when POST_NOTIFICATIONS was
+        // never granted - correct for a notification, wrong for the transcript:
+        // refreshing an open screen needs no notification permission at all, and
+        // hanging the refresh off show() would have silently tied the live chat
+        // to a permission that has nothing to do with it.
+        Push.inbound.value = Push.inbound.value + 1
         show(
             title = o.optString("title", "HelmDeck"),
             body = o.optString("body", ""),
