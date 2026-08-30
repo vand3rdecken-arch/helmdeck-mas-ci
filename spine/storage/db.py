@@ -23,6 +23,19 @@ if not os.path.exists(DBPATH) and os.path.exists(_LEGACY_DB):
 
 _local = threading.local()
 _version = 0                      # bumped on every write; SSE waits on it
+# The CHAT transcript's own cursor, deliberately SEPARATE from _version.
+#
+# The chat log is not a table in this database - it is a JSON file written by
+# copilot._append_log - so no writer below could ever move _version for it, and
+# for a long time nothing did: every surface fell back to a fixed-interval
+# refetch (phone 8s, watch 15s) for the one stream the owner actually watches.
+#
+# A second counter rather than folding chat into _version, because _version's
+# consumer invalidates the WHOLE query cache on every tick. Every Henry sentence
+# would have refetched the board, the dashboard and the card lists on every
+# paired device - trading a poll for a broadcast. Two cursors let a client wake
+# on exactly the stream it is reading.
+_chat_version = 0
 _version_cond = threading.Condition()
 
 def conn():
@@ -40,6 +53,17 @@ def bump():
         _version += 1
         _version_cond.notify_all()
 
+def bump_chat():
+    """The chat transcript moved. ONE caller by construction: copilot._append_log,
+    which is already this repo's single writer of the chat log - so the cursor is
+    folded at EVENT TIME at exactly one owner, never reconstructed by re-reading
+    the file or inferred from a stored flag (CLAUDE.md's no-monkey-patches law,
+    same shape as drivers.turn_active and sessions.record_bg)."""
+    global _chat_version
+    with _version_cond:
+        _chat_version += 1
+        _version_cond.notify_all()
+
 def wait_version(last, timeout=25):
     """Block until the data version passes `last` (or timeout). SSE fuel."""
     with _version_cond:
@@ -48,8 +72,29 @@ def wait_version(last, timeout=25):
         _version_cond.wait(timeout)
         return _version
 
+def wait_any(board_last, chat_last, timeout=22):
+    """Block until EITHER cursor passes the client's value, and report both.
+
+    One waiter, one condition, two cursors: a client holds a single hanging
+    request and is woken by whichever stream it is subscribed to actually moved.
+    That is the whole point - the alternative (a second long-poll for chat) would
+    double every device's idle connection count to say the same thing.
+
+    Returns the CURRENT pair, not a delta. Condition.wait may return spuriously
+    or on timeout, exactly as wait_version already tolerates; the client compares
+    the numbers it gets back against the ones it sent and re-arms either way, so
+    a spurious wake costs one round trip and can never lose an event."""
+    with _version_cond:
+        if _version > board_last or _chat_version > chat_last:
+            return _version, _chat_version
+        _version_cond.wait(timeout)
+        return _version, _chat_version
+
 def current_version():
     return _version
+
+def current_chat_version():
+    return _chat_version
 
 def init(role="tool"):
     """role="daemon" marks THE process that owns the driver sessions (server.
