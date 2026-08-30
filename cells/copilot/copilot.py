@@ -529,6 +529,18 @@ def _readable(m):
     The block is dropped, not resurrected as a panel. A question from a past
     turn has already been answered or has gone stale, and offering dead buttons
     for it would be a worse lie than the JSON was."""
+    # NOT every entry is a dict, and the writer says so out loud: _append_log
+    # deliberately passes a non-dict through instead of crashing the log write
+    # (ops/tests/test_chat_date_stamp.py step 6 asserts exactly that). The reader
+    # never honoured the other half of that contract - one stray string in the
+    # log and this raised AttributeError, taking down /chat/history and with it
+    # the transcript on EVERY surface at once, not just the malformed line.
+    #
+    # Returned untouched rather than dropped: this function's whole discipline is
+    # that the log is an append-only record and a display defect is no reason to
+    # edit history. The surfaces already skip what they cannot render.
+    if not isinstance(m, dict):
+        return m
     if m.get("cls") != "bot":
         return m
     text = m.get("text") or ""
