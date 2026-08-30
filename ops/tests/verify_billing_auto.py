@@ -14,10 +14,28 @@ import sys
 import tempfile
 import types
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daemon"))
-import events                                                    # noqa: E402
+# REPO ROOT + the real package paths. This file was dead from the day the tree
+# became spine/cells/surfaces/ops: it pointed at "<this dir>/../daemon" and did
+# `import events`, and neither has existed since. It still COMPILED, which is
+# why nobody noticed - an unrunnable check looks exactly like a passing one.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from spine.storage import events                                 # noqa: E402
 
 FAILED = []
+
+
+def _install_fake(pkg_path, attr, mod):
+    """Put a fake where `from <pkg> import <attr>` actually looks.
+
+    sys.modules alone is NOT enough: `from X import Y` checks the parent
+    package's ATTRIBUTE first, and the real submodule is usually already bound
+    there by the time this runs - so the fake would sit in sys.modules being
+    ignored while the REAL module answered, and these checks would fail against
+    a product that is fine. Bind both."""
+    import importlib
+    pkg = importlib.import_module(pkg_path)
+    sys.modules["%s.%s" % (pkg_path, attr)] = mod
+    setattr(pkg, attr, mod)
 
 
 def check(name, got, want):
@@ -31,7 +49,7 @@ def fake_login(method, subscription=None):
     m = types.ModuleType("usage")
     m.login_method = lambda: {"method": method, "subscription": subscription,
                               "plan": subscription and subscription.capitalize()}
-    sys.modules["usage"] = m
+    _install_fake("spine.ops", "usage", m)
 
 
 def settings(plan="auto"):
@@ -60,15 +78,18 @@ check("...and ai_billing renders it metered", events.ai_billing(settings()), "me
 fake_login(None)
 check("no auth at all -> old flat default, never invented $",
       events.plan_effective(settings()), ("max", "default"))
-sys.modules["usage"] = types.ModuleType("usage")          # no login_method at all
+_install_fake("spine.ops", "usage", types.ModuleType("usage"))    # no login_method
 check("usage module broken -> flat default, no crash",
       events.plan_effective(settings()), ("max", "default"))
 check("missing plan key behaves like auto",
       events.plan_effective({"pm": {}}), ("max", "default"))
 
 print("usage.login_method - reads the same file Paseo's usage tab does")
-sys.modules.pop("usage", None)
-import usage as real_usage                                        # noqa: E402
+import importlib                                                  # noqa: E402
+import spine.ops                                                  # noqa: E402
+sys.modules.pop("spine.ops.usage", None)
+real_usage = importlib.import_module("spine.ops.usage")           # the real one back
+spine.ops.usage = real_usage
 tmp = tempfile.mkdtemp()
 os.environ["CLAUDE_HOME"] = tmp                                   # sandbox: never the real login
 os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -97,15 +118,15 @@ print("pm.economics - the planner thinks in the RESOLVED plan")
 fake_login_mod = types.ModuleType("usage")
 fake_login_mod.login_method = lambda: {"method": "oauth", "subscription": "max", "plan": "Max 20x"}
 fake_login_mod.cached = lambda refresh=True: None
-sys.modules["usage"] = fake_login_mod
-import pm                                                         # noqa: E402
+_install_fake("spine.ops", "usage", fake_login_mod)
+from cells.pm import pm                                           # noqa: E402
 check("PM default is auto", pm.PM_DEFAULTS["plan"], "auto")
 fake_sessions = types.ModuleType("sessions")
 fake_sessions.list_tracks = lambda: []
-sys.modules["sessions"] = fake_sessions
+_install_fake("cells.engineer", "sessions", fake_sessions)
 fake_procs = types.ModuleType("processes")
 fake_procs.list_processes = lambda: []
-sys.modules["processes"] = fake_procs
+_install_fake("cells.process", "processes", fake_procs)
 _orig_settings, _orig_read = events.settings, events.read_events
 events.settings = lambda: {"pm": {"plan": "auto"}, "capacity": {"tariff": {}, "wip_limit": 3, "touch_budget_day": 40},
                            "prices": {"default": {"in": 3.0, "out": 15.0}}, "currency": "EUR"}
