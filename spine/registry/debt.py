@@ -3642,23 +3642,29 @@ DEBT = [
     },
     {
         "id": "e2e-harnesses-stale-after-split",
-        "title": "Eight manual test/camera harnesses died silently at the "
+        "title": "Five manual test/camera harnesses are still dead after the "
                  "four-folder split",
         "status": "open",
         "what": "The move to spine/cells/surfaces/ops left 12 scripts under "
                 "ops/tests/ and ops/docs/shots/ importing the pre-split flat "
                 "layout (sys.path.insert(<repo>/daemon) + `import auth, db, "
-                "events`). Four are now fixed and green - verify_plan_share.py "
-                "(19 checks), verify_billing_auto.py (24 checks), and "
-                "repo_pipeline_sandbox.py which replaces the dead "
-                "loopmap_sandbox.py. e2e_lane_http.py runs again but is still "
-                "red for its OWN reasons (its stubs point at sessions._gate "
-                "etc., machinery that moved into lanemachine.py in the same "
-                "split, so they bind nothing). Still dead and untouched: "
+                "events`). Resolved so far: verify_plan_share.py (19 checks) and "
+                "verify_billing_auto.py (24 checks) are repaired and GREEN; "
+                "e2e_lane_http.py runs again but is still red for its own "
+                "reasons (its stubs name sessions._gate etc., machinery that "
+                "moved into lanemachine.py in the same split, so they bind "
+                "nothing); and four USED-UP JIGS were deleted rather than "
+                "repaired - uifix_harness.py, uifix_p3_harness.py and "
+                "uifix_question_harness.py each seeded the card states of ONE "
+                "branch that has long since shipped (gating, the transcript "
+                "model, the question channel are all normal product now), and "
+                "loopmap_sandbox.py seeded nothing at all, so it was pure "
+                "boilerplate that repo_pipeline_sandbox.py now does. Still dead: "
                 "e2e_cancel_resume.py, e2e_question_live.py, glance_shoot.py, "
-                "uifix_harness.py, uifix_p3_harness.py, "
-                "uifix_question_harness.py, smoke/pair_link.py, "
-                "smoke/setup_sandbox.py.",
+                "smoke/pair_link.py, smoke/setup_sandbox.py - these five are "
+                "STANDING tools (a behaviour proof, a glasses camera, the "
+                "APK-against-a-tunnel recipe), not scaffolding, which is why "
+                "they were not deleted with the rest.",
         "why_it_bites": "A dead script is worse than a missing one: it COMPILES, "
                         "so py_compile and the gate stay green and it looks "
                         "maintained right up until someone runs it and gets a "
@@ -3671,16 +3677,19 @@ DEBT = [
                         "decree.",
         "trigger": "any UI judgement or e2e replay that reaches for one of the "
                    "eight remaining scripts.",
-        "fix": "OPEN, and it is per-file triage, not one sweep: five of the "
-               "eight (uifix_* x3, loopmap_sandbox, smoke/setup_sandbox) are "
-               "five copies of ONE idea - a throwaway sandboxed daemon - which "
-               "ops/docs/shots/repo_pipeline_sandbox.py now does properly; they "
-               "should be deleted, not repaired. e2e_question_live.py spends "
-               "real tokens on a real claude worker, so it needs an owner call "
-               "before anyone runs it. The rest need their stubs re-pointed at "
-               "the post-split seams and then an actual RUN - a fix nobody may "
-               "claim without executing it, which is how they rotted the first "
-               "time.",
+        "fix": "OPEN for the five standing tools, and it is per-file triage. "
+               "The TEST to apply to each (the owner's, and it is the right "
+               "one): is this a jig for one branch, or a tool that will be "
+               "needed again? A jig whose branch shipped is used up - delete "
+               "it. glance_shoot.py and e2e_cancel_resume.py are locally "
+               "runnable (fake CLI, no tunnel) and are mostly import lines. "
+               "smoke/pair_link.py + smoke/setup_sandbox.py are a PAIR and need "
+               "a tunnel + emulator, so they cannot be verified from a card "
+               "worktree. e2e_question_live.py spends real tokens on a real "
+               "claude worker and needs an owner call before anyone runs it. "
+               "Whatever is repaired must be RUN once in the same commit - a "
+               "fix nobody executes is how these rotted in the first place, and "
+               "a dead script compiles green, so nothing else catches it.",
         "order": 53,
     },
 ]
