@@ -9,6 +9,7 @@ validates against). All GET, all read-only, no background jobs. Bodies are
 byte-identical to the inline blocks they replace.
 """
 import json
+from urllib.parse import parse_qs, urlparse
 
 from spine.http.apimeta import _lane_flow, _loop_machine, _config_schema
 
@@ -53,8 +54,22 @@ def loop_map_get(self, user):
     from spine.storage import events
     _s = events.settings()
     ll = (_s.get("policy") or {}).get("lane_labels") or {}
+    # ?repo= makes the map answer for ONE repo: which stations its template
+    # leaves on, what the deploy step actually runs, where the owner has since
+    # deviated from the template. Without it the answer is the general machine,
+    # exactly as before - so every existing caller is unaffected.
+    repo = (parse_qs(urlparse(self.path).query).get("repo") or [""])[0].strip()
+    repo_view = None
+    if repo:
+        try:
+            from spine.ops import projects
+            repo_view = projects.resolve(repo)
+        except Exception as e:                               # noqa: BLE001
+            repo_view = {"repo": repo, "error": str(e)[:200]}
     return self._send(200, json.dumps({
-        "runtime": dict(_lane_flow(ll), title="Wie Arbeit fliesst"),
+        "runtime": dict(_lane_flow(ll, repo_view), title="Wie Arbeit fliesst"),
+        # the repo half of the answer, or null when no repo was asked about
+        "repo": repo_view,
         "build": _loop_machine(),
         "harness": _harness_state(),
         # WHICH of the dotted paths a node names can really be changed
