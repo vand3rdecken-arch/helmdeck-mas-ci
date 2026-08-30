@@ -88,7 +88,13 @@ def prewarm(user):
                 return
             vm = events.settings().get("voice_model")
             model = (vm if vm is not None else "haiku") or ""
-            cli_model, _ = turnopts.resolve_model(model or "auto", "", False)
+            # SAME ctx signal chat() uses - the warm process is keyed by
+            # (model, pmode), so a prewarm that resolved haiku while the real
+            # turn resolves sonnet would kill and respawn the process on every
+            # single turn. Both sides must route from the same measurement.
+            cli_model, _ = turnopts.resolve_model(
+                model or "auto", "", False,
+                signals={"ctx_tokens": (_stats().get(user) or {}).get("ctx_tokens")})
             base = harness.brief("board-copilot")
             lock = _turn_lock(user)
             if not lock.acquire(blocking=False):
@@ -852,7 +858,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # "" (no explicit pick) routes as Auto - never falls through to the CLI's
     # global default, which is whatever the owner's interactive /model was
     # last set to (the same leak fixed in sessions._turn, 2026-08-14).
-    cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths))
+    # ctx_tokens is a ROUTING INPUT, not just a meter. Henry's session is
+    # long-lived (one per user, months of board chat) while the picker reads a
+    # two-character message: without this the trivial-message path picked the
+    # 200k Haiku tier for a 615k session and the resume died on "Prompt is too
+    # long" (2026-08-30, card 20260830-065545). Read from copilot_stats, the
+    # ONE owner of that number - folded at event time, never re-derived.
+    _st = _stats().get(user) or {}
+    cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths),
+                                          signals={"ctx_tokens": _st.get("ctx_tokens")})
     body = turnopts.augment_prompt(message, thinking, paths)
     focus = ""
     card_run_dir = None

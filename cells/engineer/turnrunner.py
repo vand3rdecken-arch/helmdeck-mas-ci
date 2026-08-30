@@ -72,7 +72,8 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None, by=None):
         model, _ = turnopts.resolve_model("auto", prompt, signals={
             "value": t.get("value"), "priority": t.get("priority"),
             "turns": t.get("turns"), "failed": bool(t.get("gate_failed")),
-            "fails": events.consecutive_gate_fails(t["id"])})
+            "fails": events.consecutive_gate_fails(t["id"]),
+            "ctx_tokens": t.get("ctx_tokens")})
     if model:
         cfg = {**cfg, "model": model}
     if perm:
