@@ -220,11 +220,39 @@ function resolveClaudeSpawn(claude) {
   return { cmd: claude.cmd, prefixArgs: [], useShell: win };
 }
 
+/** Quote one argument for the shell we are about to hand a joined string to.
+ *  Only needed on the resolveClaudeSpawn FALLBACK path (shim we cannot see
+ *  through): Node does NOT escape argv when `shell` is set - it joins on spaces
+ *  and hands the result to cmd.exe - so anything with a space or a colon must
+ *  carry its own quotes or it arrives as several arguments. */
+const shellQuote = (a) => (win
+  ? `"${String(a).replace(/"/g, '\\"')}"`
+  : `'${String(a).replace(/'/g, "'\\''")}'`);
+
+/** spawnSync for `claude`, going through resolveClaudeSpawn like claudeTask
+ *  already does. This is not cosmetic: `runQ(claude.cmd, ["-p", "reply with: ok"])`
+ *  reaches cmd.exe as `claude.cmd -p reply with: ok`, so the prompt splits into
+ *  three arguments, claude exits non-zero on the junk, and the caller concludes
+ *  "not logged in" on a perfectly healthy, authenticated install - onboarding
+ *  then opens a login terminal nobody needs and waits out its full five-minute
+ *  poll. Exactly the loss realClaudeExe documents above (fixed for the daemon in
+ *  ea09780), reached through the one call site that still used the shell. */
+function runClaude(claude, args, opts = {}) {
+  const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
+  const argv = [...prefixArgs, ...args];
+  try {
+    return spawnSync(cmd, useShell ? argv.map(shellQuote) : argv,
+      { shell: useShell, windowsHide: true, encoding: "utf8", timeout: 20000, env: hydratedEnv(), ...opts });
+  } catch (e) {
+    return { status: 1, stdout: "", stderr: String(e && e.message) };
+  }
+}
+
 /** Authenticated == a trivial non-interactive prompt returns without an auth
  *  error. `claude -p` exits non-zero and says so when the user is logged out. */
 function claudeAuthed(claude) {
   if (!claude) return false;
-  const r = runQ(claude.cmd, ["-p", "reply with: ok"], { timeout: 60000 });
+  const r = runClaude(claude, ["-p", "reply with: ok"], { timeout: 60000 });
   const out = ((r.stdout || "") + (r.stderr || "")).toLowerCase();
   if (/not logged in|unauthor|authenticate|login|invalid api key|no api key/.test(out)) return false;
   return r.status === 0;
@@ -289,7 +317,14 @@ function npmInstallGlobal(npmCmd, pkgName, displayName) {
 function openClaudeLoginTerminal(claude) {
   try {
     if (win) {
-      spawn("cmd.exe", ["/c", "start", "\"Claude Code Login\"", "cmd", "/k", claude.cmd],
+      // Prefer the real executable over the .cmd shim (same reason as
+      // resolveClaudeSpawn), and let Node do the quoting: with shell:false it
+      // quotes any argument containing spaces, so the title stays a title and
+      // a path like C:\Program Files\nodejs\claude.cmd survives. Pre-quoting
+      // the title by hand produced a doubly-quoted token, and the unquoted
+      // ProgramFiles path made `cmd /k` try to run "C:\Program".
+      const { cmd, prefixArgs } = resolveClaudeSpawn(claude);
+      spawn("cmd.exe", ["/c", "start", "Claude Code Login", "cmd", "/k", cmd, ...prefixArgs],
         { shell: false, windowsHide: false, detached: true, stdio: "ignore", env: hydratedEnv() }).unref();
       return true;
     }
@@ -347,6 +382,45 @@ function download(url, dest, redirects = 0) {
       f.on("error", reject);
     }).on("error", reject);
   });
+}
+
+/** Make an embeddable CPython able to import the daemon package.
+ *
+ * MEASURED, NOT REASONED (2026-08-29, stock 3.12.8 embed extract, the exact
+ * production command from the repo root):
+ *     python.exe -c "import sys; print(sys.path)"
+ *       -> ['...\\python312.zip', '...\\python']          # no cwd, at all
+ *     python.exe -m daemon.swarm
+ *       -> ModuleNotFoundError: No module named 'daemon'
+ *
+ * The embeddable build ships a `python3xx._pth`, which PINS sys.path to the zip
+ * plus its own directory and - by existing at all - also suppresses the working
+ * directory that `-m` normally prepends. It makes PYTHONPATH inert too, so there
+ * is no environment-variable way around it; the _pth is the only lever.
+ *
+ * That lands precisely on the fresh machine this whole fallback exists for:
+ * provisioning would fetch the runtime, report "Python-Laufzeit bereit", and
+ * then fail to start the very instance it had just made possible - with the
+ * traceback in daemon.out.log where the onboarding screen never looks.
+ *
+ * Appending the root the daemon is actually launched from (main.js startDaemon
+ * uses path.dirname(daemonDir) as cwd) is enough; `site` stays disabled. */
+function pinPthToDaemonRoot(pyDir, daemonRoot) {
+  let entries;
+  try { entries = fs.readdirSync(pyDir); } catch { return; }
+  const name = entries.find((f) => /^python\d+\._pth$/i.test(f));
+  if (!name) return;                    // a full install, not an embed - nothing to pin
+  const file = path.join(pyDir, name);
+  try {
+    const body = fs.readFileSync(file, "utf8");
+    // Idempotent: this runs on every provision (which may be re-entered by a
+    // reload or a second press), and a stacked duplicate path is a slow leak.
+    if (body.split(/\r?\n/).some((l) => l.trim().toLowerCase() === daemonRoot.toLowerCase())) return;
+    fs.appendFileSync(file, (body.endsWith("\n") ? "" : "\r\n") + daemonRoot + "\r\n");
+    say("Python-Laufzeit auf HelmDeck ausgerichtet.", "ok");
+  } catch (e) {
+    say("Konnte die Python-Laufzeit nicht ausrichten: " + e.message, "err");
+  }
 }
 
 /** Fetch + unpack the embeddable CPython next to our resources. Only reached
@@ -463,9 +537,27 @@ function startSetupServer(ctx) {
   // un-install mid-run; a MISSING one is re-probed (so installing Python
   // while the setup screen is open is still picked up on the next poll).
   let _pyProbe = null, _claudeProbe = null, _engineProbeCache = {};
+  // A MISS is retried - installing Python while this screen is open has to be
+  // noticed - but no more often than MISS_TTL. Both halves matter: on a fresh
+  // machine every probe misses BY DEFINITION, and findPython/findClaude shell
+  // out per candidate SYNCHRONOUSLY, so an unthrottled retry re-ran up to six
+  // blocking spawns per request while two independent hooks poll /setup/state
+  // about twice a second - the control plane spent provisioning blocked on its
+  // own probes. Positive results still stick forever (below).
+  const MISS_TTL = 5000;
+  const _missAt = {};
+  const cachedProbe = (key, probe) => {
+    const now = Date.now();
+    if (now - (_missAt[key] || 0) < MISS_TTL) return null;
+    const r = probe();
+    if (!r) _missAt[key] = now;
+    return r;
+  };
+  const probePython = () => _pyProbe || (_pyProbe = cachedProbe("python", () => findPython(ctx.resourcesDir)));
+  const probeClaude = () => _claudeProbe || (_claudeProbe = cachedProbe("claude", () => findClaude()));
   const state = async () => {
-    const py = _pyProbe || (_pyProbe = findPython(ctx.resourcesDir));
-    const claude = _claudeProbe || (_claudeProbe = findClaude());
+    const py = probePython();
+    const claude = probeClaude();
     return {
       python: !!py, pythonBundled: !!(py && py.bundled),
       claude: !!claude, claudeVersion: claude ? claude.version : "",
@@ -474,17 +566,22 @@ function startSetupServer(ctx) {
     };
   };
 
-  // Same cache-once-positive reasoning as _pyProbe/_claudeProbe above (a found
-  // CLI doesn't uninstall itself mid-run; a missing one is re-probed so an
-  // install that just happened elsewhere is picked up on the next poll).
+  // Same cache-once-positive / throttle-the-miss reasoning as probePython above,
+  // and for the same reason: this list is five CLIs, all of them missing on a
+  // fresh machine, probed on every poll. The cache holds HITS only, so a null
+  // entry is simply "not found yet" and re-probes on the next tick past MISS_TTL.
   const engineStatuses = () => ENGINES.map((eng) => {
     if (eng.id === "claude") {
-      const c = _claudeProbe || (_claudeProbe = findClaude());
+      const c = probeClaude();
       return { id: eng.id, label: eng.label, tier: eng.tier, installed: !!c, version: c ? c.version : "" };
     }
-    const cached = _engineProbeCache[eng.id];
-    const status = (cached && cached.installed) ? cached : (_engineProbeCache[eng.id] = probeCliVersion(eng.id));
-    return { id: eng.id, label: eng.label, tier: eng.tier, installed: status.installed, version: status.version };
+    const hit = _engineProbeCache[eng.id]
+      || (_engineProbeCache[eng.id] = cachedProbe("eng:" + eng.id, () => {
+        const s = probeCliVersion(eng.id);
+        return s.installed ? s : null;
+      }));
+    return { id: eng.id, label: eng.label, tier: eng.tier,
+      installed: !!hit, version: hit ? hit.version : "" };
   });
 
   async function provision(selected) {
@@ -549,19 +646,36 @@ function startSetupServer(ctx) {
       let py = findPython(ctx.resourcesDir);
       if (!py) {
         say("Keine Python-Laufzeit gefunden.");
-        try { py = await fetchPython(ctx.resourcesDir); }
-        catch (e) {
-          say("Download fehlgeschlagen: " + e.message, "err");
+        // The embeddable runtime is a WINDOWS artifact (…-embed-amd64.zip) and
+        // unpacking it goes through PowerShell, so on macOS/Linux this would
+        // download 11 MB and then fail at the unzip. Go straight to the hand-off
+        // that can actually succeed there instead of spending the round trip.
+        try {
+          if (!win) throw new Error("kein einbettbares Python für diese Plattform");
+          py = await fetchPython(ctx.resourcesDir);
+        } catch (e) {
+          say(win ? "Download fehlgeschlagen: " + e.message : e.message, "err");
           say("Ich lasse Claude es übernehmen…");
+          // Describe the machine we are ACTUALLY on: this hand-off is now the
+          // only route to a runtime on macOS/Linux, and telling Claude to use
+          // winget on a Mac wastes the one step that can still rescue the run.
           await claudeTask(claude,
-            "Install a Python 3.12 runtime on this Windows machine so that `py -3.12 --version` "
-            + "works, using winget if available. Do not modify anything else. Report what you did.",
+            win
+              ? "Install a Python 3.12 runtime on this Windows machine so that `py -3.12 --version` "
+                + "works, using winget if available. Do not modify anything else. Report what you did."
+              : "Install a Python 3.12 runtime on this " + process.platform + " machine so that "
+                + "`python3 --version` reports 3.12 or newer, using the system package manager "
+                + "(Homebrew on macOS). Do not modify anything else. Report what you did.",
             ctx.daemonDir, "acceptEdits");   // this step must actually change the machine
           py = findPython(ctx.resourcesDir);
         }
       }
       if (!py) { say("Ohne Python-Laufzeit kann der Daemon nicht starten.", "err"); return; }
       say("Python-Laufzeit bereit.", "ok");
+      // Covers BOTH embeddable runtimes we can end up on - the one fetchPython
+      // just downloaded and one the installer bundled - because they land in the
+      // same directory and carry the same _pth. A system Python needs nothing.
+      if (py.bundled) pinPthToDaemonRoot(path.join(ctx.resourcesDir, "python"), path.dirname(ctx.daemonDir));
 
       // 3) Instance
       if (!(await daemonUp(ctx.daemonPort))) {
@@ -605,8 +719,13 @@ function startSetupServer(ctx) {
     if (url.pathname === "/setup/engines") return send(200, { engines: engineStatuses() });
     if (url.pathname === "/setup/provision") {
       const raw = (url.searchParams.get("engines") || "claude").split(",").map((s) => s.trim()).filter(Boolean);
+      // Report whether THIS call started a run. A reload mid-provision re-posts
+      // here, and provision() correctly ignores the second one - but answering
+      // `started: true` to a call that started nothing is the kind of small lie
+      // that later reads as "it ran twice" when debugging a re-entrant flow.
+      const already = running;
       provision(raw);
-      return send(200, { started: true });
+      return send(200, { started: !already, alreadyRunning: already });
     }
     return send(404, { error: "not found" });
   });
@@ -615,4 +734,6 @@ function startSetupServer(ctx) {
   return { port: PORT, nonce, close: () => { try { srv.close(); } catch { /* already down */ } } };
 }
 
-module.exports = { startSetupServer, findPython, findClaude, SETUP_PORT: PORT };
+// pinPthToDaemonRoot is exported alongside the probes so the _pth behaviour it
+// works around stays testable without a full provision run.
+module.exports = { startSetupServer, findPython, findClaude, pinPthToDaemonRoot, SETUP_PORT: PORT };
