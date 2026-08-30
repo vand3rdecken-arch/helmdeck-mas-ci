@@ -487,7 +487,18 @@ def history(user):
 
 
 def open_question(user):
-    """Henry's OWN open question in this chat, or None.
+    """The CHAT's own open question (as opposed to a card's), or None.
+
+    "The chat's", not "Henry's", since 2026-08-30: the PM asks through this
+    same channel now - pm_comm._ask_owner writes a cls:"bot" entry carrying a
+    question - because the owner decreed that an automatic notice holding a
+    real decision has to give him a BUTTON instead of a paragraph. Both ends
+    of the channel key on cls "bot" (this function, which routes_copilot.
+    _answer_text checks the tapped request_id against, and the app's
+    openChatQuestion), so a PM question written in any other class would
+    render as prose with buttons nobody can tap. The tapped answer then walks
+    the ordinary chat path into Henry - the right split, since the PM detects
+    and asks while Henry is the one with hands to execute the answer.
 
     DERIVED from the log every time it is asked - there is no `pending_question`
     field anywhere, and there must not be one. The chat log is the single record
@@ -502,8 +513,9 @@ def open_question(user):
     disappearing is then the truth rather than a guess, because answering a
     superseded question is a 409 here anyway.
 
-    Note this is Henry's question only. A mirrored CARD question belongs to that
-    card and is answered through sessions.answer_question (see _route_to_card)."""
+    Note this covers only questions asked IN the chat (Henry's or the PM's). A
+    mirrored CARD question belongs to that card and is answered through
+    sessions.answer_question (see _route_to_card)."""
     log = _log().get(user, [])
     for i in range(len(log) - 1, -1, -1):
         m = log[i]

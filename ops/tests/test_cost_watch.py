@@ -39,6 +39,7 @@ from cells.pm import pm
 from cells.pm import pm_watchdog
 from cells.pm import pm_comm
 from spine.comms import notify
+from spine.comms import notice
 from spine.comms import presence
 from spine.storage import events
 
@@ -63,9 +64,16 @@ CFG = dict(pm.PM_DEFAULTS)                     # base 5%, reserve 40%, floor $5,
 pm._pm = lambda: dict(CFG)   # _cost_watch imports _pm LAZILY (fresh each call) - this seam still works
 pm_watchdog._save_loopstate = lambda s: None
 pm_watchdog._activity = lambda *a, **k: None
+# The two OWNER-FACING seams the watchdog now uses (owner decree 2026-08-30):
+# a budget rung ASKS the owner with real buttons, a context crossing is handed
+# to HENRY and never reaches the owner at all. ESC keeps its name so every
+# budget assertion below still reads as "what the owner was told".
 ESC = []
-pm_watchdog._escalate = lambda text, tid="", title="": ESC.append(
-    {"text": text, "tid": tid, "title": title})
+pm_watchdog._ask_owner = lambda text, options, header="", card="", title="": ESC.append(
+    {"text": text, "tid": card, "title": title, "options": options, "header": header})
+HENRY = []
+pm_watchdog._to_henry = lambda kind, detail, card=None, feed="": HENRY.append(
+    {"kind": kind, "detail": detail, "card": card, "feed": feed})
 PLAN = ["max"]                                 # mutable so scenarios can flip it
 CALIB = [{"cost_per_pct": 1.0, "tokens_per_pct": 1_000_000.0}]   # $1 = 1%, 1M tok = 1%
 events.plan_effective = lambda s=None: (PLAN[0], "test")
@@ -151,17 +159,33 @@ pm._cost_watch(st, [track("e", cost=10.5)])
 check("api: over the EUR budget escalates", len(ESC) == 1 and "€" in ESC[0]["text"])
 PLAN[0] = "max"
 
-print("8. ctx floor: fire on crossing, clear under, fire again")
-st = {}; ESC.clear()
+print("8. ctx floor: hand to HENRY on crossing, clear under, hand again")
+st = {}; ESC.clear(); HENRY.clear()
 pm._cost_watch(st, [track("a", ctx=40_000)])
 pm._cost_watch(st, [track("a", ctx=160_000)])
-check("ctx crossing escalates", len(ESC) == 1 and ESC[0]["title"] == pm._i18n.t("push.pmCtx"))
+check("ctx crossing goes to Henry", len(HENRY) == 1 and HENRY[0]["kind"] == "context-bloat")
+check("ctx crossing names the card", HENRY and HENRY[0]["card"] == "a")
+# the whole point of the 2026-08-30 decree: this one is a work order for Henry
+# (compact/split/close), so the owner must not be woken by it at all
+check("ctx crossing never reaches the owner", not ESC)
 pm._cost_watch(st, [track("a", ctx=170_000)])
-check("still hot does not re-fire", len(ESC) == 1)
+check("still hot does not re-fire", len(HENRY) == 1)
 pm._cost_watch(st, [track("a", ctx=90_000)])
-check("compaction clears the corner", len(ESC) == 1 and not st["cost_watch"]["a"]["ctx_hot"])
+check("compaction clears the corner", len(HENRY) == 1 and not st["cost_watch"]["a"]["ctx_hot"])
 pm._cost_watch(st, [track("a", ctx=155_000)])
-check("next crossing escalates again", len(ESC) == 2)
+check("next crossing hands over again", len(HENRY) == 2)
+
+print("8b. an over-budget rung ASKS the owner, with real buttons")
+st = {}; ESC.clear(); HENRY.clear()
+pm._cost_watch(st, [track("a", cost=1.0)])
+pm._cost_watch(st, [track("a", cost=7.0)])
+check("over budget asks the owner", len(ESC) == 1)
+check("the ask carries tappable options", ESC and len(ESC[0]["options"]) >= 2
+      and all(o.get("label") for o in ESC[0]["options"]))
+# written short ENOUGH that the writer's clip never fires - a cap that has to
+# engage would take the actionable half of the sentence with it
+check("the ask already obeys the length law untouched",
+      ESC and notice.short(ESC[0]["text"]) == ESC[0]["text"])
 
 print("9. leaving 'working' drops the entry; re-entry re-baselines")
 st = {}; ESC.clear()

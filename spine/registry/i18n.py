@@ -130,10 +130,13 @@ MESSAGES = {
     # PM escalations through the presence-aware pipe (pm._escalate -> notify.escalate)
     "push.pmAlert": {"de": "PM: Achtung", "en": "PM: heads-up"},
     "push.pmCost": {"de": "PM: Karte ueber Budget", "en": "PM: card over budget"},
-    "push.pmCtx": {"de": "PM: Kontext laeuft voll", "en": "PM: context filling up"},
     "push.pmQuota": {"de": "PM: Wochenkontingent laeuft voraus",
                      "en": "PM: weekly quota ahead of pace"},
-    "push.pmTriangle": {"de": "PM: Dreieck schief", "en": "PM: triangle tilted"},
+    # push.pmCtx and push.pmTriangle were DELETED, not orphaned (owner decree
+    # 2026-08-30): the context watchdog and the triangle tilt no longer reach
+    # the owner at all - they go to Henry (pm_comm._to_henry), who has no push
+    # title because he is not a notification. A push title left lying around
+    # for a channel that no longer exists is an invitation to re-wire it.
     # the per-card autopilot escalating on its own (processes._auto_resolve)
     "push.autopilotStuck": {"de": "Autopilot: haengt", "en": "Autopilot: stuck"},
     "push.autopilotStuckBody": {
@@ -142,53 +145,46 @@ MESSAGES = {
     },
 
     # -- the PM speaking in chat (pm._say) ------------------------------------
+    #
+    # THE TWO-SENTENCE LAW (owner decree 2026-08-30: "Zu viel info.. bzw ich
+    # weiss nicht was ich dazu machen soll"). Every string that survives here is
+    # one the owner has a MOVE for, cut down to the sentence that names that
+    # move. pm_comm._short enforces the cap regardless of what is written here;
+    # these are written short so the clip never has to fire and take the
+    # actionable half with it. Notices with NO owner move - the quota
+    # projection, the plan gate, the triangle tilt, the context watchdog, "ich
+    # kuemmere mich", "wieder frei" - left the chat entirely and now go to the
+    # dashboard feed or to Henry (pm_comm._to_henry). Do not re-add one here
+    # without a move in it.
     "pm.planned": {
         "de": "Kurzes Update: ich hab {n} neue Aufgabe(n) fuer dein Ziel eingeplant.",
         "en": "Quick update: I planned {n} new task(s) for your goal.",
     },
     "pm.delivered": {
-        "de": "Fertig: '{task}' ist geliefert und wartet auf deine Abnahme (oder Bounce). "
-              "Sag mir Bescheid oder tipp die Karte an.",
-        "en": "Done: '{task}' is delivered and waiting for you to accept (or bounce) it. "
-              "Tell me, or tap the card.",
+        "de": "Fertig: '{task}' wartet auf deine Abnahme.",
+        "en": "Done: '{task}' is waiting for you to accept it.",
     },
     # a card parked on an unanswered question is NOT delivered - saying so sent
     # the owner to accept work that was never finished
     "pm.asking": {
-        "de": "'{task}' braucht eine Entscheidung von dir: {question} "
-              "Tipp die Karte an - da sind Auswahl-Buttons.",
-        "en": "'{task}' needs a decision from you: {question} "
-              "Tap the card - there are option buttons.",
+        "de": "'{task}' fragt dich: {question}",
+        "en": "'{task}' is asking you: {question}",
     },
     "pm.stillStuck": {
-        "de": "Achtung: '{task}' haengt weiter - meine Fix-Versuche haben nicht gereicht. {proposal}",
-        "en": "Heads up: '{task}' is still stuck - my fix attempts were not enough. {proposal}",
+        "de": "'{task}' haengt weiter - {proposal}",
+        "en": "'{task}' is still stuck - {proposal}",
     },
-    "pm.onIt": {
-        "de": "'{task}' ist gebounct ({kind}) - ich kuemmere mich: Fix delegiert, "
-              "danach reiche ich die Karte selbst neu ein.",
-        "en": "'{task}' bounced ({kind}) - I am on it: fix delegated, then I resubmit "
-              "the card myself.",
-    },
-    "pm.freeAgain": {"de": "Geschafft: '{task}' ist wieder frei{note}",
-                     "en": "Sorted: '{task}' is unblocked again{note}"},
     "pm.burnStuck": {
-        "de": "Der Worker der Karte '{task}' wiederholt denselben Schritt ({n}x {tool}) und "
-              "kommt nicht weiter. Ich habe {corr} Korrektur(en) versucht - bitte schau drauf.",
-        "en": "The worker on '{task}' keeps repeating the same step ({n}x {tool}) and is not "
-              "getting anywhere. I tried {corr} correction(s) - please take a look.",
+        "de": "Der Worker von '{task}' dreht sich im Kreis ({n}x {tool}) - meine "
+              "{corr} Korrektur(en) haben nicht gereicht.",
+        "en": "The worker on '{task}' is going in circles ({n}x {tool}) - my "
+              "{corr} correction(s) were not enough.",
     },
     "pm.launchCheck": {
-        "de": "Koordinations-Check fuers Play-Store-Deploy (highest prio: in den Store) - das "
-              "brauche nur ich VON DIR, den Rest treibe ich selbst als Karten: "
-              "1) Google-Play-Console-Account angelegt? 2) Upload-Keystore / Play App Signing "
-              "bereit? 3) Datenschutz-URL + Data-Safety-Angaben? Sag mir kurz, was schon steht - "
-              "fuer den Rest lege ich Karten an und arbeite sie ab.",
-        "en": "Coordination check for the Play Store deploy (highest priority: get into the "
-              "store) - this is all I need FROM YOU, I drive the rest myself as cards: "
-              "1) Google Play Console account created? 2) Upload keystore / Play App Signing "
-              "ready? 3) Privacy URL + data-safety answers? Tell me briefly what already "
-              "exists - for the rest I file cards and work through them.",
+        "de": "Fuers Play-Store-Deploy brauche ich nur von dir: Console-Account, "
+              "Upload-Keystore und Datenschutz-URL. Was steht schon?",
+        "en": "For the Play Store deploy I only need this from you: console account, "
+              "upload keystore and privacy URL. What already exists?",
     },
 
     # -- unblock proposals attached to every escalation (pm._unblock_proposal) -

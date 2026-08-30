@@ -8,12 +8,34 @@ Computed from the REAL board, never LLM-guessed, so it's reliable.
 Depends only on i18n/copilot/sessions/notify - nothing back into pm.py's own
 logic, so pm.py (and the extracted pm_resolve.py) import these at module
 level with no cycle. PLANS is recomputed independently rather than imported
-from pm.py (same value, process-idempotent - importing it would cycle back)."""
+from pm.py (same value, process-idempotent - importing it would cycle back).
+
+THE NOTICE LAW (owner decree 2026-08-30, verbatim: "Diese Karte sollte in der
+Form nicht mehr im Chat sein. Zu viel info.. bzw ich weiss nicht was ich dazu
+machen soll.")
+------------------------------------------------------------------------
+Every automatic notice now has to answer ONE question before it is written:
+is there a decision only the OWNER can make?
+
+  yes -> _say / _escalate / _ask_owner. One short line, and spine.comms.notice
+         .short() enforces that in the WRITER, not in the caller's good
+         intentions - a caller that rambles gets clipped. _ask_owner
+         additionally gives him a real BUTTON to tap.
+  no  -> _activity (the dashboard feed, pm.activity -> PMStatusPanel) and/or
+         _to_henry (the escalation bus, where Henry judges and ACTS on it).
+         Never the owner's chat.
+
+The complained-about block was _stakeholder_update's "Ziel vs. Budget" wall:
+five sentences of projections with no move for the owner in any of them. The
+context watchdog was worse - it was ADDRESSED to Henry ("Karte kompaktieren,
+aufteilen oder abschliessen") and delivered to the owner. Both are routed by
+the rule above now, not by whoever wrote the string."""
 import json
 import os
 import time
 
 from spine.registry import i18n as _i18n
+from spine.comms.notice import short as _short
 from daemon.paths import DAEMON_ROOT as ROOT
 
 PLANS = os.path.join(ROOT, "pm")
@@ -36,12 +58,111 @@ def _say(text):
     chat MOVES on its own - real proactive communication, not just a silent feed.
     You can reply there and steer it. (cls 'pm' = a PM-authored message.)
     One voice: the shared writer in copilot.say, which the lane pipeline uses
-    too - so everything non-interactive speaks in the same chat."""
+    too - so everything non-interactive speaks in the same chat.
+
+    Clipped by _short: this is the LAST gate before the owner's chat, so it is
+    where the two-sentence law is actually enforced. Use it only when the
+    owner has a move to make - a notice with no move belongs in _activity or
+    _to_henry (see the module docstring)."""
     try:
         from cells.copilot import copilot
-        copilot.say(text, cls="pm")
+        copilot.say(_short(text), cls="pm")
     except Exception:
         pass
+
+
+def _to_henry(kind, detail, card=None, feed=""):
+    """Hand a notice that needs NO OWNER DECISION to HENRY instead of writing
+    it into the owner's chat (owner decree 2026-08-30).
+
+    Henry is the exception broker WITH HANDS: he reads the fact, judges it in
+    full board context and acts - compact/split/close the bloated card,
+    re-derive a red triage corner, hold non-goal work while the quota is
+    ahead. That is what every one of these notices was already ASKING FOR in
+    prose; it was just asking the wrong person. The context watchdog is the
+    clearest case: its own text told the reader to compact the card, which the
+    owner cannot do and Henry can.
+
+    Guarded against re-emitting the SAME open exception (same guard shape as
+    lifecycle._landed_not_closed and turnrunner's delivered-parked): the PM's
+    own dedup latches decide WHEN a fact is news, this makes sure a Henry who
+    is still working on it does not get it a second time.
+
+    Also lands in the activity feed, so the dashboard keeps showing it - going
+    quiet in the chat must not mean going invisible."""
+    _activity("blocked", feed or detail, card=card)
+    try:
+        from spine.registry import escalations
+        if any(e.get("kind") == kind and e.get("card") == card
+               for e in escalations.list_open()):
+            return ""                    # Henry is already on this exact one
+        return escalations.emit(kind, card=card, detail=detail)
+    except Exception as e:
+        print("pm: henry handoff failed:", e)
+        return ""
+
+
+def _ask_owner(text, options, header="", card=None, title=""):
+    """The PM ASKS: ONE short line plus REAL TAP BUTTONS in the owner's chat.
+
+    The owner's complaint was two-sided - too long AND "ich weiss nicht was ich
+    dazu machen soll". A cap alone fixes only the first half; this fixes the
+    second, for the notices that genuinely hold an owner decision (a card over
+    budget, the goal at risk before the quota reset).
+
+    The question is built by round-tripping a real <helmdeck-ask> block through
+    ask.parse rather than hand-rolling the dict: shape and validation then keep
+    exactly ONE owner (spine/ops/ask.py), so a PM question can never drift from
+    a worker's, and an unusable option list is REJECTED there instead of
+    rendering a dead panel.
+
+    Posted as cls "bot" because that is the class the question channel is keyed
+    on at BOTH ends - copilot.open_question (which routes_copilot._answer_text
+    checks the tapped request_id against) and the app's openChatQuestion. A
+    "pm"-class entry carrying a question renders as prose with buttons nobody
+    can tap. The tapped answer therefore walks the ordinary chat path into
+    HENRY, who has the hands to execute it - which is the right split: the PM
+    detects and asks, Henry acts.
+
+    The chat holds ONE open question at a time (copilot.open_question: the
+    newest, with nothing said after it), so a PM ask posted while a Henry
+    question is pending SETTLES that one - the owner answers the newest. That
+    is the existing rule for two Henry questions, inherited rather than
+    introduced, and it is why every caller here is behind a latch that fires
+    on a state CHANGE (a budget rung, the first at-risk of a window) instead
+    of once a tick.
+
+    Degrades to a plain short line (never silence) if the question cannot be
+    built or the chat write fails."""
+    line = _short(text)
+    q = None
+    try:
+        from spine.ops import ask
+        block = ("<helmdeck-ask>"
+                 + json.dumps({"questions": [{"question": line,
+                                              "header": header or line,
+                                              "options": options}]},
+                              ensure_ascii=False)
+                 + "</helmdeck-ask>")
+        q, _cleaned = ask.parse(block)
+    except Exception as e:
+        print("pm: ask build failed:", e)
+    if not q:
+        _escalate(line, tid=card or "", title=title)
+        return False
+    try:
+        from cells.copilot import copilot
+        copilot.say(line, cls="bot", card=card or None, extra={"question": q})
+    except Exception as e:
+        print("pm: ask say failed:", e)
+        return False
+    try:
+        from spine.comms import notify
+        notify.escalate(title or _i18n.t("push.pmAlert"), line[:180],
+                        card or _escalation_tid())
+    except Exception as e:
+        print("pm: ask push failed:", e)
+    return True
 
 
 def _escalation_tid():
@@ -69,7 +190,13 @@ def _escalate(text, tid="", title=""):
     proved (_push_burn). _say alone let the €843 card burn for days: its
     warnings sat in a chat nobody had open. Dedup stays with the caller
     (content hash / level ladder); notify.escalate only decides delivery
-    (silent / in-app / push)."""
+    (silent / in-app / push).
+
+    Clipped ONCE here and the SAME line goes to both channels: the push and
+    the chat disagreeing about the same event is the drift the one-owner rule
+    exists to prevent, and the owner already reported the mid-word version of
+    it (2026-08-28, "Nachrichten enden mitten im Wort")."""
+    text = _short(text)
     _say(text)
     try:
         from spine.comms import notify

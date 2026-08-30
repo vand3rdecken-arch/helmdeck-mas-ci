@@ -578,9 +578,19 @@ def _notify_owner(text, t):
     # reads while watching Henry work, the Henry chat, showed none of the
     # broker's decisions. copilot.say is the same line the lane pipeline's
     # _say_card uses; best-effort like the push.
+    #
+    # Clipped to the same two-sentence ceiling as every other automatic notice
+    # (owner decree 2026-08-30). Henry is an LLM writing free prose into the one
+    # chat the owner actually reads, so he is the likeliest future source of the
+    # wall the decree bans - the cap belongs at this edge, not in his mandate,
+    # where it would be a request rather than a rule. Only the CHAT copy is cut:
+    # the push has always had its own 230-char budget above, and the card audit
+    # below still gets the message WHOLE, so nothing is lost, it just stops
+    # being shouted (the same split _notify_owner's docstring already draws).
     try:
         from cells.copilot import copilot
-        copilot.say(text, cls="pm", card=(t or {}).get("id") or None)
+        from spine.comms.notice import short
+        copilot.say(short(text), cls="pm", card=(t or {}).get("id") or None)
     except Exception:
         pass
     if t:
