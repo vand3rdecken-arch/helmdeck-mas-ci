@@ -280,7 +280,12 @@ def _resolve_card(tid, attempt):
         kind = _bounce_kind(t)
         task = (t.get("task") or "").replace("\n", " ")[:60]
         if attempt == 1 and kind != "dispatch":
-            _say(_i18n.t("pm.onIt", task=task, kind=kind))
+            # DASHBOARD ONLY (owner decree 2026-08-30): "ich kuemmere mich" is the
+            # PM narrating its own work - there is no owner move in it, and the
+            # _activity lines below already carry every attempt into the feed. If
+            # the fix does NOT hold, _notify_deliveries escalates it WITH a
+            # concrete proposal, which is the version he can act on.
+            _activity("resolve", "Bounce (%s) - kuemmere mich: %s" % (kind, task), card=tid)
         if kind == "dispatch":
             _activity("resolve", "Dispatch schlug fehl - starte neu (Versuch %d): %s"
                       % (attempt, task), card=tid)
@@ -332,8 +337,11 @@ def _resolve_card(tid, attempt):
     t = sessions._find(sessions._load(), tid)
     task = ((t or {}).get("task") or "").replace("\n", " ")[:60]
     if t and t.get("status") != "bounced":
-        _activity("resolve", "Wieder frei (Versuch %d): %s" % (attempt, task), card=tid)
-        _say(_i18n.t("pm.freeAgain", task=task, note=(" - " + note[:200]) if note else "."))
+        # DASHBOARD ONLY (owner decree 2026-08-30): a self-healed card is good
+        # news with no move in it. The card left the blocker list, which is the
+        # honest place that shows; the feed line keeps the detail.
+        _activity("resolve", "Wieder frei (Versuch %d): %s%s"
+                  % (attempt, task, (" - " + note[:200]) if note else ""), card=tid)
     elif attempt >= _RESOLVE_MAX:
         _give_up(tid)
         _activity("blocked", "Haengt trotz %d Fix-Versuchen - eskaliere mit Vorschlag: %s"
