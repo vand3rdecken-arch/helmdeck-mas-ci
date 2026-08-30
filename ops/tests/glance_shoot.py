@@ -2,7 +2,7 @@
 """Screenshot + JUDGE the glasses Glance webapp at its real 600x600 viewport.
 
 Serves surfaces/glasses/ AND a fake /glance built by the REAL daemon code path
-(server.glance_payload over a fixture board), so what the shots show is what the
+(glance_payload over a fixture board), so what the shots show is what the
 daemon would actually send - not a hand-written JSON that could flatter the UI.
 
   py -3.12 ops/tests/glance_shoot.py            # port from HELMDECK_DEV_PORT
@@ -13,21 +13,30 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, os.path.join(ROOT, "daemon"))
+# REPO ROOT. This pointed at "<repo>/daemon" and did `import server`, dead since
+# the tree became spine/cells/surfaces/ops - and silently, because an unrunnable
+# script compiles exactly like a working one.
+sys.path.insert(0, ROOT)
 
 PORT = int(os.environ.get("HELMDECK_DEV_PORT") or 3404)
 SHOTS = os.path.join(ROOT, "ops", "docs", "shots")
 TOKEN = "shoot-token"
 
+# A LIVE turn, faked at its real address.
+#
+# The old FakeDrivers stub sat on the flat `drivers` module; the seam is now
+# spine.agent.drivers.turn_active, reached via glance_payload ->
+# blockers.owner_blockers -> sessions.present. Without it BOTH running cards
+# read as phantoms (a stored `running` with no turn in flight is deliberately
+# presented as needs_you, lifecycle.present) and m-running would appear on the
+# glasses - so the shot would quietly stop covering the case it exists for:
+# a card that is genuinely WORKING is nobody's move and must stay off the lens.
+from spine.agent import drivers                                 # noqa: E402
 
-class FakeDrivers:
-    live = {"m-running"}
-    turn_active = staticmethod(lambda tid: tid in FakeDrivers.live)
-    has_session = staticmethod(lambda tid: tid in FakeDrivers.live)
+_LIVE = {"m-running"}
+drivers.turn_active = lambda tid: tid in _LIVE
 
-
-sys.modules["drivers"] = FakeDrivers
-import server                                                   # noqa: E402
+from spine.ops.glances import glance_payload                    # noqa: E402
 
 BOARD = [
     {"id": "c-gate", "task": "Zahlungs-Webhook auf Idempotenz umstellen",
@@ -73,7 +82,7 @@ class H(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/glance"):
-            body = json.dumps(server.glance_payload(
+            body = json.dumps(glance_payload(
                 [dict(t) for t in BOARD], METRICS)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -87,7 +96,7 @@ class H(SimpleHTTPRequestHandler):
 
 def main():
     os.makedirs(SHOTS, exist_ok=True)
-    payload = server.glance_payload([dict(t) for t in BOARD], METRICS)
+    payload = glance_payload([dict(t) for t in BOARD], METRICS)
     print("payload the UI will render:")
     for c in payload["needs_you"]:
         print("  %-9s %-12s %s" % (c["reason"], c["id"], c["detail"][:60]))
