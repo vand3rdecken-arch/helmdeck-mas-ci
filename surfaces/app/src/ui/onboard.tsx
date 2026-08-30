@@ -5,12 +5,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import { api, AuthRequired } from "@/data/client";
+import { useConfig } from "@/data/config";
 import { qrDataUrl } from "@/data/qrgen";
 import {
   setupApi, setupAvailable, useOnboard,
   type EngineStatus, type SetupLine, type SetupState,
 } from "@/data/setup";
 import { useT } from "@/i18n";
+import { LoginScreen } from "@/ui/login_screen";
 import { useTheme } from "@/theme";
 
 // ONE screen. One button.
@@ -35,24 +37,45 @@ export function Onboard() {
   const [qr, setQr] = useState("");
   const [pairLink, setPairLink] = useState("");
   const [pairErr, setPairErr] = useState("");
+  // A token means someone is signed in; the QR is owner-only (/relay/pair,
+  // routes_relay.py), so on a fresh machine the last provisioning step is
+  // creating that account. `authRejected` covers the other case - a persisted
+  // token the daemon no longer accepts - so a stale credential lands on the
+  // same sign-in step instead of a red error under a dead button.
+  const token = useConfig((s) => s.token);
+  const [authRejected, setAuthRejected] = useState(false);
   const paired = useRef(false);
   const scroller = useRef<ScrollView>(null);
 
   // Poll state + log. Cheap (loopback) and it keeps the screen honest about a
   // provisioning run that was started by an earlier window.
+  //
+  // CHAINED, not setInterval: /setup/state probes for Python/Claude with
+  // SYNCHRONOUS spawns on the shell side, so on a slow first run a fixed
+  // interval stacks requests faster than they answer and the screen ends up
+  // rendering whichever reply happens to land last.
   useEffect(() => {
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       const [s, l, e] = await Promise.all([setupApi.state(), setupApi.log(), setupApi.engines()]);
       if (!alive) return;
       if (s) setSt(s);
       if (l) setLines(l.log);
       if (e) setEngines(e.engines);
+      timer = setTimeout(tick, 1200);
     };
     tick();
-    const iv = setInterval(tick, 1200);
-    return () => { alive = false; clearInterval(iv); };
+    return () => { alive = false; clearTimeout(timer); };
   }, []);
+
+  // A fresh sign-in earns a fresh pairing attempt: clear the rejection and drop
+  // the once-only latch so the effect below can mint the QR that the missing
+  // account was blocking.
+  useEffect(() => {
+    setAuthRejected(false);
+    paired.current = false;
+  }, [token]);
 
   // The instance is up -> mint the pairing artifact. One link, shown as a QR and
   // as copyable text: the same string works as scan, tap-link and deep link.
@@ -73,10 +96,11 @@ export function Onboard() {
       // Not being logged in is the EXPECTED state here now that the shell hands
       // out no free owner token, so it must not read like a breakage: pairing a
       // phone binds it to an account, and there is no account until someone
-      // signs in. The auth gate takes the screen from here.
-      setPairErr(e instanceof AuthRequired
-        ? tr("onboard.pairNeedsLogin")
-        : String((e as Error).message));
+      // signs in. That is a STEP of onboarding, not the end of it - so route it
+      // to the sign-in step rather than parking an error message on a screen
+      // whose only remaining button re-runs provisioning that already worked.
+      if (e instanceof AuthRequired) setAuthRejected(true);
+      else setPairErr(String((e as Error).message));
       paired.current = false;
     }
   }, [tr]);
@@ -92,15 +116,26 @@ export function Onboard() {
     });
   }, []);
 
+  // The instance runs, but the pairing artifact is owner-only - so this is the
+  // one thing still missing before the screen can show its end state.
+  const needsAuth = !!st?.daemon && (!token || authRejected);
+
   useEffect(() => {
-    if (st?.daemon && !qr && !pairErr) {
+    if (st?.daemon && !needsAuth && !qr && !pairErr) {
       qc.invalidateQueries();
       makePairing();
     }
-  }, [st?.daemon, qr, pairErr, makePairing, qc]);
+  }, [st?.daemon, needsAuth, qr, pairErr, makePairing, qc]);
 
   const busy = !!st?.running;
   const needsClaude = st && !st.claude;
+
+  // Still onboarding, just its third step - NOT a different screen. LoginScreen
+  // already IS this step: its "setup" mode is "Owner-Konto anlegen", picked from
+  // the daemon's own setup_needed, and it is drawn on the same centered canvas.
+  // Reusing it keeps ONE sign-in surface; a second copy here would be the same
+  // mistake as maintaining two chat UIs.
+  if (needsAuth) return <LoginScreen />;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
@@ -200,25 +235,40 @@ export function Onboard() {
   );
 }
 
-/** Desktop shell + instance not serving yet => onboarding owns the window.
+/** Desktop shell, first run => onboarding owns the window.
  *
  *  Deliberately NOT keyed off the health store: on a cold start `lastOkAt` is 0
  *  for everyone, so that would flash onboarding into every normal launch. We ask
  *  the control plane instead and stay silent until it has actually answered
- *  (`null` = unknown = show nothing). */
+ *  (`null` = unknown = show nothing).
+ *
+ *  Onboarding is ENTERED because the instance is not serving - but it is NOT
+ *  LEFT the moment it starts serving, which is the middle of the flow, not the
+ *  end of it. Provisioning starts the daemon at step 3 of 5; keying purely on
+ *  `!daemon` tore the screen down right there, taking the still-streaming
+ *  progress log, the owner-account step and the pairing QR - the whole promised
+ *  end state - with it, and dropped the user on a bare login screen instead.
+ *
+ *  So the condition also honours the control plane's OWN `running`/`done`, the
+ *  runtime's real signals about a provisioning run, rather than a local flag we
+ *  set ourselves: they live in the Electron main process, so a reload mid-run
+ *  lands back on the same step with the same log, and a plain later launch
+ *  (fresh process => running/done false, daemon up) correctly shows nothing. */
 export function useShowOnboard() {
   const dismissed = useOnboard((s) => s.dismissed);
-  const [daemonUp, setDaemonUp] = useState<boolean | null>(null);
+  const [owns, setOwns] = useState<boolean | null>(null);
   useEffect(() => {
     if (!setupAvailable()) return;
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       const s = await setupApi.state();
-      if (alive && s) setDaemonUp(s.daemon);
+      if (!alive) return;
+      if (s) setOwns(!s.daemon || s.running || s.done);
+      timer = setTimeout(tick, 2000);
     };
     tick();
-    const iv = setInterval(tick, 2000);
-    return () => { alive = false; clearInterval(iv); };
+    return () => { alive = false; clearTimeout(timer); };
   }, []);
-  return setupAvailable() && !dismissed && daemonUp === false;
+  return setupAvailable() && !dismissed && owns === true;
 }
