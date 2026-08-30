@@ -12,6 +12,17 @@ and for any "just compact this card now" the owner wants.
     py -3.12 ops/tools/compact_card.py <card-id-or-fragment>
     py -3.12 ops/tools/compact_card.py <fragment> --dry
     py -3.12 ops/tools/compact_card.py <fragment> --idle 900
+    py -3.12 ops/tools/compact_card.py <fragment> --verify
+
+--no-compact skips the /compact turn and only does the rest - use it when the
+transcript already shows a compaction landed (see _compact_marks) and all that
+is missing is the refresh.
+
+--verify runs ONE tiny cheap turn afterwards. That is not cosmetic: ctx_tokens
+is reported BY a turn, so a freshly compacted card keeps showing its old red
+meter until something runs on it. The turn is the only thing that can both
+prove the session still resumes on the compacted tip and refresh the number
+the owner is looking at. Opt-in, because it costs a (small) billed turn.
 
 --idle overrides how long the compaction may be SILENT before the driver's
 watchdog kills it. Measured 2026-08-30: a 183k session emits nothing on the
@@ -86,11 +97,44 @@ def main():
         return
     log = ActionLog(t["run_dir"])
     log.log("note", "Manuelle Verdichtung angestossen (ops/tools/compact_card.py).")
-    out = sessions._maybe_compact(t, log, force=True, idle_timeout=idle)
+    marks0 = sessions._compact_marks(t["session_id"])
+    out = None
+    if "--no-compact" not in sys.argv:
+        out = sessions._maybe_compact(t, log, force=True, idle_timeout=idle)
+    marks1 = sessions._compact_marks(t["session_id"])
+    print("--> compaction summaries in the session transcript: %d -> %d"
+          % (marks0, marks1))
+    if "--verify" in sys.argv:
+        # ctx_tokens is reported BY a turn, so the meter cannot move until one
+        # runs. This turn is therefore the verification AND the refresh: if the
+        # session no longer resumes, it fails here loudly instead of silently
+        # leaving a red meter over a healthy card.
+        from cells.engineer.turnrunner import _turn
+        from spine.turn.econ import _record_econ
+        from spine.storage.trackstore import _mutate
+        t = sessions.get_track(t["id"])
+        log.log("note", "Verdichtung wird geprueft (ein kurzer Turn frischt das "
+                        "Kontext-Meter auf).")
+        sid, reply, meta = _turn(
+            t, "Kurzer Funktionscheck nach dem Verdichten: antworte in EINEM Satz, "
+               "ob du den bisherigen Auftrag und den Stand der PRD noch kennst. "
+               "Arbeite nicht weiter, aendere nichts.",
+            model="claude-haiku-4-5-20251001", idle_timeout=300)
+
+        def _apply(tt):
+            if sid and tt.get("session_id") and sid != tt["session_id"]:
+                chain = [s for s in (tt.get("session_chain") or []) if s != tt["session_id"]]
+                chain.append(tt["session_id"])
+                tt["session_chain"] = chain[-6:]
+                tt["session_id"] = sid
+            _record_econ(tt, meta)
+        t = _mutate(t["id"], _apply) or t
+        print("--> worker replied: %s" % (reply or "")[:300])
+        out = t
     after = (out or t).get("ctx_tokens", ctx)
     print("--> context now: %d  (%d%%)  chain=%s"
           % (after, round(after / window * 100), (out or t).get("session_chain")))
-    print("--> shrank" if after <= ctx * 0.75 else "--> NO shrink - see the card's log")
+    print("--> shrank" if after <= ctx * 0.75 else "--> meter not (yet) moved")
 
 
 if __name__ == "__main__":
