@@ -3642,8 +3642,8 @@ DEBT = [
     },
     {
         "id": "e2e-harnesses-stale-after-split",
-        "title": "Five manual test/camera harnesses are still dead after the "
-                 "four-folder split",
+        "title": "Test/camera harnesses died silently at the four-folder split - "
+                 "mostly recovered, six assertions still stale",
         "status": "open",
         "what": "The move to spine/cells/surfaces/ops left 12 scripts under "
                 "ops/tests/ and ops/docs/shots/ importing the pre-split flat "
@@ -3664,7 +3664,18 @@ DEBT = [
                 "smoke/pair_link.py, smoke/setup_sandbox.py - these five are "
                 "STANDING tools (a behaviour proof, a glasses camera, the "
                 "APK-against-a-tunnel recipe), not scaffolding, which is why "
-                "they were not deleted with the rest.",
+                "they were not deleted with the rest. FINAL STATE: the whole "
+                "ops/tests/unit/ pytest suite turned out to be dead too - its "
+                "shared conftest.py pointed at <repo>/daemon, so all three "
+                "tests died at COLLECTION and the count was 15 files, not 12. "
+                "conftest + imports + the moved seams (proctable._PIDFILE, the "
+                "package-attribute fakes) are fixed and the suite runs: 29 pass, "
+                "6 fail. glance_shoot.py and e2e_cancel_resume.py are repaired "
+                "and GREEN (9/9). smoke/pair_link.py, smoke/setup_sandbox.py and "
+                "e2e_question_live.py were DELETED - the first two bootstrapped "
+                "one finished release-smoke card whose result is written down in "
+                "ops/tests/smoke/EVIDENCE.md, and the third spent real tokens on "
+                "a real worker.",
         "why_it_bites": "A dead script is worse than a missing one: it COMPILES, "
                         "so py_compile and the gate stay green and it looks "
                         "maintained right up until someone runs it and gets a "
@@ -3677,19 +3688,21 @@ DEBT = [
                         "decree.",
         "trigger": "any UI judgement or e2e replay that reaches for one of the "
                    "eight remaining scripts.",
-        "fix": "OPEN for the five standing tools, and it is per-file triage. "
-               "The TEST to apply to each (the owner's, and it is the right "
-               "one): is this a jig for one branch, or a tool that will be "
-               "needed again? A jig whose branch shipped is used up - delete "
-               "it. glance_shoot.py and e2e_cancel_resume.py are locally "
-               "runnable (fake CLI, no tunnel) and are mostly import lines. "
-               "smoke/pair_link.py + smoke/setup_sandbox.py are a PAIR and need "
-               "a tunnel + emulator, so they cannot be verified from a card "
-               "worktree. e2e_question_live.py spends real tokens on a real "
-               "claude worker and needs an owner call before anyone runs it. "
-               "Whatever is repaired must be RUN once in the same commit - a "
-               "fix nobody executes is how these rotted in the first place, and "
-               "a dead script compiles green, so nothing else catches it.",
+        "fix": "OPEN for exactly six assertions, all named in "
+               "ops/tests/unit/conftest.py's STATUS block, none of them a "
+               "product regression: five duplicate `order` values that piled up "
+               "in THIS register while test_debt was dead (left red on purpose "
+               "- renumbering entries other cards edit is a merge conflict "
+               "waiting to happen), four test_drivers expectations that "
+               "describe an older _ClaudeSession (meta legitimately grew a "
+               "ctx_usage key), and one nightshift fake thinner than the code "
+               "it stands in for. Each needs its FIXTURE updated to match "
+               "evolved behaviour and then an actual RUN - a fix nobody "
+               "executes is exactly how this rotted, and a dead script compiles "
+               "green so nothing else will catch it. The triage rule that "
+               "settled the deletions is the owner's and it generalises: is "
+               "this a JIG for one branch, or a TOOL that gets used again? A "
+               "jig whose branch shipped is used up.",
         "order": 53,
     },
 ]
