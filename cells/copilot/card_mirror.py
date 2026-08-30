@@ -42,6 +42,8 @@ without sharing the state that decides delivery.
 """
 import threading
 
+from spine.comms import notice as _notice
+
 # The chat entry class. NOT "pm": that is Henry's own proactive voice, and the
 # watch's transcript filter keeps a per-class allowlist - a mirror line needs to
 # be distinguishable from a Henry remark by both the phone (which draws a
@@ -69,16 +71,14 @@ def short_name(track):
 
     The task text's first line, clipped on a word boundary. Falls back to the
     id, never to "" : a mirror line whose label is blank is worse than one
-    labelled with an ugly id, because the owner cannot tell WHICH card spoke."""
-    task = ((track or {}).get("task") or "").strip()
-    first = task.replace("\r", "\n").split("\n")[0].strip()
-    if not first:
-        return (track or {}).get("id") or "?"
-    if len(first) <= 42:
-        return first
-    cut = first[:42]
-    sp = cut.rfind(" ")
-    return (cut[:sp] if sp > 20 else cut).rstrip(" ,.;:-") + "…"
+    labelled with an ugly id, because the owner cannot tell WHICH card spoke.
+
+    The clipping itself moved to spine.comms.notice.label (2026-08-30) because
+    the PM's budget question needs the same label and lives in another cell -
+    it was shipping a raw [:60] slice that cut mid-word. Same rule, one owner;
+    this keeps the track-shaped signature and the id fallback."""
+    return _notice.label(((track or {}).get("task") or ""),
+                         fallback=(track or {}).get("id") or "?")
 
 
 def say_card(track, kind, text, question=None):

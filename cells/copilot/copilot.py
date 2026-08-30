@@ -486,6 +486,35 @@ def history(user):
             "stats": st}
 
 
+def owner_name():
+    """WHO the board chat belongs to, or None. Derived from the user registry
+    every time, never cached - the same read say() always did inline, lifted
+    out so it has one owner: pm_comm._ask_owner has to ask "is one of MY
+    questions still unanswered?" before posting another, and that means
+    resolving the same principal say() writes to. Two copies of this lookup
+    would be two answers to "whose chat is this"."""
+    try:
+        from spine.auth import auth
+        return next((u["name"] for u in auth.list_users()
+                     if u.get("role") == "owner"), None)
+    except Exception:
+        return None
+
+
+def chat_question_open():
+    """The owner's currently-open chat question, or None - open_question()
+    with the principal resolved, for callers outside this cell.
+
+    Exists because the chat offers exactly ONE answerable question at a time
+    (see open_question), and a writer that ignores that stacks DEAD PANELS:
+    measured 2026-08-30 12:47, the first live tick after the notice rework
+    posted three asks in one PM pass, and the two earlier ones - both more
+    urgent than the third - were unanswerable the instant the third landed.
+    Anyone about to ask must check here first."""
+    u = owner_name()
+    return open_question(u) if u else None
+
+
 def open_question(user):
     """The CHAT's own open question (as opposed to a card's), or None.
 
@@ -602,8 +631,7 @@ def say(text, cls="pm", card=None, extra=None):
     parameter list so a new mirror field never needs a signature change here,
     in _append_log, and in every stub that stands in for this function."""
     try:
-        from spine.auth import auth
-        owner = next((u["name"] for u in auth.list_users() if u.get("role") == "owner"), None)
+        owner = owner_name()
         if not owner:
             return
         entry = {"cls": cls, "text": text, "ts": time.strftime("%H:%M")}

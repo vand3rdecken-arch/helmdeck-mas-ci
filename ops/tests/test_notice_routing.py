@@ -183,6 +183,11 @@ SAID = []
 from cells.copilot import copilot
 copilot.say = lambda text, cls="pm", card=None, extra=None: SAID.append(
     {"text": text, "cls": cls, "card": card, "extra": extra or {}})
+# MUST be stubbed: _ask_owner now asks the chat whether a question is already
+# open, and the real one reads the owner's live log - an unsandboxed run would
+# defer every ask and test nothing. (That it failed exactly this way on the
+# first run is the guard proving itself against real data.)
+copilot.chat_question_open = lambda: None
 
 from cells.pm import pm_comm
 pm_comm._escalation_tid = lambda: ""
@@ -191,6 +196,15 @@ ok = pm_comm._ask_owner("Karte X ist über Budget. Weiterlaufen lassen?",
                          {"label": "Weiterlaufen", "description": "Budget erhöhen"}],
                         header="Über Budget", card="t1")
 check("_ask_owner reports success", ok is True)
+# the exact string the live 12:47 question got wrong: a raw slice produced
+# "...Die automatischen PM-M", cut mid-word
+_raw = "UX-FIX (Owner-Beschwerde 2026-08-30): Die automatischen PM-Meldungen"
+_lab = notice.label(_raw)
+check("the card is named on a WORD boundary, not mid-word",
+      _lab.endswith("…") and _raw.startswith(_lab[:-1])
+      and not _raw[len(_lab) - 1:len(_lab)].strip())
+check("a short name is left alone", notice.label("Wear-OS-Bug") == "Wear-OS-Bug")
+check("an empty task falls back to the id", notice.label("", fallback="t1") == "t1")
 check("one chat entry written", len(SAID) == 1)
 # cls "bot" is what BOTH ends of the question channel key on - copilot.
 # open_question (which routes_copilot._answer_text checks the tapped request_id
@@ -215,6 +229,48 @@ ok2 = pm_comm._ask_owner("Nur eine Option ist keine Wahl.",
                          [{"label": "Nur die eine"}], card="t1")
 check("an unusable option list does not produce a dead panel", ok2 is False)
 check("...and falls back to speaking, not to silence", len(ESCALATED) == 1)
+
+
+# =============================================================================
+print("4. ONE open question at a time (the 12:47 dead-panel regression)")
+
+# Measured live 2026-08-30 12:47: the first PM tick after the rework posted
+# three asks back to back. The chat answers only the NEWEST, so the two earlier
+# and MORE URGENT budget questions were dead panels the instant the third
+# landed. A dedup latch does not prevent this - it stops the same notice
+# repeating, not two different ones firing in one tick.
+del SAID[:]
+HANDOVER = []
+pm_comm._to_henry = lambda kind, detail, card=None, feed="": HANDOVER.append(
+    {"kind": kind, "detail": detail, "feed": feed})
+
+PENDING = [None]
+copilot.chat_question_open = lambda: PENDING[0]
+
+OPTS = [{"label": "Stoppen", "description": "anhalten"},
+        {"label": "Weiterlaufen", "description": "weiter"}]
+
+first = pm_comm._ask_owner("Karte A ist über Budget. Weiterlaufen lassen?", OPTS, card="a")
+check("with nothing pending, the first ask goes through", first is True and len(SAID) == 1)
+
+# now one IS open - exactly the 12:47 state
+PENDING[0] = SAID[0]["extra"]["question"]
+second = pm_comm._ask_owner("Karte B ist über Budget. Weiterlaufen lassen?", OPTS, card="b")
+check("a second ask is refused while one is open", second is False)
+check("only ONE chat entry exists - no dead panel", len(SAID) == 1)
+check("the refused ask is handed to Henry, not dropped",
+      len(HANDOVER) == 1 and HANDOVER[0]["kind"] == "owner-ask-deferred")
+check("Henry gets the question AND its options",
+      HANDOVER and "Karte B" in HANDOVER[0]["detail"]
+      and "Stoppen" in HANDOVER[0]["detail"])
+check("the deferral is visible on the dashboard too", HANDOVER and HANDOVER[0]["feed"])
+
+# the owner answers -> open_question settles itself -> the slot re-arms.
+# No stored flag to clear: that is why the guard reads the log.
+PENDING[0] = None
+third = pm_comm._ask_owner("Karte C ist über Budget. Weiterlaufen lassen?", OPTS, card="c")
+check("once answered, the next ask goes through again",
+      third is True and len(SAID) == 2)
 
 
 print("")

@@ -22,6 +22,7 @@ at module level to re-export these names unchanged for existing callers, so
 a top-level import back would cycle."""
 from spine.registry import i18n as _i18n
 from cells.pm.pm_state import _save_loopstate
+from spine.comms.notice import label as _label
 from cells.pm.pm_comm import _activity, _ask_owner, _to_henry
 
 _WATCH_PRIO = {"urgent": 2.0, "high": 1.5, "medium": 1.0, "low": 0.5}
@@ -126,6 +127,12 @@ def _cost_watch(st, tracks):
             changed = True
             continue
         task = (t.get("task") or "").replace("\n", " ")[:60]
+        # The OWNER-facing name is not the same string as the log-facing one.
+        # `task` is a raw 60-char slice - fine for the activity feed, wrong in a
+        # question: the first live ask read „UX-FIX (Owner-Beschwerde
+        # 2026-08-30): Die automatischen PM-M“, cut mid-word. notice.label is
+        # the KURZNAME rule the card mirror has used all along.
+        name = _label(t.get("task") or "", fallback=tid)
         prio = t.get("priority") or "medium"
         bac_pct = _watch_bac_pct(base_pct, reserve, prio, weight_sum)
         d_cost = max(0.0, cost - float(w.get("cost") or 0.0))
@@ -171,7 +178,7 @@ def _cost_watch(st, tracks):
                           "Kalibrierung kalt, naechste Meldung ~%.2f): %s"
                           % (spent, nxt, task), card=tid)
                 over = "~$%.2f API-Gegenwert" % spent
-            _ask_owner("💸 „%s“ hat %s verbraucht. Weiterlaufen lassen?" % (task, over),
+            _ask_owner("💸 „%s“ hat %s verbraucht. Weiterlaufen lassen?" % (name, over),
                        _OVER_BUDGET_OPTIONS, header="Über Budget", card=tid,
                        title=_i18n.t("push.pmCost"))
         hot = ctx >= ctx_floor

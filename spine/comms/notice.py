@@ -83,3 +83,34 @@ def short(text, chars=MAX_CHARS, sentences=MAX_SENTENCES):
         sp = cut.rfind(" ")
         out = (cut[:sp] if sp > chars // 2 else cut).rstrip(" ,;:-") + " …"
     return out
+
+
+LABEL_MAX = 42
+
+
+def label(text, fallback="?", chars=LABEL_MAX):
+    """A card's KURZNAME - what the owner would call it out loud.
+
+    The first line, clipped on a WORD boundary. Not the same job as short():
+    that bounds a whole notice by sentences, this names ONE thing inside a
+    sentence, so it must never cut mid-word. The first live tick of the notice
+    rework showed why it matters - the budget question read
+
+        „UX-FIX (Owner-Beschwerde 2026-08-30): Die automatischen PM-M“
+
+    which is a raw [:60] slice and reads like a truncated log line, not like a
+    card the owner recognises.
+
+    card_mirror.short_name() had solved this months ago and is now this
+    function's only other caller, delegating here so the rule has ONE owner
+    (its word-boundary threshold is normalised from >20 to >chars//2, a
+    one-index difference on a 42-char label and the more principled rule:
+    take the word boundary unless it costs more than half the label)."""
+    first = (text or "").replace("\r", "\n").split("\n")[0].strip()
+    if not first:
+        return fallback or "?"
+    if len(first) <= chars:
+        return first
+    cut = first[:chars]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > chars // 2 else cut).rstrip(" ,.;:-") + "…"
