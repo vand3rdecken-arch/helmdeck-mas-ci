@@ -124,17 +124,43 @@ def _ask_owner(text, options, header="", card=None, title=""):
     HENRY, who has the hands to execute it - which is the right split: the PM
     detects and asks, Henry acts.
 
-    The chat holds ONE open question at a time (copilot.open_question: the
-    newest, with nothing said after it), so a PM ask posted while a Henry
-    question is pending SETTLES that one - the owner answers the newest. That
-    is the existing rule for two Henry questions, inherited rather than
-    introduced, and it is why every caller here is behind a latch that fires
-    on a state CHANGE (a budget rung, the first at-risk of a window) instead
-    of once a tick.
+    ONE OPEN QUESTION AT A TIME - and this was got WRONG first.
+
+    The chat offers exactly one answerable question (copilot.open_question:
+    the newest, with nothing said after it). The first version of this
+    function reasoned that the callers' dedup latches made collisions
+    impossible. They do not: a latch stops the SAME notice repeating, not two
+    DIFFERENT notices firing in one tick. Measured on the very first live tick
+    after the rework, 2026-08-30 12:47 - two over-budget cards and the
+    goal-at-risk warning posted back to back, and the two budget questions,
+    the more urgent pair, were dead panels the moment the third landed.
+
+    So: if a question is already open and unanswered, the FIRST one keeps the
+    slot and this one goes to Henry instead. Nothing is lost - he gets the
+    full text and the options as an escalation and can act on it himself or
+    re-raise it once the owner has answered - and the owner keeps the property
+    that every button he can see is a button that works. The guard reads the
+    log, not a stored flag: answering (or anyone speaking) settles the open
+    question by itself, so the slot re-arms with no state to clear.
 
     Degrades to a plain short line (never silence) if the question cannot be
     built or the chat write fails."""
     line = _short(text)
+    try:
+        from cells.copilot import copilot
+        pending = copilot.chat_question_open()
+    except Exception as e:
+        print("pm: open-question probe failed:", e)
+        pending = None
+    if pending:
+        _to_henry("owner-ask-deferred", card=card,
+                  detail=("Diese Frage an den Owner konnte nicht gestellt werden - im Chat "
+                          "wartet bereits eine unbeantwortete Frage, und eine zweite waere "
+                          "ein totes Panel. Uebernimm sie: %s (Optionen: %s)"
+                          % (line, " / ".join(str(o.get("label") or o)
+                                              for o in (options or [])))),
+                  feed="Frage an Owner zurueckgestellt (andere Frage offen): %s" % line[:80])
+        return False
     q = None
     try:
         from spine.ops import ask
