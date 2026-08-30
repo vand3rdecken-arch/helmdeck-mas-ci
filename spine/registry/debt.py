@@ -3640,6 +3640,49 @@ DEBT = [
                "capacity.wip_limit for the same reason.",
         "order": 52,
     },
+    {
+        "id": "e2e-harnesses-stale-after-split",
+        "title": "Eight manual test/camera harnesses died silently at the "
+                 "four-folder split",
+        "status": "open",
+        "what": "The move to spine/cells/surfaces/ops left 12 scripts under "
+                "ops/tests/ and ops/docs/shots/ importing the pre-split flat "
+                "layout (sys.path.insert(<repo>/daemon) + `import auth, db, "
+                "events`). Four are now fixed and green - verify_plan_share.py "
+                "(19 checks), verify_billing_auto.py (24 checks), and "
+                "repo_pipeline_sandbox.py which replaces the dead "
+                "loopmap_sandbox.py. e2e_lane_http.py runs again but is still "
+                "red for its OWN reasons (its stubs point at sessions._gate "
+                "etc., machinery that moved into lanemachine.py in the same "
+                "split, so they bind nothing). Still dead and untouched: "
+                "e2e_cancel_resume.py, e2e_question_live.py, glance_shoot.py, "
+                "uifix_harness.py, uifix_p3_harness.py, "
+                "uifix_question_harness.py, smoke/pair_link.py, "
+                "smoke/setup_sandbox.py.",
+        "why_it_bites": "A dead script is worse than a missing one: it COMPILES, "
+                        "so py_compile and the gate stay green and it looks "
+                        "maintained right up until someone runs it and gets a "
+                        "ModuleNotFoundError. Measured - it cost a card's worth "
+                        "of time when the loop-map camera was needed for a UI "
+                        "judgement and turned out not to exist any more. Worse, "
+                        "reviving two of them recovered 43 real checks that had "
+                        "been silently unenforced ever since, including the "
+                        "proof behind the 'costs are plan-share, not EUR' "
+                        "decree.",
+        "trigger": "any UI judgement or e2e replay that reaches for one of the "
+                   "eight remaining scripts.",
+        "fix": "OPEN, and it is per-file triage, not one sweep: five of the "
+               "eight (uifix_* x3, loopmap_sandbox, smoke/setup_sandbox) are "
+               "five copies of ONE idea - a throwaway sandboxed daemon - which "
+               "ops/docs/shots/repo_pipeline_sandbox.py now does properly; they "
+               "should be deleted, not repaired. e2e_question_live.py spends "
+               "real tokens on a real claude worker, so it needs an owner call "
+               "before anyone runs it. The rest need their stubs re-pointed at "
+               "the post-split seams and then an actual RUN - a fix nobody may "
+               "claim without executing it, which is how they rotted the first "
+               "time.",
+        "order": 53,
+    },
 ]
 
 def list_debt():

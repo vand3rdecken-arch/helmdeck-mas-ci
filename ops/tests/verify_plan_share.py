@@ -11,8 +11,13 @@ import sys
 import time
 import types
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daemon"))
-import events                                                    # noqa: E402
+# REPO ROOT + the real package path. This file was dead from the day the tree
+# became spine/cells/surfaces/ops: it pointed at "<this dir>/../daemon" and did
+# `import events`, and neither has existed since. It still COMPILED, which is
+# exactly why nobody noticed - an unrunnable check looks identical to a passing
+# one until someone tries to run it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from spine.storage import events                                 # noqa: E402
 
 FAILED = []
 
@@ -24,13 +29,26 @@ def check(name, got, want):
         FAILED.append(name)
 
 
+def _install_fake(mod):
+    """Put a fake in the place `from spine.ops import usage` actually looks.
+
+    Setting sys.modules["spine.ops.usage"] alone is NOT enough: `from X import Y`
+    checks the parent package's ATTRIBUTE first, and spine.ops.usage is already
+    bound to the real module by the time this runs - so the fake would sit in
+    sys.modules being ignored, the real (cold) cache would return None, and the
+    checks below would fail against a product that is fine. Bind both."""
+    import spine.ops
+    sys.modules["spine.ops.usage"] = mod
+    spine.ops.usage = mod
+
+
 def fake_usage(used_pct, status="ok"):
     m = types.ModuleType("usage")
     m.cached = lambda refresh=True: {
         "status": status,
         "windows": [{"id": "weekly", "usedPct": used_pct, "resetsAt": "2026-08-15T00:00:00Z"}],
     }
-    sys.modules["usage"] = m
+    _install_fake(m)
 
 
 def turn(tokens, age_days=0.0):
@@ -80,12 +98,15 @@ check("non-turn events only",
       events.plan_calibration([{"kind": "lane", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}], settings()), None)
 fake_usage(10.0, status="unavailable")
 check("usage endpoint unavailable", events.plan_calibration([turn(1_000_000)], settings()), None)
-sys.modules["usage"] = types.ModuleType("usage")          # no cached() at all
+_install_fake(types.ModuleType("usage"))                  # no cached() at all
 check("usage module broken", events.plan_calibration([turn(1_000_000)], settings()), None)
 
 print("usage.cached - never blocks, backs off on ATTEMPT")
-sys.modules.pop("usage", None)
-import usage as real_usage                                        # noqa: E402
+import importlib                                                  # noqa: E402
+import spine.ops                                                  # noqa: E402
+sys.modules.pop("spine.ops.usage", None)
+real_usage = importlib.import_module("spine.ops.usage")           # the real one back
+spine.ops.usage = real_usage
 calls = []
 real_usage.snapshot = lambda force=False: calls.append(1)         # never fills the cache
 t0 = time.time()
