@@ -1,7 +1,8 @@
 ---
 id: software-dev
 label: Software-Entwicklung
-who: Code-Repos. Alles laeuft, nichts landet ungeprueft.
+who: Code-Repos. Alles läuft, nichts landet ungeprüft.
+summary: Worktree je Karte · Gate vor der Review · Deploy nach deiner Abnahme
 stations: backlog, working, gate, review, deploy
 card_kind: new_track
 deploy_hook: ""

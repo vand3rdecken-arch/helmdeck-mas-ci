@@ -5,10 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type LoopMap, type LoopNode } from "@/data/client";
+import { api, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
 import { useT } from "@/i18n";
-import { laneColor, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { RepoPipeline } from "@/ui/repo_pipeline";
 import { useResponsive } from "@/ui/responsive";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
@@ -37,27 +38,9 @@ function FlowToken({ width, color }: { width: number; color: string }) {
   );
 }
 
-// The gate: a shield whose ring pulses, signalling "checked here".
-function GatePulse({ color, active, onPress }: { color: string; active: boolean; onPress: () => void }) {
-  const p = useRef(new RNAnimated.Value(0)).current;
-  useEffect(() => {
-    const anim = RNAnimated.loop(RNAnimated.timing(p, { toValue: 1, duration: 1600, easing: Easing.out(Easing.quad), useNativeDriver: true }));
-    anim.start();
-    return () => anim.stop();
-  }, [p]);
-  const scale = p.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.9] });
-  const op = p.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
-  return (
-    <Pressable onPress={onPress} hitSlop={10} style={{ alignItems: "center", justifyContent: "center", width: 46 }}>
-      <RNAnimated.View style={{ position: "absolute", width: 34, height: 34, borderRadius: 17,
-        borderWidth: 2, borderColor: color, transform: [{ scale }], opacity: op }} />
-      <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center",
-        backgroundColor: active ? color : "transparent", borderWidth: 1.5, borderColor: color }}>
-        <Ionicons name="shield-checkmark" size={18} color={active ? "#fff" : color} />
-      </View>
-    </Pressable>
-  );
-}
+// The gate's pulsing shield moved into ui/repo_pipeline.tsx with the rest of the
+// station row - it belongs to the pipeline, not to this screen, now that repo
+// onboarding draws the same row.
 
 /**
  * FIXED vs ADJUSTABLE, in words.
@@ -201,7 +184,18 @@ export default function LoopMapScreen() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { data, isLoading, error } = useQuery<LoopMap>({ queryKey: ["loopmap"], queryFn: api.loopMap, staleTime: 60000 });
+  // Which repo the pipeline is drawn for. "" = the general machine, which is
+  // what this screen has always shown - so the default is unchanged.
+  const [repo, setRepo] = useState("");
+  const { data, isLoading, error } = useQuery<LoopMap>({
+    queryKey: ["loopmap", repo], queryFn: () => api.loopMap(repo), staleTime: 60000,
+  });
+  // The repo chips need the registry, not the map. Failing to load them must
+  // not take the map down with it - the map is useful without them.
+  const { data: reg } = useQuery<RepoTemplates>({
+    queryKey: ["repoTemplates"], queryFn: api.repoTemplates, staleTime: 60000, retry: false,
+  });
+  const repos = reg?.repos ?? [];
   // The lane pipeline's selection. The build loop no longer shares it: tapping a
   // stage at the BOTTOM of the page used to mutate one detail card wedged under
   // the pipeline at the TOP, i.e. far off screen — so the explanation existed
@@ -217,13 +211,16 @@ export default function LoopMapScreen() {
   const openHub = () => router.push("/automation" as never);
   const editable = data?.editable ?? [];
   const lanes = data?.runtime.lanes ?? [];
-  // gate sits after "working"
-  const gateAfter = data?.runtime.gate.between?.[0] ?? "working";
   // default selection = the gate: the one node on the pipeline that is neither
   // a lane nor optional, so the card below the track is never empty.
+  // Deploy joined gate as a step-on-an-edge, so it resolves the same way -
+  // otherwise tapping the station the owner most wants explained (the only
+  // switchable one) would silently select nothing.
   const selected = useMemo<LoopNode | null>(() => {
     if (!data) return null;
-    if (lane && lane !== "gate") return lanes.find((l) => l.key === lane) ?? null;
+    if (lane === "gate") return data.runtime.gate;
+    if (lane === "deploy") return data.runtime.deploy ?? null;
+    if (lane) return lanes.find((l) => l.key === lane) ?? null;
     return data.runtime.gate;
   }, [data, lane, lanes]);
 
@@ -274,41 +271,50 @@ export default function LoopMapScreen() {
           {/* ---- 1. lanes: where a CARD sits ---- */}
           <SectionHead title={tr("loopmap.secLanes")} hint={tr("loopmap.secLanesHint")} t={t} tr={tr} />
           <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16, padding: 14, paddingTop: 20 }}>
-            <View onLayout={(e) => setTrackW(e.nativeEvent.layout.width)} style={{ position: "relative" }}>
-              <FlowToken width={trackW} color={t.accent} />
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                {lanes.map((l, i) => {
-                  const on = selected?.key === l.key;
-                  return (
-                    <View key={l.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                      <Pressable testID={"lane-" + l.key} onPress={() => setLane(l.key)}
-                        style={{ alignItems: "center", gap: 6, flex: 1 }}>
-                        {/* the SELECTED lane is filled, so the card below is
-                            visibly the answer to the last tap rather than a
-                            standalone paragraph that silently swapped content */}
-                        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
-                          backgroundColor: on ? laneColor(t, l.key) : t.surface2, borderWidth: 2, borderColor: laneColor(t, l.key) }}>
-                          <View style={{ width: 11, height: 11, borderRadius: 6,
-                            backgroundColor: on ? t.canvas : laneColor(t, l.key) }} />
-                        </View>
-                        <Text numberOfLines={1} style={{ color: on ? t.txtPrimary : t.txtSecondary,
-                          fontSize: 11, fontWeight: on ? "800" : "600" }}>{l.label}</Text>
-                      </Pressable>
-                      {i < lanes.length - 1 ? (
-                        l.key === gateAfter ? (
-                          <GatePulse color={t.accent2} active={selected?.key === "gate"}
-                            onPress={() => setLane("gate")} />
-                        ) : (
-                          <View style={{ width: 26, height: 2, backgroundColor: t.borderStrong }} />
-                        )
-                      ) : null}
-                    </View>
-                  );
-                })}
+            {/* WHICH REPO is this pipeline for? With no repo the map answers for
+                the general machine; with one it answers for that repo's
+                template - which stations run, and where the owner has since
+                deviated. The chips are a FILTER, never an editor: the type is
+                chosen on /repo, so this screen stays read-only. */}
+            {repos.length ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                <Pressable testID="maprepo-all" onPress={() => setRepo("")}
+                  style={{ backgroundColor: !repo ? t.accent : t.surface2, borderColor: t.glassBorder,
+                    borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <Text style={{ color: !repo ? t.canvas : t.txtSecondary, fontSize: 11, fontWeight: "700" }}>
+                    {tr("loopmap.allRepos")}
+                  </Text>
+                </Pressable>
+                {repos.map((r) => (
+                  // testID by NAME: a Windows path's backslashes are CSS escape
+                  // sequences in `[data-testid="..."]`, so a path-based id
+                  // matched nothing and the shot driver silently photographed
+                  // an unclicked screen.
+                  <Pressable key={r.repo} testID={"maprepo-" + (r.project?.name || r.repo)}
+                    onPress={() => setRepo(r.repo)}
+                    style={{ backgroundColor: repo === r.repo ? t.accent : t.surface2,
+                      borderColor: t.glassBorder, borderWidth: 1, borderRadius: 999,
+                      paddingHorizontal: 10, paddingVertical: 5 }}>
+                    <Text numberOfLines={1} style={{ color: repo === r.repo ? t.canvas : t.txtSecondary,
+                      fontSize: 11, fontWeight: "700", maxWidth: 200 }}>
+                      {r.project?.name || r.repo}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
-            </View>
+            ) : null}
+            {/* The travelling FlowToken was dropped here, not forgotten: the
+                stations now carry a label AND a note line, so the token's
+                absolutely-positioned band no longer sits above a row of bare
+                dots - it landed on top of the last station and read as a stray
+                artifact. Judged from the screenshot; a decoration that collides
+                with content loses. */}
+            {/* ONE pipeline component, shared with repo onboarding (see
+                ui/repo_pipeline.tsx). Station list, order and on/off all come
+                from the daemon - the route is not described twice in this app. */}
+            <RepoPipeline map={data} onSelect={setLane} selected={selected?.key} hideHint />
             <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center", lineHeight: 16 }}>
-              {tr("loopmap.hint")}
+              {repo ? tr("loopmap.repoHint") : tr("loopmap.hint")}
             </Text>
           </View>
 

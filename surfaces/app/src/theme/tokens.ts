@@ -99,6 +99,7 @@ export const statusTokens: Record<string, keyof ThemeTokens> = {
   'queued': 'txtTertiary',
   'running': 'ai',
   'needs_you': 'warn',
+  'gating': 'accent2',
   'submitted': 'human',
   'accepted': 'ok',
   'bounced': 'danger',

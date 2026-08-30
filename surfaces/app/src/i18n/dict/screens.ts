@@ -317,9 +317,41 @@ export const screens: Dict = {
     en: "This one is yours to set. Tap to see which knob governs it and where that knob lives.",
   },
   "loopmap.hint": {
-    de: "Tippe eine Lane oder das Schild für Regel, Grund und Codestelle.",
-    en: "Tap a lane or the shield for the rule, the reason and the source line.",
+    de: "Tippe eine Station für Regel, Grund und Codestelle.",
+    en: "Tap a station for the rule, the reason and the source line.",
   },
+  "loopmap.allRepos": { de: "Allgemein", en: "General" },
+  "loopmap.repoHint": {
+    de: "Die Strecke dieses Repos — gestrichelt heißt: gibt es, läuft hier aber nicht. Ändern? Sag es Henry.",
+    en: "This repo's route — dashed means: it exists, but does not run here. Want it changed? Tell Henry.",
+  },
+
+  // -- the repo pipeline, shared by the loop map and repo onboarding ----------
+  "pipeline.off": { de: "nicht aktiv", en: "not active" },
+  "pipeline.askHenry": {
+    de: "Nur Anzeige. Geändert wird im Chat: sag Henry in einem Satz, wie das Repo laufen soll.",
+    en: "Display only. Changes happen in chat: tell Henry in one sentence how the repo should run.",
+  },
+  "pipeline.deviated": {
+    de: "Vom Standard der Vorlage „{template}“ abgewichen: {keys}. Bewusst so gesetzt — die Vorlage gibt nur den Startwert vor.",
+    en: "Deviates from the “{template}” template default: {keys}. Set deliberately — the template only provides the starting value.",
+  },
+
+  // -- repo onboarding: one choice instead of twenty switches -----------------
+  "repo.title": { de: "Repo einrichten", en: "Set up repo" },
+  "repo.intro": {
+    de: "Wähle, was für ein Repo das ist. Die Vorlage belegt alles Weitere vor — welche Stationen laufen, wie Karten gebaut werden, ob es einen Deploy gibt. Feintuning geht danach über den Chat.",
+    en: "Choose what kind of repo this is. The template presets everything else — which stations run, how cards are built, whether there is a deploy. Fine-tuning happens in chat afterwards.",
+  },
+  "repo.which": { de: "Welches Repo", en: "Which repo" },
+  "repo.noType": { de: "kein Typ", en: "no type" },
+  "repo.none": {
+    de: "HelmDeck kennt noch kein Repo. Trag unten einen Pfad ein.",
+    en: "HelmDeck does not know any repo yet. Enter a path below.",
+  },
+  "repo.pathPlaceholder": { de: "C:\\Pfad\\zum\\Repo", en: "C:\\path\\to\\repo" },
+  "repo.pickType": { de: "Repo-Typ", en: "Repo type" },
+  "repo.pipeline": { de: "So läuft dieses Repo", en: "How this repo runs" },
   "loopmap.laws": { de: "Harness-Gesetze", en: "Harness laws" },
   "loopmap.lawsHint": {
     de: "Die sieben Sätze, die über allem stehen. Kein Schalter, kein Chat und keine Karte kann sie aufweichen — jeder nennt das Modul, das ihn durchsetzt.",

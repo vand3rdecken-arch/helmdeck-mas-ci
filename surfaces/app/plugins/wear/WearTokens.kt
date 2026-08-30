@@ -65,6 +65,7 @@ object WearSemantics {
         "queued" -> WearTokens.txtTertiary
         "running" -> WearTokens.ai
         "needs_you" -> WearTokens.warn
+        "gating" -> WearTokens.accent2
         "submitted" -> WearTokens.human
         "accepted" -> WearTokens.ok
         "bounced" -> WearTokens.danger

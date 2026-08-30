@@ -357,7 +357,11 @@ export interface RepoView {
 }
 /** One repo TYPE from the catalog (ops/harness/templates/*.md). */
 export interface RepoTemplate {
-  id: string; label: string; who: string; card_kind: string;
+  id: string; label: string; who: string;
+  /** The one line the PICKER shows. `body` is the template file's full prose -
+   *  reference for whoever edits it, far too much for a choice card. */
+  summary: string;
+  card_kind: string;
   stations: string[]; deploy_hook: string; body: string; source: string;
   settings?: Record<string, unknown>; notes?: Record<string, string>;
 }

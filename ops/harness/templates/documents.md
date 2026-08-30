@@ -2,12 +2,13 @@
 id: documents
 label: Dokumente & Inhalte
 who: Texte, Angebote, Freigaben. Kein Build, leichte Review.
+summary: Direkt im Ordner · Gate läuft leer · kein Deploy · Abnahme bleibt Pflicht
 stations: backlog, working, gate, review
 card_kind: new_direct_task
 deploy_hook: ""
 settings.policy.auto_accept_green: false
 settings.policy.auto_dispatch_modes: ["do", "prepare"]
-note.gate: Laeuft leer - in einem Text-Repo gibt es nichts zu kompilieren, der Gate meldet PASS.
+note.gate: Läuft leer - hier gibt es nichts zu kompilieren, der Gate meldet PASS.
 note.working: Direkt im Ordner, ohne Worktree.
 ---
 
