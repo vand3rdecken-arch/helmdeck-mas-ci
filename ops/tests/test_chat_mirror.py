@@ -149,13 +149,20 @@ check(len(cards()) == 1,
       "a silent transition does not consume the dedup key - the next real "
       "message under the same key still prints")
 
-# a long reply is cut on a word boundary and SAYS it was cut
+# a long reply reaches the chat WHOLE (owner decision 2026-08-30, replacing the
+# clip this block used to pin). The mirror has no length budget of its own: the
+# chat scrolls and folds, and on a card the owner started FROM the chat there is
+# no second copy to tap through to - the clip destroyed the only one he had a
+# route to. Measured that day: 10 of 10 clipped mirror lines were such cards.
 reset()
-notify.card_event(card(last_reply="wort " * 400), "needs_you")
+long_reply = "wort " * 400
+notify.card_event(card(last_reply=long_reply), "needs_you")
 txt = cards()[0]["text"] if cards() else ""
-check(txt.endswith("…") and len(txt) <= card_mirror.RESULT_MAX + 4,
-      "an over-long result is clipped AND says so - a silent cut reads as the "
-      "card's complete answer")
+check(txt == long_reply.strip(),
+      "an over-long result is mirrored WHOLE - no clip and no ' …' marker")
+check(not hasattr(card_mirror, "RESULT_MAX"),
+      "the cap is GONE, not merely raised - a dormant constant is the next "
+      "agent's invitation to reintroduce the clip")
 
 # -- 3. THE CORE PROPERTY: suppressed push, written inbox ---------------------
 for decision, why in (("silent", "the owner is looking at that very card"),
