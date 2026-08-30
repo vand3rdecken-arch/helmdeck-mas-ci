@@ -1128,6 +1128,38 @@ DEBT = [
         "order": 16,
     },
     {
+        "id": "henry-memory-parallel-to-cli-automemory",
+        "title": "Henry's memory is a SECOND surface beside the CLI's own auto-memory",
+        "status": "open",
+        "what": "Henry writes durable facts to daemon/henry_memory/ - a plain .md "
+                "directory plus an index, injected each turn by copilot._memory_digest "
+                "and instructed in ops/harness/agents/board-copilot.md. The claude CLI "
+                "ALSO carries its own auto-memory directory under ~/.claude/projects/**. "
+                "We deliberately did not build on that one: harness._memory_isolation "
+                "records that the CLI derives its path from a project identity which "
+                "measurably is NOT 'this cwd' (every card worktree measured shared ONE "
+                "directory keyed off something else), and guessing that derivation is "
+                "the unverified reconstruction CLAUDE.md forbids.",
+        "why_it_bites": "Henry is a Claude Code process WITH HANDS (acceptEdits). "
+                        "Nothing stops him from also using the CLI's native memory if "
+                        "it is active for his project - and then two stores exist while "
+                        "only ours rides in his turn, because the digest reads our index "
+                        "alone. A fact written to the other one is invisible to him "
+                        "afterwards, and nothing reconciles them. The failure is silent: "
+                        "no error, just an assistant that forgot something it did write.",
+        "trigger": "A `memory/` directory appearing under "
+                   "~/.claude/projects/C--Users-*-swarmdeck-daemon/, any report of Henry "
+                   "remembering inconsistently, or the CLI documenting/exposing how it "
+                   "derives the auto-memory path.",
+        "fix": "Consolidate onto ONE surface once the CLI's derivation can be MEASURED "
+               "rather than guessed - either point the digest at the CLI's directory, or "
+               "tell Henry in the brief never to use the native one. The second is cheap "
+               "and could land today; it was left out on purpose, because writing a "
+               "prohibition against a mechanism we have not yet observed him using would "
+               "be the same guessing this entry exists to avoid.",
+        "order": 51,
+    },
+    {
         "id": "autocompact-probe-process-global",
         "title": "The '/compact is supported' probe is ONE process-wide flag for the whole board",
         "status": "open",
