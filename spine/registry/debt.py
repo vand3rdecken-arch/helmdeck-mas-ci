@@ -3563,6 +3563,45 @@ DEBT = [
         "order": 48,
     },
     {
+        "id": "ship-decision-not-wired",
+        "title": "Ship advisor exists but the automatic deploy path still uses the hash",
+        "status": "open",
+        "what": "The ship decision was inverted from a fixed heuristic to an "
+                "agent judgement (owner decree 2026-08-30): ops/tools/ship_facts.py "
+                "reports evidence and decides nothing, ops/harness/agents/"
+                "ship-advisor.md is the deciding brief, and ops/deploy/ship.sh "
+                "now EXECUTES a decision passed as SHIP_KIND=none|ota|native. "
+                "But the automatic path - lanemachine._repo_hook running the "
+                "repo_hooks 'deploy' command post-accept - still invokes "
+                "`bash ops/deploy/ship.sh` with no SHIP_KIND, so it falls back "
+                "to the legacy stored-fingerprint hash. The seam is built and "
+                "verified; nothing calls it yet on the automatic path.",
+        "why_it_bites": "Every failure mode of the hash is still live for "
+                        "automatic ships - including the one the advisor exists "
+                        "to fix: the hash cannot answer 'do not ship', so a "
+                        "docs-only or daemon-only accept still pushes an OTA. "
+                        "Measured on this very tree 2026-08-30: only .py and "
+                        "ops/ files had changed and the hash fallback still "
+                        "resolved to 'OTA only'. Worse, the fallback is SILENT "
+                        "in the sense that matters - it announces itself in the "
+                        "hook log, but nobody reads a green deploy log, so the "
+                        "advisor can look adopted while never running.",
+        "trigger": "before trusting the advisor for real ships, or the first "
+                   "time an automatic ship makes a decision a human disagrees "
+                   "with.",
+        "fix": "OPEN, and it needs a decision the code should not make alone: "
+               "an agent turn inside the post-accept path costs tokens and "
+               "latency on every accept, and it can fail - so it needs a "
+               "defined behaviour when the advisor is unavailable (fall back to "
+               "the hash, or refuse to ship?). Falling back silently would "
+               "recreate exactly the drift this work removed. Suggested shape: "
+               "the advisor runs as its own step BEFORE the deploy hook, writes "
+               "its decision into the card's actionlog where the owner can see "
+               "it, and passes SHIP_KIND at event time (never via a file - a "
+               "decision file is the stored flag this work deleted).",
+        "order": 50,
+    },
+    {
         "id": "android-build-lock-advisory",
         "title": "Android build mutex is advisory - a raw ./gradlew still bypasses it",
         "status": "open",
