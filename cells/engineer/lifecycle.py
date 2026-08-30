@@ -403,6 +403,61 @@ def check_landed_not_closed():
                                         or (r or {}).get("gate_report") or "")[:300]))
 
 
+def sweep_pending_compaction():
+    """Retry a compaction that got cut. sessions._maybe_compact re-queues onto
+    the card (compact_pending) whenever its /compact turn was interrupted
+    rather than completed - the 2026-08-30 case: the owner types while the
+    harness is compacting, interrupt-and-replace kills the maintenance turn,
+    and nothing ever compacted the 92%-full session again. This is the "next
+    idle moment" half: the card must be settled (no live turn, no pending
+    question, not mid-lane-move) before we spend a turn on maintenance.
+
+    Deliberately NOT a timer on the card: the flag is set at event time by the
+    one compaction owner and cleared by it too, so this sweep only ever ACTS on
+    a fact the runtime recorded - it never reconstructs "probably needs
+    compacting" by re-reading transcripts."""
+    import threading
+    from spine.storage.trackstore import _load as _load_t
+    from spine.agent import drivers
+    from cells.engineer import sessions, lanemachine
+    from spine.ops.actionlog import ActionLog
+    for t in _load_t():
+        if not t.get("compact_pending") or not t.get("session_id"):
+            continue
+        tid = t["id"]
+        if t.get("status") == "running" or t.get("question"):
+            continue
+        if drivers.turn_active(tid) or sessions.compacting(tid) is not None:
+            continue
+        try:
+            if lanemachine.lane_active(tid):
+                continue
+        except Exception:
+            pass
+        if _track_idle_s(t) < 20:
+            continue                     # just settled - give the steer thread room
+        # Still actually full? The interrupted turn may have partially landed,
+        # or a fork/rewind may have moved the session on. Re-read the live
+        # figure rather than trusting the flag alone, and drop the flag if the
+        # session no longer needs it - a re-queue must never become a
+        # perpetual compaction loop on a small session.
+        window = max(t.get("ctx_window") or 0, sessions._CTX_WINDOW)
+        if t.get("ctx_tokens", 0) < 0.8 * window:
+            sessions._mark_compact_pending(tid, False)
+            continue
+
+        def _run(track=t):
+            try:
+                log = ActionLog(track["run_dir"])
+                log.log("note", "Nachhol-Verdichtung (die unterbrochene wird jetzt "
+                                "im Leerlauf beendet).")
+                sessions._maybe_compact(track, log, force=True)
+            except Exception as e:
+                print("pending-compaction retry failed for %s: %s" % (track["id"], e),
+                      flush=True)
+        threading.Thread(target=_run, daemon=True).start()
+
+
 def start_zombie_reconciler(interval=20, min_idle_s=45, landed_check_every=6):
     """Reconcile status vs the live session CONTINUOUSLY (Paseo-parity), not just at
     boot. HelmDeck's `status` is a STORED field a thread must remember to clear; if
@@ -431,6 +486,10 @@ def start_zombie_reconciler(interval=20, min_idle_s=45, landed_check_every=6):
                           % (len(swept), ", ".join(swept)), flush=True)
             except Exception as e:
                 print("zombie reconciler error: %s" % e, flush=True)
+            try:
+                sweep_pending_compaction()
+            except Exception as e:
+                print("pending-compaction sweep error: %s" % e, flush=True)
             if n % landed_check_every == 0:
                 try:
                     check_landed_not_closed()

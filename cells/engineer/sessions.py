@@ -325,17 +325,124 @@ _CTX_WINDOW = 200_000
 # honor /compact costs nothing per turn.
 _autocompact_supported = None    # None=unprobed, True/False learned from first /compact
 
+# COMPACTION IS A MAINTENANCE TURN, AND IT MUST SURVIVE THE OWNER TYPING.
+# Measured 2026-08-30 07:46-07:49 (card 20260830-065545, actions.jsonl):
+#   07:46:40  AUTO-COMPACT at 92% (183k) starts a bounded /compact turn
+#   07:48:13  the owner sends a normal message -> steer()'s interrupt-and-
+#             replace (a36d962) sees turn_active and cancels it. The CLI
+#             surfaces "AbortError: Compaction canceled."
+#   07:48:21  _maybe_compact reads an UNCHANGED ctx and concludes "this CLI
+#             doesn't honor /compact", latching _autocompact_supported=False
+# The second line is the worse half: that flag is a PROCESS global, so ONE
+# interrupted compaction silently disabled auto-compaction for EVERY card on
+# the board until the next daemon restart - and the 92% card was never
+# compacted again. Two rules follow, and they are what this block encodes:
+#   1. An INTERRUPT teaches nothing. Only a turn that ran to completion is
+#      evidence about whether the CLI honors /compact (CLAUDE.md: derived and
+#      VERIFIED from the runtime's own signals, never assumed).
+#   2. Compaction that got cut is RE-QUEUED (compact_pending on the card) and
+#      retried at the next idle moment by the reconciler - never dropped.
+# `_compacting` is the single owner of "a maintenance turn is in flight for
+# this card", set at event time around the one _turn call below. steer() reads
+# it to WAIT instead of cancelling, and an owner-typed /compact reads it for
+# single-flight. No wall-clock cap anywhere: the compact turn stays bounded by
+# its own 180s idle watchdog, the waiters by that same bound plus slack.
+_compacting = {}                 # tid -> threading.Event (set when the turn ends)
+_compacting_guard = _threading.Lock()
+_compact_interrupted = set()     # tids whose in-flight compaction we cut on purpose
 
-def _maybe_compact(t, log):
+# HOW LONG A COMPACTION MAY BE SILENT, and how long the OWNER waits for one.
+# These used to be the same number (180s, chosen 2026-08-15 when a wedged
+# compact turn blocked the whole post-turn pipeline for 15 minutes). Measured
+# 2026-08-30 on the 183k session this bug was found on: `/compact` emits NOTHING
+# on the stream for over three minutes on a near-full window - it was still
+# working (the transcript grew at 08:04:16) when the 180s watchdog killed it.
+# So 180s was not "generous slack above every observed compaction", it was
+# tuned on small sessions and fails exactly on the big ones that need it most.
+# They are now two DIFFERENT numbers because they answer two questions:
+#   _COMPACT_IDLE_S  - how patient the watchdog is with a working compaction.
+#                      Generous, because compaction no longer sits on the
+#                      critical path (it runs off the turn thread, copilot's
+#                      _schedule_compact precedent) so nobody is waiting on it.
+#   _COMPACT_WAIT_S  - how long a STEERING OWNER defers to maintenance. Short,
+#                      because the owner must never feel the harness. If his
+#                      message arrives mid-compaction the compaction is cut and
+#                      RE-QUEUED (compact_pending) - it finishes at the next
+#                      idle moment, where it has the full patience above.
+# Neither is a wall-clock cap on a turn: the watchdog still measures SILENCE.
+_COMPACT_IDLE_S = 600
+_COMPACT_WAIT_S = 25
+
+
+def compacting(tid):
+    """The in-flight compaction's completion Event for this card, or None.
+    Truth comes from the registry the compaction itself writes, not from a
+    stored card flag - same rule as drivers.turn_active."""
+    with _compacting_guard:
+        return _compacting.get(tid)
+
+
+def await_compaction(tid, log=None, timeout=_COMPACT_WAIT_S):
+    """Let an in-flight compaction FINISH before this caller's own turn.
+    Returns True if we ended up cutting it short (caller may proceed to
+    cancel), False if there was nothing to wait for or it finished cleanly."""
+    ev = compacting(tid)
+    if ev is None:
+        return False
+    if log:
+        log.log("note", "⏳ Verdichtung laeuft - deine Anweisung startet direkt danach "
+                        "(der Verlauf bleibt erhalten).")
+    if ev.wait(timeout):
+        return False
+    # Wedged past its own idle bound: the owner goes first, but we record WHY
+    # it ended so the shrink check below never reads this as "unsupported".
+    _compact_interrupted.add(tid)
+    if log:
+        log.log("note", "Verdichtung haengt - wird abgebrochen, deine Anweisung geht vor. "
+                        "Sie wird beim naechsten Leerlauf nachgeholt.")
+    return True
+
+
+def _mark_compact_pending(tid, on):
+    def _set(tt):
+        if on:
+            if tt.get("compact_pending"):
+                return False
+            tt["compact_pending"] = True
+        else:
+            if not tt.get("compact_pending"):
+                return False
+            tt.pop("compact_pending", None)
+    try:
+        _mutate(tid, _set)
+    except Exception:
+        pass
+
+
+def _compact_after_turn(t, log):
+    """The post-turn compaction, on its own thread. Best-effort by contract:
+    nothing downstream waits on it and a failure here must never surface as a
+    turn failure - _maybe_compact already re-queues whatever it could not
+    finish, so 'later' is a real outcome, not a loss."""
+    try:
+        _maybe_compact(t, log)
+    except Exception as _e:
+        log.log("note", "auto-compact skipped: %s" % str(_e)[:200])
+        _mark_compact_pending(t["id"], True)
+
+
+def _maybe_compact(t, log, force=False, idle_timeout=None):
     """Compact the session in place if the live context crossed the high-water
     mark. Self-verifying: /compact must actually SHRINK the context (ctx_tokens
     is the last-call-only reading, not summed - a real compaction is visible
     there). If it does not (an older CLI that treats the slash line as literal
     input), we learn that once and stop - no no-op cost, no polluting the
-    conversation every turn. Returns the fresh track (or None if nothing was
-    done)."""
+    conversation every turn. `force` is the owner typing /compact himself: run
+    regardless of the high-water mark and regardless of a previously learned
+    False (he can see the meter; his ask outranks our probe). Returns the fresh
+    track (or None if nothing was done)."""
     global _autocompact_supported
-    if _autocompact_supported is False:
+    if _autocompact_supported is False and not force:
         return None
     ctx = t.get("ctx_tokens", 0)
     # high-water mark scales with the session's DERIVED window (ctx_window is
@@ -344,22 +451,51 @@ def _maybe_compact(t, log):
     # burning a full-context /compact turn while the CLI (which knows its real
     # window) rightly saw no reason to shrink anything.
     window = max(t.get("ctx_window") or 0, _CTX_WINDOW)
-    if ctx < 0.8 * window or not t.get("session_id"):
+    if not t.get("session_id"):
         return None
+    if ctx < 0.8 * window and not force:
+        _mark_compact_pending(t["id"], False)   # dropped below the brim on its own
+        return None
+    tid = t["id"]
+    # SINGLE FLIGHT. Without this, an owner-typed /compact landing on a card
+    # that is already auto-compacting starts a SECOND /compact against the same
+    # session - two turns racing for one session id, and whichever loses gets
+    # read as evidence about the CLI. One compaction per card, always.
+    with _compacting_guard:
+        if tid in _compacting:
+            log.log("note", "Verdichtung laeuft bereits - kein zweiter Durchlauf.")
+            return None
+        done = _threading.Event()
+        _compacting[tid] = done
+    _compact_interrupted.discard(tid)
     pct = min(100, round(ctx / window * 100))
     log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
             "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
-    # SHORT watchdog, not the driver's default 900s: incident (2026-08-15) - a
-    # /compact turn finished writing its own transcript (the session showed
-    # "Compacted") but the underlying CLI process never exited, so this call
-    # sat blocked for the full 15 minutes before the default idle-timeout
-    # finally killed it - and every OTHER post-turn step (fast-track ship
-    # included) waits on this call returning. Compact is a small, bounded
-    # operation; 3 minutes of total silence is already generous slack above
-    # every observed real compaction, and failing fast here just falls
-    # through to the existing self-verifying "CLI doesn't honor /compact"
-    # path below - never a hard failure, just a faster one.
-    sid, _out, meta = _turn(t, "/compact", idle_timeout=180)
+    # The watchdog here is the SILENCE bound only (see _COMPACT_IDLE_S above for
+    # why it is no longer the 180s that killed the 183k compaction mid-work).
+    # The 2026-08-15 concern it replaces - a wedged compact turn blocking every
+    # post-turn step - is answered structurally instead: this runs off the turn
+    # thread, and a steering owner cuts it via await_compaction rather than
+    # waiting it out.
+    try:
+        sid, _out, meta = _turn(t, "/compact",
+                                idle_timeout=idle_timeout or _COMPACT_IDLE_S)
+    except BaseException as e:
+        # The turn DIED (stalled past the watchdog, driver crash, killed
+        # process). That is not evidence about /compact support either - it is
+        # the same "learned nothing" case as an interrupt, and it must re-queue
+        # or the card silently keeps its full context forever. Measured
+        # 2026-08-30: this exact path fired on the 183k session and, before
+        # this, escaped through steer's blanket except with only a log line.
+        _mark_compact_pending(tid, True)
+        log.log("note", "AUTO-COMPACT abgebrochen (%s) - nichts gelernt, Session "
+                        "unveraendert. Wird beim naechsten Leerlauf nachgeholt."
+                % str(e)[:160])
+        return None
+    finally:
+        with _compacting_guard:
+            _compacting.pop(tid, None)
+        done.set()                        # release every steer waiting on us
 
     def _apply(tt):
         if sid and tt.get("session_id") and sid != tt["session_id"]:
@@ -368,15 +504,32 @@ def _maybe_compact(t, log):
             tt["session_chain"] = chain[-6:]
             tt["session_id"] = sid
         _record_econ(tt, meta)            # measured economics: the compact turn is billed too
-    t = _mutate(t["id"], _apply) or t
+    t = _mutate(tid, _apply) or t
     before = ctx
     after = t.get("ctx_tokens", before)
+    # DID IT RUN, OR WAS IT CUT? A cancelled turn returns the driver's clean
+    # sentinel ("(turn cancelled by you)") - plus our own flag when we cut it
+    # ourselves. Either way the unchanged ctx says NOTHING about whether the
+    # CLI honors /compact, so the probe must not learn from it (this is the
+    # exact misread that latched _autocompact_supported=False board-wide on
+    # 2026-08-30). Re-queue instead; the reconciler retries at idle.
+    interrupted = (tid in _compact_interrupted
+                   or "cancelled" in (_out or "").lower()
+                   or "compaction canceled" in (_out or "").lower())
+    _compact_interrupted.discard(tid)
+    if interrupted:
+        _mark_compact_pending(tid, True)
+        log.log("note", "AUTO-COMPACT unterbrochen - nichts gelernt, nichts verloren. "
+                "Wird beim naechsten Leerlauf automatisch nachgeholt.")
+        return t
     if after <= before * 0.75:            # a real compaction frees a big chunk
         _autocompact_supported = True
+        _mark_compact_pending(tid, False)
         log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
                 "ohne Unterbrechung weiter." % round(after / 1000))
     else:
         _autocompact_supported = False
+        _mark_compact_pending(tid, False)
         log.log("note", "AUTO-COMPACT: diese CLI honoriert /compact nicht - fuer diese "
                 "Session abgeschaltet. Kontext-Meter + Nudge bleiben aktiv.")
     return t
@@ -404,6 +557,39 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     was_bounced = t.get("status") == "bounced"   # routing signal, read BEFORE 'running'
     from spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
+    # The owner typing /compact is a COMMAND, not a message to the worker. Sent
+    # through as ordinary text it (a) interrupts whatever turn is live and (b)
+    # can race the harness's own auto-compaction for the same session. Route it
+    # to the one compaction owner instead - single-flight, force past a learned
+    # "unsupported", and never a second concurrent run.
+    if (text or "").strip().lower() == "/compact":
+        log.log("steer", text)
+        if compacting(tid) is not None:
+            log.log("note", "Verdichtung laeuft bereits - dein /compact wartet nicht "
+                            "doppelt, das Ergebnis kommt gleich.")
+            return t
+        if drivers.turn_active(tid):
+            _mark_compact_pending(tid, True)
+            log.log("note", "Ein Turn laeuft - die Session wird direkt danach verdichtet "
+                            "(kein Abbruch, nichts geht verloren).")
+            return t
+        try:
+            t = _maybe_compact(t, log, force=True) or t
+        except Exception as _ce:
+            _mark_compact_pending(tid, True)
+            log.log("note", "/compact fehlgeschlagen: %s - wird beim naechsten Leerlauf "
+                            "nachgeholt." % str(_ce)[:200])
+        return t
+    # A COMPACTION IS NOT A TURN TO REPLACE. It is bounded maintenance on the
+    # session this very instruction needs, and cancelling it both loses the
+    # compaction AND (before the fix above) taught the probe a lie. So wait for
+    # it - the wait is bounded by the compact turn's own 180s idle watchdog, no
+    # new wall-clock cap - and only cut it if it wedges past that.
+    if await_compaction(tid, log):
+        try:
+            drivers.cancel(tid)
+        except Exception:
+            pass
     # INTERRUPT-AND-REPLACE: if a turn is live, soft-interrupt it and start THIS
     # instruction now (Paseo's replaceAgentRun), instead of queuing behind it on
     # the per-card lock. drivers.cancel is the cooperative interrupt (~2s ack,
@@ -530,13 +716,15 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # question/waiting_on, status, economics - all under the mutation lock.
     t, reason = _finish_turn(tid, sid, result, meta, log)
     # Auto-compact-and-continue: if this turn left the context near the brim,
-    # verdict the session NOW (one bounded /compact on the same session) so the
-    # next steer keeps headroom and the thread stays continuous - never a
-    # dead-end or a fresh-session overflow. Best-effort, self-verifying.
-    try:
-        t = _maybe_compact(t, log) or t
-    except Exception as _e:
-        log.log("note", "auto-compact skipped: %s" % str(_e)[:200])
+    # verdict the session (one /compact on the same session) so the next steer
+    # keeps headroom and the thread stays continuous - never a dead-end or a
+    # fresh-session overflow. OFF THE TURN THREAD, exactly like the copilot's
+    # _schedule_compact ("compaction is maintenance and must never be a pause in
+    # the conversation"): a near-full window takes minutes to compact, and
+    # everything after this line - the push notification, the fast-track ship -
+    # used to sit behind it. The single-flight registry, not this call site,
+    # is what keeps one compaction per card.
+    _threading.Thread(target=_compact_after_turn, args=(t, log), daemon=True).start()
     from spine.comms import notify
     notify.card_event(t, reason)
     # FAST-TRACK = ship EVERY finished turn, hands-free. The flag used to fire
