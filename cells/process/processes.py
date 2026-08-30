@@ -488,6 +488,11 @@ def accept_step(pid, idx, repo, actor="owner"):
     if tt:
         tt["process"] = pid
         tt["process_title"] = p["request"][:60]
+        # The step NUMBER as a field. The board used to recover it by matching
+        # /-s(\d+)$/ against the branch name - a data channel smuggled through a
+        # git ref, which broke the moment branches gained their card-id tail
+        # (trackstore._card_branch). Store the fact instead of encoding it.
+        tt["process_step"] = idx + 1
         tt["mode"] = mode
         sessions._save(tracks)
     return get(pid)

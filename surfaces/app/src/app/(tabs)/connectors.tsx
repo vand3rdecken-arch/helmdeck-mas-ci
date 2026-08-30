@@ -65,8 +65,12 @@ function ConnectorPanel({ conn, tracks, savedMins, onRefresh }:
   const [busy, setBusy] = useState(false);
   const [mins, setMins] = useState(savedMins > 0 ? String(savedMins) : "");
 
-  // The web derives produced cards by branch prefix: "conn-" + name[:14].
-  const produced = tracks.filter((k) => (k.branch ?? "").startsWith("conn-" + conn.name.slice(0, 14)));
+  // Produced cards are matched on dispatched_by ("connector:<name>"), which the
+  // daemon records at intake - exact, and immune to how the branch is spelled.
+  // The branch prefix stays as the fallback for cards filed before branches
+  // were slugged and given their card-id tail.
+  const produced = tracks.filter((k) => k.dispatched_by === "connector:" + conn.name
+    || (k.branch ?? "").startsWith("conn-" + conn.name.slice(0, 14)));
 
   async function act(fn: () => Promise<unknown>, ok: string | ((res: unknown) => string)) {
     setBusy(true);
