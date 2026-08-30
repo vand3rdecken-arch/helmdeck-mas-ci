@@ -1128,6 +1128,36 @@ DEBT = [
         "order": 16,
     },
     {
+        "id": "autocompact-probe-process-global",
+        "title": "The '/compact is supported' probe is ONE process-wide flag for the whole board",
+        "status": "open",
+        "what": "sessions._autocompact_supported is a module global: the FIRST "
+                "card whose compaction fails to shrink turns auto-compaction off "
+                "for EVERY card in the daemon, until a restart. It is never "
+                "re-probed and it is not keyed by driver, model or CLI version, "
+                "even though a board can run several drivers side by side.",
+        "why_it_bites": "Measured 2026-08-30 (card 20260830-065545): the owner "
+                        "typed while the harness was auto-compacting, steer()'s "
+                        "interrupt-and-replace killed the maintenance turn, and "
+                        "the unchanged context was read as 'this CLI doesn't "
+                        "honor /compact' - latching the global False. One "
+                        "interrupted turn on one card silently disabled "
+                        "compaction board-wide, and the 92%-full session it was "
+                        "trying to save was never compacted again.",
+        "trigger": "A second driver type (codex/opencode/omp) in real use, or any "
+                   "further report of auto-compaction 'just stopping' on cards "
+                   "that never ran one themselves.",
+        "fix": "Narrowed, not closed. The interrupt half IS fixed (an interrupted "
+               "compaction now teaches nothing and re-queues onto the card via "
+               "compact_pending, retried by the reconciler's "
+               "sweep_pending_compaction), so the flag can only be set by a turn "
+               "that actually RAN to completion - which is what the probe always "
+               "meant to measure. Remaining: key the learned verdict by driver "
+               "name + model instead of one process global, and let it decay so a "
+               "CLI upgrade is re-probed rather than staying off until a restart.",
+        "order": 16,
+    },
+    {
         "id": "ai-billing-workspace-global",
         "title": "AI billing mode (flat vs metered) is one workspace-wide switch",
         "status": "open",
