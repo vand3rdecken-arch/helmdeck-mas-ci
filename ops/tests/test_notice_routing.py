@@ -22,13 +22,27 @@ re-route is invisible until the owner complains again:
      question channel reads, and the payload survives the same validation the
      tapped answer goes through.
 
-Self-sandboxing: pm's _say/_ask_owner/_to_henry/_activity/_save_loopstate,
-get_goal/latest_plan and usage's snapshot/weekly_pacing_flag are patched -
-nothing touches disk, chat, FCM or the real board.
+SANDBOXING - AND WHY IT IS PATHS, NOT ONLY STUBS
+------------------------------------------------
+The first version of this file claimed "nothing touches disk, chat, FCM or the
+real board" and that claim was FALSE. Section 3 stubbed copilot.say but not
+pm_comm._to_henry, and on the run where the open-question guard fired it
+emitted a REAL escalation about a card "t1" that does not exist. Henry picked
+it up off the live bus 90 seconds later, spent two judgement turns on it and
+closed it as "Testverschmutzung" - correct call, wasted quota, and only luck
+that the verb he chose was `ignore` rather than something that moves a card.
+This repo has paid for that lesson once before (ops/tests/test_reset_gxp_guard
+wiped live recordings through an unsandboxed seam).
+
+So the isolation is now at the PATHS, below every stub: escalations.ESC_PATH
+and pm_comm._ACTIVITY are redirected into a temp dir before anything runs, the
+way test_escalations.py already does it. A forgotten stub can then only write
+to a throwaway file - it can no longer reach Henry. The per-section stubs stay,
+but they are for ASSERTIONS now, not for safety.
 
 Run: py -3.12 ops/tests/test_notice_routing.py
 """
-import os, sys
+import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -36,7 +50,15 @@ sys.path.insert(0, ROOT)
 
 from spine.comms import notice
 from spine.ops import ask
+from spine.registry import escalations
 from cells.pm import pm
+from cells.pm import pm_comm
+
+# -- CUT THE WIRES TO PRODUCTION FIRST, before any test code can run ----------
+_TMP = tempfile.mkdtemp(prefix="hd-notice-test-")
+escalations.ESC_PATH = os.path.join(_TMP, "escalations.jsonl")
+pm_comm._ACTIVITY = os.path.join(_TMP, "activity.jsonl")
+pm_comm.PLANS = _TMP
 
 FAILS = []
 
@@ -181,16 +203,19 @@ print("3. the notices that stay are ANSWERABLE, not just short")
 
 SAID = []
 from cells.copilot import copilot
+pm_comm._escalation_tid = lambda: ""
 copilot.say = lambda text, cls="pm", card=None, extra=None: SAID.append(
     {"text": text, "cls": cls, "card": card, "extra": extra or {}})
 # MUST be stubbed: _ask_owner now asks the chat whether a question is already
 # open, and the real one reads the owner's live log - an unsandboxed run would
 # defer every ask and test nothing. (That it failed exactly this way on the
-# first run is the guard proving itself against real data.)
+# first run is the guard proving itself against real data - and the deferral it
+# then took is what emitted the "Karte X" escalation into production.)
 copilot.chat_question_open = lambda: None
+# ...and the deferral path itself, so this section asserts on the ASK, not on a
+# handover. The temp ESC_PATH above is the backstop if this line is ever lost.
+pm_comm._to_henry = lambda kind, detail, card=None, feed="": None
 
-from cells.pm import pm_comm
-pm_comm._escalation_tid = lambda: ""
 ok = pm_comm._ask_owner("Karte X ist über Budget. Weiterlaufen lassen?",
                         [{"label": "Stoppen", "description": "anhalten"},
                          {"label": "Weiterlaufen", "description": "Budget erhöhen"}],
