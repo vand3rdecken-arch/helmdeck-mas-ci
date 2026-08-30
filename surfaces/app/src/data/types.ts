@@ -72,6 +72,9 @@ export interface Track {
   ctx_window?: number;
   created: string; updated: string;
   mode?: string; process?: string; process_title?: string;
+  /** 1-based step index within `process`, set at card creation. Read this, do
+   *  NOT parse the branch name - branches carry a card-id tail now. */
+  process_step?: number;
   up_next?: boolean; gate_report?: string[]; gate_failed?: boolean;
   merge_failed?: boolean; merge_kind?: string; merge_report?: string;
   review_preview?: boolean; review_report?: string;

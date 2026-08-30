@@ -20,7 +20,8 @@ import time
 from spine.ops.runs import REC
 from spine.registry import i18n as _i18n
 
-from spine.storage.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
+from spine.storage.trackstore import (_load, _save_track, _find, _slug, _unique_id,
+                                      _mutate, _card_branch)
 from spine.git.gitutil import (_git, _git_try, _branch_exists, _git_state_broken,
                      _owned_worktree, _seed_worktree, _base_ref,
                      _worktree_for, _worktree_of_branch)
@@ -50,6 +51,14 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     repo = os.path.abspath(repo)
     tracks = _load()
     tid = _unique_id(_slug(branch))
+    # ONE owner for the card's branch name. Callers pass a HUMAN STEM ("chat-"
+    # + the request, "req-" + the request, "connector-" + name); what actually
+    # goes on the board is derived here from the card id and verified free, so
+    # no caller can hand in a name that already addresses a live card's
+    # worktree. Machine and direct cards keep their fixed marker - they have no
+    # branch and no worktree by construction and never reach _worktree_for.
+    if branch not in (MACHINE_BRANCH, DIRECT_BRANCH):
+        branch = _card_branch(repo, branch, tid)
     run_dir = os.path.join(REC, tid)
     os.makedirs(run_dir, exist_ok=True)
     # attachments filed with the request are saved now; the first run reads them.

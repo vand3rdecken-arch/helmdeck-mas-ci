@@ -373,8 +373,11 @@ def _run_action(a, actor, role="operator"):
             return ("file_card: es ist kein default_repo gesetzt. Entweder settings "
                     "default_repo auf das Projekt setzen (configure), oder ich mache es "
                     "als machine_task auf dem Rechner - sag mir welches.")
-        branch = "chat-" + "".join(ch if ch.isalnum() else "-" for ch in a["task"].lower())[:24]
-        t = sessions.new_track(repo, branch, a["task"],
+        # Hand new_track the human STEM only - it owns the real branch name
+        # (slug + card id, verified free). This used to slug the task here and
+        # ship it verbatim, so two cards opening with the same sentence shared a
+        # branch AND a worktree; accepting one deleted the other's live tree.
+        t = sessions.new_track(repo, "chat-" + a["task"], a["task"],
                                lane="working" if a.get("dispatch") else "backlog",
                                value=a.get("value"), driver=a.get("driver", "claude"),
                                actor=actor, priority=a.get("priority", "medium"),

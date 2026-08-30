@@ -15,7 +15,8 @@ import time
 from spine.ops.runs import REC
 
 from spine.storage import db as _db
-from spine.storage.trackstore import _load, _save_track, _find, _slug, _unique_id, _mutate
+from spine.storage.trackstore import (_load, _save_track, _find, _slug, _unique_id,
+                                      _mutate, _card_branch)
 from spine.git.gitutil import _git, _branch_exists, _checkpoint, _worktree_for
 from spine.git.worktrees import reclaim_worktree
 
@@ -360,7 +361,11 @@ def fork_conversation(tid, first="", actor="owner"):
         worktree = src.get("worktree", "")
         branch = src.get("branch", "(no git)")
     else:
-        branch = "chatfork-" + _slug(src.get("branch", ""))[:20] + "-" + new_id.split("-")[-1][-4:]
+        # _card_branch, not a hand-rolled token: the old tail was
+        # new_id.split("-")[-1][-4:], i.e. the last 4 chars of the literal
+        # suffix "chatfork" - the constant "fork". Every fork of one card
+        # therefore asked for the SAME branch and the same worktree.
+        branch = _card_branch(src["repo"], "chatfork-" + src.get("branch", ""), new_id)
         worktree = _worktree_for(src["repo"], branch)
         if os.path.exists(worktree):
             raise RuntimeError("fork worktree already exists")
@@ -401,7 +406,9 @@ def fork_track(tid, from_ref="", actor="owner"):
     repo = src["repo"]
     ref = (from_ref or "").strip() or src["branch"]
     new_id = _unique_id("fork")
-    branch = "fork-" + _slug(src["branch"])[:20] + "-" + new_id.split("-")[0][-4:]
+    # the old tail was new_id.split("-")[0][-4:] = the DATE's last 4 digits, so
+    # two forks of one card on the same day collided (see _card_branch).
+    branch = _card_branch(repo, "fork-" + src["branch"], new_id)
     wt = _worktree_for(repo, branch)
     if os.path.exists(wt):
         raise RuntimeError("fork worktree already exists")
