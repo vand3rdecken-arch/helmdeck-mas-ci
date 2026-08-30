@@ -74,9 +74,16 @@ Weil kein Produzent "eine Nachricht an den Owner" besitzt, wurde die Frage
 "wie lang darf sie sein" an vier unabhängigen Stellen beantwortet:
 `notice.short` (240), `card_mirror.RESULT_MAX` (400), die Push-Budgets
 (230/180) und `clampText` (1600). `ba71f80` hat drei davon aus dem Chat-Pfad
-entfernt; `RESULT_MAX` bleibt per Owner-Entscheid (2026-08-30) als
-Posteingangs-Zeiger stehen. Das war Symptombehandlung an der richtigen Stelle —
-die Ursache ist dieser fehlende Produzenten-Vertrag.
+entfernt, ein zweiter Owner-Entscheid am selben Tag auch die vierte:
+`RESULT_MAX` ist **ersatzlos weg**. Gemessen an seinem eigenen Log waren 10 von
+10 gekürzten Spiegel-Zeilen Karten, die der Owner AUS DEM CHAT gestartet hatte —
+dort gibt es den „einen Tap entfernten" Volltext gar nicht (~3.600–4.300 Zeichen
+Verlust je Zeile). Im Chat-Pfad bleibt damit kein Budget mehr übrig; Budgets
+haben nur noch Kanäle, die nicht scrollen können.
+
+Das war Symptombehandlung an der richtigen Stelle — die Ursache ist dieser
+fehlende Produzenten-Vertrag: **vier Stellen konnten die Frage überhaupt nur
+deshalb unabhängig beantworten, weil keine von ihnen sie besitzt.**
 
 ## Vorschlag: drei Phasen, sequenziell
 
@@ -100,7 +107,7 @@ sie macht die Divergenz sichtbar, ohne etwas zu bewegen.
 
 ## Nicht in dieses Kartendeck
 
-- `RESULT_MAX` (Owner-Entscheid: bleibt).
+- `RESULT_MAX` (erledigt: ersatzlos entfernt, siehe Befund 5).
 - Die Label-Komposition pro Fläche (siehe oben: Absicht).
 - `voice_mode.tsx:582` rendert bewusst nicht über `Transcript` — mit
   begründendem Kommentar. Erst nach Phase 2 neu bewerten.

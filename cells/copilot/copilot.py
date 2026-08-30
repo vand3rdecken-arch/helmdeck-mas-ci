@@ -88,7 +88,13 @@ def prewarm(user):
                 return
             vm = events.settings().get("voice_model")
             model = (vm if vm is not None else "haiku") or ""
-            cli_model, _ = turnopts.resolve_model(model or "auto", "", False)
+            # SAME ctx signal chat() uses - the warm process is keyed by
+            # (model, pmode), so a prewarm that resolved haiku while the real
+            # turn resolves sonnet would kill and respawn the process on every
+            # single turn. Both sides must route from the same measurement.
+            cli_model, _ = turnopts.resolve_model(
+                model or "auto", "", False,
+                signals={"ctx_tokens": (_stats().get(user) or {}).get("ctx_tokens")})
             base = harness.brief("board-copilot")
             lock = _turn_lock(user)
             if not lock.acquire(blocking=False):
@@ -341,6 +347,74 @@ _FILLER_REPLIES = {"no response requested"}
 
 _compacting = set()              # users with a background compaction in flight
 
+# Henry's durable memory. NOT the CLI's shared auto-memory directory: that one
+# is derived by the CLI from a project identity which measurably is NOT "this
+# cwd" (harness._memory_isolation says so, and every card worktree we measured
+# shared ONE directory keyed off something else). Guessing that derivation is
+# the unverified reconstruction CLAUDE.md forbids - and cards are DENIED writes
+# there on purpose (debt: card-shares-the-operators-auto-memory).
+#
+# So Henry gets the shape Anthropic documents for exactly this and nothing more
+# clever: a plain directory of .md files plus an index that rides in the brief
+# (progressive disclosure - the index is always in context, a file is read only
+# when it's relevant). Machine-local runtime data, so it lives under daemon/
+# like every other runtime store.
+MEMORY_DIR = os.path.join(ROOT, "henry_memory")
+MEMORY_INDEX = os.path.join(MEMORY_DIR, "MEMORY.md")
+
+
+def _memory_digest():
+    """The memory INDEX for the turn - never the notes themselves.
+
+    That split is the whole mechanism: the index is small and always present, a
+    note is opened only when it turns out to matter. Putting the notes inline
+    would re-grow exactly the context the compaction just freed."""
+    try:
+        with open(MEMORY_INDEX, encoding="utf-8") as f:
+            body = f.read().strip()
+    except OSError:
+        return ""
+    if not body:
+        return ""
+    return ("\n\nDEIN GEDAECHTNIS (Index; die Dateien liegen in %s - lies eine, "
+            "wenn sie zur Frage passt, und schreib dazu, wenn du etwas "
+            "Dauerhaftes lernst):\n%s" % (MEMORY_DIR, body[:4000]))
+
+
+def _compact_mark(st):
+    """The context level at which Henry must compact - the LOWER of two
+    INDEPENDENT reasons, because they protect different things:
+
+      overflow  0.8 * window - the session must not hit the wall.
+      stay-fast the biggest context the FAST model can still carry, so a
+                trivial ack or a spoken turn can still be answered by it.
+
+    Only the first existed, and it is the wrong guard for the symptom the owner
+    actually feels. Measured 2026-08-30: Henry sat at 615,889 of a 1M window =
+    61.6%, comfortably under the 800k overflow mark and therefore never
+    compacted - while having been too big for Haiku's 200k window since roughly
+    168k, i.e. since 17% fill. The overflow guard fires at 80%; the line that
+    costs speed and plan-share is crossed at 17%. Nothing watched it, so every
+    board turn - typed or spoken - silently ran on the big model with a 615k
+    prefill re-read each time (83M input tokens over 98 turns).
+
+    Returns (mark, why). `why` is carried into the chat note so a compaction
+    never looks arbitrary to the owner."""
+    from spine.agent import turnopts
+    from spine.storage import events
+    from cells.engineer import sessions
+    window = max(int(st.get("ctx_window") or 0), sessions._CTX_WINDOW)
+    overflow = int(0.8 * window)
+    try:
+        vm = events.settings().get("voice_model")
+        fast_id, _ = turnopts.resolve_model((vm if vm is not None else "haiku") or "haiku", "")
+        fw = turnopts.model_window(fast_id)
+    except Exception:                                            # noqa: BLE001
+        fw = None
+    if fw and fw - turnopts.CTX_HEADROOM < overflow:
+        return fw - turnopts.CTX_HEADROOM, "stay-fast"
+    return overflow, "overflow"
+
 
 def _schedule_compact(user):
     """Compact in the BACKGROUND, off the request thread. The
@@ -356,10 +430,17 @@ def _schedule_compact(user):
         from cells.engineer import sessions
         st = _stats().get(user) or {}
         ctx = st.get("ctx_tokens") or 0
-        window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
+        mark, _why = _compact_mark(st)
     except Exception:
         return
-    if ctx < 0.8 * window or user in _compacting:
+    # at most ONE compaction per conversation turn. Without this the stay-fast
+    # mark can sit just above what a compaction actually achieves, and the
+    # background worker would re-fire on every reply forever. _maybe_compact's
+    # own "did it really shrink" check catches a CLI that ignores /compact; this
+    # catches a compaction that works but doesn't reach the mark.
+    if ctx < mark or user in _compacting:
+        return
+    if int(st.get("turns") or 0) <= int(st.get("compacted_at_turn") or -1):
         return
     _compacting.add(user)
 
@@ -382,6 +463,71 @@ def _schedule_compact(user):
     threading.Thread(target=_go, daemon=True).start()
 
 
+_MEMORY_SEED = """# Henrys Gedaechtnis
+
+Index. Eine Zeile pro Notiz - `- [Titel](datei.md) - Aufhaenger`.
+Der Index faehrt bei jedem Turn im Brief mit; die Datei selbst liest Henry nur,
+wenn sie zur Frage passt.
+"""
+
+_SAVE_PROMPT = (
+    "SYSTEM-WARTUNG, keine Owner-Nachricht - antworte NICHT im Chat-Ton und "
+    "stelle keine Rueckfrage.\n\n"
+    "Dein Verlauf wird gleich verdichtet. Was jetzt nicht auf der Platte steht, "
+    "steht dir danach nur noch als Zusammenfassung zur Verfuegung.\n\n"
+    "Schreib die dauerhaften Fakten aus diesem Gespraech nach %s:\n"
+    "- eine Datei pro Sache, `<kurz-kebab-titel>.md`, Einzeiler-Zusammenfassung "
+    "ganz oben, dann der Fakt und WARUM er zaehlt.\n"
+    "- danach eine Zeile pro Datei in MEMORY.md nachtragen.\n"
+    "- dauerhaft = Owner-Entscheidungen, Vorlieben, laufende Vorhaben, "
+    "Zusagen, offene Fragen, harte Fakten ueber Repos und Geraete.\n"
+    "- NICHT speichern, was Code, Karten oder Git-Historie ohnehin festhalten, "
+    "und nichts, was nur fuer den letzten Turn galt.\n"
+    "- gibt es die Notiz schon, aktualisiere sie statt eine zweite anzulegen.\n"
+    "- Geheimnisse (Token, Passwoerter) gehoeren NICHT hinein.\n\n"
+    "Antworte am Ende mit genau einer Zeile: was du gespeichert hast."
+)
+
+
+def _save_memory(user, sid):
+    """Give Henry ONE turn to persist what matters BEFORE the verdichtung.
+
+    This is the owner's decree of 2026-08-30 ("kompaktieren und ins Speicher"),
+    and it is the documented shape rather than an invention: a plain directory
+    of .md files plus an index, exactly what Anthropic's own guidance prescribes
+    when an agent needs to carry knowledge across a context boundary. Henry
+    writes it himself with the hands he already has (henry_pmode is acceptEdits)
+    - nothing here parses his conversation or decides for him what mattered.
+
+    Runs on the SAME session id, so what he writes is informed by the full,
+    not-yet-compacted history. Best-effort by the same contract as the
+    compaction it precedes: a failed save must never block the compaction, and a
+    failed compaction must never break the chat."""
+    from spine.agent import drivers
+    try:
+        os.makedirs(MEMORY_DIR, exist_ok=True)
+        if not os.path.exists(MEMORY_INDEX):
+            with open(MEMORY_INDEX, "w", encoding="utf-8") as f:
+                f.write(_MEMORY_SEED)
+    except OSError:
+        return False
+    # acceptEdits, NOT the plan mode the /compact spawn uses: a turn told to
+    # write files must be allowed to write files.
+    argv = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
+            "--permission-mode", henry_pmode(), "--resume", sid]
+    try:
+        p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             text=True, encoding="utf-8", errors="replace")
+        p.stdin.write(_SAVE_PROMPT % MEMORY_DIR); p.stdin.close()
+        for _line in p.stdout:                    # drain: an undrained pipe deadlocks
+            pass
+        p.wait(timeout=20)
+    except Exception:                                            # noqa: BLE001
+        return False
+    return True
+
+
 def _maybe_compact(user):
     """Copilot counterpart of sessions._maybe_compact (card parity, re-enabled
     2026-08-14): compact the board-chat session in place once it crosses the
@@ -402,12 +548,16 @@ def _maybe_compact(user):
     # scale the mark with the DERIVED window (sessions._maybe_compact parity):
     # a fixed 160k made a 1M-tier PM session probe /compact at ~16% real fill.
     window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
-    if ctx < 0.8 * window or not sid:
+    mark, why = _compact_mark(st)
+    if ctx < mark or not sid:
         return None
     # the external /compact turn resumes the SAME session id - a live warm
     # process on it would fork the conversation. Drop it first; the next chat
     # turn respawns on the compacted tip.
     _persist_drop(user)
+    # ...and BEFORE the history is verdichtet, let Henry put what matters on
+    # disk. Order is the whole point: after /compact he only has the summary.
+    saved = _save_memory(user, sid)
     pct = min(100, round(ctx / window * 100))
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--include-partial-messages",
             "--verbose", "--permission-mode", "plan", "--resume", sid]
@@ -462,12 +612,18 @@ def _maybe_compact(user):
     after = (after_usage.get("input_tokens", 0) + after_usage.get("cache_creation_input_tokens", 0)
              + after_usage.get("cache_read_input_tokens", 0)) or ctx
     m["ctx_tokens"] = after
+    # one compaction per turn (see _schedule_compact): a stay-fast mark can sit
+    # below what /compact actually reaches, and that must not become a loop.
+    m["compacted_at_turn"] = int(st.get("turns") or 0)
     _save_stats(all_st)
     if after <= ctx * 0.75:                     # a real compaction frees a big chunk
         _autocompact_supported = True
-        return ("AUTO-COMPACT: Kontext war bei %d%% (~%dk) - Verlauf verdichtet, "
-                "jetzt ~%dk. Es geht ohne Unterbrechung weiter."
-                % (pct, round(ctx / 1000), round(after / 1000)))
+        return ("AUTO-COMPACT (%s): Kontext war bei %d%% (~%dk) - %s, Verlauf "
+                "verdichtet, jetzt ~%dk. Es geht ohne Unterbrechung weiter."
+                % (why, pct, round(ctx / 1000),
+                   "Dauerhaftes zuvor ins Gedaechtnis geschrieben" if saved
+                   else "Gedaechtnis-Schreibung fehlgeschlagen",
+                   round(after / 1000)))
     _autocompact_supported = False
     return None    # this CLI doesn't honor /compact - stay silent, no per-turn pollution
 
@@ -852,7 +1008,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # "" (no explicit pick) routes as Auto - never falls through to the CLI's
     # global default, which is whatever the owner's interactive /model was
     # last set to (the same leak fixed in sessions._turn, 2026-08-14).
-    cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths))
+    # ctx_tokens is a ROUTING INPUT, not just a meter. Henry's session is
+    # long-lived (one per user, months of board chat) while the picker reads a
+    # two-character message: without this the trivial-message path picked the
+    # 200k Haiku tier for a 615k session and the resume died on "Prompt is too
+    # long" (2026-08-30, card 20260830-065545). Read from copilot_stats, the
+    # ONE owner of that number - folded at event time, never re-derived.
+    _st = _stats().get(user) or {}
+    cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths),
+                                          signals={"ctx_tokens": _st.get("ctx_tokens")})
     body = turnopts.augment_prompt(message, thinking, paths)
     focus = ""
     card_run_dir = None
@@ -886,6 +1050,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         system = system + "\n\n" + extra_system
     turn = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
         + _snapshot() + (("\n\n" + _plan) if _plan else "") \
+        + _memory_digest() \
         + focus + "\n\nUSER (%s): %s" % (user, body)
     # STREAM (shared with the card surface): stream-json so the prose reply types
     # into the per-user live feed the board chat polls, instead of a blocking

@@ -695,7 +695,11 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     cli_model, _ = turnopts.resolve_model(model, text, bool(paths),
         signals={"value": t.get("value"), "priority": t.get("priority"), "turns": t.get("turns"),
                  "failed": was_bounced or bool(t.get("gate_failed")),
-                 "fails": events.consecutive_gate_fails(t["id"])})
+                 "fails": events.consecutive_gate_fails(t["id"]),
+                 # the card's own measured meter: a worker that has grown past
+                 # a cheap model's window must not be routed into it (the board
+                 # chat hit exactly that, 2026-08-30 - see turnopts.CTX_WINDOWS)
+                 "ctx_tokens": t.get("ctx_tokens")})
     # An explicit composer pick (incl. "auto") is a STICKY card default, not a
     # one-turn favor: without this, the picker only ever won the turn it was
     # clicked on (t["model"] stayed "" from creation) and every later harness-
