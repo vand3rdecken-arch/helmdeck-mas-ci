@@ -4,11 +4,13 @@ import android.app.Activity.RESULT_OK
 import android.content.Context
 import android.content.Intent
 import android.speech.RecognizerIntent
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -18,8 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -33,6 +38,7 @@ import app.helmdeck.wear.data.DeviceStore
 import app.helmdeck.wear.data.RelayClient
 import app.helmdeck.wear.data.VoicePlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -276,8 +282,20 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // screen is already populated while this call is in flight. On success the
     // server list replaces it wholesale (the daemon may have compacted or
     // rotated the session) and is written back.
-    LaunchedEffect(Unit) {
-        val device = DeviceStore.load(context) ?: return@LaunchedEffect
+    //
+    // ONE refresh, called from THREE places (owner report 2026-08-30: "Chat
+    // auf der Uhr ist verzoegert - die Antwort kommt spaeter oder gar nicht"):
+    // the first load, every resume, and an idle ticker. Before this it ran
+    // exactly ONCE per composition, so a reply that landed anywhere but in
+    // this one in-flight call was invisible until the app was closed and
+    // reopened - and talk()'s own timeout message PROMISES the opposite
+    // ("falls die Antwort noch entsteht, erscheint sie gleich im Verlauf").
+    // Three real paths reach the wrist only through this:
+    //   - a turn that outlived talk()'s 4x150s patience (the message above),
+    //   - a turn the owner started on the PHONE or the GLASSES,
+    //   - an answer that landed while the watch screen was off.
+    suspend fun refresh() {
+        val device = DeviceStore.load(context) ?: return
         loadingHistory = lines.isEmpty()
         val result = withContext(Dispatchers.IO) {
             runCatching {
@@ -288,10 +306,10 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             }.getOrNull()
         }
         loadingHistory = false
-        if (result == null || result.first !in 200..299) return@LaunchedEffect
+        if (result == null || result.first !in 200..299) return
         val arr = runCatching {
             JSONObject(result.second).optJSONArray("messages")
-        }.getOrNull() ?: return@LaunchedEffect
+        }.getOrNull() ?: return
         val fresh = ArrayList<Line>(arr.length())
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
@@ -333,6 +351,50 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         }
     }
 
+    // RESUMED, not merely composed. A LaunchedEffect keeps running while
+    // the activity is stopped (the composition outlives onStop), so an
+    // unconditional ticker would keep polling the relay from the owner's
+    // wrist with the screen off - a watch has neither the battery nor the
+    // radio budget for that. Read off the Activity's own lifecycle rather
+    // than pulling in lifecycle-runtime-compose for one boolean (§9.1
+    // item 15: no new unverified dependency for something already reachable).
+    val activity = context as? ComponentActivity
+    var resumed by remember { mutableStateOf(true) }
+    DisposableEffect(activity) {
+        val lc = activity?.lifecycle
+        if (lc == null) return@DisposableEffect onDispose { }
+        val obs = LifecycleEventObserver { _, e ->
+            when (e) {
+                Lifecycle.Event.ON_RESUME -> resumed = true
+                Lifecycle.Event.ON_PAUSE -> resumed = false
+                else -> {}
+            }
+        }
+        lc.addObserver(obs)
+        onDispose { lc.removeObserver(obs) }
+    }
+
+    // First load AND every return to the screen. Coming back to the watch
+    // is exactly when the owner expects to see what Henry answered while
+    // his wrist was down, so a resume must not wait for the ticker.
+    LaunchedEffect(resumed) {
+        if (resumed && !busy) refresh()
+    }
+
+    // The idle ticker. NOT while a turn is in flight: the owner's own
+    // message is appended to the server log only when the whole turn
+    // completes (copilot.chat -> _append_log), so a mid-turn poll would
+    // return a transcript WITHOUT the line he just spoke and wipe it off
+    // his screen until Henry finished - his own words vanishing as he
+    // watches. talk() already delivers that answer itself; this loop is
+    // only for the answers that arrive by any other path.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            if (resumed && !busy) refresh()
+        }
+    }
+
     // Follow the conversation instead of making him scroll after every reply -
     // but ONLY once there is something to follow. The first version keyed on
     // `busy` as well and scrolled on the very first composition, when the list
@@ -354,6 +416,26 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // No MaterialTheme wrapper here on purpose: MainActivity wraps the whole
     // app in HelmDeckWearTheme once. A nested `MaterialTheme { }` with no
     // arguments is exactly how Material's default PURPLE got onto this screen.
+    // ROUND SCREEN SIDE INSET. Owner, 2026-08-30, with a photo of
+    // the watch: "Auf dem runden Wear-Screen ist die linke Kante der
+    // Textblase abgeschnitten - es fehlen ganze Buchstaben am
+    // Zeilenanfang."
+    //
+    // The cards fill the column's width and the column is only inset by
+    // ScreenScaffold's own contentPadding, which is what keeps the FIRST
+    // and LAST row off the bezel - it is not a horizontal safe area. On a
+    // ROUND display a full-width card is cut by the circle everywhere
+    // except the vertical middle: at 25% down from the top of a 192dp
+    // screen the chord is only ~154dp wide, so a card spanning the full
+    // 192 loses ~19dp on EACH side - whole letters, exactly as
+    // photographed.
+    //
+    // Screen-relative rather than a fixed dp value: the same 10% is right
+    // on a 192dp small round watch and a 227dp large one, and it is the
+    // only number here that is not a guess about one device. Applied to
+    // the CARDS rather than to the column, so the date separators and the
+    // title stay centred on the full width.
+    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
     run {
         ScreenScaffold(scrollState = columnState) { contentPadding ->
             TransformingLazyColumn(
@@ -445,7 +527,8 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                                  else WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
                             ),
-                            modifier = Modifier.padding(vertical = 3.dp),
+                            modifier = Modifier.padding(
+                                horizontal = sideInset, vertical = 3.dp),
                         ) {
                             Text(text = line.text, textAlign = TextAlign.Start)
                         }

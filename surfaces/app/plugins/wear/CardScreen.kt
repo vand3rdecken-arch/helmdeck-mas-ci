@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -105,6 +106,14 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
+        // ROUND SCREEN SIDE INSET - same as HenryScreen.kt, same cause:
+        // ScreenScaffold's contentPadding keeps the first and last ROW off
+        // the bezel, but a full-width card is still cut by the circle at
+        // every height except the vertical middle (owner photo,
+        // 2026-08-30: whole letters missing at the start of the wrapped
+        // lines). 10% of the screen width per side, so it scales with
+        // the device instead of being a guess about one.
+        val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
         // Same reasoning as PairingScreen: ScreenScaffold computes the
         // screen-size-relative content padding and passes it in, instead of a
         // bare Box that leaves the first and last row against the bezel.
@@ -178,7 +187,8 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                     item {
                         OutlinedCard(
                             onClick = {},
-                            modifier = Modifier.padding(vertical = 3.dp),
+                            modifier = Modifier.padding(
+                                horizontal = sideInset, vertical = 3.dp),
                         ) {
                             Text(text = card.detail, textAlign = TextAlign.Start)
                         }
@@ -198,7 +208,8 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                 containerColor = WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
                             ),
-                            modifier = Modifier.padding(vertical = 3.dp),
+                            modifier = Modifier.padding(
+                                horizontal = sideInset, vertical = 3.dp),
                         ) {
                             Text(text = card.body, textAlign = TextAlign.Start)
                         }
