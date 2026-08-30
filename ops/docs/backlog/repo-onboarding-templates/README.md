@@ -3,7 +3,7 @@
 **STATUS: ENTWURF ZUR ABNAHME. Kein Code in diesem Kartenlauf.** Dieses Dokument
 beschreibt, *was* gebaut werden soll und *auf welche echten Keys* es abgebildet
 wird. Es soll entschieden werden, bevor gebaut wird — die offenen
-Entscheidungen stehen in §8.
+Entscheidungen stehen in §8 und §14; die **bereits entschiedenen** in §0.
 
 **Stand:** 2026-08-30. Alle Datei:Zeile-Angaben sind in diesem Worktree gegen
 `96fa973` gelesen. Wo eine Anforderung heute **nicht** abbildbar ist, steht das
@@ -46,7 +46,8 @@ Dafür stellt er eine antippbare Rückfrage, und der Owner entscheidet.
 2. **Cells sind global**, nicht pro Repo. „Das Template seedet Cells" ist heute
    nicht ausdrückbar und ist eine echte Architekturänderung.
 3. Es gibt **keinen Gate-An/Aus-Key**. Das Gate läuft, wenn eine Datei
-   `helmdeck.gate` existiert. „Gate abschalten" hat heute kein Ziel.
+   `helmdeck.gate` existiert. „Gate abschalten" hat heute kein Ziel —
+   der Key wird eingeführt (Entscheidung **E3**, §0).
 
 ## Nachtrag UX (Owner-Rückfrage 2026-08-30)
 
@@ -64,9 +65,34 @@ Dafür stellt er eine antippbare Rückfrage, und der Owner entscheidet.
   wenn Erkennung möglich ist. Fünf Schritte, inklusive Erkennungstabelle.
 - **§12 Kanban — fünf Stationen, vier Spalten.** Gate und Deploy sind
   **Übergänge**, keine Spalten. Das Modell dafür (Spalte = Projektion mehrerer
-  Status) hat HelmDeck bereits, nur unbenannt.
+  Status) hat HelmDeck bereits, nur unbenannt. **§12.5** spezifiziert den
+  beschlossenen Board-Umbau (E2), mit dem Templates Spalten definieren dürfen.
 - **§13 Begriffslexikon** — verbindliche Standardbegriffe EN/DE.
 - **§14 F8–F12** — die zusätzlichen Entscheidungen, die daraus folgen.
+
+---
+
+# 0. Getroffene Owner-Entscheidungen (2026-08-30)
+
+Drei Fragen sind **entschieden** und im Dokument eingearbeitet. Sie sind nicht
+mehr offen; wo sie vorher als Frage standen, steht jetzt das Ergebnis.
+
+| # | Frage | Entscheidung | Wirkung im Dokument |
+|---|---|---|---|
+| **E1** | F8 — Repo-Identität | **Drei-Ebenen-Modell** (Repository → Project → Billing-Project), `_repo_hash` wird Schlüssel | §10.5 verbindlich, §5.1 Schlüsselform, §11.2 Schritt 2 |
+| **E2** | F10 — Board | **Umbau aufgenommen:** Spalten kommen aus `/loop/map`, Template darf Spalten definieren | §12.4, neu §12.5, §4.3 |
+| **E3** | F2 — Gate aus | **Echter An/Aus-Key**, den Henry kippen kann | §2.3, §4.1, §4.2, §5.3, §6.2, neu §8/F2-Ergebnis |
+
+**Was diese drei zusammen bedeuten:** der Zuschnitt wächst gegenüber dem
+Entwurf. E1 zieht eine Migration nach sich, E2 bricht eine hartkodierte Liste
+im Client auf, E3 führt einen Key ein, der ein Gesetz zu Policy macht. Alle
+drei sind unten mit ihren Kosten und ihren Schutzplanken beschrieben — keine
+Entscheidung wird als kostenlos dargestellt.
+
+**Ein Punkt aus E3, der ausdrücklich mitentschieden ist:** ein abschaltbares
+Gate erzeugt einen Zustand, in dem vor der Abnahme **nichts** geprüft wird.
+Das ist zulässig, aber es darf nie *still* eintreten — §4.2 und §9 legen fest,
+dass dieser Zustand an der Station, auf dem Board und im Audit sichtbar ist.
 
 ---
 
@@ -173,7 +199,14 @@ Es gibt **keine** Einstellung, die das Gate deaktiviert.
 
 > **Konsequenz:** „Henry, schalt das Gate für dieses Repo ab" hat heute kein
 > Ziel. Entweder man löscht eine Datei im Repo (unsichtbar, nicht
-> auditierbar) oder man führt den Key erst ein. Entscheidung: **offene Frage F2.**
+> auditierbar) oder man führt den Key erst ein.
+>
+> **Entschieden (E3):** der Key wird eingeführt —
+> `repo_profiles.<project>.stations.gate ∈ {"on","off"}`, gelesen von `_gate()`.
+> Die Datei-Erkennung bleibt als *zweite* Bedingung bestehen: das Gate läuft,
+> wenn der Key `"on"` ist **und** eine Gate-Datei existiert. Damit schaltet der
+> Key ab, aber er schaltet nichts ein, was es nicht gibt — und ein Repo ohne
+> Gate-Datei verhält sich weiter wie heute.
 
 ## 2.4 Deploy ist bereits optional — und bereits pro Repo
 
@@ -272,7 +305,10 @@ was eine Station tut, steht an der Station, samt Key und Quelldatei-Zeile.
 - Kein frei verschiebbarer Graph-Editor. Kein Drag & Drop, keine Kanten-Malerei.
 - Keine Multi-Repo-Karten, kein Repo-übergreifendes Deployment.
 - Keine Änderung an Gate-, Merge- oder Deploy-*Mechanik* — nur an ihrer
-  Konfiguration und Sichtbarkeit.
+  Konfiguration und Sichtbarkeit. (Seit E3 liest `_gate()` zusätzlich **einen**
+  Schalter, bevor es prüft; der Prüfvorgang selbst bleibt unangetastet.)
+- **Keine neuen Workflow-Status.** E2 macht die Board-*Spalten* frei, nicht die
+  Zustandsmaschine — die sieben Status und ihre Übergänge bleiben (§12.5).
 - Kein Ersatz für `settings-ia-redesign`; dieses PRD ist die Repo-Ebene darunter.
 
 ---
@@ -293,7 +329,7 @@ Karte  Arbeit   Gate  Abnahme  Deploy
 |---|---|---|---|---|
 | 1 | **Karte** | Lane `backlog` (`sessions.py:142-147`) | `policy.auto_dispatch_priority`, `capacity.wip_limit` | nein — strukturell |
 | 2 | **Arbeit** | Lane `working` (`:148-153`), Worktree-Erzeugung `dispatch.py:130` | `policy.machine.*`; Worktree vs. `direct_task` (`dispatch.py:334`) | nein — nur *Bauart* wählbar |
-| 3 | **Gate** | Knoten `gate` (`:187-194`), Ausführung `lanemachine.py:162-262` | Datei `<repo>/helmdeck.gate`; `gate_idle_s`, `gate_hard_s` | **kein Key vorhanden** → F2 |
+| 3 | **Gate** | Knoten `gate` (`:187-194`), Ausführung `lanemachine.py:162-262` | **neu** `repo_profiles.{project}.stations.gate`; Datei `<repo>/helmdeck.gate`; `gate_idle_s`, `gate_hard_s` | **ja — neuer Key (E3)** |
 | 4 | **Abnahme** | Kante `review → done`, Verb `accept` (`:181-185`) | `policy.auto_accept_green`, `policies.sod_accept` | nein — nur *automatisierbar* |
 | 5 | **Deploy** | `_repo_hook(t,"deploy")` (`lanemachine.py:1119`) | `repo_hooks.<repo>.deploy` | **ja, heute schon** (§2.4) |
 
@@ -308,8 +344,24 @@ zwei:
 - **Automatisch** (Abnahme) — die Station bleibt in der Linie, wird aber ohne
   Halt durchfahren. `auto_accept_green: true` heißt *„niemand hält hier an"*,
   nicht *„es gibt keine Abnahme"*. Visuell: gestrichelte Kante, Station hohl.
-- **Aus** (Deploy; ggf. Gate nach F2) — die Station wird ausgegraut mit
+- **Aus** (Deploy, **und Gate seit E3**) — die Station wird ausgegraut mit
   Begründung („kein Deploy-Hook für dieses Repo hinterlegt").
+
+**Sonderregel für „Gate aus" (Folge von E3).** Ein abgeschaltetes Gate ist der
+einzige Aus-Zustand, der eine *Schutzfunktion* entfernt statt eines optionalen
+Schritts. Er unterliegt deshalb drei Pflichten, die kein anderer Zustand hat:
+
+1. **Nie stumm.** Die Station wird nicht nur ausgegraut, sondern mit Warnstil
+   und Klartext gerendert: „Gate aus — Karten gehen ungeprüft in die Abnahme",
+   plus Akteur und Zeitpunkt der Abschaltung. Dieselbe Zeile erscheint als
+   Badge über der betroffenen Board-Spalte, nicht nur in der Linie.
+2. **Immer rücknehmbar.** `repo_profiles` gehört in `SIGNIFICANT_SETTINGS`
+   (§5.1), damit das Abschalten einen Checkpoint erzeugt. „Gate wieder scharf"
+   ist Stufe A (§6.2 #4) — Verschärfen darf nie schwerer sein als Abschalten.
+3. **Nicht global.** Der Key wirkt ausschließlich auf ein Project (Ebene 2 aus
+   §10.5). Es gibt keinen Weg, das Gate für *alle* Repos abzuschalten — ein
+   Massen-Aus wäre genau die Wirkung, die die Policy-Plane owner-only hält
+   (§2.6).
 
 Diese Unterscheidung ist die Übersetzung des bestehenden
 `kind: "fixed" | "policy"`-Tags (`sessions.py:140-195`) in Owner-Sprache — und
@@ -332,6 +384,16 @@ neutral gerendert, nicht als rotes Schloss. *„It is structure, not a problem."
    prüft `/loop/map` gegen die TS-Interfaces in `client.ts:308-354` in **beide**
    Richtungen. Jede Feld-Erweiterung muss dort mitgezogen werden, sonst
    bricht der Gate.
+5. **Gate-An/Aus-Key (E3).** `repo_profiles.{project}.stations.gate` in
+   `DEFAULTS` (`events.py:97`), gelesen an **genau einer** Stelle — in `_gate()`
+   vor der Datei-Erkennung (`lanemachine.py:193-196`). Kein zweiter Leser,
+   keine Kopie in der UI: der Stationszustand kommt aus `/loop/map`, nicht aus
+   einer eigenen Abfrage. (Ein Flag, das an zwei Stellen ausgewertet wird, ist
+   genau das Muster, das `CLAUDE.md` unter „NO MONKEY PATCHES" verbietet.)
+6. **Spalten kommen aus dem Server (E2).** `/loop/map` liefert zusätzlich die
+   **Spaltenliste** des Projects; `board.tsx:27` verliert seine hartkodierte
+   Kopie. Details und Grenzen in §12.5 — das ist der größte Einzelposten der
+   drei Entscheidungen.
 
 ---
 
@@ -339,20 +401,30 @@ neutral gerendert, nicht als rotes Schloss. *„It is structure, not a problem."
 
 ## 5.1 Wo ein Template gespeichert wird
 
-Neuer Top-Level-Key in `settings.json` — der erste echte Pro-Repo-Datensatz:
+Neuer Top-Level-Key in `settings.json` — der erste echte Pro-Repo-Datensatz.
+**Der Schlüssel ist seit E1 kein Pfad mehr**, sondern die Project-Identität aus
+§10.5: `"<repo_id>:<root_dir>"`, wobei `repo_id` der `_repo_hash` ist und
+`root_dir` bei einem Ein-Projekt-Repo schlicht `.` lautet.
 
 ```jsonc
 "repo_profiles": {
-  "C:\\Users\\...\\helmdeck": {
+  "1mmjd8p4:.": {
+    "repo_path": "C:\\Users\\...\\helmdeck",   // nur Anzeige, nicht Schlüssel
     "template": "software-dev",
     "template_version": 1,
     "applied": "2026-08-30T12:00:00Z",
     "applied_by": "owner",
     "stations": { "gate": "on", "abnahme": "manual", "deploy": "on" },
+    "columns": null,       // null = Standard aus dem Template (E2, §12.5)
     "drift": []            // Keys, die seit dem Seeden abweichen
   }
 }
 ```
+
+`repo_path` ist bewusst **abgeleitete Anzeige**, kein Identitätsträger: er wird
+bei jedem Auflösen neu gesetzt, damit ein umgezogenes Repo seinen Datensatz
+behält (F9) und ein falsch geschriebener Pfad nichts mehr kaputt macht — genau
+die Brüche 2–4 aus §10.2.
 
 Pflichten bei der Umsetzung, aus den Regeln des Hauses:
 
@@ -368,7 +440,15 @@ Pflichten bei der Umsetzung, aus den Regeln des Hauses:
 - Aufnahme in `ALLOWED_CONFIG` (`copilot_actions.py:67`), sonst ist §6 nicht
   ausführbar.
 - Aufnahme in `SIGNIFICANT_SETTINGS` (`events.py:162`), damit ein
-  Template-Wechsel einen Checkpoint erzeugt und rücknehmbar ist.
+  Template-Wechsel einen Checkpoint erzeugt und rücknehmbar ist. Seit E3 ist
+  das nicht mehr nur Komfort: das Abschalten eines Gates **muss** einen
+  Rücknahmepunkt hinterlassen (§4.2, Pflicht 2).
+- **Migration (Folge von E1).** Bestehende pfadbasierte Einträge
+  (`repo_hooks`, `pm.repos`, `default_repo`, GxP-Scope) werden einmalig über
+  `_repo_hash` aufgelöst und umgeschlüsselt. Der Schritt läuft mit
+  Vorher/Nachher-Liste und ist rückrollbar; Pfade, die sich **nicht** auflösen
+  lassen (Repo weg, kein Git), bleiben unverändert stehen und werden gemeldet
+  statt still verworfen.
 
 ## 5.2 Template „Software-Entwicklung" (`software-dev`)
 
@@ -376,7 +456,7 @@ Für Repos, aus denen ein Artefakt gebaut und ausgeliefert wird.
 
 | Was das Template vorlegt | Echter Key | Wert | Warum |
 |---|---|---|---|
-| Gate an | Datei `<repo>/helmdeck.gate` | anlegen, falls fehlt | Gate-before-review ist hier Gesetz |
+| Gate an | `repo_profiles.{project}.stations.gate` + Datei `<repo>/helmdeck.gate` | `"on"`, Datei anlegen falls fehlt | Gate-before-review ist hier Gesetz |
 | Gate-Kommando | Inhalt derselben Datei | `py -3.12 "%HELMDECK_REPO%\ops\tools\run_gate.py"` | Der leichte Gate (Dekret `gate-light`) |
 | Gate-Geduld | `gate_idle_s` | `300` | bestehender Default |
 | Abnahme manuell | `policy.auto_accept_green` | `false` | Mensch sieht Code vor dem Merge |
@@ -394,7 +474,7 @@ kein Deploy, schnelle Runden.
 | Was das Template vorlegt | Echter Key | Wert | Warum |
 |---|---|---|---|
 | **Kein Deploy** | `repo_hooks.<repo>` | **nicht angelegt** | `_repo_hook` liefert `None` → Station entfällt (§2.4) |
-| Gate leicht | Datei `helmdeck.gate` | Doku-Gate (Links/Frontmatter) oder keine → **F2** | ein Python-Compile-Gate ist hier sinnlos |
+| Gate leicht, aber an | `stations.gate` + Datei `helmdeck.gate` | `"on"` + Doku-Gate (Frontmatter/Links) | ein Python-Compile-Gate ist hier sinnlos — ein *passender* Gate nicht |
 | Abnahme automatisch bei Grün | `policy.auto_accept_green` | `true` | ein Textabsatz braucht kein Vier-Augen-Merge |
 | Direkt im Baum arbeiten | Karten-Default | `direct_task` + `fast_track` | kein Branch/Merge-Overhead für eine Textdatei |
 | Zügiger Selbst-Dispatch | `policy.auto_dispatch_priority` | `"high"` | kurze Aufgaben nicht anstauen |
@@ -406,6 +486,13 @@ kein Deploy, schnelle Runden.
 > Template macht diese Schuld aber pro Repo *bewusst und sichtbar* — die
 > Station „Gate" muss in diesem Fall als **aus mit Begründung** gerendert
 > werden, nicht als grün.
+>
+> **Seit E3 ist das kein Sonderfall mehr, sondern derselbe Zustand:** ein Repo
+> auf `direct_task` und ein Repo mit `stations.gate = "off"` landen beide im
+> Zustand „ungeprüft vor Abnahme" und werden **identisch** dargestellt
+> (§4.2, Sonderregel). Das Template liefert `gate: "on"` aus — wer es
+> abschaltet, tut das bewusst und sichtbar, statt es sich über die Bauart der
+> Karte einzuhandeln.
 
 ## 5.4 Was ein Template nicht darf
 
@@ -447,7 +534,7 @@ gezielt aktiviert werden.
 |---|---|---|---|---|
 | 1 | „Henry, dieses Repo braucht kein Deploy" · „Deploy aus" | **A** | `configure` | `repo_profiles.{repo}.stations.deploy = "off"`; `repo_hooks.{repo}.deploy` geleert |
 | 2 | „Deploy wieder an" | **B** | `<helmdeck-ask>` + `configure` | Deploy-**Befehl** ist Stufe B (F5) — Henry fragt nach dem Kommando bzw. bietet das zuletzt bekannte an |
-| 3 | „Schalt das Gate für dieses Repo ab" | **B** | Ask → owner-bestätigt | `repo_profiles.{repo}.stations.gate = "off"` — **existiert erst nach F2** |
+| 3 | „Schalt das Gate für dieses Repo ab" | **B** | Ask → owner-bestätigt | `repo_profiles.{project}.stations.gate = "off"` — Key existiert seit **E3**; bleibt Stufe B, weil er eine Prüfung entfernt |
 | 4 | „Mach das Gate wieder scharf" | **A** | `configure` | `…stations.gate = "on"` — Verschärfen ist immer Stufe A |
 | 5 | „Grüne Karten sollen hier automatisch durchgehen" | **A** | `configure` | `policy.auto_accept_green = true` |
 | 6 | „Ich will jede Karte selbst abnehmen" | **A** | `configure` | `policy.auto_accept_green = false` |
@@ -457,6 +544,7 @@ gezielt aktiviert werden.
 | 10 | „Dringende Karten sollen von selbst starten" | **A** | `configure` | `policy.auto_dispatch_priority = "high"` |
 | 11 | „Der PM soll hier nicht planen" | **B** | Ask → `POST /pm/config` | `pm.repos` ohne `{repo}` — `pm` ist **nicht** in `ALLOWED_CONFIG` |
 | 12 | „Nenn die Spalte ‚Freigabe' statt ‚Review'" | **A** | `configure` | `policy.lane_labels.review = "Freigabe"` |
+| 12b | „Mach hier eine Spalte ‚Wartet auf Kunden' auf" | **B** | Ask (Vorschau zeigen) → `configure` | `repo_profiles.{project}.columns` — seit **E2** möglich; Stufe B, weil das Board für alle sichtbar umgebaut wird (§12.5) |
 | 13 | „Schalt die PM-Cell ab" | **B** | Ask → `POST /policy/swap` | `pmEnabled = false`; Henry hat dafür heute **keinen** Weg (§2.6) |
 | 14 | „Schalt Auth ab" · „Niemand muss sich mehr anmelden" | **C** | Ablehnung + Begründung | `authRequired` — Gesetz, `spine/auth/auth.py` |
 | 15 | „Ändere den Charter-Kern" · „Erlaub Connectoren Shell-Zugriff" | **C** | Ablehnung + Begründung | `spine/auth/charter.py` — der eine Boden (§6.4) |
@@ -468,10 +556,16 @@ gezielt aktiviert werden.
 > **Henry:** „Erledigt — die Deploy-Station ist für helmdeck-docs aus. Karten
 > landen nach der Abnahme direkt in Fertig."
 > ```actions
-> [{"type":"configure","patch":{"repo_profiles":{"C:\\…\\helmdeck-docs":
->   {"template":"docs-process","template_version":1,
+> [{"type":"configure","patch":{"repo_profiles":{"7f3a2c91:.":
+>   {"repo_path":"C:\\…\\helmdeck-docs",
+>    "template":"docs-process","template_version":1,
 >    "stations":{"gate":"on","abnahme":"auto","deploy":"off"}}}}}]
 > ```
+>
+> Der Schlüssel ist die Project-Identität (E1), nicht der Pfad — deshalb
+> funktioniert derselbe Satz auch, wenn der Owner den Ordner vorher umbenannt
+> oder das Repo verschoben hat. Der Patch enthält das **vollständige**
+> Profilobjekt, weil `save_settings` nur eine Ebene tief merged (§5.1-Trap).
 
 ## 6.4 Was FIXED bleibt — und die genaue Formulierung dafür
 
@@ -542,7 +636,9 @@ Schwesterkarte ist.
 
 # 8. Offene Fragen — zur Entscheidung durch den Owner
 
-Alle sieben blockieren den Bau ganz oder teilweise. Reihenfolge = Wichtigkeit.
+Ursprünglich sieben; **F2 ist seit 2026-08-30 entschieden** (§0/E3) und bleibt
+hier mit dem Ergebnis stehen, damit die Begründung nachlesbar ist. Offen sind
+noch F1, F3–F7. Reihenfolge = Wichtigkeit.
 
 **F1 — Pro-Repo-Cells: Scope oder Vertagung?** *(blockiert Template-Umfang)*
 Cells sind heute global (§2.2). „Das Template legt fest, welche Cells geseedet
@@ -553,8 +649,9 @@ passiert, wenn ihre Cell für dieses Repo aus ist.
 §5.2/§5.3 kommen ohne Cell-Flags aus). Pro-Repo-Cells als eigene Karte nach
 `settings-ia-redesign` Tür 3.
 
-**F2 — Was heißt „Gate aus" für ein Dokumenten-Repo?** *(blockiert Chat-Mapping #3)*
-Es gibt keinen Key (§2.3). Drei Wege:
+**F2 — Was heißt „Gate aus" für ein Dokumenten-Repo?** — **ENTSCHIEDEN: (b),
+echter An/Aus-Key.** *(war: blockiert Chat-Mapping #3)*
+Es gab keinen Key (§2.3). Drei Wege standen zur Wahl:
 (a) **Gate bleibt immer an, nur das Kommando wechselt** — ein Doku-Repo bekommt
 einen Doku-Gate (Frontmatter/Links/tote Verweise). Gesetz bleibt unangetastet.
 (b) **Neuer Key `repo_profiles.<repo>.stations.gate`**, den `_gate()` liest.
@@ -562,9 +659,25 @@ Ehrlich und auditierbar, macht aber ein Gesetz zu Policy — berührt die offene
 Schuld `full-dynamism-decree`.
 (c) **Datei löschen** — funktioniert heute, ist aber unsichtbar und nicht im
 Audit.
-*Empfehlung:* **(a).** Ein Repo ohne jede Prüfung braucht das Konzept „Gate aus"
-gar nicht — es braucht einen *passenden* Gate. Das hält das Gesetz intakt und
-löst das Owner-Problem trotzdem.
+*Meine Empfehlung war (a).* **Der Owner hat (b) gewählt.** Das ist die
+mächtigere und die ehrlichere Variante — sie macht einen Zustand, den es über
+`direct_task` faktisch längst gibt, benennbar und auditierbar, statt ihn hinter
+der Bauart einer Karte zu verstecken.
+
+**Was mit der Entscheidung mitgebaut werden muss** (der Preis von (b), damit er
+nicht später überrascht):
+- Der Key steht in `DEFAULTS`, wird an **einer** Stelle gelesen (§4.3 Punkt 5).
+- „Aus" ist nie stumm, immer rücknehmbar, nie global — die drei Pflichten aus
+  §4.2. Ohne sie ist (b) genau das, wovor (a) schützen sollte.
+- Die offene Schuld `full-dynamism-decree` wird berührt: `gateBeforeReview`
+  liegt deklarativ in der Policy-Plane und wird von niemandem gelesen. Der neue
+  Key darf **nicht** stillschweigend zur zweiten Wahrheit daneben werden —
+  entweder liest `_gate()` künftig beide (Policy-Plane als Obergrenze, Repo-Key
+  als Verschärfung darunter), oder der tote Seed-Eintrag wird im selben Zug
+  entfernt. Beides ist vertretbar; **nichts tun ist es nicht**, weil sonst zwei
+  Schalter mit demselben Namen existieren, von denen einer wirkungslos ist.
+- Das Verschärfen (`"off" → "on"`) bleibt Stufe A, das Abschalten Stufe B
+  (§6.2 #3/#4).
 
 **F3 — Bindet das Template, oder seedet es einmalig?** *(blockiert Datenmodell)*
 (a) **Seed-once:** Template setzt Werte, danach ist jede Abweichung erlaubt und
@@ -623,6 +736,25 @@ Ein Bau gilt als fertig, wenn:
    erzeugt — **kein** `machine_task` (§6.5, Fallthrough).
 5. Screenshot der Linie beurteilt, nicht nur gerendert: Lesbarkeit, Zentrierung,
    Theming, keine Kollisionen bei fünf Stationen auf Telefonbreite.
+
+**Zusätzlich aus den Entscheidungen E1–E3:**
+
+6. **(E1)** Dasselbe Repo, aufgerufen über Hauptpfad, Kleinschreibung,
+   Trailing-Slash, Unterordner und Worktree, löst auf **ein** Profil auf. Ein
+   zweites Anlegen mit gleichem `(repo_id, root_dir)` wird **abgelehnt**, nicht
+   überschrieben — und der Deploy-Hook feuert auch bei kleingeschriebenem Pfad
+   (das war Bruch 2 aus §10.2).
+7. **(E2)** Eine im Profil geänderte Spaltenliste erscheint im Board **ohne**
+   Client-Änderung; `board.tsx` enthält keine Lane-Liste mehr (Nachweis: grep
+   findet keinen zweiten `LANES`-Array). Eine Karte in einer entfernten Spalte
+   geht **nicht** verloren, sondern fällt sichtbar auf ihre Standardspalte
+   zurück (§12.5).
+8. **(E3)** Mit `stations.gate = "off"` läuft nachweislich **kein** Gate
+   (kein `gate`-Event im Audit) — und Linie *und* Board zeigen den Warnhinweis
+   mit Akteur und Zeitpunkt. „Henry, mach das Gate wieder scharf" stellt den
+   Zustand ohne Rückfrage her.
+9. **(E3, negativ)** Es gibt keinen Aufruf, der das Gate für **mehr als ein**
+   Project gleichzeitig abschaltet — auch nicht über Henry.
 
 ---
 
@@ -739,7 +871,11 @@ auch die, die ein Template nicht erneut anwenden und keine Abweichung erkennen
 können.** Wer später „Template aktualisieren" oder „weicht vom Template ab"
 will, braucht einen eigenen Projekt-Datensatz, in dem die Bindung steht.
 
-## 10.5 Vorgeschlagenes Identitätsmodell (drei Ebenen, Standardbegriffe)
+## 10.5 Identitätsmodell (drei Ebenen, Standardbegriffe) — **abgenommen (E1)**
+
+> **Owner-Entscheidung 2026-08-30:** dieses Modell ist angenommen und damit die
+> verbindliche Grundlage für `repo_profiles` (§5.1), den Onboarding-Schritt 2
+> (§11.2) und die Migration bestehender pfadbasierter Keys.
 
 Statt einer Gleichung eine **Hierarchie** — jede Ebene für sich eindeutig:
 
@@ -802,7 +938,9 @@ project is created."* Das ist die Erfahrung, die wir **nicht** wiederholen.
 anlegen" (legt an; `init_repo` in `gitutil.py:86` existiert bereits) oder
 „vorhandenen Ordner aufnehmen".
 
-**Schritt 2 — Identität prüfen (neu, verhindert die Brüche aus §10).** Bevor
+**Schritt 2 — Identität prüfen (neu, verhindert die Brüche aus §10).**
+Verbindlich seit **E1**: aufgelöst wird auf das Drei-Ebenen-Modell (§10.5),
+nicht auf einen Pfad-String. Bevor
 irgendetwas vorgeschlagen wird, wird aufgelöst und *dem Nutzer gezeigt*:
 Repository (Hash + Haupt-Checkout-Pfad), Root Directory, und die Antwort auf
 „kennen wir das schon?". Vier Fälle mit klarer Ansage statt stiller Annahme:
@@ -847,9 +985,9 @@ Der Owner nennt „states, skills, gates, policies". Ehrlicher Stand je Kategori
 
 | Kategorie | Heute abbildbar? | Wie |
 |---|---|---|
-| **States** | teilweise | Lanes sind fix (4, `sessions.py:121`), aber `policy.lane_labels` benennt sie um. Andere *Zustände* pro Repo → F10 |
+| **States** | **ja, auf Spaltenebene** (E2) | Die 7 Status bleiben Maschinenzustände; das Template definiert die **Spalten** darüber (§12.5). `policy.lane_labels` benennt weiterhin um |
 | **Skills** | **ja, überraschend gut** | Skills sind Dateien in `.claude/skills/` (verifiziert). Ein Template kann sie ins Repo legen — kein neuer Mechanismus, keine Registry nötig |
-| **Gates** | teilweise | Gate-Kommando = Datei `helmdeck.gate` (setzbar). Gate *abschalten* = kein Key (F2) |
+| **Gates** | **ja** (E3) | Gate-Kommando = Datei `helmdeck.gate` (setzbar), Gate an/aus = `stations.gate` (neuer Key, §2.3) |
 | **Policies** | **ja** | `policy.*` ist vollständig über `configure` erreichbar (§2.5) |
 
 Skills sind hier der günstigste Gewinn: weil sie schon repo-lokale Dateien sind,
@@ -897,6 +1035,12 @@ Fünf Stationen, vier Spalten — weil Gate und Deploy Übergänge sind, an dene
 keine Karte *wohnt*. Sie werden auf dem Board als Zustand der **Kante**
 gerendert (Gate läuft / Gate rot / Deploy läuft / Deploy rot), nicht als Spalte.
 
+> **Seit E2 ist diese Tabelle der Standard, nicht das Gesetz.** Die vier Spalten
+> sind das, was ein Template ohne eigene `columns` liefert; ein Template darf
+> feiner schneiden (z. B. `needs_you` als eigene Spalte). Was sich **nicht**
+> ändert: Gate und Deploy bleiben Übergänge — eine Spalte „Gate" wäre eine
+> Spalte, in der keine Karte liegen kann. Siehe §12.5.
+
 ## 12.3 Zwei Ansichten, eine Wahrheit
 
 Die U-Bahn-Linie und das Kanban-Board sind **Projektionen desselben Paares
@@ -917,17 +1061,69 @@ Zustandsliste bekommen.
 |---|---|---|
 | Spalten**namen** | **ja** | `policy.lane_labels` — existiert bereits, ist per Chat erreichbar |
 | WIP-Limit je Spalte | teilweise | `capacity.wip_limit` ist heute **global**, nicht pro Spalte (Jira: *column constraint*) → F11 |
-| Reihenfolge / Anzahl der Spalten | **nein** | 4 Lanes sind fix; `board.tsx:27` hat die Liste zusätzlich hartkodiert |
-| Ob Gate/Deploy laufen | ja/teilweise | Deploy heute (§2.4), Gate erst nach F2 |
+| Reihenfolge / Anzahl der Spalten | **ja, seit E2** | Spalten kommen aus `/loop/map`, `board.tsx:27` verliert die hartkodierte Liste → §12.5 |
+| Workflow-**Status** (die 7 Werte) | **nein** | Status sind Maschinenzustände, keine Ansichtssache → §12.5 „die Grenze" |
+| Ob Gate/Deploy laufen | **ja** | Deploy heute (§2.4), Gate seit E3 |
 | Abnahme automatisch | **ja** | `policy.auto_accept_green` |
 
-**Konkreter Umbau, den „User kann review und ändern" verlangt:**
-`surfaces/app/src/ui/board.tsx:27` hält `const LANES = [...] as const` — eine
-zweite, hartkodierte Kopie der Lane-Liste im Client. Solange die dort steht,
-kann keine Template-Entscheidung das Board beeinflussen. Sie muss aus
-`/loop/map` kommen, wie es der Loopmap-Screen schon tut. Das ist derselbe
-Fehler, den `settings-ia-redesign` für die Cell-Liste beschreibt (keine
-hartkodierten Listen im Client) — und dieselbe Lösung.
+## 12.5 Der Board-Umbau (Entscheidung E2)
+
+Der Owner hat entschieden, den Umbau **mit aufzunehmen**: ein Template darf
+Spalten definieren, nicht nur umbenennen. Das ist der größte Einzelposten der
+drei Entscheidungen — hier steht, wie er sicher gebaut wird.
+
+**Der Anlass.** `surfaces/app/src/ui/board.tsx:27` hält
+`const LANES = [...] as const` — eine zweite, hartkodierte Kopie der Lane-Liste
+im Client. Solange die dort steht, kann **keine** Template-Entscheidung das
+Board beeinflussen. Das ist derselbe Fehler, den `settings-ia-redesign` für die
+Cell-Liste beschreibt (keine hartkodierten Listen im Client) — und dieselbe
+Lösung: die Liste kommt vom Server, der Client rendert nur.
+
+**Die Grenze, die den Umbau billig hält.** Änderbar wird die **Spalte**
+(Ansicht), **nicht** der **Status** (Maschinenzustand). Das ist exakt die
+Jira-Trennung aus §12.1 und der Grund, warum dieser Umbau nicht die
+Azure-DevOps-Falle ist (§11.1: Statusmodell nachträglich gar nicht mehr
+änderbar): die Zustandsmaschine in `lanemachine.py` behält ihre Übergänge,
+ihre Gate-Kante und ihren Accept-Pfad unverändert. Eine Spalte ist eine
+**benannte Menge von `(lane, status)`-Paaren** — mehr nicht.
+
+```jsonc
+"columns": [
+  {"id":"backlog", "label":"Backlog",           "match":{"lane":"backlog"}},
+  {"id":"work",    "label":"In Arbeit",         "match":{"lane":"working"}},
+  {"id":"waiting", "label":"Wartet auf Kunden", "match":{"lane":"working","status":["needs_you"]}},
+  {"id":"review",  "label":"Freigabe",          "match":{"lane":"review"}},
+  {"id":"done",    "label":"Fertig",            "match":{"lane":"done"}}
+]
+```
+
+Im Beispiel entsteht eine **fünfte** Spalte, ohne dass ein einziger neuer
+Zustand existiert: `needs_you` wird aus „In Arbeit" herausprojiziert. Genau das
+ist Jiras Modell, angewandt.
+
+**Vier Regeln, ohne die der Umbau Karten verschwinden lässt:**
+
+1. **Vollständigkeit ist Pflicht.** Jedes mögliche `(lane, status)`-Paar muss
+   von mindestens einer Spalte getroffen werden. Beim Speichern wird das
+   geprüft; eine Lücke wird abgelehnt, nicht toleriert.
+2. **Erster Treffer gewinnt.** Spalten werden in Reihenfolge geprüft, damit die
+   speziellere Spalte (`waiting`) vor der allgemeineren (`work`) stehen kann.
+   Kein „gehört in zwei Spalten"-Zustand.
+3. **Fallback statt Verlust.** Trifft trotzdem nichts (alte Karte, neuer
+   Status), landet die Karte sichtbar in der Standardspalte ihrer Lane, mit
+   Hinweis — sie verschwindet nie.
+4. **Eine Wahrheit.** Die Spaltenliste kommt aus `/loop/map` und wird vom
+   Zwei-Wege-Test `ops/tests/test_harness_layer.py:240,351` gegen den
+   Client-Vertrag geprüft (§4.3 Punkt 4). Die U-Bahn-Linie bekommt **keine**
+   eigene Spaltenlogik — sie zeigt weiterhin Stationen, nicht Spalten (§12.3).
+
+**Was der Umbau kostet:** `board.tsx` wird schema-getrieben (Spalten, Labels,
+WIP-Anzeige aus Daten), `/loop/map` bekommt die Spaltenliste, `repo_profiles`
+das Feld `columns` (Default `null` = Standard aus dem Template), und der
+Wire-Vertrag muss in beide Richtungen nachgezogen werden. Das ist derselbe
+Umbau, den `settings-ia-redesign` Phase 1 für die Settings ohnehin vorsieht —
+weshalb die Reihenfolge aus §7 (Schwesterkarte zuerst) durch E2 **wichtiger**
+wird, nicht unwichtiger.
 
 ---
 
@@ -970,13 +1166,19 @@ Prosa. Englisch ist die Schreibweise in Keys/Enums, Deutsch die in der UI.
 
 ---
 
-# 14. Weitere offene Fragen aus der UX-Prüfung
+# 14. Weitere Fragen aus der UX-Prüfung
 
-**F8 — Wird die Repo-Identität auf `_repo_hash` umgestellt?** *(blockiert §10.5)*
+**F8 und F10 sind entschieden** (§0/E1, §0/E2) und stehen mit Ergebnis hier;
+offen bleiben F9, F11, F12.
+
+**F8 — Wird die Repo-Identität auf `_repo_hash` umgestellt?** — **ENTSCHIEDEN:
+ja, Drei-Ebenen-Modell.**
 Betrifft `repo_hooks`, `pm.repos`, GxP-Scope und den neuen `repo_profiles`-Key.
-Migration nötig: bestehende pfadbasierte Einträge einmalig auflösen.
-*Empfehlung:* **ja** — es schließt drei gemessene Brüche mit vorhandenem Code.
-Migration als eigener, rückrollbarer Schritt mit Vorher/Nachher-Liste.
+Migration nötig: bestehende pfadbasierte Einträge einmalig auflösen — Ablauf
+und Fehlerfall in §5.1, Abnahmekriterium 6 in §9.
+*Begründung (bestätigt):* es schließt drei gemessene Brüche mit bereits
+vorhandenem Code; `_repo_hash` wird vom Verzeichnisnamen zum Schlüssel
+befördert, nicht neu erfunden.
 
 **F9 — Was passiert, wenn ein Repo verschoben/umbenannt wird?** *(gemessen: Identität ändert sich)*
 (a) hinnehmen und beim nächsten Öffnen „Repo neu aufnehmen?" fragen ·
@@ -987,11 +1189,19 @@ Migration als eigener, rückrollbarer Schritt mit Vorher/Nachher-Liste.
 angebotener Reparaturweg statt stiller Verwaisung.
 
 **F10 — Dürfen Templates das Statusmodell ändern, oder nur die Beschriftung?**
+— **ENTSCHIEDEN: Board-Umbau aufgenommen, Templates dürfen Spalten definieren.**
 Heute: 4 Lanes fix, `board.tsx:27` zusätzlich hartkodiert. Azure DevOps zeigt,
 wie teuer ein pro-Projekt änderbares Statusmodell ist (nachträglich gar nicht
 mehr änderbar).
-*Empfehlung:* **nur Beschriftung + Stationen an/aus.** Lanes bleiben 4. Das
-deckt beide Templates ab und hält eine Wahrheit im System.
+*Meine Empfehlung war „nur Beschriftung".* Der Owner hat den Umbau gewählt —
+umgesetzt wird er in der Variante, die die Azure-Falle vermeidet: **Spalten
+werden frei, Status bleiben die sieben.** Eine Spalte ist eine Projektion über
+`(lane, status)`, kein neuer Maschinenzustand. Vollständige Spezifikation samt
+der vier Regeln gegen Kartenverlust: **§12.5**.
+*Bewusst nicht enthalten:* neue Workflow-*Status* pro Repo. Die würden die
+Zustandsmaschine, den Gate-Übergang und den Accept-Pfad berühren und sind damit
+ein anderes, deutlich größeres Vorhaben — falls das später gewünscht ist,
+gehört es in eine eigene Karte, nicht in dieses Feature.
 
 **F11 — WIP-Limit pro Spalte oder global?**
 `capacity.wip_limit` ist global; Kanban-Standard (Jira *column constraint*) ist
