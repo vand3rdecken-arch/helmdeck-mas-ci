@@ -112,6 +112,94 @@ def _denied(kind, role, roles, key, extra=""):
             "%s aendern%s." % (kind, role, "/".join(roles), key, (" - " + extra) if extra else ""))
 
 
+# -- the repo-template verbs' helpers ----------------------------------------
+# The refusals below are the reason set_station is not a generic key setter.
+# "Schalt das Gate ab" is the ambiguous sentence the decree itself used as the
+# test case: it can mean three different things (PRD §4.3.3), and answering it
+# with "no" would be wrong for two of them. So the refusal NAMES the readings and
+# offers the one that is actually doable - amber question, not red wall.
+_STATION_LAW = {
+    "backlog": ("Das Backlog ist der Eingang - da kommen Karten an. Es gibt nichts "
+                "abzuschalten. Wenn du meinst 'nichts soll von selbst starten': das "
+                "ist policy.auto_dispatch_priority, sag es und ich setz es."),
+    "working": ("'Arbeit' ist die Station, in der der Agent laeuft - ohne sie gaebe es "
+                "keine Karte. Wenn du meinst 'ohne eigenen Worktree arbeiten': das "
+                "haengt an der Repo-Vorlage (Dokumente arbeitet direkt im Ordner)."),
+    "gate": ("Das Gate ist Harness-Gesetz (gate-before-review) - per Chat nicht "
+             "abschaltbar. Drei Dinge koenntest du meinen:\n"
+             "1. 'Es soll mich nicht aufhalten' - in einem Doku-Repo laeuft es ohnehin "
+             "leer und meldet PASS. Da ist nichts abzuschalten.\n"
+             "2. 'Ich will nicht auf die Freigabe warten' - das ist "
+             "policy.auto_accept_green. Machbar, sofort, sag Bescheid.\n"
+             "3. 'gate-before-review soll ganz weg' - das ist Code, nicht Policy. "
+             "Sag 'leg eine Karte dafuer an', dann baut es ein Agent mit Gate und "
+             "deiner Abnahme."),
+    "review": ("Die Review IST deine Abnahme - sie abzuschalten hiesse, dass Arbeit "
+               "ungesehen durchgeht. Was ich anbieten kann: policy.auto_accept_green. "
+               "Dann wartet nichts mehr auf dich, geprueft wird trotzdem."),
+}
+
+
+def _station_is_law(station):
+    return _STATION_LAW.get(station, "Diese Station ist fest und laesst sich nicht "
+                                     "abschalten - nur Deploy ist schaltbar.")
+
+
+def _pipeline_answer(repo, headline):
+    """Confirm a change by DESCRIBING THE RESULTING PIPELINE, not by echoing a key.
+
+    The whole point of the redesign is *sehen statt konfigurieren*: the owner
+    asked in words, so the answer is the station row in words, read out of the
+    same resolve() the map renders. If chat and map ever disagreed, they would
+    disagree here first - and they cannot, because this is that data."""
+    try:
+        from cells.engineer import sessions
+        from spine.ops import projects
+        view = projects.resolve(repo)
+        f = sessions.flow(None, repo_view=view)
+        by_key = {n["key"]: n for n in f["nodes"]}
+        by_key["gate"] = f["gate"]
+        by_key["deploy"] = f["deploy"]
+        row = []
+        for k in f["stations"]:
+            n = by_key.get(k) or {}
+            row.append("%s%s" % (n.get("label") or k, "" if n.get("active") else " (aus)"))
+        tail = ""
+        if view.get("deviations"):
+            tail = ("\nVom Vorlagen-Standard abgewichen: %s."
+                    % ", ".join(d["key"] for d in view["deviations"]))
+        return "%s\nStrecke: %s.%s" % (headline, " -> ".join(row), tail)
+    except Exception as e:                                   # noqa: BLE001
+        # A confirmation that dies is worse than a plain one: the change ALREADY
+        # happened, so say so rather than letting an exception read as failure.
+        return "%s (Strecke konnte ich gerade nicht zeichnen: %s)" % (headline, str(e)[:120])
+
+
+def _note_overrides(repo, patch, actor):
+    """Record which of this repo's template values the owner just moved.
+
+    Only ever records keys the template ACTUALLY set (`applied`) - a settings
+    change that the template never had an opinion on is not a deviation from it,
+    and marking it as one would make the map cry wolf. Total: a failure to note
+    a deviation must never undo a change that already succeeded."""
+    if not repo:
+        return
+    try:
+        from spine.ops import projects
+        view = projects.resolve(repo)
+        if not view.get("template"):
+            return
+        applied = view.get("applied") or {}
+        for top, sub in list(patch.items()):
+            pairs = sub.items() if isinstance(sub, dict) else [(None, sub)]
+            for k, v in pairs:
+                dotted = "%s.%s" % (top, k) if k is not None else top
+                if dotted in applied and applied[dotted] != v:
+                    projects.set_override(view["repo"], dotted, v, actor=actor)
+    except Exception as e:                                   # noqa: BLE001
+        print("copilot: noting overrides for %s failed: %s" % (repo, e), flush=True)
+
+
 def _run_action(a, actor, role="operator"):
     from cells.engineer import sessions
     from cells.process import processes
@@ -145,7 +233,86 @@ def _run_action(a, actor, role="operator"):
         from spine.storage import events as _ev
         _ev.save_settings(patch, actor=actor, reason="via chat")
         _ev.emit("config", "-", actor=actor, patch=patch)
+        # If this repo runs on a template and the owner just moved one of the
+        # values that template set, RECORD the deviation now - at the moment it
+        # happens, at the one owner of that field. The pipeline map then RENDERS
+        # "vom Standard abgewichen" instead of a later pass deducing it (PRD §5,
+        # and CLAUDE.md's no-monkey-patches rule).
+        _note_overrides(a.get("repo") or "", patch, actor)
         return "policy updated: " + json.dumps(patch)[:300]
+    if kind == "apply_template":
+        # "Repo Y soll wie ein Doku-Repo laufen." Calls the SAME mutator the
+        # settings screen POSTs to, so a sentence and a tap cannot produce two
+        # different answers.
+        allowed_roles = (events.settings().get("policy") or {}).get("chat_configure_roles", ["owner"])
+        if role not in allowed_roles:
+            return _denied("apply_template", role, allowed_roles, "policy.chat_configure_roles")
+        from spine.ops import projects
+        from spine.registry import templates
+        repo = (a.get("repo") or events.settings().get("default_repo") or "").strip()
+        if not repo:
+            return ("apply_template: welches Repo? Sag mir den Pfad, oder setz ein "
+                    "default_repo - ich will nicht das falsche Repo umstellen.")
+        tid = (a.get("template") or "").strip()
+        if not templates.get(tid):
+            return ("apply_template: '%s' kenne ich nicht. Es gibt: %s."
+                    % (tid, ", ".join("%s (%s)" % (t["id"], t["label"])
+                                      for t in templates.catalog())))
+        try:
+            projects.apply_template(repo, tid, actor=actor)
+        except (ValueError, RuntimeError) as e:
+            return "apply_template: %s" % e
+        return _pipeline_answer(repo, "Vorlage '%s' gilt jetzt fuer %s." % (tid, repo))
+    if kind == "set_station":
+        # DELIBERATELY NOT a generic key setter. It takes a STATION NAME, maps it
+        # to the one real key behind it, and refuses every fixed station BY NAME.
+        # So a model that reaches for "switch off the gate" cannot arrive at
+        # save_settings with it - the refusal is structural, not a line in a
+        # prompt that the model may or may not honour.
+        allowed_roles = (events.settings().get("policy") or {}).get("chat_configure_roles", ["owner"])
+        if role not in allowed_roles:
+            return _denied("set_station", role, allowed_roles, "policy.chat_configure_roles")
+        from spine.ops import projects
+        repo = (a.get("repo") or events.settings().get("default_repo") or "").strip()
+        if not repo:
+            return "set_station: welches Repo? Sag mir den Pfad, oder setz ein default_repo."
+        raw = a.get("station") or ""
+        st = sessions.station_id(raw)
+        if not st:
+            return ("set_station: '%s' ist keine Station. Die Strecke ist: %s."
+                    % (raw, " -> ".join(sessions.STATIONS)))
+        if st not in sessions.SWITCHABLE_STATIONS:
+            return _station_is_law(st)
+        on = a.get("on")
+        cmd = (a.get("command") or "").strip()
+        if on is False:
+            cmd = ""
+        elif not cmd:
+            cur = projects.resolve(repo).get("deploy_hook") or ""
+            if not cur:
+                return ("Deploy anschalten heisst: sag mir den Befehl, der laufen soll "
+                        "(z.B. 'bash ops/deploy/push_update.sh'). Ohne Befehl gaebe es "
+                        "nichts zu tun - die Station bliebe aus.")
+            cmd = cur
+        try:
+            projects.sight_repo(repo, actor=actor)
+            # The hook key must be spelled the way the CARD spells its repo, or
+            # the lookup in lanemachine._repo_hook (an exact string match) never
+            # hits and the deploy step silently does not run.
+            path = projects.norm_repo(repo)
+            hooks = dict(events.settings().get("repo_hooks") or {})
+            entry = dict(hooks.get(path) or {})
+            entry["deploy"] = cmd
+            hooks[path] = entry
+            events.save_settings({"repo_hooks": hooks}, actor=actor,
+                                 reason="Station %s via chat" % st)
+            events.emit("config", "-", actor=actor,
+                        patch={"repo_hooks.%s.deploy" % path: cmd})
+            projects.set_override(path, "repo_hooks.deploy", cmd, actor=actor)
+        except (ValueError, RuntimeError) as e:
+            return "set_station: %s" % e
+        return _pipeline_answer(repo, "Station Deploy ist jetzt %s."
+                                % ("AUS" if not cmd else "AN (%s)" % cmd))
     if kind == "machine_task":
         # The board reaching the PC. The chat executes nothing itself - it
         # dispatches an agent into a real folder on this machine (see

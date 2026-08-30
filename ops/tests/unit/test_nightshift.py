@@ -16,7 +16,23 @@ with synchronous calls so claim order is deterministic."""
 import sys
 import types
 
-import processes
+from cells.process import processes
+
+
+def _fake(monkeypatch, pkg_path, attr, mod):
+    """Put a fake where `from <pkg> import <attr>` actually looks.
+
+    These were plain sys.modules["events"] / ["sessions"] entries, from when
+    modules imported their neighbours flat. processes.py now does
+    `from spine.storage import events` INSIDE the function, and that form checks
+    the parent package's ATTRIBUTE first - so a sys.modules-only fake sits there
+    ignored while the REAL module answers. It does not fail loudly either: the
+    dispatch simply claimed nothing and every assertion read `[] == [...]`,
+    which looks like a broken product rather than a mis-aimed stub. Bind both."""
+    import importlib
+    pkg = importlib.import_module(pkg_path)
+    monkeypatch.setitem(sys.modules, "%s.%s" % (pkg_path, attr), mod)
+    monkeypatch.setattr(pkg, attr, mod, raising=False)
 
 
 def card(tid, lane="backlog", priority="medium", due="", mode=None):
@@ -47,9 +63,17 @@ def dispatch(monkeypatch, tracks, floor="low", wip_limit=6):
     se.list_tracks = lambda: tracks
     se.move_lane = lambda tid, lane, actor=None: se.claimed.append(
         (tid, lane, actor))
+    # _stamp() persists the autopilot's one-dispatch-per-card bookkeeping
+    # through sessions._mutate (processes.py:336) - a guard added after this
+    # fake was written, and without it the dispatch raises before claiming
+    # anything. Applying the mutation to the in-memory card keeps the fake
+    # honest: the stamp is what stops a card being dispatched twice, so a stub
+    # that silently dropped it would let a re-dispatch bug through green.
+    se._mutate = lambda tid, fn: (
+        [fn(t) for t in tracks if t.get("id") == tid] or [None])[0]
 
-    monkeypatch.setitem(sys.modules, "events", ev)
-    monkeypatch.setitem(sys.modules, "sessions", se)
+    _fake(monkeypatch, "spine.storage", "events", ev)
+    _fake(monkeypatch, "cells.engineer", "sessions", se)
     monkeypatch.setattr(processes, "threading",
                         types.SimpleNamespace(Thread=_SyncThread))
     processes._priority_dispatch()
@@ -124,8 +148,8 @@ def test_claim_failure_does_not_raise(monkeypatch):
     def boom(tid, lane, actor=None):
         raise RuntimeError("card vanished")
     se.move_lane = boom
-    monkeypatch.setitem(sys.modules, "events", ev)
-    monkeypatch.setitem(sys.modules, "sessions", se)
+    _fake(monkeypatch, "spine.storage", "events", ev)
+    _fake(monkeypatch, "cells.engineer", "sessions", se)
     monkeypatch.setattr(processes, "threading",
                         types.SimpleNamespace(Thread=_SyncThread))
     processes._priority_dispatch()   # must not raise

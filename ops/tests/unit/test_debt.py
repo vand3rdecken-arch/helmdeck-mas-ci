@@ -2,7 +2,7 @@
 """Debt register well-formedness - the register is data reviewed like code,
 so its shape is a contract: every item must render in the History view,
 be convertible to a fix card, and keep paid items listed."""
-import debt
+from spine.registry import debt
 
 REQUIRED_KEYS = {"id", "title", "status", "what", "why_it_bites",
                  "trigger", "fix", "order"}

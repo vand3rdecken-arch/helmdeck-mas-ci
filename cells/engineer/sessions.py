@@ -192,17 +192,87 @@ LANE_FLOW = {
              "why": "Fix, weil eine Abnahme sonst nur eine Meinung wäre. Das Ergebnis "
                     "wird append-only protokolliert und kann nicht nachträglich "
                     "geschönt werden."},
+    # DEPLOY IS A STEP, NOT A LANE - and the map has to say both.
+    #
+    # The owner must SEE deploy (it is the moment his work reaches the world),
+    # but in the data model it is not a lane: it is _repo_hook(t, "deploy") run
+    # inside the accept transition, right after status="accepted"
+    # (lanemachine.py:1116-1119). So it is declared exactly the way `gate` is -
+    # a step sitting ON an edge rather than beside the lanes - and `on` names
+    # that edge. Drawing it as a fifth lane would make the picture lie about
+    # where it happens, and not lying is this screen's whole job.
+    #
+    # It is also the ONLY genuinely switchable station (PRD §4.3.1): an empty
+    # repo_hooks.<repo>.deploy means the step simply does not run
+    # (lanemachine.py:648). The other four are law or the entrance.
+    "deploy": {"key": "deploy", "default_label": "Deploy", "kind": "policy",
+               "on": ["review", "done"], "settings": ["repo_hooks.<repo>.deploy"],
+               "instruction": "Nach der Abnahme führt der DAEMON den Deploy-Hook des Repos "
+                              "aus - er hält die Secrets, nicht der Agent. Kein Befehl "
+                              "hinterlegt = der Schritt passiert schlicht nicht.",
+               "why": "Die einzige Station, die eine Vorlage wirklich an- und ausschalten "
+                      "kann. Alles andere ist Gesetz oder der Eingang."},
 }
 
+# -- STATIONS: the vocabulary the owner and the templates share ----------------
+# The pipeline the decree names - Karte -> Arbeit -> Gate -> Abnahme -> Deploy -
+# in the ids the machine actually uses. Deliberately NO second, German set of
+# ids: the German words ARE the labels (default_label / policy.lane_labels), and
+# a parallel id vocabulary is one more thing that can drift out of agreement.
+STATIONS = ("backlog", "working", "gate", "review", "deploy")
 
-def flow(lane_labels=None):
+# What the owner might SAY, mapped to what the machine calls it. Used only to
+# parse his words in the chat verb - never for storage, never for display.
+STATION_ALIASES = {
+    "karte": "backlog", "karten": "backlog", "backlog": "backlog", "eingang": "backlog",
+    "arbeit": "working", "working": "working", "in arbeit": "working",
+    "gate": "gate", "quality gate": "gate", "qualitätsgate": "gate", "qualitaetsgate": "gate",
+    "abnahme": "review", "review": "review", "freigabe": "review",
+    "deploy": "deploy", "deployment": "deploy", "ausliefern": "deploy",
+    "auslieferung": "deploy",
+}
+
+# THE HONEST LIST. "The template switches stations on and off" is true of
+# exactly ONE of them (PRD §4.3.1, each verified against the code):
+#   backlog - the entrance, always there
+#   working - kind: fixed
+#   gate    - harness law. In a text repo it runs empty and reports PASS
+#             (run_gate.py:68-70) - that is a LABEL question, not a switch
+#   review  - fixed as a station; policy.auto_accept_green only decides whether
+#             it WAITS, not whether it exists
+#   deploy  - genuinely switchable, via an empty repo hook
+# A UI offering five toggles would be found out the first time one was tapped,
+# so the code names the one that is real and refuses the others BY NAME.
+SWITCHABLE_STATIONS = ("deploy",)
+
+
+def station_id(word):
+    """What the owner said -> a station id, or "" if it is not one.
+
+    Case- and whitespace-insensitive. The chat verb runs every station name
+    through here, so a model that invents a station cannot reach the settings
+    writer with it."""
+    return STATION_ALIASES.get(str(word or "").strip().lower(), "")
+
+
+def flow(lane_labels=None, repo_view=None):
     """The lane/gate machine as data, with the owner's lane renames applied.
 
     `label` resolves policy.lane_labels over the built-in default, so the UI never
-    has to know that renaming is a thing - it just renders `label`."""
+    has to know that renaming is a thing - it just renders `label`.
+
+    `repo_view` is projects.resolve(repo) - pass it and every station also
+    carries whether it is ACTIVE for that repo, and why not when it is not. The
+    template only ever answers the on/off question: this function still owns the
+    graph, which is what keeps the map derived rather than described (the client
+    must not carry a station list - see routes_info's comment on why both graphs
+    are derived, and CLAUDE.md's no-monkey-patches rule).
+
+    Without `repo_view` every station is active, which is exactly the pre-template
+    behaviour - so an old caller sees no change."""
     ll = lane_labels or {}
     out = {"nodes": [], "edges": [dict(e) for e in LANE_FLOW["edges"]],
-           "gate": dict(LANE_FLOW["gate"])}
+           "gate": dict(LANE_FLOW["gate"]), "deploy": dict(LANE_FLOW["deploy"])}
     # file:line for every node, read out of THIS file - see loop_state._decl_lines
     # for why it is derived rather than written down.
     try:
@@ -211,18 +281,68 @@ def flow(lane_labels=None):
         if _tools not in _sys.path:
             _sys.path.insert(0, _tools)
         from loop_state import _decl_lines
-        src = _decl_lines([n["key"] for n in LANE_FLOW["nodes"]] + [LANE_FLOW["gate"]["key"]],
+        src = _decl_lines([n["key"] for n in LANE_FLOW["nodes"]]
+                          + [LANE_FLOW["gate"]["key"], LANE_FLOW["deploy"]["key"]],
                           path=os.path.abspath(__file__),
                           rel="cells/engineer/sessions.py")
     except Exception:                                        # noqa: BLE001
         src = {}
+
+    # -- the on/off answer, from the template ------------------------------
+    # An UNKNOWN repo (or none) leaves everything active: a repo without a
+    # chosen type must render as the full pipeline, not as a switched-off one.
+    tpl_stations = set((repo_view or {}).get("stations") or [])
+    has_tpl = bool((repo_view or {}).get("template"))
+    notes = (repo_view or {}).get("station_notes") or {}
+    hook = (repo_view or {}).get("deploy_hook") or ""
+
+    def _mark(node):
+        """Active? and, when not, the reason - in the owner's words.
+
+        Two different "off"s, and conflating them would be the lie the whole
+        design guards against: a station the TEMPLATE leaves out, versus the
+        deploy step that has no command hidden behind it. Both render dashed;
+        they do not say the same thing."""
+        k = node["key"]
+        node["switchable"] = k in SWITCHABLE_STATIONS
+        node["note"] = notes.get(k, "")
+        if not has_tpl:
+            node["active"] = True
+            return node
+        node["active"] = k in tpl_stations
+        if not node["active"]:
+            node["off_reason"] = ("Diese Vorlage benutzt die Station nicht."
+                                  if k in SWITCHABLE_STATIONS else
+                                  # a fixed station can never be off; if it is
+                                  # missing from a template's list that is the
+                                  # TEMPLATE being wrong, and saying so beats
+                                  # rendering a law as switched off.
+                                  "Fehlt in der Vorlage - diese Station ist aber "
+                                  "fest und läuft trotzdem.")
+            if k not in SWITCHABLE_STATIONS:
+                node["active"] = True
+        elif k == "deploy" and not hook:
+            # active by the template, but nothing to run: honest, and the exact
+            # sentence that tells the owner what to say to turn it on.
+            node["active"] = False
+            node["off_reason"] = ("Kein Deploy-Befehl hinterlegt. Sag Henry den Befehl, "
+                                  "dann geht die Station an.")
+        return node
+
     for n in LANE_FLOW["nodes"]:
         n = dict(n)
         n["label"] = ll.get(n["key"], n["default_label"])
         n["source"] = src.get(n["key"], "cells/engineer/sessions.py")
-        out["nodes"].append(n)
-    out["gate"]["label"] = out["gate"]["default_label"]
-    out["gate"]["source"] = src.get(LANE_FLOW["gate"]["key"], "cells/engineer/sessions.py")
+        out["nodes"].append(_mark(n))
+    for step in ("gate", "deploy"):
+        out[step]["label"] = out[step]["default_label"]
+        out[step]["source"] = src.get(LANE_FLOW[step]["key"], "cells/engineer/sessions.py")
+        _mark(out[step])
+    # The station order the pipeline is DRAWN in, named once here rather than
+    # re-derived by the client from lanes + gate + deploy. `done` is not a
+    # station: it is where a card ends up, and the decree's fifth station
+    # (Deploy) is the step that gets it there.
+    out["stations"] = list(STATIONS)
     return out
 
 
