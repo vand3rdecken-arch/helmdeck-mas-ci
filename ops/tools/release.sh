@@ -63,6 +63,16 @@ PY
 }
 
 build_android() {
+  # Machine-global Android build mutex - the same lock ops/deploy/build_apk.sh
+  # takes. This is a SECOND way to reach `assembleRelease` against the one
+  # surfaces/app/android tree, so leaving it unlocked would leave the hole
+  # open from the other side: a manual `release.sh android` could still land
+  # on top of a fast-track ship's build. --no-daemon below does not make it
+  # safe either - the contention is the tree, node_modules and the build
+  # outputs, not only the daemon. Taken before the versionCode bump so two
+  # builds cannot interleave their bumps against the same app.json.
+  . "$ROOT/ops/deploy/build_lock.sh"
+  android_build_lock "release.sh android assembleRelease (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
   if [ "$BUMP" = 1 ]; then echo "==> bump versionCode"; bump_version || { fail+=("bump"); return 1; }; fi
   echo "==> android: gradlew assembleRelease (signed, bundles JS via Metro, JBR 17+)"
   # arm64-v8a ONLY (owner decree 2026-08-25, same workaround as

@@ -30,6 +30,15 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
   exit 1
 }
 
+# Same machine-global Android build mutex the phone build takes. :wear is a
+# different Gradle MODULE but the same Gradle daemon, the same ~/.gradle and the
+# same surfaces/app/android tree - so a watch build racing a phone
+# assembleRelease contends for exactly the resources that collided on
+# 2026-08-30. Taken after the JDK + :wear-exists checks above so both keep
+# failing fast instead of queueing behind a long build to then fail anyway.
+. "$(dirname "$0")/build_lock.sh"
+android_build_lock "build_wear_apk.sh :wear:assembleDebug (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
+
 echo "[build_wear_apk] gradle :wear:assembleDebug (debug-signed - adb install needs no release key)"
 ( cd surfaces/app/android && ./gradlew :wear:assembleDebug -x lint --console=plain ) \
   || { echo "[build_wear_apk] WEAR APK BUILD FAILED"; exit 1; }
