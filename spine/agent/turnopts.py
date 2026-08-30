@@ -46,6 +46,76 @@ _HARD = re.compile(r"\b(refactor|architect|debug|design|analy[sz]e|"
                    r"root cause|prove|derive|reconcile|migrat)", re.I)
 _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b", re.I)
 
+# -- context windows: a model must be able to HOLD the session it resumes -----
+# MEASURED 2026-08-30 from the failure it explains: Henry's board session stood
+# at 615,889 tokens (daemon/copilot_stats.json) when the owner typed "Ok" into
+# card 20260830-065545. Two characters, matched by _EASY, routed to the CHEAP
+# tier - and Haiku's window is 200k, not the 1M the session had grown into. The
+# CLI resumes the WHOLE transcript, so the API rejected the request with
+# "Prompt is too long" before the model read a single word of the new message.
+# The card's own meter (110k/55%) described the WORKER's session, a different
+# conversation entirely - which is why the number looked impossible.
+#
+# The routing tier and the window are independent facts: picking "cheap because
+# the message is trivial" is only valid if cheap can still carry the history.
+CTX_WINDOWS = {
+    "claude-haiku-4-5":  200_000,
+    "claude-sonnet-4-6": 1_000_000,
+    "claude-sonnet-5":   1_000_000,
+    "claude-opus-4-6":   1_000_000,
+    "claude-opus-4-7":   1_000_000,
+    "claude-opus-4-8":   1_000_000,
+    "claude-opus-5":     1_000_000,
+    "claude-fable-5":    1_000_000,
+}
+# room the resumed transcript is NOT allowed to occupy: the board snapshot, the
+# system brief, this turn's text and the reply all ride on top of ctx_tokens.
+CTX_HEADROOM = 32_000
+# escalation ladder when the picked model cannot hold the session - cheapest
+# model with a measured window that fits, strongest last.
+_CTX_LADDER = ("claude-sonnet-5", "claude-opus-5")
+
+
+def model_window(mid):
+    """Context window for a model id, or None when UNKNOWN.
+
+    Two witnesses, both from the runtime itself (sessions._record_econ parity):
+    the "[1m]" suffix the CLI stamps on a 1M-tier id, and the measured table
+    above. Anything else returns None - never a guess. A None window means the
+    fit check declines to act: we only ever exclude a model we positively KNOW
+    is too small, so a newly shipped model can't be mis-escalated by this code
+    on the day it appears."""
+    m = (mid or "").strip().lower()
+    if not m:
+        return None
+    if "[1m]" in m:
+        return 1_000_000
+    m = m.split("[")[0]
+    for known, win in CTX_WINDOWS.items():
+        if m == known or m.startswith(known + "-"):   # dated ids: ...-20251001
+            return win
+    return None
+
+
+def fits_window(mid, ctx_tokens):
+    """`mid`, or the cheapest model that can actually hold `ctx_tokens`.
+
+    ctx_tokens is the DERIVED context meter (copilot_stats._fold_stats /
+    econ._record_econ fold it at event time from the last assistant call's own
+    usage) - not an estimate and not a re-scan of the transcript. No reading =
+    no action: a 0/None ctx leaves the pick untouched."""
+    ctx = int(ctx_tokens or 0)
+    if ctx <= 0:
+        return mid
+    win = model_window(mid)
+    if win is None or ctx + CTX_HEADROOM <= win:
+        return mid
+    for cand in _CTX_LADDER:
+        w = model_window(cand)
+        if w and ctx + CTX_HEADROOM <= w:
+            return cand
+    return mid              # nothing measurably fits - keep the caller's pick
+
 
 def _settings_models():
     """Custom models from the user's ~/.claude/settings.json (model + the
@@ -155,9 +225,11 @@ def _allowed_ids():
 def pick_model(text, has_attach=False, signals=None):
     """Auto routing: cheap for trivial, strong for hard/high-stakes. Returns a
     concrete id. `signals` (optional) carries the card's own facts:
-    {value: float, priority: str, turns: int} - these are the PRIMARY routing
-    inputs; the prompt text is only a weak fallback. Only used when the user
-    picked "Auto"; an explicit model always wins (see resolve_model)."""
+    {value: float, priority: str, turns: int, ctx_tokens: int} - these are the
+    PRIMARY routing inputs; the prompt text is only a weak fallback. Only used
+    when the user picked "Auto"; an explicit model always wins (see
+    resolve_model). `ctx_tokens` is a HARD constraint, not a preference - see
+    fits_window."""
     s = signals or {}
     t = text or ""
     prio = str(s.get("priority") or "").lower()
@@ -174,18 +246,22 @@ def pick_model(text, has_attach=False, signals=None):
     #   -> escalate the retry) OR it's dragged on (turns >= ESCALATE_TURNS) OR
     #   hard keywords. The failed/turns paths are "escalate on measured evidence"
     #   - the next turn after a rejection gets the strong model, no retry loop.
+    # every return goes through fits_window: the tier answers "how hard is this
+    # turn", the window answers "can that model still carry the conversation".
+    # Both must hold, and the second one is not negotiable - see CTX_WINDOWS.
+    ctx = s.get("ctx_tokens")
     if (has_attach or len(t) > 600 or "```" in t
             or prio in ("urgent", "high")
             or (value and value >= HIGH_VALUE)
             or failed
             or turns >= ESCALATE_TURNS
             or _HARD.search(t)):
-        return "claude-opus-5"
+        return fits_window("claude-opus-5", ctx)
     # CHEAP tier - ONLY clear chatter (greetings/acks). A short imperative like
     # "add a null check" is still work -> it falls through to Sonnet, never Haiku.
     if len(t) < 40 and _EASY.search(t):
-        return "claude-haiku-4-5"
-    return "claude-sonnet-5"
+        return fits_window("claude-haiku-4-5", ctx)
+    return fits_window("claude-sonnet-5", ctx)
 
 
 def resolve_model(model, text, has_attach=False, signals=None):
@@ -193,12 +269,23 @@ def resolve_model(model, text, has_attach=False, signals=None):
     signal-based pick. A known model id (manifest or settings.json) -> itself.
     Unknown -> default. Server-side whitelist: arbitrary ids from the client are
     rejected. THE USER'S EXPLICIT CHOICE ALWAYS WINS - routing only runs for
-    'auto'. `signals` = the card facts passed through to pick_model."""
+    'auto'. `signals` = the card facts passed through to pick_model.
+
+    ONE exception to "explicit wins", and it is a capability limit rather than a
+    preference: a model whose measured window cannot hold the session about to
+    be resumed cannot answer AT ALL - the API rejects the request outright. The
+    voice path proves this is not hypothetical: routes_copilot pins `haiku` for
+    every spoken turn (a SYSTEM default, not a typed pick), and on a 615k board
+    session that is a guaranteed "Prompt is too long". So an explicit pick is
+    lifted - never lowered, never touched when it fits, and only ever on a
+    window we positively measured (see fits_window / CTX_WINDOWS)."""
+    ctx = (signals or {}).get("ctx_tokens")
     if model == "auto":
         mid = pick_model(text, has_attach, signals)
         return mid, mid
     model = _ALIAS.get(model, model)
     if model and model in _allowed_ids():
+        model = fits_window(model, ctx)
         return model, model
     return None, ""  # default: let the driver/session default decide
 
