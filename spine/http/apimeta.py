@@ -21,16 +21,23 @@ def _loop_state_mod():
     return loop_state
 
 
-def _lane_flow(lane_labels):
+def _lane_flow(lane_labels, repo_view=None):
     """The lane/gate graph. `lanes` (not `nodes`) is the wire name the app
     already reads, so the richer graph arrives as an ADDITION - `edges` is new,
-    every existing field keeps its meaning."""
+    every existing field keeps its meaning.
+
+    `repo_view` (spine.ops.projects.resolve) makes it repo-specific: every
+    station then also carries `active`/`off_reason`, and the `deploy` step joins
+    `gate` as a node that sits on an edge. Omit it and the payload is exactly
+    what it has always been."""
     try:
         from cells.engineer import sessions
-        f = sessions.flow(lane_labels)
-        return {"lanes": f["nodes"], "gate": f["gate"], "edges": f["edges"]}
+        f = sessions.flow(lane_labels, repo_view=repo_view)
+        return {"lanes": f["nodes"], "gate": f["gate"], "deploy": f.get("deploy") or {},
+                "stations": f.get("stations") or [], "edges": f["edges"]}
     except Exception as e:                                   # noqa: BLE001
-        return {"lanes": [], "gate": {}, "edges": [], "error": str(e)[:200]}
+        return {"lanes": [], "gate": {}, "deploy": {}, "stations": [], "edges": [],
+                "error": str(e)[:200]}
 
 
 def _loop_machine():

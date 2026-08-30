@@ -18,6 +18,23 @@ Proves the three claims that only the live path can prove:
      GET /chat/history exactly as the app reads it
 
 Named e2e_* so ops/tools/run_gate.py skips it: it binds a port and boots a server.
+
+STATUS 2026-08-30: RUNS AGAIN, STILL RED - and the red is THIS FILE, not the
+product. Do not read the failures below as a regression.
+
+It was dead (ModuleNotFoundError at import) from the day the tree became
+spine/cells/surfaces/ops. The imports are fixed and it executes, which is how
+the remaining problem became visible at all: its STUBS point at seams that no
+longer exist. It patches sessions._gate / _autocommit / _merge_to_main, but that
+machinery moved into cells/engineer/lanemachine.py in the same split, so the
+patches bind nothing and the real git path runs against a fixture that was never
+a git repo. Finishing it means re-pointing every stub at the lanemachine seam and
+re-proving all three claims - a card's worth of work, tracked as
+`e2e-harnesses-stale-after-split` in spine/registry/debt.py.
+
+What it already proves by running: the reclaim guard (lanemachine.py:179) and
+the dirty-tree check now fire BEFORE the gate, which is newer behaviour than
+this file knew about.
 Run directly:  py -3.12 ops/tests/e2e_lane_http.py
 """
 import json, os, sys, tempfile, threading, time
@@ -25,13 +42,16 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(os.path.dirname(HERE)), "daemon")
-sys.path.insert(0, DAEMON)
+# REPO ROOT. This pointed at "<repo>/daemon" and did `import auth, db, events` -
+# dead since the tree became spine/cells/surfaces/ops, and silently so, because
+# an unrunnable check compiles exactly like a passing one.
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 
 SANDBOX = tempfile.mkdtemp(prefix="helmdeck-e2e-")
 
 # -- redirect EVERY store to the sandbox BEFORE anything reads them -----------
-import auth, db, events
+from spine.auth import auth
+from spine.storage import db, events
 
 auth.USERS = os.path.join(SANDBOX, "users.json")
 auth.SESS = os.path.join(SANDBOX, "sessions.json")
@@ -40,11 +60,15 @@ db._LEGACY_DB = os.path.join(SANDBOX, "legacy.db")
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 
-import copilot, sessions, server
+from cells.copilot import copilot
+from cells.engineer import sessions
+from spine.http import server
 
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 copilot.SESS = os.path.join(SANDBOX, "copilot_sessions.json")
-db.init()                                  # sandbox schema (never the real db)
+# role="tool": this process owns no driver sessions, so it must never be allowed
+# to devalue persisted lifecycle state (db.init's own docstring).
+db.init(role="tool")
 
 _fails = []
 
@@ -80,6 +104,15 @@ RUN = os.path.join(SANDBOX, "run")
 WT = os.path.join(SANDBOX, "wt")
 os.makedirs(RUN, exist_ok=True)
 os.makedirs(WT, exist_ok=True)
+# The .git marker is the fixture keeping up with the PRODUCT, not a workaround:
+# lanemachine.py:179 refuses to gate a worktree that has no .git, because a
+# RECLAIMED tree leaves the directory behind and the gate would otherwise run in
+# an empty dir and report a punch list that reads like catastrophic code failure.
+# That guard was added while this file sat dead, so the fixture never learned
+# about it - the card here has always meant "a card with a live worktree", and
+# this is what that now looks like. (The gate itself is stubbed below, so no
+# real git repo is needed - only the marker the guard reads.)
+os.makedirs(os.path.join(WT, ".git"), exist_ok=True)
 
 CARD = {"id": "e2e-card", "repo": SANDBOX, "branch": "b-e2e", "worktree": WT,
         "task": "E2E Testkarte", "description": "", "client": "", "session_id": None,

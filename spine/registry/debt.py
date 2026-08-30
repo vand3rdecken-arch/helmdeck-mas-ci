@@ -3611,6 +3611,132 @@ DEBT = [
                "of only writing the finished reply.",
         "order": 50,
     },
+    {
+        "id": "repo-template-card-kind-unwired",
+        "title": "A repo template declares its card kind, and nothing reads it",
+        "status": "open",
+        "what": "ops/harness/templates/*.md carry `card_kind` (new_track for "
+                "software-dev, new_direct_task for documents) and "
+                "spine/ops/projects.resolve() surfaces it, but no caller "
+                "consumes it: cells/engineer/dispatch.py still decides worktree "
+                "vs live-tree per CARD (new_track / new_direct_task are separate "
+                "entry points), never per repo.",
+        "why_it_bites": "It is the exact failure the templates were written to "
+                        "avoid, and spine/registry/templates.py's own docstring "
+                        "names it: a value that reports success and changes "
+                        "nothing. The PRD's tables (§3.1/§3.2) mark the card "
+                        "kind 'neu als Repo-Default', so this half was always "
+                        "future work - but until it is wired the documents "
+                        "template CANNOT promise 'direkt im Ordner'. Its prose "
+                        "and summary were reworded to stop claiming it. If "
+                        "someone re-adds that claim before wiring this, the "
+                        "screen starts lying again.",
+        "trigger": "the owner onboards a real document repo and expects its "
+                   "cards to skip the worktree without saying so per card.",
+        "fix": "OPEN. Have the card-creation path read "
+               "projects.resolve(repo)['card_kind'] as the DEFAULT entry point "
+               "(dispatch.new_track vs dispatch.new_direct_task) when the "
+               "caller did not pick one explicitly - one reader, at the one "
+               "place a card is born, not a flag copied onto every card.",
+        "order": 51,
+    },
+    {
+        "id": "repo-template-policy-presets-still-global",
+        "title": "A repo template's policy.* presets are workspace-wide, so two "
+                 "repos still overwrite each other",
+        "status": "open",
+        "what": "spine/ops/projects.apply_template() writes the per-repo half "
+                "(repo_hooks.<repo>.deploy) truly per repo, but its `settings` "
+                "presets (policy.auto_accept_green, policy.auto_dispatch_modes) "
+                "go through events.save_settings into the ONE global "
+                "settings.json blob. Applying a template to repo B therefore "
+                "moves those values for repo A too.",
+        "why_it_bites": "The decree is 'pro Repo', and for the stations, the "
+                        "deploy hook and the record itself that now holds - for "
+                        "these two policy keys it does not. It is NOT silent: "
+                        "the deviation is recorded in projects.overrides/applied "
+                        "at write time and the pipeline card renders 'vom "
+                        "Standard abgewichen' (PRD §5 accepted exactly this "
+                        "trade). But visible drift is still drift, and the "
+                        "measured proof is in ops/docs/shots/harness/"
+                        "repo-code.png: the code repo shows two deviations it "
+                        "never asked for, caused by the document repo's template "
+                        "being applied after it.",
+        "trigger": "the owner runs two repos of different types side by side "
+                   "and cares that autonomy differs between them.",
+        "fix": "OPEN. Either resolve these keys through "
+               "projects.resolve(repo)['overrides'] at every READ site (the "
+               "honest per-repo answer, and the reason `overrides` already "
+               "exists), or drop them from the templates and leave autonomy to "
+               "the dial - which is where PRD §9 A already sent "
+               "capacity.wip_limit for the same reason.",
+        "order": 52,
+    },
+    {
+        "id": "e2e-harnesses-stale-after-split",
+        "title": "Test/camera harnesses died silently at the four-folder split - "
+                 "mostly recovered, six assertions still stale",
+        "status": "open",
+        "what": "The move to spine/cells/surfaces/ops left 12 scripts under "
+                "ops/tests/ and ops/docs/shots/ importing the pre-split flat "
+                "layout (sys.path.insert(<repo>/daemon) + `import auth, db, "
+                "events`). Resolved so far: verify_plan_share.py (19 checks) and "
+                "verify_billing_auto.py (24 checks) are repaired and GREEN; "
+                "e2e_lane_http.py runs again but is still red for its own "
+                "reasons (its stubs name sessions._gate etc., machinery that "
+                "moved into lanemachine.py in the same split, so they bind "
+                "nothing); and four USED-UP JIGS were deleted rather than "
+                "repaired - uifix_harness.py, uifix_p3_harness.py and "
+                "uifix_question_harness.py each seeded the card states of ONE "
+                "branch that has long since shipped (gating, the transcript "
+                "model, the question channel are all normal product now), and "
+                "loopmap_sandbox.py seeded nothing at all, so it was pure "
+                "boilerplate that repo_pipeline_sandbox.py now does. Still dead: "
+                "e2e_cancel_resume.py, e2e_question_live.py, glance_shoot.py, "
+                "smoke/pair_link.py, smoke/setup_sandbox.py - these five are "
+                "STANDING tools (a behaviour proof, a glasses camera, the "
+                "APK-against-a-tunnel recipe), not scaffolding, which is why "
+                "they were not deleted with the rest. FINAL STATE: the whole "
+                "ops/tests/unit/ pytest suite turned out to be dead too - its "
+                "shared conftest.py pointed at <repo>/daemon, so all three "
+                "tests died at COLLECTION and the count was 15 files, not 12. "
+                "conftest + imports + the moved seams (proctable._PIDFILE, the "
+                "package-attribute fakes) are fixed and the suite runs: 29 pass, "
+                "6 fail. glance_shoot.py and e2e_cancel_resume.py are repaired "
+                "and GREEN (9/9). smoke/pair_link.py, smoke/setup_sandbox.py and "
+                "e2e_question_live.py were DELETED - the first two bootstrapped "
+                "one finished release-smoke card whose result is written down in "
+                "ops/tests/smoke/EVIDENCE.md, and the third spent real tokens on "
+                "a real worker.",
+        "why_it_bites": "A dead script is worse than a missing one: it COMPILES, "
+                        "so py_compile and the gate stay green and it looks "
+                        "maintained right up until someone runs it and gets a "
+                        "ModuleNotFoundError. Measured - it cost a card's worth "
+                        "of time when the loop-map camera was needed for a UI "
+                        "judgement and turned out not to exist any more. Worse, "
+                        "reviving two of them recovered 43 real checks that had "
+                        "been silently unenforced ever since, including the "
+                        "proof behind the 'costs are plan-share, not EUR' "
+                        "decree.",
+        "trigger": "any UI judgement or e2e replay that reaches for one of the "
+                   "eight remaining scripts.",
+        "fix": "OPEN for exactly six assertions, all named in "
+               "ops/tests/unit/conftest.py's STATUS block, none of them a "
+               "product regression: five duplicate `order` values that piled up "
+               "in THIS register while test_debt was dead (left red on purpose "
+               "- renumbering entries other cards edit is a merge conflict "
+               "waiting to happen), four test_drivers expectations that "
+               "describe an older _ClaudeSession (meta legitimately grew a "
+               "ctx_usage key), and one nightshift fake thinner than the code "
+               "it stands in for. Each needs its FIXTURE updated to match "
+               "evolved behaviour and then an actual RUN - a fix nobody "
+               "executes is exactly how this rotted, and a dead script compiles "
+               "green so nothing else will catch it. The triage rule that "
+               "settled the deletions is the owner's and it generalises: is "
+               "this a JIG for one branch, or a TOOL that gets used again? A "
+               "jig whose branch shipped is used up.",
+        "order": 53,
+    },
 ]
 
 def list_debt():

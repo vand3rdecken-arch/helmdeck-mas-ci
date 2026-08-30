@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-import drivers
+from spine.agent import drivers
 from conftest import FIXTURES
 
 
@@ -100,7 +100,13 @@ def claude_session(monkeypatch, tmp_path):
     redirected to tmp_path, tree-kill neutered, session registry isolated per
     test. Returns a setter for the fake CLI's stdin->stdout script."""
     fakes = []
-    monkeypatch.setattr(drivers, "_PIDFILE", str(tmp_path / "pids.json"))
+    # The pid table moved into its own module (spine/agent/proctable.py) in the
+    # four-folder split. drivers re-exports its HELPERS but not the _PIDFILE
+    # constant, so patching it on drivers raises - and patching it loosely
+    # (raising=False) would be worse than the raise: the test would go green
+    # while writing the REAL daemon/driver_pids.json.
+    from spine.agent import proctable
+    monkeypatch.setattr(proctable, "_PIDFILE", str(tmp_path / "pids.json"))
     monkeypatch.setattr(drivers, "_tree_kill", lambda proc: None)
     monkeypatch.setattr(drivers, "_cmd_line", lambda argv: argv)
     monkeypatch.setattr(drivers, "_sessions", {})

@@ -38,6 +38,7 @@ export const GROUPS: readonly [string, readonly (readonly [string, string, strin
   ]],
   ["more.grp.system", [
     ["settings", "nav.settings", "settings-outline", "more.sub.settings", "settings.read"],         // routes_settings.py settings_get: owner only (card 2)
+    ["repo", "nav.repo", "folder-open-outline", "more.sub.repo", "projects.view"],              // routes_projects.py repo_templates_get: projects.view
     ["loopmap", "nav.loopmap", "map-outline", "more.sub.loopmap", undefined],                   // /loop/map: no role check
   ]],
 ] as const;

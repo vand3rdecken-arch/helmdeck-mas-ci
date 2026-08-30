@@ -12,24 +12,35 @@ Run: py -3.12 ops/tests/e2e_cancel_resume.py
 import os, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DAEMON = os.path.join(os.path.dirname(os.path.dirname(HERE)), "daemon")
-sys.path.insert(0, DAEMON)
+# REPO ROOT. This pointed at "<repo>/daemon" and did `import db, events, runs,
+# drivers, notify, sessions` - dead since the tree became spine/cells/surfaces/
+# ops, and silently, because a dead script compiles exactly like a live one.
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-e2e-cancel-")
 
-import db
+from spine.storage import db, events
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
-import events
+db._LEGACY_DB = os.path.join(SANDBOX, "legacy.db")
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
-db.init()                                    # role=tool: no boot devaluation
+db.init(role="tool")                         # role=tool: no boot devaluation
 
-import runs
+from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs")
 os.makedirs(runs.REC, exist_ok=True)
 
-import drivers, notify, sessions
+from spine.agent import drivers, proctable
+from spine.comms import notify
+from cells.engineer import sessions
+# dispatch/cardadmin bind their OWN copy of REC at import time (`from runs import
+# REC`), which is why test_server_routes.py patches each of them by hand. Same
+# hazard here: patch every holder, or a real card lands in the owner's
+# daemon/recordings while this file believes it is sandboxed.
 sessions.REC = runs.REC
+from cells.engineer import dispatch as _dispatch, cardadmin as _cardadmin
+_dispatch.REC = runs.REC
+_cardadmin.REC = runs.REC
 notify.card_event = lambda *a, **k: None     # no push targets in the sandbox
 notify.clear_dedup = lambda *a, **k: None
 
@@ -39,7 +50,10 @@ with open(_WRAP, "w", encoding="utf-8") as f:
     f.write('@echo off\r\n"%s" "%s" %%*\r\n'
             % (sys.executable, os.path.join(HERE, "fake_claude.py")))
 drivers.CLAUDE = _WRAP
-drivers._PIDFILE = os.path.join(tempfile.mkdtemp(), "driver_pids.json")
+# The pid table moved into its own module (spine/agent/proctable.py) in the same
+# split - drivers re-exports the helpers but NOT the _PIDFILE constant, so
+# setting it on drivers would silently write the real daemon/driver_pids.json.
+proctable._PIDFILE = os.path.join(tempfile.mkdtemp(), "driver_pids.json")
 
 _fails = []
 
