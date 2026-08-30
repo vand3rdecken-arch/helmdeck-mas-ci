@@ -41,6 +41,7 @@ export const chrome: Dict = {
   "more.sub.sessions": { de: "Chat-Verläufe der Agenten", en: "Agent chat transcripts" },
   "more.sub.recordings": { de: "Mitschnitte erledigter Arbeit", en: "Recordings of finished work" },
   "more.sub.settings": { de: "Team, Geräte, Import, Nachtschicht", en: "Team, devices, import, night shift" },
+  "more.sub.repo": { de: "Repo-Typ wählen — die Vorlage belegt den Rest vor", en: "Choose the repo type — the template presets the rest" },
   "more.sub.loopmap": { de: "Schaubild: wie Karten durch Gate & Review laufen", en: "Diagram: how cards flow through gate & review" },
   "more.sub.feedback": { de: "Wunsch oder Problem melden", en: "Report a wish or a problem" },
   "more.device.section": { de: "Dieses Gerät", en: "This device" },

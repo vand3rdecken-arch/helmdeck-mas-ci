@@ -77,7 +77,8 @@ _DEFAULTS = {
         "id": "documents",
         "label": "Dokumente & Inhalte",
         "who": "Texte, Angebote, Freigaben. Kein Build, leichte Review.",
-        "summary": "Direkt im Ordner · Gate läuft leer · kein Deploy · Abnahme bleibt Pflicht",
+        "summary": "Kein Deploy · Gate läuft leer · Entwürfe allein, Senden nicht · "
+                   "Abnahme bleibt Pflicht",
         # no `deploy`: nothing to ship. The gate stays in the list because it is
         # law - in a text repo it finds nothing to compile and reports PASS
         # (run_gate.py:68-70), which the map labels honestly instead of hiding.
@@ -87,10 +88,10 @@ _DEFAULTS = {
         "settings": {"policy.auto_accept_green": False,
                      "policy.auto_dispatch_modes": ["do", "prepare"]},
         "notes": {"gate": "Läuft leer - hier gibt es nichts zu kompilieren, "
-                          "der Gate meldet PASS.",
-                  "working": "Direkt im Ordner, ohne Worktree."},
-        "body": ("Direkt im Ordner statt im Worktree, kein Deploy. Das Gate laeuft "
-                 "leer durch - deine Abnahme bleibt Pflicht."),
+                          "der Gate meldet PASS."},
+        "body": ("Kein Deploy, das Gate laeuft leer durch, deine Abnahme bleibt "
+                 "Pflicht. (card_kind steht auf new_direct_task, wird aber noch "
+                 "nicht gelesen - Schuld repo-template-card-kind-unwired.)"),
     },
 }
 

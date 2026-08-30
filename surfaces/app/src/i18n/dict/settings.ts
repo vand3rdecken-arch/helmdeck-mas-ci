@@ -5,6 +5,7 @@ import type { Dict } from "../index";
 export const settings: Dict = {
   // ---- nav bits this area owns (the shared nav.* live in chrome.ts) ----
   "nav.loopmap": { de: "Loop & Harness", en: "Loop & harness" },
+  "nav.repo": { de: "Repo einrichten", en: "Set up repo" },
   "nav.sectionWorkflow": { de: "Ablauf", en: "Workflow" },
   "nav.sectionSetup": { de: "Einrichtung", en: "Setup" },
   "nav.filter": { de: "Filter", en: "Filter" },
