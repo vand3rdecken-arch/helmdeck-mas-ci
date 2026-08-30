@@ -381,13 +381,43 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         if (resumed && !busy) refresh()
     }
 
-    // The idle ticker. NOT while a turn is in flight: the owner's own
-    // message is appended to the server log only when the whole turn
-    // completes (copilot.chat -> _append_log), so a mid-turn poll would
-    // return a transcript WITHOUT the line he just spoke and wipe it off
-    // his screen until Henry finished - his own words vanishing as he
-    // watches. talk() already delivers that answer itself; this loop is
-    // only for the answers that arrive by any other path.
+    // THE EVENT PATH - what actually makes an answer appear "by itself".
+    //
+    // Push.inbound is bumped by PushService the instant a sealed FCM push is
+    // opened on this device, which the daemon sends from the one line that makes
+    // a Henry answer exist (notify.chat_reply, hung off copilot._append_log).
+    // Reading .value here subscribes this composable, so a delivered push
+    // refreshes the transcript immediately instead of waiting out the ticker
+    // below.
+    //
+    // Nothing new is being sent for this: that push has been arriving at this
+    // watch since the reverse mirror shipped (2026-08-29) and was being spent
+    // entirely on a notification. This just stops throwing the event away.
+    //
+    // Same two guards as the ticker, for the same reasons - `busy` above all:
+    // the owner's own line only reaches the server log at TURN END, so a refresh
+    // mid-turn would wipe his message off his own screen.
+    val ping = Push.inbound.value
+    LaunchedEffect(ping) {
+        if (ping > 0 && resumed && !busy) refresh()
+    }
+
+    // The idle ticker - now the FALLBACK, not the mechanism, and it stays
+    // exactly because push is a delivery promise nobody can make: FCM may be
+    // throttled or dropped in Doze, the watch may have been off the network when
+    // it was sent, and notify.chat_reply is deliberately SILENT while any
+    // visible client reports focus on the chat (presence.plan(presence.CHAT)) -
+    // so with the phone's chat open, the watch gets no push at all and this
+    // ticker is the only thing that carries the answer to the wrist. Paseo keeps
+    // the same shape for the same reason: push plus a catch-up path, never push
+    // alone.
+    //
+    // NOT while a turn is in flight: the owner's own message is appended to the
+    // server log only when the whole turn completes (copilot.chat ->
+    // _append_log), so a mid-turn poll would return a transcript WITHOUT the
+    // line he just spoke and wipe it off his screen until Henry finished - his
+    // own words vanishing as he watches. talk() already delivers that answer
+    // itself; this loop is only for the answers that arrive by any other path.
     LaunchedEffect(Unit) {
         while (true) {
             delay(15_000)
