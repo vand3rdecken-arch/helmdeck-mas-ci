@@ -381,48 +381,104 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         if (resumed && !busy) refresh()
     }
 
-    // THE EVENT PATH - what actually makes an answer appear "by itself".
+    // THE BACKGROUND EVENT PATH. The stream below is the foreground channel and
+    // carries everything while the screen is on; this is the half that survives
+    // the screen going OFF, which is the one thing a hanging GET cannot do on a
+    // watch - Wear suspends the radio and the coroutine dies with the resume.
+    // FCM is the platform's own answer to exactly that, so the two are not
+    // duplicate transports: screen on -> stream, screen off -> push.
     //
     // Push.inbound is bumped by PushService the instant a sealed FCM push is
     // opened on this device, which the daemon sends from the one line that makes
     // a Henry answer exist (notify.chat_reply, hung off copilot._append_log).
-    // Reading .value here subscribes this composable, so a delivered push
-    // refreshes the transcript immediately instead of waiting out the ticker
-    // below.
+    // Reading .value here subscribes this composable, so a push that arrives
+    // while the screen is still on refreshes the transcript immediately.
     //
     // Nothing new is being sent for this: that push has been arriving at this
     // watch since the reverse mirror shipped (2026-08-29) and was being spent
     // entirely on a notification. This just stops throwing the event away.
     //
-    // Same two guards as the ticker, for the same reasons - `busy` above all:
-    // the owner's own line only reaches the server log at TURN END, so a refresh
-    // mid-turn would wipe his message off his own screen.
+    // Same guards as the stream, and `busy` above all: the owner's own line only
+    // reaches the server log at TURN END, so a refresh mid-turn would wipe his
+    // message off his own screen.
     val ping = Push.inbound.value
     LaunchedEffect(ping) {
         if (ping > 0 && resumed && !busy) refresh()
     }
 
-    // The idle ticker - now the FALLBACK, not the mechanism, and it stays
-    // exactly because push is a delivery promise nobody can make: FCM may be
-    // throttled or dropped in Doze, the watch may have been off the network when
-    // it was sent, and notify.chat_reply is deliberately SILENT while any
-    // visible client reports focus on the chat (presence.plan(presence.CHAT)) -
-    // so with the phone's chat open, the watch gets no push at all and this
-    // ticker is the only thing that carries the answer to the wrist. Paseo keeps
-    // the same shape for the same reason: push plus a catch-up path, never push
-    // alone.
+    // THE STREAM - the watch on the SAME event channel as the phone and the
+    // desktop, over the SAME sealed relay. The 15s ticker that used to sit here
+    // is gone; this is a HANGING GET, not a poll (owner decree 2026-08-30:
+    // "einheitlich wie Paseo, kein Polling, verschluesselter Transport").
     //
-    // NOT while a turn is in flight: the owner's own message is appended to the
-    // server log only when the whole turn completes (copilot.chat ->
-    // _append_log), so a mid-turn poll would return a transcript WITHOUT the
-    // line he just spoke and wipe it off his screen until Henry finished - his
-    // own words vanishing as he watches. talk() already delivers that answer
-    // itself; this loop is only for the answers that arrive by any other path.
-    LaunchedEffect(Unit) {
+    // /stream/wait?v&c blocks on the daemon side until the board (`v`) or the
+    // chat transcript (`c`) moves, or ~22s passes. We re-arm immediately, so an
+    // idle watch holds ONE open sealed request and transmits nothing until there
+    // is genuinely news. That is strictly less radio than a 15s timer, not more.
+    //
+    // Keyed on `resumed`, which is the battery discipline the old ticker only
+    // approximated with a guard: leaving the screen CANCELS this coroutine and
+    // with it the open request, so nothing is held while the wrist is down. The
+    // resume effect above re-reads the transcript, so nothing missed is lost.
+    //
+    // readTimeout 40s > the daemon's 22s wait, deliberately: at the old 20s
+    // default the client would abort every single wait a beat BEFORE the server
+    // answered, turning a working stream into a permanent reconnect loop. Still
+    // far below the relay's own 120s REPLY_TIMEOUT.
+    //
+    // Exponential backoff 3s->30s on failure, same as the phone's loop: a dead
+    // relay is not hammered, a blip recovers in one pause. Cursors are NOT reset
+    // on failure, so whatever moved meanwhile is reported on the next success -
+    // the reconnect IS the catch-up path, which is why no timer is needed.
+    var chatCursor by remember { mutableStateOf(0) }
+    LaunchedEffect(resumed) {
+        if (!resumed) return@LaunchedEffect
+        val device = DeviceStore.load(context) ?: return@LaunchedEffect
+        var v = 0
+        var c = 0
+        var backoff = 3_000L
         while (true) {
-            delay(15_000)
-            if (resumed && !busy) refresh()
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    RelayClient.authedCall(
+                        device.relayUrl, device.room, device.daemonPubB64,
+                        device.myPublicKeyB64, device.mySecretKeyB64,
+                        device.deviceToken, "GET", "/stream/wait?v=$v&c=$c", "",
+                        readTimeoutMs = 40_000)
+                }.getOrNull()
+            }
+            if (r == null || r.first !in 200..299) {
+                delay(backoff)
+                backoff = minOf(backoff * 2, 30_000L)
+                continue
+            }
+            backoff = 3_000L
+            val o = runCatching { JSONObject(r.second) }.getOrNull() ?: continue
+            v = o.optInt("v", v)
+            // A daemon older than this build omits `c` entirely - optInt's
+            // default keeps the cursor still rather than snapping it to 0 and
+            // refreshing on every tick forever.
+            val nc = o.optInt("c", c)
+            if (nc != c) {
+                c = nc
+                chatCursor = nc
+            }
         }
+    }
+
+    // The cursor moved -> re-read the transcript. `busy` is a KEY, not just a
+    // guard: a turn in flight must not refresh (the owner's own line only
+    // reaches the server log at TURN END, so a mid-turn read would wipe his
+    // message off his own screen), and keying on it means the refresh he was
+    // owed happens the moment the turn ends instead of being dropped.
+    //
+    // The first successful stream reply also lands here, so opening the screen
+    // costs one extra read. Deliberate: priming the cursor silently would open
+    // a window where an answer arriving between the initial load and the first
+    // stream call is adopted as "already seen" and never shown. A duplicate GET
+    // is cheap; a lost answer is the bug this whole change exists to kill.
+    LaunchedEffect(chatCursor, busy) {
+        if (chatCursor > 0 && resumed && !busy) refresh()
     }
 
     // Follow the conversation instead of making him scroll after every reply -

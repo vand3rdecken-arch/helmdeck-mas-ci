@@ -261,18 +261,38 @@ class H(BaseHTTPRequestHandler):
             if p in routes_wear.GET_ROUTES:
                 return routes_wear.GET_ROUTES[p](self, user)
             if p == "/stream/wait":
-                # Board PUSH over the sealed relay (SSE can't tunnel): long-poll
-                # the data version. Blocks until it passes `v` or ~22s, then
-                # returns {v}. The phone loops it and invalidates on change -
-                # live board updates in relay mode, no fixed poll. 22s < relay
-                # REPLY_TIMEOUT (120) and bridge _local (115).
+                # PUSH over the sealed relay (SSE can't tunnel): a HANGING GET,
+                # not a poll. Blocks until something the client subscribes to
+                # moves, or ~22s, then answers. The client re-arms immediately,
+                # so an idle fleet holds one open request each and sends nothing.
+                # 22s < relay REPLY_TIMEOUT (120) and bridge _local (115).
+                #
+                # TWO cursors: `v` = board data, `c` = chat transcript. The chat
+                # one exists because the transcript is a JSON file, not a table,
+                # so no db writer ever moved `v` for a Henry answer and every
+                # surface had quietly fallen back to a fixed interval.
                 from spine.storage import db
-                want = (parse_qs(urlparse(self.path).query).get("v") or ["0"])[0]
-                try:
-                    last = int(want)
-                except ValueError:
-                    last = 0
-                return self._send(200, json.dumps({"v": db.wait_version(last, timeout=22)}))
+                _q = parse_qs(urlparse(self.path).query)
+
+                def _cursor(name):
+                    try:
+                        return int((_q.get(name) or ["0"])[0])
+                    except ValueError:
+                        return 0
+
+                # STRICTLY OPT-IN, and this is not a style choice. If `c` is
+                # absent we must answer exactly as before: an older bundle sends
+                # only `v`, so it would be compared against chat_last=0 - and
+                # from the first chat message on, _chat_version > 0 would be
+                # permanently true and every one of its requests would return
+                # instantly. The stream loop re-calls on success, so a stale
+                # client would spin hot forever against the daemon. Absent `c`
+                # therefore means "board only", byte-identical to the old reply.
+                if "c" not in _q:
+                    return self._send(200, json.dumps(
+                        {"v": db.wait_version(_cursor("v"), timeout=22)}))
+                v, c = db.wait_any(_cursor("v"), _cursor("c"), timeout=22)
+                return self._send(200, json.dumps({"v": v, "c": c}))
             if p == "/stream":
                 # SSE: push a version tick whenever board data changes - pays
                 # the polling debt. Client refetches on tick.

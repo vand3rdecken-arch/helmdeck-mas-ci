@@ -307,6 +307,29 @@ def _append_log(user, entries):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(d, f)
     os.replace(tmp, CHATLOG)
+    # THE EVENT, announced from the one place that can honestly announce it.
+    #
+    # Every surface reading this transcript used to discover a new line on a
+    # TIMER (phone 8s, watch 15s) because nothing here ever said "it moved" -
+    # /stream/wait only ever watched db._version, and the chat log is a file, not
+    # a table. This is the missing half: the single writer of the log is also the
+    # single publisher of its cursor, so a waiting client is woken by the write
+    # itself rather than by re-reading the file on a clock.
+    #
+    # AFTER os.replace, never before: the rename is what makes the new line
+    # visible to a reader, so a cursor bumped earlier could wake a client that
+    # then reads the OLD file and concludes nothing changed - a lost event that
+    # would look exactly like the delay this replaces.
+    #
+    # Best-effort and non-fatal, the same contract as every other notify/emit
+    # call site here: the durable state (the file) is already written, and a
+    # storage hiccup must never turn a persisted turn into a failed one. The
+    # clients' reconnect path is the backstop.
+    try:
+        from spine.storage import db
+        db.bump_chat()
+    except Exception as _be:                                    # noqa: BLE001
+        print("copilot: chat cursor bump failed -", str(_be)[:200])
 
 _autocompact_supported = None    # None=unprobed, True/False learned from first /compact
 

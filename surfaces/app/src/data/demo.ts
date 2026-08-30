@@ -311,10 +311,17 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   const b = (body ?? {}) as Record<string, any>;
 
   if (path === "/stream/wait") {
-    // Long-poll: hand back the CURRENT version. client.ts paces this so the
+    // Hanging GET: hand back the CURRENT cursors. client.ts paces this so the
     // board refreshes on demo mutations without spinning the loop hot.
-    const seen = Number(new URLSearchParams(q).get("v") ?? 0);
-    return { v: version > seen ? version : seen };
+    const p = new URLSearchParams(q);
+    const seen = Number(p.get("v") ?? 0);
+    // Echo `c` back UNCHANGED. The demo has no Henry turn to move a transcript,
+    // and any other value would make the stream loop invalidate chatHistory on
+    // every tick against a canned history that never changes. Mirrored only
+    // when the client actually sent it, matching the daemon's opt-in rule.
+    const out: { v: number; c?: number } = { v: version > seen ? version : seen };
+    if (p.has("c")) out.c = Number(p.get("c") ?? 0);
+    return out;
   }
   if (path === "/tracks" && method === "GET") return rows.map(materialize);
   if (path === "/me") return ME;
