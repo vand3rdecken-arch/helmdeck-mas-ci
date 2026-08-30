@@ -233,6 +233,39 @@ def _settle_reply_compute(t, result, log):
     return question, cleaned, bg
 
 
+# How much of a turn's closing words the card keeps.
+#
+# Was a bare 2000-char slice. The owner photographed the result on his watch
+# (2026-08-30): a DELIVERED summary that stopped at "praktisch, wenn" with
+# nothing after it - measured afterwards at exactly 2000 characters, cut
+# mid-sentence. This is the LAST cap on that text and the only one no reading
+# surface can undo: /wear/board's own body cap is already None, and it still
+# showed a cut card, because the cut had happened in storage a turn earlier.
+#
+# 6000 rather than None: this is stored per card, forever, and rides inside the
+# board payload for every listed card - unbounded here would put a whole turn
+# report behind every row on a watch over a sealed relay. 6000 clears the
+# summaries actually being written (the photographed one was ~2600) with room
+# to spare, which is the point: the bound must stop being reached in normal
+# work, not merely be reached more politely.
+REPLY_MAX = 6000
+
+
+def _clip_reply(text):
+    """The reply as the card keeps it - and if it must be cut, cut it VISIBLY.
+
+    A raw slice ends mid-word and reads as a bug in the message rather than as
+    a bound on storage; the owner reported exactly that reading. Same rule
+    routes_wear._wear_clip already applies on the way out, applied here because
+    this is where the text is actually lost."""
+    text = text or ""
+    if len(text) <= REPLY_MAX:
+        return text
+    cut = text[:REPLY_MAX]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > REPLY_MAX // 2 else cut).rstrip(" ,;:-") + " …"
+
+
 def _settle_reply_apply(t, question, cleaned, bg, log):
     """The WRITE half - runs INSIDE _mutate as part of the one atomic
     end-of-turn commit (_finish_turn). Together with _settle_reply_compute this
@@ -243,8 +276,8 @@ def _settle_reply_apply(t, question, cleaned, bg, log):
     information in typed form. Returns the notify reason."""
     from spine.ops import ask
     from spine.storage import events
-    log.log("reply", cleaned[:2000])
-    t["last_reply"] = cleaned[:2000]
+    log.log("reply", cleaned[:REPLY_MAX])
+    t["last_reply"] = _clip_reply(cleaned)
     if not question:
         # A turn that does not ask supersedes any older pending question -
         # leaving a stale one would show buttons for a decision the worker has
