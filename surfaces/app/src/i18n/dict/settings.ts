@@ -336,6 +336,7 @@ export const settings: Dict = {
   "pm.leverage": { de: "Leverage ~{v}", en: "Leverage ~{v}" },
   "pm.by": { de: "bis {date}", en: "by {date}" },
   "pm.etaDays": { de: "~{n}d", en: "~{n}d" },
+  "pm.etaUnknown": { de: "wartet", en: "waiting" },
   "pm.stepsTurns": { de: "{steps} Schritte · {turns} Turns", en: "{steps} steps · {turns} turns" },
   "pm.nextHeading": { de: "ALS NÄCHSTES", en: "NEXT UP" },
   "pm.createCardTitle": { de: "Karte anlegen?", en: "Create a card?" },

@@ -352,7 +352,9 @@ def brief(goal=None, model=""):
                 "code derives each target date from your est_turns and the measured pace. "
                 "A fixed EXTERNAL wait (a review period, a trial window) is its own "
                 "milestone noted as wait time, never effort you can compress; if its "
-                "length is unknown, say unknown instead of guessing a date."
+                "length is unknown, set that milestone's calendar_wait: true - code then "
+                "leaves its date (and every date after it) unknown instead of guessing, "
+                "until you flip it to status: done."
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
@@ -372,15 +374,25 @@ def brief(goal=None, model=""):
 
     def _date_milestones(o):
         cum = 0
+        wait_hit = False   # once an open calendar_wait milestone is hit, every date
+                            # from here on is unknown - cascades until it's done
         for ms in o.get("milestones", []):
-            tt = int(ms.get("est_turns") or 0) if str(ms.get("status")) != "done" else 0
+            done = str(ms.get("status")) == "done"
+            tt = int(ms.get("est_turns") or 0) if not done else 0
             cum += tt
             ms["est_turns"] = tt
-            ms["eta_days"] = _days(tt, pace)
-            ms["cumulative_eta_days"] = _days(cum, pace)
-            # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
-            # the milestone reads "by Thu" not just "~3d".
-            ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
+            if ms.get("calendar_wait") and not done:
+                wait_hit = True
+            if wait_hit and not done:
+                ms["eta_days"] = None
+                ms["cumulative_eta_days"] = None
+                ms["target_date"] = None
+            else:
+                ms["eta_days"] = _days(tt, pace)
+                ms["cumulative_eta_days"] = _days(cum, pace)
+                # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
+                # the milestone reads "by Thu" not just "~3d".
+                ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
         return cum
 
     est_turns = _date_milestones(out)

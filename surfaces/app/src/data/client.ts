@@ -255,8 +255,8 @@ export interface PmTask { title: string; card?: string | null; priority?: string
 export interface PmMilestone {
   name: string; card?: string | null; priority?: string; status?: string; repo?: string | null; stream?: string;
   user_story?: string; done_when?: string[]; why_now?: string; steps?: string[];
-  est_turns?: number; eta_days?: number; cumulative_eta_days?: number; target_date?: string;
-  why?: string; tasks?: PmTask[];
+  est_turns?: number; eta_days?: number | null; cumulative_eta_days?: number | null; target_date?: string | null;
+  calendar_wait?: boolean; why?: string; tasks?: PmTask[];
 }
 /** The PM computes a plan-aware budget block the board renders GENERICALLY by
  *  `kind`: "usage" (Max plan - the subscription allowance IS the budget, so it
