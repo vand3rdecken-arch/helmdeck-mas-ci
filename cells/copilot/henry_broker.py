@@ -579,18 +579,23 @@ def _notify_owner(text, t):
     # broker's decisions. copilot.say is the same line the lane pipeline's
     # _say_card uses; best-effort like the push.
     #
-    # Clipped to the same two-sentence ceiling as every other automatic notice
-    # (owner decree 2026-08-30). Henry is an LLM writing free prose into the one
-    # chat the owner actually reads, so he is the likeliest future source of the
-    # wall the decree bans - the cap belongs at this edge, not in his mandate,
-    # where it would be a request rather than a rule. Only the CHAT copy is cut:
-    # the push has always had its own 230-char budget above, and the card audit
-    # below still gets the message WHOLE, so nothing is lost, it just stops
-    # being shouted (the same split _notify_owner's docstring already draws).
+    # WHOLE, like every other chat message. A notice.short() clip stood here for
+    # one day (2026-08-30) and the owner photographed the result the same
+    # afternoon: his 14:08 chat card ended "... kein Agent-Turn) …" mid-thought,
+    # while the ordinary bot bubbles right above it were intact. The reason it
+    # looked like a rogue widget is that it WAS a rogue clip - but on the write
+    # side, not the render side (see the module note above _decide's report-back).
+    #
+    # The two-sentence law is a law about CHANNELS THAT CANNOT SCROLL - the FCM
+    # push (its own 230 above) and a question's button header. The chat is a
+    # transcript: card_transcript.tsx already folds anything past 1600 chars
+    # behind a "mehr anzeigen" toggle, which gives the decree what it actually
+    # wanted (no wall) without amputating the sentence that carries Henry's
+    # point. Clipping here just moved the push's budget onto the transcript -
+    # precisely what this function's own docstring forbids.
     try:
         from cells.copilot import copilot
-        from spine.comms.notice import short
-        copilot.say(short(text), cls="pm", card=(t or {}).get("id") or None)
+        copilot.say(text, cls="pm", card=(t or {}).get("id") or None)
     except Exception:
         pass
     if t:

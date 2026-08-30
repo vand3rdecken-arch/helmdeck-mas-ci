@@ -875,8 +875,13 @@ def _needs_from_owner(st):
     # not a question, and the owner answered none of them. Asking the first and
     # re-asking as the set changes (the _notice_due key counts them) walks the
     # same list one answerable step at a time; the full set stays on the plan.
+    # The question goes in WHOLE - the [:180] that stood here was a raw slice
+    # that could land inside a word, and the chat has no length budget to
+    # justify it (2026-08-30; spine/comms/notice.short's docstring says where a
+    # clip does belong). Brevity here comes from asking ONE question - the line
+    # above - not from cutting it in half.
     more = (" (%d weitere im Plan.)" % (len(qs) - 1)) if len(qs) > 1 else ""
-    _say("Mir fehlt Info: %s%s" % (qs[0][:180], more))
+    _say("Mir fehlt Info: %s%s" % (qs[0], more))
 
 
 def _triangle_watch(st):

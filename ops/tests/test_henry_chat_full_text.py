@@ -19,6 +19,10 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from cells.copilot import henry_broker as hb
+# Imported UP HERE, before section 4 swaps package attributes around: pm_comm
+# binds `from spine.registry import i18n as _i18n` at module level, so importing
+# it while that attribute is stubbed would freeze the stub into the module.
+from cells.pm import pm_comm
 
 _fails = []
 
@@ -132,6 +136,55 @@ check(said and said[0].rstrip().endswith(TAIL), "_notify_owner: chat message is 
 check(pushed and len(pushed[0]) <= 230, "_notify_owner: the FCM push stays in its budget")
 check(pushed and said and len(pushed[0]) < len(said[0]),
       "_notify_owner: push is the truncated one - chat is not")
+
+# ---------------------------------------------------------------------------
+# 5) THE OTHER DOOR into the same chat card (owner report 2026-08-30, 14:08
+# screenshot). Henry is not the only writer of a cls:"pm" entry - the PM cell
+# writes through pm_comm._say/_escalate, and the app renders BOTH with the
+# identical component (chat.tsx toStep -> card_transcript.tsx, byKind "henry").
+# A clip on either door therefore produces the same mid-thought "…" card, and
+# pinning only Henry's door is how the 2026-08-28 fix came back as the
+# 2026-08-30 bug: notice.short() was wired into pm_comm._say the same day.
+#
+# Pinned HERE, in the file whose subject is "the chat gets it whole", and not in
+# ops/tests/test_notice_routing.py - that suite asserts a notice is BORN short
+# (short(line) == line), a different and complementary rule, which is exactly
+# why it stayed green straight through the regression.
+pm_pushed = []
+
+
+class _Notify2:
+    escalate = staticmethod(lambda title, body, tid: pm_pushed.append(body))
+
+
+spine.comms.notify, cells.copilot.copilot = _Notify2, _Copilot
+said[:] = []
+try:
+    pm_comm._say(LONG)
+    check(said and said[0] == LONG, "pm _say: the chat gets the whole notice")
+    check(said and said[0].rstrip().endswith(TAIL), "pm _say: not mangled")
+
+    said[:] = []
+    pm_comm._escalate(LONG, tid="c1", title="T")
+    check(said and said[0] == LONG, "pm _escalate: the CHAT copy is whole")
+    check(pm_pushed and len(pm_pushed[0]) <= 180,
+          "pm _escalate: only the PUSH is clipped, to its own 180 budget")
+    check(pm_pushed and pm_pushed[0].endswith(" …"),
+          "pm _escalate: the clipped push ADMITS it was clipped")
+    # word boundary: strip the marker, and the next character in the source must
+    # be whitespace - i.e. the cut fell between words, never inside one. This is
+    # the property a raw [:180] cannot give and the owner reported twice.
+    _body = pm_pushed[0][:-2] if pm_pushed else ""
+    check(bool(_body) and LONG.startswith(_body) and LONG[len(_body):len(_body) + 1].isspace(),
+          "pm _escalate: the push cut lands between words, not mid-word")
+finally:
+    spine.comms.notify, cells.copilot.copilot = _prev[0], _prev[2]
+
+# 6) `chars` is a TRUE ceiling - the " …" marker is paid out of the budget, not
+# added on top. A caller at a hard limit must not have to write chars-2 itself.
+from spine.comms import notice as _n
+check(len(_n.short("x" * 500, chars=180)) == 180, "short(): `chars` is a true ceiling")
+check(len(_n.short("wort " * 200)) <= _n.MAX_CHARS, "short(): default budget respected")
 
 print()
 if _fails:
