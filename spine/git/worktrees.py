@@ -14,6 +14,33 @@ from spine.git.gitutil import (_git_try, _owned_worktree, _current_branch,
                      _git_state_broken, _repo_hash, WORKTREE_DIRNAME)
 
 
+def _live_cohabitant(t, wt):
+    """Is a DIFFERENT, still-open card living in this exact directory? Returns
+    its id, or None.
+
+    sweep_worktrees has asked this since 2026-08-14 (active_by_path); the
+    per-card reclaim never did, because "one card, one tree" was assumed from
+    the branch name rather than verified. Colliding branch names broke that
+    assumption on 2026-08-30 and cost a card its entire session: accepting
+    20260830-065545 reclaimed the tree 20260830-194212 was live inside.
+
+    The collision is fixed at its source now (trackstore._card_branch), so this
+    can only fire for cards filed BEFORE that fix - which is precisely why it
+    belongs here: those cards are still on the board, still sharing trees. It is
+    also the nothing-lost invariant stated where it is actually enforced, so no
+    future naming scheme can quietly reopen the same hole."""
+    from cells.engineer import sessions
+    p = os.path.realpath(wt)
+    for o in sessions._load():
+        if o.get("id") == t.get("id") or not o.get("worktree"):
+            continue
+        if os.path.realpath(o["worktree"]) != p:
+            continue
+        if not (bool(o.get("archived")) or o.get("lane") == "done"):
+            return o.get("id")
+    return None
+
+
 def reclaim_worktree(t, log=None, force=False):
     """Give ONE finished card's worktree (and branch) back. Called on a terminal
     transition (accepted/archived): the work is already in the integration
@@ -26,6 +53,13 @@ def reclaim_worktree(t, log=None, force=False):
         return False
     if os.path.abspath(wt) == os.path.abspath(repo):
         return False                       # never the main checkout
+    other = _live_cohabitant(t, wt)
+    if other:
+        # NOT force-overridable: force exists to drop uncommitted noise on an
+        # accepted card, never to evict another card that is still working.
+        if log:
+            log.log("note", "WORKTREE behalten - Karte %s arbeitet noch darin: %s" % (other, wt))
+        return False
     if not force:
         rc, out, _ = _git_try(wt, "status", "--porcelain", "--untracked-files=no")
         if rc == 0 and out:

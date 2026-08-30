@@ -167,7 +167,11 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const e = cards.find((c) => c.id === k.id);
   const maxA = Math.max(1, ...cards.map((c) => c.ai_cost));   // cross-card scale so
   const maxH = Math.max(1, ...cards.map((c) => c.touches));   // split bars compare
-  const stepM = k.branch?.match(/-s(\d+)$/);
+  // Step number from the card's own field; the branch regex is only a fallback
+  // for cards filed before process_step existed (their branches still end in
+  // -sN). New branches carry a card-id tail, so the regex alone would silently
+  // drop the step badge.
+  const stepNo = k.process_step ?? k.branch?.match(/-s(\d+)$/)?.[1];
   const report =
     (k.gate_report && k.gate_report.length) ? "gate: " + k.gate_report.join(" | ") :
     (k.merge_report && !k.gate_report) ? k.merge_report.split("\n")[0] :
@@ -245,7 +249,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         </Pressable>
       ) : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
-        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepM ? tr("board.step", { n: stepM[1] }) : (k.process_title ?? tr("board.process"))}</Text> : null}
+        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepNo ? tr("board.step", { n: String(stepNo) }) : (k.process_title ?? tr("board.process"))}</Text> : null}
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={prioLabel(tr, k.priority)} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
         {k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}

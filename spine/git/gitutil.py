@@ -281,9 +281,20 @@ def _git_state_broken(wt):
 
 
 def _worktree_for(repo, branch):
-    from spine.storage.trackstore import _slug
+    # _slug_tail, NOT _slug: a card branch carries its uniqueness in a TRAILING
+    # card-id token, and _slug's head-only 32-char cut used to shear that off -
+    # mapping two different branches onto one directory (see _card_branch).
+    # No legacy-path fallback on purpose: the two slugs only disagree above 32
+    # chars, and every pre-fix branch was a short prefix plus task[:24]
+    # ("chat-"+24 = 29, "req-"+24 = 28, "proc-..." = 16), so no existing card's
+    # directory moves. A card whose tree IS already checked out is found through
+    # git's own worktree registry (_worktree_of_branch, which _ensure_worktree
+    # consults first), not through this formula. Adding a "use the old path if
+    # it exists" branch here would let a NEW card adopt an OLD card's live tree
+    # whenever their truncations happened to agree - the very bug being fixed.
+    from spine.storage.trackstore import _slug_tail
     base = os.path.abspath(os.path.join(repo, "..", WORKTREE_DIRNAME))
-    wt = os.path.join(base, _repo_hash(repo), _slug(branch))
+    wt = os.path.join(base, _repo_hash(repo), _slug_tail(branch))
     os.makedirs(os.path.dirname(wt), exist_ok=True)
     return wt
 
