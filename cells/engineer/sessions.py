@@ -419,6 +419,36 @@ def _mark_compact_pending(tid, on):
         pass
 
 
+def _compact_marks(session_id):
+    """How many compaction summaries the CLI has written into this session's
+    OWN transcript (~/.claude/projects/<cwd>/<sid>.jsonl, the same append-only
+    record claude_sessions.py already treats as the source of truth for the
+    card feed - see its isCompactSummary handling).
+
+    This exists because the turn's return value is NOT sufficient evidence that
+    a compaction did or did not happen. Measured 2026-08-30 on the 183k
+    session: `/compact` wrote its summary into the transcript and then the CLI
+    process simply never exited, so the turn died on the watchdog and the
+    harness concluded "nothing happened" - twice - about a compaction that had
+    in fact already succeeded. (The 2026-08-15 note in this file described the
+    same hang and drew the wrong conclusion from it.) The transcript is the
+    runtime's own signal; the exit code is only the transport."""
+    try:
+        from spine.agent.claude_sessions import _find_transcript
+        p = _find_transcript(session_id)
+        if not p:
+            return 0
+        n = 0
+        with open(p, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                i = line.find('"isCompactSummary"')
+                if i >= 0 and "true" in line[i:i + 30]:
+                    n += 1
+        return n
+    except Exception:
+        return 0
+
+
 def _compact_after_turn(t, log):
     """The post-turn compaction, on its own thread. Best-effort by contract:
     nothing downstream waits on it and a failure here must never surface as a
@@ -468,6 +498,7 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
         done = _threading.Event()
         _compacting[tid] = done
     _compact_interrupted.discard(tid)
+    marks0 = _compact_marks(t.get("session_id"))
     pct = min(100, round(ctx / window * 100))
     log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
             "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
@@ -482,11 +513,21 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
                                 idle_timeout=idle_timeout or _COMPACT_IDLE_S)
     except BaseException as e:
         # The turn DIED (stalled past the watchdog, driver crash, killed
-        # process). That is not evidence about /compact support either - it is
-        # the same "learned nothing" case as an interrupt, and it must re-queue
-        # or the card silently keeps its full context forever. Measured
-        # 2026-08-30: this exact path fired on the 183k session and, before
-        # this, escaped through steer's blanket except with only a log line.
+        # process). Ask the TRANSCRIPT what actually happened before deciding -
+        # measured 2026-08-30, the compaction had already been written when the
+        # watchdog fired, and calling that "nothing happened" is what left the
+        # card at 92% across two full retries.
+        if _compact_marks(t.get("session_id")) > marks0:
+            _autocompact_supported = True
+            _mark_compact_pending(tid, False)
+            log.log("note", "AUTO-COMPACT ok: die Verdichtung steht im Transkript - der "
+                            "CLI-Prozess ist danach nur nicht sauber beendet (%s). "
+                            "Die Session ist verdichtet, der naechste Turn startet auf "
+                            "dem kleinen Kontext." % str(e)[:120])
+            return None
+        # Genuinely nothing landed. Not evidence about /compact support either -
+        # same "learned nothing" case as an interrupt - so re-queue, or the card
+        # silently keeps its full context forever.
         _mark_compact_pending(tid, True)
         log.log("note", "AUTO-COMPACT abgebrochen (%s) - nichts gelernt, Session "
                         "unveraendert. Wird beim naechsten Leerlauf nachgeholt."
@@ -527,6 +568,17 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
         _mark_compact_pending(tid, False)
         log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
                 "ohne Unterbrechung weiter." % round(after / 1000))
+    elif _compact_marks(t.get("session_id")) > marks0:
+        # The context figure did not move but the CLI DID write a compaction.
+        # The reading is stale, not the compaction absent: ctx_tokens comes from
+        # the turn's reported usage, and a /compact turn that reports nothing
+        # (or reports the PRE-compaction call) leaves the meter behind until the
+        # next real turn refreshes it. Judging "unsupported" on that number
+        # alone is how a working compaction got switched off.
+        _autocompact_supported = True
+        _mark_compact_pending(tid, False)
+        log.log("note", "AUTO-COMPACT ok: Verdichtung im Transkript. Das Kontext-Meter "
+                        "steht erst beim naechsten Turn wieder richtig.")
     else:
         _autocompact_supported = False
         _mark_compact_pending(tid, False)

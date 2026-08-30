@@ -64,6 +64,10 @@ def _fake_mutate(tid, fn):
 
 
 S._mutate = _fake_mutate
+# The transcript-evidence probe: tests drive it explicitly (see MARKS below),
+# so no test ever depends on a real ~/.claude/projects file being present.
+MARKS = [0]
+S._compact_marks = lambda sid: MARKS[0]
 S._record_econ = lambda tt, meta: tt.update(meta.get("_ctx") and
                                             {"ctx_tokens": meta["_ctx"]} or {})
 
@@ -193,8 +197,63 @@ check(S._COMPACT_IDLE_S > 180,
 check(S._COMPACT_WAIT_S < S._COMPACT_IDLE_S,
       "a steering owner waits far less than the compaction's own patience")
 
+# 6b) THE STALL THAT ALREADY SUCCEEDED ---------------------------------------
+# Measured 2026-08-30 on the same 183k session: `/compact` wrote its summary
+# into the transcript and the CLI process then never exited. The turn died on
+# the watchdog, so the harness called it "nothing happened" - twice - about a
+# compaction that had already landed. The transcript is the evidence, the exit
+# code is only the transport.
+S._autocompact_supported = None
+S._turn = _turn_raises
+t = _track()
+lg = _Log()
+MARKS[0] = 0
+
+
+def _turn_raises_after_writing(t_, prompt, **kw):
+    MARKS[0] += 1                      # the CLI wrote the summary...
+    raise RuntimeError("claude turn stalled (no output for 900s) - session killed")
+
+
+S._turn = _turn_raises_after_writing
+S._maybe_compact(t, lg)
+check(S._autocompact_supported is True,
+      "a stalled turn that DID write a compaction counts as a success, not a failure")
+check(not CARD.get("compact_pending"),
+      "a compaction proven by the transcript is NOT re-queued (no pointless retry)")
+check(lg.saw("im Transkript"), "the card log says the compaction landed despite the hang")
+
+# 6c) completed turn, meter unmoved, but the transcript shows a compaction ----
+S._autocompact_supported = None
+MARKS[0] = 0
+
+
+def _turn_clean_but_writes(t_, prompt, **kw):
+    MARKS[0] += 1
+    return "sess-old", "compacted", {"_ctx": 183450}      # meter did not move
+
+
+S._turn = _turn_clean_but_writes
+t = _track()
+lg = _Log()
+S._maybe_compact(t, lg)
+check(S._autocompact_supported is True,
+      "a stale ctx reading no longer produces a false 'CLI doesn't honor /compact'")
+check(lg.saw("Kontext-Meter"), "the log explains the meter lags until the next turn")
+
+# 6d) ...but a turn that compacted NOTHING still learns False -----------------
+S._autocompact_supported = None
+MARKS[0] = 0
+S._turn = _turn_returning("sess-old", "I don't know that command", new_ctx=183450)
+t = _track()
+S._maybe_compact(t, _Log())
+check(S._autocompact_supported is False,
+      "no shrink AND no transcript summary still learns 'unsupported' (probe intact)")
+MARKS[0] = 0
+
 # 7) an explicit idle override reaches the driver (ops/tools/compact_card.py) --
 del spawned[:]
+S._turn = _turn_raises            # records the idle_timeout it was handed
 t = _track()
 S._maybe_compact(t, _Log(), force=True, idle_timeout=900)
 check(spawned and spawned[0] == 900, "--idle override is threaded down to the turn")
