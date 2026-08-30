@@ -185,6 +185,42 @@ def _cached(path, parse):
         return None
 
 
+def cached(path, parse):
+    """The caching + never-raise primitive, shared with spine/registry/templates.py.
+
+    Declared rather than reached into: the repo-template catalog needs EXACTLY
+    this behaviour (re-read on mtime-or-size change, fall back to a built-in on
+    any failure, record the reason in errors()), and a second implementation of
+    "a broken data file may never break a spawn" is a second thing to get wrong.
+    Sharing the primitive also means a broken template file shows up in the same
+    /loop/map error list as a broken brief, for free."""
+    return _cached(path, parse)
+
+
+def note_error(path, msg):
+    """Record that a harness data file is present but unusable.
+
+    _cached() only reports files that failed to READ or PARSE. A file can do
+    both successfully and still be unusable - a template whose frontmatter
+    parsed into a dict with no label and no stations, say. That case falls back
+    to the built-in correctly but would otherwise fall back SILENTLY, which is
+    the exact failure mode this module's docstring promises not to have. The
+    caller that judged the content unusable is the only one who knows, so it
+    says so here."""
+    _note(path, msg)
+
+
+def clear_error(path):
+    """The file loads cleanly again."""
+    _errors.pop(path, None)
+
+
+def parse_frontmatter(raw):
+    """(body, frontmatter) for any `---`-delimited markdown data file. Same
+    reason as cached(): the template files use the identical shape."""
+    return _parse_agent(raw)
+
+
 # ---------------------------------------------------------------------------
 # frontmatter
 # ---------------------------------------------------------------------------

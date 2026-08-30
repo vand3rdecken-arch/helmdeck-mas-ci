@@ -317,6 +317,56 @@ export interface LoopNode {
    *  reads as arbitrary, and a reason the UI invents is a claim about code it
    *  cannot see. Optional so an older daemon degrades to the generic legend. */
   why?: string;
+  /** Only present when /loop/map was asked about a REPO (?repo=). Whether this
+   *  station runs for that repo under its chosen template. Absent = the general
+   *  machine was asked about, and every station is shown plainly. */
+  active?: boolean;
+  /** Why it is NOT active, in the owner's words - a station the template leaves
+   *  out reads differently from a deploy step with no command behind it, and
+   *  the map must not blur the two into one grey dot. */
+  off_reason?: string;
+  /** Active, but here is what it actually MEANS for this repo type: the gate in
+   *  a document repo runs and reports PASS with nothing to compile. Honest
+   *  labelling is what keeps "on" from over-promising. */
+  note?: string;
+  /** Whether a template may switch it at all. Exactly one station (deploy) is
+   *  switchable; the daemon says which, so the app never renders a toggle that
+   *  the server would refuse. */
+  switchable?: boolean;
+}
+/** How ONE repo runs - spine/ops/projects.resolve(). The repo IS the project
+ *  (owner decree 2026-08-30), so this is that record's repo half. */
+export interface RepoView {
+  repo: string; known: boolean;
+  project: { id: string; name: string } | null;
+  template: string; template_label: string; template_who: string;
+  card_kind: string;
+  /** The stations the template declares active. The app does NOT decide from
+   *  this what a station is - it renders the graph the daemon sends. */
+  stations: string[];
+  station_notes?: Record<string, string>;
+  deploy_hook: string;
+  applied?: Record<string, unknown>;
+  overrides?: Record<string, unknown>;
+  /** Values the owner moved away from what the template set - RECORDED when it
+   *  happened, not deduced by the app. PRD §5: a silently overwritten value was
+   *  the original complaint, so the deviation is data. */
+  deviations?: { key: string; template_value: unknown; value: unknown; explicit: boolean }[];
+  applied_at?: string; applied_by?: string;
+  error?: string;
+}
+/** One repo TYPE from the catalog (ops/harness/templates/*.md). */
+export interface RepoTemplate {
+  id: string; label: string; who: string; card_kind: string;
+  stations: string[]; deploy_hook: string; body: string; source: string;
+  settings?: Record<string, unknown>; notes?: Record<string, string>;
+}
+export interface RepoTemplates {
+  templates: RepoTemplate[]; repos: RepoView[];
+  /** Which stations a template may switch AT ALL - sent by the daemon so the
+   *  picker cannot grow a toggle the server refuses (sessions.SWITCHABLE_STATIONS). */
+  switchable: string[];
+  stations: string[];
 }
 export interface LoopEdge {
   from: string; to: string; verb?: string; when?: string;
@@ -330,7 +380,20 @@ export interface HarnessAgent {
   setting_sources?: string; ask_protocol: boolean; chars: number;
 }
 export interface LoopMap {
-  runtime: { title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] }; edges?: LoopEdge[] };
+  runtime: {
+    title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] };
+    /** Deploy is a STEP, not a lane: it runs inside the accept transition
+     *  (lanemachine._repo_hook), which is why it arrives beside `gate` with an
+     *  `on` edge rather than in `lanes`. The owner still has to see it. */
+    deploy?: LoopNode & { on?: string[] };
+    /** The draw order of the pipeline, from the daemon - the client keeps NO
+     *  station list of its own (that duplication is what /loop/map exists to
+     *  end). */
+    stations?: string[];
+    edges?: LoopEdge[];
+  };
+  /** Present only when ?repo= was passed: how that one repo runs. */
+  repo?: RepoView | null;
   build: {
     title: string; states: LoopState[]; edges?: LoopEdge[];
     /** "card" = a card's worktree (no workorder ceremony) vs "repo". */
@@ -654,7 +717,15 @@ export const api = {
     if (!Array.isArray(m) || m.length === 0) throw new TransportError("empty /models");
     return m;
   }),
-  loopMap: () => req<LoopMap>("GET", "/loop/map"),
+  // `repo` makes the map answer for ONE repo (which stations its template
+  // leaves on, where it deviates). Omit it for the general machine.
+  loopMap: (repo?: string) =>
+    req<LoopMap>("GET", "/loop/map" + (repo ? `?repo=${encodeURIComponent(repo)}` : "")),
+  repoTemplates: () => req<RepoTemplates>("GET", "/repo/templates"),
+  // THE write path for a repo's type - the same mutator Henry's chat verb
+  // calls, so a tap and a sentence can never produce different answers.
+  applyRepoTemplate: (repo: string, template: string) =>
+    req<RepoView & { error?: string }>("POST", "/repo/template", { repo, template }),
   escalations: () => req<{ id: string; ts: string; kind: string; card?: string; detail?: string;
     attempts: number; closed: boolean; action?: string; why?: string }[]>("GET", "/escalations"),
   harness: () => req<HarnessDocument>("GET", "/harness"),
