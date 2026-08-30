@@ -58,9 +58,25 @@ KIND_BLOCKER = "blocker"       # the card cannot proceed on its own
 # module docstring for why `done`/`bounced`/`background` are not here).
 REASONS = {"question": KIND_QUESTION, "needs_you": KIND_RESULT}
 
-# How much of a card's closing reply becomes the chat line. The full text stays
-# one tap away in the card transcript; this is an inbox entry, not the document.
-RESULT_MAX = 400
+# A card's closing reply is mirrored WHOLE. There is deliberately NO length
+# constant here, and the one that stood in its place (RESULT_MAX = 400) was
+# removed on an owner decision (2026-08-30) taken against measured data.
+#
+# Its premise was: "this is an inbox entry, not the document - the full text is
+# one tap away in the card transcript." That premise holds for a DISPATCHED
+# worker card, which has its own conversation the owner opens. It does not hold
+# for a card the owner started FROM THIS CHAT: there the Henry chat IS the
+# card's conversation and there is no second place to tap to. Measured on the
+# owner's own log the day it was removed: 10 of 10 clipped mirror lines were
+# exactly those cards, each losing ~3.600-4.300 characters - including the
+# answer to the question he had asked in that same chat minutes earlier.
+#
+# "Whole" is not "unbounded": the reply is already capped where it is actually
+# stored (turnrunner.REPLY_MAX, 6000), and the transcript folds a long message
+# behind card_transcript.tsx's "mehr anzeigen" toggle instead of throwing it
+# away. A cap here was a FOURTH answer to "how long may a line be", on the one
+# surface that can scroll - see spine/comms/notice.short's docstring for which
+# channels legitimately have a length budget.
 
 _last = {}
 _lock = threading.Lock()
@@ -134,17 +150,11 @@ def mirror(track, status):
             q = track.get("question") or {}
             text = ask.summary(q) or ""
         else:
-            # KIND_RESULT: the card's own closing words. `last_reply` is already
-            # the ask-block-stripped reply _finish_turn persisted, so a raw
+            # KIND_RESULT: the card's own closing words, WHOLE (see the note
+            # where RESULT_MAX used to live). `last_reply` is already the
+            # ask-block-stripped reply _finish_turn persisted, so a raw
             # <helmdeck-ask> can never leak into the inbox.
             text = (track.get("last_reply") or "").strip()
-            if len(text) > RESULT_MAX:
-                cut = text[:RESULT_MAX]
-                sp = cut.rfind(" ")
-                # " ...", not a bare cut: the watch learned this the hard way
-                # (d243545) - a clipped line that does not say it was clipped
-                # reads as the card's complete answer.
-                text = (cut[:sp] if sp > RESULT_MAX // 2 else cut).rstrip() + " …"
         if not text:
             return False
         from spine.comms import notify

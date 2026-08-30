@@ -333,8 +333,11 @@ def escalate(title, body, track_id=""):
 
 # How much of a Henry answer becomes the notification body. ~100 chars is what a
 # lockscreen line and a round watch face actually show; the full answer is one
-# tap away in the chat. card_mirror.RESULT_MAX (400) is deliberately larger - an
-# INBOX line may be a paragraph, a notification may not.
+# tap away in the chat. This budget exists because a lockscreen CANNOT SCROLL -
+# it is not a house style to be copied inward. The chat-side counterpart of this
+# constant (card_mirror.RESULT_MAX, 400) was removed on 2026-08-30: the chat
+# scrolls and folds, so a cap there destroyed the very text this pointer points
+# at. See spine/comms/notice.short's docstring for the full rule.
 CHAT_BODY_MAX = 100
 
 

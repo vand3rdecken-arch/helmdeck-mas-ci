@@ -86,7 +86,10 @@ def short(text, chars=MAX_CHARS, sentences=MAX_SENTENCES):
 
     The " …" is not decoration: a clipped line that does not admit it was
     clipped reads as the complete message (the watch learned this the hard
-    way, d243545; card_mirror.RESULT_MAX carries the same marker).
+    way, d243545). card_mirror used to carry the same marker on the chat's
+    card-result line; that cap is gone as of 2026-08-30, because admitting a
+    cut is only the SECOND-best outcome - on a surface that scrolls, not
+    cutting at all is the best one, and the chat is such a surface.
 
     `chars` is a TRUE ceiling - the marker is paid for out of the budget, not
     added on top of it. It used to return chars+2, which contradicted this
