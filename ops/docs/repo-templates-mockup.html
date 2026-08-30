@@ -109,6 +109,10 @@
   .audit div{margin-bottom:3px}
   .blocked{border-color:rgba(234,106,102,.45)!important}
   .blocked b{color:var(--danger)}
+  /* not a refusal: a question back. Amber, not red - the sentence was fine,
+     it was only ambiguous, and Henry must never dead-end on it. */
+  .asks{border-color:rgba(229,156,75,.45)!important}
+  .asks b{color:var(--warn)}
   .foot{color:var(--txt3);font-size:12.5px;margin-top:28px;border-top:1px solid var(--borderSubtle);padding-top:14px}
   a{color:var(--accent)}
 </style>
@@ -201,7 +205,7 @@
       <button onclick="say('docs')">„Repo Y soll wie ein Doku-Repo laufen“</button>
       <button onclick="say('noreview')">„Schalt die Review für dieses Repo aus“</button>
       <button onclick="say('nodeploy')">„Kein automatischer Deploy mehr“</button>
-      <button onclick="say('gate')">„Lass das Gate weg, ich prüfe selbst“</button>
+      <button onclick="say('gate')">„Henry, schalt das Gate für dieses Repo ab“</button>
       <div class="audit" id="audit"><div>audit &mdash; noch keine Änderung</div></div>
     </div>
   </div>
@@ -336,20 +340,29 @@ const REPLIES = {
     apply: () => { TPL[cur].active = TPL[cur].active.filter(s => s !== "deploy"); drawMap(); },
     log: "config actor=owner patch={\"repo_hooks\":{\"deploy\":\"\"}} reason=\"via chat\"",
   },
+  // The owner's own example sentence. It must NOT produce a wall: "Gate
+  // abschalten" has two legitimate readings and one forbidden one, and Henry's
+  // job is to name all three rather than refuse the whole sentence.
   gate: {
-    me: "Lass das Gate weg, ich prüfe selbst",
-    ok: false,
-    henry: "<b>Das Gate ist fest.</b> Es gehört zum Harness (Auth/Audit/Gate/Driver), nicht zur Policy - per Chat nicht schaltbar. Wenn es wirklich weg soll, ist das eine Code-Änderung: sag „leg eine Karte dafür an“, dann baut ein Agent es mit Gate und deiner Abnahme.",
+    me: "Henry, schalt das Gate für dieses Repo ab",
+    ok: "ask",
+    henry: "Das kann zweierlei heißen &mdash; sag mir welches:<br><br>"
+      + "<b>1. „Es soll mich nicht aufhalten.“</b> Bei einem Doku-Repo läuft das Gate ohnehin leer: "
+      + "es findet nichts zu kompilieren und meldet sofort PASS. Da ist nichts abzuschalten.<br>"
+      + "<b>2. „Ich will nicht mehr auf die Freigabe warten.“</b> Das kann ich: grüne Karten "
+      + "automatisch durchwinken (<code>policy.auto_accept_green</code>). Geprüft wird trotzdem.<br>"
+      + "<b>3. „gate-before-review soll ganz weg.“</b> Das ist Harness, nicht Policy &mdash; per Chat "
+      + "nicht schaltbar. Es ginge als Code-Änderung: sag „leg eine Karte dafür an“.",
     apply: null,
-    log: "config DENIED key=gate reason=harness-not-policy -> route: card",
+    log: "configure AMBIGUOUS key=gate -> 2 policy-Optionen + 1 Code-Route angeboten",
   },
 };
 
 function say(k){
   const r = REPLIES[k], c = document.getElementById("chat");
   c.insertAdjacentHTML("beforeend", `<div class="msg me">${r.me}</div>`);
-  c.insertAdjacentHTML("beforeend",
-    `<div class="msg henry ${r.ok?"":"blocked"}">${r.henry}</div>`);
+  const tone = r.ok === true ? "" : (r.ok === "ask" ? "asks" : "blocked");
+  c.insertAdjacentHTML("beforeend", `<div class="msg henry ${tone}">${r.henry}</div>`);
   if(r.apply) r.apply();
   audit(r.log);
   c.scrollTop = c.scrollHeight;

@@ -320,21 +320,127 @@ Zu tun bleibt:
    Repo-Datensatz wird über den Mutator aus §4.1 geschrieben, mit eigener
    Rollenprüfung (`policy.chat_configure_roles` wiederverwenden).
 
-**Vokabular-Vorschlag** (Satz → Wirkung):
+#### 4.3.1 Welche Station ist überhaupt schaltbar?
 
-| Owner sagt | Henry tut | Erlaubt? |
+Bevor Sätze auf Keys abgebildet werden, die ehrliche Bestandsaufnahme —
+*„das Template schaltet Stationen an/aus"* trifft heute auf genau **eine**
+Station zu:
+
+| Station | schaltbar? | wodurch |
 |---|---|---|
-| „Repo Y soll wie ein Doku-Repo laufen" | `apply_template(Y, "documents")` | ja |
-| „Kein automatischer Deploy mehr" | `repo_hooks.<Y>.deploy = ""` | ja |
-| „Grüne Karten darfst du selbst abnehmen" | `policy.auto_accept_green = true` | ja (heute global!) |
-| „Höchstens 2 Karten gleichzeitig" | `capacity.wip_limit = 2` | ja (heute global!) |
-| „Schalt die Review aus" | **Ablehnen + Route** | nein — Review *ist* die Abnahme |
-| „Lass das Gate weg" | **Ablehnen + Route** | nein — Harness, kein Policy-Key |
-| „Mach mich zum Admin" | **Ablehnen** | nein — Auth, `permissions.set_role_caps` |
+| Karte | nein, immer da | Backlog ist die Eingangslane |
+| Arbeit | **fest** | `working` ist `kind: fixed` (`sessions.py`) |
+| Gate | **fest** | Harness-Gesetz; läuft im Doku-Repo leer und meldet PASS |
+| Abnahme | **fest** als Station | aber `policy.auto_accept_green` entscheidet, ob *gewartet* wird |
+| Deploy | **JA** | `repo_hooks.<repo>.deploy` leer ⇒ Schritt entfällt |
 
-Die Ablehnung existiert schon als guter Text (`copilot_actions.py:122-126`):
-Harness-Keys werden *mit Route* abgewiesen („sag ‚leg eine Karte dafür an'").
-**Diese Zeile ist der Ton, den die ganze Vorlagen-Fläche treffen soll.**
+Das deckt den Beispielfall des Decrees exakt ab („Dokumenten-Repo ohne
+Deploy-Station"). Aber es heißt auch: die Vorlage ist **kein Schaltpult mit
+fünf Kippschaltern**. Vier Stationen sind Gesetz oder Eingang; verstellbar sind
+der Deploy-Schritt, die *Wartepflicht* an der Abnahme und (neu) die Kartenart.
+Ein Mockup, das fünf Schalter suggeriert, würde später als Lüge auffliegen.
+
+#### 4.3.2 Die Copilot-Actions
+
+Henrys Antwortformat ist Prosa + ein abschließender ` ```actions `-Block
+(`copilot_actions.py:_parse_reply_actions`). Bestehendes Verb, unverändert:
+
+```json
+{"type": "configure", "patch": {"policy.auto_accept_green": true}}
+```
+
+Zwei neue Verben, beide mit `repo`-Bezug (der Repo-Scope aus §4.1):
+
+```json
+{"type": "apply_template", "repo": "C:/pfad", "template": "documents"}
+{"type": "set_station",    "repo": "C:/pfad", "station": "deploy", "on": false}
+```
+
+`set_station` ist bewusst **kein** generischer Key-Setter: er nimmt nur
+Stationsnamen, bildet intern auf den echten Key ab (`deploy` →
+`repo_hooks.<repo>.deploy`) und **lehnt jede feste Station ab**. Damit kann ein
+Modell-Halluzination-Satz keine Station „ausschalten", die es gar nicht gibt.
+
+#### 4.3.3 Satz → Action → Key (die geforderte Abbildung)
+
+| Owner sagt | Action | Key / Feld | Wirkung auf die Karte |
+|---|---|---|---|
+| „Repo Y soll wie ein Doku-Repo laufen" | `apply_template` | `project.template = "documents"` | Deploy-Station geht aus |
+| „Kein automatischer Deploy mehr" | `set_station` | `repo_hooks.<Y>.deploy = ""` | Deploy-Station geht aus |
+| „Deploy wieder an, Befehl ist `bash ship.sh`" | `set_station` + `configure` | `repo_hooks.<Y>.deploy = "bash ship.sh"` | Deploy-Station geht an |
+| „Grüne Karten darfst du selbst abnehmen" | `configure` | `policy.auto_accept_green = true` | Abnahme bleibt, Marke „wartet nicht" |
+| „Ich will wieder selbst freigeben" | `configure` | `policy.auto_accept_green = false` | Marke verschwindet |
+| „Fang nur voll automatische Sachen von selbst an" | `configure` | `policy.auto_dispatch_modes = ["do"]` | Karte-Station Untertitel ändert sich |
+| „Höchstens 2 Karten gleichzeitig" | `configure` | `capacity.wip_limit = 2` | keine (Durchsatz, keine Station) |
+| „Nenn die Review-Spalte ‚Freigabe'" | `configure` | `policy.lane_labels.review` | Stationsname ändert sich |
+
+**Abgelehnt — aber nie als Wand** (`copilot_actions.py:122-126` ist bereits der
+richtige Ton):
+
+| Owner sagt | Antwort |
+|---|---|
+| „Schalt die Review aus" | Review **ist** die Abnahme. Angebot: `auto_accept_green` — dann wartet nichts mehr, geprüft wird trotzdem. |
+| „Mach mich zum Admin" | Auth. Geht über `permissions.set_role_caps`, nicht über Chat. |
+| „Ändere den Deploy-Befehl von Repo Z" (anderes Repo) | nur mit `repo`-Angabe und Owner-Rolle; sonst Rückfrage. |
+
+**Der Beispielsatz des Decrees ist mehrdeutig — und das ist der Testfall.**
+„Henry, schalt das Gate für dieses Repo ab" kann dreierlei heißen. Henry muss
+alle drei benennen statt den Satz abzulehnen:
+
+1. *„Es soll mich nicht aufhalten."* → Im Doku-Repo läuft das Gate ohnehin leer
+   und meldet PASS. Nichts abzuschalten.
+2. *„Ich will nicht auf die Freigabe warten."* → `policy.auto_accept_green = true`.
+   Machbar, sofort.
+3. *„gate-before-review soll ganz weg."* → Harness, nicht Policy. Route: Karte.
+
+Genau so im Mockup umgesetzt (bernsteinfarbene Rückfrage, nicht rote Ablehnung).
+
+#### 4.3.4 Wie die Karte die Änderung sofort zeigt
+
+Kein Polling, kein zweiter Zustand:
+
+1. Henrys Action läuft serverseitig durch (`_run_action`) und schreibt über den
+   **einen** Mutator aus §4.1.
+2. Der Mutator emittiert wie bisher `events.emit("config", …)` — der Stream, den
+   die App ohnehin offen hält (`useGlobalStream`).
+3. Die App invalidiert auf dieses Event die Query `["loopmap", repo]`.
+4. `/loop/map?repo=` wird neu geholt und die Stationsreihe rendert neu.
+
+Die Karte hält also **keinen eigenen Zustand**, den man synchron halten müsste —
+sie ist eine Projektion des Servers. Das ist dieselbe Regel wie in §4.2 und der
+Grund, warum die Bestätigung „sofort" sein kann, ohne dass Chat und Karte je
+auseinanderlaufen.
+
+### 4.5 Die Governance-Grenze, präzise
+
+Der Decree sagt „Charter/Gate/Auth bleiben FIXED (full-dynamism-decree)". Beides
+gilt gleichzeitig, und die Auflösung steht in `ARCHITECTURE.md:28-36`:
+
+> *„… nothing is structurally unreachable. Everything — engines, surfaces, tools,
+> and governance itself — is a swappable module. The one invariant that replaced
+> ‚fixed' is **trackability**."*
+
+**Fixed heißt also nicht „unmöglich", sondern „nicht über diesen Kanal".**
+Präzise formuliert für die Vorlagen-Fläche:
+
+| | per Chat | per Karte (Code, Gate, Abnahme) |
+|---|---|---|
+| `policy.*`, `repo_hooks`, Template-Wahl | **ja** | ja |
+| gate-before-review, Auth, Audit, Driver-argv, Charter-Kern | **nein** | ja — genau das ist der „swappable module"-Weg |
+| Connector-Sandbox, GxP-Schalter | **nein** | **nein** — menschlich, per Hand (`policy.py:99-104`, `gxp.py:28-34`) |
+
+Die dritte Zeile ist der einzige echte Boden: zwei Dinge bleiben auch für eine
+Karte gesperrt, weil ein Agent sonst seine eigene Sandbox aufschließen könnte.
+
+Zwei Fallen, die beim Bau zuschlagen würden:
+
+- **Alles unter `policy` ist per Konstruktion chat-schreibbar**
+  (`HARNESS.md:229-233`, `ALLOWED_CONFIG` filtert nur Top-Level-Keys). Ein neuer
+  Knopf, der *nicht* per Chat änderbar sein soll, darf nicht unter `policy`
+  liegen — deshalb liegt der Repo-Datensatz in der DB (§4.1).
+- **Ebene-B-Flags nicht anfassen.** `worktreeIsolation`, `gateBeforeReview` &
+  Co. werden noch gar nicht gelesen (`ARCHITECTURE.md:160-162`). Ein Chat-Satz,
+  der sie setzt, meldet Erfolg und bewirkt nichts — die schlimmste Sorte Antwort.
 
 ### 4.4 Wo die Vorlage im UI auftaucht
 
