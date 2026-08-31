@@ -28,6 +28,10 @@ working set combined. Swept manually the same day.
 Extend the daemon's existing zombie/stale sweep with a Windows-only
 conhost reaper:
 
+- Sweep `OpenConsole.exe` too (2026-08-31 follow-up: with Windows Terminal
+  set as default terminal app, every spawn leaks a VISIBLE terminal window
+  hosted by OpenConsole — 24 more orphans piled up within two hours of the
+  first sweep).
 - Enumerate `conhost.exe` processes, resolve each parent PID against the
   live process table, kill only those whose parent is DEAD. This is derived
   state from the runtime's own signals (process table), one owner (the
