@@ -1,6 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, dehydrate, hydrate } from "@tanstack/react-query";
 
+// How long a value stays trustworthy without a refetch - the horizon shared by
+// BOTH halves of the cache (in-memory gcTime below, persisted blob further
+// down). Declared here because the client is constructed at module load and a
+// const declared later would be in its temporal dead zone.
+const CACHE_MAX_AGE = 24 * 60 * 60 * 1000;   // discard a cache older than a day
+
 // One client for the app. The daemon pushes a version tick over SSE (web/LAN)
 // or we poll (relay); either way we invalidate queries to refetch. Tuned for a
 // data surface that changes often but not every second.
@@ -10,7 +16,19 @@ export const queryClient = new QueryClient({
     // invalidateQueries) rather than via focus, so this stays false: no
     // focusManager pause-on-background hazard, and desktop web doesn't refetch
     // on every tab focus.
-    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 2000 },
+    //
+    // gcTime outlives NAVIGATION, deliberately. React Query's 5-minute default
+    // is counted from the moment a query loses its LAST OBSERVER, and /chat is a
+    // Stack route (_layout.tsx) - closing it unmounts ChatBody, so five minutes
+    // later "chatHistory" was evicted and the next open had nothing to paint:
+    // empty transcript plus a blocking fetch over the relay, every time (owner
+    // report 2026-08-31). It also silently defeated the persisted cache below,
+    // which dehydrates whatever is in the cache RIGHT NOW - the eviction was
+    // written through to AsyncStorage, so the cold start lost the chat too.
+    // Reusing CACHE_MAX_AGE gives both halves ONE horizon: what memory keeps is
+    // what disk keeps, and last-known data is always there to show while the
+    // refetch runs.
+    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 2000, gcTime: CACHE_MAX_AGE },
   },
 });
 
@@ -25,7 +43,6 @@ export const queryClient = new QueryClient({
 // AsyncStorage is app-private and holds the same board data already in memory;
 // pairing secrets live in the config store, never in the query cache.
 const CACHE_KEY = "helmdeck.qcache.v1";
-const CACHE_MAX_AGE = 24 * 60 * 60 * 1000;   // discard a cache older than a day
 
 export async function restoreCache(): Promise<void> {
   try {
