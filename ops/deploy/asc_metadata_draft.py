@@ -69,7 +69,7 @@ LOCALIZATIONS = {
         ),
         "feedbackEmail": "tienduyvo@googlemail.com",
         "marketingUrl": "https://helmdeck.de",
-        "privacyPolicyUrl": "https://141.144.227.105.sslip.io/privacy",
+        "privacyPolicyUrl": "https://relay.helmdeck.de/privacy",
     },
     "en-US": {
         "description": (
@@ -83,7 +83,7 @@ LOCALIZATIONS = {
         ),
         "feedbackEmail": "tienduyvo@googlemail.com",
         "marketingUrl": "https://helmdeck.de",
-        "privacyPolicyUrl": "https://141.144.227.105.sslip.io/privacy",
+        "privacyPolicyUrl": "https://relay.helmdeck.de/privacy",
     },
 }
 

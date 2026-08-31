@@ -9,10 +9,10 @@
 # mints a fresh pairing each time - a test harness should set up its own
 # preconditions rather than depend on what the last run happened to leave.
 set -o pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT/apk" || exit 1
-export JAVA_HOME="/c/Program Files/Android/Android Studio1/jbr"
-export ANDROID_HOME="/c/Users/Tien Duy Vo/AppData/Local/Android/Sdk"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT/surfaces/app/android" || exit 1
+export JAVA_HOME="${JAVA_HOME:-/c/Program Files/Android/Android Studio1/jbr}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/AppData/Local/Android/Sdk}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
 API="${SWARM_API:-http://localhost:8140}"
