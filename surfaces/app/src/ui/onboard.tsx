@@ -13,6 +13,7 @@ import {
 } from "@/data/setup";
 import { useT } from "@/i18n";
 import { LoginScreen } from "@/ui/login_screen";
+import { RepoTypePicker, useRepoTypeOutstanding } from "@/ui/repo_type_picker";
 import { useTheme } from "@/theme";
 
 // ONE screen. One button.
@@ -120,6 +121,15 @@ export function Onboard() {
   // one thing still missing before the screen can show its end state.
   const needsAuth = !!st?.daemon && (!token || authRejected);
 
+  // The repo step: only once the daemon is up AND someone is signed in (the
+  // /repo/templates call is authenticated), only while a repo type is actually
+  // outstanding, and only until the user moves past it. `=== true` on purpose -
+  // the hook returns undefined until the query answers, and treating that as
+  // "outstanding" would flash this step into every launch.
+  const [repoDone, setRepoDone] = useState(false);
+  const repoOutstanding = useRepoTypeOutstanding();
+  const repoStep = !!st?.daemon && !needsAuth && !repoDone && repoOutstanding === true;
+
   useEffect(() => {
     if (st?.daemon && !needsAuth && !qr && !pairErr) {
       qc.invalidateQueries();
@@ -136,6 +146,52 @@ export function Onboard() {
   // Reusing it keeps ONE sign-in surface; a second copy here would be the same
   // mistake as maintaining two chat UIs.
   if (needsAuth) return <LoginScreen />;
+
+  // FOURTH STEP: which kind of repo is this?
+  //
+  // Provisioning installs an instance; it does not tell HelmDeck what the user
+  // actually works on. Without this step a new user finished onboarding with no
+  // repo at all, landed on an empty board, and never met the choice that decides
+  // whether their cards get a worktree, a gate command and a deploy hook - the
+  // "manuelles Nacharbeiten" this flow exists to remove. Asking it HERE, once
+  // the daemon is up and someone is signed in, is the first moment it can be
+  // both asked and answered.
+  //
+  // Skipped entirely for anyone who already chose (useRepoTypeOutstanding is
+  // false), and skippable by hand - a user who wants to point HelmDeck at a repo
+  // later must not be trapped on a form. `undefined` means the query has not
+  // answered yet, and is deliberately NOT treated as "outstanding": flashing
+  // this step into a returning user's launch would be the same bug the
+  // useShowOnboard docstring below describes.
+  if (repoStep) {
+    return (
+      <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
+        <ScrollView style={{ width: "100%", maxWidth: 620 }}
+          contentContainerStyle={{ gap: 18, paddingVertical: 24 }}>
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: t.txtPrimary, fontSize: 26, fontWeight: "700" }}>
+              {tr("onboard.repoTitle")}
+            </Text>
+            <Text style={{ color: t.txtSecondary, fontSize: 14, lineHeight: 20 }}>
+              {tr("onboard.repoSub")}
+            </Text>
+          </View>
+
+          <RepoTypePicker wide={false} intro={tr("onboard.repoIntro")} />
+
+          <Pressable onPress={() => setRepoDone(true)}
+            style={{ backgroundColor: t.accent, borderRadius: 14, paddingVertical: 15, alignItems: "center" }}>
+            <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>{tr("onboard.repoNext")}</Text>
+          </Pressable>
+          <Pressable onPress={() => setRepoDone(true)}>
+            <Text style={{ color: t.txtTertiary, fontSize: 12.5, textAlign: "center" }}>
+              {tr("onboard.repoLater")}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
