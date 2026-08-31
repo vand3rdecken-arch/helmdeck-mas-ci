@@ -36,21 +36,103 @@ from spine.turn.outcomes import extract_outcome, _record_outcome
 DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
 
 
+def _repo_default_kind(repo):
+    """The card kind THIS REPO's template declares, or "" if it declares none.
+
+    THE one reader of `projects.resolve(repo)['card_kind']` (debt
+    repo-template-card-kind-unwired: the value existed, was surfaced, and was
+    consumed by nobody - a setting that reported success and changed nothing).
+
+    Total by construction: a repo with no project record, an unreadable db, a
+    template that was deleted - all mean "this repo expresses no preference",
+    which is the pre-template behavior. A broken record may cost the default,
+    never the card."""
+    try:
+        from spine.ops import projects
+        return (projects.resolve(repo) or {}).get("card_kind") or ""
+    except Exception as e:                                       # noqa: BLE001
+        print("dispatch: repo card_kind for %s unreadable (%s) - using the "
+              "per-card default" % (repo, e), flush=True)
+        return ""
+
+
+def _direct_ok(repo):
+    """May a card in `repo` actually run on the live tree? (ok, why_not, policy).
+
+    The same three guards new_direct_task enforces - the policy switch, a real
+    git repo, the allowed root. They are checked HERE too because the repo
+    default reaches the live tree without going through that function, and a
+    default that quietly bypassed a policy switch would be a hole, not a
+    convenience. The policy dict comes back with the answer so the caller can
+    also take its `perm` - live-tree work is governed by policy.machine, and a
+    card that landed there by repo default must run under the same rules as one
+    that got there by name."""
+    try:
+        pol = machine_policy()
+        if not pol.get("enabled", True):
+            return False, "policy.machine.enabled=false", pol
+        if not os.path.isdir(os.path.join(repo, ".git")):
+            return False, "kein git-Repo: %s" % repo, pol
+        ok, why = machine_root_ok(repo)
+        if not ok:
+            return False, why, pol
+        return True, "", pol
+    except Exception as e:                                       # noqa: BLE001
+        return False, "Direct-Vorpruefung fehlgeschlagen: %s" % e, {}
+
+
 def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
               value=None, driver="claude", actor="owner", priority="medium", due="",
               model="", attachments=None, project_id=None, billing="fixed", rate=None,
-              description=""):
+              description="", card_kind=""):
     """File a request. lane=backlog stores it un-started (no worktree, no session);
     lane=working starts the branch session immediately. value = what the
     deliverable is worth (settings default when omitted) - set at intake so
     margin is computable at acceptance. project_id assigns the card to a
     fixed-price/T&M project (projects.py); its own `value` then stops feeding
-    the totals - the project's billing does (events.metrics)."""
+    the totals - the project's billing does (events.metrics).
+
+    `card_kind` ("new_track" | "new_direct_task") is the caller stating the
+    entry point OUTRIGHT. Left empty, the REPO decides via its template - this
+    is the one place a card is born, so it is the one place that question is
+    answered (see _repo_default_kind)."""
     from spine.storage import events
     from spine.agent import turnopts
     repo = os.path.abspath(repo)
     tracks = _load()
     tid = _unique_id(_slug(branch))
+    # WHICH KIND OF CARD THIS IS - decided BEFORE the branch name, because the
+    # two answers are the same decision: a live-tree card carries DIRECT_BRANCH
+    # and never gets a derived branch or a worktree.
+    #
+    # Precedence: an explicit `card_kind`, else the branch sentinel a wrapper
+    # already passed (new_direct_task/new_machine_task have chosen by calling
+    # at all), else the repo's template. So the repo default only ever fills a
+    # silence - it can never override a caller who said what they wanted.
+    if branch in (MACHINE_BRANCH, DIRECT_BRANCH):
+        kind = "new_direct_task" if branch == DIRECT_BRANCH else "new_machine_task"
+    else:
+        kind = card_kind or _repo_default_kind(repo)
+    if kind == "new_direct_task" and branch != DIRECT_BRANCH:
+        # The repo (or the caller) asked for the live tree. Honour it only if
+        # the guards allow it - and if they do not, fall back to the isolated
+        # worktree LOUDLY. Silently building something other than what the
+        # template promises is the failure mode templates exist to prevent.
+        ok, why, pol = _direct_ok(repo)
+        if ok:
+            branch = DIRECT_BRANCH
+            # Live-tree work runs under policy.machine's permission mode. A
+            # direct card has to be able to COMMIT its own work; left on the
+            # worktree default (acceptEdits) the git write is gated and the card
+            # stalls with nothing saying why. Only filled when the caller did
+            # not ask for a specific mode - an explicit perm still wins.
+            if perm == DEFAULT_PERM:
+                perm = pol.get("perm", "bypassPermissions")
+        else:
+            kind = "new_track"
+            print("dispatch: %s wants live-tree cards (Vorlage card_kind="
+                  "new_direct_task) but %s - Karte laeuft im Worktree"
+                  % (repo, why), flush=True)
     # ONE owner for the card's branch name. Callers pass a HUMAN STEM ("chat-"
     # + the request, "req-" + the request, "connector-" + name); what actually
     # goes on the board is derived here from the card id and verified free, so
@@ -94,6 +176,15 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
+    # THE DIRECT-CARD FIELDS, set in exactly one place. They used to be written
+    # after the fact by new_direct_task's own _mutate; folding them in here at
+    # BUILD time makes this function the single owner of the shape, so a card
+    # born from the repo default and one born from the explicit entry point are
+    # the same object rather than two lookalikes maintained in parallel.
+    if kind == "new_direct_task":
+        t["machine"] = True      # ride the no-worktree dispatch/accept path
+        t["direct"] = True       # serialized per-tree in _turn; shown as direct
+        t["worktree"] = repo     # the driver's cwd - the LIVE tree, no copy
     from spine.ops.actionlog import ActionLog
     ActionLog(run_dir).log("note", "REQUEST filed: %s (branch %s)" % (task, branch))
     events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver=t["driver"])
@@ -373,17 +464,18 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
     t = new_track(repo, DIRECT_BRANCH, task, lane="backlog", actor=actor,
                   priority=priority, description=description, driver=driver,
                   value=value, model=model, perm=pol.get("perm", "bypassPermissions"))
+    # machine/direct/worktree are NOT set here any more: passing DIRECT_BRANCH
+    # already told new_track which kind of card this is, and it writes those
+    # three at build time (one owner for the shape - see its comment). What is
+    # left is the one flag only this entry point can express.
     def _mark(tt):
-        tt["machine"] = True         # ride the no-worktree dispatch/accept path
-        tt["direct"] = True          # serialized per-tree in _turn; shown as direct
-        tt["worktree"] = repo        # the driver's cwd - the LIVE tree, no copy
         if fast_track:
             # ship-on-turn-end from birth (sessions._maybe_fast_track_ship_direct):
             # autocommit + deploy hook, no gate/merge - the quick-fix class the
             # owner triages in chat (2026-08-29). Same registered debt
             # fast-track-no-gate as the after-the-fact flag flip.
             tt["fast_track"] = True
-    cur = _mutate(t["id"], _mark) or t
+    cur = (_mutate(t["id"], _mark) or t) if fast_track else t
     from spine.ops.actionlog import ActionLog
     ActionLog(cur["run_dir"]).log(
         "note", "DIRECT build filed - workplace is the live tree %s (by %s)" % (repo, actor))

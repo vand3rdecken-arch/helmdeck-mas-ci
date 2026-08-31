@@ -67,6 +67,21 @@ _DEFAULTS = {
         "stations": ["backlog", "working", "gate", "review", "deploy"],
         "card_kind": "new_track",
         "deploy_hook": "",
+        # THE GATE COMMAND, per repo. Unlike deploy_hook this is NOT left empty:
+        # an empty deploy hook means "nothing to ship", which is a harmless
+        # no-op, but an empty gate means the card passes the gate station having
+        # checked nothing - a green light for unread code. repo_gate.py derives
+        # its checks from the marker files the target repo actually has
+        # (py_compile / npm typecheck / cargo check / go build), so it is a real
+        # check on a repo HelmDeck has never seen, rather than a guess.
+        # %HELMDECK_HOME% is HelmDeck's own install root, exported by
+        # lanemachine._gate - the graded repo does not contain this script.
+        # FORWARD SLASHES on purpose: python accepts them on Windows, and they
+        # keep this string byte-identical to the one in the template FILE - a
+        # backslash means one thing to PyYAML and another to the mini parser
+        # (harness._mini_yaml), which is exactly the per-machine divergence this
+        # module's docstring exists to forbid.
+        "gate_cmd": 'py -3.12 "%HELMDECK_HOME%/ops/tools/repo_gate.py"',
         "settings": {"policy.auto_accept_green": False,
                      "policy.auto_dispatch_modes": ["do"]},
         "notes": {},
@@ -85,13 +100,17 @@ _DEFAULTS = {
         "stations": ["backlog", "working", "gate", "review"],
         "card_kind": "new_direct_task",
         "deploy_hook": "",
+        # A text repo has no code check, and repo_gate.py would correctly find
+        # nothing - but running it to be told so is theatre. Empty is the honest
+        # value here, and the gate now SAYS "no gate declared" on the timeline
+        # rather than implying it checked something (lanemachine._gate).
+        "gate_cmd": "",
         "settings": {"policy.auto_accept_green": False,
                      "policy.auto_dispatch_modes": ["do", "prepare"]},
-        "notes": {"gate": "Läuft leer - hier gibt es nichts zu kompilieren, "
-                          "der Gate meldet PASS."},
-        "body": ("Kein Deploy, das Gate laeuft leer durch, deine Abnahme bleibt "
-                 "Pflicht. (card_kind steht auf new_direct_task, wird aber noch "
-                 "nicht gelesen - Schuld repo-template-card-kind-unwired.)"),
+        "notes": {"gate": "Läuft leer - dieses Repo deklariert keinen "
+                          "Gate-Befehl, es wird nichts geprüft."},
+        "body": ("Kein Deploy, das Gate laeuft leer durch, Karten arbeiten direkt "
+                 "im Ordner statt im Worktree, deine Abnahme bleibt Pflicht."),
     },
 }
 
@@ -105,7 +124,7 @@ _ORDER = ["software-dev", "documents"]
 # on the one screen whose entire point is *sehen statt konfigurieren*. The prose
 # body is reference material for whoever edits the template; the owner choosing a
 # repo type needs one line.
-_SCALARS = ("id", "label", "who", "summary", "card_kind", "deploy_hook")
+_SCALARS = ("id", "label", "who", "summary", "card_kind", "deploy_hook", "gate_cmd")
 
 
 def _coerce(v):

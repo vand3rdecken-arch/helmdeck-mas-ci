@@ -188,9 +188,14 @@ def sync():
     (control)."""
     from cells.engineer import sessions
     from spine.storage import events
-    policy = events.settings().get("policy") or {}
-    auto_modes = policy.get("auto_dispatch_modes", ["do", "prepare"])
-    auto_accept = bool(policy.get("auto_accept_green"))
+    from spine.ops import projects
+    # PER REPO, not hoisted out of the loop any more. These two knobs are set by
+    # a repo's TEMPLATE (a document repo may prepare a draft on its own; a code
+    # repo may not), and reading them once up here was what forced them to be
+    # workspace-global - the value had to be the same for every card in the
+    # sweep. Resolved at the decision point instead, where the card (and so its
+    # repo) is in hand. projects.policy_for falls back to the workspace value, so
+    # a repo with no template behaves exactly as before.
     with _lock:
         ps = _load()
     tracks = sessions._load()
@@ -209,6 +214,11 @@ def sync():
                           "ready" if s["ready"] else
                           "waiting" if t else "proposed")
             if t:
+                _repo = t.get("repo") or ""
+                auto_modes = projects.policy_for(_repo, "auto_dispatch_modes",
+                                                 ["do", "prepare"])
+                auto_accept = bool(projects.policy_for(_repo, "auto_accept_green",
+                                                       False))
                 want = s["ready"] and t.get("lane") == "backlog"
                 if t.get("up_next") != bool(want):
                     t["up_next"] = bool(want)
@@ -402,11 +412,18 @@ def _autopilot():
     auto = [t for t in tracks if t.get("autopilot") and not t.get("archived")]
     if not auto:
         return
+    from spine.ops import projects
     s = events.settings()
-    auto_accept = bool((s.get("policy") or {}).get("auto_accept_green"))
+    # wip_limit stays global on purpose: it is a property of this MACHINE (how
+    # much load the box takes), not of a repo type - the same call the templates
+    # make (spine/registry/templates.py docstring). auto_accept_green is the
+    # opposite: whose work merges itself is a property of the REPO, so it moves
+    # inside the loop where the card's repo is known.
     headroom = (s["capacity"]["wip_limit"]
                 - sum(1 for t in tracks if t.get("lane") == "working"))
     for t in auto:
+        auto_accept = bool(projects.policy_for(t.get("repo") or "",
+                                               "auto_accept_green", False))
         if t.get("status") == "bounced":
             _auto_resolve(t)
         elif sessions.is_delivered(t) and auto_accept:
