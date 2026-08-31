@@ -186,78 +186,131 @@ def _gate(t):
             problems.append("uncommitted changes:\n" + dirty[:400])
     except Exception as e:
         problems.append("git status failed: %s" % e)
-    # The gate command is defined by the REPO (main) - authoritative, so EVERY
-    # card is verified with the current gate even on an old branch - and it is run
-    # by the DAEMON (full command access), so the agent's permission mode never
-    # blocks the tests. Fall back to the worktree's own gate file if main has none.
+    # WHERE THE GATE COMMAND COMES FROM - falling authority, first hit wins:
+    #   1. `helmdeck.gate` in the REPO (main) - authoritative, so EVERY card is
+    #      verified with the CURRENT gate even on an old branch.
+    #   2. `helmdeck.gate` in the worktree - the branch's own, if main has none.
+    #   3. the repo's TEMPLATE, provisioned per repo into repo_hooks[<repo>].gate
+    #      by projects.apply_template().
+    # A repo that ships its own file always beats the preset: the file is the
+    # repo DECLARING its check, the preset is HelmDeck filling in for a repo that
+    # never declared one. Either way the command is run by the DAEMON (full
+    # command access), so the agent's permission mode never blocks the checks.
+    #
+    # Before (3) existed, a freshly cloned repo resolved NOTHING here: the whole
+    # block was skipped and the card passed the gate station having run zero
+    # checks, with nothing anywhere saying so. That silence is the bug this
+    # resolution order and the else-branch below close.
+    from spine.storage import events
+    cmd, cmd_src = "", ""
     gate_file = os.path.join(t.get("repo") or wt, "helmdeck.gate")
     if not os.path.exists(gate_file):
         gate_file = os.path.join(wt, "helmdeck.gate")
     if os.path.exists(gate_file):
         with open(gate_file, encoding="utf-8") as f:
             cmd = f.read().strip()
+        cmd_src = gate_file
+    if not cmd:
+        _hooks = (events.settings().get("repo_hooks") or {}).get(t.get("repo") or "", {})
+        cmd = ((_hooks or {}).get("gate") or "").strip()
         if cmd:
-            from spine.storage import events
-            from spine.git.locks import _gate_lock_for, _release_heavy
+            cmd_src = "Repo-Vorlage (repo_hooks.gate)"
+    if cmd:
+        from spine.git.locks import _gate_lock_for, _release_heavy
+        from spine.ops.actionlog import ActionLog
+        # run_dir is absent on a few synthetic test fixtures (no real card
+        # was dispatched) - the admission wait note is a courtesy, not a
+        # contract, so degrade to no log rather than KeyError on those.
+        log = ActionLog(t["run_dir"]) if t.get("run_dir") else None
+        st = events.settings()
+        # SILENCE-bounded, not the old fixed 600s wall-clock cap: the LIGHT
+        # gate (ops/tools/run_gate.py, debt gate-light) normally finishes in
+        # seconds, but under box contention it can legitimately run 3-5x
+        # slower (measured, ops/docs/backlog/load-aware-admission) - a wall-clock cap
+        # then reds a gate that never actually stalled. gate_idle_s is total
+        # OUTPUT silence (same shape as _repo_hook's hook_idle_s); an
+        # optional gate_hard_s stays available for a runaway custom gate.
+        def _num(key, default):
+            try:
+                return float(st.get(key) or 0) or default
+            except Exception:
+                return default
+        idle = _num("gate_idle_s", 300.0)
+        hard = _num("gate_hard_s", 0.0)
+        # Which of the three sources won is worth one line on the timeline: a
+        # gate that behaves unexpectedly is almost always the wrong SOURCE
+        # (a stale helmdeck.gate on the branch beating the repo's preset), and
+        # without this the owner sees only the command, never where it came from.
+        if log:
+            log.log("note", "GATE (%s): %s" % (cmd_src, cmd[:200]))
+        # GATE SINGLETON (measured 2026-08-20, Display-Glasses card, debt
+        # item in ops/docs/backlog/load-aware-admission): a second gate on the SAME
+        # tree blocks here instead of racing the first for the box's CPU.
+        with _gate_lock_for(wt):
+            # Run in the worktree (cwd = the code under test), but expose the
+            # MAIN checkout as %HELMDECK_REPO% so the gate can invoke the
+            # CURRENT gate script from main - old branches don't carry
+            # ops/tools/run_gate.py.
+            #
+            # %HELMDECK_HOME% is a SECOND, different root: HelmDeck's own
+            # install. For HelmDeck's own cards the two are equal, which is why
+            # one variable sufficed until now - but a FOREIGN repo's gate has to
+            # reach ops/tools/repo_gate.py, which lives in HelmDeck, not in the
+            # graded repo. Derived from the running code's own location
+            # (daemon.paths.REPO_ROOT), never from a stored path that could go
+            # stale after a move.
+            from daemon.paths import REPO_ROOT as _HD_HOME
+            genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt,
+                        HELMDECK_HOME=_HD_HOME)
+            token = _admit_heavy(t, "gate", log)
+            try:
+                rc, out, why = _run_streamed(cmd, wt, genv, idle, hard)
+            finally:
+                _release_heavy(token)
+        if why:
+            problems.append("gate killed (%s):\n%s\n\n(gate command: %s)"
+                            % (why, out[-1200:], cmd[:120]))
+        # Observed on the live board (card 20260812-164257): a `py -3.12`
+        # gate run via shell=True on Windows can come back with a nonzero
+        # r.returncode while its OWN stdout is a clean ops/tools/run_gate.py
+        # verdict - every check "ok", ending "gate: PASS (34 checks)" - a
+        # shell/launcher exit-code hiccup downstream of the script's own
+        # sys.exit(0), not a real failure. Root cause not pinned (no
+        # AutoRun hook, reproduces clean when replayed by hand) - see debt
+        # [gate-exit-code-vs-stdout-verdict]. run_gate.py's own verdict
+        # line is a REAL signal (the process that printed it did finish
+        # its checks), so prefer it over a returncode that contradicts it;
+        # still hard-fail whenever the verdict itself is missing or red.
+        elif rc != 0 and (_GATE_PASS_RE.search(out) and "=== GATE FAILED (" not in out):
+            print("GATE: returncode %s disagreed with the script's own PASS verdict for %s "
+                  "- trusting the verdict (see debt gate-exit-code-vs-stdout-verdict)"
+                  % (rc, t.get("id")))
+        elif rc != 0:
+            # Lead with the ACTUAL error, not the command - the command alone
+            # (truncated on mobile) is the "ominous, unresolvable" message. An
+            # empty output means the command couldn't even start (missing
+            # interpreter/tool); say so with the exit code instead of nothing.
+            detail = out[-1200:] if out else "(no output - command could not run; exit %s)" % rc
+            problems.append("gate FAILED:\n%s\n\n(gate command: %s)" % (detail, cmd[:120]))
+    else:
+        # NO gate command resolved at all. Deliberately NOT a failure: repos
+        # onboarded before templates existed have no gate file and no preset,
+        # and reddening every one of their cards would be a migration disguised
+        # as a check. But it must not stay SILENT either - "the gate ran and was
+        # happy" and "there was no gate" are different claims, and only the
+        # second was ever true here. Naming it on the card's own timeline is
+        # what makes it fixable (choose a repo type, or drop in a helmdeck.gate).
+        note = ("gate: dieses Repo deklariert keinen Gate-Befehl - es wurde NICHTS "
+                "geprueft. Repo-Typ waehlen (Mehr > Repo) oder eine helmdeck.gate "
+                "ins Repo legen.")
+        print("GATE: no command for %s (%s) - nothing checked"
+              % (t.get("id"), t.get("repo")), flush=True)
+        try:
             from spine.ops.actionlog import ActionLog
-            # run_dir is absent on a few synthetic test fixtures (no real card
-            # was dispatched) - the admission wait note is a courtesy, not a
-            # contract, so degrade to no log rather than KeyError on those.
-            log = ActionLog(t["run_dir"]) if t.get("run_dir") else None
-            st = events.settings()
-            # SILENCE-bounded, not the old fixed 600s wall-clock cap: the LIGHT
-            # gate (ops/tools/run_gate.py, debt gate-light) normally finishes in
-            # seconds, but under box contention it can legitimately run 3-5x
-            # slower (measured, ops/docs/backlog/load-aware-admission) - a wall-clock cap
-            # then reds a gate that never actually stalled. gate_idle_s is total
-            # OUTPUT silence (same shape as _repo_hook's hook_idle_s); an
-            # optional gate_hard_s stays available for a runaway custom gate.
-            def _num(key, default):
-                try:
-                    return float(st.get(key) or 0) or default
-                except Exception:
-                    return default
-            idle = _num("gate_idle_s", 300.0)
-            hard = _num("gate_hard_s", 0.0)
-            # GATE SINGLETON (measured 2026-08-20, Display-Glasses card, debt
-            # item in ops/docs/backlog/load-aware-admission): a second gate on the SAME
-            # tree blocks here instead of racing the first for the box's CPU.
-            with _gate_lock_for(wt):
-                # Run in the worktree (cwd = the code under test), but expose the
-                # MAIN checkout as %HELMDECK_REPO% so the gate can invoke the
-                # CURRENT gate script from main - old branches don't carry
-                # ops/tools/run_gate.py.
-                genv = dict(os.environ, HELMDECK_REPO=t.get("repo") or wt)
-                token = _admit_heavy(t, "gate", log)
-                try:
-                    rc, out, why = _run_streamed(cmd, wt, genv, idle, hard)
-                finally:
-                    _release_heavy(token)
-            if why:
-                problems.append("gate killed (%s):\n%s\n\n(gate command: %s)"
-                                % (why, out[-1200:], cmd[:120]))
-            # Observed on the live board (card 20260812-164257): a `py -3.12`
-            # gate run via shell=True on Windows can come back with a nonzero
-            # r.returncode while its OWN stdout is a clean ops/tools/run_gate.py
-            # verdict - every check "ok", ending "gate: PASS (34 checks)" - a
-            # shell/launcher exit-code hiccup downstream of the script's own
-            # sys.exit(0), not a real failure. Root cause not pinned (no
-            # AutoRun hook, reproduces clean when replayed by hand) - see debt
-            # [gate-exit-code-vs-stdout-verdict]. run_gate.py's own verdict
-            # line is a REAL signal (the process that printed it did finish
-            # its checks), so prefer it over a returncode that contradicts it;
-            # still hard-fail whenever the verdict itself is missing or red.
-            elif rc != 0 and (_GATE_PASS_RE.search(out) and "=== GATE FAILED (" not in out):
-                print("GATE: returncode %s disagreed with the script's own PASS verdict for %s "
-                      "- trusting the verdict (see debt gate-exit-code-vs-stdout-verdict)"
-                      % (rc, t.get("id")))
-            elif rc != 0:
-                # Lead with the ACTUAL error, not the command - the command alone
-                # (truncated on mobile) is the "ominous, unresolvable" message. An
-                # empty output means the command couldn't even start (missing
-                # interpreter/tool); say so with the exit code instead of nothing.
-                detail = out[-1200:] if out else "(no output - command could not run; exit %s)" % rc
-                problems.append("gate FAILED:\n%s\n\n(gate command: %s)" % (detail, cmd[:120]))
+            if t.get("run_dir"):
+                ActionLog(t["run_dir"]).log("note", note)
+        except Exception as e:                                   # noqa: BLE001
+            print("GATE: could not log the no-gate note: %s" % e, flush=True)
     return (not problems), problems
 
 def _merge_to_main(t):
