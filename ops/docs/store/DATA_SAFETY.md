@@ -118,7 +118,7 @@ nimmt ein globaler Block dem Dev-Build sein Overlay (LogBox/Dev-Menü).
 
 ## 4. Privacy-Policy-URL
 
-`https://141.144.227.105.sslip.io/privacy` (DE+EN, in `surfaces/relay/relay.py`
+`https://relay.helmdeck.de/privacy` (DE+EN, in `surfaces/relay/relay.py`
 eingebettet, deployt via `ops/deploy/push_relay.sh`). In Play Console → App
 content → Privacy policy eintragen. Inhalt deckt: Datenarten, E2EE-Relay,
 FCM, Speicherung nur beim Nutzer, Löschung via Entkoppeln, Kontakt.

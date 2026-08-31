@@ -47,7 +47,7 @@ ist deutsch mit englischem Fallback, also beide pflegen.
 > HelmDeck-Installation auf deinem eigenen Rechner. Die Kopplung dauert eine
 > Minute – QR-Code auf dem Desktop scannen, fertig.
 >
-> Datenschutz: https://141.144.227.105.sslip.io/privacy
+> Datenschutz: https://relay.helmdeck.de/privacy
 
 **EN** (~1700 Zeichen):
 
@@ -78,7 +78,7 @@ ist deutsch mit englischem Fallback, also beide pflegen.
 > your own computer. Pairing takes a minute — scan the QR code on your
 > desktop and you're in.
 >
-> Privacy policy: https://141.144.227.105.sslip.io/privacy
+> Privacy policy: https://relay.helmdeck.de/privacy
 
 ## Grafiken
 

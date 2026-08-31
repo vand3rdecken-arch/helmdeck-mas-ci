@@ -72,7 +72,7 @@ umformuliert auf Beta-Kontext.
 | `description` | HelmDeck ist die Begleit-App für deine eigene HelmDeck-Installation: ein Board, auf dem KI-Agenten an echten Aufgaben arbeiten, während du steuerst, Rückfragen beantwortest und Ergebnisse abnimmst — vom Telefon aus. Die App verbindet sich ausschließlich mit deinem eigenen Rechner/Server, Inhalte sind Ende-zu-Ende-verschlüsselt (Curve25519/XSalsa20-Poly1305). Diese Beta ist der interne Testkanal vor einem möglichen Store-Release. |
 | `feedbackEmail` | tienduyvo@googlemail.com |
 | `marketingUrl` | https://helmdeck.de |
-| `privacyPolicyUrl` | https://141.144.227.105.sslip.io/privacy |
+| `privacyPolicyUrl` | https://relay.helmdeck.de/privacy |
 | `tvOsPrivacyPolicy` | *(leer, keine tvOS-App)* |
 
 ### en-US
@@ -82,7 +82,7 @@ umformuliert auf Beta-Kontext.
 | `description` | HelmDeck is the companion app for your own HelmDeck installation: a board where AI agents work on real tasks while you steer, answer questions and approve results — from your phone. The app talks only to your own machine/server; content is end-to-end encrypted (Curve25519/XSalsa20-Poly1305). This beta is the internal test channel ahead of a possible App Store release. |
 | `feedbackEmail` | tienduyvo@googlemail.com |
 | `marketingUrl` | https://helmdeck.de |
-| `privacyPolicyUrl` | https://141.144.227.105.sslip.io/privacy |
+| `privacyPolicyUrl` | https://relay.helmdeck.de/privacy |
 | `tvOsPrivacyPolicy` | *(leer)* |
 
 ⚠ Die Privacy-Policy-Seite (`surfaces/relay/relay.py PRIVACY_HTML`) ist noch auf dem

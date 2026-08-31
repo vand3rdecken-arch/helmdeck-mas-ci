@@ -6,7 +6,7 @@ Screenshots) liegt fertig in diesem Repo:
 
 | Baustein | Wo |
 |---|---|
-| Datenschutz-URL (live nach Relay-Deploy) | `https://141.144.227.105.sslip.io/privacy` — vorher einmal `bash ops/deploy/push_relay.sh` |
+| Datenschutz-URL (live nach Relay-Deploy) | `https://relay.helmdeck.de/privacy` — vorher einmal `bash ops/deploy/push_relay.sh` |
 | Data-Safety-Antworten | `ops/docs/store/DATA_SAFETY.md` (Tabelle §2 abtippen) |
 | Kurz-/Langbeschreibung DE+EN | `ops/docs/store/LISTING.md` |
 | Screenshots (1080×2400) | `ops/docs/store/screenshots/01…04*.png` |
