@@ -260,19 +260,19 @@ def apply_template(repo, template_id, actor="owner"):
                          reason="Vorlage %s fuer %s" % (template_id, repo))
     applied["repo_hooks.deploy"] = entry["deploy"]
     applied["repo_hooks.gate"] = entry["gate"]
-    # -- 2. the global half, honestly labelled as global -----------------------
-    presets = t.get("settings") or {}
-    if presets:
-        patch = {}
-        for dotted, val in presets.items():
-            top, _, sub = dotted.partition(".")
-            if sub:
-                patch.setdefault(top, dict(events.settings().get(top) or {}))[sub] = val
-            else:
-                patch[top] = val
-            applied[dotted] = val
-        events.save_settings(patch, actor=actor,
-                             reason="Vorlage %s fuer %s" % (template_id, repo))
+    # -- 2. the policy presets: RECORDED for this repo, not written globally ---
+    # This used to fan the template's `settings` out through events.save_settings
+    # into the one global settings.json, which meant applying a template to repo
+    # B moved those values for repo A too (debt
+    # repo-template-policy-presets-still-global). The decree is "pro Repo", so
+    # the presets now live where the rest of the repo's answer already lives:
+    # the project record. `applied` was ALREADY the snapshot of what the template
+    # set - it just had no reader. policy_for() is that reader.
+    #
+    # Nothing is lost for repos without a template: policy_for falls through to
+    # the global settings value, which stays the workspace default it always was.
+    for dotted, val in (t.get("settings") or {}).items():
+        applied[dotted] = val
     # -- 3. the record ---------------------------------------------------------
     p["template"] = template_id
     p["applied"] = applied
@@ -307,6 +307,41 @@ def set_override(repo, key, value, actor="owner"):
     db.project_put(p)
     _audit("override_set", p["repo"], actor, key=key, value=value)
     return p
+
+
+def policy_for(repo, key, default=None):
+    """The value `policy.<key>` has FOR THIS REPO. THE reader of the per-repo
+    presets (debt repo-template-policy-presets-still-global).
+
+    Three recorded facts, in falling order - never a reconstruction:
+      1. `overrides` - the owner deliberately moved this key for this repo;
+      2. `applied`   - what the repo's template set when it was applied;
+      3. the global settings value - the workspace default, which is what a repo
+         with no template has always used and still uses.
+
+    Total: an unknown repo, a missing record or an unreadable db all mean "no
+    per-repo answer", which falls through to (3). A repo config problem may cost
+    the customisation, never the caller's decision.
+
+    Callers pass the SUB-key (`auto_accept_green`), matching how they read it
+    from the settings blob; the dotted form is this function's business."""
+    dotted = "policy." + str(key or "")
+    try:
+        p = for_repo(repo) if repo else None
+    except Exception as e:                                   # noqa: BLE001
+        print("projects: per-repo policy for %s unreadable (%s) - using the "
+              "workspace default" % (repo, e), flush=True)
+        p = None
+    if p:
+        ov = p.get("overrides") or {}
+        if dotted in ov:
+            return ov[dotted]
+        ap = p.get("applied") or {}
+        if dotted in ap:
+            return ap[dotted]
+    from spine.storage import events
+    v = (events.settings().get("policy") or {}).get(key)
+    return default if v is None else v
 
 
 def _live(dotted):
@@ -350,6 +385,15 @@ def resolve(repo):
             now = hook
         elif dotted == "repo_hooks.gate":
             now = gate_cmd
+        elif dotted.startswith("policy."):
+            # Per-repo since the presets stopped being global: comparing against
+            # the WORKSPACE value here would report a deviation for every repo
+            # whose template legitimately differs from the workspace default -
+            # the map would light up permanently and mean nothing. The honest
+            # comparison is the value in force FOR THIS REPO against what its
+            # template set, which makes a deviation exactly what the word says:
+            # the owner moved it.
+            now = policy_for(path, dotted[len("policy."):])
         else:
             now = _live(dotted)
         if now != was:

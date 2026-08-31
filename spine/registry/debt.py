@@ -3691,7 +3691,7 @@ DEBT = [
     {
         "id": "repo-template-card-kind-unwired",
         "title": "A repo template declares its card kind, and nothing reads it",
-        "status": "open",
+        "status": "paid",
         "what": "ops/harness/templates/*.md carry `card_kind` (new_track for "
                 "software-dev, new_direct_task for documents) and "
                 "spine/ops/projects.resolve() surfaces it, but no caller "
@@ -3710,18 +3710,31 @@ DEBT = [
                         "screen starts lying again.",
         "trigger": "the owner onboards a real document repo and expects its "
                    "cards to skip the worktree without saying so per card.",
-        "fix": "OPEN. Have the card-creation path read "
-               "projects.resolve(repo)['card_kind'] as the DEFAULT entry point "
-               "(dispatch.new_track vs dispatch.new_direct_task) when the "
-               "caller did not pick one explicitly - one reader, at the one "
-               "place a card is born, not a flag copied onto every card.",
+        "fix": "PAID 2026-08-31. dispatch.new_track - the one place a card is "
+               "born, every other entry point wraps it - now resolves the kind "
+               "BEFORE the branch name, because they are the same decision: a "
+               "live-tree card carries DIRECT_BRANCH and never gets a worktree. "
+               "Precedence: an explicit card_kind= argument, else the branch "
+               "sentinel a wrapper already passed, else _repo_default_kind() - "
+               "THE single reader of projects.resolve(repo)['card_kind']. So the "
+               "repo default only ever fills a silence and can never override a "
+               "caller. The three direct-card fields (machine/direct/worktree) "
+               "moved into new_track too, so a card born from the repo default "
+               "and one born from new_direct_task are the same object, not two "
+               "lookalikes. The guards are NOT bypassable: policy.machine.enabled, "
+               "a real .git, machine_root_ok are re-checked on the default path, "
+               "and a repo that fails them falls back to the worktree LOUDLY "
+               "rather than silently doing something other than the template "
+               "promised. A direct card also adopts policy.machine's perm, or it "
+               "would stall on its own git write. Pinned: "
+               "ops/tests/test_repo_template_wiring.py.",
         "order": 51,
     },
     {
         "id": "repo-template-policy-presets-still-global",
         "title": "A repo template's policy.* presets are workspace-wide, so two "
                  "repos still overwrite each other",
-        "status": "open",
+        "status": "paid",
         "what": "spine/ops/projects.apply_template() writes the per-repo half "
                 "(repo_hooks.<repo>.deploy) truly per repo, but its `settings` "
                 "presets (policy.auto_accept_green, policy.auto_dispatch_modes) "
@@ -3741,12 +3754,26 @@ DEBT = [
                         "being applied after it.",
         "trigger": "the owner runs two repos of different types side by side "
                    "and cares that autonomy differs between them.",
-        "fix": "OPEN. Either resolve these keys through "
-               "projects.resolve(repo)['overrides'] at every READ site (the "
-               "honest per-repo answer, and the reason `overrides` already "
-               "exists), or drop them from the templates and leave autonomy to "
-               "the dial - which is where PRD §9 A already sent "
-               "capacity.wip_limit for the same reason.",
+        "fix": "PAID 2026-08-31, via the first of the two options. "
+               "apply_template() no longer fans the template's `settings` out "
+               "through events.save_settings; it records them in the project "
+               "record's `applied`, which was ALREADY the snapshot of what the "
+               "template set and simply had no reader. projects.policy_for(repo, "
+               "key, default) is that reader: overrides -> applied -> the global "
+               "settings value, three recorded facts in falling order, total on "
+               "a missing/unreadable record. Both real read sites consume it - "
+               "processes.sync() and processes._autopilot() no longer hoist the "
+               "values above their loops (the hoist was WHY they had to be "
+               "global) and resolve at the decision point, where the card's repo "
+               "is in hand. capacity.wip_limit deliberately stays workspace-wide: "
+               "it is a property of the machine, per PRD §9 A. resolve()'s "
+               "deviation check compares per-repo now, or every repo whose "
+               "template legitimately differs from the workspace default would "
+               "show a permanent phantom deviation. A repo with no template is "
+               "unchanged: it falls through to the same global value as before. "
+               "Pinned: ops/tests/test_repo_template_wiring.py, including that an "
+               "override on repo B leaks neither to repo A nor into the "
+               "workspace default.",
         "order": 52,
     },
     {
