@@ -5,7 +5,10 @@
 #   - native change (a native module, permission, app.json plugin, manifest)
 #     -> build a fresh APK, emulator-smoke it, distribute it (ops/deploy/build_apk.sh),
 #        THEN also push a matching OTA so the relay bundle can't revert the APK's JS.
-# Native-vs-JS is decided by a fingerprint of the files that change the APK.
+# Native-vs-JS is decided by a fingerprint of the files that change the APK,
+# stored as a shared git ref (refs/helmdeck/last-native-fp) so every worktree
+# checkout sees the same value - see the LAST= comment below for why a plain
+# file broke this.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
 
@@ -163,7 +166,15 @@ PY
 
 KT_START="$(kt_fp)"
 CUR="$(combine_fp "$(cfg_fp)" "$KT_START")"
-LAST="$(cat ops/deploy/.native_fp 2>/dev/null || true)"
+# Stored as a git ref (refs/helmdeck/last-native-fp -> a blob holding the
+# hash string), NOT a working-tree file (measured 2026-08-31: a plain file
+# under ops/deploy/ is gitignored, so `git worktree add` never copies it -
+# every worktree-based card started from an EMPTY LAST and re-detected
+# "native change" on its very first ship, no matter how trivial the diff.
+# Refs live in the shared .git object database every worktree points at, so
+# this reads/writes the same value regardless of which checkout ship.sh
+# runs from - the class of bug this is fixing, not just a data-format swap).
+LAST="$(git cat-file -p refs/helmdeck/last-native-fp 2>/dev/null || true)"
 
 # WHO DECIDES (owner decree 2026-08-30). This script used to be both decider and
 # executor: the hash above, compared against a STORED file, chose OTA vs APK,
@@ -255,7 +266,10 @@ else
   # mutation is this build's own deterministic output) + START-time SOURCES
   # (a module created while gradle ran is NOT in this APK - measured
   # 2026-08-23, the livemic near-miss). See kt_fp's header.
-  combine_fp "$(cfg_fp)" "$KT_START" > ops/deploy/.native_fp
+  NEWFP="$(combine_fp "$(cfg_fp)" "$KT_START")"
+  BLOB="$(printf '%s' "$NEWFP" | git hash-object -w --stdin)" \
+    && git update-ref refs/helmdeck/last-native-fp "$BLOB" \
+    || echo "[ship] WARN: could not record the native fingerprint ref - the next accept may re-detect this as a native change"
 fi
 # Report what ACTUALLY ran, from the branch we actually took. This line used to
 # re-derive it from the hash ($LAST/$CUR), which was harmless while the hash was
