@@ -64,14 +64,32 @@ fi
 ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' <<'REMOTE'
 set -e
 # the systemd unit on this VM runs /opt/helmdeck-relay.py (installed that
-# way originally); keep /opt/relay.py in sync for older docs
+# way originally); keep /opt/relay.py in sync for older docs.
+#
+# ONLY restart the live service when relay.py's content actually changed.
+# A restart drops every in-flight long-poll on the phone/desktop bridge for
+# ~2s - fine for a real relay.py change, but this script also runs on EVERY
+# APK-only ship (native build success), and running it repeatedly (a caller
+# retrying, a stale native-change detector re-triggering) was restarting a
+# byte-identical relay.py every ~20-35 min for days (measured 2026-08-28
+# onward via `sudo grep helmdeck-relay /var/log/auth.log` - same md5 every
+# time), which is what made the phone/desktop show "verbindet neu" on a
+# schedule that had nothing to do with real relay changes.
+NEED_RESTART=1
+if [ -f /opt/helmdeck-relay.py ] && cmp -s /tmp/relay.py /opt/helmdeck-relay.py; then
+  NEED_RESTART=0
+fi
 sudo install -m755 /tmp/relay.py /opt/helmdeck-relay.py
 sudo install -m755 /tmp/relay.py /opt/relay.py
 sudo mkdir -p /opt/helmdeck-apk
 [ -f /tmp/helmdeck.apk ] && sudo install -m644 /tmp/helmdeck.apk /opt/helmdeck-apk/helmdeck.apk
 [ -f /tmp/version.json ] && sudo install -m644 /tmp/version.json /opt/helmdeck-apk/version.json
-sudo systemctl restart helmdeck-relay
-sleep 2
+if [ "$NEED_RESTART" = "1" ] || ! systemctl is-active --quiet helmdeck-relay; then
+  sudo systemctl restart helmdeck-relay
+  sleep 2
+else
+  echo "relay.py unchanged - skipping restart (no reason to drop live connections)"
+fi
 systemctl is-active helmdeck-relay
 REMOTE
 # The ssh block above had NO error check for its whole life, so a remote that
