@@ -656,7 +656,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
           {msgs.length === 0 && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
-            : <Transcript me={me?.name} steps={(() => {
+            : <Transcript me={me?.name} ctxWindow={stats?.ctx_window} steps={(() => {
                 const s = msgs.map((m) => toStep(m, me?.name, tr));
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.

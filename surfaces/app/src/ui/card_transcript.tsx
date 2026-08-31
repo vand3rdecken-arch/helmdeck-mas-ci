@@ -213,15 +213,20 @@ function RunningClock({ ta, t }: { ta?: number; t: ThemeTokens }) {
 
 // Per-turn context/token usage (DeepSeek / Claude-Code parity): a compact chip
 // showing what THIS turn cost and the context it carried. ctx is everything the
-// model saw (input + cache read + cache write); the 200k window drives the %.
-const CTX_WINDOW = 200_000;
+// model saw (input + cache read + cache write). The window is the CALLER's
+// evidence (ctx_window off the card/session, same source ui/context_meter.tsx
+// uses) - a hardcoded 200_000 here once showed "100%" on a 601k/1M-window
+// session (60% actually full), because a [1m] model's window is 1M, not 200k.
+// 200_000 survives only as the last-resort fallback for a caller with no
+// window evidence at all, same as ContextMeter's own fallback.
+const CTX_WINDOW_FALLBACK = 200_000;
 function tokK(n?: number): string {
   const v = n ?? 0;
   return v >= 1000 ? `${(v / 1000).toFixed(v >= 10_000 ? 0 : 1)}k` : `${v}`;
 }
-function UsageChip({ s, t }: { s: TStep; t: ThemeTokens }) {
+function UsageChip({ s, t, ctxWindow }: { s: TStep; t: ThemeTokens; ctxWindow?: number }) {
   const ctx = s.ctx ?? 0;
-  const pct = Math.min(100, Math.round((ctx / CTX_WINDOW) * 100));
+  const pct = Math.min(100, Math.round((ctx / (ctxWindow || CTX_WINDOW_FALLBACK)) * 100));
   const cached = (s.cacheRead ?? 0) > 0;
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3, paddingHorizontal: 2, flexWrap: "wrap" }}>
@@ -373,7 +378,7 @@ function readable(steps: TStep[]): TStep[] {
   return out;
 }
 
-export function Transcript({ steps: rawSteps, onRewind, me }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string }) {
+export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string; ctxWindow?: number }) {
   const t = useTheme();
   const tr = useT();
   const steps = readable(rawSteps);
@@ -441,7 +446,7 @@ export function Transcript({ steps: rawSteps, onRewind, me }: { steps: TStep[]; 
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
             </View>);
         }
-        if (kind === "usage") return <UsageChip key={key} s={s} t={t} />;
+        if (kind === "usage") return <UsageChip key={key} s={s} t={t} ctxWindow={ctxWindow} />;
         if (kind === "tool") return <ToolCard key={key} s={s} t={t} defaultOpen={i === lastToolIdx} />;
         if (kind === "todos") return <Todos key={key} s={s} t={t} />;
         if (kind === "plan") return (
