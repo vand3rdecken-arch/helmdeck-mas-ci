@@ -489,7 +489,7 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
           {steps.length === 0 ? (
             <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />
           ) :
-            <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
+            <Transcript steps={steps} ctxWindow={k.ctx_window} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
         </ChatScroll>
       </View>
 
