@@ -41,6 +41,22 @@ export const onboard: Dict = {
   "onboard.engineTier.agent-install": { de: "Claude installiert es für dich", en: "Claude installs it for you" },
   "onboard.engineTier.detect-only": { de: "nur Status, keine Installation", en: "status only, no install" },
 
+  // ---- repo type, the last onboarding step (ui/repo_type_picker.tsx) ------
+  // Provisioning installs an instance; it does not say what the user works on.
+  // This step is what turns a running HelmDeck into one that knows how THIS
+  // repo runs - which stations, which gate command, which deploy hook.
+  "onboard.repoTitle": { de: "Woran arbeitest du?", en: "What do you work on?" },
+  "onboard.repoSub": {
+    de: "Ein Ordner und eine Frage: Was für ein Repo ist das? Den Rest belegt die Vorlage vor.",
+    en: "One folder and one question: what kind of repo is this? The template presets the rest.",
+  },
+  "onboard.repoIntro": {
+    de: "Wähle den Ordner, in dem gearbeitet wird, und dann seinen Typ. Der Typ entscheidet, ob jede Karte einen eigenen Worktree bekommt, was das Gate prüft und ob es einen Deploy gibt. Änderbar bleibt alles später.",
+    en: "Pick the folder the work happens in, then its type. The type decides whether each card gets its own worktree, what the gate checks, and whether there is a deploy. All of it stays changeable later.",
+  },
+  "onboard.repoNext": { de: "Weiter", en: "Continue" },
+  "onboard.repoLater": { de: "Später einrichten", en: "Set this up later" },
+
   // ---- sign in / register (ui/login_screen.tsx) ---------------------------
   // The error the daemon returns on a failed attempt is NOT here - routes_auth
   // speaks through daemon/i18n.py, so it arrives already in the right language.
