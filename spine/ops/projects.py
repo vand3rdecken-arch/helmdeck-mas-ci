@@ -241,15 +241,25 @@ def apply_template(repo, template_id, actor="owner"):
         raise ValueError("kein Repo-Pfad angegeben")
     repo = p["repo"]
     applied = {}
-    # -- 1. the per-repo half: the deploy hook lives under repo_hooks[<repo>] --
+    # -- 1. the per-repo half: deploy hook AND gate command, under repo_hooks --
+    # The gate command joined the deploy hook here because they have the same
+    # shape (a shell command that belongs to ONE repo) but opposite defaults: an
+    # empty deploy hook is harmless ("nothing to ship"), an empty gate command
+    # means the card clears the gate station having checked nothing. Before this,
+    # a freshly cloned repo had no gate at all and nothing said so -
+    # lanemachine._gate simply found no helmdeck.gate and skipped the block.
+    # A helmdeck.gate file IN the repo still wins over this preset (_gate's
+    # resolution order): the file is the repo declaring its own check.
     from spine.storage import events
     hooks = dict(events.settings().get("repo_hooks") or {})
     entry = dict(hooks.get(repo) or {})
     entry["deploy"] = t.get("deploy_hook", "")
+    entry["gate"] = t.get("gate_cmd", "")
     hooks[repo] = entry
     events.save_settings({"repo_hooks": hooks}, actor=actor,
                          reason="Vorlage %s fuer %s" % (template_id, repo))
     applied["repo_hooks.deploy"] = entry["deploy"]
+    applied["repo_hooks.gate"] = entry["gate"]
     # -- 2. the global half, honestly labelled as global -----------------------
     presets = t.get("settings") or {}
     if presets:
@@ -330,11 +340,18 @@ def resolve(repo):
     overrides = (p or {}).get("overrides") or {}
 
     from spine.storage import events
-    hook = ((events.settings().get("repo_hooks") or {}).get(path) or {}).get("deploy", "")
+    _entry = (events.settings().get("repo_hooks") or {}).get(path) or {}
+    hook = _entry.get("deploy", "")
+    gate_cmd = _entry.get("gate", "")
 
     deviations = []
     for dotted, was in applied.items():
-        now = hook if dotted == "repo_hooks.deploy" else _live(dotted)
+        if dotted == "repo_hooks.deploy":
+            now = hook
+        elif dotted == "repo_hooks.gate":
+            now = gate_cmd
+        else:
+            now = _live(dotted)
         if now != was:
             deviations.append({"key": dotted, "template_value": was, "value": now,
                                "explicit": dotted in overrides})
@@ -354,6 +371,13 @@ def resolve(repo):
         "stations": list((t or {}).get("stations") or []),
         "station_notes": dict((t or {}).get("notes") or {}),
         "deploy_hook": hook,
+        # The gate command IN FORCE for this repo as far as settings know. It is
+        # deliberately not the whole answer: a `helmdeck.gate` file inside the
+        # repo outranks it (lanemachine._gate), and this record cannot see that
+        # file. So the map may say "the template set this" while the repo's own
+        # file is what actually runs - which is why _gate logs the SOURCE it
+        # used on the card timeline rather than leaving the owner to infer it.
+        "gate_cmd": gate_cmd,
         "applied": applied,
         "overrides": overrides,
         "deviations": deviations,

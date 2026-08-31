@@ -6,9 +6,10 @@ summary: Kein Deploy · Gate läuft leer · Entwürfe allein, Senden nicht · Ab
 stations: backlog, working, gate, review
 card_kind: new_direct_task
 deploy_hook: ""
+gate_cmd: ""
 settings.policy.auto_accept_green: false
 settings.policy.auto_dispatch_modes: ["do", "prepare"]
-note.gate: Läuft leer - hier gibt es nichts zu kompilieren, der Gate meldet PASS.
+note.gate: Läuft leer - dieses Repo deklariert keinen Gate-Befehl, es wird nichts geprüft.
 ---
 
 Fuer Repos, in denen geschrieben statt gebaut wird: Angebote, Vertraege,
@@ -18,19 +19,22 @@ Dokumentation, Freigabe-Unterlagen.
 weg - ein leerer `repo_hooks.<repo>.deploy` heisst schlicht, dass er nicht
 passiert (`lanemachine.py:648`).
 
-**Direkt im Ordner statt im Worktree - angemeldet, noch nicht automatisch.**
-`card_kind: new_direct_task` steht als Repo-Default in dieser Vorlage, aber
-gelesen wird er noch von niemandem: ob eine Karte einen Worktree bekommt,
-entscheidet bis heute die Karte, nicht das Repo. Deshalb verspricht die Vorlage
-es hier NICHT - sag es weiter pro Karte, bis die Schuld
-`repo-template-card-kind-unwired` bezahlt ist.
+**Direkt im Ordner statt im Worktree.** `card_kind: new_direct_task` ist der
+Repo-Default dieser Vorlage, und er wird jetzt auch gelesen: eine Karte, die
+fuer dieses Repo entsteht, ohne dass jemand die Art ausdruecklich waehlt,
+arbeitet im echten Ordner statt in einer Kopie (`dispatch.new_track`).
+Voraussetzung ist, dass `policy.machine.enabled` an ist und der Ordner in der
+erlaubten Wurzel liegt - sonst faellt die Karte hoerbar auf den Worktree
+zurueck, statt still etwas anderes zu tun, als die Vorlage verspricht.
 
 **Das Gate bleibt an - und das ist kein Versehen.** Es laesst sich nicht
-abschalten (Harness-Gesetz), aber es findet in einem Text-Repo nichts zu
-kompilieren und meldet `"gate: nothing to run on this branch - PASS"`
-(`run_gate.py:68-70`). Die Karte beschriftet die Station deshalb als *"laeuft
-leer"*, statt so zu tun, als waere sie aus. Der Unterschied zwischen einer
-ehrlichen Anzeige und einem Gesetzesbruch.
+abschalten (Harness-Gesetz), aber in einem Text-Repo gibt es keinen
+Code-Check: `gate_cmd` ist hier bewusst leer. Die Station laeuft, schreibt
+ausdruecklich *"dieses Repo deklariert keinen Gate-Befehl - es wurde NICHTS
+geprueft"* auf die Karten-Timeline und laesst die Karte durch. Die Karte
+beschriftet die Station deshalb als *"laeuft leer"*, statt so zu tun, als waere
+sie aus - und statt so zu tun, als haette sie etwas geprueft. Der Unterschied
+zwischen einer ehrlichen Anzeige und einem Gesetzesbruch.
 
 **Entwuerfe darf der Agent allein anfangen, senden nicht.**
 `policy.auto_dispatch_modes` steht auf `do` und `prepare`: vorbereiten ja, der
