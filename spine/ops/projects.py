@@ -241,28 +241,38 @@ def apply_template(repo, template_id, actor="owner"):
         raise ValueError("kein Repo-Pfad angegeben")
     repo = p["repo"]
     applied = {}
-    # -- 1. the per-repo half: the deploy hook lives under repo_hooks[<repo>] --
+    # -- 1. the per-repo half: deploy hook AND gate command, under repo_hooks --
+    # The gate command joined the deploy hook here because they have the same
+    # shape (a shell command that belongs to ONE repo) but opposite defaults: an
+    # empty deploy hook is harmless ("nothing to ship"), an empty gate command
+    # means the card clears the gate station having checked nothing. Before this,
+    # a freshly cloned repo had no gate at all and nothing said so -
+    # lanemachine._gate simply found no helmdeck.gate and skipped the block.
+    # A helmdeck.gate file IN the repo still wins over this preset (_gate's
+    # resolution order): the file is the repo declaring its own check.
     from spine.storage import events
     hooks = dict(events.settings().get("repo_hooks") or {})
     entry = dict(hooks.get(repo) or {})
     entry["deploy"] = t.get("deploy_hook", "")
+    entry["gate"] = t.get("gate_cmd", "")
     hooks[repo] = entry
     events.save_settings({"repo_hooks": hooks}, actor=actor,
                          reason="Vorlage %s fuer %s" % (template_id, repo))
     applied["repo_hooks.deploy"] = entry["deploy"]
-    # -- 2. the global half, honestly labelled as global -----------------------
-    presets = t.get("settings") or {}
-    if presets:
-        patch = {}
-        for dotted, val in presets.items():
-            top, _, sub = dotted.partition(".")
-            if sub:
-                patch.setdefault(top, dict(events.settings().get(top) or {}))[sub] = val
-            else:
-                patch[top] = val
-            applied[dotted] = val
-        events.save_settings(patch, actor=actor,
-                             reason="Vorlage %s fuer %s" % (template_id, repo))
+    applied["repo_hooks.gate"] = entry["gate"]
+    # -- 2. the policy presets: RECORDED for this repo, not written globally ---
+    # This used to fan the template's `settings` out through events.save_settings
+    # into the one global settings.json, which meant applying a template to repo
+    # B moved those values for repo A too (debt
+    # repo-template-policy-presets-still-global). The decree is "pro Repo", so
+    # the presets now live where the rest of the repo's answer already lives:
+    # the project record. `applied` was ALREADY the snapshot of what the template
+    # set - it just had no reader. policy_for() is that reader.
+    #
+    # Nothing is lost for repos without a template: policy_for falls through to
+    # the global settings value, which stays the workspace default it always was.
+    for dotted, val in (t.get("settings") or {}).items():
+        applied[dotted] = val
     # -- 3. the record ---------------------------------------------------------
     p["template"] = template_id
     p["applied"] = applied
@@ -299,6 +309,41 @@ def set_override(repo, key, value, actor="owner"):
     return p
 
 
+def policy_for(repo, key, default=None):
+    """The value `policy.<key>` has FOR THIS REPO. THE reader of the per-repo
+    presets (debt repo-template-policy-presets-still-global).
+
+    Three recorded facts, in falling order - never a reconstruction:
+      1. `overrides` - the owner deliberately moved this key for this repo;
+      2. `applied`   - what the repo's template set when it was applied;
+      3. the global settings value - the workspace default, which is what a repo
+         with no template has always used and still uses.
+
+    Total: an unknown repo, a missing record or an unreadable db all mean "no
+    per-repo answer", which falls through to (3). A repo config problem may cost
+    the customisation, never the caller's decision.
+
+    Callers pass the SUB-key (`auto_accept_green`), matching how they read it
+    from the settings blob; the dotted form is this function's business."""
+    dotted = "policy." + str(key or "")
+    try:
+        p = for_repo(repo) if repo else None
+    except Exception as e:                                   # noqa: BLE001
+        print("projects: per-repo policy for %s unreadable (%s) - using the "
+              "workspace default" % (repo, e), flush=True)
+        p = None
+    if p:
+        ov = p.get("overrides") or {}
+        if dotted in ov:
+            return ov[dotted]
+        ap = p.get("applied") or {}
+        if dotted in ap:
+            return ap[dotted]
+    from spine.storage import events
+    v = (events.settings().get("policy") or {}).get(key)
+    return default if v is None else v
+
+
 def _live(dotted):
     """The value a dotted settings path has RIGHT NOW. `repo_hooks.deploy` is
     resolved per repo by the caller, everything else is a global settings read."""
@@ -330,11 +375,27 @@ def resolve(repo):
     overrides = (p or {}).get("overrides") or {}
 
     from spine.storage import events
-    hook = ((events.settings().get("repo_hooks") or {}).get(path) or {}).get("deploy", "")
+    _entry = (events.settings().get("repo_hooks") or {}).get(path) or {}
+    hook = _entry.get("deploy", "")
+    gate_cmd = _entry.get("gate", "")
 
     deviations = []
     for dotted, was in applied.items():
-        now = hook if dotted == "repo_hooks.deploy" else _live(dotted)
+        if dotted == "repo_hooks.deploy":
+            now = hook
+        elif dotted == "repo_hooks.gate":
+            now = gate_cmd
+        elif dotted.startswith("policy."):
+            # Per-repo since the presets stopped being global: comparing against
+            # the WORKSPACE value here would report a deviation for every repo
+            # whose template legitimately differs from the workspace default -
+            # the map would light up permanently and mean nothing. The honest
+            # comparison is the value in force FOR THIS REPO against what its
+            # template set, which makes a deviation exactly what the word says:
+            # the owner moved it.
+            now = policy_for(path, dotted[len("policy."):])
+        else:
+            now = _live(dotted)
         if now != was:
             deviations.append({"key": dotted, "template_value": was, "value": now,
                                "explicit": dotted in overrides})
@@ -354,6 +415,13 @@ def resolve(repo):
         "stations": list((t or {}).get("stations") or []),
         "station_notes": dict((t or {}).get("notes") or {}),
         "deploy_hook": hook,
+        # The gate command IN FORCE for this repo as far as settings know. It is
+        # deliberately not the whole answer: a `helmdeck.gate` file inside the
+        # repo outranks it (lanemachine._gate), and this record cannot see that
+        # file. So the map may say "the template set this" while the repo's own
+        # file is what actually runs - which is why _gate logs the SOURCE it
+        # used on the card timeline rather than leaving the owner to infer it.
+        "gate_cmd": gate_cmd,
         "applied": applied,
         "overrides": overrides,
         "deviations": deviations,
