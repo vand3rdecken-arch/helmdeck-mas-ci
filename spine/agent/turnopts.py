@@ -240,17 +240,28 @@ def pick_model(text, has_attach=False, signals=None):
     # back-compat one-shot flag; either one means "escalate the retry".
     fails = int(s.get("fails") or 0)
     failed = bool(s.get("failed")) or fails > 0
-    # STRONG tier - structural, stakes, or proven-hard signals (any one):
-    #   real work in the prompt (attachment / long / code) OR a high-stakes card
-    #   (urgent|high priority, or >= HIGH_VALUE) OR it already FAILED (bounce/gate
-    #   -> escalate the retry) OR it's dragged on (turns >= ESCALATE_TURNS) OR
-    #   hard keywords. The failed/turns paths are "escalate on measured evidence"
-    #   - the next turn after a rejection gets the strong model, no retry loop.
+    # STRONG tier - structural/stakes signals (any one): a high-stakes card
+    # (urgent|high priority, or >= HIGH_VALUE) OR it already FAILED (bounce/gate
+    # -> escalate the retry) OR it's dragged on (turns >= ESCALATE_TURNS) OR an
+    # attachment (deliberate, rare - real evidence of work) OR hard keywords in
+    # the text. The failed/turns paths are "escalate on measured evidence" -
+    # the next turn after a rejection gets the strong model, no retry loop.
     # every return goes through fits_window: the tier answers "how hard is this
     # turn", the window answers "can that model still carry the conversation".
     # Both must hold, and the second one is not negotiable - see CTX_WINDOWS.
+    #
+    # Bare length and a stray ``` used to be STRONG triggers too, contradicting
+    # this function's own doctrine ("text is only a weak, secondary signal -
+    # structural signals win", see module header). Every real HelmDeck card
+    # description easily runs past 600 chars or quotes a filename/function in
+    # backticks, so that pair fired on ~80% of ordinary cards (measured
+    # 2026-08-31 from daemon/events.jsonl: 144/285 recent turns landed pure
+    # claude-opus-5 vs. 26 pure claude-sonnet-5) and starved Sonnet as the
+    # everyday default the owner expects for a plain no-model card. Dropped;
+    # _HARD keyword match is the text signal that actually correlates with
+    # real difficulty.
     ctx = s.get("ctx_tokens")
-    if (has_attach or len(t) > 600 or "```" in t
+    if (has_attach
             or prio in ("urgent", "high")
             or (value and value >= HIGH_VALUE)
             or failed
