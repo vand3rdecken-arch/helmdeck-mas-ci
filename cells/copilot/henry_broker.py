@@ -22,6 +22,7 @@ import re
 import subprocess
 import threading
 import time
+import traceback
 
 from daemon.paths import DAEMON_ROOT as ROOT
 from spine.registry import escalations
@@ -651,10 +652,14 @@ def _loop():
                     _give_up(esc)
                     continue
                 _decide(esc)
-        except Exception as e:
+        except Exception:
             # never die, but never be SILENT either - an invisible broken broker
-            # is exactly the class of failure Henry exists to end.
-            print("henry: loop error:", str(e)[:200])
+            # is exactly the class of failure Henry exists to end. Full
+            # traceback, not str(e): SystemErrors from C-level builtins
+            # (os.kill, os.fspath, ...) put nothing useful in str(e) - the
+            # cause lives in __cause__/__context__, which only the traceback
+            # module walks (ops/docs/backlog/henry-loop-error-swallowed-traceback).
+            print("henry: loop error:\n" + traceback.format_exc())
         time.sleep(_INTERVAL_S)
 
 
