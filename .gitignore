@@ -181,3 +181,11 @@ surfaces/app/modules/livemic/android/libs/
 # gets written here (a shell here-string is flattened by the rtk hook into
 # pathspecs). Ignored because `git add -A` swept one into a commit, 2026-08-29.
 .git-commit-msg.tmp
+
+# Scratch from the local verification tools: the classes
+# ops/tests/wear_chat_rows.py compiles, the AAR an API check unpacks, and the
+# judging screenshots ops/tests/e2e_chat_scroll.py writes. All reproducible,
+# none of it source. (*.log already covers the expo dev-server log.)
+.wear_rows_check/
+.wearaar/
+shot_chat_scroll_*.png

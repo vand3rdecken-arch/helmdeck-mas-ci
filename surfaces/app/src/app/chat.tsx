@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Keyboard, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
@@ -18,6 +18,7 @@ import { planLabel, useAiFlat } from "@/ui/billing";
 import { Composer, type Recipient } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import * as outbox from "@/data/outbox";
 import { ContextMeter } from "@/ui/context_meter";
@@ -253,8 +254,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     return () => { alive = false; clearTimeout(to); };
   }, [busy, takeClips]);
   const qc = useQueryClient();
-  const scroll = useRef<ScrollView>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  // The scroller (and its "↓ Neueste" pill) is ui/chat_scroll.tsx - the SAME
+  // component the card chat uses. The hand-rolled copy that used to live here
+  // positioned the pill against a wrapper that also held the composer stack, so
+  // the composer swallowed every tap on it (owner report 2026-08-31).
+  const scroll = useRef<ChatScrollHandle>(null);
   // Edge-to-edge (Expo SDK 57) makes Android ignore adjustResize, so the composer
   // hides behind the keyboard. Measure the keyboard height and lift the content
   // manually (a height:kb spacer) - works on both platforms without a native lib.
@@ -387,15 +391,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // board chat has always been and must stay when no card is asking.
   const replyTarget = openQ?.card ? `card:${openQ.card}` : undefined;
 
-  // auto-pin to newest (incl. the PM's proactive messages) when already near the
-  // bottom - same pattern as the card chat, so opening lands you at the latest.
-  useEffect(() => {
-    if (atBottom) setTimeout(() => scroll.current?.scrollToEnd({ animated: false }), 30);
-  }, [msgs.length, atBottom]);
-  const onScroll = (e: { nativeEvent: { contentOffset: { y: number }; contentSize: { height: number }; layoutMeasurement: { height: number } } }) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    setAtBottom(contentSize.height - contentOffset.y - layoutMeasurement.height < 60);
-  };
+  // Auto-pin to newest lives in ChatScroll now, driven by the scroll view's own
+  // content-size/layout signals rather than by `msgs.length` - the count does
+  // not move while Henry STREAMS into the last bubble, which is exactly when
+  // following the conversation matters most.
 
   // baseline = this occurrence's rank among same-text user messages already
   // visible (server + pending) at queue time - see the reconcile effect above.
@@ -487,7 +486,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       if (turn.current !== id) return;
       appendReply(id, { cls: "error", text: msg });
     } finally {
-      if (turn.current === id) { setBusy(false); setTimeout(() => scroll.current?.scrollToEnd(), 50); }
+      if (turn.current === id) { setBusy(false); setTimeout(() => scroll.current?.toBottom(), 50); }
     }
   }
 
@@ -653,7 +652,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       ...(wide ? { borderLeftWidth: 1, borderColor: t.glassBorder } : null) }}>
       {header}
       <View style={{ flex: 1 }}>
-        <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
+        <ChatScroll ref={scroll} label={tr("chat.latest")}
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
           {msgs.length === 0 && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
@@ -665,16 +664,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 return s;
               })()} />}
           {busy && !stream.trim() ? <ThinkingIndicator preview={think} /> : null}
-        </ScrollView>
-        {!atBottom ? (
-          <Pressable onPress={() => { scroll.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
-            style={{ position: "absolute", right: 14, bottom: (kb > 0 ? kb : 0) + 96, flexDirection: "row", alignItems: "center", gap: 4,
-              backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
-              paddingHorizontal: 12, paddingVertical: 7, ...(Platform.OS === "web" ? {} : { elevation: 6 }) }}>
-            <Ionicons name="arrow-down" size={14} color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("chat.latest")}</Text>
-          </Pressable>
-        ) : null}
+        </ChatScroll>
 
         <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>
           {/* Context meter — the SAME component the card chat renders (see
