@@ -124,11 +124,22 @@ PY
 kt_fp() {
   py -3.12 - <<'PY'
 import glob, hashlib
+# EXCLUDE anything under a build/ directory (2026-08-31, ops/docs/backlog/
+# ship-native-fp-never-updates-forces-every-build): the recursive **/*.java
+# glob also swept up Gradle's OWN generated output - e.g.
+# modules/glasses/android/build/generated/.../BuildConfig.java - a file
+# Gradle writes fresh every build, not hand-written source. Its mere
+# presence/absence (any checkout that hasn't built that module locally has
+# none) moved this fingerprint independent of any real source change,
+# exactly the false-positive class this function exists to prevent.
+sources = [p for p in
+           (glob.glob("surfaces/app/plugins/**/*.kt", recursive=True)
+            + glob.glob("surfaces/app/plugins/**/*.java", recursive=True)
+            + glob.glob("surfaces/app/modules/**/*.kt", recursive=True)
+            + glob.glob("surfaces/app/modules/**/*.java", recursive=True))
+           if "/build/" not in p.replace("\\", "/")]
 blob = ""
-for src in sorted(glob.glob("surfaces/app/plugins/**/*.kt", recursive=True)
-                  + glob.glob("surfaces/app/plugins/**/*.java", recursive=True)
-                  + glob.glob("surfaces/app/modules/**/*.kt", recursive=True)
-                  + glob.glob("surfaces/app/modules/**/*.java", recursive=True)):
+for src in sorted(sources):
     try:
         blob += src + "\n" + open(src, encoding="utf-8").read()
     except OSError:
