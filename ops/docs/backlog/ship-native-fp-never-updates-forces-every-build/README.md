@@ -128,3 +128,25 @@ GENERATED artifact rather than relying on its sources (app.json + plugin
 risks reintroducing the false-negative class this script is most guarded
 against. Needs a scoped look at the manifest-fingerprinting history before
 touching it.
+
+## CLOSED 2026-08-31 (commit b19233d)
+
+Read DEPLOY.md instead of guessing: `surfaces/app/android/` IS
+deliberately hand-managed (a native permission needs a direct
+AndroidManifest.xml edit - `expo prebuild` alone doesn't reproduce it), so
+dropping the manifest fingerprint would have reintroduced the false-
+negative class. Extended the ALREADY-EXISTING worktree-seed mechanism
+(`spine/git/gitutil.py::_seed_worktree`, previously only
+`local.properties`) to also copy the manifest into fresh worktrees - same
+established pattern, not a new one. Also found `kt_fp()`'s glob was
+independently sweeping up Gradle's own generated `BuildConfig.java` under
+`build/`, excluded that too. Verified end-to-end with a disposable `git
+worktree add`: identical `native_fp()` in live tree and fresh worktree,
+both correctly resolve to OTA now.
+
+Bonus find: `worktree_seed`'s configured/default paths
+(`apk/local.properties`, `local.properties`) were themselves stale since
+the four-folder refactor (298decc) - the real path is
+`surfaces/app/android/local.properties`. Fixed alongside; this had been
+silently making the ENTIRE worktree-seed mechanism a no-op for its
+original purpose too.
