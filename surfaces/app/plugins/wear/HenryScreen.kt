@@ -8,10 +8,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,8 +31,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.ChildButton
+// Wear Compose Material3's own small pill - the right size for a transient
+// overlay on a 192dp screen, where a full-height Button would be a hole in the
+// conversation. Present in the RESOLVED artifact (compose-material3 1.6.2:
+// ButtonKt carries CompactButton, ButtonDefaults carries
+// filledTonalButtonColors - both read out of the AAR in the Gradle cache, not
+// assumed from docs), which is the same check TitleCard above went through.
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
@@ -43,26 +54,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** One line of the conversation: who said it, what, and when.
- *
- *  `ts` is the daemon's own "HH:mm" (copilot's log stamp, passed through by
- *  wear_chat_get) for a message read back from the server, and the WATCH's
- *  clock for one that was just sent or just answered - /wear/talk returns no
- *  stamp, and the moment the line appears is the honest answer for it. Empty
- *  when neither is available; the chat then shows the name without a time
- *  rather than inventing a minute.
- *
- *  `label`, `card` and `options` are set only on a MIRRORED CARD EVENT (cls
- *  "card" server-side, cells/copilot/card_mirror.py). `label` is the composed
- *  "Frage · Kartenname" that replaces the sender name, so the owner can tell a
- *  worker waiting on a decision from Henry talking; `card` is the id an answer
- *  goes back to; `options` are the worker's own choices when one tap settles
- *  it. All three are empty on an ordinary line, and an older daemon omits them
- *  from the payload entirely - which degrades to exactly the previous
- *  behaviour, never to a blank. */
-private data class Line(val mine: Boolean, val text: String, val ts: String = "",
-                        val date: String = "", val label: String = "",
-                        val card: String = "", val options: List<String> = emptyList())
+// `Line`, `Row`, `buildRows` and `newestMessageIndex` live in ChatRows.kt -
+// same package, no Compose, no Android. Kept out of this file ON PURPOSE: the
+// scroll bug this screen had was an INDEX bug, and an index can only be checked
+// against a layout that exists as data. ops/tests/wear_chat_rows.kt compiles
+// that file and asserts the arithmetic.
 
 /** "HH:mm", 24h, matching the daemon's time.strftime("%H:%M") exactly - a
  *  locale-defaulted pattern would render some watches as 12h and the two halves
@@ -481,21 +477,45 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         if (chatCursor > 0 && resumed && !busy) refresh()
     }
 
-    // Follow the conversation instead of making him scroll after every reply -
-    // but ONLY once there is something to follow. The first version keyed on
-    // `busy` as well and scrolled on the very first composition, when the list
-    // was still empty: the title and the "tap Sprechen" hint were pushed up
-    // under the clock and the screen opened half-cut (seen on the watch,
-    // 2026-08-29). An empty chat must open at the TOP.
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            // index 0 is the title, so the newest line sits at lines.size -
-            // but scrollToItem puts the target at the TOP edge, where the
-            // scaffold's TimeText sits on top of it (seen on the watch,
-            // 2026-08-29: the newest line was clipped under the clock). Aiming
-            // one item earlier lands the newest line in clear space, with its
-            // predecessor as context above it.
-            runCatching { columnState.scrollToItem(maxOf(0, lines.size - 1)) }
+    // THE LIST, built once per composition. Everything below - what is drawn,
+    // where the auto-scroll aims, and whether the "Neueste" button is offered -
+    // reads THIS, so the three can never disagree about what is on screen.
+    val rows = buildRows(
+        lines, answered, busy,
+        // Distinguishable states: still fetching vs. genuinely nothing said
+        // yet. Showing the invitation while the history is still loading would
+        // read as "Henry has forgotten everything".
+        if (loadingHistory) "Verlauf wird geladen…"
+        else "Tippe auf Sprechen und stelle deine Frage.",
+        // Henry's own follow-up options, when a tap can settle it.
+        suggestions?.questions?.firstOrNull()?.options?.map { it.label } ?: emptyList(),
+    )
+    val newest = newestMessageIndex(rows)
+
+    // Follow the conversation instead of making him scroll after every reply.
+    //
+    // Keyed on the newest message's own IDENTITY, not on `lines.size`. refresh()
+    // replaces the whole list with the server's (`lines.clear()` +
+    // `addAll(fresh)`), and a replacement that happens to be the same length -
+    // the daemon compacted one line away while adding a reply - moved no count
+    // and therefore scrolled nowhere, even though the newest message had
+    // changed. `newest` alone is not enough for the same reason.
+    val newestKey = lines.lastOrNull()?.let { "${it.date}|${it.ts}|${it.text.length}|${it.text.take(32)}" } ?: ""
+    LaunchedEffect(newest, newestKey) {
+        if (newest >= 0) runCatching { columnState.scrollToItem(newest) }
+    }
+
+    // IS THE NEWEST MESSAGE ACTUALLY ON SCREEN? Asked of the column's own
+    // layout - the list of items it is currently showing - rather than tracked
+    // in a flag this screen would have to remember to update on every scroll,
+    // every refresh and every relayout. `derivedStateOf` so it only recomposes
+    // when the ANSWER flips, not on every pixel of a scroll.
+    // KEYED on `newest`: a bare `remember { }` would capture the index from the
+    // FIRST composition and go on comparing against it forever, so the button
+    // would answer a question about a message that is no longer the newest one.
+    val atNewest by remember(newest) {
+        derivedStateOf {
+            newest < 0 || columnState.layoutInfo.visibleItems.any { it.index >= newest }
         }
     }
 
@@ -522,31 +542,25 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // the CARDS rather than to the column, so the date separators and the
     // title stay centred on the full width.
     val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
-    run {
+    // Box so the "Neueste" button below can float OVER the list. ScreenScaffold
+    // keeps its own scroll indicator on the right edge, so the button sits
+    // bottom-CENTRE and the two never fight for the same pixels.
+    Box(modifier = Modifier.fillMaxSize()) {
         ScreenScaffold(scrollState = columnState) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
                 contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                item {
-                    Text(text = "Henry", textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 8.dp))
-                }
-                if (lines.isEmpty()) {
-                    item {
-                        Text(
-                            // Distinguishable states: still fetching vs. genuinely
-                            // nothing said yet. Showing the invitation while the
-                            // history is still loading would read as "Henry has
-                            // forgotten everything".
-                            text = if (loadingHistory) "Verlauf wird geladenâ€¦"
-                                   else "Tippe auf Sprechen und stelle deine Frage.",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                    }
-                }
+                // ONE `item` PER ROW, in the order buildRows put them - so the
+                // index the auto-scroll and the "Neueste" button aim at is the
+                // index the column actually lays out. This used to be an
+                // imperative build (a `for` over `lines` with conditional
+                // separators and buttons inlined), which is precisely why the
+                // scroll target could not be computed correctly: the layout
+                // existed only as control flow, and nothing could ask it where
+                // the newest message had ended up.
+                //
                 // ONE MESSAGE = ONE TITLECARD: sender top-left, time top-right,
                 // text below. Owner, 2026-08-29, with a screenshot of the
                 // watch's own SMS app: "Kannst du die Nachrichten genau wie im
@@ -573,120 +587,114 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 // Text is START-aligned: centring is right for a one-line
                 // status, wrong for prose - a centred paragraph has a ragged
                 // left edge and the eye loses the line it was on.
-                // DATE SEPARATORS, exactly where the owner's SMS screenshot has
-                // them: one centred caption above the first message of each day.
                 //
-                // Drawn ONLY from a recorded date. copilot._append_log started
-                // stamping one on 2026-08-29 and everything older has none, so
-                // `date` is "" for the existing transcript - and a line with no
-                // date gets no separator and does not close the previous day
-                // either. Filing an undated message under whatever day happened
-                // to precede it would be a guess rendered as a fact; the whole
-                // point of the forward-only stamp is that we do not do that.
-                var lastDay = ""
-                for (line in lines) {
-                    if (line.date.isNotBlank() && line.date != lastDay) {
-                        lastDay = line.date
-                        item {
-                            Text(
-                                text = dayLabel(line.date),
+                // THREE LEVELS OF EMPHASIS on the trailing buttons, not three
+                // identical blue pills. "Sprechen" is the one thing this screen
+                // exists for and keeps the filled accent; the voice switch is a
+                // setting (outlined); leaving for the board is navigation
+                // (lowest). All three shouting equally is how a small screen
+                // stops telling you where to look.
+                for (row in rows) {
+                    item {
+                        when (row) {
+                            is Row.Title -> Text(
+                                text = "Henry", textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp))
+
+                            is Row.Hint -> Text(
+                                text = row.text, textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+
+                            is Row.Day -> Text(
+                                text = dayLabel(row.date),
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+
+                            is Row.Msg -> TitleCard(
+                                onClick = {},
+                                title = { Text(senderOf(row.line)) },
+                                // Omitted, not blanked, when there is no stamp:
+                                // an empty `time` slot would still reserve its
+                                // space and leave a gap where a time should be.
+                                // A line cached before timestamps existed simply
+                                // shows the name - see DeviceStore.ChatLine.
+                                time = if (row.line.ts.isBlank()) null
+                                       else ({ Text(row.line.ts) }),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (row.line.mine) WearTokens.glow1
+                                                     else WearTokens.layer2,
+                                    contentColor = WearTokens.txtPrimary,
+                                ),
                                 modifier = Modifier.padding(
-                                    horizontal = 10.dp, vertical = 6.dp),
-                            )
-                        }
-                    }
-                    item {
-                        TitleCard(
-                            onClick = {},
-                            title = { Text(senderOf(line)) },
-                            // Omitted, not blanked, when there is no stamp: an
-                            // empty `time` slot would still reserve its space
-                            // and leave a gap where a time should be. A line
-                            // cached before timestamps existed simply shows the
-                            // name - see DeviceStore.ChatLine.
-                            time = if (line.ts.isBlank()) null
-                                   else ({ Text(line.ts) }),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (line.mine) WearTokens.glow1
-                                                 else WearTokens.layer2,
-                                contentColor = WearTokens.txtPrimary,
-                            ),
-                            modifier = Modifier.padding(
-                                horizontal = sideInset, vertical = 3.dp),
-                        ) {
-                            Text(text = line.text, textAlign = TextAlign.Start)
-                        }
-                    }
-                    // The worker's OWN options, right under the question that
-                    // offered them - not collected at the bottom of the screen
-                    // like Henry's follow-up suggestions below. Two cards can be
-                    // waiting at once, and a pooled list would give the owner no
-                    // way to see which card a button belongs to.
-                    if (line.card.isNotBlank() && line.card !in answered) {
-                        for (opt in line.options) {
-                            item {
-                                Button(onClick = { answerCard(line.card, opt) },
-                                    enabled = !busy,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                    Text(text = opt)
-                                }
+                                    horizontal = sideInset, vertical = 3.dp),
+                            ) {
+                                Text(text = row.line.text, textAlign = TextAlign.Start)
                             }
+
+                            is Row.Option -> Button(
+                                onClick = { answerCard(row.card, row.label) },
+                                enabled = !busy,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            ) { Text(text = row.label) }
+
+                            is Row.Busy -> Text(
+                                text = "Henry denkt …", textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(6.dp))
+
+                            is Row.Suggest -> Button(
+                                onClick = { ask(row.label) }, enabled = !busy,
+                                modifier = Modifier.padding(4.dp)) { Text(text = row.label) }
+
+                            is Row.Speak -> Button(
+                                onClick = { dictate.launch(speechIntent()) }, enabled = !busy,
+                                modifier = Modifier.padding(6.dp),
+                            ) { Text(if (busy) "…" else "Sprechen") }
+
+                            is Row.VoiceToggle -> OutlinedButton(
+                                onClick = {
+                                    voiceOn = !voiceOn
+                                    DeviceStore.saveVoiceOn(context, voiceOn)
+                                    // Switching off mid-sentence must stop THAT
+                                    // sentence, not merely the next one.
+                                    if (!voiceOn) VoicePlayer.stop()
+                                },
+                                modifier = Modifier.padding(6.dp),
+                            ) { Text(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
+
+                            // Lowest emphasis, but NOT invisible. A bare
+                            // ChildButton draws neither fill nor border, and on
+                            // the real watch this rendered as the word "Board"
+                            // floating in black - the only way off the landing
+                            // screen, looking like a caption. Same hairline the
+                            // board's own context rows carry; borderSubtle is
+                            // one step below the voice toggle's outline. Both
+                            // from WearTokens, i.e. ops/tools/gen_tokens.py.
+                            is Row.Board -> ChildButton(
+                                onClick = { VoicePlayer.stop(); onOpenBoard() },
+                                border = BorderStroke(1.dp, WearTokens.borderSubtle),
+                                modifier = Modifier.padding(6.dp)) { Text("Board") }
                         }
                     }
-                }
-                if (busy) {
-                    item {
-                        Text(text = "Henry denktâ€¦", textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(6.dp))
-                    }
-                }
-                // Henry's own follow-up options, when a tap can settle it.
-                suggestions?.questions?.firstOrNull()?.options?.forEach { opt ->
-                    item {
-                        Button(onClick = { ask(opt.label) }, enabled = !busy,
-                            modifier = Modifier.padding(4.dp)) { Text(text = opt.label) }
-                    }
-                }
-                item {
-                    Button(onClick = { dictate.launch(speechIntent()) }, enabled = !busy,
-                        modifier = Modifier.padding(6.dp)) {
-                        Text(if (busy) "â€¦" else "Sprechen")
-                    }
-                }
-                // THREE LEVELS OF EMPHASIS, not three identical blue pills.
-                // "Sprechen" above is the one thing this screen exists for and
-                // keeps the filled accent; the voice switch is a setting
-                // (outlined); leaving for the board is navigation (lowest).
-                // All three shouting equally is how a small screen stops
-                // telling you where to look.
-                item {
-                    OutlinedButton(
-                        onClick = {
-                            voiceOn = !voiceOn
-                            DeviceStore.saveVoiceOn(context, voiceOn)
-                            // Switching off mid-sentence must stop THAT
-                            // sentence, not merely the next one.
-                            if (!voiceOn) VoicePlayer.stop()
-                        },
-                        modifier = Modifier.padding(6.dp),
-                    ) { Text(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
-                }
-                // Lowest emphasis, but NOT invisible. A bare ChildButton draws
-                // neither fill nor border, and on the real watch this rendered
-                // as the word "Board" floating in black - the only way off the
-                // landing screen, looking like a caption. Same hairline the
-                // board's own context rows now carry, so "tappable but not your
-                // move" looks the same everywhere. borderSubtle is one step
-                // below the outline the voice toggle above uses; both from
-                // WearTokens, i.e. from ops/tools/gen_tokens.py.
-                item {
-                    ChildButton(onClick = { VoicePlayer.stop(); onOpenBoard() },
-                        border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                        modifier = Modifier.padding(6.dp)) { Text("Board") }
                 }
             }
+        }
+
+        // JUMP TO THE NEWEST MESSAGE - the wrist's half of the same affordance
+        // the phone chat carries as its "↓ Neueste" pill (ui/chat_scroll.tsx).
+        // Offered ONLY while the newest message is off screen, because on a
+        // 192dp watch a permanent floating button is a permanent hole in the
+        // conversation. Scrolls to the same index the auto-follow above uses,
+        // animated: this one is a deliberate jump by the owner and the movement
+        // is what tells him where he landed.
+        if (!atNewest) {
+            CompactButton(
+                onClick = { scope.launch { runCatching { columnState.animateScrollToItem(newest) } } },
+                colors = ButtonDefaults.filledTonalButtonColors(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 6.dp),
+            ) { Text(text = "↓ Neueste") }
         }
     }
 }

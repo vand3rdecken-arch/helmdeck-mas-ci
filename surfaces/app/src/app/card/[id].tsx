@@ -23,6 +23,7 @@ import { BackgroundTasks } from "@/ui/card_background";
 import { ContextMeter } from "@/ui/context_meter";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import { SignOff } from "@/ui/sign_off";
 import { useActionSheet } from "@/ui/action_sheet";
@@ -368,8 +369,9 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   // optimistic echo: your just-sent message shows instantly, before the
   // session transcript catches up. Reconciled away once the real feed carries it.
   const [pending, setPending] = useState<TStep[]>([]);
-  const scrollRef = useRef<ScrollView>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  // ui/chat_scroll.tsx - shared with the board chat, so "follow the newest
+  // message" and the "↓ Neueste" pill have ONE implementation to be right in.
+  const scrollRef = useRef<ChatScrollHandle>(null);
   // edge-to-edge (SDK 57) breaks Android adjustResize -> lift the composer above
   // the keyboard by measuring its height (same fix as the board chat).
   const [kb, setKb] = useState(0);
@@ -416,15 +418,10 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   // a streaming step is present - once the stream settles they show correctly.
   const streaming = steps.some((s) => s.streaming);
 
-  // auto-pin to newest — but only when the reader is already near the bottom, so
-  // scrolling up to read isn't yanked back down.
-  useEffect(() => {
-    if (atBottom) scrollRef.current?.scrollToEnd({ animated: true });
-  }, [steps.length, atBottom]);
-  const onScroll = (e: { nativeEvent: { contentOffset: { y: number }; contentSize: { height: number }; layoutMeasurement: { height: number } } }) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    setAtBottom(contentSize.height - contentOffset.y - layoutMeasurement.height < 60);
-  };
+  // Auto-pin to newest (only when the reader is already near the bottom, so
+  // scrolling up to read isn't yanked back down) is ChatScroll's job now, and it
+  // keys on the scroll view's own geometry instead of `steps.length` - a worker
+  // STREAMING into the last bubble grows the content without growing the count.
 
   const hhmm = () => new Date().toTimeString().slice(0, 5);
   // `retryOf` = the outbox row being re-attempted (see ui/outbox_strip.tsx).
@@ -487,22 +484,13 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   return (
     <View style={{ flex: 1, paddingBottom: kb }}>
       <View style={{ flex: 1 }}>
-        <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={64} style={{ flex: 1 }}
+        <ChatScroll ref={scrollRef} label={tr("card.chat.latest")}
           contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
           {steps.length === 0 ? (
             <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />
           ) :
             <Transcript steps={steps} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
-        </ScrollView>
-        {!atBottom ? (
-          <Pressable onPress={() => { scrollRef.current?.scrollToEnd({ animated: true }); setAtBottom(true); }}
-            style={{ position: "absolute", right: 14, bottom: 12, flexDirection: "row", alignItems: "center", gap: 4,
-              backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 16,
-              paddingHorizontal: 12, paddingVertical: 7 }}>
-            <Ionicons name="arrow-down" size={14} color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("card.chat.latest")}</Text>
-          </Pressable>
-        ) : null}
+        </ChatScroll>
       </View>
 
       {/* What the parked card is waiting on. Two distinct cases:
