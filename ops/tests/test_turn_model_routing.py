@@ -38,7 +38,7 @@ def check(cond, msg):
 captured = {}
 
 
-def _fake_run(cfg, t, prompt):
+def _fake_run(cfg, t, prompt, by=None):
     captured["cfg"] = cfg
     return ("sid-x", "ok", {"usage": {}, "models": []})
 
