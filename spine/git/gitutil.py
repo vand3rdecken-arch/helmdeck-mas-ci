@@ -191,16 +191,29 @@ def _seed_worktree(repo, wt):
     points at the Android SDK, .env holds local settings). Without them a card
     cannot build what the same repo builds fine by hand.
 
+    AndroidManifest.xml is seeded too (added 2026-08-31, ops/docs/backlog/
+    ship-native-fp-never-updates-forces-every-build): surfaces/app/android/ is
+    itself gitignored/hand-managed (DEPLOY.md - a native permission needs a
+    hand-edit here, `expo prebuild` alone does not reproduce it), so a FRESH
+    worktree had no manifest at all until its own build ran prebuild once.
+    ship.sh's cfg_fp() reads that file to decide native-vs-OTA - its mere
+    presence/absence (not its content) was swinging the fingerprint
+    independent of any real native change, false-positiving every worktree
+    card's first ship as "native". Seeding the LIVE tree's current manifest
+    gives cfg_fp() something real and consistent to compare on that first
+    ship instead of "file missing".
+
     Configure in settings.json; defaults deliberately carry NO signing material,
     because handing an agent a release keystore should be a decision, not a
     side effect:
 
-        "worktree_seed": ["apk/local.properties", ".env"]
+        "worktree_seed": ["surfaces/app/android/local.properties", ".env"]
     """
     from spine.storage import events
     patterns = events.settings().get("worktree_seed")
     if patterns is None:
-        patterns = ["apk/local.properties", "local.properties"]
+        patterns = ["surfaces/app/android/local.properties",
+                     "surfaces/app/android/app/src/main/AndroidManifest.xml"]
     copied = []
     for rel in patterns:
         src = os.path.join(repo, rel)
