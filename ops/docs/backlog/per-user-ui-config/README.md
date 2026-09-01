@@ -1,5 +1,11 @@
 # Per-user view config: each registered user owns their board's look; HelmDeck renders
 
+> **SUPERSEDED 2026-09-01 by `ops/docs/backlog/accounts-boards-prd/`** (owner Q&A:
+> Jira model - personal BOARDS replace per-user column overlays; account-first
+> onboarding). This card's research/data-model notes remain referenced there;
+> dispatch from the PRD's phase table, not from here.
+
+
 **Filed 2026-09-01, owner decree:** "Each user should be able to register and
 save their own config in db. They can set lanes, labels etc. HelmDeck is just
 rendering." Refined same day: "Best is to let users create account, log in

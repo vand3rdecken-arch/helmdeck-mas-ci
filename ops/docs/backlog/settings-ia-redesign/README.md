@@ -1,5 +1,11 @@
 # Settings-IA-Redesign — Einstellungen neu aufbauen
 
+> **ABSORBED 2026-09-01 into `ops/docs/backlog/accounts-boards-prd/`** (owner decision):
+> the 6-door hub ships as this document designs it, as the PRD's Phase 4, with
+> two amendments - Tuer 1 wird ACCOUNT-backed ('Mein Profil'), neue Tuer 'Boards'.
+> Everything else here stays the authoritative design for that phase.
+
+
 Owner-Beschwerde (2026-08-26): "Zu viele Optionen, 3× gleiches Symbol, selbst ich
 verstehe nicht, was dahinter ist." Die Gruppierung des Mehr-Tabs (2b77a55) war
 Kosmetik; dieses Dokument ist der Grundriss für den echten Umbau.
