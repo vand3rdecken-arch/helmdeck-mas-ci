@@ -111,6 +111,10 @@ const isGating = (k: Track) => k.status === "gating";
  *  reporting an outcome we don't have yet — the old inline call blocked the
  *  request for minutes and put the only copy of the reason in a 5s toast. */
 function laneVerdict(res: LaneMove, lane: string): string | null {
+  // The onboarding example card refuses every move off Backlog (it never runs
+  // an agent) - surfaced the same way GxP's refusal is, so a curious drag
+  // reads as an explanation, not a silent snap-back.
+  if (res.example_refused) return res.example_refused;
   // The gate/merge report itself is audit text from the daemon - it travels as
   // a variable and stays in its original wording.
   const heads = () => (res.gate_report ?? []).map((p) => p.split("\n")[0]).join(" | ");

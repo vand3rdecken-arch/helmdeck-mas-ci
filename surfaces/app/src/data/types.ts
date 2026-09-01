@@ -79,6 +79,10 @@ export interface Track {
   merge_failed?: boolean; merge_kind?: string; merge_report?: string;
   review_preview?: boolean; review_report?: string;
   archived?: boolean; autopilot?: boolean; fast_track?: boolean;
+  /** The one guided onboarding card owner first-run seeds (accounts-boards-prd
+   *  phase 3): never dispatches (lanemachine._move_lane refuses every move off
+   *  Backlog), excluded from PM/economics/Henry. Deletable like any card. */
+  example?: boolean;
   // GxP, DERIVED server-side per read (lifecycle._present_gxp), never stored.
   // Absent entirely for a card outside the regulated scope, so `gxp_scope` is
   // the one flag the board branches on. `gxp_signed` is the cheap question
@@ -142,7 +146,11 @@ export interface BackgroundWait { n: number; names?: string[]; since?: number }
  *  carries status "gating" until the real verdict lands on it. */
 // gxp_refused: the daemon declined the landing (no signature, drifted, or
 // the actor is not a real account). Carries the reason, ready to show.
-export type LaneMove = Partial<Track> & { started?: string; gating?: boolean; gxp_refused?: string };
+// example_refused: the card is the onboarding guide (Track.example) - it
+// never dispatches, whatever lane the move targeted.
+export type LaneMove = Partial<Track> & {
+  started?: string; gating?: boolean; gxp_refused?: string; example_refused?: string;
+};
 export interface EconCard {
   id: string; task: string; branch: string; lane: string; ai_cost: number;
   touches: number; value: number; mode: string | null; models: string[];

@@ -238,7 +238,8 @@ def sync():
                                          daemon=True).start()
                 # auto-run agent steps the moment the chain reaches them
                 if s["ready"] and s.get("mode") in auto_modes \
-                   and t.get("lane") == "backlog" and not s.get("auto_dispatched"):
+                   and t.get("lane") == "backlog" and not s.get("auto_dispatched") \
+                   and not t.get("example"):
                     s["auto_dispatched"] = True
                     events.emit("process", p["id"], action="auto_advance",
                                 step=s["title"][:80], card=t["id"])
@@ -347,6 +348,7 @@ def _priority_dispatch():
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
                    and not t.get("mode") in ("human", "teach", "cowork")
                    and not t.get("priority_dispatched")
+                   and not t.get("example")
                    and order.get(t.get("priority", "medium"), 2) <= order[floor]),
                   key=lambda t: (order.get(t.get("priority", "medium"), 2), t.get("due") or "9999"))
     for t in todo[:max(0, headroom)]:
@@ -409,7 +411,7 @@ def _autopilot():
     from cells.engineer import sessions
     from spine.storage import events
     tracks = sessions.list_tracks()
-    auto = [t for t in tracks if t.get("autopilot") and not t.get("archived")]
+    auto = [t for t in tracks if t.get("autopilot") and not t.get("archived") and not t.get("example")]
     if not auto:
         return
     from spine.ops import projects

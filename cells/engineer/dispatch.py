@@ -84,7 +84,7 @@ def _direct_ok(repo):
 def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
               value=None, driver="claude", actor="owner", priority="medium", due="",
               model="", attachments=None, project_id=None, billing="fixed", rate=None,
-              description="", card_kind=""):
+              description="", card_kind="", example=False):
     """File a request. lane=backlog stores it un-started (no worktree, no session);
     lane=working starts the branch session immediately. value = what the
     deliverable is worth (settings default when omitted) - set at intake so
@@ -95,7 +95,13 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     `card_kind` ("new_track" | "new_direct_task") is the caller stating the
     entry point OUTRIGHT. Left empty, the REPO decides via its template - this
     is the one place a card is born, so it is the one place that question is
-    answered (see _repo_default_kind)."""
+    answered (see _repo_default_kind).
+
+    `example` (accounts-boards-prd phase 3) marks the one guided onboarding
+    card seed_example_card files at setup: set HERE, at birth, so it is never
+    a card that later "becomes" inert - lanemachine._move_lane refuses to
+    dispatch it and every economics/planning read site skips it, all keyed
+    off this one flag."""
     from spine.storage import events
     from spine.agent import turnopts
     repo = os.path.abspath(repo)
@@ -174,6 +180,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
          "billing": billing if billing in ("fixed", "tm", "none") else "fixed",
          "rate": float(rate) if rate is not None else None,
          "ai_cost": 0.0, "tokens_in": 0, "tokens_out": 0, "models": [],
+         "example": bool(example),
          "created": time.strftime("%Y-%m-%d %H:%M:%S"),
          "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
     # THE DIRECT-CARD FIELDS, set in exactly one place. They used to be written
@@ -189,9 +196,49 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
     ActionLog(run_dir).log("note", "REQUEST filed: %s (branch %s)" % (task, branch))
     events.emit("filed", tid, branch=branch, value=t["value"], actor=actor, driver=t["driver"])
     _save_track(t)
-    if lane == "working":
+    # example cards never dispatch, even if a future caller mis-files one
+    # straight into lane="working" - the same law _move_lane enforces on
+    # every later move, held here too so birth can't be the one path around it.
+    if lane == "working" and not example:
         t = _start(tid)
     return t
+
+
+_EXAMPLE_TITLE = "So funktioniert HelmDeck"
+_EXAMPLE_BODY = (
+    "Das ist eine Beispielkarte - keine Sorge, sie startet nie einen Agenten "
+    "und kostet nichts. Sie zeigt nur, wie eine Karte durchs Board wandert:\n\n"
+    "1. Backlog - hier liegt sie jetzt, angefragt, aber noch nicht gestartet.\n"
+    "2. Working - ein Agent bekommt einen eigenen, isolierten Arbeitsbereich "
+    "(worktree) und einen eigenen Branch, damit nichts sich in die Quere kommt.\n"
+    "3. Review - fertige Arbeit läuft zuerst durchs Gate (Tests/Checks); nur "
+    "grün darf weiter, rot geht mit einer Punktliste zurück nach Working.\n"
+    "4. Done - du nimmst ab, die Arbeit wird ins Hauptrepo gemerged.\n\n"
+    "Du kannst diese Karte jederzeit löschen, wenn du sie nicht mehr brauchst."
+)
+
+
+def seed_example_card(actor="system"):
+    """The ONE guided onboarding card owner first-run seeds alongside the
+    default board (accounts-boards-prd phase 3, PRD section 4.1): explains the
+    lane machine without touching it, `example=True` so it is inert by
+    construction wherever a card is inert-checked (lanemachine._move_lane,
+    events.metrics, the PM's dispatcher/planning, Henry's snapshot - PRD
+    section 8's risk item, grep-verified across all of them in this phase).
+
+    Filed against the daemon's OWN repo root: it never dispatches, so which
+    repo it names is otherwise moot, and REPO_ROOT is guaranteed to be a real
+    git checkout on every install (unlike an owner's project repo, which may
+    not exist yet at first-run). card_kind is pinned to "new_track" so this
+    repo's own template (if it names one) can never route it onto the
+    live-tree/direct path - an example card must always look like the
+    ordinary worktree shape a newcomer will actually use."""
+    from daemon.paths import REPO_ROOT
+    return new_track(REPO_ROOT, "example", _EXAMPLE_TITLE, lane="backlog",
+                     description=_EXAMPLE_BODY, value=0.0, billing="none",
+                     driver="", actor=actor, priority="low", card_kind="new_track",
+                     example=True)
+
 
 def _dispatch_failed(t, e):
     """Dispatch runs on a background thread, so an uncaught exception is
