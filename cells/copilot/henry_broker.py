@@ -190,7 +190,9 @@ def _snapshot():
         from spine.storage.trackstore import _load
         from spine.agent import drivers
         for t in _load():
-            if t.get("archived") or t.get("lane") == "done":
+            # example: the onboarding demo card (accounts-boards-prd phase 3) -
+            # inert, never dispatched, and Henry must never plan/reason about it.
+            if t.get("archived") or t.get("lane") == "done" or t.get("example"):
                 continue
             lines.append("card %s | %s/%s | ft=%s direct=%s turn_active=%s | %s" % (
                 t["id"], t.get("lane"), t.get("status"), bool(t.get("fast_track")),

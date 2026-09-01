@@ -912,6 +912,19 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
     if not t:
         raise RuntimeError("no such track: " + tid)
     prev = t.get("lane")
+    # ---- EXAMPLE CARD: never dispatches -----------------------------------
+    # The onboarding guide card seeded at setup (accounts-boards-prd phase 3,
+    # `example: true`) has no repo worth an agent's time and must stay inert
+    # by CONSTRUCTION, not by every caller remembering to check first - this
+    # is the one chokepoint every lane move arrives at (see the GxP comment
+    # below), so blocking it here closes the board drag, the chat verb, the
+    # PM's autonomous dispatch and any future caller in one place. Refused,
+    # not silently ignored, so a curious owner sees why nothing happened.
+    if t.get("example") and lane != "backlog":
+        events.emit("example", tid, outcome="move_refused", actor=actor,
+                    lane_from=prev, lane_to=lane)
+        return dict(t, example_refused="this is the onboarding example card - "
+                    "it never runs an agent; delete it if you don't need it")
     # ---- GxP: THE chokepoint -------------------------------------------
     # Every accept path in the daemon arrives here - the board route, Henry's
     # `move`, the policy auto-accept, the chat verb, the PM - and fast-track and

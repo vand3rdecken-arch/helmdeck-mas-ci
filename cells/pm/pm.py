@@ -730,6 +730,7 @@ def _backlog(tracks, pm, day):
         (t for t in tracks
          if t.get("lane") == "backlog" and t["id"] not in day.get("dispatched", [])
          and t.get("mode") not in ("human", "teach", "cowork")
+         and not t.get("example")
          and (not allow or os.path.normcase(t.get("repo") or "") in allow)),
         key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
 
@@ -1115,7 +1116,8 @@ def _state():
     if not pm.get("loop_enabled"):
         return ("OFF", "Proaktiv ist aus.")
     from cells.engineer import sessions
-    tracks = [t for t in sessions.list_tracks() if not t.get("archived")]
+    tracks = [t for t in sessions.list_tracks()
+              if not t.get("archived") and not t.get("example")]
     st = _loopstate()
     day = st.get(_today(), {})
     disp = set(day.get("dispatched", []))
@@ -1252,7 +1254,7 @@ def _tick():
     _cost_watch(st, tracks)
 
     # 2+3 - STAND, judged by the TRIANGLE
-    pos = _position([t for t in tracks if not t.get("archived")], plan)
+    pos = _position([t for t in tracks if not t.get("archived") and not t.get("example")], plan)
     _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)
 
     # 4 - COMMUNICATE ONLY ON DELTA. Persist the new digest FIRST so a substep
@@ -1319,7 +1321,8 @@ def activity():
     # turn had died - it reads `running` in the store until the reconciler heals
     # it, so the narrative claimed work was in flight AND left the card out of
     # "needs you". present() derives the truth at read time (invariant I2).
-    tracks = [sessions.present(t) for t in sessions.list_tracks() if not t.get("archived")]
+    tracks = [sessions.present(t) for t in sessions.list_tracks()
+              if not t.get("archived") and not t.get("example")]
     st = _loopstate()
 
     def lbl(t):
