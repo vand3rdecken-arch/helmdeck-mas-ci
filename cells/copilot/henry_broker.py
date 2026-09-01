@@ -397,9 +397,10 @@ def _decide(esc):
           "(prueft das Gate) bzw. done (nimmt ab, merged, deployed) - nicht "
           "parken und auf den Owner warten. "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|rerun_deploy|steer|notify_owner|ignore",\n'
+          '{"action": "did|move|ship|rerun_deploy|steer|notify_owner|ignore",\n'
           ' "card": "karten-id oder leer",\n'
           ' "lane": "bei move: review|done",\n'
+          ' "kind": "bei ship: none|ota|native",\n'
           ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "why": "ein satz begruendung"}')
     if not privileged:
@@ -421,6 +422,7 @@ def _decide(esc):
     action = (d.get("action") or "").strip()
     card = (d.get("card") or esc.get("card") or "").strip()
     lane = (d.get("lane") or "").strip()
+    kind = (d.get("kind") or "").strip()
     text = (d.get("text") or "").strip()
     why = (d.get("why") or "").strip()
     if action == "did" and not privileged:
@@ -432,7 +434,7 @@ def _decide(esc):
             "Henry versuchte 'did' auf einer client-Karte ohne Haende - "
             "abgelehnt, bleibt offen")
         return False
-    if not _execute(action, card, lane, text, esc):
+    if not _execute(action, card, lane, text, esc, kind=kind):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why)
     # Full text here too: _audit lands as a `note` in the card's ActionLog, and
@@ -444,13 +446,14 @@ def _decide(esc):
     # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
     # is done he doesn't report back") - notify_owner/give-up already push; the
     # quiet successes (did/move/rerun/steer) were invisible until now.
-    if action in ("did", "move", "rerun_deploy", "steer"):
+    if action in ("did", "move", "ship", "rerun_deploy", "steer"):
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a
         # chat has no length budget: _notify_owner truncates for FCM alone.
+        _label = action + ((" " + kind) if action == "ship" and kind else "")
         _notify_owner("Henry (%s): %s%s - %s" % (
-            esc["kind"], action, (" -> " + lane) if action == "move" else "",
+            esc["kind"], _label, (" -> " + lane) if action == "move" else "",
             text or why), None if action == "did" else _find_track(card))
     return True
 
@@ -463,11 +466,53 @@ def _find_track(card):
         return None
 
 
-def _execute(action, card, lane, text, esc):
+def _execute(action, card, lane, text, esc, kind=""):
     from spine.auth import gxp
     from spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
     if action == "ignore":
+        return True
+    if action == "ship":
+        # The ship DECISION, executed (owner decree 2026-09-01: shipping is
+        # Henry's judgement, not a post-done reflex - the emit half is
+        # lanemachine.request_ship_decision, this is the execute half; pays
+        # debt ship-decision-not-wired). `kind` is the advisor contract:
+        # none = a deliberate non-ship (docs-only, daemon-only - the answer
+        # the old hash could never give), ota|native ride into ship.sh as
+        # SHIP_KIND at event time, never via a file. Execution mirrors
+        # rerun_deploy exactly: same _repo_hook (silence-bounded, load-
+        # admitted, HOOK-NOTE narration), same loud no-hook failure, same
+        # synchronous-and-verified close.
+        if kind == "none":
+            return True                # deliberate non-ship; why lands in the audit note
+        if kind not in ("ota", "native"):
+            escalations.record_note(esc["id"],
+                "ship: kind %r ist nicht none|ota|native - bleibt offen" % kind)
+            return False
+        from cells.engineer.lanemachine import _repo_hook
+        from spine.storage import events
+        if t is None:
+            repo = events.settings().get("default_repo") or ""
+            if not repo:
+                return False
+            t = {"id": "-", "repo": repo, "run_dir": os.path.join(ROOT, "recordings", "_henry"),
+                 "worktree": repo}
+            os.makedirs(t["run_dir"], exist_ok=True)
+        cmd = ((events.settings().get("repo_hooks") or {}).get(t["repo"]) or {}).get("deploy", "").strip()
+        if not cmd:
+            escalations.record_note(esc["id"],
+                "ship: kein settings.repo_hooks['%s']['deploy'] konfiguriert - "
+                "kein Deploy ausgeloest." % t["repo"])
+            return False
+        try:
+            hk = _repo_hook(dict(t), "deploy", extra_env={"SHIP_KIND": kind})
+        except Exception as e:
+            escalations.record_note(esc["id"], "ship crashed: %s" % str(e)[:250])
+            return False
+        if hk is False:
+            escalations.record_note(esc["id"],
+                "ship (%s): Deploy-Hook rot - bleibt offen fuer den naechsten Versuch." % kind)
+            return False               # stays open (attempt cap) - the agentic retry
         return True
     # GxP: Henry's two HANDS verbs are off for a card in the regulated scope.
     # `move` would also be stopped by the lane machine's chokepoint (he is not

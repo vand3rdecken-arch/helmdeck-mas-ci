@@ -665,13 +665,19 @@ def _hook_kill_tree(proc):
         pass
 
 
-def _repo_hook(t, kind):
+def _repo_hook(t, kind, extra_env=None):
     """Owner-defined per-repo hook, policy in settings:
       "repo_hooks": {"<repo path>": {"preview": "<cmd>", "deploy": "<cmd>"}}
     preview runs in the WORKTREE when a card reaches Review (try it before
     merging); deploy runs in the MAIN REPO after accept - by the daemon, which
     is the only party holding secrets. Output lands on the card (last_reply
     stays the agent's - hooks log to the actionlog + a hook field).
+
+    `extra_env` overlays the hook's environment for THIS run. The ship
+    decision rides in here (SHIP_KIND=none|ota|native, decided by Henry at
+    event time, executed by ship.sh) - an env var and never a file, exactly
+    as the ship-advisor brief demands: a decision file would be the stored
+    flag the advisor exists to replace.
 
     Bounded by SILENCE, not by wall-clock. A fixed 1800s cap killed the deploy
     hook mid-build: the NATIVE ship path (npm ci -> gradle assembleRelease ->
@@ -722,8 +728,11 @@ def _repo_hook(t, kind):
             log.log("note", s[len("HOOK-NOTE:"):].strip())
 
     token = _admit_heavy(t, "build" if kind == "deploy" else "preview", log)
+    env = dict(os.environ)
+    if extra_env:
+        env.update(extra_env)
     try:
-        rc, out, why = _run_streamed(cmd, cwd, dict(os.environ), idle, hard, note_cb=_note)
+        rc, out, why = _run_streamed(cmd, cwd, env, idle, hard, note_cb=_note)
     finally:
         _release_heavy(token)
     if why:
@@ -732,6 +741,67 @@ def _repo_hook(t, kind):
     log.log("note", "%s HOOK %s: %s" % (kind.upper(), "OK" if ok else "FAILED", out[-800:]))
     t[kind + "_hook"] = {"ok": ok, "tail": out[-1500:]}
     return ok
+
+
+def request_ship_decision(t, origin):
+    """Hand the SHIP DECISION to Henry instead of firing the deploy hook
+    (owner decree 2026-09-01: "not a process after done anymore but something
+    Henry needs to decide whether it makes sense" - measured cost of the old
+    reflex that same day: a mechanical post-accept ship, a manual build and a
+    daemon-restart eviction collided for hours, and no agent was anywhere in
+    the loop to notice or stop it).
+
+    This is the EMIT half only (the engineer cell reports facts, never
+    decides - the broker docstring's split): one escalation per landed
+    change, judged by Henry with the full system snapshot he already carries
+    (build locks, box load, live build processes - exactly the context the
+    collisions above needed). Henry answers with the `ship` verb
+    (kind none|ota|native); the broker executes ota/native through
+    _repo_hook with SHIP_KIND so ship.sh runs the DECISION, not the legacy
+    hash fallback (pays debt ship-decision-not-wired).
+
+    Facts are deliberately NOT pre-collected here: the advisor brief's own
+    rule is "decide at the moment of shipping, from facts read at that
+    moment", and Henry's judgement turn runs ops/tools/ship_facts.py itself,
+    fresh, minutes later when the decision actually happens.
+
+    DEDUP by (open ship-decision, same card): fast-track finishes a turn
+    every few minutes and each one used to deploy - under judgement, a still
+    -open decision already covers the newer landing, because Henry reads the
+    tree fresh when he gets to it. Returns the escalation id, or None when
+    nothing was emitted (no deploy hook configured = repo ships some other
+    way, or an open decision already pending)."""
+    from spine.storage import events
+    from spine.registry import escalations
+    st = events.settings()
+    hooks = (st.get("repo_hooks") or {}).get(t.get("repo") or "", {})
+    if not (hooks or {}).get("deploy", "").strip():
+        return None                     # no deploy hook - nothing to decide about
+    from spine.ops.actionlog import ActionLog
+    log = ActionLog(t["run_dir"])
+    try:
+        if any(e.get("kind") == "ship-decision" and e.get("card") == t["id"]
+               for e in escalations.list_open()):
+            log.log("note", "SHIP: Entscheidung liegt bereits bei Henry (offen) - "
+                            "keine zweite Eskalation fuer diese Landung (%s)." % origin)
+            return None
+    except Exception:
+        pass                            # a fold failure must not block the emit
+    eid = escalations.emit(
+        "ship-decision", card=t["id"],
+        detail=("Aenderung gelandet (%s, Karte %s). Entscheide, ob JETZT geshippt "
+                "wird - kein Automatismus mehr (Owner-Dekret 2026-09-01).\n"
+                "Brief: ops/harness/agents/ship-advisor.md. Evidenz IMMER frisch "
+                "holen: py -3.12 ops/tools/ship_facts.py\n"
+                "Antworte mit action \"ship\" und kind none|ota|native "
+                "(none = nichts zu shippen, kurz begruenden). Der Harness fuehrt "
+                "ota/native selbst ueber den Deploy-Hook aus (SHIP_KIND an "
+                "ship.sh, silence-bounded) - baue NIE selbst im Judgement-Turn, "
+                "ein nativer Build sprengt dessen Timeout."
+                % (origin, t["id"])))
+    log.log("note", "SHIP: Entscheidung an Henry uebergeben (%s) - kein "
+                    "automatischer Deploy mehr." % origin)
+    return eid
 
 
 from spine.registry import i18n as _i18n  # owner-facing prose only; the audit trail stays English
@@ -1169,29 +1239,21 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
             tt["status"] = "accepted"; tt["mode"] = mode
             _record_outcome(tt)
         t = _mutate(tid, _accepted) or t
-        _repo_hook(t, "deploy")    # daemon-side (post-merge), with the secrets agents never see
+        # Owner decree 2026-09-01: the deploy hook does NOT fire here anymore.
+        # A landing hands the SHIP DECISION to Henry (request_ship_decision);
+        # he judges from the live snapshot (locks, box load, what changed) and
+        # the broker executes his kind through _repo_hook + SHIP_KIND. The old
+        # deploy-red emit for a failed post-accept deploy moved with the
+        # execution: a red ship now keeps its ship-decision escalation open,
+        # which IS the agentic retry (2-attempt cap, then the owner).
+        _ship_eid = request_ship_decision(t, "accept")
         # A landing was the QUIETEST outcome of all: no push (card_event was only
         # ever called for bounces) and no chat line. Report it like any other.
         _LANDED = {"merged": "say.landed.merged",
                    "already_merged": "say.landed.redundant",
                    "redundant_uncommitted": "say.landed.redundant"}
-        _dh = t.get("deploy_hook") or {}
         _say_card(t, _i18n.t(_LANDED.get(kind, "say.landed.plain")) + (
-            "" if not _dh else _i18n.t("say.deployOk" if _dh.get("ok") else "say.deployFailed")))
-        if _dh and not _dh.get("ok"):
-            # Report the failed post-accept deploy to Henry - the fast-track path
-            # already escalates (deploy-red after its retry cap) but THIS path only
-            # said "ACHTUNG: Deploy-Hook fehlgeschlagen" in chat and moved on
-            # (measured 2026-08-21 17:51: npm ci EBUSY against a concurrently
-            # running gradle build, main merged, nothing shipped, Henry deaf).
-            # Emit the fact; whether to rerun is Henry's judgement, not code's.
-            try:
-                from spine.registry import escalations
-                escalations.emit("deploy-red", card=tid,
-                                 detail="Deploy-Hook nach Accept rot:\n"
-                                        + ((_dh.get("tail") or "")[:600]))
-            except Exception:
-                pass
+            _i18n.t("say.shipHenry") if _ship_eid else ""))
         from spine.comms import notify
         notify.card_event(t, "done")
         try:

@@ -120,6 +120,44 @@ def main():
             "the missing-hook reason must be recorded as a note on the escalation"
         print("PASS broker: rerun_deploy with no matching repo_hooks entry -> False + noted, not a silent no-op success")
 
+        # -- the ship verb (owner decree 2026-09-01: shipping is Henry's ------
+        # -- judgement; emit half = lanemachine.request_ship_decision, --------
+        # -- execute half = this verb; pays debt ship-decision-not-wired) -----
+        eid5 = esc.emit("ship-decision", card=None, detail="entscheide")
+        e5 = [e for e in esc.list_open() if e["id"] == eid5][0]
+        # kind none = a deliberate non-ship, closes with no hook involved
+        assert hb._execute("ship", "", "", "", e5, kind="none") is True
+        # an invalid kind is a malformed verb: stays open, reason noted
+        assert hb._execute("ship", "", "", "", e5, kind="banana") is False
+        # ota with no configured hook fails LOUD (same law as rerun_deploy)
+        assert hb._execute("ship", "", "", "", e5, kind="ota") is False
+        print("PASS broker: ship verb -> none closes, bad kind + missing hook stay open loud")
+
+        # -- SHIP_KIND must actually REACH the hook subprocess (the whole -----
+        # -- point: ship.sh runs the DECISION, not the legacy hash fallback) --
+        import cells.engineer.lanemachine as lm
+        marker = os.path.join(tmp, "shipkind.txt")
+        events.settings = lambda: {"default_repo": tmp, "repo_hooks": {
+            tmp: {"deploy": 'sh -c "echo $SHIP_KIND > \\"%s\\""' % marker.replace("\\", "/")}}}
+        eid6 = esc.emit("ship-decision", card=None, detail="entscheide")
+        e6 = [e for e in esc.list_open() if e["id"] == eid6][0]
+        assert hb._execute("ship", "", "", "", e6, kind="ota") is True
+        with open(marker, encoding="utf-8") as f:
+            assert f.read().strip() == "ota", "SHIP_KIND must reach the hook's env"
+        print("PASS broker: ship ota -> hook ran with SHIP_KIND=ota in its env")
+
+        # -- emit half: one open decision per card, deduped; no hook = no-op --
+        t9 = {"id": "c9", "repo": tmp, "run_dir": os.path.join(tmp, "run9"), "worktree": tmp}
+        os.makedirs(t9["run_dir"], exist_ok=True)
+        assert lm.request_ship_decision(t9, "test") is not None
+        assert lm.request_ship_decision(t9, "test") is None, \
+            "an open ship-decision for the card must dedup the second emit"
+        events.settings = lambda: {"repo_hooks": {}}
+        t10 = dict(t9, id="c10")
+        assert lm.request_ship_decision(t10, "test") is None, \
+            "no deploy hook configured -> nothing to decide, no escalation"
+        print("PASS emit: request_ship_decision -> deduped per card, no-op without a hook")
+
         print("ALL PASS")
     finally:
         (esc.ESC_PATH, hb._ask, hb._hands_on_ask, hb._notify_owner, events.settings,
