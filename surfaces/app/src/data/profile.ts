@@ -39,34 +39,59 @@ import type { Me, Profile } from "@/data/types";
 const isWeb = Platform.OS === "web";
 const KEY = "helmdeck.profile";
 
-let memo: Profile | null = null;   // survives a remount; the store is async on native
+// TWO values, and keeping them apart is load-bearing.
+//
+//   memo    - the LIVE cache. Moves on every /me and every edit. This is what
+//             renders.
+//   brought - what this DEVICE had ON DISK when the app launched, captured
+//             once, before any write-through. This is the ONLY thing the
+//             device->account migration may offer.
+//
+// Collapsing them into one was a real bug, caught by driving the actual
+// screens: the hook writes /me's resolved profile through to the cache, and
+// that effect runs before the migration effect in the same commit - so the
+// migration read back the WORKSPACE DEFAULTS it had just been handed and
+// pushed them up as if the device had chosen them. Every account would have
+// been pinned to the workspace default at first login, permanently, and the
+// language question this card adds would never have appeared. A device can
+// only legitimately hand up what it already had; anything it learned from the
+// daemon this session is the daemon's, not the device's.
+let memo: Profile | null = null;
+let brought: Profile | null = null;
+let loaded = false;
+
+function loadOnce(): void {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const raw = globalThis.localStorage?.getItem(KEY);
+    if (raw) { brought = JSON.parse(raw) as Profile; memo = brought; }
+  } catch { /* storage unavailable or corrupt - no opinion */ }
+}
 
 /** Last-known account profile. Synchronous by design - the render path cannot
  *  await, and a missing cache must degrade to "no opinion" (null), never to a
  *  guessed default that would out-rank the daemon's answer. */
 export function cachedProfile(): Profile | null {
-  if (memo) return memo;
-  try {
-    if (isWeb) {
-      const raw = globalThis.localStorage?.getItem(KEY);
-      if (raw) memo = JSON.parse(raw) as Profile;
-    }
-  } catch { /* storage unavailable or corrupt - no opinion */ }
+  if (isWeb) loadOnce();
   return memo;
 }
 
 /** Native's SecureStore is async, so the cache is warmed once at boot; on web
- *  cachedProfile() already reads synchronously and this is a no-op. */
+ *  loadOnce() reads synchronously and this only settles the same flag. */
 export async function warmProfileCache(): Promise<void> {
-  if (isWeb || memo) return;
+  if (isWeb) { loadOnce(); return; }
+  if (loaded) return;
+  loaded = true;
   try {
     const raw = await SecureStore.getItemAsync(KEY);
-    if (raw) memo = JSON.parse(raw) as Profile;
+    if (raw) { brought = JSON.parse(raw) as Profile; memo = brought; }
   } catch { /* storage unavailable */ }
 }
 
 export async function cacheProfile(p: Profile | undefined | null): Promise<void> {
   if (!p) return;
+  if (isWeb) loadOnce();   // capture what was brought BEFORE overwriting it
   memo = p;
   try {
     const raw = JSON.stringify(p);
@@ -77,9 +102,11 @@ export async function cacheProfile(p: Profile | undefined | null): Promise<void>
 
 /** Forget the cache. Called on logout: the next person to sign in on this
  *  device must not inherit the previous account's view for the one frame
- *  before /me answers. */
+ *  before /me answers - nor have it offered up as their own legacy prefs. */
 export async function clearProfileCache(): Promise<void> {
   memo = null;
+  brought = null;
+  loaded = true;          // deliberately empty, not merely unread
   try {
     if (isWeb) globalThis.localStorage?.removeItem(KEY);
     else await SecureStore.deleteItemAsync(KEY);
@@ -99,7 +126,8 @@ export async function saveProfile(patch: Partial<Profile>): Promise<Profile> {
  *  error. */
 export async function migrateIfLegacy(me: Me | undefined): Promise<string[]> {
   if (!me || (me.profile_keys?.length ?? 0) > 0) return [];   // account already speaks for itself
-  const local = cachedProfile();
+  if (isWeb) loadOnce();
+  const local = brought;   // what the DEVICE arrived with - never `memo`, see above
   if (!local) return [];                                      // nothing local to hand up
   const patch: Partial<Profile> = {};
   if (local.lang) patch.lang = local.lang;
