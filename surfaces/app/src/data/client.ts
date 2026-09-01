@@ -7,8 +7,9 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
-import type { Track, LaneMove, Metrics, Me, Profile, Usage, UsageWindow, PendingQuestion,
-  SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult, GxpState } from "./types";
+import type { Track, LaneMove, Metrics, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
+  PendingQuestion, SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult,
+  GxpState } from "./types";
 import type { VoiceClip } from "./voice";
 
 export class AuthRequired extends Error {}
@@ -580,6 +581,19 @@ export const api = {
   // the "once" is not tracked on the device).
   migrateMyConfig: (config: Partial<Profile>) =>
     req<MyConfigResult>("PUT", "/me/config", { config, migrate: true }),
+  // MY OWN boards (accounts-boards-prd phase 2), on the same self-scoped PUT
+  // for the same reason as the profile above. Create vs. update is decided by
+  // `board.id`, not by the verb: omit it and the daemon MINTS one (so no
+  // caller can squat an id), pass it and the daemon checks the row is yours -
+  // or, for the shared default board, that you are the owner role. Which makes
+  // this idempotent: a retry over a flaky relay updates instead of duplicating.
+  saveBoard: (board: { id?: string; name: string; columns: BoardColumn[] }) =>
+    req<{ ok: boolean; board: Board; boards: Board[] }>("PUT", "/me/boards", { board }),
+  // The id rides in the query string, not the path: do_DELETE is a CLOSED
+  // exact-match table (see its docstring), which is what keeps "every delete
+  // ran the same three gates" readable in one block.
+  deleteBoard: (id: string) =>
+    req<{ ok: boolean; boards: Board[] }>("DELETE", `/me/boards?id=${encodeURIComponent(id)}`),
   // The cell registry manifest (cells.py) - which agentic systems exist
   // and whether each is enabled. Used to gate nav (see (tabs)/_layout.tsx) and
   // the Modules screen's CELLS section.
