@@ -127,14 +127,20 @@ export function FirstRunProfile() {
           </Text>
         </View>
 
+        {/* Two PEER choices, so both are tinted rather than filled. A solid
+            accent button is this app's "the action" (login's submit); using it
+            twice here would read as the same action offered twice, and filling
+            only one would nominate a default - which is the one thing a
+            question with no right answer must not do. */}
         <View style={{ gap: 10 }}>
           {LANGS.map((l) => (
             <Pressable key={l.id} onPress={() => pick(l.id as Lang)} disabled={!!busy}
               style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-                backgroundColor: busy === l.id ? t.surface2 : t.accent, borderRadius: 14,
-                paddingVertical: 14, opacity: busy && busy !== l.id ? 0.5 : 1 }}>
-              {busy === l.id ? <ActivityIndicator color="#fff" /> : null}
-              <Text style={{ color: busy === l.id ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>
+                backgroundColor: t.layer2, borderWidth: 1,
+                borderColor: busy === l.id ? t.accent : t.borderStrong, borderRadius: 14,
+                paddingVertical: 14, opacity: busy && busy !== l.id ? 0.45 : 1 }}>
+              {busy === l.id ? <ActivityIndicator color={t.accent} /> : null}
+              <Text style={{ color: busy === l.id ? t.accent : t.txtPrimary, fontSize: 15, fontWeight: "600" }}>
                 {l.label}
               </Text>
             </Pressable>
