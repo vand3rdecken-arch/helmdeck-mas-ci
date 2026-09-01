@@ -118,6 +118,18 @@ def init(role="tool"):
     c.execute("""CREATE TABLE IF NOT EXISTS user_config(
         user TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
         updated_at TEXT NOT NULL, PRIMARY KEY(user, key))""")
+    # BOARDS: saved VIEWS over the one card pool (accounts-boards-prd phase 2).
+    # Cards exist once, in `tracks`; a board only says which columns to draw and
+    # which station each one shows. `owner` is the account NAME (or "" for the
+    # single shared default board) - the same name-IS-the-identity decision
+    # user_config made above, and the reason boards join the rename guard.
+    # `name` and `owner` are mirrored out of `json` into real columns purely so
+    # this table can be QUERIED by owner; the json blob stays authoritative.
+    # Shape, bounds and who-may-edit-which-row live in spine/storage/boards.py.
+    c.execute("""CREATE TABLE IF NOT EXISTS boards(
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, owner TEXT NOT NULL,
+        json TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS boards_owner ON boards(owner)")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         id TEXT, ts TEXT, kind TEXT, track TEXT, data TEXT)""")
@@ -408,6 +420,104 @@ def user_config_users():
     (userconfig.rename_block_reason) - derived from the table, never a flag."""
     return [r[0] for r in conn().execute(
         "SELECT DISTINCT user FROM user_config").fetchall()]
+
+
+# -- boards ----------------------------------------------------------------
+# Same division of labour as user_config above: rows, atomicity and the version
+# bump here; the record shape, the bounds and every ownership rule one layer up
+# in spine/storage/boards.py. A board is stored as its own JSON blob, so this
+# layer never has to know what a column is.
+
+def _board_row(r):
+    """(json) -> the board dict, or None if the blob is unreadable. `id`/`owner`
+    are re-asserted from the indexed columns rather than trusted from the blob:
+    they are what every ownership decision reads, and a row whose two copies
+    ever disagreed must resolve to the one the WHERE clause matched on."""
+    try:
+        b = json.loads(r[2])
+    except ValueError:
+        return None
+    if not isinstance(b, dict):
+        return None
+    b["id"], b["owner"] = r[0], r[1]
+    return b
+
+
+def board_get(bid):
+    r = conn().execute(
+        "SELECT id,owner,json FROM boards WHERE id=?", (bid,)).fetchone()
+    return _board_row(r) if r else None
+
+
+def boards_owned_by(owner):
+    """Every board belonging to one account, oldest first. `owner=""` is the
+    shared default board - it is a normal row, not a special case here."""
+    rows = conn().execute(
+        "SELECT id,owner,json FROM boards WHERE owner=? ORDER BY updated_at,id",
+        (owner,)).fetchall()
+    return [b for b in (_board_row(r) for r in rows) if b]
+
+
+def _board_write(board, verb):
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with conn() as c:
+        cur = c.execute(
+            verb + " INTO boards(id,name,owner,json,updated_at) VALUES(?,?,?,?,?)",
+            (board["id"], board.get("name") or "", board.get("owner") or "",
+             json.dumps(board), now))
+        n = cur.rowcount
+    if n:
+        bump()            # other open devices re-render on the next SSE tick
+    return bool(n)
+
+
+def board_put(board):
+    """Create or replace one board row. Last-write-wins on the WHOLE row, which
+    PRD section 8 accepts for v1: a personal board has exactly one editor and
+    the default board is owner-only, so the collision surface is one human."""
+    return _board_write(board, "INSERT OR REPLACE")
+
+
+def board_insert_absent(board):
+    """Seed a board only if its id is free; True when this call created it.
+
+    INSERT OR IGNORE against the primary key, not a read-then-write: two daemon
+    threads reaching the default-board seed at the same moment (boot and a
+    first /me) would both read "absent" and both write, and the second would
+    silently reset the labels the migration had just produced. SQLite decides
+    it, so "seeded exactly once" holds under a race - the same property
+    user_config_put's only_absent buys for the device->account migration."""
+    return _board_write(board, "INSERT OR IGNORE")
+
+
+def board_delete(bid):
+    with conn() as c:
+        n = c.execute("DELETE FROM boards WHERE id=?", (bid,)).rowcount
+    if n:
+        bump()
+    return bool(n)
+
+
+def boards_drop_user(owner):
+    """Delete every board an account owns. Called from auth.delete_user for the
+    same reason user_config_drop_user is: boards key on the NAME, so a later
+    account created with that name would otherwise inherit a stranger's views.
+    `owner=""` is never passed here - the default board outlives its creator."""
+    if not owner:
+        return 0
+    with conn() as c:
+        n = c.execute("DELETE FROM boards WHERE owner=?", (owner,)).rowcount
+    if n:
+        bump()
+    return n
+
+
+def board_owners():
+    """Accounts that own at least one board. The rename guard reads this -
+    derived from the table, never a stored flag."""
+    return [r[0] for r in conn().execute(
+        "SELECT DISTINCT owner FROM boards WHERE owner!=''").fetchall()]
 
 
 # -- events --------------------------------------------------------------

@@ -157,14 +157,23 @@ def write(user, patch, actor=None, migrate=False):
 def rename_block_reason(name):
     """None if renaming account `name` is safe, else the reason to refuse.
 
-    THE GUARD for the decision in this module's docstring. No rename exists in
-    auth.py today; this is here so the one that gets written cannot quietly
-    orphan a profile - it must call this and surface the refusal."""
-    from spine.storage import db
+    THE GUARD for the decision in this module's docstring, and it answers for
+    EVERY name-keyed store, not just this one - a rename blocked on the profile
+    but not on the boards would still orphan half a setup. Phase 2 added
+    `boards.owner`, so the boards module contributes its own reason here rather
+    than growing a second guard a future rename could forget to call. No rename
+    exists in auth.py today; this is here so the one that gets written cannot
+    quietly orphan anything - it must call this and surface the refusal."""
+    from spine.storage import boards, db
+    why = []
     n = len(db.user_config_get(name))
-    if not n:
+    if n:
+        why.append("%d saved profile setting(s)" % n)
+    b = boards.personal_count(name)
+    if b:
+        why.append("%d personal board(s)" % b)
+    if not why:
         return None
-    return ("%s holds %d saved profile setting(s), which key on the account "
-            "name - renaming would orphan them. Delete the account or leave "
-            "the name as it is; a name is an identity here, not a label."
-            % (name, n))
+    return ("%s holds %s, which key on the account name - renaming would "
+            "orphan them. Delete the account or leave the name as it is; a "
+            "name is an identity here, not a label." % (name, " and ".join(why)))
