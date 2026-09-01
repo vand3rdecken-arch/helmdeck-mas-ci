@@ -724,6 +724,18 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     t = _find(tracks, tid)
     if not t:
         raise RuntimeError("no such track: " + tid)
+    if t.get("example"):
+        # A message to the onboarding guide must NOT be the one path that
+        # dispatches it - this runs in a background thread (routes_track_
+        # actions.tracks_steer_post), so an uncaught refusal here would be
+        # silent; answer the owner instead, same as lanemachine's move refusal.
+        from spine.ops.actionlog import ActionLog
+        from spine.storage import events
+        ActionLog(t["run_dir"]).log("note",
+            "Das ist die Beispielkarte - sie startet nie einen Agenten. "
+            "Loesch sie, wenn du sie nicht mehr brauchst.")
+        events.emit("example", tid, outcome="steer_refused", actor=actor)
+        return t
     if not t.get("session_id"):
         _start(tid)                      # steering a backlog card dispatches it first
         tracks = _load(); t = _find(tracks, tid)

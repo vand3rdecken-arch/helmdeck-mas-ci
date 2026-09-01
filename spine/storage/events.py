@@ -528,6 +528,14 @@ def metrics(tracks):
 
     cards = []
     for t in tracks:
+        # The onboarding example card (accounts-boards-prd phase 3) is inert by
+        # construction - never dispatched, never billed - and must stay OUT of
+        # every total this function computes, not merely zero-valued in them:
+        # this is the one function every economics surface (dashboard, PM's
+        # economics(), Henry's/board-copilot's snapshot) funnels through, so
+        # excluding it here is the single choke point for that promise.
+        if t.get("example"):
+            continue
         te = by_track.get(t["id"], [])
         touches = sum(tariff.get(e.get("touch"), 1) for e in te if e["kind"] == "touch")
         secs = time_in_work(te, running_now=t.get("lane") == "working")
