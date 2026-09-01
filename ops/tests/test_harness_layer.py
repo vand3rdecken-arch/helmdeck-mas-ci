@@ -280,6 +280,13 @@ def test_one_definition():
 # a field now forces a conscious choice - declare it, or say why it stays
 # internal - which is the whole point.
 CLIENT_TS = os.path.join(ROOT, "surfaces", "app", "src", "data", "client.ts")
+# types.ts is read TOO, not instead: the app splits its wire types across both
+# files (client.ts holds the ones declared next to the call that returns them,
+# types.ts the shared ones like Me/Profile), and an interface is checkable
+# wherever it is declared. Concatenating them is safe because the parser looks
+# up interfaces BY NAME and the two files may not declare the same name twice -
+# tsc would already reject that.
+TYPES_TS = os.path.join(ROOT, "surfaces", "app", "src", "data", "types.ts")
 
 DELIBERATE_EXTRAS = {
     # (interface, field): why the app does not declare it
@@ -293,7 +300,7 @@ DELIBERATE_EXTRAS = {
 
 
 def _ts_interfaces():
-    """{name: {field: required_bool}} from client.ts.
+    """{name: {field: required_bool}} from client.ts + types.ts.
 
     A deliberately small parser: strip comments, find `export interface X`, walk
     to the matching brace tracking depth, and take `name:` / `name?:` at depth 1
@@ -301,7 +308,7 @@ def _ts_interfaces():
     key and not its children's. It follows `extends`. Anything it cannot parse
     shows up as an empty field set, which the caller reports rather than skips."""
     import re
-    src = open(CLIENT_TS, encoding="utf-8").read()
+    src = "\n".join(open(p, encoding="utf-8").read() for p in (CLIENT_TS, TYPES_TS))
     src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
     src = re.sub(r"//[^\n]*", "", src)
 
@@ -352,8 +359,10 @@ def test_export_matches_the_app_contract():
     from spine.registry import harness
     from cells.engineer import sessions
     import loop_state
+    from spine.storage import userconfig
     fields = _ts_interfaces()
     check(os.path.exists(CLIENT_TS), "surfaces/app/src/data/client.ts is where we think it is")
+    check(os.path.exists(TYPES_TS), "surfaces/app/src/data/types.ts is where we think it is")
 
     old = os.environ.pop("HELMDECK_WORKTREE", None)
     try:
@@ -375,6 +384,20 @@ def test_export_matches_the_app_contract():
             ("HarnessHook", [h for p in prev for h in p["hooks"]]),
             ("HarnessAgentDoc", [harness.agent_doc(s["agent"]) for s in harness.SURFACES]),
             ("HarnessSettingsDoc", [harness.settings_doc(k) for k in harness.settings_keys()]),
+            # accounts-boards-prd phase 1. THE drift this catches: the profile
+            # whitelist is a closed set in spine/storage/userconfig.py and a
+            # mirrored interface in the app, and the two are edited by
+            # different hands months apart. A key added server-side but not
+            # declared here is a value the daemon happily stores and the app
+            # can never read; a key declared here but not whitelisted is a
+            # control that renders, writes, and 400s. Neither is a type error
+            # on either side - the same blind spot the rows above exist for.
+            #
+            # defaults() is the right object to diff against precisely because
+            # it is the resolution layer: it has one entry per whitelisted key
+            # by construction, so it cannot drift from KEYS without the
+            # assertion below failing first.
+            ("Profile", [userconfig.defaults()]),
         ]
         for name, objs in contract:
             ts = fields(name)
@@ -394,6 +417,27 @@ def test_export_matches_the_app_contract():
                   "%s: the daemon exports nothing the app has not declared - "
                   "add it to client.ts or to DELIBERATE_EXTRAS with a reason "
                   "(undeclared: %s)" % (name, sorted(extra)))
+
+        # The whitelist IS the contract, so hold the two halves of it equal
+        # directly rather than only through defaults(): every writable key must
+        # resolve to something, and every resolvable key must be writable. A
+        # key in one and not the other is a knob that either cannot be saved or
+        # cannot be read back, and the loop above would not see it.
+        check(set(userconfig.KEYS) == set(userconfig.defaults()),
+              "userconfig.KEYS (what PUT /me/config accepts) and defaults() "
+              "(what GET /me resolves) name the same keys "
+              "(write-only: %s, read-only: %s)"
+              % (sorted(set(userconfig.KEYS) - set(userconfig.defaults())),
+                 sorted(set(userconfig.defaults()) - set(userconfig.KEYS))))
+        check(set(userconfig.KEYS) <= set(fields("Profile")),
+              "every whitelisted profile key is declared on the app's Profile "
+              "interface - an undeclared key is a value the daemon stores and "
+              "the app can never read (undeclared: %s)"
+              % sorted(set(userconfig.KEYS) - set(fields("Profile"))))
+        check(all(not req for req in fields("Profile").values()),
+              "every Profile field is OPTIONAL - the app must survive an older "
+              "daemon that predates the key, and a phone renders the cached "
+              "profile from before it existed")
 
         # the gate is an intersection type (LoopNode & {between}), which the
         # parser above deliberately does not model - so state its extra field here

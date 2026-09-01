@@ -23,6 +23,7 @@ import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useSilentOta } from "@/data/ota";
 import { usePresenceHeartbeat } from "@/data/presence";
+import { warmProfileCache } from "@/data/profile";
 import { useBlockerVoice } from "@/data/blocker_voice";
 import { announceDecrypted, decryptPush, presentDecrypted, registerForPush } from "@/data/push";
 import { pushRoute } from "@/data/push_route";
@@ -32,6 +33,7 @@ import { tokens } from "@/theme/tokens";
 import { HealthBanner } from "@/ui/health_banner";
 import { DemoBanner } from "@/ui/demo_banner";
 import { Onboard, useShowOnboard } from "@/ui/onboard";
+import { ProfileGate } from "@/ui/first_run_profile";
 import { LoginScreen } from "@/ui/login_screen";
 import { PairingGate } from "@/ui/pairing_gate";
 import { CommandPalette, usePalette } from "@/ui/palette";
@@ -258,6 +260,11 @@ function useCacheGate() {
   useEffect(() => {
     let done = false;
     const timer = setTimeout(() => { if (!done) setRestored(true); }, 1000);
+    // Same launch window, same reason: the account's last-known profile decides
+    // which LANGUAGE the first frame paints, and on native it lives behind an
+    // async store. Warmed alongside the board cache (and not awaited separately)
+    // so it cannot add a second gate to the launch path.
+    void warmProfileCache();
     restoreCache().finally(() => { done = true; clearTimeout(timer); setRestored(true); });
     const stop = startCachePersist();
     return () => { clearTimeout(timer); stop(); };
@@ -359,17 +366,23 @@ export default function RootLayout() {
         <ThemeProvider name="dark">
           <SafeAreaProvider>
             <StatusBar style="light" />
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: tokens.dark.canvas } }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="card/[id]" />
-              <Stack.Screen name="chat" options={{ presentation: "transparentModal", animation: "fade" }} />
-              <Stack.Screen name="new" options={{ presentation: "modal" }} />
-            </Stack>
+            {/* The account's minimal profile step stands between sign-in and
+                the board (accounts-boards-prd 4.2), so it wraps the Stack
+                rather than sitting beside it - a banner over a rendered board
+                would be a suggestion, and this is a question. */}
+            <ProfileGate>
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: tokens.dark.canvas } }}>
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="card/[id]" />
+                <Stack.Screen name="chat" options={{ presentation: "transparentModal", animation: "fade" }} />
+                <Stack.Screen name="new" options={{ presentation: "modal" }} />
+              </Stack>
+              <HealthBanner />
+              <DemoBanner />
+              <CommandPalette />
+              <PromptHost />
+            </ProfileGate>
             <WebStyles />
-            <HealthBanner />
-            <DemoBanner />
-            <CommandPalette />
-            <PromptHost />
           </SafeAreaProvider>
         </ThemeProvider>
         </WithKernel>
