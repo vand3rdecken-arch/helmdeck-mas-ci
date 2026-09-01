@@ -240,11 +240,35 @@ echo "[build_apk] gradle assembleRelease (native, ~10 min first time)"
 # signingConfig, never built once) as a side effect of a phone-only release.
 # Scoping to :app keeps this exact command's tested behaviour unchanged; the
 # watch module is built on demand by ops/deploy/build_wear_apk.sh instead.
-( cd surfaces/app/android && ./gradlew :app:assembleRelease -x lint --console=plain \
+# WITH_AAB=1 additionally builds the Play Store bundle IN THE SAME gradle
+# invocation (2026-09-01, owner: "can't wait 20 min each time"). The APK and
+# the AAB share the entire compile graph - built together, the AAB costs ~1-2
+# extra minutes of packaging instead of a second full clean build. This is the
+# preferred way to produce a Play artifact; build_aab.sh remains for an
+# AAB-only run.
+GRADLE_TASKS=":app:assembleRelease"
+if [ -n "$WITH_AAB" ]; then
+  GRADLE_TASKS=":app:assembleRelease :app:bundleRelease"
+  echo "[build_apk] WITH_AAB=1 - building the Play AAB in the same run"
+fi
+( cd surfaces/app/android && ./gradlew $GRADLE_TASKS -x lint --console=plain \
     -PreactNativeArchitectures=arm64-v8a ) \
-  || { echo "[build_apk] APK BUILD FAILED"; exit 1; }
+  || { echo "[build_apk] BUILD FAILED"; exit 1; }
 APK="surfaces/app/android/app/build/outputs/apk/release/app-release.apk"
 [ -f "$APK" ] || { echo "[build_apk] no APK produced"; exit 1; }
+if [ -n "$WITH_AAB" ]; then
+  AAB="surfaces/app/android/app/build/outputs/bundle/release/app-release.aab"
+  if [ -f "$AAB" ]; then
+    # Same copy-out as build_aab.sh: the next prebuild --clean wipes android/,
+    # so the artifact must leave the tree immediately (measured loss 2026-09-01).
+    VCODE=$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['android']['versionCode'])")
+    mkdir -p .loop/artifacts
+    cp "$AAB" ".loop/artifacts/helmdeck-vc${VCODE}.aab" \
+      && echo "[build_apk] AAB: $(du -h "$AAB" | cut -f1) -> .loop/artifacts/helmdeck-vc${VCODE}.aab"
+  else
+    echo "[build_apk] WARN: WITH_AAB was set but no AAB was produced"
+  fi
+fi
 echo "[build_apk] APK: $(du -h "$APK" | cut -f1)"
 echo "HOOK-NOTE: APK built ($(du -h "$APK" | cut -f1)) - smoke test + distributing to relay"
 
