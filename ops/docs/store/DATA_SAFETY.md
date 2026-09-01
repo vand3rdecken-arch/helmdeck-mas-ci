@@ -81,14 +81,29 @@ adb shell dumpsys package app.helmdeck | sed -n '/requested permissions/,/instal
 | Badge-Permissions (`READ_APP_BADGE`, `*.permission.BADGE_COUNT_*`, launcher-spezifisch) | ShortcutBadger via `expo-notifications` | App-Icon-Badge; harmlos, keine Deklaration nötig |
 | `USE_BIOMETRIC`, `USE_FINGERPRINT` | `expo-secure-store` → `androidx.biometric:1.1.0` (dessen `build.gradle`) | biometrisch abgesicherter Keystore; keine Play-Deklaration nötig |
 | `BIND_GET_INSTALL_REFERRER_SERVICE` | Play-Services-AAR | Install-Referrer; keine Deklaration nötig |
+| `RECORD_AUDIO`, `BLUETOOTH_CONNECT`, `MODIFY_AUDIO_SETTINGS` | `./plugins/withGlassVoice` (2026-08 hinzugekommen — unten war das noch "nicht enthalten", jetzt korrigiert) | Brillen-Mikro-Gespräch mit Henry (`GlassVoiceService.kt`) + Telefon-Mikro für den normalen Sprachmodus (`modules/livemic`) |
+| ⚠ `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE` | `./plugins/withGlassVoice`, `GlassVoiceService.kt` | **Braucht das Play-Console-Formular „Foreground service permissions" (Begründungstext + Demo-Video) — fertiger Text + Video-Shotlist: `surfaces/app/PLAY_STORE_RELEASE.md` §6.1.** Echtes, verdrahtetes Feature (`chat.tsx`-Toggle startet den Service); läuft als Foreground Service, weil das Gespräch weiterlaufen muss, während der Bildschirm aus ist und der Owner auf die Brille schaut. |
 | ⚠ `SYSTEM_ALERT_WINDOW` | **nicht abschließend zugeordnet** — im JS-Baum nur in `react-native/ReactAndroid/src/debug/AndroidManifest.xml` deklariert, der Build ist aber nicht debuggable ⇒ vermutlich aus einem AAR | **Vor der Einreichung klären.** „Über anderen Apps anzeigen" ist für Nutzer sichtbar und zieht Rückfragen; die App nutzt keinerlei Overlay-API (`grep -ri overlay surfaces/app/src` → nichts) |
 
-**Nicht enthalten** (im ausgelieferten Build geprüft): kein `RECORD_AUDIO`,
-kein `READ_MEDIA_IMAGES`, kein Standort, kein `QUERY_ALL_PACKAGES`.
+**Absichtlich NICHT im Build** (2026-09-01): `FOREGROUND_SERVICE_CONNECTED_DEVICE`
+und `FOREGROUND_SERVICE_MEDIA_PLAYBACK`. MEDIA_PLAYBACK kam aus `expo-audio`s
+Plugin-Default (`enableBackgroundPlayback: true`, jetzt in `app.json` explizit
+`false` — die App hat keine Lockscreen-Mediensteuerung, die das gebraucht
+hätte). CONNECTED_DEVICE gehört zur Brillen-KAMERA (`withMetaDat`/
+`GlassCameraService`) — der Capture-Pfad hat noch keinen einzigen UI-Trigger
+in `surfaces/app/src` (`glasses.ts:capture()`/`stopCamera()` wird nirgends
+aufgerufen), also wäre die Play-Deklaration + das Pflicht-Video nicht ehrlich
+zu erfüllen gewesen. Plugin bleibt im Repo, ist aber aus `app.json`s
+`plugins`-Liste entfernt, bis die Kamera-Funktion einen echten Screen hat.
 
-`RECORD_AUDIO`: `expo-camera`s Plugin fügt es per Default hinzu
-(`recordAudioAndroid` ist in `plugin/build/withCamera.js` auf `true`
-vorbelegt) — deshalb steht in `app.json` jetzt `"recordAudioAndroid": false`.
+**Nicht enthalten** (im ausgelieferten Build geprüft): kein `READ_MEDIA_IMAGES`,
+kein Standort, kein `QUERY_ALL_PACKAGES`.
+
+`RECORD_AUDIO` von `expo-camera` selbst ist weiterhin deaktiviert
+(`recordAudioAndroid` ist in dessen `plugin/build/withCamera.js` auf `true`
+vorbelegt, deshalb `"recordAudioAndroid": false` in `app.json`) — `RECORD_AUDIO`
+steht trotzdem im Build, aber jetzt korrekt zugeordnet zu `withGlassVoice`
+(Tabelle oben), nicht mehr fälschlich als "nicht enthalten" geführt.
 `expo-image-picker` ist nicht in `plugins` gelistet, sein Plugin läuft also
 nicht; sein Library-Manifest deklariert `CAMERA` und
 `READ/WRITE_EXTERNAL_STORAGE` mit `maxSdkVersion="32"` (unkritisch, kein

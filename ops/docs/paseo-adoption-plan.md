@@ -127,10 +127,21 @@ concluding anything:
   schema round-trip); commits forced to skip GPG signing (no call site in
   `gitutil.py`/`lanemachine.py`/`henry_broker.py` passes a signing override -
   git already applies the user's own config).
-- **FOUND, filed to backlog**: [[livemic-stop-drops-tail]] (worse than
-  Paseo's own #4065/#3968 dictation bugs - HelmDeck drops the tail entirely,
-  Paseo's was merely late) and [[git-subprocess-no-timeout]] (small, low
-  severity, noted so it isn't lost).
+- **FOUND, fixed directly (2026-09-01)**: `LiveMicModule.kt`'s `stop()`
+  silently discarded an in-progress utterance instead of finalizing it -
+  worse than Paseo's own #4065/#3968 dictation bugs (theirs was late,
+  HelmDeck's was lost entirely). Fixed by draining on loop-exit (`pump()`
+  now calls `finish(true)` before cleanup whenever an utterance was
+  mid-flight), making `start`/`stop` awaitable so JS can serialize against
+  drain completion, and a generation counter (`activeGen`) so a fast
+  stop->start can't resurrect the old pump thread via the shared `running`
+  flag. `voice_mode.tsx`'s cleanup paths now stop() (and let it drain)
+  BEFORE removing the `onSegment` listener, so a trailing segment isn't
+  swallowed either. Also fixed: no `git` subprocess call in
+  `spine/git/gitutil.py` had a `timeout=` - a hung git process (credential/
+  signer prompt) would have pinned a background thread forever. All calls
+  now route through `_run_git` (60s bound, duck-types a normal
+  `CompletedProcess` on timeout so no call site needed special-casing).
 
 Method note for next time: `git log --all --oneline --grep="#<PR-number>"`
 against a local Paseo clone finds the exact fix commit fast - much cheaper

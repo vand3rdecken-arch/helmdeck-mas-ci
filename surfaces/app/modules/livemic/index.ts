@@ -9,9 +9,15 @@ import { requireOptionalNativeModule } from "expo-modules-core";
  *  white screen (see modules/surfaces/glasses/index.ts). */
 export interface LiveMicModule {
   /** Open the mic. `voiceComm=true` = AudioSource.VOICE_COMMUNICATION (HW echo
-   *  cancel where the handset has one). Idempotent; false = mic unavailable. */
-  start(voiceComm: boolean): boolean;
-  stop(): boolean;
+   *  cancel where the handset has one). Idempotent; resolves false = mic
+   *  unavailable. Waits (bounded) for a still-draining previous stop() to
+   *  actually finish before opening a new AudioRecord. */
+  start(voiceComm: boolean): Promise<boolean>;
+  /** Resolves once capture has actually stopped AND any utterance still
+   *  mid-flight has been flushed as a final segment - await this before
+   *  tearing down onSegment listeners so a trailing segment isn't dropped
+   *  (ops/docs/backlog/livemic-stop-drops-tail). */
+  stop(): Promise<boolean>;
   /** should_listen gate: mute capture while Henry speaks, so the phone never
    *  transcribes its own speaker. */
   setMuted(m: boolean): boolean;
