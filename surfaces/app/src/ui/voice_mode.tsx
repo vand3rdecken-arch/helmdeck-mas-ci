@@ -352,7 +352,7 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
       setProblem("");
       setCaption("");
       setState("listening");
-      LiveMic.start(true);
+      LiveMic.start(true).catch(() => { /* mic unavailable - onSegment just never fires */ });
       LiveMic.setMuted(false);
       return;
     }
@@ -460,7 +460,7 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
       speechRef.current?.stop();
       speechRef.current = null;
       stopSpeaking();
-      try { LiveMic?.stop(); } catch { /* absent on old builds */ }
+      LiveMic?.stop()?.catch(() => { /* absent on old builds, or already idle */ });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -472,7 +472,7 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
   useEffect(() => {
     const mic = LiveMic;
     if (!visible || !live || !mic) return;
-    mic.start(true);
+    mic.start(true).catch(() => { /* mic unavailable - onSegment just never fires */ });
     const seg = mic.addListener("onSegment", async (e: MicSegment) => {
       if (!alive.current || !liveRef.current) return;
       mic.setMuted(true);
@@ -505,7 +505,13 @@ export function VoiceMode({ visible, onClose, onAsk, onCancel, busy, initialAsk 
     const st = mic.addListener("onState", (e: { state: string }) => {
       if (alive.current) setLevel(e.state === "speech" ? 0.8 : 0);
     });
-    return () => { seg.remove(); st.remove(); try { mic.stop(); } catch { /* gone */ } };
+    return () => {
+      // stop() BEFORE removing listeners: it resolves only after any
+      // in-flight utterance has been flushed as a trailing onSegment
+      // (ops/docs/backlog/livemic-stop-drops-tail) - removing the listener
+      // first would silently swallow that final segment.
+      mic.stop().catch(() => { /* gone */ }).finally(() => { seg.remove(); st.remove(); });
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, live]);
 

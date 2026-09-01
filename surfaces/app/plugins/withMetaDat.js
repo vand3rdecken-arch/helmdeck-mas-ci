@@ -4,6 +4,19 @@
 // runs against the HAND-MANAGED surfaces/app/android tree. One owner, both paths, no
 // drift.
 //
+// ⚠ NOT REGISTERED IN app.json's `plugins` RIGHT NOW (2026-09-01). This file,
+// GlassCameraService.kt and GlassesDevice.kt all still exist and still work -
+// they were pulled from the build because `glasses.capture()`/`stopCamera()`
+// (surfaces/app/src/data/glasses.ts) have NO caller anywhere in surfaces/app/src.
+// The whole point of GlassCameraService is Play's FOREGROUND_SERVICE_CONNECTED_DEVICE
+// declaration, and Google Play's foreground-service permission review requires a
+// justification AND a demo video of the feature actually working - which cannot
+// be done honestly for a capture path with no UI button. Re-add this plugin to
+// app.json's `plugins` array the moment glasses.capture() gets a real screen
+// (and the worker's /glance/photo route is on the allowlist - see glasses.ts's
+// own comment), then re-run the prebuild permission check in
+// ops/docs/store/DATA_SAFETY.md before the next Play submission.
+//
 // WHY THIS FILE EXISTS AT ALL — the fact that changed, measured 2026-08-21.
 // ops/docs/glasses-reference.md §11.7 used to say the DAT artifacts were already in
 // this box's Gradle cache and resolved offline with no token. That is DEAD:

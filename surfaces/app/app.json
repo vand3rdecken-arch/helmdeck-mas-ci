@@ -77,7 +77,6 @@
         }
       ],
       "./plugins/withGlassVoice",
-      "./plugins/withMetaDat",
       [
         "expo-splash-screen",
         {
@@ -102,7 +101,8 @@
         "expo-audio",
         {
           "microphonePermission": false,
-          "recordAudioAndroid": false
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
         }
       ]
     ],

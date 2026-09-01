@@ -26,9 +26,31 @@ WORKTREE_DIRNAME = "helmdeck-worktrees"
 AGENT_IDENT = ("-c", "user.name=HelmDeck Agent",
                "-c", "user.email=agent@helmdeck.local")
 
+# ops/docs/backlog/git-subprocess-no-timeout: a bare `git` call has no clock of
+# its own - a credential/host-key/signer prompt it can never answer would pin
+# whatever background thread ran it forever, producing exactly the "card looks
+# stuck, needs_you never fires" symptom the daemon otherwise guards against for
+# the driver process. Every subprocess.run in this module goes through
+# _run_git so that bound is universal, not something each call site has to
+# remember.
+GIT_TIMEOUT_S = 60
+
+
+def _run_git(args, cwd=None, env=None):
+    try:
+        return subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True,
+                              timeout=GIT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        # Duck-types a normal CompletedProcess so every existing call site's
+        # `r.returncode != 0` / `(rc, out, err) = ...` handling already covers
+        # this without special-casing - it just reads as "git failed".
+        return subprocess.CompletedProcess(
+            args, 124, "",
+            "git %s: timed out after %ss" % (" ".join(args[1:]), GIT_TIMEOUT_S))
+
 
 def _git(repo, *args):
-    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    r = _run_git(["git", "-C", repo, *args])
     if r.returncode != 0:
         raise RuntimeError("git %s: %s" % (" ".join(args), r.stderr.strip()))
     return r.stdout.strip()
@@ -36,13 +58,12 @@ def _git(repo, *args):
 
 def _git_try(repo, *args):
     """Run git, return (returncode, stdout, stderr) without raising."""
-    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    r = _run_git(["git", "-C", repo, *args])
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
 
 def _branch_exists(repo, branch):
-    r = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", branch],
-                       capture_output=True, text=True)
+    r = _run_git(["git", "-C", repo, "rev-parse", "--verify", branch])
     return r.returncode == 0
 
 
@@ -78,8 +99,7 @@ def is_git_repo(path):
     be rejected when the card is filed, not discovered mid-dispatch."""
     if not path or not os.path.isdir(path):
         return False
-    r = subprocess.run(["git", "-C", path, "rev-parse", "--git-dir"],
-                       capture_output=True, text=True)
+    r = _run_git(["git", "-C", path, "rev-parse", "--git-dir"])
     return r.returncode == 0
 
 
@@ -161,8 +181,7 @@ def _checkpoint(worktree):
         env = dict(os.environ, GIT_INDEX_FILE=idx)
 
         def g(*a, check=True):
-            r = subprocess.run(["git", "-C", worktree, *a], env=env,
-                               capture_output=True, text=True)
+            r = _run_git(["git", "-C", worktree, *a], env=env)
             if check and r.returncode != 0:
                 raise RuntimeError(r.stderr.strip())
             return r.stdout.strip()
@@ -342,8 +361,7 @@ def _worktree_of_branch(repo, branch):
     None. git refuses to check the same branch out twice, so if a stale worktree
     holds it (e.g. a swarmdeck->helmdeck rename left ../swarmdeck-worktrees),
     dispatch must REUSE that path instead of failing on `git worktree add`."""
-    r = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"],
-                       capture_output=True, text=True)
+    r = _run_git(["git", "-C", repo, "worktree", "list", "--porcelain"])
     if r.returncode != 0:
         return None
     path = None

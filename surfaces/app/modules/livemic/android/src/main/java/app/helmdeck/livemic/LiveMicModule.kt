@@ -15,6 +15,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.sqrt
 
 /**
@@ -66,20 +67,42 @@ class LiveMicModule : Module() {
   @Volatile private var running = false
   @Volatile private var muted = false
   private var worker: Thread? = null
+  // ops/docs/backlog/livemic-stop-drops-tail: `running` alone can't tell one
+  // capture generation apart from the next - a fast stop->start could flip it
+  // back to true before the OLD pump thread's loop noticed it was false,
+  // resurrecting that thread alongside the new one. Each startCapture mints a
+  // new generation; a pump loop that isn't the current generation anymore
+  // stops even if `running` says true (for someone else's capture).
+  private val activeGen = AtomicLong(0)
 
   override fun definition() = ModuleDefinition {
     Name("LiveMic")
     Events("onSegment", "onState")
 
-    /** Open the mic and start cutting utterances. Idempotent. */
-    Function("start") { voiceComm: Boolean ->
-      if (running) return@Function true
-      startCapture(voiceComm)
+    /** Open the mic and start cutting utterances. Idempotent. Waits (bounded)
+     *  for a still-draining previous capture to actually exit first, so two
+     *  AudioRecord instances are never intentionally open at once. */
+    AsyncFunction("start") { voiceComm: Boolean, promise: Promise ->
+      if (running) { promise.resolve(true); return@AsyncFunction }
+      val prev = worker
+      Thread {
+        try { prev?.join(500) } catch (t: Throwable) { /* best effort */ }
+        promise.resolve(startCapture(voiceComm))
+      }.start()
     }
 
-    Function("stop") {
+    /** Stop capture. Resolves once the pump thread has actually exited AND
+     *  any utterance that was still mid-flight when stop() was called has
+     *  been flushed as a segment (see pump()'s drain-on-exit) - a caller
+     *  that awaits this is guaranteed not to have silently dropped the tail
+     *  end of what the user was saying. */
+    AsyncFunction("stop") { promise: Promise ->
       running = false
-      true
+      val w = worker
+      Thread {
+        try { w?.join(2000) } catch (t: Throwable) { /* best effort */ }
+        promise.resolve(true)
+      }.start()
     }
 
     /** should_listen gate: while Henry speaks, capture is dropped and the VAD
@@ -237,15 +260,16 @@ class LiveMicModule : Module() {
       Log.w(TAG, "AudioRecord: ${t.message}"); return false
     }
     if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); return false }
+    val myGen = activeGen.incrementAndGet()
     rec = r
     running = true
     r.startRecording()
-    worker = Thread { pump(r) }.apply { isDaemon = true; start() }
+    worker = Thread { pump(r, myGen) }.apply { isDaemon = true; start() }
     return true
   }
 
   /** The capture loop. One thread, one owner of every VAD variable. */
-  private fun pump(r: AudioRecord) {
+  private fun pump(r: AudioRecord, myGen: Long) {
     val frame = ShortArray(FRAME)
     val preroll = ArrayDeque<ShortArray>()
     var utterance: ByteArrayOutputStream? = null
@@ -277,7 +301,7 @@ class LiveMicModule : Module() {
       reset()
     }
 
-    while (running) {
+    while (running && activeGen.get() == myGen) {
       val n = try { r.read(frame, 0, FRAME) } catch (t: Throwable) { -1 }
       if (n <= 0) break
       if (muted) { if (utterance != null) finish(true); continue }
@@ -310,10 +334,21 @@ class LiveMicModule : Module() {
         }
       }
     }
+    // DRAIN, don't discard: the loop above can exit mid-utterance (stop()
+    // called, a newer capture superseded this one, or the hardware read
+    // failed) - whatever was captured so far is still real audio the user
+    // produced and must still reach onSegment, not vanish silently
+    // (ops/docs/backlog/livemic-stop-drops-tail). finish()'s own
+    // MIN_SPEECH_FRAMES gate still drops a bare door-slam exactly as it does
+    // on a normal silence-triggered finish.
+    if (utterance != null) finish(true)
     try { r.stop() } catch (t: Throwable) { /* already stopped */ }
     r.release()
     if (rec === r) rec = null
-    running = false
+    // Only clear `running` if no newer capture has already taken over - an
+    // old, superseded generation exiting must not turn off a capture that
+    // isn't its own.
+    if (activeGen.get() == myGen) running = false
   }
 
   private fun pcmBytes(s: ShortArray): ByteArray {

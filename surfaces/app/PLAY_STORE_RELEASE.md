@@ -116,8 +116,9 @@ Summary of what the app actually does with data (verified in `surfaces/app/src`)
 
 ## 6. Permission justifications
 
-Managed workflow — the manifest is generated. Expected merged permissions and
-why (no sensitive/declaration-form permissions are used):
+Managed workflow — the manifest is generated. **Updated 2026-09-01**: this used
+to say "no sensitive/declaration-form permissions are used" — that's stale
+since the glasses voice feature shipped. Expected merged permissions and why:
 
 | Permission | Source | Justification |
 |---|---|---|
@@ -125,26 +126,75 @@ why (no sensitive/declaration-form permissions are used):
 | `CAMERA` | `expo-camera` plugin in app.json | QR pairing scan (`src/app/scan.tsx`) + attachment photos (`src/data/attachments.ts` `takePhoto`); runtime-prompted, never in background |
 | `POST_NOTIFICATIONS` | `expo-notifications` | push for agent replies/review-ready; runtime-prompted in `src/data/push.ts` (`requestPermissionsAsync`) — only after pairing, good |
 | `VIBRATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM` (maybe, from expo-notifications) | `expo-notifications` | notification delivery/rescheduling |
+| `RECORD_AUDIO`, `BLUETOOTH_CONNECT`, `MODIFY_AUDIO_SETTINGS` | `./plugins/withGlassVoice` | glasses-mic conversation with Henry (`GlassVoiceService.kt`) + the phone's own mic for in-app voice mode (`modules/livemic`) |
+| ⚠ **`FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE`** | `./plugins/withGlassVoice`, `GlassVoiceService.kt` | **Needs a Play Console foreground-service declaration form (justification text + demo video) — see the ready-to-paste text and shot list below.** Real, wired feature: `chat.tsx`'s glasses-voice toggle starts it; it's a `START_STICKY` service with an ongoing notification, because the conversation must survive the phone screen going dark while the owner is looking at the glasses lens. |
 
 - ✅ CAMERA needs no Play declaration form (only location/SMS/etc. do); it
   must simply match the Data Safety answers — see `ops/docs/store/DATA_SAFETY.md`.
-- ✅ `RECORD_AUDIO` from expo-camera is disabled via
-  `"recordAudioAndroid": false` (app.json) — its plugin defaults that to
-  `true`, so this was actively being merged in. Verified absent from the
-  shipped build.
+- ✅ `RECORD_AUDIO` from expo-camera itself is still disabled via
+  `"recordAudioAndroid": false` (app.json) — but `RECORD_AUDIO` IS now in the
+  shipped build regardless, via `withGlassVoice`. Don't be surprised by it in
+  the manifest; it's real and justified above.
+- ✅ **`FOREGROUND_SERVICE_CONNECTED_DEVICE` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK`
+  are deliberately NOT in this build** (2026-09-01). MEDIA_PLAYBACK was a
+  default-on trap in `expo-audio`'s plugin (`enableBackgroundPlayback`
+  defaults to `true`; nothing in the app uses lock-screen media controls) —
+  fixed by setting it `false` in app.json. CONNECTED_DEVICE would have needed
+  a declaration + video for the glasses CAMERA (`withMetaDat`/
+  `GlassCameraService`), but that capture path has no UI trigger anywhere in
+  `surfaces/app/src` yet — the plugin is written but deliberately unregistered
+  in `app.json`'s `plugins` until it does (see `withMetaDat.js`'s header).
 - ⚠ **`SYSTEM_ALERT_WINDOW` is in the currently shipped build** (verified via
   `adb shell dumpsys package app.helmdeck`) and nothing in `surfaces/app/src` uses an
   overlay. Confirm it is absent from the release AAB before submitting; if
   present, block it via `android.blockedPermissions`. Full verified permission
   table + the check: `ops/docs/store/DATA_SAFETY.md` §3.
-- ✅ Verified absent from the shipped build: mic, location,
-  `READ_MEDIA_IMAGES`, QUERY_ALL_PACKAGES.
+- ✅ Verified absent from the shipped build: location, `READ_MEDIA_IMAGES`,
+  QUERY_ALL_PACKAGES.
 - ⚠ Verify the final merged manifest before submitting:
   `cd surfaces/app && npx expo prebuild -p android --no-install` (throwaway; don't
   commit `android/`) and read
   `android/app/src/main/AndroidManifest.xml`. If `SCHEDULE_EXACT_ALARM` /
   `USE_EXACT_ALARM` appears and nothing schedules exact alarms, strip it via
   `expo-build-properties` — Google asks for justification on those.
+
+### 6.1 FOREGROUND_SERVICE_MICROPHONE — Play Console declaration form
+
+Play Console → App content → **Permissions** (or the in-review prompt asking
+"what is this foreground service used for" + a video) — paste/adapt:
+
+> HelmDeck lets the owner talk to their AI assistant ("Henry") hands-free
+> through paired Meta Ray-Ban Display smart glasses. Tapping the glasses-voice
+> control starts a foreground service that listens on the glasses' Bluetooth
+> microphone, sends the recognized speech to the user's own backend, and
+> speaks the reply back through the glasses. The service must run as a
+> foreground service because the entire point of the feature is that it keeps
+> listening while the phone screen is off and the owner is looking at the
+> glasses display, not the phone — an ordinary background-restricted service
+> would be killed the moment the phone is put away, which is exactly when this
+> feature is used. A persistent notification ("Henry — Bereit/Hört zu…") is
+> shown the whole time the service is active, and it stops the instant the
+> user ends the conversation or the app is unpaired.
+
+**Video to record** (owner action — needs the paired glasses + phone, cannot
+be done from a worktree):
+1. Show the phone's Settings → Apps → HelmDeck → Permissions screen with
+   Microphone NOT yet granted (or fresh install), for a moment.
+2. Open HelmDeck, pair/confirm the Meta glasses are connected.
+3. Tap the glasses-voice control in the chat screen (`chat.tsx`) — show the
+   RECORD_AUDIO system permission prompt appearing and being granted (skip if
+   already granted from a prior run — then just show the toggle turning on).
+4. Show the persistent "Henry" notification appear in the status bar / shade
+   — this is the foreground-service indicator Google specifically wants to
+   see present during use.
+5. **Turn the phone screen off (or switch to another app)** and speak a short
+   question — this is the crux of the justification, so it must be visibly
+   demonstrated, not just claimed. Show Henry's spoken reply still arriving
+   with the screen off/app backgrounded.
+6. Turn the phone screen back on, tap the control again to stop — show the
+   notification disappearing.
+Keep it short (30–60s), no narration needed, screen-record the phone (the
+glasses' own view doesn't need to be captured).
 
 ## 7. Target SDK & cleartext compliance
 
