@@ -25,7 +25,11 @@ export type Cap = string | undefined;
 // within the list (three near-identical git glyphs before).
 export const GROUPS: readonly [string, readonly (readonly [string, string, string, string, Cap])[]][] = [
   ["more.grp.control", [
-    ["automation", "nav.automation", "options-outline", "more.sub.automation", "settings.read"], // routes_settings.py automation_get: owner only (card 2)
+    // "automation" used to be a row here. It is a redirect INTO the settings
+    // hub now (accounts-boards-prd phase 4), and a row that lands on the same
+    // screen as "Einstellungen" further down is exactly the Mehr-tab
+    // wildwuchs settings-ia-redesign's point B removes. The route still
+    // exists for deep links; it no longer wants a row of its own.
     ["processes", "nav.processes", "git-network-outline", "more.sub.processes", undefined],    // no role check in processes.py
     ["connectors", "nav.connectors", "extension-puzzle-outline", "more.sub.connectors", TEAM_MEMBER_CAP], // routes_connectors.py: client blocked, not yet migrated
   ]],
@@ -37,7 +41,12 @@ export const GROUPS: readonly [string, readonly (readonly [string, string, strin
     ["audit", "nav.audit", "file-tray-full-outline", "more.sub.audit", "audit.read"],   // routes_audit.py audit_get: capability-gated (card 2), screen built card 5
   ]],
   ["more.grp.system", [
-    ["settings", "nav.settings", "settings-outline", "more.sub.settings", "settings.read"],         // routes_settings.py settings_get: owner only (card 2)
+    // No cap since accounts-boards-prd phase 4: the hub is every role's (door 1
+    // is the ACCOUNT's profile, door 2 their boards) and the owner-only doors
+    // are hidden inside it, not behind the row. This is the phone's only way in
+    // - the settings tab is desktopOnly - so gating it would have left a client
+    // with no route to their own language at all.
+    ["settings", "nav.settings", "settings-outline", "more.sub.settings", undefined],
     ["repo", "nav.repo", "folder-open-outline", "more.sub.repo", "projects.view"],              // routes_projects.py repo_templates_get: projects.view
     ["loopmap", "nav.loopmap", "map-outline", "more.sub.loopmap", undefined],                   // /loop/map: no role check
   ]],

@@ -60,6 +60,46 @@ for i, (tid, task, lane, status, prio) in enumerate(CARDS):
                   "created": NOW, "rank": i, "driver": "claude",
                   "actor": "owner", "client": "", "ai_cost": 0.0})
 
+# THE DUMMY KNOB (accounts-boards-prd phase 4, opt-in via HELMDECK_DUMMY_KNOB=1).
+#
+# The card's acceptance is "a dummy knob with a scope tag appears in the correct
+# door with the correct badge with NO client code change". The placement RULE is
+# proved without a browser by surfaces/app/src/data/__settings_hub_selftest__.ts;
+# this is the other half - that a knob the client bundle has never heard of
+# really does draw itself, in the real app, against the real routes.
+#
+# Wrapping the schema function HERE, in a throwaway verification daemon, is
+# deliberate: the dummy must not exist in shipped code, and "no client change"
+# is only an honest claim if the knob enters through the same door a real new
+# knob would - one entry in the daemon's table. The wrapper APPENDS; it never
+# edits what apimeta emits, so everything else on the screen stays real.
+if os.environ.get("HELMDECK_DUMMY_KNOB") == "1":
+    from spine.http import apimeta                  # noqa: E402
+    _real_schema = apimeta._config_schema
+
+    def _with_dummy(s):
+        rows = list(_real_schema(s))
+        rows.append({
+            "group": "dummySection", "groupKey": "Dummy-Sektion",
+            "path": "dummy.knob", "control": "text",
+            "labelKey": "Dummy-Knopf", "descKey": "Erfunden fuer den Abnahmetest.",
+            "value": (s.get("dummy") or {}).get("knob") or "",
+            # A door that has NO schema rows of its own, and a scope the daemon
+            # never otherwise emits - so nothing about this can be satisfied by
+            # a special case somebody wrote for the real knobs.
+            "door": "connections", "level": "basic", "scope": "device",
+        })
+        return rows
+
+    apimeta._config_schema = _with_dummy
+    # routes_settings.py imported the symbol BY VALUE at import time, so the
+    # module that actually serves /automation has to be rebound too - patching
+    # apimeta alone would leave the live route on the original function and the
+    # test would silently prove nothing.
+    from spine.http.routes import routes_settings   # noqa: E402
+    routes_settings._config_schema = _with_dummy
+    print("dummy   : dummy.knob -> door=connections scope=device")
+
 from http.server import ThreadingHTTPServer     # noqa: E402
 from spine.http.server import H                 # noqa: E402
 

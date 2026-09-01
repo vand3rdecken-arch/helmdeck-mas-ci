@@ -5,8 +5,6 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAnalytics } from "@/data/analytics";
-import { useBlockerVoice } from "@/data/blocker_voice";
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
@@ -17,7 +15,6 @@ import { useTheme } from "@/theme";
 import { ApkUpdateBanner } from "@/ui/apk_update";
 import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { Panel, SectionLabel } from "@/ui/kit";
-import { Hint, Toggle } from "@/ui/settings_sections";
 import { VersionFooter } from "@/ui/updates_info";
 import { GROUPS as GROUPS_DATA } from "@/nav/more_groups";
 
@@ -53,10 +50,6 @@ export default function MoreTab() {
   // they were the top half of the screen on a phone that is long since paired.
   const [connOpen, setConnOpen] = useState(false);
   const showConn = !paired || connOpen;
-  const analyticsOn = useAnalytics((s) => s.enabled);
-  const setAnalytics = useAnalytics((s) => s.setEnabled);
-  const blockerVoiceOn = useBlockerVoice((s) => s.enabled);
-  const setBlockerVoice = useBlockerVoice((s) => s.setEnabled);
 
   // Apply the code, then PROVE the connection with a real round-trip before
   // claiming success — a parsed-but-dead code (expired window, relay down,
@@ -147,14 +140,21 @@ export default function MoreTab() {
           </Pressable>
         </Panel>
         ) : null}
-        {/* device-local switches, one panel instead of two */}
+        {/* The device-local switches (Vorlesen, Analytics) MOVED to the
+            settings hub's door 1, with a "Gerät" badge next to them -
+            settings-ia-redesign's point B: Mehr = connection status +
+            protocols + one Einstellungen row + feedback, and every toggle
+            lives behind that one row. Kept as a pointer rather than a
+            duplicate form, because a second edit surface for the same switch
+            is the exact thing this redesign exists to end. */}
         <Panel>
           <SectionLabel text={tr("more.device.section")} />
-          <Toggle label={tr("settings.voice.speakBlockers")} value={blockerVoiceOn} onChange={setBlockerVoice} />
-          <Hint text={tr("settings.voice.hint")} />
-          <View style={{ height: 10 }} />
-          <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
-          <Hint text={tr("settings.privacy.hint")} />
+          <Pressable onPress={() => router.push("/settings?door=general" as never)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
+            <Ionicons name="person-circle-outline" size={18} color={t.txtSecondary} />
+            <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{tr("more.device.moved")}</Text>
+            <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
+          </Pressable>
         </Panel>
         {GROUPS.map(([grpKey, allLinks]) => {
           const links = allLinks.filter(([, , , , cap]) => can(me, cap));
