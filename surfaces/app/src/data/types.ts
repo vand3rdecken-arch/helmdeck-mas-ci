@@ -205,6 +205,17 @@ export interface Process {
   id: string; request: string; client: string; due: string; status: string;
   steps: Step[]; cost: number; created: string; error?: string;
 }
+/** MY ACCOUNT's view preferences (accounts-boards-prd phase 1). Resolved
+ *  server-side: the account's own rows overlaid on the workspace defaults, so
+ *  every field is always present and always renderable. Written back with
+ *  `PUT /me/config`, which accepts exactly these keys and nothing else - the
+ *  whitelist lives in spine/storage/userconfig.py and adding a key here
+ *  without adding it there (or the reverse) fails the ts-contract test in
+ *  ops/tests/test_harness_layer.py. */
+export interface Profile {
+  lang?: string;
+  appearance?: { backdrop?: string };
+}
 /** `ui` is the PUBLIC slice of policy every role may see (language + lane
  *  labels). The full settings blob stays owner-only on /settings. */
 export interface Me {
@@ -214,6 +225,14 @@ export interface Me {
    *  `role`, that's exactly the drift rbac-gxp card 4 closes. See
    *  src/kernel/caps.ts's `can()`. */
   caps?: string[];
+  /** The account's resolved view - the same on every device it signs in on. */
+  profile?: Profile;
+  /** Which profile keys this account actually CHOSE, as opposed to inherited
+   *  from the workspace. NOT derivable from `profile` (a resolved value looks
+   *  identical either way), and two flows turn on it: the first-login language
+   *  step only appears while "lang" is absent from it, and the device->account
+   *  migration only offers when it is empty. */
+  profile_keys?: string[];
   ui?: { lang?: string; lane_labels?: Record<string, string>;
     /** flat = Max subscription (quota, not cash) → cost surfaces show tokens;
      *  metered = API pay-per-token → $ amounts are real spend. */
