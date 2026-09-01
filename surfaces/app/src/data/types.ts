@@ -216,6 +216,32 @@ export interface Profile {
   lang?: string;
   appearance?: { backdrop?: string };
 }
+/** One column of a board (accounts-boards-prd phase 2). `station` is a real
+ *  lane, so the drag handler can translate a drop straight into
+ *  `move_lane(station)` - a column can never name something the lane machine
+ *  would refuse a card into.
+ *
+ *  `label` MAY BE EMPTY, and empty is not "missing": it means "render this
+ *  station's own name", which is what keeps a board translatable instead of
+ *  freezing whatever language it was created in. Never render `label` raw -
+ *  go through `columnLabel()` in data/boards.ts. */
+export interface BoardColumn {
+  id: string;
+  label: string;
+  station: string;
+}
+/** A saved VIEW over the one card pool. Cards exist once; a board only says
+ *  which columns to draw over them. `owner: ""` is the shared default board
+ *  (owner-role edits it, nobody deletes it); anything else is that account's
+ *  private board. Shape held against spine/storage/boards.py by the
+ *  ts-contract test in ops/tests/test_harness_layer.py. */
+export interface Board {
+  id: string;
+  name: string;
+  owner: string;
+  columns: BoardColumn[];
+  created?: string;
+}
 /** `ui` is the PUBLIC slice of policy every role may see (language + lane
  *  labels). The full settings blob stays owner-only on /settings. */
 export interface Me {
@@ -233,6 +259,12 @@ export interface Me {
    *  step only appears while "lang" is absent from it, and the device->account
    *  migration only offers when it is empty. */
   profile_keys?: string[];
+  /** The boards this account may render: the shared default first, then its
+   *  own. OPTIONAL, and the app must survive its absence - a daemon older than
+   *  this bundle omits it, and the demo fixture has none. data/boards.ts falls
+   *  back to the four stations, which is exactly the board the app drew before
+   *  boards existed. */
+  boards?: Board[];
   ui?: { lang?: string; lane_labels?: Record<string, string>;
     /** flat = Max subscription (quota, not cash) → cost surfaces show tokens;
      *  metered = API pay-per-token → $ amounts are real spend. */

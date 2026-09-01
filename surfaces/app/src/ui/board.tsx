@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -9,6 +9,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
+import { cardStation, columnLabel, groupByColumn, renderColumns, useBoards,
+  type RenderColumn } from "@/data/boards";
 import { useDemo } from "@/data/demo";
 import { useHealth } from "@/data/health";
 import type { Track, LaneMove } from "@/data/types";
@@ -23,8 +25,6 @@ import { isWeb, useResponsive } from "./responsive";
 import { useActionSheet } from "./action_sheet";
 import { SignOff } from "./sign_off";
 import { SignOffBatch } from "./sign_off_batch";
-
-const LANES = ["backlog", "working", "review", "done"] as const;
 
 /** Content-layer card (Apple HIG: don't put Liquid Glass in the content layer —
  *  use an opaque standard surface with a hairline + soft elevation shadow, and
@@ -57,7 +57,13 @@ const statusLabel = (tr: TFn, s?: string) =>
   (s ? (STATUS_KEY[s] ? tr(STATUS_KEY[s]) : s.replace(/_/g, " ")) : "");
 const prioLabel = (tr: TFn, p?: string) => (p ? (PRIO_KEY[p] ? tr(PRIO_KEY[p]) : p) : "");
 
-function useLaneLabels() {
+/** A STATION's own name - what an unlabelled column renders as (see
+ *  data/boards.ts columnLabel). Boards own their column labels now; this stays
+ *  the resolver underneath them, and `policy.lane_labels` stays in the chain
+ *  for one release as the PRD specifies: it is what a workspace that renamed a
+ *  lane before boards existed still reads on any board whose column the user
+ *  never labelled. */
+export function useLaneLabels() {
   const tr = useT();
   // /me first: it carries the public UI policy for EVERY role. The dashboard
   // payload strips `settings` for operators, so reading only there left them
@@ -414,19 +420,25 @@ function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) =>
 // ---- desktop drag-and-drop kanban --------------------------------------------
 // A card is a Pan gesture that only activates after a short hold (so a plain tap
 // still opens the card). While dragging we translate it under the finger, hit-
-// test the four column plates in window coordinates, and show an insertion line.
-// Drop -> moveLane (lane changed) or reorder (same lane, new position).
+// test the column plates in window coordinates, and show an insertion line.
+// Drop -> moveLane (the column's STATION changed) or reorder (same station,
+// new position). The columns are the active board's, so their number and their
+// stations are data now - nothing below may assume there are four of them.
 
 type Frame = { x: number; w: number };
-type CardCenter = { lane: string; cy: number };
+type CardCenter = { col: string; cy: number };
 
 function DraggableCard({
-  k, onMoveTarget, onDropCard, onMeasure, children,
+  k, colId, onMoveTarget, onDropCard, onMeasure, children,
 }: {
   k: Track;
+  /** The column this card is RENDERED in - the reorder index is measured
+   *  within it, so it must be the rendered column and not the card's station
+   *  (two columns may show one station). */
+  colId: string;
   onMoveTarget: (x: number, y: number, id: string) => void;
   onDropCard: (id: string, x: number, y: number) => void;
-  onMeasure: (id: string, lane: string, cy: number) => void;
+  onMeasure: (id: string, colId: string, cy: number) => void;
   children: React.ReactNode;
 }) {
   const tx = useSharedValue(0);
@@ -454,7 +466,7 @@ function DraggableCard({
     <GestureDetector gesture={pan}>
       <Animated.View
         ref={ref}
-        onLayout={() => ref.current?.measureInWindow((_x, y, _w, h) => onMeasure(k.id, k.lane || "working", y + h / 2))}
+        onLayout={() => ref.current?.measureInWindow((_x, y, _w, h) => onMeasure(k.id, colId, y + h / 2))}
         style={aStyle}
       >
         {children}
@@ -463,11 +475,28 @@ function DraggableCard({
   );
 }
 
+/** The "this column is not on your board" cue. An overflow column is derived
+ *  (data/boards.ts renderColumns) and disappears when its last card leaves, so
+ *  it has to SAY that - otherwise it reads as a column the user forgot they
+ *  made, and they go looking for it in the editor. */
+function OverflowMark({ color }: { color: string }) {
+  const tr = useT();
+  return (
+    <View accessibilityLabel={tr("board.overflowHint")}
+      style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+      <Ionicons name="eye-off-outline" size={11} color={color} />
+    </View>
+  );
+}
+
 function WideKanban({
-  tracks, label, qc, onError, onInfo, onMove, gateDone,
+  tracks, columns, label, qc, onError, onInfo, onMove, gateDone,
 }: {
   tracks: Track[];
-  label: (l: string) => string;
+  /** The active board's columns PLUS any derived overflow ones. Never
+   *  `board.columns` raw - see renderColumns for why that would hide cards. */
+  columns: RenderColumn[];
+  label: (station: string) => string;
   qc: QueryClient;
   onError: (m: string) => void;
   onInfo: (m: string | null) => void;
@@ -480,91 +509,122 @@ function WideKanban({
   const colFrames = useRef<Record<string, Frame>>({});
   const colRefs = useRef<Record<string, View | null>>({});
   const cardPos = useRef<Record<string, CardCenter>>({});
-  const [indicator, setIndicator] = useState<{ lane: string; index: number } | null>(null);
+  const [indicator, setIndicator] = useState<{ col: string; index: number } | null>(null);
 
-  const byLane = useCallback(
-    (lane: string) => tracks.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort),
-    [tracks],
-  );
+  const grouped = useMemo(() => {
+    const g = groupByColumn(columns, tracks);
+    for (const id of Object.keys(g)) g[id] = g[id].slice().sort(laneSort);
+    return g;
+  }, [columns, tracks]);
 
-  const laneAt = useCallback((x: number): string | null => {
-    for (const lane of LANES) {
-      const f = colFrames.current[lane];
-      if (f && x >= f.x && x <= f.x + f.w) return lane;
+  // A board can hold more columns than fit, so the row scrolls horizontally -
+  // which makes every measured frame stale the moment it does. Re-measure on
+  // scroll or the drag hit-test silently drops cards into the wrong column.
+  const measureAll = useCallback(() => {
+    for (const c of columns) {
+      colRefs.current[c.id]?.measureInWindow((x, _y, w) => { colFrames.current[c.id] = { x, w }; });
+    }
+  }, [columns]);
+
+  /** The column a drop at `x` lands in. Resolves to the column that actually
+   *  RENDERS that station's cards (groupByColumn's first-match), so a pointer
+   *  over a second column of the same station still promises the truth. */
+  const targetAt = useCallback((x: number): RenderColumn | null => {
+    for (const c of columns) {
+      const f = colFrames.current[c.id];
+      if (f && x >= f.x && x <= f.x + f.w) {
+        return columns.find((h) => h.station === c.station) ?? c;
+      }
     }
     return null;
-  }, []);
+  }, [columns]);
 
-  const indexAt = useCallback((lane: string, y: number, dragged: string): number => {
+  const indexAt = useCallback((colId: string, y: number, dragged: string): number => {
     const arr = Object.entries(cardPos.current)
-      .filter(([id, v]) => v.lane === lane && id !== dragged)
+      .filter(([id, v]) => v.col === colId && id !== dragged)
       .sort((a, b) => a[1].cy - b[1].cy);
     let i = 0;
     for (const [, v] of arr) { if (y > v.cy) i++; else break; }
     return i;
   }, []);
 
-  const onMeasure = useCallback((id: string, lane: string, cy: number) => { cardPos.current[id] = { lane, cy }; }, []);
+  const onMeasure = useCallback((id: string, colId: string, cy: number) => { cardPos.current[id] = { col: colId, cy }; }, []);
 
   const onMoveTarget = useCallback((x: number, y: number, id: string) => {
-    const lane = laneAt(x);
-    if (!lane) { setIndicator(null); return; }
-    setIndicator({ lane, index: indexAt(lane, y, id) });
-  }, [laneAt, indexAt]);
+    const col = targetAt(x);
+    if (!col) { setIndicator(null); return; }
+    setIndicator({ col: col.id, index: indexAt(col.id, y, id) });
+  }, [targetAt, indexAt]);
 
   const onDropCard = useCallback(async (id: string, x: number, y: number) => {
     setIndicator(null);
-    const lane = laneAt(x);
+    const col = targetAt(x);
     const card = tracks.find((k) => k.id === id);
-    if (!lane || !card) return;
+    if (!col || !card) return;
     // The drag gesture is REDIRECTED, not forbidden. Taking away a gesture that
     // worked yesterday is worse UX than translating it - the drop opens the
     // sign-off dialog instead of moving the card.
-    if (gateDone(card, lane)) return;
+    if (gateDone(card, col.station)) return;
     try {
-      if ((card.lane || "working") !== lane) {
-        const res = await api.moveLane(id, lane);
-        onInfo(laneVerdict(res, lane));
+      if (cardStation(card) !== col.station) {
+        // THE COLUMN IS A VIEW, THE STATION IS THE WORKFLOW. A drop translates
+        // to move_lane(station) and to nothing else, so a card dragged through
+        // somebody's custom column runs the exact same rails as always -
+        // including the gate on review entry, the merge classification and the
+        // GxP refusals. A board can never buy its way around them, because a
+        // board never gets to name the destination.
+        const res = await api.moveLane(id, col.station);
+        onInfo(laneVerdict(res, col.station));
       } else {
-        const ordered = byLane(lane).map((k) => k.id).filter((cid) => cid !== id);
-        ordered.splice(indexAt(lane, y, id), 0, id);
+        const ordered = (grouped[col.id] ?? []).map((k) => k.id).filter((cid) => cid !== id);
+        ordered.splice(indexAt(col.id, y, id), 0, id);
         await api.reorder(ordered);
       }
       await qc.invalidateQueries({ queryKey: ["tracks"] });
     } catch (e) { onError(String((e as Error).message)); }
-  }, [tracks, byLane, indexAt, laneAt, qc, onError, onInfo, gateDone]);
+  }, [tracks, grouped, indexAt, targetAt, qc, onError, onInfo, gateDone]);
 
   const Ins = () => <View style={{ height: 2, borderRadius: 2, backgroundColor: t.accent, marginVertical: 2 }} />;
 
   return (
-    <View style={{ flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
-      {LANES.map((lane) => {
-        const inLane = byLane(lane);
+    // contentContainerStyle flexGrow:1 keeps a four-column board filling the
+    // width exactly as it did before boards existed; a wider board scrolls
+    // instead of squeezing its columns below the readable minimum.
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      onScroll={measureAll} scrollEventThrottle={16}
+      contentContainerStyle={{ flexGrow: 1, flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
+      {columns.map((col) => {
+        const inCol = grouped[col.id] ?? [];
         return (
           <View
-            key={lane}
-            ref={(r) => { colRefs.current[lane] = r; }}
-            onLayout={() => colRefs.current[lane]?.measureInWindow((x, _y, w) => { colFrames.current[lane] = { x, w }; })}
+            key={col.id}
+            ref={(r) => { colRefs.current[col.id] = r; }}
+            onLayout={() => colRefs.current[col.id]?.measureInWindow((x, _y, w) => { colFrames.current[col.id] = { x, w }; })}
             style={s.column}
           >
             {/* web-app lanes are transparent: just a sticky header + floating glass cards */}
             <View style={[s.row, { paddingBottom: 10, paddingHorizontal: 6 }]}>
-              <Dot color={laneColor(t, lane)} size={9} />
-              <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600", flex: 1 }}>{label(lane)}</Text>
+              <Dot color={laneColor(t, col.station)} size={9} />
+              <Text numberOfLines={1}
+                style={{ color: col.overflow ? t.txtTertiary : t.txtSecondary,
+                  fontSize: 12.5, fontWeight: "600", flex: 1 }}>
+                {columnLabel(col, label)}
+              </Text>
+              {col.overflow ? <OverflowMark color={t.txtTertiary} /> : null}
               <View style={{ backgroundColor: t.layer1, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 0.5 }}>
-                <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "600" }}>{inLane.length}</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "600" }}>{inCol.length}</Text>
               </View>
             </View>
-            {inLane.length === 0 ? (
+            {inCol.length === 0 ? (
               <>
-                {indicator?.lane === lane && indicator.index === 0 ? <Ins /> : null}
+                {indicator?.col === col.id && indicator.index === 0 ? <Ins /> : null}
                 <Empty text={tr("ui.empty")} />
               </>
             ) : (
-              inLane.map((k, i) => (
+              inCol.map((k, i) => (
                 <React.Fragment key={k.id}>
-                  {indicator?.lane === lane && indicator.index === i ? <Ins /> : null}
-                  <DraggableCard k={k} onMoveTarget={onMoveTarget} onDropCard={onDropCard} onMeasure={onMeasure}>
+                  {indicator?.col === col.id && indicator.index === i ? <Ins /> : null}
+                  <DraggableCard k={k} colId={col.id} onMoveTarget={onMoveTarget} onDropCard={onDropCard} onMeasure={onMeasure}>
                     {/* real onMove, not a no-op: the ⋯ menu button inside the
                         card needs it, and long-press is unreachable with a mouse
                         on desktop (the card menu was inaccessible there). */}
@@ -573,11 +633,11 @@ function WideKanban({
                 </React.Fragment>
               ))
             )}
-            {indicator?.lane === lane && indicator.index === inLane.length && inLane.length > 0 ? <Ins /> : null}
+            {indicator?.col === col.id && indicator.index === inCol.length && inCol.length > 0 ? <Ins /> : null}
           </View>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -616,6 +676,10 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const tr = useT();
   const router = useRouter();
   const label = useLaneLabels();
+  // WHICH board is drawn (accounts-boards-prd phase 2). Falls back to the four
+  // stations when /me carries no boards - an older daemon or the demo fixture -
+  // so this screen never depends on the feature being there.
+  const { active } = useBoards();
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   // Freshness is driven by the global version long-poll (useGlobalStream); this
@@ -686,13 +750,28 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     if (eff.startsWith("repo:")) return (k.repo ?? "") === eff.slice(5) && !k.archived;
     return !k.archived; // "all"
   });
+  // The columns actually drawn: the active board's, plus a derived overflow
+  // column for any station that holds cards this board does not show. Computed
+  // over `shown` (the filtered set) rather than every row, so the invariant is
+  // about what this screen claims to display - a card hidden by the Archive
+  // filter is not "invisible", it is filtered.
+  const columns = useMemo(() => renderColumns(active, shown), [active, shown]);
+  // Moving from the ⋯ sheet targets a STATION, offered under the board's own
+  // wording. Deduped by station: two columns showing one station are one
+  // destination, and listing it twice would read as two different places.
+  const moveTargets = useMemo(() => {
+    const seen = new Set<string>();
+    return columns.filter((c) => !seen.has(c.station) && seen.add(c.station));
+  }, [columns]);
+
   function onMove(k: Track) {
     sheet.show({
       title: k.task,
       message: tr("board.moveTo"),
-      options: LANES.filter((l) => l !== k.lane).map((l) => ({
-        label: "→ " + label(l),
+      options: moveTargets.filter((c) => c.station !== cardStation(k)).map((c) => ({
+        label: "→ " + columnLabel(c, label),
         onPress: async () => {
+          const l = c.station;
           if (gateDone(k, l)) return;
           setBusy(true);
           try { const res = await api.moveLane(k.id, l); showToast(laneVerdict(res, l)); await qc.invalidateQueries({ queryKey: ["tracks"] }); }
@@ -815,23 +894,32 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         // today line, due diamonds). No separate "Gantt" tab anymore.
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
-        // desktop kanban: four column plates side by side, drag to move/reorder
-        <WideKanban tracks={shown} label={label} qc={qc} onError={showToast} onInfo={showToast} onMove={onMove} gateDone={gateDone} />
+        // desktop kanban: the board's column plates side by side, drag to move/reorder
+        <WideKanban tracks={shown} columns={columns} label={label} qc={qc} onError={showToast} onInfo={showToast} onMove={onMove} gateDone={gateDone} />
       ) : (
-        LANES.map((lane) => {
-          const inLane = shown.filter((k) => (k.lane || "working") === lane).slice().sort(laneSort);
-          return (
-            <View key={lane} style={{ gap: 8 }}>
-              <View style={[s.row, { marginTop: 8 }]}>
-                <Dot color={laneColor(t, lane)} size={8} />
-                <Text style={{ color: t.txtSecondary, fontSize: 13, fontWeight: "600" }}>{label(lane)}</Text>
-                <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{inLane.length}</Text>
+        // phone: the same columns, stacked. One grouping function for both
+        // layouts, so a card can never be in one column on the desktop and
+        // another on the phone.
+        (() => {
+          const grouped = groupByColumn(columns, shown);
+          return columns.map((col) => {
+            const inCol = (grouped[col.id] ?? []).slice().sort(laneSort);
+            return (
+              <View key={col.id} style={{ gap: 8 }}>
+                <View style={[s.row, { marginTop: 8 }]}>
+                  <Dot color={laneColor(t, col.station)} size={8} />
+                  <Text style={{ color: col.overflow ? t.txtTertiary : t.txtSecondary, fontSize: 13, fontWeight: "600" }}>
+                    {columnLabel(col, label)}
+                  </Text>
+                  {col.overflow ? <OverflowMark color={t.txtTertiary} /> : null}
+                  <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{inCol.length}</Text>
+                </View>
+                {inCol.length === 0 ? <Empty text={tr("ui.empty")} /> :
+                  inCol.map((k) => <Card key={k.id} k={k} onMove={onMove} />)}
               </View>
-              {inLane.length === 0 ? <Empty text={tr("ui.empty")} /> :
-                inLane.map((k) => <Card key={k.id} k={k} onMove={onMove} />)}
-            </View>
-          );
-        })
+            );
+          });
+        })()
       )}
     </ScrollView>
     {toast ? (
@@ -888,7 +976,10 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
 const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   card: { borderRadius: 16, paddingVertical: 11, paddingHorizontal: 12, gap: 7 },
-  column: { flex: 1, minWidth: 250, maxWidth: 340, gap: 8, minHeight: 120 },
+  // flexGrow (not flex:1) + flexShrink:0: with the pre-boards four columns this
+  // still divides the width evenly, but a board with more columns than fit must
+  // SCROLL rather than squeeze every column below the readable minimum.
+  column: { flexGrow: 1, flexShrink: 0, flexBasis: 250, minWidth: 250, maxWidth: 340, gap: 8, minHeight: 120 },
   task: { fontSize: 13.5, fontWeight: "500", lineHeight: 19 },
   branch: { fontSize: 11, flexShrink: 1 },
   nextup: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 6 },

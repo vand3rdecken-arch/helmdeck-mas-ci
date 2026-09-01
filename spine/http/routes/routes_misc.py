@@ -28,10 +28,19 @@ def me_get(self, user):
     # /dashboard/data can't serve it: it strips settings for
     # non-owners and 403s clients. Whitelisted, never the whole
     # settings blob - that stays owner-only.
-    from spine.storage import events, userconfig
+    from spine.storage import boards, events, userconfig
     from spine.auth import permissions
     pol = events.settings().get("policy") or {}
     profile = userconfig.resolve(user["name"])
+    try:
+        my_boards = boards.for_user(user["name"])
+    except Exception:
+        # /me is the ONE endpoint every role and every surface depends on -
+        # the watch, the glasses and the login gate all block on it. A board
+        # store that will not open must degrade to "no boards" (the app then
+        # renders the four stations as it always did) rather than 500 the
+        # identity call and lock everyone out of the app.
+        my_boards = []
     return self._send(200, json.dumps({
         "name": user["name"], "role": user["role"],
         # Card 4 (ops/docs/backlog/rbac-gxp): the app's ONE source for "what
@@ -51,6 +60,14 @@ def me_get(self, user):
         # when the list is empty. Derived from the table on every call, never
         # a stored "migrated" flag on the device.
         "profile_keys": sorted(userconfig.stored(user["name"])),
+        # THE BOARDS this account may render (accounts-boards-prd phase 2): the
+        # shared default board first, then its own. Served here rather than on
+        # a route of their own for the reason this endpoint exists at all -
+        # /dashboard/data 403s clients and strips settings for operators, and a
+        # board is exactly the thing every role must be able to draw. It also
+        # means a board write needs no new client plumbing: the write bumps
+        # _version, the global long-poll invalidates, /me answers again.
+        "boards": my_boards,
         # `ui` predates the profile and older bundles still read it, so it now
         # answers with the RESOLVED language rather than the raw workspace one.
         # One question, one answer: an old client that never learns to call
@@ -95,6 +112,57 @@ def me_config_put(self, user, body):
     }))
 
 
+def me_boards_put(self, user, body):
+    """Create or replace ONE OF MY BOARDS (accounts-boards-prd phase 2).
+
+    Under /me and behind PUT for exactly the reasons `PUT /me/config` is (see
+    me_config_put and do_PUT): the account is taken from the session, so the
+    route is self-scoped and needs no capability, and do_POST's blanket
+    "clients can file and comment only" denial would otherwise lock the weakest
+    role out of creating its own private view - which is the whole feature.
+
+    Create vs. update is decided by `board.id`, not by the verb: absent mints a
+    new board owned by the caller, present addresses an EXISTING row the caller
+    must already be allowed to write. That is what makes this PUT idempotent
+    (a retry over a flaky relay updates instead of duplicating) and why no
+    caller can ever invent an id to squat - spine/storage/boards.write mints
+    them."""
+    from spine.storage import boards
+    board = body.get("board")
+    if board is None:
+        return self._send(400, json.dumps({"error": "board required"}))
+    row, err = boards.write(user["name"], user["role"], board, actor=user["name"])
+    if err:
+        # 403 when the refusal is about WHO is asking, 400 when it is about
+        # what was sent - a client that renders "not your board" as a form
+        # error would ask the user to fix something they cannot fix.
+        code = 403 if err in ("not your board",) or "only the owner role" in err else 400
+        return self._send(code, json.dumps({"error": err}))
+    # Answer with the new board AND the full list, so the client never has to
+    # guess the minted id or refetch to learn where the board landed.
+    return self._send(200, json.dumps({
+        "ok": True, "board": row, "boards": boards.for_user(user["name"]),
+    }))
+
+
+def me_boards_delete(self, user, _q):
+    """Delete one of my boards. `?id=` rather than a path parameter: do_DELETE
+    is a CLOSED exact-match table like do_PUT, and keeping it exact is what
+    makes "every delete route ran the same three gates" checkable by reading
+    one dispatch block instead of a pattern list."""
+    from spine.storage import boards
+    bid = (_q.get("id") or [""])[0]
+    if not bid:
+        return self._send(400, json.dumps({"error": "id required"}))
+    ok, err = boards.delete(user["name"], user["role"], bid, actor=user["name"])
+    if not ok:
+        code = 403 if (err == "not your board" or "only the owner role" in (err or "")) else 400
+        return self._send(code, json.dumps({"error": err}))
+    return self._send(200, json.dumps({
+        "ok": True, "boards": boards.for_user(user["name"]),
+    }))
+
+
 def processes_new_post(self, user, body):
     from cells.process import processes
     req = body.get("request")
@@ -136,15 +204,25 @@ POST_ROUTES = {
 }
 PUT_ROUTES = {
     "/me/config": me_config_put,
+    "/me/boards": me_boards_put,
+}
+DELETE_ROUTES = {
+    "/me/boards": me_boards_delete,
 }
 # /processes, /me, /processes/new are open to every role by design (client
 # filtering happens by parameter, not by capability) - no entry here for them.
 POST_CAPS = {
     "/voice/transcribe": "chat.use",
 }
-# PUT /me/config is deliberately absent from a *_CAPS table: it is self-scoped
-# (see me_config_put), so the capability matrix has nothing to say about it -
-# every authenticated account may write its own profile and no account can
-# reach another's. PUT_CAPS exists so that a LATER put route must make the
-# opposite case explicitly rather than inherit this one's openness.
+# PUT /me/config and PUT|DELETE /me/boards are deliberately absent from a
+# *_CAPS table: they are self-scoped (see me_config_put / me_boards_put), so
+# the capability matrix has nothing to say about them - every authenticated
+# account may write its own profile and its own boards, and no account can
+# reach another's. The ONE shared row a self-scoped route can touch, the
+# default board, carries its own owner-role check in spine/storage/boards.
+# may_edit rather than a capability, because a capability would also have to be
+# granted for the personal boards on the same route. These tables exist so that
+# a LATER put/delete route must make the opposite case explicitly rather than
+# inherit this openness.
 PUT_CAPS = {}
+DELETE_CAPS = {}

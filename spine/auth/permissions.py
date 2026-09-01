@@ -231,7 +231,8 @@ def cap_for(method, path, parts):
     # capability answer for a question nobody asked. An unknown method gets no
     # table and therefore no capability, which is the same no-op contract this
     # function already has for an unmigrated route.
-    table = {"GET": "GET_CAPS", "POST": "POST_CAPS", "PUT": "PUT_CAPS"}.get(method)
+    table = {"GET": "GET_CAPS", "POST": "POST_CAPS", "PUT": "PUT_CAPS",
+             "DELETE": "DELETE_CAPS"}.get(method)
     if not table:
         return None
     for name in _CAP_MODULES:

@@ -322,11 +322,23 @@ def delete_user(name, actor=None):
         config_dropped = db.user_config_drop_user(name)
     except Exception:
         pass
+    # ...and their personal boards, for exactly the same reason: `boards.owner`
+    # is the account NAME too (accounts-boards-prd phase 2). The shared default
+    # board has owner="" and is never touched here - it outlives its creator,
+    # which is what lets an owner be replaced without the workspace losing the
+    # board every account lands on.
+    boards_dropped = 0
+    try:
+        from spine.storage import db
+        boards_dropped = db.boards_drop_user(name)
+    except Exception:
+        pass
     _audit("user.delete", actor, name,
            role=(gone or {}).get("role"),
            tokens_killed=len((gone or {}).get("tokens") or []),
            sessions_killed=len([s for s in sess if s["user"] == name]),
            config_rows_dropped=config_dropped,
+           boards_dropped=boards_dropped,
            existed=gone is not None)
 
 def set_password(name, password, actor=None):

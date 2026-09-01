@@ -9,6 +9,7 @@ import { useCellEnabled } from "@/data/cells";
 import { useT } from "@/i18n";
 import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { BoardList } from "@/ui/board";
+import { BoardSwitcher } from "@/ui/board_switcher";
 import { GlowBackdrop } from "@/ui/glow";
 import { useTheme } from "@/theme";
 import { useResponsive } from "@/ui/responsive";
@@ -49,8 +50,17 @@ export default function BoardTab() {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 16, paddingTop: insets.top + 10,
         paddingHorizontal: wide ? 20 : 16, paddingBottom: 6 }}>
         <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700" }}>{tr("nav.board")}</Text>
-        {wide ? <CapacityMeter /> : null}
+        {/* WHICH board (accounts-boards-prd phase 2) - next to the title on
+            every width, because it NAMES what you are looking at and because on
+            the phone it is the only way in. */}
+        <BoardSwitcher />
         <View style={{ flex: 1 }} />
+        {/* Capacity moved to the far right when the switcher joined this row:
+            the two of them left-aligned pushed the meter under the centred
+            HealthBanner, which overlays the header whenever the daemon blips
+            and clipped "4 Luft" mid-word. Title + board name is one cluster
+            (what am I looking at), load is another (how busy am I). */}
+        {wide ? <CapacityMeter /> : null}
       </View>
       <BoardList />
       {/* floating board chat + new-request, bottom-right (works on desktop too).
