@@ -141,7 +141,38 @@ of it stays valid), with these amendments from this PRD:
 | 1 | accounts-config-store | db tables, /me resolution, PUT /me/config, first-login language step, device→account migration, "Mein Profil" door (minimal render, full hub comes in 4) | two accounts on two devices hold different languages/labels; new device hydrates on login; legacy device pushes up once |
 | 2 | boards-model | boards table + routes, default-board seed + migration from lane_labels, board.tsx renders active board, switcher, overflow-column invariant | rename a column on a personal board on device A, device B re-renders within one SSE tick; drag through a custom column still gates on review entry |
 | 3 | setup-seeds | first-run seeds default board + example card (`example: true`, never dispatches, excluded from economics); invited-user landing flow | fresh daemon → working board with example card; new client-role login lands on board, sees example |
-| 4 | settings-hub | the settings-ia-redesign phases (hub, doors, schema renderer, cleanups) on top of the new scopes; Boards door | old settings.tsx/modules/automation dissolve; dummy-knob-with-scope appears in the right door with the right badge, no client change |
+| 4 | settings-hub — **DONE** | the settings-ia-redesign phases (hub, doors, schema renderer, cleanups) on top of the new scopes; Boards door | old settings.tsx/modules/automation dissolve; dummy-knob-with-scope appears in the right door with the right badge, no client change |
+
+**Phase 4 as shipped.** `DOORS`/`SCOPES` are declared once in
+`spine/http/apimeta.py` and mirrored in `surfaces/app/src/data/settings_schema.ts`
+(held equal by `test_settings_hub_vocabularies`). Every knob carries
+`door/group/groupKey/level/scope`, and the generic `SchemaDoor` renderer
+(`surfaces/app/src/ui/settings_schema_page.tsx`) places, badges and SAVES from
+that metadata alone — `scope` decides both the badge and the write target
+(profile → `PUT /me/config`, everything else → `POST /settings`). Acceptance is
+proved twice: `surfaces/app/src/data/__settings_hub_selftest__.ts` (the
+placement rule, no browser) and `ops/tests/e2e_settings_hub.py` (a dummy knob
+injected daemon-side, drawn by an unmodified bundle in door 5 with its badge).
+
+Three things the plan did not foresee, all measured rather than reasoned:
+- Profile rows had to ride on **`GET /me`**, not `/automation`: the latter is
+  `settings.read` (owner-only), and door 1 exists for the roles that are not
+  the owner. `_profile_schema()` is therefore a second list with the same
+  entry shape; the client concatenates and never learns there were two.
+- The `/settings` ROUTE had to lose its `cap`. `(tabs)/_layout.tsx` builds its
+  navigator with `useOnlyUserDefinedScreens=true`, so a capability-gated tab is
+  not merely unlisted, it is **unregistered** — a client navigating to
+  `/settings` silently landed back on the dashboard. The owner-only DOORS are
+  hidden inside the hub instead, and every owner-only route it calls is still
+  gated server-side.
+- `/automation` and `/modules` stay registered as `hidden` nav entries (a new
+  `Surface.nav.hidden` flag) for the same reason: dropping them from the nav
+  tables would have unregistered the redirect routes and broken the deep links
+  this card promised to keep.
+
+Deferred with a debt entry: `policy.lane_labels` is badged "Board" but still
+stored in `settings.json` (`board-scope-still-in-settings-json`) — section 6's
+migration into the board row is the fix.
 
 Phase 1+2 are independent of 4 (the hub); 3 needs 2. The old
 per-user-ui-config card is superseded by 1+2; settings-ia-redesign by 4 -

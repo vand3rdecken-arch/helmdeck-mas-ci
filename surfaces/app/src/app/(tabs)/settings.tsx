@@ -5,149 +5,88 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import util from "tweetnacl-util";
 import { useConfig } from "@/data/config";
 import { qrDataUrl } from "@/data/qrgen";
-import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, type TextStyle, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAnalytics } from "@/data/analytics";
+import { useBlockerVoice } from "@/data/blocker_voice";
+import { useBoards } from "@/data/boards";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useCellEnabled } from "@/data/cells";
-import { clearProfileCache, saveProfile } from "@/data/profile";
+import { clearProfileCache } from "@/data/profile";
+import { DOOR_IDS, type DoorId } from "@/data/settings_schema";
 import type { Me, UserRow } from "@/data/types";
 import { LANGS, useT, type Lang } from "@/i18n";
 import { can } from "@/kernel";
 import { useTheme } from "@/theme";
-import type { ThemeTokens } from "@/theme/tokens";
-import { Chip, KVRow, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
+import { Chip, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
+import { CellsCatalog } from "@/ui/cells_catalog";
 import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
 import { GxpActivate } from "@/ui/gxp_activate";
 import { PMControls } from "@/ui/pm_panel";
+import { SchemaDoor, ScopeBadge, useSchema } from "@/ui/settings_schema_page";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { UpdatesPanel } from "@/ui/updates_info";
 import { useResponsive } from "@/ui/responsive";
 
 // ---------------------------------------------------------------------------
-// settings-ia-redesign (ops/docs/backlog/settings-ia-redesign) - the hub.
+// THE SETTINGS HUB (settings-ia-redesign, completed as accounts-boards-prd
+// phase 4 "settings-hub").
 //
-// ONE route ("settings"), an internal door list + door detail, addressable
-// via ?door=<id> (so /automation and /modules can redirect here instead of
-// living as their own screens - see automation.tsx/modules.tsx). This
-// replaces the old flat 10-panel settings.tsx: doors group by USER GOAL
-// (Home-Assistant pattern), not by which daemon key backs a field.
+// ONE route ("settings"), an internal door list + door detail, addressable via
+// ?door=<id> - so /automation and /modules are redirects into it rather than
+// screens of their own. Doors group by USER GOAL (Home-Assistant pattern), not
+// by which daemon key backs a field.
 //
-// Deliberate scope for THIS pass (see the backlog doc for the full phase
-// plan): doors 2/5/6 below are fully built here. Door "cells" (3) links out
-// to the existing modules.tsx, which already renders a live, registry-driven
-// cell catalog (GET /cells) with per-cell diagrams - not rebuilt here, it
-// already does the job. Door "connections" (4) folds in Jira/import (moved
-// from the old settings.tsx) and links to connectors.tsx. Search and the
-// guided connect wizards are later cards (settings-search,
-// connect-wizards) - not here.
+// WHAT PHASE 4 CHANGED, and why the file got SHORTER rather than longer:
 //
-// Nightshift dedup (a named requirement of the plan): this hub is now the
-// ONLY place nightshift.* is editable - the old settings.tsx had a second,
-// duplicate form for the exact same keys. That second form is gone.
-type DoorId = "general" | "automation" | "cells" | "connections" | "team" | "system";
-const DOORS: readonly { id: DoorId; labelKey: string; subKey: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { id: "general", labelKey: "hub.door.general", subKey: "hub.door.general.sub", icon: "options-outline" },
-  { id: "automation", labelKey: "hub.door.automation", subKey: "hub.door.automation.sub", icon: "flash-outline" },
-  { id: "cells", labelKey: "hub.door.cells", subKey: "hub.door.cells.sub", icon: "grid-outline" },
-  { id: "connections", labelKey: "hub.door.connections", subKey: "hub.door.connections.sub", icon: "extension-puzzle-outline" },
-  { id: "team", labelKey: "hub.door.team", subKey: "hub.door.team.sub", icon: "people-outline" },
-  { id: "system", labelKey: "hub.door.system", subKey: "hub.door.system.sub", icon: "hardware-chip-outline" },
-];
+//  - Rows are no longer hand-placed. Every knob the daemon can describe is
+//    rendered by <SchemaDoor>, which reads the knob's own `door`/`group`/
+//    `level`/`scope` metadata (spine/http/apimeta.py). Adding a knob - or a
+//    section, or the first knob in a door that had none - is now a daemon-side
+//    edit with NO change here. That is this card's acceptance criterion.
+//  - Every row wears a SCOPE BADGE saying who a change affects (Konto / Board
+//    / Workspace / Gerät / System), and the scope also decides where the write
+//    goes: profile rows PUT /me/config, the rest POST /settings. G4's "one
+//    owner, one storage location, one edit surface" is data, not convention.
+//  - Door 1 is "Mein Profil" and is ACCOUNT-backed (PRD section 5). Its rows
+//    ride on /me, so a `client` - who 403s on /automation - can still set
+//    their own language. Genuinely device-bound switches sit alongside them
+//    with a "Gerät" badge, moved out of the Mehr tab (the plan's point B).
+//  - New door "Boards" between 1 and 2 (PRD section 5): my boards + the shared
+//    one, each opening the board editor.
+//  - Door 3 "Zellen" is a real door now, not a link: @/ui/cells_catalog.tsx
+//    renders inside the hub and (tabs)/modules.tsx is a redirect.
+//  - The hand-built business panel dissolved into schema knobs in door 6.
+//
+// Hand-built by design (the plan's explicit "handgebaut bleiben nur ..."):
+// wizards (Jira, pairing, invite), the users/devices lists, the harness brief
+// editor, PMControls, and the board list. Those are flows and tables, not
+// knobs; forcing them through a control union would be the second monolith
+// this redesign exists to avoid.
+type Door = { id: DoorId; labelKey: string; subKey: string; icon: keyof typeof Ionicons.glyphMap; cap?: string };
+// Order comes from DOOR_IDS (the daemon's own order, mirrored in
+// data/settings_schema.ts) - this table only decorates it. `cap` hides a door
+// from a role that would 403 behind it: the plan's "Nicht-Owner sehen nur
+// Tür 1 - Rest unsichtbar statt 403". Boards is capless on purpose; every
+// role has boards.
+const DOOR_META: Record<DoorId, Omit<Door, "id">> = {
+  general: { labelKey: "hub.door.general", subKey: "hub.door.general.sub", icon: "person-circle-outline" },
+  boards: { labelKey: "hub.door.boards", subKey: "hub.door.boards.sub", icon: "grid-outline" },
+  automation: { labelKey: "hub.door.automation", subKey: "hub.door.automation.sub", icon: "flash-outline", cap: "settings.read" },
+  cells: { labelKey: "hub.door.cells", subKey: "hub.door.cells.sub", icon: "cube-outline", cap: "settings.read" },
+  connections: { labelKey: "hub.door.connections", subKey: "hub.door.connections.sub", icon: "extension-puzzle-outline", cap: "settings.read" },
+  team: { labelKey: "hub.door.team", subKey: "hub.door.team.sub", icon: "people-outline", cap: "settings.read" },
+  system: { labelKey: "hub.door.system", subKey: "hub.door.system.sub", icon: "hardware-chip-outline", cap: "settings.read" },
+};
+const DOORS: readonly Door[] = DOOR_IDS.map((id) => ({ id, ...DOOR_META[id] }));
 
-const BACKDROPS = ["mesh", "aurora", "ember", "forest", "mono"] as const;
 const LANG_LABELS = LANGS.map((l) => l.label);
 const langId = (label: string): Lang => (LANGS.find((l) => l.label === label)?.id ?? "de");
-
-type Ctl = "toggle" | "multi" | "single" | "text" | "number" | "labels";
-interface ConfigItem {
-  group: "policy" | "night";
-  path: string;
-  control: Ctl;
-  labelKey: string;
-  descKey?: string;
-  level?: "basic" | "advanced";
-  door?: string;
-  value: unknown;
-  options?: string[];
-  keys?: string[];
-  placeholder?: string;
-}
-
-function nest(path: string, value: unknown): Record<string, unknown> {
-  const [a, b] = path.split(".");
-  return { [a]: { [b]: value } };
-}
-
-// Module scope, not component body - see automation.tsx's incident note this
-// was copied from: a function redeclared every render loses text-input focus
-// after one keystroke (React treats it as a brand new component type).
-function Control({ it, value, onChange, t, tr, field, wide }: {
-  it: ConfigItem; value: unknown; onChange: (v: unknown) => void;
-  t: ThemeTokens; tr: (k: string, p?: Record<string, string | number>) => string;
-  field: TextStyle; wide: boolean;
-}) {
-  const label = tr(it.labelKey);
-  const desc = it.descKey ? tr(it.descKey) : "";
-  if (it.control === "toggle")
-    return <View><Toggle label={label} value={!!value} onChange={onChange} />{desc ? <Hint text={desc} /> : null}</View>;
-  if (it.control === "text" || it.control === "number")
-    return (
-      <View>
-        <Caption text={label} />
-        <TextInput value={value == null ? "" : String(value)} style={field}
-          keyboardType={it.control === "number" ? "numeric" : "default"}
-          autoCapitalize="none" placeholder={it.placeholder} placeholderTextColor={t.txtPlaceholder}
-          onChangeText={(x) => onChange(it.control === "number" ? (Number(x) || 0) : x)} />
-        {desc ? <Hint text={desc} /> : null}
-      </View>
-    );
-  if (it.control === "single")
-    return (
-      <View>
-        <Caption text={label} />
-        <ChipPick options={it.options ?? []} selected={[String(value ?? "")]} single onToggle={onChange} />
-        {desc ? <Hint text={desc} /> : null}
-      </View>
-    );
-  if (it.control === "multi") {
-    const arr = Array.isArray(value) ? (value as string[]) : [];
-    return (
-      <View>
-        <Caption text={label} />
-        <ChipPick options={it.options ?? []} selected={arr}
-          onToggle={(x) => onChange(arr.includes(x) ? arr.filter((y) => y !== x) : [...arr, x])} />
-        {desc ? <Hint text={desc} /> : null}
-      </View>
-    );
-  }
-  if (it.control === "labels") {
-    const obj = (value && typeof value === "object" ? value : {}) as Record<string, string>;
-    return (
-      <View>
-        <Caption text={label} />
-        <FormGrid wide={wide}>
-          {(it.keys ?? []).map((k) => (
-            <View key={k}>
-              <Text style={{ color: t.txtTertiary, fontSize: 11, marginBottom: 3 }}>{k}</Text>
-              <TextInput value={obj[k] ?? ""} style={field}
-                onChangeText={(x) => onChange({ ...obj, [k]: x })} />
-            </View>
-          ))}
-        </FormGrid>
-        {desc ? <Hint text={desc} /> : null}
-      </View>
-    );
-  }
-  return null;
-}
-
-type PlanRepo = { items?: { title: string; priority?: string }[]; error?: string | null };
-type NightPlan = { made?: string; actor?: string; repos?: Record<string, PlanRepo> };
 
 export default function Settings() {
   const t = useTheme();
@@ -163,43 +102,50 @@ export default function Settings() {
     if (doorParam && DOORS.some((d) => d.id === doorParam)) setDoor(doorParam);
   }, [doorParam]);
 
-  const { data: s, isLoading, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const { data: auto } = useQuery({ queryKey: ["automation"], queryFn: api.automation, staleTime: 30000 });
-  const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users });
-  const { data: devices, refetch: refetchDevices } = useQuery({ queryKey: ["devices"], queryFn: api.devices });
-  const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
-  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  // EVERY query below this line reads an owner-only route, so every one of
+  // them is gated on the live capability rather than fired and left to 403.
+  // Before phase 4 this screen WAS owner-only, so firing them unconditionally
+  // cost nothing; now a client legitimately opens door 1 here, and an
+  // ungated fetch would mean four failed requests and four red console lines
+  // on the one door that is meant to be theirs.
+  const owner = can(me, "settings.read");
+  const { data: s, isLoading, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings, enabled: owner });
+  const { data: auto } = useQuery({ queryKey: ["automation"], queryFn: api.automation, staleTime: 30000, retry: false, enabled: owner });
+  const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users, enabled: owner });
+  const { data: devices, refetch: refetchDevices } = useQuery({ queryKey: ["devices"], queryFn: api.devices, enabled: owner });
+  const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, enabled: owner });
+  const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000, enabled: owner });
   const actors = metrics?.capacity?.actors ?? {};
   const pmEnabled = useCellEnabled("pm");
-  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  // BOTH halves of the config schema (/me's account rows + /automation's
+  // workspace rows), concatenated. Every door then just filters it.
+  const schema = useSchema();
+  const { boards } = useBoards();
 
   const field = fieldStyle(t);
 
-  // ---- GxP mode (door: system, card 6) ----
+  // ---- GxP mode (door: system, rbac-gxp card 6) ----
   const [showGxp, setShowGxp] = useState(false);
   const [gxpMsg, setGxpMsg] = useState<string | null>(null);
   const { data: gxpState } = useQuery({ queryKey: ["gxpState"], queryFn: api.gxpState,
     enabled: can(me, "gxp.activate") });
 
-  // ---- business (door: system) ----
-  const [repo, setRepo] = useState("");
-  const [wip, setWip] = useState("");
-  const [value, setValue] = useState("");
-  const [budget, setBudget] = useState("");
-  const [tSteer, setTSteer] = useState(""); const [tReview, setTReview] = useState(""); const [tBounce, setTBounce] = useState("");
+  // ---- device-local switches (door: general, badge "Gerät") ----
+  // Moved here out of the Mehr tab (the plan's point B: "Gerätelokale Toggles
+  // ziehen in Tür 1 mit 'Dieses Gerät'-Badge"). They are NOT schema knobs and
+  // must not be: they live in a zustand store on this device and never travel
+  // to the daemon at all, which is exactly what the "Gerät" badge says.
+  const analyticsOn = useAnalytics((x) => x.enabled);
+  const setAnalytics = useAnalytics((x) => x.setEnabled);
+  const blockerVoiceOn = useBlockerVoice((x) => x.enabled);
+  const setBlockerVoice = useBlockerVoice((x) => x.setEnabled);
 
-  // ---- language / appearance (door: general) ----
-  // TWO scopes, deliberately kept apart (accounts-boards-prd G4: every knob has
-  // exactly one owner and one edit surface). `lang`/`backdrop` below are MY
-  // ACCOUNT's - they follow me to every device I sign in on. `wsLang`/
-  // `wsBackdrop` are the WORKSPACE DEFAULT that accounts inherit until they
-  // choose, owner-only, and they are a genuinely different knob rather than a
-  // second surface for the same one. Before this card the account scope did not
-  // exist, so these two controls wrote the workspace value for everybody - which
-  // meant a client role could not change the language at all (POST /settings
-  // 403s them) and an operator changing "their" language changed the owner's.
-  const [lang, setLangSel] = useState<Lang>("de");
-  const [backdrop, setBackdrop] = useState("mesh");
+  // ---- workspace-default language/appearance (door: general, owner-only) ----
+  // The WORKSPACE DEFAULT that accounts inherit until they choose. A genuinely
+  // different knob from the account's own (which is a schema row above it),
+  // not a second surface for the same one: changing this moves everyone who
+  // never picked one, and nobody who did.
   const [wsLang, setWsLang] = useState<Lang>("de");
   const [wsBackdrop, setWsBackdrop] = useState("mesh");
 
@@ -208,45 +154,20 @@ export default function Settings() {
   const [jToken, setJToken] = useState(""); const [jJql, setJJql] = useState("");
   const [impUrl, setImpUrl] = useState(""); const [busyImp, setBusyImp] = useState(false);
 
-  // ---- automation: schema-driven draft (door: automation) ----
-  const schema = ((auto?.config_schema as ConfigItem[]) ?? []);
-  const [draft, setDraft] = useState<Record<string, unknown>>({});
-  const [busyGroup, setBusyGroup] = useState<string>("");
-  const dirty = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!schema.length) return;
-    setDraft((d) => {
-      const next: Record<string, unknown> = {};
-      for (const it of schema) next[it.path] = dirty.current.has(it.path) && it.path in d ? d[it.path] : it.value;
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auto]);
-  const setKnob = (path: string, v: unknown) => { dirty.current.add(path); setDraft((d) => ({ ...d, [path]: v })); };
-  // nightshift.repos is NOT a schema knob (a newline list, not a control the
-  // schema's flat model covers yet) - kept as one extra field here so this
-  // stays the ONLY nightshift edit surface (the plan's dedup requirement),
-  // saved in the same patch as the schema knobs below.
+  // nightshift.repos is NOT a schema knob (a newline list, which no control in
+  // the union renders) - kept as its own field so the key still has exactly
+  // ONE edit surface, next to the schema-rendered night rows in the same door.
   const [nsRepos, setNsRepos] = useState("");
+  const [nsBusy, setNsBusy] = useState(false);
   useEffect(() => { if (s) setNsRepos((s.nightshift?.repos ?? []).join("\n")); }, [s]);
-  async function saveAutomationGroup(group: "policy" | "night") {
-    setBusyGroup(group);
+  async function saveNsRepos() {
+    setNsBusy(true);
     try {
-      const patch: Record<string, any> = {};
-      const items = schema.filter((i) => i.group === group);
-      for (const it of items) { const [a, b] = it.path.split("."); (patch[a] ??= {})[b] = draft[it.path]; }
-      if (group === "night") {
-        patch.nightshift = { ...(patch.nightshift ?? {}), repos: nsRepos.split("\n").map((r) => r.trim()).filter(Boolean) };
-      }
-      await api.saveSettings(patch);
-      for (const it of items) dirty.current.delete(it.path);
-      await qc.invalidateQueries({ queryKey: ["automation"] });
+      await api.saveSettings({ nightshift: { repos: nsRepos.split("\n").map((r) => r.trim()).filter(Boolean) } });
       await qc.invalidateQueries({ queryKey: ["settings"] });
-      await qc.invalidateQueries({ queryKey: ["metrics"] });
-    } catch (e) { Alert.alert("", String((e as Error).message)); } finally { setBusyGroup(""); }
+      await qc.invalidateQueries({ queryKey: ["automation"] });
+    } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); } finally { setNsBusy(false); }
   }
-  const policyItems = schema.filter((i) => i.group === "policy");
-  const nightItems = schema.filter((i) => i.group === "night");
   const cur = (auto?.loop_current as { state: string; action: string }[]) ?? [];
   const curState = cur[0]?.state ?? "";
   const autoRepos = (auto?.repos as string[]) ?? [];
@@ -274,13 +195,6 @@ export default function Settings() {
 
   useEffect(() => {
     if (!s) return;
-    setRepo(s.default_repo ?? "");
-    setWip(String(s.capacity?.wip_limit ?? ""));
-    setValue(String(s.value_per_card ?? ""));
-    setBudget(String(s.capacity?.touch_budget_day ?? ""));
-    setTSteer(String(s.capacity?.tariff?.steer ?? ""));
-    setTReview(String(s.capacity?.tariff?.review ?? ""));
-    setTBounce(String(s.capacity?.tariff?.bounce ?? ""));
     const pol = s.policy ?? {};
     setWsLang(pol.lang === "en" ? "en" : "de");
     setWsBackdrop(s.appearance?.backdrop ?? "mesh");
@@ -291,44 +205,10 @@ export default function Settings() {
     setRegRole(s.registration?.default_role ?? "client");
   }, [s]);
 
-  // My own profile, from /me. Separate from the `s` effect above because
-  // /settings 403s a client role while /me never does - a client must still be
-  // able to see and change their own language.
-  useEffect(() => {
-    const p = me?.profile;
-    if (!p) return;
-    setLangSel(p.lang === "en" ? "en" : "de");
-    setBackdrop(p.appearance?.backdrop ?? "mesh");
-  }, [me]);
-
   const ok = (msg: string) => Alert.alert(tr("settings.savedTitle"), msg);
   const fail = (e: unknown) => Alert.alert(tr("ui.error"), String((e as Error).message));
   async function invalidate() { await qc.invalidateQueries({ queryKey: ["settings"] }); }
 
-  // ---- MY ACCOUNT (PUT /me/config) ----
-  async function saveLang(l: Lang) {
-    if (l === lang) return;
-    const prev = lang;
-    setLangSel(l);                       // optimistic: the chip must not lag the tap
-    try {
-      await saveProfile({ lang: l });
-      await qc.invalidateQueries({ queryKey: ["me"] });
-    } catch (e) { setLangSel(prev); fail(e); }
-  }
-
-  async function saveBackdrop(b: string) {
-    if (b === backdrop) return;
-    const prev = backdrop;
-    setBackdrop(b);
-    try {
-      await saveProfile({ appearance: { backdrop: b } });
-      await qc.invalidateQueries({ queryKey: ["me"] });
-    } catch (e) { setBackdrop(prev); fail(e); }
-  }
-
-  // ---- THE WORKSPACE DEFAULT (POST /settings, owner-only) ----
-  // What an account inherits until it chooses. Changing it moves everyone who
-  // never picked one, and nobody who did.
   async function saveWsLang(l: Lang) {
     if (l === wsLang) return;
     const prev = wsLang;
@@ -339,17 +219,6 @@ export default function Settings() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       await qc.invalidateQueries({ queryKey: ["metrics"] });
     } catch (e) { setWsLang(prev); fail(e); }
-  }
-
-  async function saveBusiness() {
-    try {
-      await api.saveSettings({ default_repo: repo.trim(), value_per_card: Number(value) || 0,
-        capacity: { ...(s?.capacity ?? {}), wip_limit: Number(wip) || 0,
-          touch_budget_day: Number(budget) || 0,
-          tariff: { ...(s?.capacity?.tariff ?? {}),
-            steer: Number(tSteer) || 1, review: Number(tReview) || 1, bounce: Number(tBounce) || 3 } } });
-      await invalidate(); ok(tr("settings.saved.business"));
-    } catch (e) { fail(e); }
   }
 
   async function saveJira() {
@@ -513,19 +382,16 @@ export default function Settings() {
 
   // -------------------------------------------------------------- door list
   if (!door) {
+    const visible = DOORS.filter((d) => can(me, d.cap));
     return (
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
         <ScreenHeader title={tr("nav.settings")} onBack={() => router.back()} />
         <ScrollView contentContainerStyle={content}>
-          <Pressable onPress={logout} style={{ alignSelf: "flex-start", marginBottom: 4 }}>
-            <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>Abmelden</Text>
-          </Pressable>
-          {isLoading ? <ActivityIndicator color={t.accent} /> : null}
-          {error ? <Text style={{ color: t.danger }}>{tr("settings.ownerOnly")}</Text> : null}
+          {isLoading && owner ? <ActivityIndicator color={t.accent} /> : null}
+          {error && owner ? <Text style={{ color: t.danger }}>{tr("settings.ownerOnly")}</Text> : null}
           <Panel style={{ padding: 0 }}>
-            {DOORS.map((d, i) => (
-              <Pressable key={d.id}
-                onPress={() => (d.id === "cells" ? router.push("/modules" as never) : goDoor(d.id))}
+            {visible.map((d, i) => (
+              <Pressable key={d.id} onPress={() => goDoor(d.id)}
                 style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 13,
                   borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
                 <Ionicons name={d.icon} size={19} color={t.txtSecondary} />
@@ -537,6 +403,15 @@ export default function Settings() {
               </Pressable>
             ))}
           </Panel>
+          {/* Destructive LAST (NN/g, and the plan's door-6 "Abmelden +
+              Gefahrenzone"). It stays on the door LIST rather than moving into
+              door 6, because door 6 is owner-only and a client must be able to
+              sign out of their own account - the hub root is the one page
+              every role reaches. */}
+          <Pressable onPress={logout}
+            style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
+            <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>{tr("settings.logout")}</Text>
+          </Pressable>
           <DesktopUpdateBanner />
           <UpdatesPanel />
         </ScrollView>
@@ -545,387 +420,388 @@ export default function Settings() {
   }
 
   const doorMeta = DOORS.find((d) => d.id === door)!;
-
-  // ------------------------------------------------------------- door: general
-  if (door === "general") {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-        <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
-        <ScrollView contentContainerStyle={content}>
-          {/* Door 1 is "Mein Profil" (accounts-boards-prd 5): ACCOUNT-backed,
-              so these two knobs follow the person, not the machine. The full
-              6-door hub with scope badges is phase 4 - here the scope is said
-              in the section label and the hint, which is the minimum that
-              keeps the two panels from reading as duplicates. */}
-          <Panel>
-            <SectionLabel text={tr("profile.section")} />
-            <Hint text={tr("profile.section.hint")} />
-            <Caption text={tr("ui.language")} />
-            <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === lang)?.label ?? LANG_LABELS[0]]}
-              single onToggle={(label) => saveLang(langId(label))} />
-            <View style={{ height: 10 }} />
-            <Caption text={tr("settings.policy.backdrop")} />
-            <ChipPick options={BACKDROPS} selected={[backdrop]} single
-              onToggle={saveBackdrop} />
-          </Panel>
-          {can(me, "settings.write") ? (
-            <Panel>
-              <SectionLabel text={tr("profile.wsSection")} />
-              <Hint text={tr("profile.wsSection.hint")} />
-              <Caption text={tr("ui.language")} />
-              <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === wsLang)?.label ?? LANG_LABELS[0]]}
-                single onToggle={(label) => saveWsLang(langId(label))} />
-              <View style={{ height: 10 }} />
-              <Caption text={tr("settings.policy.backdrop")} />
-              <ChipPick options={BACKDROPS} selected={[wsBackdrop]} single
-                onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
-            </Panel>
-          ) : null}
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------- door: automation
-  if (door === "automation") {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-        <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
-        <ScrollView contentContainerStyle={content}>
-          {pmEnabled ? (
-            <Panel>
-              <SectionLabel text={tr("pm.title")} />
-              <PMControls />
-            </Panel>
-          ) : null}
-          <Panel>
-            <SectionLabel text="build-loop" />
-            <Text style={{ color: t.accent, fontWeight: "600", marginBottom: 2 }}>{curState ? tr("automation.now", { state: curState }) : "?"}</Text>
-            {cur[0]?.action ? <Text style={{ color: t.txtSecondary, fontSize: 12, marginBottom: 8 }}>{cur[0].action}</Text> : null}
-            <Pressable onPress={() => router.push("/loopmap" as never)}
-              style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface2,
-                borderColor: t.glassBorder, borderWidth: 1, borderRadius: 12, padding: 11 }}>
-              <Ionicons name="git-network-outline" size={16} color={t.accent} />
-              <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600", flex: 1 }}>{tr("automation.openMap")}</Text>
-              <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
-            </Pressable>
-          </Panel>
-          {policyItems.length ? (
-            <Panel>
-              <SectionLabel text={tr("automation.configPolicy")} />
-              {policyItems.map((it, i) => (
-                <View key={it.path} style={{ marginTop: i ? 10 : 0 }}>
-                  <Control it={it} value={draft[it.path]} onChange={(v) => setKnob(it.path, v)} t={t} tr={tr} field={field} wide={wide} />
-                </View>
-              ))}
-              <View style={{ height: 12 }} />
-              <Btn label={busyGroup === "policy" ? "…" : tr("automation.save")} onPress={() => saveAutomationGroup("policy")} disabled={busyGroup === "policy"} />
-            </Panel>
-          ) : null}
-          {/* nightshift: the ONLY edit surface now (dedup - the old settings.tsx
-              had a second, duplicate form for these same daemon keys). */}
-          {nightItems.length ? (
-            <Panel>
-              <SectionLabel text={tr("automation.nightSection")} />
-              {nightItems.map((it, i) => (
-                <View key={it.path} style={{ marginTop: i ? 10 : 0 }}>
-                  <Control it={it} value={draft[it.path]} onChange={(v) => setKnob(it.path, v)} t={t} tr={tr} field={field} wide={wide} />
-                </View>
-              ))}
-              <View style={{ height: 10 }} />
-              <Caption text={tr("settings.night.repos")} />
-              <TextInput value={nsRepos} onChangeText={setNsRepos} autoCapitalize="none" multiline
-                placeholder={"C:\\Users\\you\\Downloads\\myrepo"} placeholderTextColor={t.txtPlaceholder}
-                style={[field, { minHeight: 84, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 }]} />
-              <View style={{ height: 12 }} />
-              <Btn label={busyGroup === "night" ? "…" : tr("automation.save")} onPress={() => saveAutomationGroup("night")} disabled={busyGroup === "night"} />
-            </Panel>
-          ) : null}
-          <HarnessSection />
-          <Panel>
-            <SectionLabel text={tr("automation.repos", { n: autoRepos.length })} />
-            {autoRepos.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("automation.noRepos")}</Text> :
-              autoRepos.map((r) => <Text key={r} style={{ color: t.txtSecondary, fontSize: 11.5 }}>{r}</Text>)}
-          </Panel>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // --------------------------------------------------------- door: connections
-  if (door === "connections") {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-        <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
-        <ScrollView contentContainerStyle={content}>
-          <Panel>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <SectionLabel text={tr("nav.connectors")} />
-              <Pressable onPress={() => router.push("/connectors" as never)}>
-                <Text style={{ color: t.accent, fontSize: 12.5, fontWeight: "600" }}>{tr("ui.open")}</Text>
-              </Pressable>
-            </View>
-          </Panel>
-          <Panel>
-            <SectionLabel text={tr("settings.sec.dataflows")} />
-            <Caption text={tr("settings.jira.caption")} />
-            <FormGrid wide={wide}>
-              <TextInput value={jBase} onChangeText={setJBase} autoCapitalize="none" placeholder="https://your.atlassian.net" placeholderTextColor={t.txtPlaceholder} style={field} />
-              <TextInput value={jEmail} onChangeText={setJEmail} autoCapitalize="none" placeholder={tr("settings.jira.emailPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-              <TextInput value={jToken} onChangeText={setJToken} autoCapitalize="none" secureTextEntry placeholder={tr("settings.jira.tokenPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-              <TextInput value={jJql} onChangeText={setJJql} autoCapitalize="none" placeholder={tr("settings.jira.jqlPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-            </FormGrid>
-            <View style={{ height: 10 }} />
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <View style={{ flex: 1 }}><Btn label={tr("settings.jira.saveConn")} kind="ghost" onPress={saveJira} /></View>
-              <View style={{ flex: 1 }}><Btn label={busyImp ? "…" : tr("settings.jira.importNow")} onPress={importJira} disabled={busyImp} /></View>
-            </View>
-            <View style={{ height: 14 }} />
-            <Caption text={tr("settings.import.urlCaption")} />
-            <TextInput value={impUrl} onChangeText={setImpUrl} autoCapitalize="none" placeholder="https://..." placeholderTextColor={t.txtPlaceholder} style={field} />
-            <View style={{ height: 8 }} />
-            <Btn label={busyImp ? "…" : tr("settings.import.page")} onPress={importUrl} disabled={busyImp} />
-          </Panel>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------- door: team
-  if (door === "team") {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-        <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
-        <ScrollView contentContainerStyle={content}>
-          <Panel>
-            <SectionLabel text={tr("settings.sec.mobile")} />
-            <Hint text={tr("settings.pair.hint")} />
-            <Caption text={tr("settings.pair.relayUrl")} />
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <TextInput value={relayUrl} onChangeText={setRelayUrl} autoCapitalize="none" placeholder="https://relay.example.com"
-                placeholderTextColor={t.txtPlaceholder} style={[field, { flex: 1 }]} />
-              <Btn label={tr("ui.save")} kind="ghost" onPress={saveRelay} />
-            </View>
-            <View style={{ height: 10 }} />
-            <Btn label={pairBusy ? "…" : tr("settings.pair.pairPhone")} onPress={pairPhone} disabled={pairBusy} />
-            {pairCode ? (
-              <View style={{ marginTop: 10, gap: 8 }}>
-                <Hint text={tr("settings.pair.ttl", { min: pairTtlMin })} />
-                {pairLink ? (
-                  <View style={{ gap: 6 }}>
-                    <Hint text={tr("settings.pair.linkHint")} />
-                    <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
-                      <Text selectable numberOfLines={2} style={{ color: t.accent, fontSize: 11.5 }}>{pairLink}</Text>
-                    </View>
-                    <View style={{ flexDirection: "row", gap: 8 }}>
-                      <View style={{ flex: 1 }}><Btn label={tr("settings.pair.copyLink")} onPress={async () => { await Clipboard.setStringAsync(pairLink); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.linkCopied")); }} /></View>
-                      {isWeb && typeof navigator !== "undefined" && (navigator as unknown as { share?: unknown }).share ? (
-                        <View style={{ flex: 1 }}><Btn label={tr("settings.pair.share")} kind="ghost" onPress={() => { (navigator as unknown as { share: (d: { url: string }) => Promise<void> }).share({ url: pairLink }).catch(() => {}); }} /></View>
-                      ) : null}
-                    </View>
-                  </View>
-                ) : null}
-                {qr ? (
-                  <View style={{ alignItems: "center", gap: 6 }}>
-                    <Hint text={tr("settings.pair.qrHint")} />
-                    <Image source={{ uri: qr }} style={{ width: 220, height: 220, borderRadius: 10, backgroundColor: "#fff" }} />
-                  </View>
-                ) : null}
-                <Hint text={tr("settings.pair.codeHint")} />
-                <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
-                  <Text selectable numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{pairCode}</Text>
-                </View>
-                <Btn label={tr("settings.pair.copyCode")} kind="ghost" onPress={async () => { await Clipboard.setStringAsync(pairCode); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.codeCopied")); }} />
-              </View>
-            ) : null}
-          </Panel>
-
-          <Panel>
-            <SectionLabel text={tr("settings.sec.wearPair")} />
-            <Hint text={tr("settings.wearPair.hint")} />
-            <TextInput value={wearLabel} onChangeText={setWearLabel} autoCapitalize="words"
-              placeholder={tr("settings.wearPair.label")} placeholderTextColor={t.txtPlaceholder} style={field} />
-            <View style={{ height: 10 }} />
-            <Btn label={wearBusy ? "…" : tr("settings.wearPair.pairWatch")} onPress={pairWatch} disabled={wearBusy} />
-            {wearCode ? (
-              <View style={{ marginTop: 10, gap: 8 }}>
-                <Hint text={tr("settings.wearPair.ttl", { min: wearTtlMin })} />
-                <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 14, alignItems: "center" }}>
-                  <Text selectable style={{ color: t.accent, fontSize: 22, letterSpacing: 4,
-                    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{wearCode}</Text>
-                </View>
-                <Btn label={tr("settings.wearPair.copyCode")} kind="ghost" onPress={async () => {
-                  await Clipboard.setStringAsync(wearCode);
-                  Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.wearPair.codeCopied"));
-                }} />
-              </View>
-            ) : null}
-          </Panel>
-
-          <Panel>
-            <SectionLabel text={tr("settings.sec.users", { n: users?.length ?? 0 })} />
-            {(users ?? []).map((u) => (
-              <View key={u.name} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 6 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{u.name}</Text>
-                  {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{tr("settings.users.touchesToday", { n: actors[u.name] })}</Text> : null}
-                  <Pressable onPress={() => changeRole(u)}>
-                    <Chip text={u.role} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
-                  </Pressable>
-                </View>
-                {u.tokens?.length ? (
-                  <View style={{ gap: 3 }}>
-                    {u.tokens.map((tk) => (
-                      <View key={tk.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>
-                          {tk.label} · …{tk.tail}
-                          {tk.stale ? "  " : ""}
-                        </Text>
-                        {/* card 5 debt: >90d unused, computed server-side */}
-                        {tk.stale ? (
-                          <View style={{ borderWidth: 1, borderColor: t.warn + "66", borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text style={{ color: t.warn, fontSize: 9.5, fontWeight: "600" }}>{tr("settings.users.stale")}</Text>
-                          </View>
-                        ) : null}
-                        <Pressable onPress={() => revokeToken(u, tk.id)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-                  <Pressable onPress={() => invite(u)}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.accent + "1F",
-                      borderColor: t.accent + "66", borderWidth: 1, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3 }}>
-                    <Ionicons name="person-add-outline" size={12} color={t.accent} />
-                    <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.users.invite")}</Text>
-                  </Pressable>
-                  <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.addToken")}</Text></Pressable>
-                  <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.password")}</Text></Pressable>
-                  <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.delete")}</Text></Pressable>
-                </View>
-              </View>
-            ))}
-            <View style={{ height: 12, borderTopWidth: 1, borderTopColor: t.glassBorder, marginTop: 4 }} />
-            <Caption text={tr("settings.users.newUser")} />
-            <FormGrid wide={wide}>
-              <TextInput value={uName} onChangeText={setUName} autoCapitalize="none" placeholder={tr("settings.users.namePh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-              <TextInput value={uPw} onChangeText={setUPw} autoCapitalize="none" secureTextEntry placeholder={tr("settings.users.pwPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-            </FormGrid>
-            <View style={{ height: 8 }} />
-            <ChipPick options={["operator", "client", "owner"]} selected={[uRole]} single onToggle={setURole} />
-            <View style={{ height: 10 }} />
-            <Btn label={tr("settings.users.create")} onPress={addUser} />
-          </Panel>
-
-          <Panel>
-            <SectionLabel text={tr("settings.sec.devices", { n: devices?.length ?? 0 })} />
-            <Hint text={tr("settings.devices.hint")} />
-            {(devices ?? []).map((d) => (
-              <View key={d.id} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }} numberOfLines={1}>{d.label}</Text>
-                  <Chip text={tr(d.billing_scope === "shared" ? "settings.devices.scopeShared" : "settings.devices.scopeExternal")}
-                        dot={d.billing_scope === "shared" ? t.ai : t.txtTertiary} />
-                  <Pressable onPress={() => revokeDeviceH(d)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.devices.revoke")}</Text></Pressable>
-                </View>
-                <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
-                  {d.last_seen ? tr("settings.devices.lastSeen", { when: String(d.last_seen).replace("T", " ").slice(0, 16) }) : tr("settings.devices.neverSeen")}
-                </Text>
-              </View>
-            ))}
-            {(tracks ?? []).filter((k) => k.device_stale).map((k) => (
-              <View key={k.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
-                <Text style={{ color: t.danger, fontSize: 12, flex: 1 }} numberOfLines={1}>⚠ {k.task.slice(0, 50)}</Text>
-                <Pressable onPress={() => reassignCard(k)}><Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.devices.reassign")}</Text></Pressable>
-              </View>
-            ))}
-            <View style={{ height: 10 }} />
-            <Btn label={tr("settings.devices.register")} kind="ghost" onPress={addDevice} />
-          </Panel>
-
-          <Panel>
-            <SectionLabel text={tr("settings.sec.registration")} />
-            <Hint text={tr("settings.reg.hint")} />
-            <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={setRegOpen} />
-            <View style={{ height: 8 }} />
-            <Caption text={tr("settings.reg.code")} />
-            <TextInput value={regCode} onChangeText={setRegCode} autoCapitalize="none" style={field} />
-            <View style={{ height: 10 }} />
-            <Caption text={tr("settings.reg.role")} />
-            <ChipPick options={["client", "operator"]} selected={[regRole]} single onToggle={setRegRole} />
-            <View style={{ height: 12 }} />
-            <Btn label={tr("settings.reg.save")} onPress={saveReg} />
-          </Panel>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // -------------------------------------------------------------- door: system
-  return (
+  const Frame = ({ children }: { children: React.ReactNode }) => (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
-      <ScrollView contentContainerStyle={content}>
-        <UsagePanel />
-        <Panel>
-          <SectionLabel text={tr("settings.sec.business")} />
-          <FormGrid wide={wide}>
-            <View>
-              <Caption text={tr("settings.business.repo")} />
-              <TextInput value={repo} onChangeText={setRepo} autoCapitalize="none" style={field} />
-            </View>
-            <View>
-              <Caption text={tr("settings.business.wip")} />
-              <TextInput value={wip} onChangeText={setWip} keyboardType="numeric" style={field} />
-            </View>
-            <View>
-              <Caption text={tr("settings.business.value")} />
-              <TextInput value={value} onChangeText={setValue} keyboardType="numeric" style={field} />
-            </View>
-            <View>
-              <Caption text={tr("settings.business.budget")} />
-              <TextInput value={budget} onChangeText={setBudget} keyboardType="numeric" style={field} />
-            </View>
-          </FormGrid>
-          <View style={{ height: 10 }} />
-          <Caption text={tr("settings.business.tariff")} />
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <View style={{ flex: 1 }}><TextInput value={tSteer} onChangeText={setTSteer} keyboardType="numeric" style={field} /></View>
-            <View style={{ flex: 1 }}><TextInput value={tReview} onChangeText={setTReview} keyboardType="numeric" style={field} /></View>
-            <View style={{ flex: 1 }}><TextInput value={tBounce} onChangeText={setTBounce} keyboardType="numeric" style={field} /></View>
-          </View>
-          <View style={{ height: 12 }} />
-          <Btn label={tr("ui.save")} onPress={saveBusiness} />
-        </Panel>
+      <ScrollView contentContainerStyle={content}>{children}</ScrollView>
+    </View>
+  );
 
-        {/* GxP-mode activation (card 6, ops/docs/backlog/rbac-gxp) - defense
-            in depth beyond this door already being owner-only: also checked
-            against the live capability matrix, not assumed from the door. */}
-        {can(me, "gxp.activate") ? (
+  // ------------------------------------------------------ door 1: Mein Profil
+  if (door === "general") {
+    return (
+      <Frame>
+        {/* The account's own rows, straight from the schema on /me - so a
+            client role, who cannot read /settings at all, still lands on a
+            door with something in it. */}
+        <Hint text={tr("profile.section.hint")} />
+        <SchemaDoor door="general" schema={schema} />
+        {/* Device-local, badged as such: these never leave this device. */}
+        <Panel>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <SectionLabel text={tr("more.device.section")} />
+            <ScopeBadge scope="device" />
+          </View>
+          <Toggle label={tr("settings.voice.speakBlockers")} value={blockerVoiceOn} onChange={setBlockerVoice} />
+          <Hint text={tr("settings.voice.hint")} />
+          <View style={{ height: 10 }} />
+          <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
+          <Hint text={tr("settings.privacy.hint")} />
+        </Panel>
+        {can(me, "settings.write") ? (
           <Panel>
-            <SectionLabel text={tr("gxp.openDialog")} />
-            <Hint text={tr("gxp.openDialogSub")} />
-            <Text style={{ color: gxpState?.active ? t.ok : t.txtTertiary, fontSize: 12, marginBottom: 8 }}>
-              {gxpState?.active
-                ? (gxpState.scope === "workspace"
-                    ? tr("gxp.activeWorkspace", { who: gxpState.activated_by ?? "?" })
-                    : tr("gxp.activeRepos", { who: gxpState.activated_by ?? "?", n: gxpState.repos?.length ?? 0 }))
-                : tr("gxp.inactive")}
-            </Text>
-            {gxpMsg ? <Text style={{ color: t.ok, fontSize: 12, marginBottom: 8 }}>{gxpMsg}</Text> : null}
-            <Btn label={tr("gxp.openDialog")} kind="ghost" onPress={() => { setGxpMsg(null); setShowGxp(true); }} />
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <SectionLabel text={tr("profile.wsSection")} />
+              <ScopeBadge scope="workspace" />
+            </View>
+            <Hint text={tr("profile.wsSection.hint")} />
+            <Caption text={tr("ui.language")} />
+            <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === wsLang)?.label ?? LANG_LABELS[0]]}
+              single onToggle={(label) => saveWsLang(langId(label))} />
+            <View style={{ height: 10 }} />
+            <Caption text={tr("settings.policy.backdrop")} />
+            <ChipPick options={["mesh", "aurora", "ember", "forest", "mono"]} selected={[wsBackdrop]} single
+              onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
           </Panel>
         ) : null}
+      </Frame>
+    );
+  }
 
-        <DesktopUpdateBanner />
-        <UpdatesPanel />
-      </ScrollView>
+  // ---------------------------------------------------------- door 2: Boards
+  if (door === "boards") {
+    return (
+      <Frame>
+        <Panel>
+          <SectionLabel text={tr("hub.boards.mine")} />
+          <Hint text={tr("hub.boards.hint")} />
+          {boards.length === 0 ? (
+            <Text style={{ color: t.txtTertiary, fontSize: 12.5 }}>{tr("hub.boards.none")}</Text>
+          ) : boards.map((b, i) => (
+            <Pressable key={b.id || "fallback-" + i}
+              onPress={() => router.push(`/boards?board=${encodeURIComponent(b.id)}` as never)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10,
+                borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
+              <Ionicons name={b.owner === "" ? "people-outline" : "person-outline"} size={16} color={t.txtSecondary} />
+              <View style={{ flex: 1, gap: 1 }}>
+                <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{b.name}</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>
+                  {tr("hub.boards.columns", { n: b.columns?.length ?? 0 })}
+                </Text>
+              </View>
+              {b.owner === "" ? <Chip text={tr("boards.shared")} dot={t.accent} /> : null}
+              <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
+            </Pressable>
+          ))}
+          <View style={{ height: 12 }} />
+          <Btn label={tr("hub.boards.open")} kind="ghost" onPress={() => router.push("/boards" as never)} />
+        </Panel>
+        {/* The station names every board's columns fall back to - a board-scope
+            knob, placed here by its own metadata (see apimeta.py). */}
+        <SchemaDoor door="boards" schema={schema} />
+      </Frame>
+    );
+  }
+
+  // ------------------------------------------------ door 3: Agenten/Autonomie
+  if (door === "automation") {
+    return (
+      <Frame>
+        {pmEnabled ? (
+          <Panel>
+            <SectionLabel text={tr("pm.title")} />
+            <PMControls />
+          </Panel>
+        ) : null}
+        <Panel>
+          <SectionLabel text="build-loop" />
+          <Text style={{ color: t.accent, fontWeight: "600", marginBottom: 2 }}>{curState ? tr("automation.now", { state: curState }) : "?"}</Text>
+          {cur[0]?.action ? <Text style={{ color: t.txtSecondary, fontSize: 12, marginBottom: 8 }}>{cur[0].action}</Text> : null}
+          <Pressable onPress={() => router.push("/loopmap" as never)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface2,
+              borderColor: t.glassBorder, borderWidth: 1, borderRadius: 12, padding: 11 }}>
+            <Ionicons name="git-network-outline" size={16} color={t.accent} />
+            <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600", flex: 1 }}>{tr("automation.openMap")}</Text>
+            <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
+          </Pressable>
+        </Panel>
+        {/* policy + nightshift, both schema-rendered. This door is still the
+            ONLY place nightshift.* is editable (the plan's dedup requirement);
+            the old duplicate form in settings.tsx is long gone. */}
+        <SchemaDoor door="automation" schema={schema} />
+        <Panel>
+          <SectionLabel text={tr("settings.night.repos")} />
+          <TextInput value={nsRepos} onChangeText={setNsRepos} autoCapitalize="none" multiline
+            placeholder={"C:\\Users\\you\\Downloads\\myrepo"} placeholderTextColor={t.txtPlaceholder}
+            style={[field, { minHeight: 84, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 }]} />
+          <View style={{ height: 12 }} />
+          <Btn label={nsBusy ? "…" : tr("automation.save")} onPress={saveNsRepos} disabled={nsBusy} />
+        </Panel>
+        <HarnessSection />
+        <Panel>
+          <SectionLabel text={tr("automation.repos", { n: autoRepos.length })} />
+          {autoRepos.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("automation.noRepos")}</Text> :
+            autoRepos.map((r) => <Text key={r} style={{ color: t.txtSecondary, fontSize: 11.5 }}>{r}</Text>)}
+        </Panel>
+      </Frame>
+    );
+  }
+
+  // ----------------------------------------------------------- door 4: Zellen
+  if (door === "cells") {
+    return (
+      <Frame>
+        <Panel>
+          <CellsCatalog />
+        </Panel>
+        <SchemaDoor door="cells" schema={schema} />
+      </Frame>
+    );
+  }
+
+  // ------------------------------------------------------ door 5: Verbindungen
+  if (door === "connections") {
+    return (
+      <Frame>
+        <Panel>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <SectionLabel text={tr("nav.connectors")} />
+            <Pressable onPress={() => router.push("/connectors" as never)}>
+              <Text style={{ color: t.accent, fontSize: 12.5, fontWeight: "600" }}>{tr("ui.open")}</Text>
+            </Pressable>
+          </View>
+        </Panel>
+        <Panel>
+          <SectionLabel text={tr("settings.sec.dataflows")} />
+          <Caption text={tr("settings.jira.caption")} />
+          <FormGrid wide={wide}>
+            <TextInput value={jBase} onChangeText={setJBase} autoCapitalize="none" placeholder="https://your.atlassian.net" placeholderTextColor={t.txtPlaceholder} style={field} />
+            <TextInput value={jEmail} onChangeText={setJEmail} autoCapitalize="none" placeholder={tr("settings.jira.emailPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+            <TextInput value={jToken} onChangeText={setJToken} autoCapitalize="none" secureTextEntry placeholder={tr("settings.jira.tokenPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+            <TextInput value={jJql} onChangeText={setJJql} autoCapitalize="none" placeholder={tr("settings.jira.jqlPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+          </FormGrid>
+          <View style={{ height: 10 }} />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flex: 1 }}><Btn label={tr("settings.jira.saveConn")} kind="ghost" onPress={saveJira} /></View>
+            <View style={{ flex: 1 }}><Btn label={busyImp ? "…" : tr("settings.jira.importNow")} onPress={importJira} disabled={busyImp} /></View>
+          </View>
+          <View style={{ height: 14 }} />
+          <Caption text={tr("settings.import.urlCaption")} />
+          <TextInput value={impUrl} onChangeText={setImpUrl} autoCapitalize="none" placeholder="https://..." placeholderTextColor={t.txtPlaceholder} style={field} />
+          <View style={{ height: 8 }} />
+          <Btn label={busyImp ? "…" : tr("settings.import.page")} onPress={importUrl} disabled={busyImp} />
+        </Panel>
+        <SchemaDoor door="connections" schema={schema} />
+      </Frame>
+    );
+  }
+
+  // ---------------------------------------------------- door 6: Team & Geräte
+  if (door === "team") {
+    return (
+      <Frame>
+        <Panel>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <SectionLabel text={tr("settings.sec.mobile")} />
+            <ScopeBadge scope="device" />
+          </View>
+          <Hint text={tr("settings.pair.hint")} />
+          <Caption text={tr("settings.pair.relayUrl")} />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TextInput value={relayUrl} onChangeText={setRelayUrl} autoCapitalize="none" placeholder="https://relay.example.com"
+              placeholderTextColor={t.txtPlaceholder} style={[field, { flex: 1 }]} />
+            <Btn label={tr("ui.save")} kind="ghost" onPress={saveRelay} />
+          </View>
+          <View style={{ height: 10 }} />
+          <Btn label={pairBusy ? "…" : tr("settings.pair.pairPhone")} onPress={pairPhone} disabled={pairBusy} />
+          {pairCode ? (
+            <View style={{ marginTop: 10, gap: 8 }}>
+              <Hint text={tr("settings.pair.ttl", { min: pairTtlMin })} />
+              {pairLink ? (
+                <View style={{ gap: 6 }}>
+                  <Hint text={tr("settings.pair.linkHint")} />
+                  <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
+                    <Text selectable numberOfLines={2} style={{ color: t.accent, fontSize: 11.5 }}>{pairLink}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <View style={{ flex: 1 }}><Btn label={tr("settings.pair.copyLink")} onPress={async () => { await Clipboard.setStringAsync(pairLink); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.linkCopied")); }} /></View>
+                    {isWeb && typeof navigator !== "undefined" && (navigator as unknown as { share?: unknown }).share ? (
+                      <View style={{ flex: 1 }}><Btn label={tr("settings.pair.share")} kind="ghost" onPress={() => { (navigator as unknown as { share: (d: { url: string }) => Promise<void> }).share({ url: pairLink }).catch(() => {}); }} /></View>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+              {qr ? (
+                <View style={{ alignItems: "center", gap: 6 }}>
+                  <Hint text={tr("settings.pair.qrHint")} />
+                  <Image source={{ uri: qr }} style={{ width: 220, height: 220, borderRadius: 10, backgroundColor: "#fff" }} />
+                </View>
+              ) : null}
+              <Hint text={tr("settings.pair.codeHint")} />
+              <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10 }}>
+                <Text selectable numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{pairCode}</Text>
+              </View>
+              <Btn label={tr("settings.pair.copyCode")} kind="ghost" onPress={async () => { await Clipboard.setStringAsync(pairCode); Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.pair.codeCopied")); }} />
+            </View>
+          ) : null}
+        </Panel>
+
+        <Panel>
+          <SectionLabel text={tr("settings.sec.wearPair")} />
+          <Hint text={tr("settings.wearPair.hint")} />
+          <TextInput value={wearLabel} onChangeText={setWearLabel} autoCapitalize="words"
+            placeholder={tr("settings.wearPair.label")} placeholderTextColor={t.txtPlaceholder} style={field} />
+          <View style={{ height: 10 }} />
+          <Btn label={wearBusy ? "…" : tr("settings.wearPair.pairWatch")} onPress={pairWatch} disabled={wearBusy} />
+          {wearCode ? (
+            <View style={{ marginTop: 10, gap: 8 }}>
+              <Hint text={tr("settings.wearPair.ttl", { min: wearTtlMin })} />
+              <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 14, alignItems: "center" }}>
+                <Text selectable style={{ color: t.accent, fontSize: 22, letterSpacing: 4,
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{wearCode}</Text>
+              </View>
+              <Btn label={tr("settings.wearPair.copyCode")} kind="ghost" onPress={async () => {
+                await Clipboard.setStringAsync(wearCode);
+                Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.wearPair.codeCopied"));
+              }} />
+            </View>
+          ) : null}
+        </Panel>
+
+        <Panel>
+          <SectionLabel text={tr("settings.sec.users", { n: users?.length ?? 0 })} />
+          {(users ?? []).map((u) => (
+            <View key={u.name} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{u.name}</Text>
+                {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{tr("settings.users.touchesToday", { n: actors[u.name] })}</Text> : null}
+                <Pressable onPress={() => changeRole(u)}>
+                  <Chip text={u.role} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
+                </Pressable>
+              </View>
+              {u.tokens?.length ? (
+                <View style={{ gap: 3 }}>
+                  {u.tokens.map((tk) => (
+                    <View key={tk.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                        {tk.label} · …{tk.tail}
+                        {tk.stale ? "  " : ""}
+                      </Text>
+                      {/* card 5 debt: >90d unused, computed server-side */}
+                      {tk.stale ? (
+                        <View style={{ borderWidth: 1, borderColor: t.warn + "66", borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                          <Text style={{ color: t.warn, fontSize: 9.5, fontWeight: "600" }}>{tr("settings.users.stale")}</Text>
+                        </View>
+                      ) : null}
+                      <Pressable onPress={() => revokeToken(u, tk.id)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                <Pressable onPress={() => invite(u)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.accent + "1F",
+                    borderColor: t.accent + "66", borderWidth: 1, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3 }}>
+                  <Ionicons name="person-add-outline" size={12} color={t.accent} />
+                  <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.users.invite")}</Text>
+                </Pressable>
+                <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.addToken")}</Text></Pressable>
+                <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.password")}</Text></Pressable>
+                <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.delete")}</Text></Pressable>
+              </View>
+            </View>
+          ))}
+          <View style={{ height: 12, borderTopWidth: 1, borderTopColor: t.glassBorder, marginTop: 4 }} />
+          <Caption text={tr("settings.users.newUser")} />
+          <FormGrid wide={wide}>
+            <TextInput value={uName} onChangeText={setUName} autoCapitalize="none" placeholder={tr("settings.users.namePh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+            <TextInput value={uPw} onChangeText={setUPw} autoCapitalize="none" secureTextEntry placeholder={tr("settings.users.pwPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
+          </FormGrid>
+          <View style={{ height: 8 }} />
+          <ChipPick options={["operator", "client", "owner"]} selected={[uRole]} single onToggle={setURole} />
+          <View style={{ height: 10 }} />
+          <Btn label={tr("settings.users.create")} onPress={addUser} />
+        </Panel>
+
+        <Panel>
+          <SectionLabel text={tr("settings.sec.devices", { n: devices?.length ?? 0 })} />
+          <Hint text={tr("settings.devices.hint")} />
+          {(devices ?? []).map((d) => (
+            <View key={d.id} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }} numberOfLines={1}>{d.label}</Text>
+                <Chip text={tr(d.billing_scope === "shared" ? "settings.devices.scopeShared" : "settings.devices.scopeExternal")}
+                      dot={d.billing_scope === "shared" ? t.ai : t.txtTertiary} />
+                <Pressable onPress={() => revokeDeviceH(d)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.devices.revoke")}</Text></Pressable>
+              </View>
+              <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
+                {d.last_seen ? tr("settings.devices.lastSeen", { when: String(d.last_seen).replace("T", " ").slice(0, 16) }) : tr("settings.devices.neverSeen")}
+              </Text>
+            </View>
+          ))}
+          {(tracks ?? []).filter((k) => k.device_stale).map((k) => (
+            <View key={k.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+              <Text style={{ color: t.danger, fontSize: 12, flex: 1 }} numberOfLines={1}>⚠ {k.task.slice(0, 50)}</Text>
+              <Pressable onPress={() => reassignCard(k)}><Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.devices.reassign")}</Text></Pressable>
+            </View>
+          ))}
+          <View style={{ height: 10 }} />
+          <Btn label={tr("settings.devices.register")} kind="ghost" onPress={addDevice} />
+        </Panel>
+
+        <Panel>
+          <SectionLabel text={tr("settings.sec.registration")} />
+          <Hint text={tr("settings.reg.hint")} />
+          <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={setRegOpen} />
+          <View style={{ height: 8 }} />
+          <Caption text={tr("settings.reg.code")} />
+          <TextInput value={regCode} onChangeText={setRegCode} autoCapitalize="none" style={field} />
+          <View style={{ height: 10 }} />
+          <Caption text={tr("settings.reg.role")} />
+          <ChipPick options={["client", "operator"]} selected={[regRole]} single onToggle={setRegRole} />
+          <View style={{ height: 12 }} />
+          <Btn label={tr("settings.reg.save")} onPress={saveReg} />
+        </Panel>
+        <SchemaDoor door="team" schema={schema} />
+      </Frame>
+    );
+  }
+
+  // -------------------------------------------------------------- door 7: System
+  return (
+    <Frame>
+      <UsagePanel />
+      {/* Business + machine knobs: schema-rendered since phase 4. This was a
+          hand-built nine-field FormGrid with its own saveBusiness(). */}
+      <SchemaDoor door="system" schema={schema} />
+
+      {/* GxP-mode activation (rbac-gxp card 6) - defense in depth beyond this
+          door already being owner-only: also checked against the live
+          capability matrix, not assumed from the door. */}
+      {can(me, "gxp.activate") ? (
+        <Panel>
+          <SectionLabel text={tr("gxp.openDialog")} />
+          <Hint text={tr("gxp.openDialogSub")} />
+          <Text style={{ color: gxpState?.active ? t.ok : t.txtTertiary, fontSize: 12, marginBottom: 8 }}>
+            {gxpState?.active
+              ? (gxpState.scope === "workspace"
+                  ? tr("gxp.activeWorkspace", { who: gxpState.activated_by ?? "?" })
+                  : tr("gxp.activeRepos", { who: gxpState.activated_by ?? "?", n: gxpState.repos?.length ?? 0 }))
+              : tr("gxp.inactive")}
+          </Text>
+          {gxpMsg ? <Text style={{ color: t.ok, fontSize: 12, marginBottom: 8 }}>{gxpMsg}</Text> : null}
+          <Btn label={tr("gxp.openDialog")} kind="ghost" onPress={() => { setGxpMsg(null); setShowGxp(true); }} />
+        </Panel>
+      ) : null}
+
+      <DesktopUpdateBanner />
+      <UpdatesPanel />
       {showGxp ? (
         <GxpActivate
           onClose={() => setShowGxp(false)}
           onActivated={(msg) => setGxpMsg(msg)}
         />
       ) : null}
-    </View>
+    </Frame>
   );
 }

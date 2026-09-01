@@ -45,6 +45,20 @@ export const chrome: Dict = {
   "more.sub.loopmap": { de: "Schaubild: wie Karten durch Gate & Review laufen", en: "Diagram: how cards flow through gate & review" },
   "more.sub.feedback": { de: "Wunsch oder Problem melden", en: "Report a wish or a problem" },
   "more.device.section": { de: "Dieses Gerät", en: "This device" },
+  "more.device.moved": { de: "Vorlesen & Analytics: in Mein Profil",
+                         en: "Read-aloud & analytics: in My profile" },
+  // The two language OPTIONS, for the generic chip renderer - a schema knob
+  // ships option VALUES ("de"), never prose, so the labels live here.
+  //
+  // NATIVE names, identical in both columns, deliberately: a language picker
+  // is the one control a reader may not be able to read, so "English" must say
+  // English even to somebody whose UI is German. It also keeps this chip row
+  // identical to the workspace-default row right below it in door 1 (which
+  // renders from i18n's own LANGS) and to the login screen - judged on a
+  // screenshot, where "Deutsch/Englisch" above "Deutsch/English" read as two
+  // different controls.
+  "lang.de": { de: "Deutsch", en: "Deutsch" },
+  "lang.en": { de: "English", en: "English" },
   "more.conn.connectedRelay": { de: "Mit dem Desktop gekoppelt (über Relay)", en: "Paired with the desktop (via relay)" },
   "more.conn.edit": { de: "Ändern", en: "Change" },
   "more.conn.hide": { de: "Fertig", en: "Done" },

@@ -9,6 +9,8 @@ blocks they replace.
 """
 import json
 
+from spine.http.apimeta import _profile_schema
+
 
 def processes_get(self, user):
     from cells.process import processes
@@ -52,6 +54,14 @@ def me_get(self, user):
         # rows resolved over the workspace defaults. Log in on any device and
         # this is the same - that is the whole point of the phase.
         "profile": profile,
+        # The SCHEMA for those rows (accounts-boards-prd phase 4). The hub's
+        # generic renderer places and badges every settings row from schema
+        # metadata; the account-scoped rows have to ride HERE rather than on
+        # /automation, because /automation is settings.read (owner-only) and
+        # door 1 "Mein Profil" exists precisely for the roles that are NOT the
+        # owner. Same entry shape as /automation's config_schema - the client
+        # concatenates the two and never learns there were two.
+        "config_schema": _profile_schema(profile),
         # Which of those the account actually CHOSE, as opposed to inherited
         # from the workspace. The client cannot infer this from `profile` (a
         # resolved value looks identical either way), and two flows turn on

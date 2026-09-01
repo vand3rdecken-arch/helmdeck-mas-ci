@@ -35,13 +35,32 @@ export const TABS: NavSurface[] = [
   // is still enforced server-side by its own inline check, just not by a
   // real capability yet.
   { id: "tab.history", title: "", path: "history", route: "history", nav: { group: "more", order: 6, icon: "time-outline", labelKey: "nav.history", cap: TEAM_MEMBER_CAP, desktopOnly: true } },
-  // automation/settings are routes_settings.py, now capability-gated for
-  // real (settings.read, owner-only in the seeded matrix) - card 2.
-  { id: "tab.automation", title: "", path: "automation", route: "automation", nav: { group: "more", order: 8, icon: "git-branch-outline", labelKey: "nav.automation", cap: "settings.read", desktopOnly: true } },
-  { id: "tab.settings", title: "", path: "settings", route: "settings", nav: { group: "more", order: 9, icon: "settings-outline", labelKey: "nav.settings", cap: "settings.read", desktopOnly: true } },
-  // modules(policy): GET /policy is owner/operator (routes_policy.py, not yet
-  // migrated) - team-only via the interim stand-in, same caveat as /history.
-  { id: "tab.modules", title: "", path: "modules", route: "modules", nav: { group: "more", order: 10, icon: "cube-outline", labelKey: "nav.modules", sectionKey: "nav.sectionSetup", cap: TEAM_MEMBER_CAP, desktopOnly: true } },
+  // The HUB (accounts-boards-prd phase 4). ONE row instead of the three
+  // near-synonyms it replaced ("Automatik" / "Einstellungen" / "Module") -
+  // the redundancy settings-ia-redesign phase 3 was filed to remove.
+  //
+  // NO `cap`, and that is a deliberate change from card 2's settings.read.
+  // This screen stopped being owner-only the moment door 1 became the
+  // ACCOUNT's profile: a `client` has two real doors here (Mein Profil,
+  // Boards) and must be able to set their own language. Gating the ROUTE
+  // would make the screen unreachable for them - measured, not assumed: with
+  // the cap in place a client navigating to /settings silently landed back on
+  // the dashboard, because _layout.tsx registers only the tabs a role passes.
+  // The owner-only DOORS are hidden inside the hub instead (settings.tsx's
+  // DOOR_META carries the caps), which is the plan's "Nicht-Owner sehen nur
+  // Tür 1 - Rest unsichtbar statt 403", and every owner-only ROUTE the hub
+  // calls is still gated server-side exactly as before.
+  { id: "tab.settings", title: "", path: "settings", route: "settings", nav: { group: "more", order: 9, icon: "settings-outline", labelKey: "nav.settings", desktopOnly: true } },
+  // The two REDIRECT routes (see (tabs)/automation.tsx and modules.tsx).
+  // Still registered, deliberately: _layout.tsx's navigator is built with
+  // useOnlyUserDefinedScreens=true, so dropping them here would make
+  // /automation and /modules UNREACHABLE rather than merely unlisted, and
+  // this card's brief keeps them alive for deep links and chat references.
+  // `hidden` is what says "route yes, nav no". `cap` deliberately stays off:
+  // a redirect must resolve for whoever follows the link, and the hub it
+  // lands on does the role gating one screen later.
+  { id: "tab.automation", title: "", path: "automation", route: "automation", nav: { group: "more", order: 8, icon: "git-branch-outline", labelKey: "nav.automation", hidden: true } },
+  { id: "tab.modules", title: "", path: "modules", route: "modules", nav: { group: "more", order: 10, icon: "cube-outline", labelKey: "nav.modules", hidden: true } },
   { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 11, icon: "ellipsis-horizontal", labelKey: "nav.more", phoneOnly: true } },
 ];
 

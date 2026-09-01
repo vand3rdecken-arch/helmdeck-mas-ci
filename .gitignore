@@ -94,6 +94,9 @@ surfaces/app/web_dev.log
 # src/kernel/__caps_selftest__.ts) - compiled JS, not source.
 surfaces/app/.kernel-out/
 surfaces/app/.capstest-out/
+surfaces/app/.hubtest-out/
+# screenshots + dev-server logs from the e2e_* UI judgements (ops/tests/e2e_*.py)
+.verify/
 daemon/swarmdeck.db-wal
 daemon/swarmdeck.db-shm
 daemon/helmdeck.db-wal
