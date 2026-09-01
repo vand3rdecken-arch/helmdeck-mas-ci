@@ -110,6 +110,14 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS connector_state(
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    # Per-ACCOUNT profile rows (accounts-boards-prd phase 1). Keyed on the
+    # user NAME, which is what users.json calls an account - see
+    # spine/storage/userconfig.py for why that makes a rename an identity
+    # change rather than an edit. `value` is a JSON scalar/object; the
+    # whitelist and the size bound live one layer up, not here.
+    c.execute("""CREATE TABLE IF NOT EXISTS user_config(
+        user TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+        updated_at TEXT NOT NULL, PRIMARY KEY(user, key))""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         id TEXT, ts TEXT, kind TEXT, track TEXT, data TEXT)""")
@@ -334,6 +342,73 @@ def connector_state_put(d):
         c.execute("INSERT OR REPLACE INTO connector_state(id,data) VALUES(?,?)",
                   ("state", json.dumps(d)))
     bump()
+
+# -- user config -----------------------------------------------------------
+# Dumb storage, exactly like the tables above: no whitelist, no defaults, no
+# validation. spine/storage/userconfig.py owns all of that - this layer only
+# knows rows, atomicity and the version bump.
+
+def user_config_get(user):
+    """Every STORED row for this account, {key: decoded value}. Absent keys are
+    absent - resolution against the workspace defaults is userconfig.py's job,
+    so a caller can always tell "the account chose German" from "nobody chose"."""
+    rows = conn().execute(
+        "SELECT key,value FROM user_config WHERE user=?", (user,)).fetchall()
+    out = {}
+    for k, v in rows:
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            continue          # a hand-corrupted row reads as absent, not as a crash
+    return out
+
+
+def user_config_put(user, pairs, only_absent=False):
+    """Write `pairs` ({key: value}) for one account; return the keys actually
+    written, in one transaction.
+
+    `only_absent` is the device->account migration's whole safety property, and
+    it is a single INSERT OR IGNORE against the (user,key) primary key rather
+    than a read-then-write in Python. That matters: two devices logging in at
+    the same second would both read "account has nothing" and both write, and
+    the later one would silently overwrite a value the user had already picked
+    on the first. SQLite decides it instead, per row, atomically - so "never
+    overwrite existing account config" holds under a race, not just in the
+    happy path."""
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    verb = "INSERT OR IGNORE" if only_absent else "INSERT OR REPLACE"
+    written = []
+    with conn() as c:
+        for k, v in pairs.items():
+            cur = c.execute(
+                verb + " INTO user_config(user,key,value,updated_at) VALUES(?,?,?,?)",
+                (user, k, json.dumps(v), now))
+            if cur.rowcount:
+                written.append(k)
+    if written:
+        bump()            # other open devices re-render on the next SSE tick
+    return written
+
+
+def user_config_drop_user(user):
+    """Delete every config row for an account. Called from auth.delete_user:
+    the rows key on the NAME, so without this a later account created with the
+    same name would silently inherit a stranger's profile."""
+    with conn() as c:
+        cur = c.execute("DELETE FROM user_config WHERE user=?", (user,))
+        n = cur.rowcount
+    if n:
+        bump()
+    return n
+
+
+def user_config_users():
+    """Accounts that hold at least one config row. The rename guard reads this
+    (userconfig.rename_block_reason) - derived from the table, never a flag."""
+    return [r[0] for r in conn().execute(
+        "SELECT DISTINCT user FROM user_config").fetchall()]
+
 
 # -- events --------------------------------------------------------------
 
