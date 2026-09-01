@@ -491,8 +491,33 @@ def test_export_matches_the_app_contract():
             os.environ["HELMDECK_WORKTREE"] = old
 
 
+def _dict_src():
+    """Every i18n dictionary file concatenated.
+
+    Was screens.ts alone, which silently assumed the knob table would only
+    ever use keys owned by that one file. accounts-boards-prd phase 4 broke
+    that assumption honestly - the schema now carries labels that belong to
+    the settings area (settings.ts) and to the shell (chrome.ts) - so the
+    check reads the whole dict, the same way _ts_interfaces() reads both
+    client.ts and types.ts. A key is a key wherever it is declared; what
+    matters is that it EXISTS in both languages."""
+    import glob
+    d = os.path.join(ROOT, "surfaces", "app", "src", "i18n", "dict")
+    return "\n".join(open(p, encoding="utf-8").read()
+                     for p in sorted(glob.glob(os.path.join(d, "*.ts"))))
+
+
+def _check_i18n(dict_src, key, why):
+    import re
+    hit = re.search(r'"%s"\s*:\s*\{([^}]*)\}' % re.escape(key), dict_src)
+    check(bool(hit), "%s has an i18n entry (%s)" % (key, why))
+    if hit:
+        check("de:" in hit.group(1) and "en:" in hit.group(1),
+              "%s carries BOTH languages" % key)
+
+
 def test_policy_knob_contract():
-    """The OTHER declarative table: /automation's config_schema.
+    """The OTHER declarative table: the settings hub's config schema.
 
     Same failure mode as the state machine, different table. The app renders
     each knob generically by switching on `control`, so a knob whose control has
@@ -500,23 +525,35 @@ def test_policy_knob_contract():
     screen nobody looks at twice. And a labelKey with no dict entry renders the
     raw key. Neither is a type error on either side.
 
-    Reads settings.tsx, not automation.tsx: settings-ia-redesign's
-    settings-hub-shell moved the Ctl union + Control component into the hub's
-    "automation" door (settings.tsx) - automation.tsx is now a thin redirect
-    to it, so the Ctl union no longer lives there."""
+    BOTH halves are checked (accounts-boards-prd phase 4): _config_schema (the
+    settings.json-backed rows, served on /automation) and _profile_schema (the
+    account's own rows, served on /me). They have different owners and
+    different endpoints but ONE entry shape, and the app concatenates them - so
+    a metadata field missing from either is the same silent bug.
+
+    Reads data/settings_schema.ts + ui/settings_schema_page.tsx, not
+    settings.tsx: phase 4 moved the Ctl union into the pure placement module
+    and the Control switch into the generic renderer, which is what made the
+    placement rules testable without a browser at all (see
+    surfaces/app/src/data/__settings_hub_selftest__.ts)."""
     import re
     from spine.http import server
-    schema = server._config_schema({})
-    check(bool(schema), "server._config_schema() is importable and non-empty")
+    from spine.storage import userconfig
+    ws = server._config_schema({})
+    prof = server._profile_schema(userconfig.defaults())
+    schema = list(ws) + list(prof)
+    check(bool(ws), "server._config_schema() is importable and non-empty")
+    check(bool(prof), "server._profile_schema() is importable and non-empty")
 
-    auto_tsx = os.path.join(ROOT, "surfaces", "app", "src", "app", "(tabs)", "settings.tsx")
-    src = open(auto_tsx, encoding="utf-8").read()
-    m = re.search(r'type\s+Ctl\s*=\s*([^;]+);', src)
-    check(bool(m), "the app declares its Ctl union in automation.tsx")
+    app_src = os.path.join(ROOT, "surfaces", "app", "src")
+    schema_ts = open(os.path.join(app_src, "data", "settings_schema.ts"), encoding="utf-8").read()
+    page_tsx = open(os.path.join(app_src, "ui", "settings_schema_page.tsx"), encoding="utf-8").read()
+    m = re.search(r'export type\s+Ctl\s*=\s*([^;]+);', schema_ts)
+    check(bool(m), "the app declares its Ctl union in data/settings_schema.ts")
     rendered = set(re.findall(r'"(\w+)"', m.group(1))) if m else set()
     # the union is the DECLARATION; the switch is what actually runs, so read
     # both and require the daemon's controls to be in the intersection
-    branches = set(re.findall(r'it\.control === "(\w+)"', src))
+    branches = set(re.findall(r'it\.control === "(\w+)"', page_tsx))
     emitted = {e["control"] for e in schema}
     check(emitted <= rendered,
           "every control the daemon emits is in the app's Ctl union "
@@ -530,50 +567,141 @@ def test_policy_knob_contract():
           "(daemon-only: %s, app-only: %s)"
           % (sorted(set(server.CONTROLS) - rendered), sorted(rendered - set(server.CONTROLS))))
 
-    dict_src = open(os.path.join(ROOT, "surfaces", "app", "src", "i18n", "dict", "screens.ts"),
-                    encoding="utf-8").read()
+    dict_src = _dict_src()
     for e in schema:
-        hit = re.search(r'"%s"\s*:\s*\{([^}]*)\}' % re.escape(e["labelKey"]), dict_src)
-        check(bool(hit), "%s has an i18n entry" % e["labelKey"])
-        if hit:
-            check("de:" in hit.group(1) and "en:" in hit.group(1),
-                  "%s carries BOTH languages" % e["labelKey"])
-    check(all(len(e["path"].split(".")) == 2 for e in schema),
-          "every knob path is exactly two levels - the app's nest() splits on one dot")
-    check(all(e["group"] in ("policy", "night") for e in schema),
-          "every knob is in a group the app has a panel for")
+        _check_i18n(dict_src, e["labelKey"], "label of %s" % e["path"])
     check(all(e.get("options") for e in schema if e["control"] in ("multi", "single")),
           "every multi/single knob ships its options - the app renders an empty "
           "chip row otherwise")
     check(all(e.get("keys") for e in schema if e["control"] == "labels"),
           "every labels knob ships its keys")
+    # An optionLabels map may only name options the knob actually offers, or a
+    # chip renders a translated label for a value nothing can select.
+    for e in schema:
+        ol = e.get("optionLabels") or {}
+        check(set(ol) <= set(e.get("options") or []),
+              "%s: optionLabels only name real options (stray: %s)"
+              % (e["path"], sorted(set(ol) - set(e.get("options") or []))))
+        for k in ol.values():
+            _check_i18n(dict_src, k, "option label of %s" % e["path"])
+    # Paths are no longer capped at two levels: nest() recurses, which is what
+    # let `default_repo` (one) and `capacity.tariff.steer` (three) stop being a
+    # hand-built panel. What still MUST hold is that a path is well-formed.
+    check(all(e["path"] and not e["path"].startswith(".") and ".." not in e["path"]
+              and not e["path"].endswith(".") for e in schema),
+          "every knob path is a well-formed dotted path (nest() recurses, so "
+          "depth itself is free)")
+    check(len({e["path"] for e in schema}) == len(schema),
+          "no knob path appears twice - two rows for one key is two edit "
+          "surfaces, which is the exact thing this redesign removes")
 
-    # settings-ia-redesign phase 1 (settings-schema-v2): door/level/descKey/
-    # scope are the metadata the planned settings hub reads to place and
-    # describe each knob without a second hand-maintained table. Held to the
-    # same rigor as control/labelKey above - a knob missing one of these
-    # would render in the wrong door, in the wrong tier, or with no
-    # explanation, silently.
-    check(all(e.get("door") for e in schema), "every knob names its settings-hub door")
+    # settings-ia-redesign phase 1 + accounts-boards-prd phase 4: door/group/
+    # groupKey/level/descKey/scope are the metadata the hub reads to PLACE,
+    # BADGE and describe each knob without a second hand-maintained table in
+    # the client. Held to the same rigor as control/labelKey above - a knob
+    # missing one of these renders in the wrong door, in the wrong tier, with
+    # no explanation or with no badge, silently.
+    check(all(e.get("door") in server.DOORS for e in schema),
+          "every knob names a REAL settings-hub door (offenders: %s)"
+          % sorted({e["path"] for e in schema if e.get("door") not in server.DOORS}))
     check(all(e.get("level") in ("basic", "advanced") for e in schema),
           "every knob is basic or advanced (progressive disclosure)")
-    check(all(e.get("scope") in ("workspace", "device", "personal") for e in schema),
-          "every knob names its scope (workspace/device/personal)")
+    check(all(e.get("scope") in server.SCOPES for e in schema),
+          "every knob names a REAL scope - the badge and the WRITE TARGET both "
+          "come off it (offenders: %s)"
+          % sorted({e["path"] for e in schema if e.get("scope") not in server.SCOPES}))
+    check(all(e.get("group") and e.get("groupKey") for e in schema),
+          "every knob names its section AND that section's i18n label - a "
+          "group->label table in the client is the second monolith this "
+          "redesign exists to avoid")
+    for e in schema:
+        _check_i18n(dict_src, e["groupKey"], "section heading of %s" % e["path"])
+    # One group must not span two doors: the renderer keys sections by group
+    # within a door, so the same group id in two doors would draw one heading
+    # twice and imply the rows belong together when they do not.
+    doors_per_group = {}
+    for e in schema:
+        doors_per_group.setdefault(e["group"], set()).add(e["door"])
+    check(all(len(v) == 1 for v in doors_per_group.values()),
+          "no group is split across doors (offenders: %s)"
+          % sorted(g for g, v in doors_per_group.items() if len(v) > 1))
+    # The whole point of _profile_schema being a SEPARATE list: it is what
+    # /me serves, and /me is the one endpoint a client role may call. A
+    # workspace-scoped row leaking into it would be an owner-only knob offered
+    # to every role, and a profile-scoped row on /automation would be a knob
+    # the roles it exists for can never load.
+    check(all(e["scope"] == "profile" for e in prof),
+          "_profile_schema serves ONLY account-scoped rows - /me is readable "
+          "by every role")
+    check(all(e["scope"] != "profile" for e in ws),
+          "_config_schema serves NO account-scoped rows - /automation is "
+          "owner-only, and door 1 exists for the roles that are not the owner")
+    # The ROOT segment is what the whitelist names: nest("appearance.backdrop")
+    # produces {"appearance": {...}}, so `appearance` is the key PUT /me/config
+    # validates, not the dotted path.
+    prof_roots = {e["path"].split(".")[0] for e in prof}
+    check(prof_roots <= set(userconfig.KEYS),
+          "every profile knob writes a WHITELISTED user_config key - a knob "
+          "outside the whitelist renders, writes, and 400s (stray: %s)"
+          % sorted(prof_roots - set(userconfig.KEYS)))
     for e in schema:
         dk = e.get("descKey")
         check(bool(dk), "%s has a descKey" % e["path"])
-        if not dk:
-            continue
-        hit = re.search(r'"%s"\s*:\s*\{([^}]*)\}' % re.escape(dk), dict_src)
-        check(bool(hit), "%s has an i18n entry" % dk)
-        if hit:
-            check("de:" in hit.group(1) and "en:" in hit.group(1),
-                  "%s carries BOTH languages" % dk)
+        if dk:
+            _check_i18n(dict_src, dk, "description of %s" % e["path"])
+
+
+def test_settings_hub_vocabularies():
+    """The daemon's DOORS/SCOPES and the app's mirror of them must be one set.
+
+    These two vocabularies are the placement contract of the settings hub: the
+    daemon tags a knob with a door and a scope, and the app turns those tags
+    into a page and a badge. They live in two languages with no import between
+    them, exactly like the loop machine and its client.ts view - and the
+    failure mode is the same shape and just as silent. A door the daemon emits
+    and the app does not know is a knob that renders NOWHERE; a scope the app
+    does not know is a row with no badge, which says nothing about who a change
+    affects.
+
+    Also checks the app's DOOR list against the doors the hub screen actually
+    implements, so a door can never be declared, badged and unreachable."""
+    import re
+    app_src = os.path.join(ROOT, "surfaces", "app", "src")
+    schema_ts = open(os.path.join(app_src, "data", "settings_schema.ts"), encoding="utf-8").read()
+    from spine.http import server
+
+    def ts_list(name):
+        m = re.search(r'export const %s\s*=\s*\[([^\]]*)\]' % re.escape(name), schema_ts)
+        return tuple(re.findall(r'"([^"]+)"', m.group(1))) if m else ()
+
+    doors, scopes = ts_list("DOOR_IDS"), ts_list("SCOPES")
+    check(doors == server.DOORS,
+          "DOOR_IDS mirrors apimeta.DOORS, in the same ORDER (the hub lists "
+          "doors in it) - daemon %s vs app %s" % (list(server.DOORS), list(doors)))
+    check(set(scopes) == set(server.SCOPES),
+          "settings_schema.ts SCOPES mirrors apimeta.SCOPES "
+          "(daemon-only: %s, app-only: %s)"
+          % (sorted(set(server.SCOPES) - set(scopes)), sorted(set(scopes) - set(server.SCOPES))))
+
+    hub = open(os.path.join(app_src, "app", "(tabs)", "settings.tsx"), encoding="utf-8").read()
+    dict_src = _dict_src()
+    for d in server.DOORS:
+        check(('door === "%s"' % d) in hub or d == server.DOORS[-1],
+              "door '%s' has a body in the hub screen (the last door is the "
+              "fall-through)" % d)
+        check(('door="%s"' % d) in hub,
+              "door '%s' mounts <SchemaDoor>, so a knob tagged with it renders "
+              "with no client change - THE acceptance property" % d)
+        _check_i18n(dict_src, "hub.door.%s" % d, "door label")
+        _check_i18n(dict_src, "hub.door.%s.sub" % d, "door subtitle")
+    for s in server.SCOPES:
+        _check_i18n(dict_src, "hub.scope.%s" % s, "scope badge")
 
 
 for fn in (test_no_drift, test_ask_protocol, test_cli_args,
            test_never_breaks_a_spawn, test_loop_state, test_one_definition,
-           test_export_matches_the_app_contract, test_policy_knob_contract):
+           test_export_matches_the_app_contract, test_policy_knob_contract,
+           test_settings_hub_vocabularies):
     print(fn.__name__)
     fn()
 

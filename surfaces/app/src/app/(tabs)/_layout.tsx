@@ -94,9 +94,15 @@ function Sidebar({ state, navigation }: any) {
   const surfaces = useSurfaces();
   const disabledCells = useDisabledCellSurfaces();
   const registryNav = surfaces
-    .filter((s) => s.route && s.nav && !s.nav.phoneOnly && !isSurfaceCellDisabled(s, disabledCells))
+    // `hidden` drops the row from the sidebar while the screen stays
+    // registered below - the hub redirects (/automation, /modules) are routes
+    // with no nav presence (accounts-boards-prd phase 4).
+    .filter((s) => s.route && s.nav && !s.nav.phoneOnly && !s.nav.hidden && !isSurfaceCellDisabled(s, disabledCells))
     .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, cap: s.nav!.cap }));
-  const navItems: NavItem[] = registryNav.length ? registryNav : (NAV as NavItem[]);
+  // registryNav already dropped `hidden` rows in the filter above; the
+  // fallback table carries them (it is what REGISTERS the redirect screens),
+  // so it filters here.
+  const navItems: NavItem[] = registryNav.length ? registryNav : (NAV as NavItem[]).filter((i) => !i.hidden);
   const filter = useBoardFilter((s) => s.filter);
   const setFilter = useBoardFilter((s) => s.setFilter);
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
@@ -196,7 +202,7 @@ export default function TabsLayout() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const fromRegistry = surfaces
     .filter((s) => s.route && s.nav && !isSurfaceCellDisabled(s, disabledCells))
-    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly, cap: s.nav!.cap }));
+    .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly, cap: s.nav!.cap, hidden: s.nav!.hidden }));
   const tabItems: TabItem[] = (fromRegistry.length ? fromRegistry : (TAB_FALLBACK as TabItem[])).filter((item) => can(me, item.cap));
   // Hiding a screen from the phone bottom bar: tabBarItemStyle:{display:'none'}
   // removes it from the flex layout (a bare tabBarButton:null alone still
@@ -232,8 +238,12 @@ export default function TabsLayout() {
           (git mv) and the board now has its own named route, /(tabs)/board.
           The set below is registry-driven (nav.tabs) with a 1:1 fallback. */}
       {tabItems.map((item) => {
+        // `hidden` = drawn nowhere, on either breakpoint, while the screen
+        // stays in the navigator so its route still resolves. That is the
+        // whole reason the flag exists rather than an omitted entry - see
+        // kernel/keys.ts's Surface.nav.hidden.
         const hide =
-          (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly)
+          item.hidden || (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly)
             ? { tabBarItemStyle: { display: "none" as const }, tabBarButton: () => null }
             : {};
         return (

@@ -1,0 +1,37 @@
+{
+  // Standalone compile config for src/data/__settings_hub_selftest__.ts
+  // (accounts-boards-prd phase 4) - the "dummy knob lands in the right door
+  // with the right badge, no client change" acceptance test. Same shape and
+  // same reasoning as tsconfig.capstest.json: deliberately NOT extending
+  // ./tsconfig.json, because the base config's expo/tsconfig.base sets
+  // customConditions, which requires moduleResolution "bundler"/"node16"/
+  // "nodenext" - incompatible with plain "node" resolution plus a real
+  // commonjs emit for a bare `node` run.
+  //
+  // Run: npx tsc -p tsconfig.hubtest.json && node .hubtest-out/data/__settings_hub_selftest__.js
+  //
+  // "files" pins the ONE entry point rather than "include"-sweeping src/,
+  // which would drag in real RN screens that cannot compile outside the
+  // Metro/Expo runtime. The test only reaches data/settings_schema.ts, which
+  // is react-native-free on purpose.
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "target": "es2019",
+    "lib": ["es2019"],
+    "outDir": "./.hubtest-out",
+    "rootDir": "./src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": false,
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "*": ["./node_modules/@types/*", "./node_modules/*"]
+    }
+  },
+  "include": [],
+  "files": ["src/data/__settings_hub_selftest__.ts"]
+}

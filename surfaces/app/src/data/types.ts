@@ -267,6 +267,15 @@ export interface Me {
    *  step only appears while "lang" is absent from it, and the device->account
    *  migration only offers when it is empty. */
   profile_keys?: string[];
+  /** The SCHEMA for the account's own knobs (accounts-boards-prd phase 4,
+   *  spine/http/apimeta.py `_profile_schema`). Same entry shape as
+   *  /automation's `config_schema`, and the settings hub concatenates the two
+   *  - these rows ride here rather than there because /automation is
+   *  settings.read (owner-only) and door 1 "Mein Profil" exists precisely for
+   *  the roles that are not the owner. Typed loosely as ConfigItem[] via the
+   *  hub's own import; OPTIONAL, because a daemon older than this bundle
+   *  omits it and door 1 must then simply render its device rows. */
+  config_schema?: unknown[];
   /** The boards this account may render: the shared default first, then its
    *  own. OPTIONAL, and the app must survive its absence - a daemon older than
    *  this bundle omits it, and the demo fixture has none. data/boards.ts falls

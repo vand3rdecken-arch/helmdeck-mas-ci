@@ -31,11 +31,22 @@ function ok(cond: boolean, msg: string): void {
   }
 }
 
-// Mirrors permissions.py's _DEFAULT_MATRIX (2026-08-27).
+// Mirrors permissions.py's _DEFAULT_MATRIX (re-synced 2026-09-01).
+//
+// The 2026-08-27 snapshot had gone stale exactly the way the note above warns
+// it can: permissions.py had since granted owner system.introspect/projects.*/
+// pm.* and operator projects.view/pm.view, and this copy still listed the old
+// set. That made check 1 below ("owner sees every declared nav item") fail on
+// the Mehr tab's `repo` row (cap projects.view) - a red test reporting a gap
+// the server does not have. Found while running the suite for
+// accounts-boards-prd phase 4; the drift itself predates that card.
 const ROLE_CAPS: Record<string, string[]> = {
   owner: ["settings.read", "settings.write", "users.manage", "recordings.view",
-    "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate", "cards.admin"],
-  operator: ["recordings.view", "devices.manage", "devices.use", "chat.use", "cards.admin"],
+    "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate",
+    "cards.admin", "system.introspect", "projects.view", "projects.manage",
+    "pm.view", "pm.manage"],
+  operator: ["recordings.view", "devices.manage", "devices.use", "chat.use",
+    "cards.admin", "projects.view", "pm.view"],
   client: [],
   quality: [],
   auditor: ["settings.read", "recordings.view", "audit.read"],
