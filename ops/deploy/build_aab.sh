@@ -9,10 +9,22 @@
 # goes to production is the LAST place to re-learn that, so this script copies
 # the whole preamble rather than shelling out to a shortcut.
 #
-# Differences from build_apk.sh, all at the end:
+# Differences from build_apk.sh:
 #   - `:app:bundleRelease` instead of `:app:assembleRelease`
 #   - no emulator smoke (an .aab cannot be `adb install`ed)
 #   - no relay distribution (the relay serves the sideload APK, not the Play AAB)
+#   - withMetaDat.js is DELIBERATELY SKIPPED (2026-09-01). It wires the glasses
+#     CAMERA (GlassCameraService, FOREGROUND_SERVICE_CONNECTED_DEVICE). That
+#     permission was removed from app.json's `plugins` for the Play submission
+#     specifically because glasses.capture()/stopCamera() have no UI trigger
+#     anywhere in surfaces/app/src - Google's foreground-service declaration
+#     needs a real, demoable feature, and there isn't one yet (see
+#     ops/docs/store/DATA_SAFETY.md, PLAY_STORE_RELEASE.md §6.1). Re-applying
+#     it here unconditionally, the way build_apk.sh correctly still does for
+#     the sideload APK (which Play never reviews), would silently put Google
+#     right back in front of the same undeclarable permission. Re-add the call
+#     below once the camera feature has a real screen AND withMetaDat is back
+#     in app.json's plugins array - not before.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
 
@@ -65,8 +77,7 @@ node surfaces/app/plugins/withReleaseSigning.js surfaces/app/android \
   || { echo "[build_aab] release-signing apply FAILED"; exit 1; }
 node surfaces/app/plugins/withGlassVoice.js surfaces/app/android \
   || { echo "[build_aab] glass-voice manifest apply FAILED"; exit 1; }
-node surfaces/app/plugins/withMetaDat.js surfaces/app/android \
-  || { echo "[build_aab] meta-dat wiring apply FAILED"; exit 1; }
+# withMetaDat.js intentionally NOT called here - see the header comment.
 node surfaces/app/plugins/withSherpaOnnx.js surfaces/app/android \
   || { echo "[build_aab] sherpa-onnx wiring apply FAILED"; exit 1; }
 node surfaces/app/plugins/withUpdateUrl.js surfaces/app/android \
