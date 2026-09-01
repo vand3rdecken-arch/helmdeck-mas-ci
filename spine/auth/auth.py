@@ -81,8 +81,15 @@ def owns_card(user, track):
     Takes the track dict directly rather than an id: every call site has
     already looked the card up (to 404 on a missing one, to act on it), so
     a second internal lookup here would just be a second place that lookup
-    could drift from the caller's."""
-    return user.get("role") != "client" or bool(track) and track.get("client") == user.get("name")
+    could drift from the caller's.
+
+    The onboarding example card (accounts-boards-prd phase 3) has no
+    `client` - it belongs to nobody, so the ownership match above would hide
+    it from every client-role account, exactly the "empty screen" the PRD's
+    4.2 setup flow exists to prevent. It is everyone's guide, so it is
+    visible unconditionally, the same way owner/operator already are."""
+    return (user.get("role") != "client" or bool(track) and
+            (track.get("example") or track.get("client") == user.get("name")))
 
 # -- brute-force lockout ---------------------------------------------------
 # There was no limit of ANY kind on password attempts: the relay exposes the

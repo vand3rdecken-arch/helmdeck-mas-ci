@@ -31,6 +31,20 @@ def auth_setup(self, user, body):
         auth.create_user(body.get("name", ""), body.get("password", ""), "owner")
     except ValueError as e:
         return self._send(400, json.dumps({"error": str(e)}))
+    # accounts-boards-prd phase 3 (section 4.1): the SAME first-run transaction
+    # that creates the owner also seeds the default board + one guided example
+    # card, so "fresh daemon" and "working board" are never two separate steps
+    # an owner could stop between. Best-effort: a seed failure must never lose
+    # the account that was just created - the owner would otherwise be locked
+    # out of a daemon that thinks it is already set up.
+    try:
+        from spine.storage import boards
+        boards.ensure_default()
+        from cells.engineer import dispatch
+        dispatch.seed_example_card()
+    except Exception as e:                                         # noqa: BLE001
+        print("auth_setup: board/example seed failed (%s) - owner account is "
+              "still created" % e, flush=True)
     sid = auth.login(body["name"], body["password"])
     # Same reasoning as auth_login below: the app's request layer needs a real
     # Bearer token, not just the cookie, to actually use the account it just

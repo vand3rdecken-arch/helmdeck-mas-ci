@@ -212,6 +212,11 @@ def _snapshot():
     lines.append("CARDS (each belongs to ONE repo; a question about a specific "
                  "project/repo must include ONLY that repo's cards):")
     for t in sessions.list_tracks():
+        # example: the onboarding demo card (accounts-boards-prd phase 3) is
+        # never real work - excluded so the PM/board-copilot never plans
+        # around it or reports it as an open card.
+        if t.get("example"):
+            continue
         repo = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "?"
         # needs_you carries its open question; a FINISHED card carries its RESULT
         # (outcome, persisted at accept). Without the second half, an owner
