@@ -1035,6 +1035,8 @@ def _stakeholder_update(st):
     _activity("status", msg)
     if verdict != "at_risk":
         return
+    if not risk_new:
+        return                       # same risk_key already asked - Henry has it
     # no timestamp in the ASK, deliberately: "~So 30.08. 22:00" is a number the
     # owner cannot act on differently depending on its value, and a chain of
     # those is the shape the decree bans. The exact exhaust time is in the
