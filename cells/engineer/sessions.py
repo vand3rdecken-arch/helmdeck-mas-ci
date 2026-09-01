@@ -159,9 +159,9 @@ LANE_FLOW = {
                 "die einzige Stelle, die 'grün' beweist statt behauptet."},
         {"key": "done", "default_label": "Fertig", "kind": "policy",
          "settings": ["policy.auto_accept_green"],
-         "instruction": "Merge + Deploy. Nichts merged sich selbst - außer "
-                        "policy.auto_accept_green ist an. Der Prozess-Chain rückt "
-                        "einen Schritt vor.",
+         "instruction": "Merge; danach entscheidet Henry über den Ship. Nichts "
+                        "merged sich selbst - außer policy.auto_accept_green ist an. "
+                        "Der Prozess-Chain rückt einen Schritt vor.",
          "why": "Standard ist: nichts merged sich selbst. Ob grüne Karten automatisch "
                 "durchgehen, entscheidest du mit policy.auto_accept_green."},
     ],
@@ -180,9 +180,9 @@ LANE_FLOW = {
                         "Ökonomie verbucht."},
         {"from": "review", "to": "done", "verb": "accept", "kind": "policy",
          "settings": ["policy.auto_accept_green"],
-         "instruction": "Der bewusste Zug nach Done merged wirklich und fährt den "
-                        "Deploy-Hook. Idempotent: eine gelandete Karte wird nie erneut "
-                        "gegatet oder gemerged."},
+         "instruction": "Der bewusste Zug nach Done merged wirklich und übergibt "
+                        "die Ship-Entscheidung an Henry. Idempotent: eine gelandete "
+                        "Karte wird nie erneut gegatet oder gemerged."},
     ],
     "gate": {"key": "gate", "default_label": "Quality Gate", "kind": "fixed",
              "between": ["working", "review"], "settings": [],
@@ -195,21 +195,26 @@ LANE_FLOW = {
     # DEPLOY IS A STEP, NOT A LANE - and the map has to say both.
     #
     # The owner must SEE deploy (it is the moment his work reaches the world),
-    # but in the data model it is not a lane: it is _repo_hook(t, "deploy") run
-    # inside the accept transition, right after status="accepted"
-    # (lanemachine.py:1116-1119). So it is declared exactly the way `gate` is -
+    # but in the data model it is not a lane: since the 2026-09-01 owner decree
+    # it is a JUDGEMENT - every landing calls
+    # lanemachine.request_ship_decision, Henry decides (ship verb, kind
+    # none|ota|native), and the broker executes his kind through the repo's
+    # deploy hook with SHIP_KIND. So it is declared exactly the way `gate` is -
     # a step sitting ON an edge rather than beside the lanes - and `on` names
     # that edge. Drawing it as a fifth lane would make the picture lie about
     # where it happens, and not lying is this screen's whole job.
     #
     # It is also the ONLY genuinely switchable station (PRD §4.3.1): an empty
-    # repo_hooks.<repo>.deploy means the step simply does not run
-    # (lanemachine.py:648). The other four are law or the entrance.
+    # repo_hooks.<repo>.deploy means there is nothing to decide about and no
+    # escalation is even emitted (request_ship_decision's first check). The
+    # other four are law or the entrance.
     "deploy": {"key": "deploy", "default_label": "Deploy", "kind": "policy",
                "on": ["review", "done"], "settings": ["repo_hooks.<repo>.deploy"],
-               "instruction": "Nach der Abnahme führt der DAEMON den Deploy-Hook des Repos "
-                              "aus - er hält die Secrets, nicht der Agent. Kein Befehl "
-                              "hinterlegt = der Schritt passiert schlicht nicht.",
+               "instruction": "Nach einer Landung entscheidet HENRY, ob und wie geshippt "
+                              "wird (none/ota/native) - der DAEMON führt seine Entscheidung "
+                              "über den Deploy-Hook aus, er hält die Secrets, nicht der "
+                              "Agent. Kein Befehl hinterlegt = der Schritt passiert "
+                              "schlicht nicht.",
                "why": "Die einzige Station, die eine Vorlage wirklich an- und ausschalten "
                       "kann. Alles andere ist Gesetz oder der Eingang."},
 }
@@ -951,8 +956,8 @@ def _maybe_fast_track_ship(t, log):
     if not ((rc == 0 and dirty) or ahead):
         return                          # chat-only turn - nothing to deploy
     tid = t["id"]
-    log.log("note", "FAST-TRACK: Turn fertig -> Gate + Merge + Deploy im Hintergrund. "
-            "Die Karte bleibt in Arbeit.")
+    log.log("note", "FAST-TRACK: Turn fertig -> Gate + Merge im Hintergrund; "
+            "Ship entscheidet Henry. Die Karte bleibt in Arbeit.")
 
     def _ship():
         from spine.ops.actionlog import ActionLog
