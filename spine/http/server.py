@@ -169,7 +169,7 @@ class H(BaseHTTPRequestHandler):
         # this only tells the browser the request is permitted.
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
@@ -369,6 +369,48 @@ class H(BaseHTTPRequestHandler):
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass
+
+    def do_PUT(self):
+        """PUT is a CLOSED table - the third method this server answers, added
+        for accounts-boards-prd phase 1's `PUT /me/config`.
+
+        Deliberately not folded into do_POST: do_POST carries a blanket "clients
+        can file and comment only" denial partway down its chain, and a
+        self-scoped profile write is precisely the thing a client role MUST be
+        able to do. Bolting an exception onto that denial list would have made
+        the rule read as a list of accidents; a separate verb for a separate
+        kind of write keeps both statements true.
+
+        There is no fall-through: a path with no PUT_ROUTES entry 404s. The
+        auth, cell and capability gates below are the same three do_GET/do_POST
+        run, in the same order, so a put route is never accidentally the one
+        door that skips one."""
+        p = self.path.split("?")[0]
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+        except ValueError:
+            body = {}
+        try:
+            user = self._user()
+            if not user:
+                return self._send(401, json.dumps({"error": "auth required"}))
+            from spine.registry import cells
+            if cells.path_disabled(p):
+                return self._send(404, json.dumps({"error": "cell disabled"}))
+            from spine.auth import permissions
+            _cap = permissions.cap_for("PUT", p, p.strip("/").split("/"))
+            if _cap:
+                _denial = permissions.require(user, _cap)
+                if _denial:
+                    return self._send(*_denial)
+            if p in routes_misc.PUT_ROUTES:
+                return routes_misc.PUT_ROUTES[p](self, user, body)
+            self._send(404, b"?", "text/plain")
+        except (ConnectionAbortedError, BrokenPipeError):
+            pass
+        except Exception as e:
+            self._send(500, json.dumps({"error": str(e)}))
 
     def do_POST(self):
         p = self.path.split("?")[0]

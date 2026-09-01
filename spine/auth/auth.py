@@ -311,10 +311,22 @@ def delete_user(name, actor=None):
     # kill their sessions
     sess = _load(SESS)
     _save(SESS, [s for s in sess if s["user"] != name])
+    # ...and their saved profile. The rows key on the NAME (accounts-boards-prd
+    # phase 1, spine/storage/userconfig.py), so leaving them behind means a
+    # LATER account created with the same name silently inherits a stranger's
+    # language and appearance - the same class of bug as a resurrected session.
+    # Best-effort: a db that will not open must not block removing an account.
+    config_dropped = 0
+    try:
+        from spine.storage import db
+        config_dropped = db.user_config_drop_user(name)
+    except Exception:
+        pass
     _audit("user.delete", actor, name,
            role=(gone or {}).get("role"),
            tokens_killed=len((gone or {}).get("tokens") or []),
            sessions_killed=len([s for s in sess if s["user"] == name]),
+           config_rows_dropped=config_dropped,
            existed=gone is not None)
 
 def set_password(name, password, actor=None):
