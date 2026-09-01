@@ -103,3 +103,35 @@ Phase 5 is now ANALYSED (not built): see `ops/docs/multi-engine-support.md` for 
 provider-seam comparison against the real Paseo source, the measured HelmDeck
 change surface, and an ACP-driver integration plan with per-block effort
 estimates.
+
+## v0.7.0 changelog parity check (2026-09-01)
+
+Paseo 0.7.0 shipped a batch of resilience/data-model fixes. Checked each
+bug class against real HelmDeck source (not the changelog text alone) before
+concluding anything:
+
+- **CONFIRMED ABSENT** (HelmDeck already guards against these - no action):
+  daemon crash on a dead child's stdin EPIPE (`drivers.py` write sites are
+  already try/except-wrapped per-turn, per-card background threads only -
+  `spine/ops/bgthread.spawn`); git subprocess spawns stalling the HTTP
+  dispatcher (`ThreadingHTTPServer` + per-job threads, no shared lock); stale
+  pending-question cards surviving an interrupt (`sessions.py` `steer()`/
+  `answer()`/`cancel_turn()` all explicitly clear or claim `question`); a
+  false "reopened" status on TodoWrite items (HelmDeck renders each
+  `TodoWrite` call as an independent snapshot, no cross-call identity
+  comparison exists to get this wrong); desktop update admission getting
+  cleared by a later poll (no staged-rollout gate exists at all - see
+  `native-updater.js`'s own comment on deliberately skipping that
+  machinery); older desktop builds dropping newer settings.json fields on
+  rewrite (`spine/storage/events.py` does a raw dict overlay, never a
+  schema round-trip); commits forced to skip GPG signing (no call site in
+  `gitutil.py`/`lanemachine.py`/`henry_broker.py` passes a signing override -
+  git already applies the user's own config).
+- **FOUND, filed to backlog**: [[livemic-stop-drops-tail]] (worse than
+  Paseo's own #4065/#3968 dictation bugs - HelmDeck drops the tail entirely,
+  Paseo's was merely late) and [[git-subprocess-no-timeout]] (small, low
+  severity, noted so it isn't lost).
+
+Method note for next time: `git log --all --oneline --grep="#<PR-number>"`
+against a local Paseo clone finds the exact fix commit fast - much cheaper
+than diffing the full history or guessing from changelog prose alone.
