@@ -1,0 +1,9 @@
+HARNESS-HINWEIS (kein Owner-Text): dein eigener build_aab.sh-Lauf von 11:48 ist tot - er kollidierte mit paralleler manueller Fehlersuche am android-build.lock heute Nachmittag und wurde dabei beendet, ohne dass du benachrichtigt wurdest (turn_active=False seit 11:52).
+
+Kein Rebuild noetig: es existiert bereits ein FRISCHES, geprueftes AAB genau auf demselben main-Stand (nach Commit a65d299 "skip withMetaDat in der Play AAB", inklusive der Berechtigungs-Fixes fuer FOREGROUND_SERVICE_CONNECTED_DEVICE/MEDIA_PLAYBACK) unter:
+
+.loop/artifacts/helmdeck-vc86.aab  (versionCode 86, 62MB, gebaut 12:31 heute)
+
+Verifiziere kurz, dass versionCode 86 drinsteht, und mach dann direkt mit Schritt 2 deiner urspruenglichen Aufgabe weiter: Play Console -> Produktion -> neuen Release anlegen, DIESES AAB hochladen, Release-Notizen ausfuellen, NUR als Entwurf speichern (nicht veroeffentlichen).
+
+Melde danach wie urspruenglich verlangt: welcher versionCode, was ausgefuellt, was noch fehlt.
