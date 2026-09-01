@@ -127,5 +127,16 @@ echo "[build_aab] gradle :app:bundleRelease (~10-15 min)"
 
 AAB="surfaces/app/android/app/build/outputs/bundle/release/app-release.aab"
 [ -f "$AAB" ] || { echo "[build_aab] no AAB produced"; exit 1; }
-echo "[build_aab] AAB: $(du -h "$AAB" | cut -f1) -> $AAB"
+
+# COPY THE ARTIFACT OUT of the android/ tree immediately (measured loss,
+# 2026-09-01): every build_apk.sh/build_aab.sh run starts with
+# `expo prebuild --clean`, which deletes android/ WHOLESALE - a finished AAB
+# sitting in build/outputs was destroyed by the very next sideload-APK build
+# before it was uploaded to Play. The safe copy lives outside android/, named
+# by versionCode so successive builds never overwrite each other.
+VCODE=$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['android']['versionCode'])")
+mkdir -p .loop/artifacts
+SAFE=".loop/artifacts/helmdeck-vc${VCODE}.aab"
+cp "$AAB" "$SAFE" || { echo "[build_aab] WARN: artifact copy-out failed - upload from $AAB before any other build runs"; }
+echo "[build_aab] AAB: $(du -h "$AAB" | cut -f1) -> $SAFE (safe copy; the build-tree original is wiped by the next prebuild)"
 echo "[build_aab] done"
