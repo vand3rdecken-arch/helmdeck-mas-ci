@@ -26,7 +26,7 @@ from spine.git.gitutil import _worktree_for, _base_ref, _worktree_of_branch
 from spine.storage.trackstore import _load, _save, _save_track, _find, _slug, _unique_id, _mutate, _mutate_lock_for
 from spine.git.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
 from cells.engineer.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE, GATE_CUT_NOTE)
-from cells.engineer.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, _say_card, move_lane, lane_active, _is_dirty_block, park_and_retry_merge)
+from cells.engineer.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, request_ship_decision, _say_card, move_lane, lane_active, _is_dirty_block, park_and_retry_merge)
 from cells.engineer.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED, new_remote_task, claim_remote_task, submit_remote_result, reassign_remote_task, sweep_stale_device_claims, start_device_claim_sweeper)
 from cells.engineer.cardadmin import (archive_track, delete_track, update_track, apply_board_directives, add_attachments, remove_attachment, list_checkpoints, rewind_files, fork_conversation, fork_track, history, EDITABLE, CLEARABLE, BOOLFIELDS, DIRECTIVES)
 from cells.engineer.lifecycle import (_interrupt_note_report, _promote_live_session, _track_idle_s, present, sweep_zombies, start_zombie_reconciler, PRESENT_IDLE_S, _BOUNCE_ESCALATE_AT)
@@ -975,24 +975,16 @@ def _maybe_fast_track_ship(t, log):
                 lg.log("note", "FAST-TRACK: Merge nicht moeglich (%s) - nicht deployed. %s"
                        % (kind, (msg or "")[:300]))
                 return
-            hk = _repo_hook(t, "deploy")   # None = no hook configured
-            # PERSIST the hook outcome - _repo_hook ran on THIS thread's local
-            # `t` copy (a subprocess call, kept outside the mutation lock), the
-            # same reason move_lane's _land() persists it post-hook. Without
-            # this the field only ever lived in this thread's dict and never
-            # reached the DB, so _pending_context's next-steer surfacing of
-            # deploy_hook (added for exactly this failure mode) was silently a
-            # no-op for every fast-track ship - the worker still never saw it.
-            _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
-            if _hooks:
-                _mutate(tid, lambda tt: tt.update(_hooks))
-            lg.log("note", "FAST-TRACK deployed (%s)%s - teste auf dem Handy; die Karte "
-                   "bleibt in Arbeit, steuern geht einfach weiter."
-                   % (kind, " · ACHTUNG: Deploy-Hook rot" if hk is False else ""))
-            if hk is False:
-                _try_auto_fix_deploy(t, lg)
-            elif hk is True:
-                _mutate(tid, lambda tt: tt.pop("deploy_fail_streak", None))
+            # Owner decree 2026-09-01: the merge LANDS here, the SHIP is
+            # Henry's judgement - request_ship_decision replaces the
+            # mechanical hook fire (and with it the hook-persist dance and
+            # the deploy_fail_streak auto-repair loop: a red ship now keeps
+            # its ship-decision escalation open at the broker, which is the
+            # agentic retry, bounded by the broker's own attempt cap).
+            request_ship_decision(t, "fast-track")
+            lg.log("note", "FAST-TRACK gelandet (%s) - Ship-Entscheidung liegt bei "
+                   "Henry; die Karte bleibt in Arbeit, steuern geht einfach weiter."
+                   % kind)
         except Exception as e:
             try:
                 lg.log("note", "FAST-TRACK fehlgeschlagen: %s" % str(e)[:250])
@@ -1105,25 +1097,12 @@ def _convert_fast_track_live(t, log):
             "Branch gelandet, Worktree zurueckgegeben; ab jetzt Autocommit+"
             "Deploy ohne Gate nach jedem Turn." % kind)
     if kind == "merged":
-        # real commits just landed on the base - deploy them NOW, same contract
-        # as every fast-track ship (and same hook-persist dance: _repo_hook ran
-        # on this thread's local `t`, so the fields must be written back).
-        def _dep():
-            from spine.ops.actionlog import ActionLog
-            lg = ActionLog(t["run_dir"])
-            try:
-                hk = _repo_hook(t, "deploy")
-                _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
-                if _hooks:
-                    _mutate(tid, lambda tt: tt.update(_hooks))
-                if hk is False:
-                    lg.log("note", "FAST-TRACK: Deploy-Hook rot nach dem Umzug.")
-            except Exception as e:
-                try:
-                    lg.log("note", "FAST-TRACK Umzugs-Deploy fehlgeschlagen: %s" % str(e)[:250])
-                except Exception:
-                    pass
-        _threading.Thread(target=_dep, daemon=True).start()
+        # real commits just landed on the base - the ship is Henry's call now
+        # (owner decree 2026-09-01), same contract as every other landing.
+        try:
+            request_ship_decision(t, "fast-track-umzug")
+        except Exception as e:
+            log.log("note", "FAST-TRACK: Ship-Eskalation nach Umzug fehlgeschlagen: %s" % str(e)[:250])
     return t
 
 
@@ -1159,17 +1138,11 @@ def _maybe_fast_track_ship_direct(t, log):
                 lg.log("note", "FAST-TRACK (direct): offene Konfliktmarkierungen - "
                        "nicht deployed.")
                 return
-            hk = _repo_hook(t, "deploy")   # None = no hook configured
-            _hooks = {k: t[k] for k in ("preview_hook", "deploy_hook") if k in t}
-            if _hooks:
-                _mutate(tid, lambda tt: tt.update(_hooks))
-            lg.log("note", "FAST-TRACK (direct) deployed%s - teste auf dem Handy; "
-                   "die Karte bleibt in Arbeit, steuern geht einfach weiter."
-                   % (" · ACHTUNG: Deploy-Hook rot" if hk is False else ""))
-            if hk is False:
-                _try_auto_fix_deploy(t, lg)
-            elif hk is True:
-                _mutate(tid, lambda tt: tt.pop("deploy_fail_streak", None))
+            # Owner decree 2026-09-01: autocommit lands the work, the ship is
+            # Henry's judgement (see _maybe_fast_track_ship for the full note).
+            request_ship_decision(t, "fast-track-direct")
+            lg.log("note", "FAST-TRACK (direct) gelandet - Ship-Entscheidung liegt "
+                   "bei Henry; die Karte bleibt in Arbeit, steuern geht einfach weiter.")
         except Exception as e:
             try:
                 lg.log("note", "FAST-TRACK (direct) fehlgeschlagen: %s" % str(e)[:250])
@@ -1178,39 +1151,11 @@ def _maybe_fast_track_ship_direct(t, log):
     _threading.Thread(target=_ship, daemon=True).start()
 
 
-_DEPLOY_FIX_CAP = 3   # matches turnopts.ESCALATE_TURNS - the gate thrash-guard's cap
-
-
-def _try_auto_fix_deploy(t, lg):
-    """A fast-track deploy hook failure (in practice: a native build broke,
-    like a Gradle task blowing up) already landed on main by the time we see
-    it - the merge already happened, only the build/distribute step failed.
-    Left alone, that just sits as a red note until the owner happens to
-    notice - unattended is the whole point of fast-track, so make the repair
-    unattended too: feed the worker the actual error and let it try to fix it,
-    same as it already would for a red gate. Bounded (never more than
-    _DEPLOY_FIX_CAP attempts in a row) so a genuinely, persistently broken
-    build doesn't burn turns forever without the owner ever finding out -
-    mirrors the existing gate thrash-guard in _pending_context."""
-    tid = t["id"]
-    streak = (t.get("deploy_fail_streak") or 0) + 1
-    _mutate(tid, lambda tt: tt.__setitem__("deploy_fail_streak", streak))
-    if streak > _DEPLOY_FIX_CAP:
-        lg.log("note", "FAST-TRACK: Deploy-Hook %dx in Folge rot - kein automatischer "
-               "Reparaturversuch mehr, Henry uebernimmt." % (streak - 1))
-        from spine.registry import escalations
-        escalations.emit("deploy-red", card=t["id"],
-                         detail=((t.get("deploy_hook") or {}).get("tail") or "")[:600])
-        return
-    tail = ((t.get("deploy_hook") or {}).get("tail") or "")[:1200]
-    instr = ("FAST-TRACK deploy hook FAILED after your last change was already merged "
-             "to main (repair attempt %d/%d - stops auto-retrying past this). This "
-             "usually means a native build broke. Actual error:\n\n%s\n\nInvestigate and "
-             "fix it. Your next turn's fast-track ship retries the deploy automatically "
-             "once you've committed a fix." % (streak, _DEPLOY_FIX_CAP, tail))
-    lg.log("note", "FAST-TRACK: Deploy-Hook rot - Worker bekommt den Fehler automatisch "
-           "zur Reparatur (Versuch %d/%d)." % (streak, _DEPLOY_FIX_CAP))
-    steer(tid, instr, actor="fast-track", source="fast-track-deploy-fix")
+# _try_auto_fix_deploy + deploy_fail_streak removed 2026-09-01 with the
+# mechanical fast-track deploy they reacted to: a red ship now keeps its
+# ship-decision escalation OPEN at Henry's broker, and Henry's own `steer`
+# verb is the worker-repair path - with judgement about whether repairing is
+# even the right move, which the fixed 3-strikes loop could not ask.
 
 
 def reply_door(t, text):

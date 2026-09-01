@@ -3565,7 +3565,7 @@ DEBT = [
     {
         "id": "ship-decision-not-wired",
         "title": "Ship advisor exists but the automatic deploy path still uses the hash",
-        "status": "open",
+        "status": "paid",
         "what": "The ship decision was inverted from a fixed heuristic to an "
                 "agent judgement (owner decree 2026-08-30): ops/tools/ship_facts.py "
                 "reports evidence and decides nothing, ops/harness/agents/"
@@ -3589,16 +3589,19 @@ DEBT = [
         "trigger": "before trusting the advisor for real ships, or the first "
                    "time an automatic ship makes a decision a human disagrees "
                    "with.",
-        "fix": "OPEN, and it needs a decision the code should not make alone: "
-               "an agent turn inside the post-accept path costs tokens and "
-               "latency on every accept, and it can fail - so it needs a "
-               "defined behaviour when the advisor is unavailable (fall back to "
-               "the hash, or refuse to ship?). Falling back silently would "
-               "recreate exactly the drift this work removed. Suggested shape: "
-               "the advisor runs as its own step BEFORE the deploy hook, writes "
-               "its decision into the card's actionlog where the owner can see "
-               "it, and passes SHIP_KIND at event time (never via a file - a "
-               "decision file is the stored flag this work deleted).",
+        "fix": "PAID 2026-09-01 (owner decree, after a day lost to colliding "
+               "mechanical ships): NO automatic path fires the deploy hook "
+               "anymore. Every landing (accept, fast-track, fast-track-direct, "
+               "umzug, direct-accept) calls lanemachine.request_ship_decision, "
+               "which emits a ship-decision escalation; Henry judges it with "
+               "his live snapshot (locks, box load, build processes) and "
+               "answers the `ship` verb with kind none|ota|native - the broker "
+               "executes ota/native through _repo_hook with SHIP_KIND at event "
+               "time, never via a file. Advisor-unavailable behaviour is "
+               "DEFINED as: nothing ships (the escalation stays open and "
+               "visible; give-up after the attempt cap notifies the owner) - "
+               "the silent hash fallback is unreachable from any automatic "
+               "path. ship.sh keeps the fallback for a bare manual run only.",
         "order": 50,
     },
     {

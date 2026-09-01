@@ -978,8 +978,10 @@ def _accept_machine(t, lane, actor, log):
     t = _mutate(t["id"], _accept) or t
     events.emit("lane", t["id"], frm="review", to="done")
     if t.get("direct"):
-        from cells.engineer.lanemachine import _repo_hook
-        _repo_hook(t, "deploy")   # something DID land in a repo for a direct card
+        # something DID land in a repo for a direct card - whether it ships is
+        # Henry's judgement now (owner decree 2026-09-01), same as every path.
+        from cells.engineer.lanemachine import request_ship_decision
+        request_ship_decision(t, "direct-accept")
     _say_card(t, _i18n.t("say.machineAccepted"))
     from spine.comms import notify
     notify.card_event(t, "done")

@@ -98,6 +98,10 @@ MESSAGES = {
     },
     "say.landed.plain": {"de": "abgenommen", "en": "accepted"},
     "say.deployOk": {"de": " · Deploy ok.", "en": " · deploy ok."},
+    "say.shipHenry": {
+        "de": " · Ship-Entscheidung liegt bei Henry.",
+        "en": " · ship decision is with Henry.",
+    },
     "say.deployFailed": {
         "de": " · ACHTUNG: Deploy-Hook fehlgeschlagen.",
         "en": " · WARNING: deploy hook failed.",
