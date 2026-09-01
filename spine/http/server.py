@@ -60,7 +60,8 @@ def _web_url():
     from spine.storage import events
     return (events.settings().get("web_url") or "http://localhost:3300").rstrip("/")
 
-from spine.http.apimeta import _loop_state_mod, _lane_flow, _loop_machine, _config_schema, CONTROLS
+from spine.http.apimeta import (_loop_state_mod, _lane_flow, _loop_machine, _config_schema,
+                                _profile_schema, CONTROLS, DOORS, SCOPES)
 from spine.ops.glances import glance_payload, _glance_question
 from spine.http.routes import routes_auth
 from spine.http.routes import routes_policy

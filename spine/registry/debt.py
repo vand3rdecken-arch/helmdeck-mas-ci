@@ -3844,6 +3844,48 @@ DEBT = [
                "jig whose branch shipped is used up.",
         "order": 53,
     },
+    {
+        "id": "board-scope-still-in-settings-json",
+        "title": "policy.lane_labels is BADGED 'Board' but still STORED in settings.json",
+        "status": "open",
+        "what": "accounts-boards-prd phase 4 gave every settings knob a `scope` "
+                "tag, and the tag is load-bearing twice over: the hub badges "
+                "the row from it AND routes the write from it "
+                "(surfaces/app/src/data/settings_schema.ts writeTargetFor). "
+                "For profile/workspace/device/system the tag and the store "
+                "agree. `policy.lane_labels` is the one row where they do not: "
+                "it is tagged scope 'board' and rendered in the Boards door, "
+                "because naming the stations is a property of the board layer "
+                "(PRD section 3) - but it is still a workspace key in "
+                "settings.json, so writeTargetFor maps 'board' to POST "
+                "/settings like everything else. PRD section 6 already plans "
+                "the migration ('policy.lane_labels becomes the default "
+                "board's column labels; the settings key stays readable one "
+                "release as fallback, then retires') and asks for a debt entry "
+                "if the shortcut ships first. It did.",
+        "why_it_bites": "The badge is a PROMISE about blast radius, and this "
+                        "one row breaks it: it says 'Board' while a save moves "
+                        "the station names for every board and every account "
+                        "on the daemon. That is the exact confusion the scope "
+                        "badges were added to end, so a wrong badge is worse "
+                        "here than no badge - it is trusted. It also 403s a "
+                        "non-owner who has a personal board and would "
+                        "reasonably expect to name its columns, since the "
+                        "write lands on the owner-only POST /settings.",
+        "trigger": "a second board-scoped knob appears, or a non-owner tries "
+                   "to rename a station from the Boards door",
+        "fix": "Finish PRD section 6: move the labels into the board row "
+               "(boards.columns already carries a per-column `label`, which "
+               "the board editor edits today), have the Boards door render the "
+               "ACTIVE board's columns instead of this knob, and make "
+               "writeTargetFor('board') a real third target (PUT /me/boards). "
+               "Keep reading policy.lane_labels as the fallback for one "
+               "release - data/boards.ts columnLabel() and useLaneLabels() "
+               "already resolve empty labels through it - then retire the key. "
+               "Until then the honest reading of the badge is 'this is the "
+               "board LAYER's knob', not 'this write is board-local'.",
+        "order": 54,
+    },
 ]
 
 def list_debt():

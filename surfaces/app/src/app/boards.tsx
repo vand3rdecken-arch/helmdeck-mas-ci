@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -50,6 +50,7 @@ export default function BoardsScreen() {
   const insets = useSafeAreaInsets();
   const { wide } = useResponsive();
   const qc = useQueryClient();
+  const params = useLocalSearchParams<{ board?: string }>();
   const stationName = useLaneLabels();
   const { boards, active, role } = useBoards();
   const setBoardId = useActiveBoard((s) => s.setBoardId);
@@ -62,6 +63,21 @@ export default function BoardsScreen() {
 
   const current: Board | undefined = boards.find((b) => b.id === editing);
   const editable = mayEditBoard(current, role);
+
+  // ?board=<id> opens straight onto that board - the settings hub's "Boards"
+  // door links each row here. Applied ONCE, and only after /me has actually
+  // delivered a board with that id: on a cold load this screen renders before
+  // the board list exists, so seeding the initial state from the param would
+  // silently select an id that is not there yet and land on "pick a board".
+  // The one-shot flag is a ref, not state, so tapping a different board in
+  // the picker is never dragged back by a re-render.
+  const applied = useRef(false);
+  useEffect(() => {
+    const wanted = Array.isArray(params.board) ? params.board[0] : params.board;
+    if (applied.current || !wanted || !boards.some((b) => b.id === wanted)) return;
+    applied.current = true;
+    setEditing(wanted);
+  }, [params.board, boards]);
 
   // The draft is seeded from the server's board and re-seeded whenever the
   // SELECTED board changes - not on every /me tick. Re-seeding on every tick

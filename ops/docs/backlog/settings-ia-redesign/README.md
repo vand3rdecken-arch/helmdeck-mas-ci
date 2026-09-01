@@ -4,6 +4,18 @@
 > the 6-door hub ships as this document designs it, as the PRD's Phase 4, with
 > two amendments - Tuer 1 wird ACCOUNT-backed ('Mein Profil'), neue Tuer 'Boards'.
 > Everything else here stays the authoritative design for that phase.
+>
+> **SHIPPED 2026-09-01 (PRD phase 4).** Karten 1-3 sind erledigt, und Punkt C
+> ("Schema first") ist jetzt tragend statt geplant: Türen sind Schema-Filter,
+> jede Zeile traegt ein Scope-Badge, und das Scope entscheidet auch, WOHIN
+> geschrieben wird. Karte 3 (`cells-catalog`) ist mit erledigt - `modules.tsx`
+> ist ein Redirect, der Katalog rendert als `@/ui/cells_catalog.tsx` in Tuer 3,
+> und die Sidebar-Redundanz (Automation/Module) ist weg; das dort offene
+> "Ghost-Tab-Risiko" ist GEMESSEN und war keins - `_layout.tsx` baut den
+> Navigator mit `useOnlyUserDefinedScreens=true`, das umgekehrte Problem
+> (Route weg statt nur unsichtbar) war das echte, geloest mit `nav.hidden`.
+> OFFEN bleiben Karte 4 (`autonomy-dial`), 5 (`settings-search`) und 6
+> (`connect-wizards`) - sie bauen jetzt auf dem generischen Renderer auf.
 
 
 Owner-Beschwerde (2026-08-26): "Zu viele Optionen, 3× gleiches Symbol, selbst ich

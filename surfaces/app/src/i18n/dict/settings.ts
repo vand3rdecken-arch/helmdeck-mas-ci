@@ -18,8 +18,15 @@ export const settings: Dict = {
   // 6 doors in user-goal language (Home Assistant pattern), each a short
   // subtitle - the flat 10-panel screen + the opaque "Automatik"/"Module"
   // labels were the owner's original complaint (2026-08-26).
-  "hub.door.general": { de: "Allgemein", en: "General" },
-  "hub.door.general.sub": { de: "Sprache, Aussehen", en: "Language, appearance" },
+  // Door 1 is ACCOUNT-backed since accounts-boards-prd phase 4, so it is named
+  // after WHOSE it is rather than "Allgemein" - a name that said nothing and
+  // was the door everything unclassifiable ended up in.
+  "hub.door.general": { de: "Mein Profil", en: "My profile" },
+  "hub.door.general.sub": { de: "Sprache, Aussehen, dieses Gerät",
+                            en: "Language, appearance, this device" },
+  "hub.door.boards": { de: "Boards", en: "Boards" },
+  "hub.door.boards.sub": { de: "Meine Boards und das geteilte Board, Spalten benennen",
+                           en: "My boards and the shared one, naming the columns" },
   "hub.door.automation": { de: "Agenten & Autonomie", en: "Agents & autonomy" },
   "hub.door.automation.sub": { de: "Was die Agenten allein entscheiden dürfen, Nachtschicht, Briefs",
                                en: "What the agents may decide on their own, night shift, briefs" },
@@ -32,6 +39,33 @@ export const settings: Dict = {
   "hub.door.team.sub": { de: "Nutzer, Telefon koppeln, Registrierung", en: "Users, pair a phone, registration" },
   "hub.door.system": { de: "System", en: "System" },
   "hub.door.system.sub": { de: "Geschäft, Nutzung, Updates", en: "Business, usage, updates" },
+
+  // ---- scope badges (accounts-boards-prd phase 4) ----
+  // The five layers of PRD section 3, in the words a user would use for "who
+  // does changing this affect". Every schema row wears one, so "why did my
+  // colleague's board change" is answered before it is asked.
+  "hub.scope.profile": { de: "Konto", en: "Account" },
+  "hub.scope.board": { de: "Board", en: "Board" },
+  "hub.scope.workspace": { de: "Workspace", en: "Workspace" },
+  "hub.scope.device": { de: "Gerät", en: "Device" },
+  "hub.scope.system": { de: "System", en: "System" },
+  // Progressive disclosure: the count is in the label so an empty-looking
+  // section never hides its contents silently.
+  "hub.advanced": { de: "Erweitert ({n})", en: "Advanced ({n})" },
+
+  // ---- schema section headings that have no older home ----
+  "hub.grp.boardLabels": { de: "Stationsnamen", en: "Station names" },
+  "hub.grp.machine": { de: "Diese Maschine", en: "This machine" },
+
+  // ---- the Boards door ----
+  "hub.boards.mine": { de: "Meine Boards", en: "My boards" },
+  "hub.boards.hint": {
+    de: "Ein Board ist eine gespeicherte Ansicht auf denselben Kartenpool – Karten gibt es nur einmal. Das geteilte Board sehen alle.",
+    en: "A board is a saved view over the one card pool - cards exist once. Everyone sees the shared board.",
+  },
+  "hub.boards.none": { de: "Noch keine Boards.", en: "No boards yet." },
+  "hub.boards.columns": { de: "{n} Spalten", en: "{n} columns" },
+  "hub.boards.open": { de: "Board-Editor öffnen", en: "Open board editor" },
 
   // ---- my profile (accounts-boards-prd phase 1) ----
   // The hints carry the whole point of the phase, so they say WHERE a value
@@ -64,6 +98,8 @@ export const settings: Dict = {
   "settings.ownerOnly": { de: "Nur für Owner / Desktop nicht erreichbar.",
                           en: "Owner only / desktop unreachable." },
   "settings.savedTitle": { de: "Gespeichert", en: "Saved" },
+  // Was hardcoded German on the hub's door list until phase 4.
+  "settings.logout": { de: "Abmelden", en: "Sign out" },
   "settings.saved.business": { de: "Business-Einstellungen.", en: "Business settings." },
   "settings.saved.policy": { de: "Policy & Aussehen.", en: "Policy & appearance." },
   "settings.saved.jira": { de: "Jira-Verbindung.", en: "Jira connection." },

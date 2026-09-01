@@ -59,6 +59,18 @@ export interface Surface {
     desktopOnly?: boolean;
     /** shown only on the phone bottom bar, not the desktop sidebar (e.g. More). */
     phoneOnly?: boolean;
+    /** REGISTERED but never drawn - in neither the sidebar nor the bottom bar.
+     *
+     *  Not the same as omitting the surface, and the difference is
+     *  load-bearing: (tabs)/_layout.tsx builds its navigator with
+     *  useOnlyUserDefinedScreens=true, so a route that is not rendered as a
+     *  <Tabs.Screen> is not in the navigator AT ALL and can no longer be
+     *  navigated to. The settings-hub redirects (/automation and /modules ->
+     *  /settings?door=...) must stay REACHABLE for deep links and chat
+     *  references while being gone from every nav list, which is exactly and
+     *  only what this flag expresses. Added in accounts-boards-prd phase 4,
+     *  the first time a route needed it. */
+    hidden?: boolean;
   };
   /** service key ids required for this surface to be shown at all. */
   readonly requires?: readonly string[];
