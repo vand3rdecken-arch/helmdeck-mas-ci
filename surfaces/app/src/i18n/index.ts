@@ -15,6 +15,8 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/data/client";
+import { cachedProfile } from "@/data/profile";
+import type { Me } from "@/data/types";
 
 import { DICT, deviceLang, getLang, render, setLang, type Lang } from "./core";
 
@@ -22,17 +24,29 @@ export {
   allKeys, dict, getLang, LANGS, setLang, t, type Dict, type Entry, type Lang,
 } from "./core";
 
-/** The language the workspace is set to.
+/** The language THIS ACCOUNT reads in.
  *
  *  Read from /me, NOT from the dashboard payload: that one strips `settings`
  *  for operators and 403s clients, so the language would only ever resolve for
  *  the owner and everyone else would silently sit in German - the very split
- *  this replaced. /me is the one endpoint every authenticated role can call. */
+ *  this replaced. /me is the one endpoint every authenticated role can call.
+ *
+ *  Since accounts-boards-prd phase 1 the answer is per-ACCOUNT: `me.profile`
+ *  is the account's own choice resolved over the workspace default, so signing
+ *  in on a second device renders the same language without carrying anything
+ *  on the device. The resolution order below is the app's hydration order:
+ *
+ *    profile (the account, authoritative)
+ *      -> ui.lang (an older daemon that predates `profile`; it resolves the
+ *         same value, so this is a version fallback, not a second opinion)
+ *      -> the device cache (offline, or the frame before /me answers - stops
+ *         a cold start from flashing the workspace default)
+ *      -> the OS locale (demo / unpaired: nobody has said anything yet, and
+ *         defaulting everyone to German is worse than following the device). */
 export function useLang(): Lang {
   const { data } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
-  const raw = (data as { ui?: { lang?: string } } | undefined)?.ui?.lang;
-  // A pinned workspace language wins; otherwise (demo / unpaired, where `raw` is
-  // undefined) follow the device instead of defaulting everyone to German.
+  const me = data as Me | undefined;
+  const raw = me?.profile?.lang ?? me?.ui?.lang ?? cachedProfile()?.lang;
   const lang: Lang = raw === "en" ? "en" : raw === "de" ? "de" : deviceLang();
   if (lang !== getLang()) setLang(lang);   // keep the non-React t() in sync
   return lang;

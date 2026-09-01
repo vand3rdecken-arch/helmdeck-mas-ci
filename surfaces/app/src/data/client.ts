@@ -7,7 +7,7 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
-import type { Track, LaneMove, Metrics, Me, Usage, UsageWindow, PendingQuestion,
+import type { Track, LaneMove, Metrics, Me, Profile, Usage, UsageWindow, PendingQuestion,
   SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult, GxpState } from "./types";
 import type { VoiceClip } from "./voice";
 
@@ -421,6 +421,28 @@ export interface LoopMap {
 }
 
 // ---------------------------------------------------------------------------
+// PUT /me/config's reply (accounts-boards-prd phase 1). It answers with the new
+// resolved state so a write needs no follow-up GET.
+//
+// `skipped` is the load-bearing field and the reason this is not just {ok}: a
+// MIGRATING device learns from it that the account already held those keys and
+// its local values lost. Without it the device would report a successful push
+// and quietly believe it won - which is the precise failure "never overwrite an
+// account that has values" exists to prevent, made invisible.
+// ---------------------------------------------------------------------------
+export interface MyConfigResult {
+  ok: boolean;
+  /** keys that actually landed */
+  written: string[];
+  /** valid keys the daemon declined to write (a migration onto an account that
+   *  already has a profile) */
+  skipped: string[];
+  profile: Profile;
+  /** what the account has now CHOSEN, after this write */
+  profile_keys: string[];
+}
+
+// ---------------------------------------------------------------------------
 // /harness - the editable policy behind each agent surface, plus the spawn
 // preview. The preview is "effective config with provenance" (git config
 // --show-origin): not what the harness is configured to do, but the resolved
@@ -543,6 +565,21 @@ export const api = {
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   usage: () => req<Usage>("GET", "/usage"),
   me: () => req<Me>("GET", "/me"),
+  // MY OWN profile rows (accounts-boards-prd phase 1). PUT, not POST: the
+  // daemon answers this verb on exactly one path, deliberately kept off
+  // do_POST because that chain carries the "clients can file and comment only"
+  // denial - and a self-scoped view preference is precisely what a client role
+  // MUST be able to write. There is no `user` parameter and there never will
+  // be one: the account is taken from the session, which is what makes this
+  // route safe without a capability.
+  saveMyConfig: (config: Partial<Profile>) =>
+    req<MyConfigResult>("PUT", "/me/config", { config }),
+  // The one-time device->account push. Same route, same whitelist, but the
+  // daemon fills only keys the account does NOT already have - so this is
+  // idempotent and safe to call on every login (see data/profile.ts for why
+  // the "once" is not tracked on the device).
+  migrateMyConfig: (config: Partial<Profile>) =>
+    req<MyConfigResult>("PUT", "/me/config", { config, migrate: true }),
   // The cell registry manifest (cells.py) - which agentic systems exist
   // and whether each is enabled. Used to gate nav (see (tabs)/_layout.tsx) and
   // the Modules screen's CELLS section.

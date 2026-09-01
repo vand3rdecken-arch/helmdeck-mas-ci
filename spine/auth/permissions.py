@@ -225,7 +225,15 @@ def cap_for(method, path, parts):
     cap = _pattern_cap(method, path, parts)
     if cap:
         return cap
-    table = "GET_CAPS" if method == "GET" else "POST_CAPS"
+    # One table per METHOD, not "GET or else POST". Before PUT existed the
+    # else-branch was harmless; with `PUT /me/config` live it would have made a
+    # put route silently inherit whatever the SAME PATH's POST_CAPS said - a
+    # capability answer for a question nobody asked. An unknown method gets no
+    # table and therefore no capability, which is the same no-op contract this
+    # function already has for an unmigrated route.
+    table = {"GET": "GET_CAPS", "POST": "POST_CAPS", "PUT": "PUT_CAPS"}.get(method)
+    if not table:
+        return None
     for name in _CAP_MODULES:
         mod = _import_module(name)
         if mod is None:

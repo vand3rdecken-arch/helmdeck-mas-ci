@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useCellEnabled } from "@/data/cells";
+import { clearProfileCache, saveProfile } from "@/data/profile";
 import type { Me, UserRow } from "@/data/types";
 import { LANGS, useT, type Lang } from "@/i18n";
 import { can } from "@/kernel";
@@ -188,8 +189,19 @@ export default function Settings() {
   const [tSteer, setTSteer] = useState(""); const [tReview, setTReview] = useState(""); const [tBounce, setTBounce] = useState("");
 
   // ---- language / appearance (door: general) ----
+  // TWO scopes, deliberately kept apart (accounts-boards-prd G4: every knob has
+  // exactly one owner and one edit surface). `lang`/`backdrop` below are MY
+  // ACCOUNT's - they follow me to every device I sign in on. `wsLang`/
+  // `wsBackdrop` are the WORKSPACE DEFAULT that accounts inherit until they
+  // choose, owner-only, and they are a genuinely different knob rather than a
+  // second surface for the same one. Before this card the account scope did not
+  // exist, so these two controls wrote the workspace value for everybody - which
+  // meant a client role could not change the language at all (POST /settings
+  // 403s them) and an operator changing "their" language changed the owner's.
   const [lang, setLangSel] = useState<Lang>("de");
   const [backdrop, setBackdrop] = useState("mesh");
+  const [wsLang, setWsLang] = useState<Lang>("de");
+  const [wsBackdrop, setWsBackdrop] = useState("mesh");
 
   // ---- jira / imports (door: connections) ----
   const [jBase, setJBase] = useState(""); const [jEmail, setJEmail] = useState("");
@@ -270,8 +282,8 @@ export default function Settings() {
     setTReview(String(s.capacity?.tariff?.review ?? ""));
     setTBounce(String(s.capacity?.tariff?.bounce ?? ""));
     const pol = s.policy ?? {};
-    setLangSel(pol.lang === "en" ? "en" : "de");
-    setBackdrop(s.appearance?.backdrop ?? "mesh");
+    setWsLang(pol.lang === "en" ? "en" : "de");
+    setWsBackdrop(s.appearance?.backdrop ?? "mesh");
     setJBase(s.jira?.base ?? ""); setJEmail(s.jira?.email ?? "");
     setJToken(s.jira?.api_token ?? ""); setJJql(s.jira?.default_jql ?? "");
     setRelayUrl(s.relay?.url ?? "");
@@ -279,19 +291,54 @@ export default function Settings() {
     setRegRole(s.registration?.default_role ?? "client");
   }, [s]);
 
+  // My own profile, from /me. Separate from the `s` effect above because
+  // /settings 403s a client role while /me never does - a client must still be
+  // able to see and change their own language.
+  useEffect(() => {
+    const p = me?.profile;
+    if (!p) return;
+    setLangSel(p.lang === "en" ? "en" : "de");
+    setBackdrop(p.appearance?.backdrop ?? "mesh");
+  }, [me]);
+
   const ok = (msg: string) => Alert.alert(tr("settings.savedTitle"), msg);
   const fail = (e: unknown) => Alert.alert(tr("ui.error"), String((e as Error).message));
   async function invalidate() { await qc.invalidateQueries({ queryKey: ["settings"] }); }
 
+  // ---- MY ACCOUNT (PUT /me/config) ----
   async function saveLang(l: Lang) {
     if (l === lang) return;
-    setLangSel(l);
+    const prev = lang;
+    setLangSel(l);                       // optimistic: the chip must not lag the tap
+    try {
+      await saveProfile({ lang: l });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (e) { setLangSel(prev); fail(e); }
+  }
+
+  async function saveBackdrop(b: string) {
+    if (b === backdrop) return;
+    const prev = backdrop;
+    setBackdrop(b);
+    try {
+      await saveProfile({ appearance: { backdrop: b } });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (e) { setBackdrop(prev); fail(e); }
+  }
+
+  // ---- THE WORKSPACE DEFAULT (POST /settings, owner-only) ----
+  // What an account inherits until it chooses. Changing it moves everyone who
+  // never picked one, and nobody who did.
+  async function saveWsLang(l: Lang) {
+    if (l === wsLang) return;
+    const prev = wsLang;
+    setWsLang(l);
     try {
       await api.saveSettings({ policy: { lang: l } });
       await invalidate();
       await qc.invalidateQueries({ queryKey: ["me"] });
       await qc.invalidateQueries({ queryKey: ["metrics"] });
-    } catch (e) { fail(e); }
+    } catch (e) { setWsLang(prev); fail(e); }
   }
 
   async function saveBusiness() {
@@ -450,6 +497,11 @@ export default function Settings() {
   const logout = () => {
     api.post("/auth/logout", {}).catch(() => { /* best-effort - proceed regardless */ });
     useConfig.getState().set({ token: "" });
+    // The profile cache is the LAST account's view. Left behind, the next
+    // person to sign in on this device renders in their predecessor's language
+    // for the frame before /me answers - the same class of leak clearCache()
+    // already closes for the board.
+    void clearProfileCache();
     useAuthGate.getState().reportAuthRequired();
   };
 
@@ -500,16 +552,35 @@ export default function Settings() {
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
         <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
         <ScrollView contentContainerStyle={content}>
+          {/* Door 1 is "Mein Profil" (accounts-boards-prd 5): ACCOUNT-backed,
+              so these two knobs follow the person, not the machine. The full
+              6-door hub with scope badges is phase 4 - here the scope is said
+              in the section label and the hint, which is the minimum that
+              keeps the two panels from reading as duplicates. */}
           <Panel>
-            <SectionLabel text={tr("ui.language")} />
-            <Hint text={tr("settings.lang.hint")} />
+            <SectionLabel text={tr("profile.section")} />
+            <Hint text={tr("profile.section.hint")} />
+            <Caption text={tr("ui.language")} />
             <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === lang)?.label ?? LANG_LABELS[0]]}
               single onToggle={(label) => saveLang(langId(label))} />
             <View style={{ height: 10 }} />
             <Caption text={tr("settings.policy.backdrop")} />
             <ChipPick options={BACKDROPS} selected={[backdrop]} single
-              onToggle={(b) => { setBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
+              onToggle={saveBackdrop} />
           </Panel>
+          {can(me, "settings.write") ? (
+            <Panel>
+              <SectionLabel text={tr("profile.wsSection")} />
+              <Hint text={tr("profile.wsSection.hint")} />
+              <Caption text={tr("ui.language")} />
+              <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === wsLang)?.label ?? LANG_LABELS[0]]}
+                single onToggle={(label) => saveWsLang(langId(label))} />
+              <View style={{ height: 10 }} />
+              <Caption text={tr("settings.policy.backdrop")} />
+              <ChipPick options={BACKDROPS} selected={[wsBackdrop]} single
+                onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
+            </Panel>
+          ) : null}
         </ScrollView>
       </View>
     );

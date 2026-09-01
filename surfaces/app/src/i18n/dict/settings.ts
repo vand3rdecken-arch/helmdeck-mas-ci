@@ -33,6 +33,27 @@ export const settings: Dict = {
   "hub.door.system": { de: "System", en: "System" },
   "hub.door.system.sub": { de: "Geschäft, Nutzung, Updates", en: "Business, usage, updates" },
 
+  // ---- my profile (accounts-boards-prd phase 1) ----
+  // The hints carry the whole point of the phase, so they say WHERE a value
+  // lives rather than only what it does - that is what keeps the two panels in
+  // the "general" door from reading as the same control twice.
+  "profile.section": { de: "Mein Profil", en: "My profile" },
+  "profile.section.hint": {
+    de: "Gehört zu deinem Konto, nicht zu diesem Gerät: melde dich auf Handy, Web oder Desktop an – dieselbe Ansicht.",
+    en: "Belongs to your account, not to this device: sign in on phone, web or desktop and you get the same view.",
+  },
+  "profile.wsSection": { de: "Workspace-Standard", en: "Workspace default" },
+  "profile.wsSection.hint": {
+    de: "Womit Konten starten, die selbst nichts gewählt haben. Ändern verschiebt alle, die nie gewählt haben – und niemanden, der gewählt hat.",
+    en: "What accounts start with until they choose. Changing it moves everyone who never picked one, and nobody who did.",
+  },
+  "profile.langTitle": { de: "In welcher Sprache?", en: "Which language?" },
+  "profile.langHint": {
+    de: "Wird auf deinem Konto gespeichert – auf jedem Gerät, auf dem du dich anmeldest.",
+    en: "Saved to your account - on every device you sign in on.",
+  },
+  "profile.langSkip": { de: "Später entscheiden", en: "Decide later" },
+
   // ---- language switch ----
   "settings.lang.hint": {
     de: "Eine Sprache für alles: Oberfläche und Agenten-Antworten wechseln zusammen. Der Audit-Trail bleibt technisch (Englisch).",
