@@ -2,7 +2,29 @@
 
 **Filed 2026-09-01, owner decree:** "Each user should be able to register and
 save their own config in db. They can set lanes, labels etc. HelmDeck is just
-rendering."
+rendering." Refined same day: "Best is to let users create account, log in
+and then save all config cleanly."
+
+## Account-first (the refinement, and what it buys)
+
+The account is the config's home, not the device. Consequences:
+
+- **Log in anywhere, same view.** Today the app's view preferences live in
+  each device's local storage, so phone/web/desktop drift apart per device.
+  After this card, everything view-shaped is saved to the account via
+  `PUT /me/ui` and hydrated from `GET /me` on login - a fresh browser on a
+  new machine renders YOUR board the moment you sign in. Device-local
+  storage keeps only a cache of the last-known account config (offline
+  render) that re-syncs on connect.
+- **Registration -> login -> config is one clean path**: the sign-in screen
+  and invite-code registration already exist (routes_auth.py,
+  `registration` settings block); this card adds nothing to auth itself -
+  the auth law stays fixed. A fresh `default_role: client` account starts
+  with the workspace defaults and may immediately personalize its own view.
+- **What stays on the device, deliberately:** pairing material (relay room,
+  keypairs, tokens in expo-secure-store) - that is device identity and
+  secret material, not preference; it must never travel to the server. The
+  boundary: config = account, credentials = device.
 
 ## The load-bearing distinction (do not blur it)
 
@@ -53,6 +75,12 @@ columns are presentation).
   existing owner-global controls stay where they are. `client.ts` Me.ui type
   grows the new keys (the ts-contract test in test_harness_layer.py will
   hold both sides to it).
+- App hydration order (account-first): local cache renders instantly ->
+  `GET /me` on login/reconnect overwrites it -> user edits write through to
+  `PUT /me/ui` AND the cache. Every device-local view preference the app
+  holds today migrates into this flow (one-time: on first login after the
+  update, push the device's current values up IF the account has none - so
+  nobody's existing setup resets to defaults).
 
 ## Phase 2 - per-user lanes as a view mapping (the real "set lanes")
 
