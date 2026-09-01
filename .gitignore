@@ -1,5 +1,28 @@
 __pycache__/
 *.pyc
+# BUILD OUTPUT THAT ALSO HAS TO BE IGNORED *AT THE ROOT*, not just nested
+# (measured 2026-09-01, and the reason `eas build` was impossible to run).
+#
+# Both paths are already ignored by their own nested .gitignore
+# (surfaces/app/.gitignore ':/android', surfaces/desktop/.gitignore 'release/')
+# and neither holds a single TRACKED file - so for git these two lines are a
+# no-op and exist purely as documentation. They are here because eas-cli's
+# archiver does NOT reliably apply nested .gitignore files when it copies the
+# project: `surfaces/app/dist-desktop/` (a ROOT rule) was correctly excluded
+# from the upload while `surfaces/app/android/` and `surfaces/desktop/release/`
+# (NESTED rules) were both copied in whole. That put 5.4 GB of pure build
+# output - android/app/build 1.3 GB + 3.9 GB of stale HelmDeck-Setup-*.exe -
+# into a 4.2 GB tarball, and EAS hard-rejects any archive above 2.0 GB
+# ("Project archive is too big"), so every iOS build died at upload.
+#
+# The fix is deliberately NOT a .easignore, even though eas-cli's own error
+# message recommends one: vcs/local.js documents "if .easignore exists,
+# .gitignore files are not used", so adding one would silently drop EVERY
+# secret rule below (.env, *.p8, daemon/users.json, daemon/helmdeck.db,
+# .attachments/, daemon/henry_memory/) and upload them to EAS. Same
+# allowlist-vs-denylist trap electron-builder.yml already records.
+surfaces/app/android/
+surfaces/desktop/release/
 # GENERIC log net (2026-08-24 data-hygiene audit): every log is runtime
 # output, wherever a future feature drops one - the named entries further
 # down predate this rule and stay as documentation of what writes where.
