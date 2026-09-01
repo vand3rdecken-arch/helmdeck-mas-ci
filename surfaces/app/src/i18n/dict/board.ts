@@ -295,4 +295,29 @@ export const board: Dict = {
   "board.wip": { de: "in Arbeit", en: "WIP" },
   "board.touches": { de: "Eingriffe", en: "Touches" },
   "board.headroom": { de: "Luft", en: "Headroom" },
+
+  // ---- boards (accounts-boards-prd phase 2) -------------------------------
+  // The overflow hint is the one string that has to explain a column the user
+  // did NOT create - see data/boards.ts renderColumns for why it exists.
+  "board.overflowHint": {
+    de: "Nicht auf diesem Board – erscheint nur, solange hier Karten liegen",
+    en: "Not on this board – shown only while cards are sitting here" },
+  "boards.title": { de: "Boards", en: "Boards" },
+  "boards.intro": {
+    de: "Ein Board ist eine gespeicherte Ansicht: Karten gibt es nur einmal, das Board entscheidet nur, welche Spalten du siehst. Der Ablauf selbst – Gate vor Review, Merge – bleibt derselbe.",
+    en: "A board is a saved view: cards exist once, the board only decides which columns you see. The workflow itself – gate before review, merge – stays the same." },
+  "boards.switch": { de: "Board wechseln", en: "Switch board" },
+  "boards.manage": { de: "Boards verwalten…", en: "Manage boards…" },
+  "boards.new": { de: "Neues Board", en: "New board" },
+  "boards.newName": { de: "Mein Board", en: "My board" },
+  "boards.shared": { de: "geteilt", en: "shared" },
+  "boards.readonly": {
+    de: "Das geteilte Board gehört dem Workspace – nur der Owner kann es ändern.",
+    en: "The shared board belongs to the workspace – only the owner can change it." },
+  "boards.pick": { de: "Wähle ein Board zum Bearbeiten.", en: "Pick a board to edit." },
+  "boards.name": { de: "Name", en: "Name" },
+  "boards.columns": { de: "Spalten", en: "Columns" },
+  "boards.addColumn": { de: "Spalte hinzufügen", en: "Add column" },
+  "boards.save": { de: "Speichern", en: "Save" },
+  "boards.delete": { de: "Board löschen", en: "Delete board" },
 };

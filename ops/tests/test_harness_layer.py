@@ -359,8 +359,12 @@ def test_export_matches_the_app_contract():
     from spine.registry import harness
     from cells.engineer import sessions
     import loop_state
-    from spine.storage import userconfig
+    from spine.storage import boards, userconfig
     fields = _ts_interfaces()
+    # default_record(), not ensure_default(): this test runs against the LIVE
+    # daemon root, so it reads the shape the seed would write without writing
+    # anything. Same function the daemon seeds from, so it cannot drift.
+    _board = boards.default_record()
     check(os.path.exists(CLIENT_TS), "surfaces/app/src/data/client.ts is where we think it is")
     check(os.path.exists(TYPES_TS), "surfaces/app/src/data/types.ts is where we think it is")
 
@@ -398,6 +402,14 @@ def test_export_matches_the_app_contract():
             # by construction, so it cannot drift from KEYS without the
             # assertion below failing first.
             ("Profile", [userconfig.defaults()]),
+            # accounts-boards-prd phase 2, same drift, one layer up: a board
+            # crosses the wire as a whole record on /me, so a field the daemon
+            # adds and the app never declares is a column layout the app
+            # silently cannot render. Checked against a REAL board (the seeded
+            # default one) rather than a hand-written sample, so the shape
+            # under test is the shape the daemon actually serves.
+            ("Board", [_board]),
+            ("BoardColumn", _board["columns"]),
         ]
         for name, objs in contract:
             ts = fields(name)

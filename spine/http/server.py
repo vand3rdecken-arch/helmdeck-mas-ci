@@ -169,7 +169,7 @@ class H(BaseHTTPRequestHandler):
         # this only tells the browser the request is permitted.
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
@@ -412,6 +412,47 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(500, json.dumps({"error": str(e)}))
 
+    def do_DELETE(self):
+        """DELETE is a CLOSED table, the fourth method this server answers,
+        added for accounts-boards-prd phase 2's `DELETE /me/boards`.
+
+        Why a fourth verb rather than the house's usual POST /<thing>/delete
+        (users, projects): those are OWNER-ONLY routes, and do_POST denies a
+        `client` role everything outside a short allowlist. Deleting a board
+        you created is precisely a thing the weakest role must be able to do -
+        the same argument do_PUT's docstring makes, and bolting a second
+        exception onto that denial list would have turned a rule into a list of
+        accidents. A delete is also not a write with a flag: folding it into
+        PUT would mean a malformed board body could ever be read as "remove
+        it".
+
+        Exact-match only, no fall-through, no body: the resource is named in
+        the query string (`?id=`), so a delete route is never the one door that
+        quietly grew a pattern. The auth, cell and capability gates below are
+        the same three the other three verbs run, in the same order."""
+        parsed = urlparse(self.path)
+        p = parsed.path
+        try:
+            user = self._user()
+            if not user:
+                return self._send(401, json.dumps({"error": "auth required"}))
+            from spine.registry import cells
+            if cells.path_disabled(p):
+                return self._send(404, json.dumps({"error": "cell disabled"}))
+            from spine.auth import permissions
+            _cap = permissions.cap_for("DELETE", p, p.strip("/").split("/"))
+            if _cap:
+                _denial = permissions.require(user, _cap)
+                if _denial:
+                    return self._send(*_denial)
+            if p in routes_misc.DELETE_ROUTES:
+                return routes_misc.DELETE_ROUTES[p](self, user, parse_qs(parsed.query))
+            self._send(404, b"?", "text/plain")
+        except (ConnectionAbortedError, BrokenPipeError):
+            pass
+        except Exception as e:
+            self._send(500, json.dumps({"error": str(e)}))
+
     def do_POST(self):
         p = self.path.split("?")[0]
         try:
@@ -588,6 +629,16 @@ def serve(port=8140):
     # persisted 'running'/'gating' (db._devalue_persisted_running - the old
     # serve()-side sweep_zombies call, now part of the load path itself).
     db.init(role="daemon")
+    # The default board, minted from policy.lane_labels the first time (PRD
+    # phase 2: "migration at daemon start"). Idempotent - a board that exists
+    # is neither re-seeded nor re-labelled, so this is a no-op on every boot
+    # after the first. Best-effort: a board store that will not open must not
+    # stop the daemon from serving, and /me degrades to "no boards".
+    try:
+        from spine.storage import boards
+        boards.ensure_default()
+    except Exception as e:
+        print("BOARDS: default board not seeded: %s" % e)
     import atexit
     from spine.agent import drivers
     reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
