@@ -80,11 +80,28 @@ check("DAEMON_URL is not configured" in src, "unset DAEMON_URL fails closed")
 # --------------------------------------------------------------------------
 # (path, method, expected) - expected None means "must NOT proxy".
 CASES = [
-    # the four legitimate routes
+    # the legitimate routes
     ("/glance", "GET", "/glance"),
     ("/glance/answer", "POST", "/glance/answer"),
     ("/glance/talk", "POST", "/glance/talk"),
     ("/glance/voice/abc123.mp3", "GET", "/glance/voice/abc123.mp3"),
+
+    # THE REGRESSION THIS SECTION FAILED TO CATCH. /glance/banner shipped on the
+    # daemon and in app.js and was never added to the allowlist, so the spoken
+    # blocker announcement was dead on glance.helmdeck.de while working fine
+    # against a LAN daemon - broken in exactly the configuration the owner
+    # wears, and swallowed by speakBanner's own .catch(). No case below named
+    # it, which is why nothing here failed. It is named now.
+    ("/glance/banner", "GET", "/glance/banner"),
+    ("/glance/banner", "POST", None),
+
+    # the lens's hanging read of the Henry conversation + the live turn state
+    ("/glance/chat", "GET", "/glance/chat"),
+    ("/glance/chat", "POST", None),
+
+    # the microphone's own state report
+    ("/glance/state", "POST", "/glance/state"),
+    ("/glance/state", "GET", None),
 
     # right path, wrong method
     ("/glance", "POST", None),
@@ -172,8 +189,25 @@ else:
             # The allowlist itself must stay inside /glance.
             check(all(k.startswith("/glance") for k in got["routes"]),
                   "every allowlisted route is under /glance")
-            check(len(got["routes"]) == 4,
-                  "exactly 4 exact-match routes (+1 regex for audio)")
+            # THE EXACT SET, not a count.
+            #
+            # This used to assert `len(...) == 4`, and that is precisely how
+            # /glance/banner stayed missing: a count says "nothing was ADDED
+            # without me noticing", which is the wrong half of the property. The
+            # thing that actually went wrong was an omission, and a length check
+            # is blind to an omission - the number simply stayed correct for a
+            # list that was already incomplete.
+            #
+            # Spelling the set out makes both directions fail loudly: a new route
+            # must be added here deliberately (that is the point - widening what
+            # the public internet can reach on the owner's machine should cost a
+            # line in a test), and a route that quietly disappears is caught too.
+            EXPECTED_ROUTES = {
+                "/glance", "/glance/answer", "/glance/talk", "/glance/photo",
+                "/glance/banner", "/glance/chat", "/glance/state",
+            }
+            check(set(got["routes"]) == EXPECTED_ROUTES,
+                  "the allowlist is EXACTLY the expected set (+1 regex for audio)")
             check(got["maxBody"] <= 128 * 1024, "default POST body cap is small")
 
             # THE PER-ROUTE CAP. /glance/photo carries an image, so it needs a

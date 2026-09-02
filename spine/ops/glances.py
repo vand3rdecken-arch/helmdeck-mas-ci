@@ -21,6 +21,97 @@ GLASS_LABEL_LEN = 40
 GLASS_DESC_LEN = 90
 GLASS_MAX_OPTIONS = 6
 
+# --- WEARABLE TEXT --------------------------------------------------------
+#
+# One policy, one implementation, two surfaces. These three moved here from
+# routes_wear.py (where they were `_WEAR_MD`, `_wear_clip`, `_wear_text`) when
+# the LENS gained a transcript of its own and needed byte-identical treatment.
+#
+# That file's own comment is the argument for the move: it had already been
+# through this once, when /wear/board and /wear/chat carried two different clip
+# rules and the weaker one shipped markdown to the wrist - "One wrist-text
+# policy, one function". A second copy under surfaces/glasses would have been
+# the same mistake one surface wider, and the failure mode is quiet: the watch
+# renders a reply cleanly while the glasses render the same reply with literal
+# '**' on it, and nothing errors.
+#
+# routes_wear.py keeps its private names as thin aliases, so the watch path and
+# ops/tests/test_wear_card_body.py are unchanged in behaviour and in spelling.
+
+import re
+
+# The markup a renderer makes invisible and a bare screen shows as characters.
+# Headings and list bullets per line (re.M); emphasis and code ticks anywhere.
+# Deliberately NOT a markdown parser - it only removes the markers that would
+# otherwise read as '**DELIVERED**' on a display with no formatting.
+_MD_MARKS = re.compile(r"^\s{0,3}#{1,6}\s*|^\s{0,3}[-*+]\s+|\*\*|__|`+", re.M)
+
+
+def clip_text(text, cap):
+    """Cut at a boundary, and SAY that it was cut.
+
+    Owner, 2026-08-29, reading a turn report on the watch: "Message
+    abgeschnitten." A plain text[:cap] ends mid-word, which reads as a bug in
+    the message rather than as a bound on the screen.
+
+    Prefer a sentence end; fall back to a word boundary; the ellipsis is added
+    either way so a cut is never mistaken for the end of the thought. The
+    sentence end is only accepted in the second half of the budget - otherwise a
+    single early full stop would throw away most of what fits.
+    """
+    text = text or ""
+    if cap is None or len(text) <= cap:
+        return text
+    head = text[:cap]
+    end = -1
+    for mark in (". ", "! ", "? ", ".\n", "!\n", "?\n"):
+        end = max(end, head.rfind(mark))
+    if end >= cap // 2:
+        return head[:end + 1].rstrip() + " ..."
+    sp = head.rfind(" ")
+    if sp <= 0:
+        return head.rstrip() + "..."
+    return head[:sp].rstrip(" ,;:-") + " ..."
+
+
+def readable(raw, cap=None):
+    """Agent prose, made readable on a screen with no markdown renderer.
+
+    Three things are stripped, each for a reason established on a real device
+    rather than invented here:
+
+     1. the <helmdeck-ask> block, via ask.parse - the same parse every caller of
+        this already uses. The STORED reply keeps the block verbatim (it is an
+        interaction, and the live paths hand back the typed half separately);
+        rendering it raw is the screenful of '{"label": ...' JSON the owner
+        photographed on his watch on 2026-08-29.
+     2. fenced blocks. ```actions is machine syntax and a code fence is
+        unreadable at this width; taking the EVEN split segments drops the
+        fenced halves and keeps the prose between them.
+     3. markdown markers, which only a renderer makes invisible.
+
+    Blank-line structure is KEPT (collapsed to one), because paragraph breaks
+    are the only thing left telling the eye where a thought ends. Whitespace
+    inside a line is collapsed - a wrapped narrow line has no use for the
+    phone's columns.
+    """
+    from spine.ops import ask
+    _q, prose = ask.parse(raw or "")
+    text = prose or raw or ""
+    text = "".join(text.split("```")[0::2])
+    text = _MD_MARKS.sub("", text)
+    out, blank = [], False
+    for line in text.splitlines():
+        line = " ".join(line.split())
+        if not line:
+            blank = True
+            continue
+        if out and blank:
+            out.append("")
+        blank = False
+        out.append(line)
+    return clip_text("\n".join(out).strip(), cap)
+
 
 def _glance_question(t):
     """The pending decision, trimmed for the lens - or None.
