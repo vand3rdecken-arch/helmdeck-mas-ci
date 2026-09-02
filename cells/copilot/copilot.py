@@ -1268,6 +1268,9 @@ def live(user):
     # into a card's timeline - see _running_card.
     return {"text": ask.strip_stream(_rd("live_partial.txt")),
             "thinking": _rd("live_thinking.txt"),
+            # the tool action currently executing ("Bash: py -3.12 ..."), so the
+            # UI can show WHAT is happening while prose and thinking are silent
+            "status": _rd("live_status.txt"),
             "running": user in _running,
             "card": _running_card.get(user)}
 
@@ -1471,7 +1474,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     live_path = os.path.join(run_dir, "live_partial.txt")
     think_path = os.path.join(run_dir, "live_thinking.txt")
     sid_path = os.path.join(run_dir, "live_session.txt")
-    _crm(live_path); _crm(think_path); _crm(sid_path)
+    status_path = os.path.join(run_dir, "live_status.txt")   # current tool action
+    _crm(live_path); _crm(think_path); _crm(sid_path); _crm(status_path)
     # Speech rides the SAME prose stream as the live text - one source, folded in
     # at event time below, never re-derived from the finished reply.
     from spine.media import voice_stream as _vstream
@@ -1569,6 +1573,23 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     resume_echo = True
                 session_id = got; _cwrite(sid_path, session_id)
             elif typ == "assistant":
+                # TOOL ACTIVITY into the live feed (Paseo parity, owner report
+                # 2026-09-02 17:23 "34s ohne Rueckmeldung"): Paseo renders every
+                # agent event the moment it happens - partial text, thinking,
+                # and tool calls as visible chips (includePartialMessages +
+                # event-level UI). Our board chat streamed prose and thinking
+                # but went DARK during tool rounds - and since Henry now
+                # actually CHECKS (Bash rounds), the silence sat exactly where
+                # his new rigor lives. The completed tool_use block arrives on
+                # this event right before the tool executes (the slow part), so
+                # writing it here shows WHAT is running while it runs.
+                for _b in ((ev.get("message") or {}).get("content") or []):
+                    if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                        _inp = _b.get("input") or {}
+                        _brief = str(_inp.get("command") or _inp.get("description")
+                                     or _inp.get("query") or _inp.get("file_path") or "")
+                        _cwrite(status_path, ("%s: %s" % (_b.get("name") or "tool",
+                                                          _brief))[:200])
                 # each full assistant message carries the usage of ITS OWN API
                 # call - keep the last one as the context-meter source, exactly
                 # like drivers._on_event (see _fold_stats for why the result
@@ -1624,7 +1645,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 _vstream.drop(user)
             else:
                 _vstream.finish(user, _strip_actions_live("".join(parts)))
-        _crm(live_path); _crm(think_path)           # done streaming - clear the live preview
+        _crm(live_path); _crm(think_path); _crm(status_path)   # done streaming - clear the live preview
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
         return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}

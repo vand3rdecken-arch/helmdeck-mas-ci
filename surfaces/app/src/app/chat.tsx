@@ -211,6 +211,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // /chat/live so the board chat STREAMS like a card (one shared surface).
   const [stream, setStream] = useState("");
   const [think, setThink] = useState("");
+  // the tool action currently executing ("Bash: py ..."): tool rounds used to
+  // go DARK in the live feed - since Henry actually checks (2026-09-02), the
+  // silence sat exactly where his rigor lives. Paseo renders tool calls as
+  // visible chips the moment they happen; this is that signal for the wait row.
+  const [liveStatus, setLiveStatus] = useState("");
   // Voice mode rides THIS poll rather than opening its own. /chat/live is the one
   // place a running turn is observable, and a second poller would mean a second
   // cursor over the same chunks — two owners of one truth — plus double the relay
@@ -240,13 +245,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     }
   }, []);
   useEffect(() => {
-    if (!busy) { setStream(""); setThink(""); return; }
+    if (!busy) { setStream(""); setThink(""); setLiveStatus(""); return; }
     let alive = true, to: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
         const r = await api.chatLive(voiceSink.current ? voiceCur.current.seq : undefined,
           voiceSink.current ? voiceCur.current.turn : undefined);
-        if (alive && r) { setStream(r.text || ""); setThink(r.thinking || ""); takeClips(r); }
+        if (alive && r) {
+          setStream(r.text || ""); setThink(r.thinking || "");
+          setLiveStatus(r.status || ""); takeClips(r);
+        }
       } catch { /* keep polling */ }
       if (alive) to = setTimeout(poll, 500);
     };
@@ -663,7 +671,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true, by: "Henry", byKind: "henry" });
                 return s;
               })()} />}
-          {busy && !stream.trim() ? <ThinkingIndicator preview={think} /> : null}
+          {busy && !stream.trim() ? <ThinkingIndicator preview={think.trim() || liveStatus} /> : null}
         </ChatScroll>
 
         <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>
