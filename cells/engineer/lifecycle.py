@@ -106,15 +106,27 @@ def _present_gxp(t, out):
 def present(t):
     """READ-side lifecycle derivation for the API (Paseo's normalizeArchivedStatus,
     server-side): a stored 'running' is only ever DELIVERED as running while a
-    turn is actually in flight (drivers.turn_active). Otherwise - once past the
+    turn is actually in flight (drivers.turn_inflight). Otherwise - once past the
     spawn window - the client gets 'needs_you', WITHOUT touching the stored
     value. A phantom spinner is thereby impossible no matter what any write race
     puts in the DB (invariant I2); the reconciler remains the healer of the
-    stored value. Returns a copy when coercing, the original otherwise."""
+    stored value. Returns a copy when coercing, the original otherwise.
+
+    The invariant has TWO directions and only one of them used to hold. A
+    phantom spinner (badge says running, nothing runs) was impossible; the
+    MIRROR - badge says stopped while the turn runs - was not, because a turn
+    QUEUED on the desktop/direct lock is not yet turn_active. That is the more
+    expensive lie: the owner reads "stopped, waiting for me" while the card
+    spends. turn_inflight covers both halves, and the queue is surfaced
+    explicitly (`queued_for`) so running-but-not-yet-spawned reads honestly
+    instead of looking like a wedged spinner."""
     out = None
     if (t or {}).get("status") == "running":
         from spine.agent import drivers
-        if not drivers.turn_active(t["id"]) and _track_idle_s(t) > PRESENT_IDLE_S:
+        if drivers.turn_queued(t["id"]) and not drivers.turn_active(t["id"]):
+            out = dict(t)
+            out["queued_for"] = "lock"     # derived hint: turn decided, waiting to spawn
+        elif not drivers.turn_active(t["id"]) and _track_idle_s(t) > PRESENT_IDLE_S:
             out = dict(t)
             out["status"] = "needs_you"
             out["status_derived"] = True   # marker: coerced at read, not stored
@@ -222,7 +234,15 @@ def sweep_zombies(min_idle_s=0):
             # old test and it lied by design: a soft cancel keeps the worker
             # process alive for --resume, so an idle-after-cancel worker looked
             # busy forever and the frozen card was never swept ("stuck again").
-            if drivers.turn_active(t["id"]) or (min_idle_s and _track_idle_s(t) < min_idle_s):
+            # turn_INFLIGHT, not turn_active: a turn queued behind the desktop
+            # or direct-tree lock has no session yet (drivers.run hasn't been
+            # reached) and no run_dir activity to make _track_idle_s vouch for
+            # it - a brand-new card's run_dir is empty, so idle reads 1e9 and
+            # the guard below never fires. That is exactly how card
+            # 20260902-040607 got bounced 63s after being filed with the
+            # phantom note "daemon restarted mid-turn", then spawned and ran
+            # for minutes under a red badge once the lock freed (2026-09-02).
+            if drivers.turn_inflight(t["id"]) or (min_idle_s and _track_idle_s(t) < min_idle_s):
                 continue
             if drivers.has_session(t["id"]):
                 # Worker alive, NO turn in flight: the turn already ended (or
@@ -235,7 +255,7 @@ def sweep_zombies(min_idle_s=0):
                 def _settle(tt):
                     # in-lock recheck: a turn may have started (or the steer
                     # thread settled it) since the snapshot above
-                    if tt.get("status") != "running" or drivers.turn_active(tt["id"]):
+                    if tt.get("status") != "running" or drivers.turn_inflight(tt["id"]):
                         return False
                     tt["status"] = "needs_you"
                     did["ok"] = True
@@ -355,7 +375,7 @@ def check_landed_not_closed():
         if t.get("lane") != "review" or t.get("status") != "needs_you":
             continue
         tid = t["id"]
-        if t.get("question") or drivers.turn_active(tid) or lanemachine.lane_active(tid):
+        if t.get("question") or drivers.turn_inflight(tid) or lanemachine.lane_active(tid):
             continue                    # not settled yet - not this check's business
         if not t.get("turns") and not t.get("session_id"):
             # Never dispatched: ahead==0 here means "no work was ever done",
@@ -427,7 +447,7 @@ def sweep_pending_compaction():
         tid = t["id"]
         if t.get("status") == "running" or t.get("question"):
             continue
-        if drivers.turn_active(tid) or sessions.compacting(tid) is not None:
+        if drivers.turn_inflight(tid) or sessions.compacting(tid) is not None:
             continue
         try:
             if lanemachine.lane_active(tid):

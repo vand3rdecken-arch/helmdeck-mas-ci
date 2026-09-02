@@ -757,7 +757,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
             log.log("note", "Verdichtung laeuft bereits - dein /compact wartet nicht "
                             "doppelt, das Ergebnis kommt gleich.")
             return t
-        if drivers.turn_active(tid):
+        if drivers.turn_inflight(tid):     # queued counts: it is about to run
             _mark_compact_pending(tid, True)
             log.log("note", "Ein Turn laeuft - die Session wird direkt danach verdichtet "
                             "(kein Abbruch, nichts geht verloren).")
@@ -786,7 +786,10 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # releases the lock and this steer runs immediately after. A burst collapses
     # to last-wins via the epoch: only the newest steer survives the bail below.
     my_epoch = _bump_steer_epoch(tid, text)
-    if drivers.turn_active(tid):
+    # inflight, not active: a turn still QUEUED on the desktop/direct lock must
+    # also be replaced - otherwise it acquires later and runs the SUPERSEDED
+    # instruction after this one already answered.
+    if drivers.turn_inflight(tid):
         log.log("note", "⏹ neue Anweisung ersetzt den laufenden Turn (Interrupt).")
         try:
             drivers.cancel(tid)
@@ -1443,11 +1446,17 @@ def cancel_turn(tid, actor="owner"):
     # no live session - clear a stuck/zombie card so Stop is never a no-op, and
     # promote the interrupted session so re-steering RESUMES it losslessly.
     t = get_track(tid)
-    if t and t.get("status") == "running" and not drivers.has_session(tid):
+    # ...but a turn QUEUED on the desktop/direct lock also has no session, and
+    # is not a zombie - drivers.cancel above already armed its intent, so it
+    # will abort itself the moment it acquires. Bouncing it here with "daemon
+    # restarted" would be the phantom note again.
+    if t and t.get("status") == "running" and not drivers.has_session(tid) \
+            and not drivers.turn_queued(tid):
         box = {}
 
         def _unfreeze(tt):
-            if tt.get("status") != "running" or drivers.has_session(tid):
+            if tt.get("status") != "running" or drivers.has_session(tid) \
+                    or drivers.turn_queued(tid):
                 return False             # settled (or respawned) since the check
             box["resumable"] = _promote_live_session(tt)
             box["note"] = RESUME_NOTE if box["resumable"] else ZOMBIE_NOTE

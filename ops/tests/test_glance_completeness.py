@@ -52,6 +52,20 @@ class FakeDrivers:
     def has_session(tid):
         return tid in FakeDrivers.live
 
+    # The queued half of the lifecycle (a turn waiting on the desktop/direct
+    # lock, no session yet). Nothing is queued in this fixture - every card is
+    # either genuinely running or a phantom - but present()/sweep_zombies now
+    # consult it, so the oracle has to answer.
+    queued = set()
+
+    @staticmethod
+    def turn_queued(tid):
+        return tid in FakeDrivers.queued
+
+    @staticmethod
+    def turn_inflight(tid):
+        return FakeDrivers.turn_queued(tid) or FakeDrivers.turn_active(tid)
+
 
 sys.modules["spine.agent.drivers"] = FakeDrivers
 
