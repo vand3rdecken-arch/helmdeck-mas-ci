@@ -140,7 +140,11 @@ def prewarm(user, spoken=True):
                     ent = _persist.get(user)
                     if ent and ent["p"].poll() is None:
                         return
-                p, fresh = _persist_get(user, cli_model, _sessions().get(user), base)
+                # BOARD key only: the owner's decree is that just the Henry
+                # board chat is kept warm. A card conversation pays one spawn
+                # when it is opened and stays warm for the rest of it.
+                p, fresh = _persist_get(_skey(user), cli_model,
+                                        _sessions().get(_skey(user)), base)
                 if not fresh:
                     return                  # already warm AND cached
                 p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
@@ -162,11 +166,11 @@ def prewarm(user, spoken=True):
     threading.Thread(target=_go, daemon=True).start()
 
 
-def _persist_drop(user):
-    """Kill + forget the user's warm process. Next turn respawns with
-    --resume, so nothing is lost but the warmth."""
+def _persist_drop(skey):
+    """Kill + forget ONE conversation's warm process (`skey` = _skey(user, card)).
+    Next turn respawns with --resume, so nothing is lost but the warmth."""
     with _persist_lock:
-        ent = _persist.pop(user, None)
+        ent = _persist.pop(skey, None)
     if ent:
         try:
             ent["p"].kill()
@@ -248,17 +252,23 @@ def _persist_switch(ent, key):
     return True
 
 
-def _persist_get(user, cli_model, sid, system):
-    """(proc, fresh). Reuse the warm process - switching its model/mode on the
-    control plane when the turn routed differently (_persist_switch) - and only
-    spawn when there is nothing live to reuse. The system brief rides the SPAWN
-    (constant across turns); per-turn overlays travel inside the turn text."""
+def _persist_get(skey, cli_model, sid, system):
+    """(proc, fresh) for ONE conversation (`skey` = _skey(user, card)). Reuse
+    the warm process - switching its model/mode on the control plane when the
+    turn routed differently (_persist_switch) - and only spawn when there is
+    nothing live to reuse. The system brief rides the SPAWN (constant across
+    turns); per-turn overlays travel inside the turn text.
+
+    Keyed per conversation since 2026-09-02: a card chat must not resume the
+    board session (and vice versa), so each key owns its own process AND its
+    own --resume id. Only the BOARD key is prewarmed (owner's call) - a card
+    conversation pays one spawn on open and stays warm for the rest of it."""
     from spine.agent import drivers
     from spine.registry import harness
     key = (cli_model or "", henry_pmode())
     live = None
     with _persist_lock:
-        ent = _persist.get(user)
+        ent = _persist.get(skey)
         if ent and ent["p"].poll() is None:
             if ent["key"] == key:
                 return ent["p"], False
@@ -267,9 +277,9 @@ def _persist_get(user, cli_model, sid, system):
         # cancel() can drop the process while the switch was in flight - only
         # hand back a handle the registry still owns, never a killed one.
         with _persist_lock:
-            if _persist.get(user) is live and live["p"].poll() is None:
+            if _persist.get(skey) is live and live["p"].poll() is None:
                 return live["p"], False
-    _persist_drop(user)
+    _persist_drop(skey)
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--input-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", henry_pmode()]
     if cli_model:
@@ -283,7 +293,7 @@ def _persist_get(user, cli_model, sid, system):
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                          text=True, encoding="utf-8", errors="replace", bufsize=1)
     with _persist_lock:
-        _persist[user] = {"p": p, "key": key}
+        _persist[skey] = {"p": p, "key": key}
     return p, True
 
 
@@ -319,6 +329,69 @@ def _save_sessions(d):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(d, f)
     os.replace(tmp, SESS)
+
+
+def _skey(user, card=None):
+    """The identity of ONE Henry conversation - what a session id and a warm
+    process are keyed by.
+
+    Board chat keeps the BARE user key, so the owner's existing board session
+    (and its entry in daemon/copilot_sessions.json) survives this change
+    untouched - no migration, no lost history.
+
+    A card-scoped Henry chat gets its OWN key, hence its own session. Before
+    this, every card conversation was appended to the one eternal board session
+    (measured 2026-09-02: 431,257 tokens over 200 turns, re-processed on every
+    single turn). Paseo's agents are per-task for exactly this reason -
+    packages/server/.../agent-manager.ts mints a fresh agent per task and calls
+    deleteAgentState on the id first. A card session is bounded by the card.
+
+    NOT the worker's session: that one has exactly one owner
+    (drivers._ClaudeSession) appending to its transcript, and a second writer
+    would corrupt the card's own record. Henry READS the card's timeline
+    instead (_card_context) - the shared one-inbox record that already carries
+    every steer."""
+    return user if not card else "%s\x00card:%s" % (user, card)
+
+
+def _card_context(card_id, limit=40):
+    """What a card-scoped Henry needs to know about ITS card, read from the
+    card's own timeline - the one-inbox record that already interleaves the
+    worker's steps, the owner's steers and Henry's notes (see say(card=...) and
+    routes_copilot's reply_to_card). This is the "how and what was steered"
+    history, not a re-derivation of it.
+
+    Empty string when the card has no readable run_dir - a card-scoped chat
+    must never fail because its timeline is missing."""
+    ct = _find_card(card_id)
+    if not ct or isinstance(ct, list):
+        return ""
+    head = ("THIS CARD: id=%s | repo=%s | branch=%s | lane=%s | status=%s | mode=%s\n"
+            "TASK: %s" % (
+                ct.get("id"), os.path.basename((ct.get("repo") or "").replace("\\", "/").rstrip("/")) or "?",
+                ct.get("branch"), ct.get("lane"), ct.get("status"), ct.get("mode") or "-",
+                (ct.get("task") or "").strip()))
+    run_dir = ct.get("run_dir")
+    if not run_dir:
+        return head
+    try:
+        from spine.agent import timeline_store
+        steps = timeline_store.read(run_dir, limit=limit)
+    except Exception:
+        return head
+    lines = []
+    for s in steps:
+        who = s.get("byKind") or s.get("role") or "?"
+        txt = (s.get("text") or s.get("title") or "").replace("\n", " ").strip()
+        if not txt:
+            continue
+        # A steer is the interesting event - it is what the owner told the
+        # worker to do, and the reason this history is worth carrying at all.
+        lines.append("- [%s] %s: %s" % (s.get("ts") or "", who, txt[:220]))
+    if not lines:
+        return head
+    return head + "\n\nCARD TIMELINE (most recent last - worker steps, your own " \
+                  "notes and every steer the owner sent):\n" + "\n".join(lines[-limit:])
 
 
 def _snapshot(full=False):
@@ -720,7 +793,7 @@ def _maybe_compact(user):
     st = _stats().get(user) or {}
     ctx = st.get("ctx_tokens") or 0
     sess = _sessions()
-    sid = sess.get(user)
+    sid = sess.get(_skey(user))          # BOARD session - the long-lived one
     # scale the mark with the DERIVED window (sessions._maybe_compact parity):
     # a fixed 160k made a 1M-tier PM session probe /compact at ~16% real fill.
     window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
@@ -729,8 +802,10 @@ def _maybe_compact(user):
         return None
     # the external /compact turn resumes the SAME session id - a live warm
     # process on it would fork the conversation. Drop it first; the next chat
-    # turn respawns on the compacted tip.
-    _persist_drop(user)
+    # turn respawns on the compacted tip. BOARD key: proactive compaction
+    # guards the long-lived board session; card sessions are bounded by their
+    # card and are not compacted (see debt henry-card-session-uncompacted).
+    _persist_drop(_skey(user))
     # ...and BEFORE the history is verdichtet, let Henry put what matters on
     # disk. Order is the whole point: after /compact he only has the summary.
     saved = _save_memory(user, sid)
@@ -773,7 +848,7 @@ def _maybe_compact(user):
         chain = [s for s in (m.get("session_chain") or []) if s != sid]
         chain.append(sid)
         m["session_chain"] = chain[-6:]         # bounded - last 6 prior sessions
-        sess[user] = sid_final
+        sess[_skey(user)] = sid_final
         _save_sessions(sess)
     # measured economics: the compact turn is billed too, but NOT counted as a
     # conversation turn (card parity: sessions._record_econ, not _record_turn).
@@ -1110,8 +1185,11 @@ def cancel(user):
         except Exception:
             pass
     # a terminated process is no longer reusable - forget the warm handle so
-    # the next turn respawns clean (--resume keeps the conversation)
-    _persist_drop(user)
+    # the next turn respawns clean (--resume keeps the conversation). Drop the
+    # handle of the conversation the KILLED turn belonged to: _running_card is
+    # the existing satellite of _running that already records exactly that, so
+    # cancelling a card turn no longer throws the board's warm process away.
+    _persist_drop(_skey(user, _running_card.get(user)))
     return bool(p)
 
 
@@ -1189,8 +1267,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     must keep getting the one-shot `voice:true` clip instead, or an app that is
     one OTA behind would go silent (see spine/media/voice_stream.py)."""
     from spine.agent import turnopts
+    # ONE conversation per (user, card): a card-scoped Henry chat resumes its
+    # OWN session, not the eternal board one. Board chat keeps the bare user
+    # key, so the existing session survives untouched. See _skey.
+    skey = _skey(user, card)
     sess = _sessions()
-    sid = sess.get(user)
+    sid = sess.get(skey)
     paths = turnopts.save_attachments(os.path.join(ROOT, ".copilot_attachments", user),
                                       attachments)
     # "" (no explicit pick) routes as Auto - never falls through to the CLI's
@@ -1228,18 +1310,21 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
             {"role": "user", "kind": "text", "text": message,
              "by": user, "byKind": "human", "to": "henry", "ts": _tsv, "ta": _tav})
-    # The board a turn carries is the LIVE one; history is on demand (see
-    # _snapshot's docstring and ops/tools/board_state.py). An earlier attempt
-    # skipped the whole block for greeting-shaped messages instead - that was a
-    # band-aid on the wrong layer: it only paid off on chatter, and its
-    # English-only text match ("danke" did NOT match) meant it barely fired for
-    # this owner at all. Superseded and removed, debt chat-snapshot-skip-heuristic
-    # closed - the block is now cheap enough to send on every turn, which is also
-    # the only way it can never be missing when it IS needed.
-    _plan = _pm_plan_digest()
-    snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-        + _snapshot() + (("\n\n" + _plan) if _plan else "") \
-        + _memory_digest()
+    # A turn carries the context of the surface it belongs to, and only that.
+    # A CARD chat gets that card's own timeline (worker steps, Henry's notes,
+    # every steer - the one-inbox record); it does NOT need 22 other cards, and
+    # sending them was most of what made the board session grow. A BOARD chat
+    # gets the live board; its history stays on demand (see _snapshot's
+    # docstring and ops/tools/board_state.py).
+    if card:
+        _cc = _card_context(card)
+        snapshot_block = (("CARD CONTEXT (%s):\n" % time.strftime("%Y-%m-%d %H:%M"))
+                          + _cc + "\n\n") if _cc else ""
+    else:
+        _plan = _pm_plan_digest()
+        snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
+            + _snapshot() + (("\n\n" + _plan) if _plan else "") \
+            + _memory_digest()
     # The ROLE is data: ops/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
@@ -1281,7 +1366,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # base brief only at spawn (constant); per-turn overlays (VOICE_STYLE
             # et al) ride inside the turn text so voice<->typed does not respawn.
             base_system = harness.brief("board-copilot")
-            p, _fresh = _persist_get(user, cli_model, sid, base_system)
+            p, _fresh = _persist_get(skey, cli_model, sid, base_system)
             prompt = (extra_system + "\n\n" + turn) if extra_system else turn
         else:
             argv, _role = build_argv(cli_model, sid, system)
@@ -1324,9 +1409,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 p.stdin.flush()
             except Exception:
                 # warm process died since the health check - respawn ONCE fresh
-                _persist_drop(user)
+                _persist_drop(skey)
                 base_system = harness.brief("board-copilot")
-                p, _fresh = _persist_get(user, cli_model, sid, base_system)
+                p, _fresh = _persist_get(skey, cli_model, sid, base_system)
                 _running[user] = p
                 p.stdin.write(json.dumps({"type": "user",
                                           "message": {"role": "user", "content": prompt}}) + "\n")
@@ -1398,7 +1483,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         if persistable and (user in _cancelled or p.poll() is not None):
             # a cancelled or dead process must not be reused - next turn
             # respawns via --resume and loses nothing but the warmth
-            _persist_drop(user)
+            _persist_drop(skey)
         _lk.release()
         if voice_stream:
             # Flush BEFORE the live file is cleared: the last sentence of a reply
@@ -1437,7 +1522,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             chain.append(sid)
             st["session_chain"] = chain[-6:]           # bounded - last 6 prior sessions
             all_st = _stats(); all_st[user] = st; _save_stats(all_st)
-        sess[user] = sid_final
+        sess[skey] = sid_final
         _save_sessions(sess)
     reply_prose, acts_parsed = _parse_reply_actions(txt)
     # THE ASK BLOCK, folded in HERE - at event time, at the protocol's one owner.

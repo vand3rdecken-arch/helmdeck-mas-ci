@@ -10,6 +10,38 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "henry-card-session-uncompacted",
+        "order": -9,
+        "title": "only the BOARD Henry session is proactively compacted - card sessions are not",
+        "status": "open",
+        "what": "Henry conversations are keyed per (user, card) since 2026-09-02 "
+                "(cells/copilot/copilot.py _skey): the board chat keeps the "
+                "long-lived session, and each card-scoped chat gets its own. "
+                "_maybe_compact still runs against the BOARD key only "
+                "(sid = sess.get(_skey(user))), so a card session never gets "
+                "the proactive /compact at ~80% context that the board one "
+                "does.",
+        "why_it_bites": "A card whose Henry chat runs long enough would hit "
+                        "the model's context window with no proactive "
+                        "compaction to save it - the same 'Prompt is too "
+                        "long' failure the board session was given "
+                        "_maybe_compact to avoid. Not observed yet: a card "
+                        "session is bounded by the card's own lifetime, which "
+                        "is why this ships as a known gap rather than a "
+                        "blocker.",
+        "trigger": "A single card with a very long Henry conversation - most "
+                   "likely a long-lived process/epic card the owner keeps "
+                   "returning to.",
+        "fix": "Give _maybe_compact the same per-conversation key the rest of "
+               "the path now uses: compact whichever session the turn belongs "
+               "to, not only the board one. The mark/window logic is already "
+               "per-session (it reads ctx_tokens from copilot_stats), so this "
+               "is a keying change, not new machinery - but copilot_stats is "
+               "itself still keyed per USER, so that has to be split first or "
+               "a card turn will compact against the board's numbers.",
+        "since": "2026-09-02",
+    },
+    {
         "id": "workers-die-with-the-daemon",
         "order": -8,
         "title": "a daemon restart can only be safe or instant, never both - workers are its children",
