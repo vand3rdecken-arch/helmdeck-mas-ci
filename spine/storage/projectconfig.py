@@ -99,13 +99,24 @@ def overridable():
     `project: True` in spine/http/apimeta.py's schema or `scope: "project"` in
     spine/registry/behavior.py's rule table, in the same commit that gives it a
     row. Both tables are already the single source of truth for their half; a
-    third list here could only disagree with them."""
+    third list here could only disagree with them.
+
+    PER SURFACE, not per rule. This registered the rule's bare namespace
+    (`rule.tone.length`) until phase 3, and every reader names a surface
+    (`rule.tone.length.pm`) - so validate() refused the only shape that is ever
+    written and stored() filtered out the only shape that is ever read. The
+    project layer was inert end to end and nothing said so, because both halves
+    were individually consistent. The whitelist now names the paths that really
+    move."""
     out = {}
     try:
         from spine.registry import behavior
         for r in behavior.BEHAVIOR_RULES:
-            if r.get("scope") == "project":
-                out[behavior.rule_path(r["key"])] = "behavior"
+            if r.get("scope") != "project":
+                continue
+            for s in r.get("surfaces") or {}:
+                if behavior.writable(behavior.rule_path(r["key"], s))[2] is None:
+                    out[behavior.rule_path(r["key"], s)] = "behavior"
     except Exception:                                        # noqa: BLE001
         pass                  # a broken rule table must never break a resolve
     try:
@@ -153,9 +164,14 @@ def _base_layers(path):
     dv, dp = None, False
     try:
         from spine.registry import behavior
-        rule = behavior.by_path(path)
+        # split_path, not by_path: the SURFACE decides the default. by_path()
+        # answers with the rule alone, and default_of() then falls back to the
+        # first declared surface - so the four values of the length law would
+        # all report the chat default, which is the collapse per_surface exists
+        # to prevent, reappearing in the badge instead of in the brief.
+        rule, surface = behavior.split_path(path)
         if rule is not None:
-            dv, dp = behavior.default_of(rule), True
+            dv, dp = behavior.default_of(rule, surface), True
     except Exception:                                        # noqa: BLE001
         pass
     if not dp:
@@ -292,6 +308,91 @@ def write(project, patch, actor="system", note=None):
                     cleared=sorted(drop), note=note)
     except Exception:                                        # noqa: BLE001
         pass                  # a sink hiccup never blocks the write that landed
+    return before, None
+
+
+# ---------------------------------------------------------------------------
+# The workspace half of the same write
+# ---------------------------------------------------------------------------
+def _settings_subtree(paths, patch):
+    """The COMPLETE new value of every top-level key `paths` touches.
+
+    events.save_settings merges exactly ONE level deep (`s[k].update(v)`), so
+    handing it the nested patch for `rule.tone.length.pm` would replace the
+    whole `rule.tone` subtree and take `rule.tone.address` with it. Measured
+    against the shipped function, not assumed: the caller therefore sends the
+    entire top-level key, rebuilt from what is stored plus what changed."""
+    import copy
+    from spine.storage import events
+    cur = events.settings()
+    roots = {p.split(".")[0] for p in paths}
+    out = {r: copy.deepcopy(cur.get(r) or {}) for r in roots}
+    for path, val in patch.items():
+        parts = path.split(".")
+        node = out[parts[0]]
+        for part in parts[1:-1]:
+            if not isinstance(node.get(part), dict):
+                node[part] = {}
+            node = node[part]
+        if val is None:
+            node.pop(parts[-1], None)   # absent means inherited, here too
+        else:
+            node[parts[-1]] = val
+    return out
+
+
+def write_workspace(patch, actor="system"):
+    """Set (or clear) workspace-layer paths. Returns (before, error).
+
+    Goes through events.save_settings - the one audited settings writer - rather
+    than touching the file, so a rule edit lands in the same history as every
+    other config change. `before` has the same shape write() returns (None where
+    the key was absent), so the two halves of a mixed write share one undo."""
+    from spine.storage import events
+    before = {}
+    for p in patch:
+        v, present = _dig(events.settings(), p)
+        before[p] = v if present else None
+    events.save_settings(_settings_subtree(list(patch), patch), actor=actor,
+                         reason="rules: " + ", ".join(sorted(patch))[:160])
+    return before, None
+
+
+def write_scoped(patch, project="", actor="system", note=None):
+    """Write behaviour-rule paths to the layer each rule's OWN scope names.
+    Returns (before, error).
+
+    THE SPLIT LIVES HERE, once. G4 asks that every knob have one owner, one
+    storage location and one edit surface; that is only true if the CALLER
+    cannot pick the layer. A screen or a chat verb hands over {path: value} and
+    the declaration decides where it lands - so the two edit paths the card
+    promises ("tippe die Zeile ODER sag es Henry") cannot disagree about where a
+    value went."""
+    from spine.registry import behavior
+    ws, pr = {}, {}
+    for path, val in (patch or {}).items():
+        rule, surface, err = behavior.writable(path)
+        if err:
+            return None, err
+        if val is not None:
+            err = behavior.check_value(rule, surface, val)
+            if err:
+                return None, err
+        (pr if rule.get("scope") == "project" else ws)[path] = val
+    if pr and not project:
+        return None, ("no project: %s %s per-project and this turn names no repo"
+                      % (", ".join(sorted(pr)), "is" if len(pr) == 1 else "are"))
+    before = {}
+    if pr:
+        got, err = write(project, pr, actor=actor, note=note)
+        if err:
+            return None, err
+        before.update(got)
+    if ws:
+        got, err = write_workspace(ws, actor=actor)
+        if err:
+            return None, err
+        before.update(got)
     return before, None
 
 
