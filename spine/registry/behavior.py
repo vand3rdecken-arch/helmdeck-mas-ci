@@ -836,6 +836,68 @@ def track(project=""):
     return out
 
 
+def segments(text, surface, project=""):
+    """The same render as render(), but as [{kind, text, rule?}] instead of one
+    string (design doc section 4.3, "Brief ansehen").
+
+    THE POINT IS THAT IT IS THE SAME RENDER. The brief view shows the owner
+    exactly the artefact Henry is started with, with the values highlighted
+    where they act - the Mailchimp merge-tag pattern. A second renderer built
+    for the screen could drift from the one that feeds the agent, and then the
+    page would be reassuring him about a brief that is not the brief. So this
+    walks the identical markers with the identical substitution and only
+    records WHERE each value went.
+
+    `kind` is "prose" (fixed text, dimmed, not tappable) or "rule" (a value,
+    chipped, tapping it opens the row that sets it). Block slots keep their
+    trailing newline handling so the prose reads the same as the string form.
+    """
+    out = []
+    if not text:
+        return out
+
+    def _emit(kind, chunk, key=None):
+        if not chunk:
+            return
+        if out and out[-1]["kind"] == "prose" and kind == "prose":
+            out[-1]["text"] += chunk
+            return
+        row = {"kind": kind, "text": chunk}
+        if key:
+            row["rule"] = key
+        out.append(row)
+
+    pos = 0
+    for m in SLOT_RE.finditer(text):
+        _emit("prose", text[pos:m.start()])
+        key = m.group(1)
+        rule = _BY_KEY.get(key)
+        val = ""
+        if rule is not None:
+            try:
+                val = _render_one(rule, surface, value(key, surface, project))
+            except Exception:                                # noqa: BLE001
+                val = ""
+        # A block slot that renders empty takes its line with it, exactly as
+        # render() does - otherwise the prose view would show a blank line the
+        # real brief does not have.
+        _emit("rule", val, key)
+        pos = m.end()
+        # BLOCK SLOT ONLY. render() drops the line (and the blank line after it)
+        # for a marker that sits ALONE on its line and renders empty - see
+        # BLOCK_SLOT_RE. An inline slot that happens to render empty keeps its
+        # surroundings, and eating a newline there is how this view first
+        # disagreed with the brief by one character: tone.house_rules is empty
+        # by default, and the join stopped matching brief() byte for byte.
+        alone = (m.start() == 0 or text[m.start() - 1] == "\n") and text[pos:pos + 1] == "\n"
+        if not val and alone:
+            pos += 1
+            if text[pos:pos + 1] == "\n":
+                pos += 1
+    _emit("prose", text[pos:])
+    return out
+
+
 def overlay(project=""):
     """The TURN OVERLAY: what this project's rules say that the base brief does
     not. Empty string when nothing differs, which is the normal case.

@@ -429,6 +429,19 @@ export interface BehaviorRule {
  *  Deliberately NOT a superset of /loop/map: the stations, their knobs, the
  *  laws and the Henry track arrive there and the screen reads both, so neither
  *  route describes the machine twice. */
+/** One run of the brief: fixed prose, or a value a rule put there.
+ *
+ *  The Mailchimp/HubSpot merge-tag shape - highlighted means adjustable,
+ *  dimmed means fixed. `rule` is the key that produced a value, so tapping the
+ *  chip can open the row that sets it instead of leaving the owner to find it. */
+export interface BriefSegment { kind: "prose" | "rule"; text: string; rule?: string }
+/** GET /harness/brief - one surface's brief, read-only, as the owner may read
+ *  it. The daemon segments the SAME render the spawn uses, so this view cannot
+ *  reassure him about a brief that is not the brief. */
+export interface HarnessBrief {
+  surface: string; label: string; agent: string; project: string;
+  segments: BriefSegment[]; chars: number;
+}
 export interface HarnessConfig {
   project: string; repo: string;
   layers: string[];
@@ -862,6 +875,10 @@ export const api = {
   saveHarnessConfig: (repo: string, values: Record<string, unknown>) =>
     req<{ ok?: boolean; before?: Record<string, unknown>; error?: string }>(
       "POST", "/harness/config", { repo, values }),
+  // One surface's brief, read-only, with the values tagged (design doc 4.3).
+  harnessBrief: (surface: string, repo?: string) =>
+    req<HarnessBrief>("GET", `/harness/brief?surface=${encodeURIComponent(surface)}`
+      + (repo ? `&repo=${encodeURIComponent(repo)}` : "")),
   repoTemplates: () => req<RepoTemplates>("GET", "/repo/templates"),
   // THE write path for a repo's type - the same mutator Henry's chat verb
   // calls, so a tap and a sentence can never produce different answers.

@@ -179,6 +179,32 @@ def main():
        "the brief is still the whole brief, with no machinery showing")
     ok(was is not None, "brief() answered before the edit too")
 
+    # -- the brief VIEW is the brief ---------------------------------------
+    # design doc 4.3. The whole reassurance of "Brief ansehen" is that it shows
+    # the artefact Henry is really started with. If the segmented view could
+    # differ from brief() by so much as a newline, the screen would be
+    # reassuring the owner about a brief that is not the brief - so the
+    # assertion is byte equality of the JOIN, on every surface, not a spot check.
+    print("\n[the brief view IS the brief]")
+    for agent in ("board-copilot", "voice-style", "wear-brief", "glass-brief"):
+        segs = harness.brief_segments(agent)
+        joined = "".join(s["text"] for s in segs)
+        ok(joined == harness.brief(agent),
+           "%s: the segments join back to brief() byte for byte" % agent)
+        ok(all(s["kind"] in ("prose", "rule") for s in segs),
+           "%s: every segment is prose or a rule value" % agent)
+        ok(all(s.get("rule") for s in segs if s["kind"] == "rule"),
+           "%s: every value segment names the rule that produced it" % agent)
+        ok("{{rule:" not in joined, "%s: no marker survives into the view" % agent)
+
+    # and it tracks a CHANGED value, or the view is a screenshot of the past
+    pc.write_scoped({"rule.tone.address.pm": "du"}, actor="owner")
+    segs = harness.brief_segments("board-copilot")
+    chips = [s["text"] for s in segs if s.get("rule") == "tone.address"]
+    ok(chips == ['always "du"'], "the chip carries the CURRENT value (%r)" % chips)
+    ok("".join(s["text"] for s in segs) == harness.brief("board-copilot"),
+       "and the join still equals the brief after the change")
+
     # -- the write is audited, not worked around -------------------------
     print("\n[the write is in the append-only sink]")
     rows = [json.loads(x) for x in open(events.EV, encoding="utf-8") if x.strip()]

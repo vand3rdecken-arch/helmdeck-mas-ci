@@ -164,10 +164,31 @@ function RuleControl({ rule, s, onChange, t, tr }: {
   );
 }
 
+/** "Henry fragen" (design doc 5.5): the second, equal way to change a setting.
+ *
+ *  The point is not a shortcut to the chat - it is that the row travels WITH
+ *  the tap, as a context chip over the composer, so Henry never has to guess
+ *  which line was meant. That is the VS-Code-Copilot "Attach Context" gesture,
+ *  and it is why this is a per-row link rather than one button on the page. */
+function AskLink({ rule, onAsk, t, tr }: {
+  rule: BehaviorRule; onAsk?: (r: BehaviorRule) => void; t: ThemeTokens; tr: Tr;
+}) {
+  if (!onAsk) return null;
+  return (
+    <Pressable testID={"rule-ask-" + rule.key} onPress={() => onAsk(rule)} hitSlop={8}
+      style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+      <Ionicons name="chatbubble-ellipses-outline" size={11} color={t.txtTertiary} />
+      <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "600" }}>
+        {tr("rule.askHenry")}
+      </Text>
+    </Pressable>
+  );
+}
+
 /** ONE rule: label, control, one sentence, badge - and, when it has more than
  *  one surface, the expandable detail that is the whole reason this screen
  *  exists ("the watch is terser than the chat"). */
-export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
+export function RuleRow({ rule, surfaces, project, onSet, onAsk, highlight, t, tr }: {
   rule: BehaviorRule;
   /** {key: label} from the daemon, so a surface can be named without the client
    *  learning what a surface IS. */
@@ -175,6 +196,12 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
   /** The project the screen is showing, "" for the workspace view. */
   project: string;
   onSet: (path: string, value: unknown) => void;
+  /** "Henry fragen": opens the docked chat carrying THIS row as context
+   *  (design doc 5.5). Absent where no chat is mounted. */
+  onAsk?: (rule: BehaviorRule) => void;
+  /** Arrived here from a chip in the brief view - mark the row so the jump has
+   *  a visible landing, instead of dropping the owner into a list of twenty. */
+  highlight?: boolean;
   t: ThemeTokens; tr: Tr;
 }) {
   const [open, setOpen] = useState(false);
@@ -194,7 +221,9 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
 
   return (
     <View testID={"rule-" + rule.key}
-      style={{ gap: 7, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+      style={{ gap: 7, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.glassBorder,
+        ...(highlight ? { borderLeftWidth: 2, borderLeftColor: t.accent, paddingLeft: 9,
+          marginLeft: -11, backgroundColor: t.surface2 } : null) }}>
       {locked ? (
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600" }}>{tr(rule.labelKey)}</Text>
@@ -203,6 +232,11 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
             <RuleControl rule={rule} s={primary} onChange={() => {}} t={t} tr={tr} />
           ) : null}
           <LockNote why={rule.why} source={rule.source} t={t} tr={tr} />
+          {/* A locked row gets the ask link TOO. Henry is the exception broker -
+              "why is this fixed?" is exactly the question worth putting to him,
+              and his brief already makes him answer it by name with the route
+              that IS open. */}
+          <AskLink rule={rule} onAsk={onAsk} t={t} tr={tr} />
         </View>
       ) : (
         <View style={{ gap: 6 }}>
@@ -211,10 +245,13 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
           ) : null}
           <Text style={{ color: t.txtSecondary, fontSize: 11.5, lineHeight: 16.5 }}>{tr(rule.descKey)}</Text>
           {needsProject ? <Hint text={tr("rule.needsProject")} /> : null}
-          {primary ? (
-            <LayerBadge rule={rule} s={primary} t={t} tr={tr}
-              onReset={() => onSet(primary.path, null)} />
-          ) : null}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {primary ? (
+              <LayerBadge rule={rule} s={primary} t={t} tr={tr}
+                onReset={() => onSet(primary.path, null)} />
+            ) : null}
+            <AskLink rule={rule} onAsk={onAsk} t={t} tr={tr} />
+          </View>
         </View>
       )}
 
@@ -263,12 +300,15 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
  *  The block LIST and its order come from the daemon (behavior.BLOCKS), the
  *  same rule DOORS already lives under - the screen reads the order off the
  *  payload instead of re-declaring it, so a sixth block costs a daemon edit. */
-export function RuleBlock({ block, rules, surfaces, project, onSet }: {
+export function RuleBlock({ block, rules, surfaces, project, onSet, onAsk, highlight }: {
   block: { key: string; labelKey: string; descKey: string };
   rules: BehaviorRule[];
   surfaces: Record<string, string>;
   project: string;
   onSet: (path: string, value: unknown) => void;
+  onAsk?: (rule: BehaviorRule) => void;
+  /** The rule a brief chip jumped to, if any. */
+  highlight?: string;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -283,7 +323,7 @@ export function RuleBlock({ block, rules, surfaces, project, onSet }: {
       </Text>
       {mine.map((r) => (
         <RuleRow key={r.key} rule={r} surfaces={surfaces} project={project}
-          onSet={onSet} t={t} tr={tr} />
+          onSet={onSet} onAsk={onAsk} highlight={highlight === r.key} t={t} tr={tr} />
       ))}
     </View>
   );

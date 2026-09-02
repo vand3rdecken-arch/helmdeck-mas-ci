@@ -26,6 +26,12 @@ What is checked, at both form factors:
   - the four MOVED knobs are on their station page and GONE from their old
     doors (the "kein Knopf an zwei Orten" acceptance, checked in both places)
   - tapping a station on the pipeline selects it in the navigation
+  - BRIEF ANSEHEN (section 4.3): the whole brief renders as prose with the
+    values chipped in place, the un-parametrised paragraphs are there too (a
+    view that quietly summarised would defeat its own purpose), each surface is
+    its OWN document, and tapping a chip lands on the row that sets it
+  - HENRY ANGEDOCKT (section 5.5): "Henry fragen" opens the SHIPPED chat with a
+    context chip naming the row, and the chip can be dropped by hand
   - nothing is visually truncated (scrollWidth vs clientWidth - inner_text
     cannot see a CSS clip, which is how the phase-4 band shipped cut off)
   - no console or page errors
@@ -236,8 +242,68 @@ def main():
             check(not clipped_on(page, '[data-testid^="rule-"]'),
                   "%s: no rule row is visually truncated (%s)"
                   % (form, clipped_on(page, '[data-testid^="rule-"]') or "none"))
-            if form == "desktop":
-                page.screenshot(path=os.path.join(SHOTS, "harness-rules-%s.png" % form))
+            page.screenshot(path=os.path.join(SHOTS, "harness-rules-%s.png" % form))
+
+            # -- "BRIEF ANSEHEN" (design doc 4.3) ------------------------------
+            page.locator('[data-testid="briefmode-brief"]').first.click()
+            page.wait_for_timeout(3000)
+            brief = page.locator('[data-testid="brief-pm"]')
+            check(brief.count() > 0, "%s: the brief view renders" % form)
+            btxt = brief.first.inner_text() if brief.count() else ""
+            check(len(btxt) > 5000,
+                  "%s: it shows the WHOLE brief, not an excerpt (%d chars)" % (form, len(btxt)))
+            check("{{rule:" not in btxt, "%s: no machinery leaks into the prose" % form)
+            # The do/don't examples are exactly the part a summary would drop -
+            # the view promises "no hidden paragraph", so check for the prose
+            # that is NOT parametrised.
+            check("BIAS TO ACTION" in btxt or "NEVER DEAD-END" in btxt,
+                  "%s: the un-parametrised prose is there too" % form)
+            chip = page.locator('[data-testid="briefchip-tone.length"]')
+            check(chip.count() > 0, "%s: a rule value is chipped IN the prose" % form)
+            # per surface: the watch's brief is a different document
+            page.locator('[data-testid="briefsurface-wear"]').first.click()
+            page.wait_for_timeout(2500)
+            wear = page.locator('[data-testid="brief-wear"]')
+            check(wear.count() > 0, "%s: switching surface loads the watch's brief" % form)
+            check(wear.first.inner_text() != btxt,
+                  "%s: and it is a DIFFERENT brief, not the same one relabelled" % form)
+            page.screenshot(path=os.path.join(SHOTS, "harness-brief-%s.png" % form))
+
+            # the chip is the way back to the row that sets it
+            page.locator('[data-testid="briefsurface-pm"]').first.click()
+            page.wait_for_timeout(2000)
+            page.locator('[data-testid="briefchip-tone.length"]').first.click()
+            page.wait_for_timeout(2000)
+            check(page.locator('[data-testid="rule-tone.length"]').count() > 0,
+                  "%s: tapping a chip lands on the rule's row" % form)
+            check(page.locator('[data-testid="briefmode-form"]').count() > 0
+                  and not page.locator('[data-testid="brief-pm"]').count(),
+                  "%s: and switches back to the form - one state, two windows" % form)
+
+            # -- HENRY, ANGEDOCKT (design doc 5.5) -----------------------------
+            # Desktop opens the in-page panel; the phone takes the /chat route,
+            # the same split the board FAB has always used.
+            page.locator('[data-testid="rule-ask-tone.length"]').first.click()
+            page.wait_for_timeout(3500)
+            body = page.inner_text("body")
+            # NOT named `ctx` - that is the browser context this loop owns, and
+            # shadowing it made teardown call .close() on a Locator.
+            chip_ctx = page.locator('[data-testid="composer-context"]')
+            check(chip_ctx.count() > 0, "%s: the chat opens carrying a context chip" % form)
+            if chip_ctx.count():
+                check("Antwortlänge" in chip_ctx.first.inner_text(),
+                      "%s: and the chip names the ROW it was opened from (%r)"
+                      % (form, chip_ctx.first.inner_text()))
+            check("Henry" in body or "chat" in page.url,
+                  "%s: it is the real chat, not a new one" % form)
+            page.screenshot(path=os.path.join(SHOTS, "harness-henry-%s.png" % form))
+            # the chip can be dropped - it never disappears on its own
+            page.locator('[data-testid="composer-context-clear"]').first.click()
+            page.wait_for_timeout(1200)
+            check(page.locator('[data-testid="composer-context"]').count() == 0,
+                  "%s: and it can be dropped by hand" % form)
+            page.goto("http://127.0.0.1:%d/loopmap" % WEB, wait_until="domcontentloaded")
+            page.wait_for_timeout(5000)
 
             # -- the MOVED knobs are at their station --------------------------
             # inner_text returns the RENDERED text, and a section heading is

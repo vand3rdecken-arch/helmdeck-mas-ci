@@ -29,7 +29,7 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
-  onVoice, recipients, defaultTo,
+  onVoice, recipients, defaultTo, contextChip, onClearContext,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   busy?: boolean;
@@ -56,6 +56,16 @@ export function Composer({
    *  (a card going from idle to running must not silently steal a message
    *  the owner just addressed to Henry). */
   defaultTo?: string;
+  /** ATTACH CONTEXT (harness-config-ui design doc 5.5): what this message is
+   *  ABOUT, shown above the input before a word is typed.
+   *
+   *  It lives here, in the shared composer, rather than beside it on the one
+   *  screen that needed it first - the card chat renders this same component,
+   *  so the improvement lands on both surfaces and there is still exactly ONE
+   *  chat UI. The gesture is VS Code Copilot's "Attach Context": the owner sees
+   *  what he is asking about, and can drop it. */
+  contextChip?: string;
+  onClearContext?: () => void;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -239,6 +249,28 @@ export function Composer({
 
   return (
     <View style={{ borderTopWidth: 1, borderTopColor: t.glassBorder, paddingBottom: bottomInset }}>
+      {/* THE CONTEXT CHIP, above everything: what this message is about. Placed
+          over the input rather than inside it so it survives the draft being
+          cleared and cannot be accidentally deleted with a backspace. */}
+      {contextChip ? (
+        <View testID="composer-context"
+          style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12,
+            paddingTop: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1,
+            borderColor: t.accent, backgroundColor: t.surface2, borderRadius: 999,
+            paddingLeft: 9, paddingRight: onClearContext ? 5 : 9, paddingVertical: 3, maxWidth: "100%" }}>
+            <Ionicons name="at-outline" size={12} color={t.accent} />
+            <Text numberOfLines={1} style={{ color: t.accent, fontSize: 11, fontWeight: "600", flexShrink: 1 }}>
+              {contextChip}
+            </Text>
+            {onClearContext ? (
+              <Pressable testID="composer-context-clear" onPress={onClearContext} hitSlop={8}>
+                <Ionicons name="close" size={12} color={t.txtTertiary} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
       {/* @mention popover: pick who this message goes to */}
       {atMatches.length > 0 ? (
         <View style={{ backgroundColor: t.surface1, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
