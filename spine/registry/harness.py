@@ -140,6 +140,39 @@ _DEFAULTS = {
         "and needs repair.",
         {"name": "board-copilot", "settings": "copilot",
          "setting_sources": "", "ask_protocol": False}),
+    # The overlay floors (harness-config-ui phase 2). SHORT degraded stubs for
+    # the same measured reason the copilot's floor is one: a full copy beside
+    # the file rots. They are not empty, though - an absent voice overlay would
+    # silently let markdown into a text-to-speech turn, and an absent watch or
+    # glasses overlay would strand the owner on a surface where tapping an
+    # option is his ONLY input. So each floor keeps exactly the part whose
+    # absence is a defect rather than a downgrade.
+    "voice-style": (
+        "VOICE TURN - the owner is LISTENING. Plain spoken sentences, ZERO "
+        "markdown of any kind, at most two short sentences. Never speak lists, "
+        "ids, paths or long numbers.",
+        {"name": "voice-style", "settings": "", "setting_sources": "",
+         "ask_protocol": False}),
+    "wear-brief": (
+        "SURFACE: a Wear OS watch. At most 2 short sentences, no markdown. The "
+        "owner cannot type, so you MUST end every reply with a "
+        "<helmdeck-ask> block offering 2-6 tappable next moves.",
+        {"name": "wear-brief", "settings": "", "setting_sources": "",
+         "ask_protocol": False}),
+    "glass-brief": (
+        "SURFACE: Meta Ray-Ban display glasses. At most 2 short sentences, no "
+        "markdown. The owner can only TAP, so you MUST end every reply with a "
+        "<helmdeck-ask> block offering 2-6 next moves. This surface is "
+        "ADVISORY: any actions block you emit is DROPPED, never claim you "
+        "changed the board.",
+        {"name": "glass-brief", "settings": "", "setting_sources": "",
+         "ask_protocol": False}),
+    "ship-advisor": (
+        "Decide whether to ship, what kind, and the next steps - from "
+        "evidence, not a stored hash. Answer in the JSON shape the caller "
+        "asked for.",
+        {"name": "ship-advisor", "settings": "", "setting_sources": "",
+         "ask_protocol": False}),
 }
 
 ASK_MARKER = "{{ask_protocol}}"
@@ -287,24 +320,52 @@ def _resolve(body, fm):
 # ---------------------------------------------------------------------------
 # public API - every one of these is total
 # ---------------------------------------------------------------------------
-def brief(name, default=None):
+def _render_rules(text, name, project=""):
+    """Splice the behaviour VALUES into a brief (harness-config-ui phase 2).
+
+    Deliberately OUTSIDE _cached(): the cache keys on the file's (mtime, size),
+    so a cached render would keep serving the old values after a rule edit - and
+    worse, after a PROJECT switch it would serve the wrong project's brief
+    entirely (design doc section 9's prompt-cache risk). The file parse stays
+    cached; only the substitution runs per call, and it is a handful of regex
+    replacements over a string we already hold.
+
+    Total, like everything else here: any failure returns the text unrendered
+    rather than raising, and behavior.render() itself already degrades slot by
+    slot to the declared default - so the worst case is today's shipped brief."""
+    try:
+        from spine.registry import behavior
+        surf = _BY_AGENT.get(name) or {}
+        return behavior.render(text, surf.get("key") or name, project)
+    except Exception as e:                       # noqa: BLE001 - never break a spawn
+        _note("behavior:%s" % name, "%s: %s" % (type(e).__name__, str(e)[:200]))
+        return text
+
+
+def brief(name, default=None, project=""):
     """The full system prompt for a surface: the editable body from
-    ops/harness/agents/<name>.md with the fixed ask protocol spliced in.
+    ops/harness/agents/<name>.md with the fixed ask protocol spliced in and the
+    behaviour rules rendered into their slots.
 
     Falls back to the built-in default (or `default`) whenever the file is
     missing, unreadable, has no body, or fails to parse - so a bad edit costs
-    the customisation, never the spawn."""
+    the customisation, never the spawn.
+
+    `project` selects the project layer for project-scoped rules. Omit it and
+    the workspace values apply, which is the correct answer for every turn that
+    has no repo (board questions, machine_task) rather than a fallback."""
     d_body, d_fm = _DEFAULTS.get(name, ("", {}))
     if default is not None:
         d_body = default
     got = _agent_file(name)
     if not got or not got[0]:
-        return _resolve(d_body, d_fm) if d_body else (d_body or "")
+        out = _resolve(d_body, d_fm) if d_body else (d_body or "")
+        return _render_rules(out, name, project)
     body, fm = got
     # a file that forgot its frontmatter still gets the surface's normal wiring
     merged = dict(d_fm)
     merged.update(fm or {})
-    return _resolve(body, merged)
+    return _render_rules(_resolve(body, merged), name, project)
 
 
 def meta(name):
@@ -390,9 +451,19 @@ def describe():
 SCHEMA = os.path.join(HARNESS, "schema")
 VERSIONS = os.path.join(HARNESS, ".versions")
 
-# The three surfaces the board can spawn, and where each one's argv comes from.
-# `builder` names the ONE function that assembles that surface's command line;
-# preview() calls it rather than re-listing flags (CLAUDE.md: one owner).
+# The surfaces the board can spawn or overlay, and where each one's argv comes
+# from. `builder` names the ONE function that assembles that surface's command
+# line; preview() calls it rather than re-listing flags (CLAUDE.md: one owner).
+#
+# THREE SPAWNED + FOUR OVERLAYS (harness-config-ui phase 2). An overlay does not
+# spawn a process: it rides on an existing turn via copilot's `extra_system`
+# path, which is why `builder` is empty for those. They joined this table rather
+# than getting a list of their own because the behaviour rules hang off surface
+# keys (spine/registry/behavior.py), and a rule that named a surface this table
+# did not know would be a rule nothing could render. They were Python string
+# constants until this phase - which made them, by the card's own count, three
+# of the seven prose sources that together make a Henry and that the owner could
+# not see, let alone change.
 SURFACES = [
     {"key": "card", "agent": "card-worker", "label": "Karte (Worker im Worktree)",
      "builder": "drivers.build_argv", "cwd": "<worktree der Karte>"},
@@ -403,7 +474,20 @@ SURFACES = [
     # the settings mapping for a cosmetic win. The LABEL is what the owner reads.
     {"key": "pm", "agent": "board-copilot", "label": "PM / Henry",
      "builder": "copilot.build_argv", "cwd": "<repo root>"},
+    {"key": "voice", "agent": "voice-style", "label": "Sprache (gesprochene Antwort)",
+     "builder": "", "cwd": "<Turn-Overlay>"},
+    {"key": "wear", "agent": "wear-brief", "label": "Uhr (Wear OS)",
+     "builder": "", "cwd": "<Turn-Overlay>"},
+    {"key": "glass", "agent": "glass-brief", "label": "Brille (Meta Ray-Ban)",
+     "builder": "", "cwd": "<Turn-Overlay>"},
+    {"key": "ship", "agent": "ship-advisor", "label": "Ship-Berater (Deploy-Entscheidung)",
+     "builder": "", "cwd": "<Turn-Overlay>"},
 ]
+
+# Surfaces that ride on someone else's turn instead of spawning. preview() has
+# nothing to assemble for these, and write_agent still accepts them - being
+# editable was the point of moving them out of Python.
+OVERLAY_SURFACES = ("voice", "wear", "glass", "ship")
 
 _BY_KEY = {s["key"]: s for s in SURFACES}
 _BY_AGENT = {s["agent"]: s for s in SURFACES}

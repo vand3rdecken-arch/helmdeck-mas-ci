@@ -484,8 +484,16 @@ def test_export_matches_the_app_contract():
         check(all(len((n.get("why") or "")) > 40 for n in every),
               "each `why` is a real sentence, not a stub")
         keys = {s["key"] for s in harness.SURFACES}
-        check(keys == {"card", "machine", "pm"},
+        check(keys == {"card", "machine", "pm",
+                       "voice", "wear", "glass", "ship"},
               "the surface keys the app's HarnessSurface union names: %s" % sorted(keys))
+        # An overlay has no argv to assemble, a spawned surface must name the
+        # ONE function that assembles its own - the distinction preview() walks.
+        for s in harness.SURFACES:
+            overlay = s["key"] in harness.OVERLAY_SURFACES
+            check(bool(s["builder"]) != overlay,
+                  "surface %s: %s" % (s["key"], "overlay, so no builder"
+                                      if overlay else "spawned, so it names a builder"))
     finally:
         if old is not None:
             os.environ["HELMDECK_WORKTREE"] = old

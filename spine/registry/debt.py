@@ -4098,6 +4098,49 @@ DEBT = [
                "the observation is missing.",
         "order": 55,
     },
+    {
+        "id": "configure-allowlist-not-derived",
+        "title": "The configure allowlist is MEASURED against the enforced set, "
+                 "not rendered from it - the design doc asked for rendered",
+        "status": "open",
+        "what": "harness-config-ui phase 2 turned the twelve hand-counted keys "
+                "in board-copilot.md:134-146 into a `fixed` slot "
+                "(behavior.ALLOWLIST_PROSE) that harness.write_agent can no "
+                "longer overwrite. The design doc section 5.5 asked for more: "
+                "the paragraph should be RENDERED FROM THE SCHEMA so that "
+                "'what the settings page can edit is what the chat can edit, by "
+                "construction'. It is not. Rendering it truthfully would CHANGE "
+                "WHAT HENRY IS TOLD, because the prose and the enforced set "
+                "genuinely differ today: copilot_actions.ALLOWED_CONFIG "
+                "contains `jira` and the brief has never mentioned it. So the "
+                "drift is measured instead - behavior.allowlist_drift() "
+                "computes it and ops/tests/test_behavior_rules.py fails on it, "
+                "currently reporting exactly that one key.",
+        "why_it_bites": "The two lists can still disagree; they just can no "
+                        "longer disagree SILENTLY, which is the smaller half of "
+                        "the goal. Concretely: Henry may write settings.jira "
+                        "through `configure` and nothing in his brief says so, "
+                        "so the capability is reachable but undocumented to the "
+                        "agent that holds it. The reverse direction is now safe "
+                        "- a key added to the brief but not to ALLOWED_CONFIG is "
+                        "refused by the server, which is the correct way round "
+                        "for a permission surface to fail.",
+        "trigger": "The failing check in ops/tests/test_behavior_rules.py "
+                   "(test_allowlist_is_measured). It is red on purpose and "
+                   "names the difference, so this cannot be missed by anyone "
+                   "who runs the suite.",
+        "fix": "An OWNER DECISION, not a refactor, because every direction "
+               "changes behaviour: (a) add `jira` to the brief paragraph and "
+               "keep the prose authoritative; (b) drop `jira` from "
+               "ALLOWED_CONFIG so the enforced set matches what Henry was told; "
+               "or (c) generate the paragraph from the schema as the doc asked, "
+               "accepting that Henry's allowlist text then changes whenever the "
+               "schema does - which breaks the byte-identity pin in the same "
+               "commit, by design. Whichever is chosen, delete "
+               "allowlist_drift() and make the check a plain equality "
+               "assertion rather than a report.",
+        "order": 56,
+    },
 ]
 
 def list_debt():

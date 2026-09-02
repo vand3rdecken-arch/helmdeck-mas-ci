@@ -20,25 +20,13 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from spine.ops.glances import glance_payload, _glance_question
 
-GLASS_BRIEF = (
-    "SURFACE: you are being read on Meta Ray-Ban DISPLAY GLASSES, not the phone.\n"
-    "- The lens is 600x600 and shows ONE thing at a time. Keep the prose to at "
-    "most 2 short sentences - what is true right now, and what you would do. No "
-    "lists, no markdown, no headings.\n"
-    "- The owner CANNOT TYPE and CANNOT DICTATE here. Tapping an option is his "
-    "only input. So you MUST end every reply with a <helmdeck-ask> block "
-    "offering 2-6 next moves, exactly as a card worker would:\n"
-    "<helmdeck-ask>\n"
-    '{"questions": [{"question": "<what to do next>", "header": "<max 24 chars>", '
-    '"options": [{"label": "<short>", "description": "<what it means>"}]}]}\n'
-    "</helmdeck-ask>\n"
-    "Ending without that block strands him - it is a defect, not a hand-off. "
-    "Always include a way to go wider (e.g. 'Something else') so a wrong guess "
-    "is never a trap.\n"
-    "- This surface is ADVISORY: any actions block you emit is DROPPED, not run. "
-    "Never claim you changed the board. To actually move work, offer it as an "
-    "option and say it will run from the phone."
-)
+# The text moved to ops/harness/agents/glass-brief.md (harness-config-ui phase
+# 2) - policy, not mechanism, and until now one of the seven prose sources the
+# owner could not see. The lens facts and the ADVISORY clause stay verbatim;
+# only the length law became a slot.
+def glass_brief(project=""):
+    from spine.registry import harness
+    return harness.brief("glass-brief", project=project)
 
 
 def glance_voice(self, user):
@@ -182,7 +170,7 @@ def glance_talk(self, user, body):
     glassturn.thinking()
     try:
         out = copilot.chat("owner", msg, role="owner",
-                           allow_actions=False, extra_system=GLASS_BRIEF,
+                           allow_actions=False, extra_system=glass_brief(),
                            # This response IS the delivery - the lens shows the
                            # reply and plays it aloud (below). Buzzing the phone
                            # about an answer already in the owner's ear is the

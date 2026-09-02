@@ -36,8 +36,31 @@ from spine.git.locks import _direct_lock_for
 # each other instead of racing.
 _HENRY_REPO_ROOT = os.path.dirname(ROOT)
 
+# The FLOORS, not the values (harness-config-ui phase 2). Both are the declared
+# defaults of rules report.followup_attempts / report.followup_interval in
+# spine/registry/behavior.py, so an installation that cannot read the rule table
+# behaves exactly as it does today. The interval is also QUOTED in Henry's own
+# brief ("the broker loop picks up within ~90s") - one number in two places that
+# could drift, which is why the brief now renders it from this same rule.
 _MAX_ATTEMPTS = 2
 _INTERVAL_S = 90
+
+
+def _rule_int(key, floor):
+    try:
+        from spine.registry import behavior
+        v = behavior.value(key, "all")
+        return int(v) if v else floor
+    except Exception:                                        # noqa: BLE001
+        return floor
+
+
+def _max_attempts():
+    return _rule_int("report.followup_attempts", _MAX_ATTEMPTS)
+
+
+def _interval_s():
+    return _rule_int("report.followup_interval", _INTERVAL_S)
 
 # A MANDATE, not a rulebook (owner decree 2026-08-24: "Henry should only get
 # instructions to plan and intervene"). Henry judges each escalation from the
@@ -631,7 +654,7 @@ def _execute(action, card, lane, text, esc, kind=""):
 
 def _give_up(esc):
     escalations.record_decision(esc["id"], "escalated",
-                                why="no safe automatic decision after %d attempts" % _MAX_ATTEMPTS)
+                                why="no safe automatic decision after %d attempts" % _max_attempts())
     _notify_owner("Henry gibt ab (%s): %s" % (esc["kind"], esc.get("detail") or ""), None)
 
 
@@ -695,7 +718,7 @@ def _loop():
     while True:
         try:
             for esc in escalations.list_open():
-                if esc["attempts"] >= _MAX_ATTEMPTS:
+                if esc["attempts"] >= _max_attempts():
                     _give_up(esc)
                     continue
                 _decide(esc)
@@ -707,7 +730,7 @@ def _loop():
             # cause lives in __cause__/__context__, which only the traceback
             # module walks (ops/docs/backlog/henry-loop-error-swallowed-traceback).
             print("henry: loop error:\n" + traceback.format_exc())
-        time.sleep(_INTERVAL_S)
+        time.sleep(_interval_s())
 
 
 _started = False

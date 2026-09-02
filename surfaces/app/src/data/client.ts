@@ -450,8 +450,14 @@ export interface MyConfigResult {
 // command and where every piece of it came from.
 // ---------------------------------------------------------------------------
 export interface HarnessSurface {
-  key: "card" | "machine" | "pm"; agent: string; label: string;
-  /** the ONE daemon function that assembles this surface's argv */
+  /** Three SPAWNED surfaces and four OVERLAYS (harness-config-ui phase 2). An
+   *  overlay rides on an existing turn instead of starting a process, so its
+   *  `builder` is empty; it is in this list because the behaviour rules key on
+   *  surface, and a rule naming a surface the app did not know would render
+   *  nowhere. voice/wear/glass/ship were Python string constants before. */
+  key: "card" | "machine" | "pm" | "voice" | "wear" | "glass" | "ship";
+  agent: string; label: string;
+  /** the ONE daemon function that assembles this surface's argv ("" = overlay) */
   builder: string; cwd: string;
 }
 export interface HarnessVersion { id: string; ts: string; actor: string; bytes: number }
