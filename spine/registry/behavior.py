@@ -673,6 +673,48 @@ def render(text, surface, project=""):
     return SLOT_RE.sub(lambda m: _value(m.group(1)), text)
 
 
+# ---------------------------------------------------------------------------
+# The Henry track (design doc section 5.4.3)
+# ---------------------------------------------------------------------------
+# What Henry DOES at a station, in the owner's words. Only the label is declared
+# here; WHICH stations appear is derived from the rules' `binds`, so a rule
+# added in the daemon lights its station up with no client change at all - the
+# dummy-knob test of the pipeline PRD, carried over to rules.
+#
+# Deliberately owner-language and jargon-free, the same rule Henry's own brief
+# holds him to (tone.jargon): "legt an", not "dispatched into the backlog lane".
+HENRY_VERBS = {
+    "backlog": "harness.track.backlog",
+    "working": "harness.track.working",
+    "gate": "harness.track.gate",
+    "review": "harness.track.review",
+    "done": "harness.track.done",
+    "deploy": "harness.track.deploy",
+}
+
+
+def track(project=""):
+    """The band under the pipeline: one segment per station Henry acts at.
+
+    Aggregated HERE, not in the client - the client holds no station list and
+    no rule list, exactly as repo_pipeline.tsx already holds none. Each segment
+    carries the rules responsible, so the screen can route a tap to the rows
+    that made the segment appear instead of guessing."""
+    by_station = {}
+    for r in BEHAVIOR_RULES:
+        for st in r.get("binds") or []:
+            by_station.setdefault(st, []).append(r["key"])
+    out = []
+    for st, keys in by_station.items():
+        if st not in HENRY_VERBS:
+            continue          # a bind naming no known station draws nothing
+        out.append({"station": st, "labelKey": HENRY_VERBS[st],
+                    "rules": sorted(keys), "count": len(keys)})
+    order = list(HENRY_VERBS)
+    out.sort(key=lambda s: order.index(s["station"]))
+    return out
+
+
 def describe(project=""):
     """The rule table as the app receives it: every rule with its effective
     value per surface, its provenance and its lock. Server-owned end to end -
