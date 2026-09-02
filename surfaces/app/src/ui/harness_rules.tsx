@@ -35,24 +35,41 @@ const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "mon
 
 type Tr = (k: string, p?: Record<string, string | number>) => string;
 
+/** Is this surface's value SET, or is it still coming from below?
+ *
+ *  Compared against the rule's OWN scope, not against `inherited` alone.
+ *  `inherited` from the daemon means one specific thing - "this PROJECT did not
+ *  set it" - which is exactly right for the chain and wrong for the badge of a
+ *  WORKSPACE-scoped rule: the workspace is that rule's home, so a value stored
+ *  there is set, not inherited. Reading `inherited` directly badged a rule the
+ *  owner had just changed as "Geerbt vom Arbeitsbereich" and offered him no way
+ *  back, which is a screen contradicting the click that produced it.
+ */
+function isSetHere(rule: BehaviorRule, s: RuleSurface): boolean {
+  return s.layer === (rule.scope === "project" ? "project" : "workspace");
+}
+
 /** The provenance badge + the way back.
  *
  *  GitHub's org->repo settings pattern, which is where the wording comes from:
  *  a row says whether it is inherited or set here, and a set row offers exactly
- *  one way to stop being set. Reset is NOT "write the default" - it clears the
- *  row so the value INHERITS again. Those are different states, and conflating
- *  them is how an undo silently freezes today's workspace value into a project.
+ *  one way to stop being set. Reset is NOT "write the default" - it CLEARS the
+ *  row so the value falls through again. Those are different states, and
+ *  conflating them is how an undo silently freezes today's value one layer up.
  */
-function LayerBadge({ s, onReset, t, tr }: {
-  s: RuleSurface; onReset?: () => void; t: ThemeTokens; tr: Tr;
+function LayerBadge({ rule, s, onReset, t, tr }: {
+  rule: BehaviorRule; s: RuleSurface; onReset?: () => void; t: ThemeTokens; tr: Tr;
 }) {
-  const set = !s.inherited;
+  const set = isSetHere(rule, s);
+  const key = set
+    ? (rule.scope === "project" ? "rule.layer.project" : "rule.layer.workspaceSet")
+    : "rule.layer." + (s.layer || "default");
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <View style={{ borderWidth: 1, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1,
         borderColor: set ? t.accent : t.borderSubtle, backgroundColor: t.surface2 }}>
         <Text style={{ color: set ? t.accent : t.txtTertiary, fontSize: 9.5, fontWeight: "600" }}>
-          {set ? tr("rule.layer.project") : tr("rule.layer." + (s.layer || "default"))}
+          {tr(key)}
         </Text>
       </View>
       {set && onReset ? (
@@ -195,8 +212,8 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
           <Text style={{ color: t.txtSecondary, fontSize: 11.5, lineHeight: 16.5 }}>{tr(rule.descKey)}</Text>
           {needsProject ? <Hint text={tr("rule.needsProject")} /> : null}
           {primary ? (
-            <LayerBadge s={primary} t={t} tr={tr}
-              onReset={primary.inherited ? undefined : () => onSet(primary.path, null)} />
+            <LayerBadge rule={rule} s={primary} t={t} tr={tr}
+              onReset={() => onSet(primary.path, null)} />
           ) : null}
         </View>
       )}
@@ -227,8 +244,8 @@ export function RuleRow({ rule, surfaces, project, onSet, t, tr }: {
                   ) : (
                     <>
                       <RuleControl rule={rule} s={s} onChange={(v) => onSet(s.path, v)} t={t} tr={tr} />
-                      <LayerBadge s={s} t={t} tr={tr}
-                        onReset={s.inherited ? undefined : () => onSet(s.path, null)} />
+                      <LayerBadge rule={rule} s={s} t={t} tr={tr}
+                        onReset={() => onSet(s.path, null)} />
                     </>
                   )}
                 </View>

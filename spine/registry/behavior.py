@@ -323,13 +323,26 @@ BEHAVIOR_RULES = [
      "surfaces": {"all": {"default": "acceptEdits", "renders": None}},
      "source": "cells/copilot/copilot.py:343"},
 
-    {"key": "hands.agent_may_swap", "block": "hands", "wire": "code", "kind": "policy",
+    # READONLY, not a toggle - and that is a deliberate refusal, not an
+    # oversight (harness-config-ui phase 3). The value that really gates an
+    # agent-initiated swap lives in the POLICY PLANE as `policies.agentMaySwap`
+    # and is written only by spine/auth/policy.py::swap. A rule row storing
+    # `rule.hands.agent_may_swap.all` in settings.json would therefore save
+    # cleanly, badge itself "gesetzt", and change NOTHING - the dummy switch
+    # this table exists to refuse, and a dummy on the one row that reads "Henry
+    # darf Regeln selbst aendern" is the worst possible place for one.
+    # The design doc asks for a real toggle here; giving it one needs a write
+    # path into the policy plane, which is an owner decision because it touches
+    # who may change the rules. Registered as [agent-may-swap-readonly].
+    {"key": "hands.agent_may_swap", "block": "hands", "wire": "readonly", "kind": "fixed",
      "control": "toggle", "scope": "workspace", "binds": [],
      "labelKey": "rule.hands.maySwap", "descKey": "rule.hands.maySwap.desc",
      "why": "Henry ist der Ausnahme-Broker - vorschlagen ist sein Job, "
-            "ausfuehren ohne menschliche Bestaetigung nicht. Das schliesst den "
-            "Kreis der Beschwerde: du siehst seine Regeln, und er darf dich um "
-            "eine Aenderung bitten.",
+            "ausfuehren ohne menschliche Bestaetigung nicht. Steht heute auf "
+            "aus. Der Wert lebt in der Policy-Ebene und wird nur ueber "
+            "policy.swap gesetzt; diese Seite zeigt ihn, sie schreibt ihn "
+            "(noch) nicht - ein Schalter hier wuerde speichern und nichts "
+            "bewirken.",
      "reads": "spine/auth/policy.py::swap",
      "surfaces": {"all": {"default": False, "renders": None}},
      "source": "daemon/policy_seed.json:policies.agentMaySwap"},

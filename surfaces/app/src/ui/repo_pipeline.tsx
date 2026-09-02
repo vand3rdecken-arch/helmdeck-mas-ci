@@ -83,19 +83,31 @@ export interface PipelineProps {
    *  default so the onboarding preview - which shows the route to someone who
    *  has no repo yet and no knobs to count - keeps the plain row it wants. */
   showKnobs?: boolean;
+  /** {station: knob count}, from the SCHEMA's own `station` tags
+   *  (harness-config-ui section 6). Pass it wherever the station PAGES are
+   *  rendered too, so the badge on the row and the count in the navigation are
+   *  ONE derivation.
+   *
+   *  Without it the badge falls back to `node.settings` - a list kept by hand
+   *  in sessions.LANE_FLOW, which went out of step with the schema the moment
+   *  knobs started carrying `station`: the row read "2 Knöpfe" under a station
+   *  whose page rendered three. Two honest derivations contradicting each other
+   *  on one screen is worse than either being slightly wrong. */
+  knobsAt?: Record<string, number>;
 }
 
 /** How many of a station's knobs the app can actually EDIT, or null when the
  *  station is harness law.
  *
- *  Derived, never counted by hand: `settings` is the station's own declared key
- *  list and `editable` is the set the daemon really renders a control for, so
- *  the badge is their intersection. That is the same derivation loopmap's
- *  KnobChip already trusts - a knob named by a station but absent from the
- *  schema is exactly the case that once sent the owner to a screen which did
- *  not contain the knob it promised (routes_info.py's comment). */
-function knobCount(node: LoopNode, editable?: string[]): number | null {
+ *  Derived, never counted by hand. `knobsAt` (the schema's station tags) is the
+ *  authority where the caller has it; otherwise the badge falls back to the
+ *  intersection of the station's declared `settings` and the `editable` set -
+ *  the derivation loopmap's KnobChip already trusts, and the right answer for a
+ *  host like repo onboarding that holds no schema. */
+function knobCount(node: LoopNode, editable?: string[],
+                   knobsAt?: Record<string, number>): number | null {
   if (node.kind === "fixed") return null;
+  if (knobsAt) return knobsAt[node.key] ?? 0;
   const named = node.settings ?? [];
   if (!named.length) return 0;
   if (!editable) return named.length;
@@ -118,7 +130,7 @@ export function useStations(map?: LoopMap | null): LoopNode[] {
   }, [map]);
 }
 
-export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs }: PipelineProps) {
+export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, knobsAt }: PipelineProps) {
   const t = useTheme();
   const tr = useT();
   const stations = useStations(map);
@@ -194,7 +206,7 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs }: P
                     Suppressed on an off station: "3 Knöpfe" under a dashed dot
                     would advertise settings that do not run here. */}
                 {showKnobs && !off ? (() => {
-                  const n = knobCount(s, map?.editable);
+                  const n = knobCount(s, map?.editable, knobsAt);
                   if (n === null) {
                     return (
                       <Ionicons name="lock-closed" size={10} color={t.txtTertiary} />
