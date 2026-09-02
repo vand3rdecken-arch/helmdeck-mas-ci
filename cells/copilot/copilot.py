@@ -1181,7 +1181,23 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
             {"role": "user", "kind": "text", "text": message,
              "by": user, "byKind": "human", "to": "henry", "ts": _tsv, "ta": _tav})
-    _plan = _pm_plan_digest()
+    # A greeting/ack never needs the board re-read - _snapshot()/_pm_plan_digest()/
+    # _memory_digest() walk every card+process+debt item across every repo and
+    # ride uncached inside the USER turn (unlike the spawn-once system brief), so
+    # on a real board this was several KB the model had to actually process on
+    # EVERY turn regardless of relevance (measured: ~10s of the ~21s warm-turn
+    # latency vs Paseo's 11s). Gated on the SAME text signal pick_model already
+    # uses for the cheap tier - not a new heuristic - so it can't diverge from
+    # what "trivial" already means elsewhere in this file. Skipped whenever a
+    # card is in focus or a run just failed and needs re-checking: `focus` and
+    # `_retried` both mean the turn is NOT idle chatter even if the text is short.
+    if focus or _retried or not turnopts.is_trivial_chatter(message):
+        _plan = _pm_plan_digest()
+        snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
+            + _snapshot() + (("\n\n" + _plan) if _plan else "") \
+            + _memory_digest()
+    else:
+        snapshot_block = ""
     # The ROLE is data: ops/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
@@ -1189,10 +1205,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     system = harness.brief("board-copilot")
     if extra_system:
         system = system + "\n\n" + extra_system
-    turn = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-        + _snapshot() + (("\n\n" + _plan) if _plan else "") \
-        + _memory_digest() \
-        + focus + "\n\nUSER (%s): %s" % (user, body)
+    turn = snapshot_block + focus + "\n\nUSER (%s): %s" % (user, body)
     # STREAM (shared with the card surface): stream-json so the prose reply types
     # into the per-user live feed the board chat polls, instead of a blocking
     # black box. The turn goes in on stdin (it is huge - never a cmd arg).
