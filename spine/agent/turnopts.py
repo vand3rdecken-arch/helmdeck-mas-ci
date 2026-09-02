@@ -46,6 +46,17 @@ _HARD = re.compile(r"\b(refactor|architect|debug|design|analy[sz]e|"
                    r"root cause|prove|derive|reconcile|migrat)", re.I)
 _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b", re.I)
 
+
+def is_trivial_chatter(text):
+    """Same signal pick_model uses to route to the cheap tier: a short
+    greeting/ack. Exposed separately so callers can skip work a greeting never
+    needs (e.g. board-context assembly) without that decision riding on which
+    model got picked - voice pins haiku for EVERY spoken turn regardless of
+    content, so gating on the chosen model would wrongly strip context from a
+    real spoken question."""
+    t = text or ""
+    return len(t) < 40 and bool(_EASY.search(t))
+
 # -- context windows: a model must be able to HOLD the session it resumes -----
 # MEASURED 2026-08-30 from the failure it explains: Henry's board session stood
 # at 615,889 tokens (daemon/copilot_stats.json) when the owner typed "Ok" into

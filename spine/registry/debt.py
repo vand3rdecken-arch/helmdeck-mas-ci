@@ -10,6 +10,39 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "chat-snapshot-skip-heuristic",
+        "order": -7,
+        "title": "board snapshot is skipped on a text heuristic, not a real relevance check",
+        "status": "open",
+        "what": "cells/copilot/copilot.py chat(): the BOARD SNAPSHOT/PM "
+                "plan/memory digest block (_snapshot/_pm_plan_digest/"
+                "_memory_digest) is expensive uncached per-turn input - it "
+                "rebuilds and re-sends every card/process/debt item across "
+                "every repo on EVERY message, which measured as ~10s of a "
+                "~21s warm-turn latency vs Paseo's ~11s. Fixed by skipping "
+                "it when turnopts.is_trivial_chatter(message) is true (the "
+                "SAME short-greeting/ack signal pick_model already uses for "
+                "the cheap tier) and no card is in focus and the turn is not "
+                "a filler-guard retry.",
+        "why_it_bites": "is_trivial_chatter is a text-pattern match, not "
+                        "true intent detection - a message that happens to "
+                        "start with hi/ok/yes/no/thanks but actually needs "
+                        "fresh board state (rare, since the persistent "
+                        "session still holds prior turns in its own "
+                        "context) could get an answer missing this turn's "
+                        "board snapshot.",
+        "trigger": "A short greeting-shaped message that ALSO needs a fresh "
+                   "board re-read the model can't get from conversation "
+                   "history alone.",
+        "fix": "Replace the text heuristic with a cheap structural signal "
+               "(e.g. only skip when nothing on the board changed since "
+               "the last turn for this user) or make the snapshot a "
+               "tool call the model invokes on demand, matching Paseo's "
+               "design (project/task context lives in tool-callable state, "
+               "never re-injected as prose every turn).",
+        "since": "2026-09-02",
+    },
+    {
         "id": "wear-push-no-deep-link",
         "order": -6,
         "title": "a tapped notification opens the watch app at the BOARD, whatever the push was about",
