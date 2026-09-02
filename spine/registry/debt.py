@@ -4102,7 +4102,7 @@ DEBT = [
         "id": "configure-allowlist-not-derived",
         "title": "The configure allowlist is MEASURED against the enforced set, "
                  "not rendered from it - the design doc asked for rendered",
-        "status": "open",
+        "status": "paid",
         "what": "harness-config-ui phase 2 turned the twelve hand-counted keys "
                 "in board-copilot.md:134-146 into a `fixed` slot "
                 "(behavior.ALLOWLIST_PROSE) that harness.write_agent can no "
@@ -4129,16 +4129,22 @@ DEBT = [
                    "(test_allowlist_is_measured). It is red on purpose and "
                    "names the difference, so this cannot be missed by anyone "
                    "who runs the suite.",
-        "fix": "An OWNER DECISION, not a refactor, because every direction "
-               "changes behaviour: (a) add `jira` to the brief paragraph and "
-               "keep the prose authoritative; (b) drop `jira` from "
-               "ALLOWED_CONFIG so the enforced set matches what Henry was told; "
-               "or (c) generate the paragraph from the schema as the doc asked, "
-               "accepting that Henry's allowlist text then changes whenever the "
-               "schema does - which breaks the byte-identity pin in the same "
-               "commit, by design. Whichever is chosen, delete "
-               "allowlist_drift() and make the check a plain equality "
-               "assertion rather than a report.",
+        "fix": "PAID 2026-09-02 by owner decision: option (a) - `jira` was added "
+               "to the brief's configure paragraph, so the prose now names "
+               "exactly what ALLOWED_CONFIG enforces. The owner was shown that "
+               "settings.jira holds an api_token and that door "
+               "'Verbindungen' already has a real form for it, and chose to "
+               "TELL Henry about the capability rather than withdraw it; the "
+               "brief line therefore carries an explicit caution not to invent "
+               "a token or echo one back in chat. Henry's brief genuinely "
+               "changed, so the byte-identity pin for the `pm` surface moved in "
+               "the same commit - only after the diff against 883c72f was shown "
+               "to be exactly one added line. "
+               "allowlist_drift() was KEPT rather than deleted as this entry "
+               "originally planned: now that the two lists agree it IS the "
+               "equality assertion, and inlining it into the test would have "
+               "given the test its own second copy of the parser - the very "
+               "duplication this item was about.",
         "order": 56,
     },
 ]

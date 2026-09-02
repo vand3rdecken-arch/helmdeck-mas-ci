@@ -81,8 +81,16 @@ SURFACE_FILES = {
 # the baseline - which is the exact failure this check exists to catch.
 #
 # See the module docstring before changing one of these.
+#
+# `pm` MOVED ONCE, deliberately, on owner decision 2026-09-02: `jira` was in the
+# enforced ALLOWED_CONFIG but missing from the brief's configure paragraph, and
+# the owner chose to tell Henry about it rather than to withdraw the capability.
+# That is a real change to Henry's brief, so the pin had to move with it - and
+# it moved only after the diff against 883c72f was shown to be EXACTLY one added
+# line (the jira line) and nothing else. The check going red is what forced that
+# proof; a pin updated without it would have been a rubber stamp.
 EXPECTED = {
-    "pm": "277b2dc12e57e2898c32f62a0ac1e1ba14398f010464bac581812ac915592a7f",
+    "pm": "e329ebfc1c7694909e8b174a06809cb269a5f8a2551db063c34743dbe97f2e94",
     "voice": "5cf6585d188be12914b8e5177313669c7f360b6426d86c4994f2ed6d25b408bd",
     "wear": "c8c3090b5de4cba354c957c5772d277af317b46330087f1d27932a9342cac8c8",
     "glass": "2ae3eaa11f2e60dd55e0e78dce277eaeb344fcc34b35ffa64c595e0cd703c628",
@@ -185,10 +193,15 @@ def test_table_hygiene():
 
 
 def test_allowlist_is_measured():
-    """The configure allowlist: the prose and the ENFORCED set may differ, but
-    they may not differ silently. Design doc 5.5 wants the paragraph rendered
-    from the schema; it cannot be yet without changing what Henry is told, so
-    the drift is measured and reported here instead of papered over."""
+    """The configure allowlist: what the brief PROMISES and what the server
+    ENFORCES must name the same keys.
+
+    This was red by design until 2026-09-02 - `jira` was enforced and unstated -
+    and it is now a live guard rather than a report: the two lists agree, so any
+    future edit to either one that does not touch the other fails here. Which is
+    the property the design doc's 5.5 was really after; generating the paragraph
+    from the schema is one way to get it, holding the two equal is another, and
+    only the second one keeps the prose descriptions Henry actually reads."""
     print("\n[configure allowlist]")
     keys = behavior.allowlist_keys()
     check(bool(keys), "the allowlist paragraph parses into keys")
