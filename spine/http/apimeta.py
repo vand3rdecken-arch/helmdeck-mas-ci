@@ -34,10 +34,24 @@ def _lane_flow(lane_labels, repo_view=None):
         from cells.engineer import sessions
         f = sessions.flow(lane_labels, repo_view=repo_view)
         return {"lanes": f["nodes"], "gate": f["gate"], "deploy": f.get("deploy") or {},
-                "stations": f.get("stations") or [], "edges": f["edges"]}
+                "stations": f.get("stations") or [], "edges": f["edges"],
+                "henry": _henry_track()}
     except Exception as e:                                   # noqa: BLE001
         return {"lanes": [], "gate": {}, "deploy": {}, "stations": [], "edges": [],
-                "error": str(e)[:200]}
+                "henry": [], "error": str(e)[:200]}
+
+
+def _henry_track():
+    """The band under the station row: where Henry acts, and what he does there
+    (harness-config-ui phase 4). Aggregated in spine/registry/behavior.py from
+    the rules' `binds`, so the client keeps holding no station list and no rule
+    list. Empty rather than absent on failure - a missing band is honest, a
+    half-drawn one is not."""
+    try:
+        from spine.registry import behavior
+        return behavior.track()
+    except Exception:                                        # noqa: BLE001
+        return []
 
 
 def _loop_machine():

@@ -312,7 +312,11 @@ export default function LoopMapScreen() {
             {/* ONE pipeline component, shared with repo onboarding (see
                 ui/repo_pipeline.tsx). Station list, order and on/off all come
                 from the daemon - the route is not described twice in this app. */}
-            <RepoPipeline map={data} onSelect={setLane} selected={selected?.key} hideHint />
+            {/* showKnobs: this screen IS the harness view, so it gets the knob
+                badges and the Henry track. Repo onboarding leaves them off -
+                it shows the route to someone who has no repo set up yet and
+                therefore no knobs to count. */}
+            <RepoPipeline map={data} onSelect={setLane} selected={selected?.key} hideHint showKnobs />
             <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center", lineHeight: 16 }}>
               {repo ? tr("loopmap.repoHint") : tr("loopmap.hint")}
             </Text>
