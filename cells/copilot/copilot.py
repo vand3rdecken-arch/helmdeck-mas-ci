@@ -6,7 +6,7 @@ ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
 import json, os, re, shutil, subprocess, threading, time, uuid
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
 SESS = os.path.join(ROOT, "copilot_sessions.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
 from cells.copilot.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
@@ -321,7 +321,20 @@ def _save_sessions(d):
     os.replace(tmp, SESS)
 
 
-def _snapshot():
+def _snapshot(full=False):
+    """The board as text. `full=False` (the default, what a chat turn injects)
+    carries only the LIVE board; `full=True` adds finished/archived cards and
+    the full debt text.
+
+    Why the split, measured 2026-09-02: this block used to ride COMPLETE inside
+    every user turn - 83,488 chars (~23k tokens) of uncached input the model
+    re-read before answering anything, which is the bulk of the ~21s warm-turn
+    latency (Paseo, by contrast, sends ONLY the user's text and keeps context in
+    the cached system prompt + tools - packages/server/.../claude/agent.ts:3386).
+    Of that payload 53,871 chars were FINISHED cards and 14,427 were debt prose:
+    history, not live state. History is now fetched on demand (Henry runs
+    ops/tools/board_state.py, which calls this with full=True) instead of being
+    pushed into every turn."""
     from cells.engineer import sessions
     from cells.process import processes
     from spine.storage import events
@@ -334,13 +347,27 @@ def _snapshot():
     # one project (e.g. "what's left for HelmDeck") is scoped to THAT repo only -
     # without it the model mixed Seekingalpha/immo-deal-scanner cards into HelmDeck.
     lines.append("CARDS (each belongs to ONE repo; a question about a specific "
-                 "project/repo must include ONLY that repo's cards):")
+                 "project/repo must include ONLY that repo's cards)%s:"
+                 % ("" if full else " - LIVE ONLY, see the note at the end for finished work"))
+    hidden_done = hidden_arch = 0
     for t in sessions.list_tracks():
         # example: the onboarding demo card (accounts-boards-prd phase 3) is
         # never real work - excluded so the PM/board-copilot never plans
         # around it or reports it as an open card.
         if t.get("example"):
             continue
+        # Finished + archived cards are HISTORY: 53,871 of the 57,993 chars this
+        # section used to cost, re-read on every single turn to answer questions
+        # that were almost never about them. Counted (never silently dropped -
+        # the count is what tells Henry there IS history to go fetch) and served
+        # in full by ops/tools/board_state.py.
+        if not full:
+            if t.get("archived"):
+                hidden_arch += 1
+                continue
+            if t.get("lane") == "done":
+                hidden_done += 1
+                continue
         repo = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "?"
         # needs_you carries its open question; a FINISHED card carries its RESULT
         # (outcome, persisted at accept). Without the second half, an owner
@@ -379,9 +406,16 @@ def _snapshot():
         from spine.registry import debt as _d
         open_items = [d for d in _d.list_debt() if d["status"] != "paid"]
         if open_items:
-            lines.append("STRUCTURAL DEBT (open, ordered): " + "; ".join(
-                "%s - %s (bites when: %s)" % (d["id"], d["title"], d["trigger"])
-                for d in open_items))
+            if full:
+                lines.append("STRUCTURAL DEBT (open, ordered): " + "; ".join(
+                    "%s - %s (bites when: %s)" % (d["id"], d["title"], d["trigger"])
+                    for d in open_items))
+            else:
+                # ids + titles only: the full 'bites when' prose was 14,427 chars
+                # of every turn. The ids are enough for Henry to know what exists
+                # and to look one up when a question is actually about it.
+                lines.append("STRUCTURAL DEBT (%d open): " % len(open_items) + "; ".join(
+                    "%s - %s" % (d["id"], d["title"]) for d in open_items))
     except Exception:
         pass
     lines.append("PROCESSES:")
@@ -391,6 +425,19 @@ def _snapshot():
         for i, s in enumerate(p.get("steps", [])):
             lines.append("    step[%d] state=%s mode=%s title=%s" % (
                 i, s.get("state", "proposed"), s["mode"], s["title"][:70]))
+    if not full and (hidden_done or hidden_arch):
+        # NOT a silent cap: Henry is told exactly what is missing and how to get
+        # it, so "I don't know" is never the honest answer to a history question.
+        lines.append(
+            "\nNOT SHOWN ABOVE: %d finished and %d archived card(s), plus the full "
+            "'bites when' text of each debt item. They are omitted because they are "
+            "history and cost ~19k tokens on every turn. When a question is about "
+            "finished/archived work, a past outcome, or a debt item's detail, RUN "
+            "THIS FIRST and answer from its output:\n"
+            "    py -3.12 %s --full\n"
+            "(cwd does not matter - the path is absolute.)"
+            % (hidden_done, hidden_arch,
+               os.path.join(_REPO_ROOT, "ops", "tools", "board_state.py")))
     return "\n".join(lines)
 
 # -- action layer: extracted to copilot_actions.py (god-file breakup). ----
@@ -1181,23 +1228,18 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
             {"role": "user", "kind": "text", "text": message,
              "by": user, "byKind": "human", "to": "henry", "ts": _tsv, "ta": _tav})
-    # A greeting/ack never needs the board re-read - _snapshot()/_pm_plan_digest()/
-    # _memory_digest() walk every card+process+debt item across every repo and
-    # ride uncached inside the USER turn (unlike the spawn-once system brief), so
-    # on a real board this was several KB the model had to actually process on
-    # EVERY turn regardless of relevance (measured: ~10s of the ~21s warm-turn
-    # latency vs Paseo's 11s). Gated on the SAME text signal pick_model already
-    # uses for the cheap tier - not a new heuristic - so it can't diverge from
-    # what "trivial" already means elsewhere in this file. Skipped whenever a
-    # card is in focus or a run just failed and needs re-checking: `focus` and
-    # `_retried` both mean the turn is NOT idle chatter even if the text is short.
-    if focus or _retried or not turnopts.is_trivial_chatter(message):
-        _plan = _pm_plan_digest()
-        snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-            + _snapshot() + (("\n\n" + _plan) if _plan else "") \
-            + _memory_digest()
-    else:
-        snapshot_block = ""
+    # The board a turn carries is the LIVE one; history is on demand (see
+    # _snapshot's docstring and ops/tools/board_state.py). An earlier attempt
+    # skipped the whole block for greeting-shaped messages instead - that was a
+    # band-aid on the wrong layer: it only paid off on chatter, and its
+    # English-only text match ("danke" did NOT match) meant it barely fired for
+    # this owner at all. Superseded and removed, debt chat-snapshot-skip-heuristic
+    # closed - the block is now cheap enough to send on every turn, which is also
+    # the only way it can never be missing when it IS needed.
+    _plan = _pm_plan_digest()
+    snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
+        + _snapshot() + (("\n\n" + _plan) if _plan else "") \
+        + _memory_digest()
     # The ROLE is data: ops/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
