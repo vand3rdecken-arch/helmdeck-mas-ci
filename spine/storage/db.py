@@ -36,6 +36,21 @@ _version = 0                      # bumped on every write; SSE waits on it
 # paired device - trading a poll for a broadcast. Two cursors let a client wake
 # on exactly the stream it is reading.
 _chat_version = 0
+# The GLASSES conversation's own cursor - a THIRD counter, for the same reason
+# there is a second one.
+#
+# What moves it is not a stored row and not the chat log: it is the live state of
+# a voice turn on the lens (mic open, words heard, Henry thinking, answered),
+# which glassturn.py owns. That state changes several times per spoken sentence,
+# so folding it into _chat_version would wake the phone and the watch - and
+# invalidate their transcript - on every partial recognition result the glasses
+# produce. Folding it into _version would do the same to every board query on
+# every paired device.
+#
+# Three cursors, three streams: a client holds ONE hanging request and is woken
+# by exactly the stream it reads. The lens waits on chat+glass (wait_glass); the
+# phone and the watch never subscribe to this one and are untouched by it.
+_glass_version = 0
 _version_cond = threading.Condition()
 
 def conn():
@@ -63,6 +78,44 @@ def bump_chat():
     with _version_cond:
         _chat_version += 1
         _version_cond.notify_all()
+
+def bump_glass():
+    """The glasses voice turn moved. ONE caller by construction:
+    spine/ops/glassturn.py's _set(), which is the single owner of that state -
+    so this cursor is folded at EVENT TIME at exactly one owner, never
+    reconstructed and never inferred (CLAUDE.md's no-monkey-patches law, same
+    shape as bump_chat above)."""
+    global _glass_version
+    with _version_cond:
+        _glass_version += 1
+        _version_cond.notify_all()
+
+
+def wait_glass(chat_last, glass_last, timeout=20):
+    """Block until EITHER the chat transcript or the glasses turn moves.
+
+    The lens's half of wait_any: it reads the same Henry transcript the phone
+    does (so it must wake on `c`) AND the live turn state only it renders (so it
+    must wake on `g`). One hanging request, two cursors, same condition - see
+    wait_any for why that beats a second long-poll.
+
+    Returns the CURRENT pair, never a delta; a spurious or timed-out wake costs
+    one round trip and cannot lose an event, exactly as wait_any documents.
+
+    The timeout is SHORTER than wait_any's 22s on purpose: this request is
+    proxied by the Cloudflare Worker in front of the daemon, and a reply that
+    arrives comfortably inside the edge's patience is worth more here than the
+    two seconds of idle saved."""
+    with _version_cond:
+        if _chat_version > chat_last or _glass_version > glass_last:
+            return _chat_version, _glass_version
+        _version_cond.wait(timeout)
+        return _chat_version, _glass_version
+
+
+def current_glass_version():
+    return _glass_version
+
 
 def wait_version(last, timeout=25):
     """Block until the data version passes `last` (or timeout). SSE fuel."""

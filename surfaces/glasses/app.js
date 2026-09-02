@@ -137,8 +137,8 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { refreshIfStale(10000); startPoll(); }
-    else stopPoll();
+    if (!document.hidden) { refreshIfStale(10000); startPoll(); startChatStream(); }
+    else { stopPoll(); stopChatStream(); }
   });
 
   function ageText() {
@@ -450,6 +450,248 @@
     }
   }
 
+  // ---- THE CONVERSATION STREAM ---------------------------------------------
+  // The lens's half of the glasses voice loop, and the reason this file changed.
+  //
+  // WHAT WAS BROKEN. The voice loop already worked and already went to Henry:
+  // the phone's GlassVoiceService opens the glasses mic, hands the recognised
+  // words to POST /glance/talk (the same copilot session the phone and the watch
+  // use) and plays the answer back. But the LENS was not on that path at any
+  // point. Nothing on the display said a microphone was open - the only status
+  // surface was the service's Android notification, which is in the owner's
+  // pocket - and the words about to be sent in his name were never shown, so he
+  // could not catch a misheard sentence before it became a message.
+  //
+  // WHAT THIS IS NOT. Not a second channel. The daemon publishes the state of
+  // the ONE conversation (routes_glance.glance_chat + spine/ops/glassturn.py)
+  // and this reads it. Nothing here holds a lens-local transcript, so the
+  // glasses cannot drift from what the phone and the watch see.
+  //
+  // A HANGING GET, NOT A POLL. /glance/chat blocks until the transcript or the
+  // turn state actually moves (~20s otherwise). That is the same shape the watch
+  // was moved to on 2026-08-30, and it is what lets a listening indicator feel
+  // live without violating the factory rule this file's own header cites: never
+  // ship a fast poll. An idle lens holds ONE request and transmits nothing.
+  var chatMsgs = [];
+  var turn = { state: 'idle', text: '', mic: '', seq: 0, age: null };
+  // null = "I have nothing yet", which is NOT the same as 0 and is sent as an
+  // OMITTED parameter. On a freshly started daemon both server counters are
+  // genuinely zero, so claiming c=0 would mean "I am up to date" and the request
+  // would correctly block for its full 20s - leaving a first-time lens on an
+  // empty conversation with no explanation. Omitting them says the true thing
+  // and is answered at once.
+  var chatCursor = null, glassCursor = null;
+  var chatOn = false, chatCtl = null, chatBackoff = 3000;
+  var lastTurnSeq = -1;
+  var lastOptions = [];      // the tappable half of Henry's most recent reply
+
+  function chatStreamUrl() {
+    if (!connected()) return null;
+    var q = (chatCursor === null || glassCursor === null)
+      ? '' : ('c=' + chatCursor + '&g=' + glassCursor);
+    if (sameOrigin()) {                             // token rides in the header
+      return q ? ('/glance/chat?' + q) : '/glance/chat';
+    }
+    return apiBase() + '/glance/chat?' + (q ? q + '&' : '')
+      + 'token=' + encodeURIComponent(cfg.token);
+  }
+
+  function startChatStream() {
+    if (chatOn) return;
+    chatOn = true; chatBackoff = 3000;
+    chatLoop();
+  }
+  function stopChatStream() {
+    chatOn = false;
+    // Abort where we can, so the held request dies with the screen rather than
+    // lingering for the rest of its 20s window. AbortController is not something
+    // this webview's support was ever measured for (the reference doc is blunt
+    // that undocumented means unknown here, not available), so its absence is a
+    // caught non-event: chatOn=false already stops the loop re-arming, and the
+    // late reply is discarded by the guard in chatLoop.
+    try { if (chatCtl) chatCtl.abort(); } catch (e) { /* not supported - fine */ }
+    chatCtl = null;
+  }
+
+  function chatLoop() {
+    if (!chatOn) return;
+    var url = chatStreamUrl();
+    if (!url) { chatOn = false; return; }
+    var ctl = null;
+    try { ctl = new AbortController(); } catch (e) { ctl = null; }
+    chatCtl = ctl;
+    var opts = { cache: 'no-store', headers: glanceHeaders() };
+    if (ctl) opts.signal = ctl.signal;
+    fetch(url, opts)
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (j) {
+        if (!chatOn) return;             // hidden while in flight - drop it
+        chatBackoff = 3000;
+        applyChat(j);
+        chatLoop();                      // re-arm immediately
+      })
+      .catch(function () {
+        if (!chatOn) return;
+        // Capped exponential backoff, and the CURSORS ARE NOT RESET: whatever
+        // moved while we were away is reported on the next success, so the
+        // reconnect IS the catch-up path and no timer is needed to find it.
+        setTimeout(chatLoop, chatBackoff);
+        chatBackoff = Math.min(chatBackoff * 2, 30000);
+      });
+  }
+
+  function applyChat(j) {
+    chatCursor = typeof j.c === 'number' ? j.c : chatCursor;
+    glassCursor = typeof j.g === 'number' ? j.g : glassCursor;
+    if (j.messages) chatMsgs = j.messages;
+    if (j.turn) {
+      turn = j.turn;
+      // THE OPTIONS COME FROM THE TURN, so a turn the LENS did not start still
+      // gets them. On a spoken turn the POST to /glance/talk is made by
+      // GlassVoiceService on the phone and this app never sees that response -
+      // deriving options from it alone left every voice turn with nothing to
+      // tap, on the one surface that has no keyboard. Found by driving the real
+      // thing, not by reading it.
+      //
+      // renderTalk still sets these on the local D-pad path so a tap feels
+      // instant even if the stream is mid-backoff. The two cannot disagree:
+      // both are the same _glance_question(q) object computed once per turn on
+      // the daemon.
+      // The options belong to the answer that produced them, so any other state
+      // clears them: leaving the previous turn's choices tappable while a new
+      // sentence is being spoken is how the owner answers a question that is no
+      // longer on the table. (A stale snapshot arriving mid-turn cannot show
+      // through - renderOptions draws nothing while talkBusy.)
+      var qs = (turn.question && turn.question.questions) || [];
+      lastOptions = qs.length ? (qs[0].options || []) : [];
+    }
+    renderTurnbar();
+    if (screenStack[screenStack.length - 1] === 'talk') renderChat();
+    maybeOpenTalk();
+  }
+
+  // BRING THE SCREEN TO THE CONVERSATION. The owner speaks without touching the
+  // lens, so if the display stayed on the home screen the listening indicator
+  // would be on a screen nobody navigated to - which is the defect this card was
+  // written about, merely moved one level down.
+  //
+  // Only on a state the owner is part of (a mic opened, his words landed, Henry
+  // is working) and only when the seq actually moved, so a re-render never
+  // steals the screen. `decide` and `settings` are never interrupted: both are
+  // active input flows the owner started deliberately, and the existing banner
+  // code already refuses to talk over `decide` for the same reason.
+  var TALK_STATES = { listening: 1, heard: 1, thinking: 1 };
+  function maybeOpenTalk() {
+    if (turn.seq === lastTurnSeq) return;
+    lastTurnSeq = turn.seq;
+    if (!TALK_STATES[turn.state]) return;
+    var here = screenStack[screenStack.length - 1];
+    if (here === 'talk' || here === 'decide' || here === 'settings') return;
+    showScreen('talk');                  // renders the conversation on arrival
+  }
+
+  var TURN_LABEL = {
+    idle: 'Ready',
+    listening: 'Listening',
+    heard: 'Heard you',
+    thinking: 'Henry is thinking',
+    answered: 'Answered',
+    failed: 'No answer - ask again'
+  };
+  // A transient state this old is not credible any more - the mic owner is a
+  // separate process on a separate device and can die without ever reporting
+  // that it stopped. We do NOT invent the transition it failed to send (that
+  // would be exactly the assumed state the repo forbids); we show the age and
+  // let the owner see for himself that nothing has moved in a while.
+  var TURN_STALE_S = 90;
+
+  function renderTurnbar() {
+    var bar = document.getElementById('turnbar');
+    if (!bar) return;
+    var st = turn.state || 'idle';
+    bar.className = 'turnbar ' + st;
+    var label = TURN_LABEL[st] || st;
+    if (TALK_STATES[st] && typeof turn.age === 'number' && turn.age > TURN_STALE_S) {
+      label += ' (' + Math.round(turn.age / 60) + ' min)';
+    }
+    setText('turn-label', label);
+    // WHICH microphone. Only while one is actually open: naming a mic next to
+    // "Answered" would suggest something is still listening when nothing is.
+    var mic = document.getElementById('turn-mic');
+    if (!mic) {
+      mic = document.createElement('span');
+      mic.id = 'turn-mic'; mic.className = 'turn-mic';
+      bar.appendChild(mic);
+    }
+    mic.textContent = (st === 'listening' && turn.mic) ? (turn.mic + ' mic') : '';
+  }
+
+  // The pending line: what he said, before the transcript carries it.
+  //
+  // copilot only writes the log at TURN END, so between `heard` and `answered`
+  // the owner's own sentence exists nowhere but in the turn state - and that gap
+  // is precisely the moment he needs to read it, while it is still being acted
+  // on in his name. The dedupe matters for a real race: the hanging GET can wake
+  // on the CHAT cursor the instant the log is written, while the turn state has
+  // not yet moved off `thinking`, and without this the same sentence would be on
+  // screen twice.
+  function pendingText() {
+    if (!turn.text) return '';
+    if (turn.state !== 'listening' && turn.state !== 'heard' && turn.state !== 'thinking') return '';
+    for (var i = chatMsgs.length - 1; i >= 0; i--) {
+      if (chatMsgs[i].mine) return chatMsgs[i].text === turn.text ? '' : turn.text;
+    }
+    return turn.text;
+  }
+
+  function renderChat() {
+    var box = document.getElementById('talk-chat');
+    if (!box) return;
+    var html = '';
+    chatMsgs.forEach(function (m) {
+      html += '<div class="msg' + (m.mine ? ' mine' : '') + '">'
+        + (m.label ? '<div class="msg-label">' + esc(m.label) + '</div>'
+                   : '<div class="msg-who">' + (m.mine ? 'You' : 'Henry') + '</div>')
+        + '<div class="msg-body">' + esc(m.text) + '</div></div>';
+    });
+    var pend = pendingText();
+    if (pend) {
+      html += '<div class="msg mine pending"><div class="msg-who">You</div>'
+        + '<div class="msg-body">' + esc(pend) + '</div></div>';
+    }
+    if (!html) {
+      html = '<div class="empty">Say something, or tap Ask.</div>';
+    }
+    box.innerHTML = html;
+    renderOptions();
+    // follow the conversation - the newest line is the one he is reading
+    var sc = document.getElementById('talk-scroll');
+    if (sc) sc.scrollTop = sc.scrollHeight;
+  }
+
+  function renderOptions() {
+    var list = document.getElementById('talk-options');
+    if (!list) return;
+    list.innerHTML = '';
+    // Nothing to offer while a turn is in flight: the options belong to the
+    // PREVIOUS answer, and leaving them tappable invites a second question on
+    // top of the one being answered.
+    if (turn.state === 'thinking' || turn.state === 'heard' || talkBusy) return;
+    if (!lastOptions.length) return;
+    lastOptions.forEach(function (o) {
+      var el = document.createElement('button');
+      el.className = 'list-item focusable';
+      el.setAttribute('data-action', 'talk-pick');
+      el.setAttribute('data-label', o.label);
+      el.innerHTML = '<div class="li-task">' + esc(o.label) + '</div>'
+        + (o.description ? '<div class="li-sub">' + esc(o.description) + '</div>' : '');
+      list.appendChild(el);
+    });
+  }
+
   function talkStart() {
     audioUnlock();                       // MUST be inside the gesture
     talk('Where do things stand, and what should I do next?');
@@ -459,10 +701,16 @@
     if (talkBusy) return;
     if (!connected()) { toast('Not connected'); return; }
     talkBusy = true;
-    setText('talk-reply', 'Thinking…');
-    setHTML('talk-options', '');
     setText('talk-meta', '');
-    showScreen('talk');
+    // OPTIMISTIC, and immediately corrected. The daemon sets `heard` the moment
+    // this request lands, so the stream confirms it within a beat - but a D-pad
+    // tap must feel answered NOW, and on a 600x600 lens the alternative is a
+    // screen that looks frozen for the length of a round trip.
+    turn = { state: 'heard', text: message, mic: turn.mic, seq: turn.seq, age: 0 };
+    lastOptions = [];
+    lastTurnSeq = turn.seq;              // this one is ours - do not re-open on it
+    if (screenStack[screenStack.length - 1] !== 'talk') showScreen('talk');
+    else { renderTurnbar(); renderChat(); }
     fetch(apiBase() + '/glance/talk', {
       method: 'POST',
       headers: glanceHeaders({ 'Content-Type': 'application/json' }),
@@ -477,9 +725,13 @@
       renderTalk(j);
     }).catch(function (e) {
       talkBusy = false;
-      setText('talk-reply', String(e.message || e));
-      setHTML('talk-options', '');
+      turn = { state: 'failed', text: '', mic: turn.mic, seq: turn.seq, age: 0 };
+      renderTurnbar();
+      setText('talk-meta', String(e.message || e));
+      document.getElementById('talk-meta').className = 'header-meta warn';
       // a failed turn must still leave a way forward, or the lens is a wall
+      lastOptions = [];
+      renderChat();
       var list = document.getElementById('talk-options');
       var b = document.createElement('button');
       b.className = 'list-item focusable';
@@ -491,7 +743,6 @@
   }
 
   function renderTalk(j) {
-    setText('talk-reply', j.reply || '(no reply)');
     speak(j.voice);                      // the answer, out loud
     // The agent is told this surface is advisory. If it tried to change the
     // board anyway, SAY so - the owner must never believe a change landed.
@@ -499,30 +750,28 @@
     setText('talk-meta', refused ? 'not run: ' + refused.join(', ') : '');
     document.getElementById('talk-meta').className =
       'header-meta' + (refused ? ' warn' : '');
-    var list = document.getElementById('talk-options');
-    list.innerHTML = '';
     var qs = (j.question && j.question.questions) || [];
-    var opts = qs.length ? (qs[0].options || []) : [];
-    if (!opts.length) {
+    lastOptions = qs.length ? (qs[0].options || []) : [];
+    // The REPLY itself is not painted from here. It arrives through the stream
+    // as part of the one transcript, which is what keeps this surface from
+    // holding its own private copy of the conversation - the drift the shared
+    // copilot.history() read exists to prevent. The turn state moves to
+    // `answered` on the same event.
+    turn = { state: 'answered', text: '', mic: turn.mic, seq: turn.seq, age: 0,
+             question: j.question || null };
+    lastTurnSeq = turn.seq;
+    renderTurnbar();
+    renderChat();
+    if (!lastOptions.length) {
       // the agent ignored its brief - do not strand the owner
+      var list = document.getElementById('talk-options');
       var b = document.createElement('button');
       b.className = 'list-item focusable';
       b.setAttribute('data-action', 'talk-retry');
       b.innerHTML = '<div class="li-task">Ask again</div>'
         + '<div class="li-sub">no options came back</div>';
       list.appendChild(b);
-      focusFirst();
-      return;
     }
-    opts.forEach(function (o) {
-      var el = document.createElement('button');
-      el.className = 'list-item focusable';
-      el.setAttribute('data-action', 'talk-pick');
-      el.setAttribute('data-label', o.label);
-      el.innerHTML = '<div class="li-task">' + esc(o.label) + '</div>'
-        + (o.description ? '<div class="li-sub">' + esc(o.description) + '</div>' : '');
-      list.appendChild(el);
-    });
     focusFirst();
   }
 
@@ -533,6 +782,12 @@
     var el = document.getElementById(id);
     if (el) el.classList.remove('hidden');
     if (!isBack) { if (screenStack[screenStack.length - 1] !== id) screenStack.push(id); }
+    // The conversation is LIVE, so arriving at it - forwards or by going back -
+    // must paint what is true now, not whatever was last drawn. Doing it here
+    // rather than at each call site is what stops one navigation path (Escape
+    // out of a card, say) from landing on a stale screen while the others are
+    // fine, which is the kind of gap that only shows up on the device.
+    if (id === 'talk') { renderTurnbar(); renderChat(); }
     focusFirst();
   }
   function goBack() {
@@ -609,6 +864,10 @@
     toast('Saved');
     screenStack = ['home']; showScreen('home', true);
     refresh();
+    // First run reaches the board through THIS path, never through boot - so
+    // without starting it here the conversation stream would stay dead until the
+    // lens was hidden and shown again, and the listening indicator with it.
+    if (!document.hidden) startChatStream();
   }
 
   // ---- helpers --------------------------------------------------------------
@@ -661,5 +920,13 @@
   adoptUrlToken();
   updateVoiceToggleLabel();
   if (!connected()) { fillSettings(); showScreen('settings', true); }
-  else { showScreen('home', true); refresh(); if (!document.hidden) startPoll(); }
+  else {
+    showScreen('home', true); refresh();
+    // The conversation stream runs from ANY screen, not just the talk one: the
+    // owner speaks without touching the lens, so the display has to be able to
+    // notice a mic opening while he is looking at the board. It is one hanging
+    // request that transmits nothing until something moves - strictly less
+    // traffic than the 60s board poll beside it.
+    if (!document.hidden) { startPoll(); startChatStream(); }
+  }
 })();

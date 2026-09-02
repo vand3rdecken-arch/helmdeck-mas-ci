@@ -102,8 +102,120 @@ html, body {
 .decide-q { font-size: 19px; font-weight: 650; line-height: 1.35;
   color: #F2F3F5; margin-bottom: 14px; }
 
-/* the board agent's prose. Body size, not caption: it is read at a glance on an
-   additive waveguide, where 12px grey disappears. */
+/* ---- THE CONVERSATION -----------------------------------------------------
+   The Wear OS watch's chat shape (HenryScreen.kt), brought to the lens: one
+   bubble per message, the speaker named above it, the owner's own words on the
+   right. The watch earned two of these decisions the hard way and they are
+   copied rather than re-derived:
+     - text is START-aligned inside the bubble. Centring is right for a one-line
+       status and wrong for prose: a centred paragraph has a ragged left edge and
+       the eye loses the line it was on.
+     - the speaker's NAME carries the turn boundary as well as the colour, so
+       colour is never the only thing saying who spoke (the display guidelines
+       forbid colour as a sole indicator, and here it is also a legibility
+       matter - an additive display washes out hue long before it loses text). */
+.chat { display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 88%; }
+.msg.mine { align-self: flex-end; }
+.msg-who {
+  font-size: 11px; font-weight: 700; color: #B0B3B8;
+  letter-spacing: .04em; text-transform: uppercase; margin-bottom: 3px;
+}
+.msg.mine .msg-who { text-align: right; }
+.msg-body {
+  background: #1C1E21; border: 1px solid #3A3B3C; border-radius: 14px;
+  padding: 10px 13px; font-size: 16px; line-height: 1.4; color: #F2F3F5;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* The owner's own line reads as HIS. A brighter border rather than a fill,
+   because on an additive display a "tinted background" is just a dimmer one -
+   the pixels that reach the eye are the bright ones, so the edge is what
+   carries the distinction. */
+.msg.mine .msg-body { border-color: #2A6DF4; background: #16202F; }
+
+/* THE PENDING LINE - what he just said, on screen before Henry has answered.
+   This is the half the card was written about: until now the spoken words went
+   from the phone's recogniser straight to the daemon and the display never
+   showed them, so the owner had no way to check that he had been heard
+   correctly before it was sent in his name. Dashed edge = not yet part of the
+   record; it becomes an ordinary .msg the moment the transcript carries it. */
+.msg.pending .msg-body { border-style: dashed; border-color: #2A6DF4; }
+
+/* a MIRRORED card event ("Question - card name") - the same one-inbox lines the
+   watch shows. Context here, never tappable: answering a card has exactly one
+   path on this surface (the decide screen), and a second one would be drift. */
+.msg-label { font-size: 11px; font-weight: 700; color: #FFB020;
+  letter-spacing: .03em; margin-bottom: 3px; }
+
+/* ---- THE LIVE TURN STATE --------------------------------------------------
+   Pinned below the scroll area so it can never scroll away: on this surface the
+   state IS the feature, and a status the owner has to hunt for is the same as no
+   status at all - which is exactly where this screen started.
+
+   NO DARK FILL. The waveguide makes black transparent, so a "status bar" drawn
+   as a dark strip is an invisible strip. The bar is carried by a bright hairline
+   above it and bright text inside it, both of which actually reach the eye. */
+.turnbar {
+  flex-shrink: 0; height: 56px; display: flex; align-items: center; gap: 12px;
+  padding: 0 6px; border-top: 1px solid #3A3B3C; margin-top: 6px;
+}
+.turn-label { font-size: 17px; font-weight: 700; color: #E4E6EB; }
+.turn-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  background: #B0B3B8;
+}
+/* LISTENING is the one state that must be unmistakable across a room, so it is
+   the only one that moves. The pulse is a CSS keyframe animation, never a JS
+   timer: the platform performance guidance asks for exactly that ("avoid
+   continuous setInterval/requestAnimationFrame loops... prefer CSS
+   transitions"), and it stops on its own the moment the class is removed. */
+.turnbar.listening .turn-dot { background: #31C46B; animation: pulse 1.25s ease-in-out infinite; }
+.turnbar.listening .turn-label { color: #FFFFFF; }
+.turnbar.heard .turn-dot,
+.turnbar.thinking .turn-dot { background: #2A6DF4; animation: pulse 1.9s ease-in-out infinite; }
+.turnbar.answered .turn-dot { background: #31C46B; }
+.turnbar.failed .turn-dot { background: #FF5A5F; }
+.turnbar.failed .turn-label { color: #FF5A5F; }
+/* WHICH mic is open. A real distinction, not decoration: the glasses mic runs
+   over Bluetooth HFP and collapses all glasses audio to 8 kHz while it is live,
+   so "glasses" and "phone" are two different experiences and the owner should be
+   able to see which one he is in. */
+/* NOT 12px #B0B3B8. That is the exact weight this repo's trap register records
+   as disappearing on the waveguide, and the first screenshot pass of this
+   screen shows it going thin next to the label beside it. Same correction
+   .detail-why already carries, for the same reason and to the same values. */
+.turn-mic { margin-left: auto; font-size: 14px; color: #CFD2D6; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: .45; transform: scale(1.45); }
+}
+
+/* SCRIM on the scrolling conversation. The display guidelines require one on any
+   scrolling container, and this is the app's first container that genuinely
+   grows without bound. A top-only gradient: the bottom edge is already terminated
+   by the turnbar's hairline, and a second scrim there would fade the state text
+   this screen exists to show. */
+.scrollable { position: relative; }
+#talk-scroll {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 32px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 32px);
+  /* BOTTOM-ANCHORED, like every chat surface and like the watch's auto-scroll
+     to the newest row. The first screenshot pass showed why it matters here
+     specifically: a two-line conversation clung to the top of a 600px lens and
+     left a ~350px hole directly above the state bar, so the two things the eye
+     needs together - the newest words and whether anything is listening - were
+     as far apart as the screen allows. `margin-top:auto` on the first child
+     pushes a SHORT conversation down and collapses harmlessly once it is long
+     enough to scroll (unlike justify-content:flex-end, which clips the top of
+     an overflowing flex column). */
+  display: flex; flex-direction: column;
+}
+#talk-chat { margin-top: auto; }
+
+/* the board agent's prose, kept for any surface still rendering a single reply.
+   Body size, not caption: it is read at a glance on an additive waveguide,
+   where 12px grey disappears. */
 .talk-reply { font-size: 18px; line-height: 1.4; color: #F2F3F5; margin-bottom: 14px; }
 /* "the agent tried to change the board and I blocked it" is a HONESTY signal,
    not a caption - the one thing that must not quietly vanish. The default
@@ -168,4 +280,11 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .focusable:focus, .list-item, .nav-item { transition: none; transform: none; }
+  /* The pulse stops, the STATE does not. Killing the animation must never cost
+     the listening indicator itself - so the dot keeps its colour and the word
+     next to it keeps saying "Listening". That word is why the label exists:
+     with motion and colour both removed, text is the whole signal. */
+  .turnbar.listening .turn-dot,
+  .turnbar.heard .turn-dot,
+  .turnbar.thinking .turn-dot { animation: none; }
 }

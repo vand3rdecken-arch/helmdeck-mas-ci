@@ -3895,6 +3895,58 @@ DEBT = [
                "board LAYER's knob', not 'this write is board-local'.",
         "order": 54,
     },
+    {
+        "id": "glass-listening-report-uncompiled",
+        "title": "The lens's LISTENING indicator depends on a GlassVoiceService "
+                 "edit that has never been compiled",
+        "status": "open",
+        "what": "The glasses conversation surface itself is verified: GET "
+                "/glance/chat, POST /glance/state and spine/ops/glassturn.py are "
+                "covered by ops/tests/test_glance_conversation.py, and the "
+                "rebuilt talk screen in surfaces/glasses/ by a real 600x600 "
+                "Playwright drive against a real daemon "
+                "(ops/tests/e2e_glance_conversation.py), screenshots judged. "
+                "WHAT IS NOT COMPILED is the reporter feeding one of its five "
+                "states: app/plugins/glassvoice/GlassVoiceService.kt gained a "
+                "report() helper plus five call sites (mic opened; conversation "
+                "ended on silence; ACTION_STOP; and the two early returns where "
+                "no mic opens). An APK cannot be built from a card worktree "
+                "(DEPLOY.md 2, NDK path length) - the same constraint that "
+                "produced glasses-native-uncompiled.",
+        "why_it_bites": "It DEGRADES rather than breaks, and that was a design "
+                        "constraint rather than luck. `listening` is the only "
+                        "one of the five turn states that comes from the device; "
+                        "heard/thinking/answered/failed are all set by the daemon "
+                        "from its own handling of /glance/talk. So on an APK "
+                        "predating this edit the lens still shows the transcript, "
+                        "the thinking state, the answer and the options - it "
+                        "simply never lights the mic indicator, and it NEVER "
+                        "claims a mic is open when none is. The failure mode is a "
+                        "missing signal, never a false one. Genuinely unproven: "
+                        "whether report() compiles (it uses only "
+                        "HttpURLConnection, JSONObject, Thread and the existing "
+                        "safe{}/prefs members - all already imported and used by "
+                        "ask() a few lines above, but unproven is unproven), and "
+                        "whether the fire-and-forget thread is really invisible "
+                        "to the recogniser on real hardware.",
+        "trigger": "ACCEPTING THIS CARD. ops/deploy/ship.sh fingerprints "
+                   "app.json's expo block and this card does not touch it, so the "
+                   "accept takes the OTA branch and this Kotlin is NOT built: the "
+                   "daemon and lens halves ship and work, and the mic indicator "
+                   "stays dark until the next APK rebuild for any reason. That is "
+                   "a safe outcome - it is only misleading if someone reads 'the "
+                   "listening indicator shipped' without this note.",
+        "fix": "Build the APK from a short real path (C:\\hd\\app, per DEPLOY.md "
+               "2), fix whatever kotlinc says, then verify on real glasses that "
+               "the indicator lights within a beat of the mic opening and clears "
+               "on ACTION_STOP. The one thing no build can settle is whether "
+               "micWire() reports 'glasses' only when the SCO route was genuinely "
+               "obtained - it reads micInUse, which GlassVoiceService already "
+               "derives from routeToGlasses()'s own return value rather than from "
+               "the request, so the plumbing is right by construction and only "
+               "the observation is missing.",
+        "order": 55,
+    },
 ]
 
 def list_debt():
