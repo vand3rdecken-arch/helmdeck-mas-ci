@@ -39,6 +39,20 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 . "$(dirname "$0")/build_lock.sh"
 android_build_lock "build_wear_apk.sh :wear:assembleDebug (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
 
+# RE-COPY THE SOURCES FIRST (2026-09-02). This script used to go straight to
+# gradlew, on the assumption that build_apk.sh had just regenerated android/.
+# Editing plugins/wear/*.kt and running THIS script therefore built the stale
+# generated copy and reported "BUILD SUCCESSFUL ... 68 up-to-date" - green, and
+# the change simply not in the APK. Measured, not reasoned: the encoding fix in
+# BoardScreen.kt was installed onto the owner's watch that way and was still the
+# old string on the wrist. Same silent-wrong-artifact class the ERROR at the
+# bottom of withWearApp.js already guards, so it is guarded here the same way.
+# The copy is idempotent ("already current" when nothing changed), so this costs
+# nothing on the common path and makes an edit impossible to lose.
+echo "[build_wear_apk] syncing plugins/wear -> android/wear before the build"
+node surfaces/app/plugins/withWearApp.js surfaces/app/android \
+  || { echo "[build_wear_apk] withWearApp sync FAILED - refusing to build a stale :wear"; exit 1; }
+
 echo "[build_wear_apk] gradle :wear:assembleDebug (debug-signed - adb install needs no release key)"
 ( cd surfaces/app/android && ./gradlew :wear:assembleDebug -x lint --console=plain ) \
   || { echo "[build_wear_apk] WEAR APK BUILD FAILED"; exit 1; }

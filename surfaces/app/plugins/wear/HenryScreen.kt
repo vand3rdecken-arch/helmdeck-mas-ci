@@ -123,9 +123,9 @@ private val KIND_LABEL = mapOf(
  * does, which is also the honest signal that Henry has no memory of it either.
  *
  * VOICE IS SERVER-RENDERED, never device TTS - the standing owner decision in
- * ops/docs/glasses-reference.md Â§4, reaffirmed by
+ * ops/docs/glasses-reference.md §4, reaffirmed by
  * ops/docs/voice-interaction-design.md, which allows device TTS only as an
- * unapproved offline fallback (Â§8.4). The button below plays what the server
+ * unapproved offline fallback (§8.4). The button below plays what the server
  * already sent; it never synthesises anything locally.
  */
 @Composable
