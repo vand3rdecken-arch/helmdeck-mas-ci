@@ -32,17 +32,17 @@ import kotlinx.coroutines.withContext
  * GET /wear/board (routes_wear.py) - reuses glance_payload() UNCHANGED, the
  * same small curated "what needs you" read the glasses already get. Purely
  * a list: tapping a card hands its id/task/question over to CardScreen,
- * which is where the owner decree (README.md Â§4.7 - Henry, never the
+ * which is where the owner decree (README.md §4.7 - Henry, never the
  * worker) actually applies. This screen makes no decisions.
  *
  * Deliberately built with only `item { }` calls, NOT the `items(count) { }`
  * bulk form - the latter was never confirmed to exist on
  * TransformingLazyColumnScope this session (only singular `item` was, in
- * Â§4.5's own fetch), and a for-loop of `item { }` needs no such assumption.
+ * §4.5's own fetch), and a for-loop of `item { }` needs no such assumption.
  */
 @Composable
 fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: () -> Unit) {
-    var status by remember { mutableStateOf("Ladeâ€¦") }
+    var status by remember { mutableStateOf("Lade…") }
     var cards by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
     var yours by remember { mutableStateOf<List<BoardCard>>(emptyList()) }
     var working by remember { mutableStateOf(BoardSection(emptyList(), 0)) }
@@ -56,7 +56,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
             status = "Nicht gekoppelt"
             return
         }
-        status = "Ladeâ€¦"
+        status = "Lade…"
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
