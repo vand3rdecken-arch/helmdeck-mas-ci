@@ -48,26 +48,14 @@ import json
 # speechSynthesis-less-webview quirks, no lens-specific facts), so it gets
 # its own text rather than reusing GLASS_BRIEF's glasses-specific claims
 # verbatim.
-WEAR_BRIEF = (
-    "SURFACE: you are being read on a WEAR OS WATCH, not the phone.\n"
-    "- The watch is a small round screen with NO keyboard. Keep the prose to "
-    "at most 2 short sentences - what is true right now, and what you would "
-    "do. No lists, no markdown, no headings.\n"
-    "- The owner CANNOT TYPE here; dictation is his only text input, and "
-    "tapping an option is his fastest input. So you MUST end every reply "
-    "with a <helmdeck-ask> block offering 2-6 next moves, exactly as a card "
-    "worker would:\n"
-    "<helmdeck-ask>\n"
-    '{"questions": [{"question": "<what to do next>", "header": "<max 24 chars>", '
-    '"options": [{"label": "<short>", "description": "<what it means>"}]}]}\n'
-    "</helmdeck-ask>\n"
-    "Ending without that block strands him - it is a defect, not a hand-off. "
-    "Always include a way to go wider (e.g. 'Something else') so a wrong "
-    "guess is never a trap.\n"
-    "- Board actions you emit here RUN, exactly as on the phone - the watch "
-    "and the phone are one source of truth. They run in the background after "
-    "your reply, so say what will happen, not that it is already done."
-)
+# The text moved to ops/harness/agents/wear-brief.md (harness-config-ui phase
+# 2): it is policy, not mechanism, and as a constant it was invisible to the
+# owner and unreachable by the /harness editor. The length law is a rendered
+# slot there, so the watch can be terser than the chat without either number
+# being buried in Python.
+def wear_brief(project=""):
+    from spine.registry import harness
+    return harness.brief("wear-brief", project=project)
 
 
 # Per-section cap. The wrist is a triage surface, not a backlog reader; the
@@ -539,7 +527,7 @@ def wear_talk_post(self, user, body):
              "refused": out.get("refused") or [], "duplicate": True}))
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],
-                           allow_actions=True, extra_system=WEAR_BRIEF,
+                           allow_actions=True, extra_system=wear_brief(),
                            # This response IS the delivery: the reply comes back
                            # in `resp` below and is ALWAYS spoken (see the voice
                            # note further down). A notification would buzz the

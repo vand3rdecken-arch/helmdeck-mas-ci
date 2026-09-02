@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Animated as RNAnimated, Easing, Pressable, Text, View } from "react-native";
 import { useEffect, useMemo, useRef } from "react";
 
-import type { LoopMap, LoopNode, RepoView } from "@/data/client";
+import type { HenrySegment, LoopMap, LoopNode, RepoView } from "@/data/client";
 import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -79,6 +79,27 @@ export interface PipelineProps {
   selected?: string;
   /** Hide the "Ändern? Sag es Henry." footer where the host says it already. */
   hideHint?: boolean;
+  /** Draw the knob badge + the Henry track (harness-config-ui phase 4). Off by
+   *  default so the onboarding preview - which shows the route to someone who
+   *  has no repo yet and no knobs to count - keeps the plain row it wants. */
+  showKnobs?: boolean;
+}
+
+/** How many of a station's knobs the app can actually EDIT, or null when the
+ *  station is harness law.
+ *
+ *  Derived, never counted by hand: `settings` is the station's own declared key
+ *  list and `editable` is the set the daemon really renders a control for, so
+ *  the badge is their intersection. That is the same derivation loopmap's
+ *  KnobChip already trusts - a knob named by a station but absent from the
+ *  schema is exactly the case that once sent the owner to a screen which did
+ *  not contain the knob it promised (routes_info.py's comment). */
+function knobCount(node: LoopNode, editable?: string[]): number | null {
+  if (node.kind === "fixed") return null;
+  const named = node.settings ?? [];
+  if (!named.length) return 0;
+  if (!editable) return named.length;
+  return named.filter((p) => editable.includes(p)).length;
 }
 
 /** The stations, in the daemon's order, with lanes/gate/deploy merged. */
@@ -97,10 +118,19 @@ export function useStations(map?: LoopMap | null): LoopNode[] {
   }, [map]);
 }
 
-export function RepoPipeline({ map, onSelect, selected, hideHint }: PipelineProps) {
+export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs }: PipelineProps) {
   const t = useTheme();
   const tr = useT();
   const stations = useStations(map);
+  // The Henry band, indexed by station so the row below can line each segment
+  // up under its own dot. No station list is built here - this only re-keys
+  // what the daemon already aggregated.
+  const henry = useMemo(() => {
+    const by: Record<string, HenrySegment> = {};
+    for (const seg of map?.runtime?.henry ?? []) by[seg.station] = seg;
+    return by;
+  }, [map]);
+  const hasHenry = showKnobs && stations.some((s) => henry[s.key]);
   const repo: RepoView | null | undefined = map?.repo;
   // Everything the row could only hint at, collected for the list below it.
   const notes = stations
@@ -157,6 +187,26 @@ export function RepoPipeline({ map, onSelect, selected, hideHint }: PipelineProp
                     {tr("pipeline.off")}
                   </Text>
                 ) : null}
+                {/* THE KNOB BADGE (phase 4). A number when the station has
+                    knobs, a padlock when it is law - never a toggle, because
+                    exactly one station is switchable and four dummies would be
+                    found out the first time one was tapped (sessions.py:240).
+                    Suppressed on an off station: "3 Knöpfe" under a dashed dot
+                    would advertise settings that do not run here. */}
+                {showKnobs && !off ? (() => {
+                  const n = knobCount(s, map?.editable);
+                  if (n === null) {
+                    return (
+                      <Ionicons name="lock-closed" size={10} color={t.txtTertiary} />
+                    );
+                  }
+                  return n > 0 ? (
+                    <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 9.5,
+                      fontWeight: "700" }}>
+                      {tr("pipeline.knobs", { n })}
+                    </Text>
+                  ) : null;
+                })() : null}
               </Pressable>
               {i < stations.length - 1 ? (
                 <View style={{ width: 14, height: 2, marginTop: 14,
@@ -166,6 +216,51 @@ export function RepoPipeline({ map, onSelect, selected, hideHint }: PipelineProp
           );
         })}
       </View>
+
+      {/* THE HENRY TRACK (design doc 5.4.3): a band under the row spanning the
+          stations Henry acts at, with his verb per station. The segments arrive
+          FINISHED from the daemon (behavior.track(), aggregated from the rules'
+          `binds`), so adding a rule in the daemon lights a station here with no
+          edit to this file - the dummy-knob test of the pipeline PRD, carried
+          over to rules.
+
+          A band, not a second set of edges: `edges` stays deliberately unread
+          (see the header comment), and Henry's presence is not a route through
+          the graph, it is a property OF stations. */}
+      {hasHenry ? (
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 10, fontWeight: "700",
+            marginRight: 6 }}>
+            {tr("pipeline.henry")}
+          </Text>
+          {stations.map((s, i) => {
+            const seg = henry[s.key];
+            return (
+              <View key={s.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                <Pressable
+                  testID={"henrytrack-" + s.key}
+                  onPress={onSelect && seg ? () => onSelect(s.key) : undefined}
+                  disabled={!onSelect || !seg}
+                  style={{ flex: 1, paddingHorizontal: 2, alignItems: "center",
+                    // A continuous rule under the stations he touches; a gap
+                    // where he does not. The band IS the answer to "where does
+                    // Henry act", so an unbroken line across everything would
+                    // say the opposite of what it means.
+                    borderTopWidth: seg ? 2 : 0, borderTopColor: t.accent2,
+                    paddingTop: 3, minHeight: 16 }}>
+                  {seg ? (
+                    <Text numberOfLines={1} style={{ color: t.accent2, fontSize: 9.5,
+                      fontWeight: "600" }}>
+                      {tr(seg.labelKey)}
+                    </Text>
+                  ) : null}
+                </Pressable>
+                {i < stations.length - 1 ? <View style={{ width: 14 }} /> : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
 
       {/* THE HONEST PART, given room to be read.
           Every station that is off, or on-but-not-what-you-think, gets one full

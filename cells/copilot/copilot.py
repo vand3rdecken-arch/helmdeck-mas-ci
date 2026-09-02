@@ -21,31 +21,19 @@ from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip
 # "lead with the answer", but measured 2026-08-21: a voice question still got a
 # minute-long reply full of options and counter-questions - unlistenable. This
 # is a per-turn overlay, not a SYSTEM edit, so typed chat keeps its depth.
-VOICE_STYLE = (
-    "VOICE TURN - the owner is LISTENING, not reading, probably walking or "
-    "driving. This is a CONVERSATION, not a report. HARD RULES for this reply:\n"
-    "- Write EXACTLY what a person would SAY out loud: plain spoken sentences. "
-    "ZERO markdown - no **bold**, no *stars*, no bullets, no headings, no "
-    "backticks, no emoji. Every glyph you write will be read aloud literally.\n"
-    "- At most TWO short sentences (~8 seconds spoken). Answer first, one "
-    "detail if essential, stop. The owner interrupts long answers by hand - "
-    "every sentence you add is one he may have to cut off.\n"
-    "- NEVER speak lists, options, menus, card ids, branch names, file paths "
-    "or numbers with more than two digits. Summarize instead ('three cards "
-    "are waiting' - not which).\n"
-    "- Do not end with a question unless you are genuinely BLOCKED. No "
-    "'should I A or B' - pick the sensible default, act, say what you did.\n"
-    "- Talk like a colleague across the room, in the owner's language: "
-    "contractions, natural rhythm, no 'Status im Ueberblick', no preamble.\n"
-    "- SIMPLE words only - everyday vocabulary a tired listener catches on "
-    "the first pass. No jargon, no anglicisms in German ('bereitgestellt', "
-    "nicht 'deployed'), no nested sentences. One thought per sentence.\n"
-    "- ANSWER FROM WHAT YOU ALREADY HAVE (the board snapshot, the "
-    "conversation). Do NOT read files or run commands for a spoken question - "
-    "every tool call is silent seconds in the owner's ear. Use tools only "
-    "when the owner explicitly asked you to DO something this turn.\n"
-    "- Depth on request only: offer it in five words or less ('Details am "
-    "Bildschirm.'), never inline.")
+#
+# THE TEXT MOVED OUT OF THIS FILE (harness-config-ui phase 2). It is policy, not
+# mechanism - the same argument that took board-copilot.md out of here - and as
+# a Python constant it was one of the seven prose sources that make a Henry and
+# that the owner could neither see nor change. It now lives in
+# ops/harness/agents/voice-style.md with the length law as a rendered slot.
+def voice_style(project=""):
+    """The spoken-turn overlay, rendered for `project`. A function and not a
+    constant because the length rule now has a value: reading it at call time is
+    what lets an edit take effect on the next turn instead of on the next
+    daemon restart."""
+    from spine.registry import harness      # function-local, like every other
+    return harness.brief("voice-style", project=project)   # harness use here
 
 
 # -- persistent chat process (voice-speed, owner decree 2026-08-21) ----------
