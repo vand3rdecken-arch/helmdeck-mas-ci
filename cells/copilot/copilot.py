@@ -947,6 +947,28 @@ def _maybe_compact(user):
     # below what /compact actually reaches, and that must not become a loop.
     m["compacted_at_turn"] = int(st.get("turns") or 0)
     _save_stats(all_st)
+    # REFERENT RESCUE (owner incident 2026-09-02 14:33): compaction summarized
+    # away the immediate exchange - Henry had just asked "soll ich das im Code
+    # nachschauen?" (about the WATCH), the owner's "Ja" ran on the compacted
+    # summary, bound to the wrong antecedent, and dispatched an unrelated
+    # PM-plan card. The display log survives compaction verbatim - fold the
+    # last exchange into the next turn (told exactly once, the same
+    # _pending_actions seam the action results use).
+    try:
+        tail = [e for e in (_log().get(user) or []) if e.get("cls") in ("you", "bot")][-4:]
+        if tail:
+            recap = " | ".join("%s: %s" % ("OWNER" if e.get("cls") == "you" else "DU",
+                                           (e.get("text") or "")[:200].replace("\n", " "))
+                               for e in tail)
+            with _pending_lock:
+                _pending_actions.setdefault(_skey(user), []).append(
+                    "KONTEXT-HINWEIS: deine Session wurde soeben kompaktiert; das "
+                    "unmittelbare Gespraech kann im Summary fehlen. Letzter "
+                    "Wortwechsel WOERTLICH: " + recap + " || Wenn die naechste "
+                    "Owner-Nachricht kurz ist ('Ja', 'mach das'), bezieht sie "
+                    "sich HIERAUF - im Zweifel nachfragen statt raten.")
+    except Exception:
+        pass
     if after <= ctx * 0.75:                     # a real compaction frees a big chunk
         _autocompact_supported = True
         return ("AUTO-COMPACT (%s): Kontext war bei %d%% (~%dk) - %s, Verlauf "
