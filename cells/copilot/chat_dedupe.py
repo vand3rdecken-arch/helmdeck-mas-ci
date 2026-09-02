@@ -62,7 +62,23 @@ import time
 # 10 minutes": a replay was measured up to 176s out, and the layer that decides
 # to replay (relay 120s, urlopen 115s) can chain, so the window has to be an
 # order of magnitude above the observed gap, not a hair above it.
+#
+# The FLOOR, not the value (harness-config-ui phase 2): rule
+# report.dedupe_window declares this number as its default, so an installation
+# that cannot read the rule table behaves exactly as it does today.
 WINDOW = 600
+
+
+def _window():
+    """The live window. A function rather than a re-assigned constant because
+    this module is imported once and lives as long as the daemon - reading the
+    rule at call time is what makes the knob real instead of restart-only."""
+    try:
+        from spine.registry import behavior
+        v = behavior.value("report.dedupe_window", "all")
+        return int(v) if v else WINDOW
+    except Exception:                                        # noqa: BLE001
+        return WINDOW
 
 # Bounded wait a duplicate spends on the original turn before giving up and
 # telling the client "duplicate, no reply here - poll the history". Sits under
@@ -88,12 +104,13 @@ def content_key(user, text, card, attachments):
     return h.hexdigest()
 
 
-def _gc(now):
+def _gc(now, window=None):
     # Called under _lock. Drop settled entries past the window. An entry that is
     # still running is never dropped, however long it takes - forgetting it is
     # exactly how the second turn got started in the first place.
+    w = _window() if window is None else window
     keep = [e for e in _entries
-            if not e["done"].is_set() or now - e["settled"] <= WINDOW]
+            if not e["done"].is_set() or now - e["settled"] <= w]
     if len(keep) != len(_entries):
         _entries[:] = keep
 
@@ -106,8 +123,12 @@ def claim(user, text, card, attachments, mid=""):
     now = time.time()
     key = content_key(user, text, card, attachments)
     mid = (mid or "").strip()[:200]
+    # ONE read of the rule per claim, shared with the sweep below: two reads
+    # could straddle an edit and let an entry survive the GC that the lookup
+    # then treats as expired.
+    window = _window()
     with _lock:
-        _gc(now)
+        _gc(now, window)
         for e in reversed(_entries):
             if e["user"] != user:
                 continue
@@ -122,7 +143,7 @@ def claim(user, text, card, attachments, mid=""):
             # Same content, already answered. Only the id-less client falls
             # back to time here; a client that minted a fresh mid is telling us
             # this is a new send and is believed.
-            if not mid and now - e["settled"] <= WINDOW:
+            if not mid and now - e["settled"] <= window:
                 return e, e
         entry = {"user": user, "key": key, "mid": mid, "started": now,
                  "settled": 0.0, "done": threading.Event(), "result": None}

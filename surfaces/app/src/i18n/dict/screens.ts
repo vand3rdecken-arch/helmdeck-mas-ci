@@ -363,6 +363,22 @@ export const screens: Dict = {
     de: "Vom Standard der Vorlage „{template}“ abgewichen: {keys}. Bewusst so gesetzt — die Vorlage gibt nur den Startwert vor.",
     en: "Deviates from the “{template}” template default: {keys}. Set deliberately — the template only provides the starting value.",
   },
+  // The knob badge + the Henry track (harness-config-ui phase 4). The verbs are
+  // owner language on purpose - the same jargon ban Henry's own brief holds him
+  // to: "legt an", never "dispatched into the backlog lane".
+  "pipeline.knobs": { de: "{n} Knöpfe", en: "{n} settings" },
+  "pipeline.henry": { de: "Henry", en: "Henry" },
+  // SHORT ON PURPOSE. Five stations on a 430px phone leave ~80px each, and
+  // "entscheidet" measured 11 characters too wide there - it rendered as
+  // "entscheid…" in the first screenshot. A truncated verb is worse than a
+  // short one: it looks like a word and isn't. Same lesson, same row, as the
+  // off-reasons that had to move out from under these dots.
+  "harness.track.backlog": { de: "legt an", en: "files" },
+  "harness.track.working": { de: "steuert", en: "steers" },
+  "harness.track.gate": { de: "prüft", en: "checks" },
+  "harness.track.review": { de: "nimmt ab", en: "accepts" },
+  "harness.track.done": { de: "nimmt ab", en: "accepts" },
+  "harness.track.deploy": { de: "gibt frei", en: "releases" },
 
   // -- repo onboarding: one choice instead of twenty switches -----------------
   "repo.title": { de: "Repo einrichten", en: "Set up repo" },

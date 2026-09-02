@@ -384,6 +384,12 @@ export interface HarnessAgent {
   name: string; source: string; settings: string;
   setting_sources?: string; ask_protocol: boolean; chars: number;
 }
+/** One station Henry acts at. `rules` are the behaviour-rule keys that put him
+ *  there, so a tap can open exactly the rows responsible instead of guessing. */
+export interface HenrySegment {
+  station: string; labelKey: string; rules: string[]; count: number;
+}
+
 export interface LoopMap {
   runtime: {
     title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] };
@@ -396,6 +402,13 @@ export interface LoopMap {
      *  end). */
     stations?: string[];
     edges?: LoopEdge[];
+    /** THE HENRY TRACK (harness-config-ui phase 4): the band under the station
+     *  row saying where Henry acts and what he does there. Aggregated by the
+     *  daemon from the behaviour rules' `binds`, so a rule ADDED IN THE DAEMON
+     *  lights its station up with no client change - the client keeps no rule
+     *  list, exactly as it keeps no station list. Absent on an older daemon,
+     *  which simply draws no band. */
+    henry?: HenrySegment[];
   };
   /** Present only when ?repo= was passed: how that one repo runs. */
   repo?: RepoView | null;
@@ -450,8 +463,14 @@ export interface MyConfigResult {
 // command and where every piece of it came from.
 // ---------------------------------------------------------------------------
 export interface HarnessSurface {
-  key: "card" | "machine" | "pm"; agent: string; label: string;
-  /** the ONE daemon function that assembles this surface's argv */
+  /** Three SPAWNED surfaces and four OVERLAYS (harness-config-ui phase 2). An
+   *  overlay rides on an existing turn instead of starting a process, so its
+   *  `builder` is empty; it is in this list because the behaviour rules key on
+   *  surface, and a rule naming a surface the app did not know would render
+   *  nowhere. voice/wear/glass/ship were Python string constants before. */
+  key: "card" | "machine" | "pm" | "voice" | "wear" | "glass" | "ship";
+  agent: string; label: string;
+  /** the ONE daemon function that assembles this surface's argv ("" = overlay) */
   builder: string; cwd: string;
 }
 export interface HarnessVersion { id: string; ts: string; actor: string; bytes: number }

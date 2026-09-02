@@ -33,8 +33,30 @@ the second place a routing decision is made.
 import re
 
 # Two SHORT sentences - the owner's own measure of what a notice may be.
+#
+# These stay the FLOOR, not the value (harness-config-ui phase 2): they are the
+# defaults spine/registry/behavior.py declares for rules report.notice_chars and
+# report.notice_sentences, so an installation that cannot read the rule table
+# gets exactly today's behaviour. This is the FOURTH statement of the length law
+# - the other three live in the chat, voice and watch briefs, all with different
+# numbers - and the point of the phase is that the owner can finally see all
+# four side by side instead of three of them being invisible constants.
 MAX_CHARS = 240
 MAX_SENTENCES = 2
+
+
+def _limits():
+    """(chars, sentences) from the rule table, falling back to the constants.
+
+    Read per CALL, not at import: a notice writer is long-lived, and a limit
+    bound at import time would need a daemon restart to change."""
+    try:
+        from spine.registry import behavior
+        c = behavior.value("report.notice_chars", "notice")
+        s = behavior.value("report.notice_sentences", "notice")
+        return (int(c) if c else MAX_CHARS), (int(s) if s else MAX_SENTENCES)
+    except Exception:                                        # noqa: BLE001
+        return MAX_CHARS, MAX_SENTENCES
 
 # A SENTENCE END, not merely a period. The naive "split on [.!?…]" version of
 # this was written first and the watchdog test caught it immediately: these
@@ -55,9 +77,14 @@ MAX_SENTENCES = 2
 _TERMINATOR = re.compile(r"(?<!\b\w)(?<!\d)[.!?…]+(?=\s|$)")
 
 
-def short(text, chars=MAX_CHARS, sentences=MAX_SENTENCES):
+def short(text, chars=None, sentences=None):
     """Clip an owner-visible notice to at most `sentences` sentences and
     `chars` characters, on a word boundary, marked as clipped.
+
+    Both default to the RULE values (_limits above) rather than naming the
+    module constants as default arguments: a default argument binds once at def
+    time, which would have pinned the limit for the life of the process and
+    made the new knob a knob that does nothing.
 
     FOR CHANNELS THAT CANNOT SCROLL - and ONLY those. An FCM push, a watch
     line, a question's button header: surfaces where the text that does not fit
@@ -99,6 +126,10 @@ def short(text, chars=MAX_CHARS, sentences=MAX_SENTENCES):
     t = " ".join((text or "").split())
     if not t:
         return t
+    if chars is None or sentences is None:
+        _c, _s = _limits()
+        chars = _c if chars is None else chars
+        sentences = _s if sentences is None else sentences
     ends = [m.end() for m in _TERMINATOR.finditer(t)]
     out = t[:ends[sentences - 1]].strip() if len(ends) >= sentences else t
     if len(out) > chars:

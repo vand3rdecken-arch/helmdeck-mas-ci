@@ -171,6 +171,21 @@ def init(role="tool"):
     c.execute("""CREATE TABLE IF NOT EXISTS user_config(
         user TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
         updated_at TEXT NOT NULL, PRIMARY KEY(user, key))""")
+    # Per-PROJECT harness config rows (harness-config-ui phase 1). Deliberately
+    # the same shape as user_config above, one layer down the resolution chain:
+    #   code default -> seed -> workspace (settings.json) -> PROJECT (here).
+    # `project` is projects.repo_key() - the normcased comparison form, because
+    # Windows hands us C:\Repo and c:/repo for one directory and the overlay
+    # must not depend on which spelling arrived first. `key` is a dotted path
+    # (policy.auto_accept_green, rule.initiative.delegate).
+    # ABSENT MEANS INHERITED, never "set to null": a cleared value DELETES its
+    # row, so the chain can always answer "geerbt" vs "fuer dieses Projekt
+    # gesetzt" from the table rather than from a sentinel value. The whitelist,
+    # the bounds and that delete rule live one layer up, in
+    # spine/storage/projectconfig.py.
+    c.execute("""CREATE TABLE IF NOT EXISTS project_config(
+        project TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+        updated_at TEXT NOT NULL, PRIMARY KEY(project, key))""")
     # BOARDS: saved VIEWS over the one card pool (accounts-boards-prd phase 2).
     # Cards exist once, in `tracks`; a board only says which columns to draw and
     # which station each one shows. `owner` is the account NAME (or "" for the
@@ -473,6 +488,79 @@ def user_config_users():
     (userconfig.rename_block_reason) - derived from the table, never a flag."""
     return [r[0] for r in conn().execute(
         "SELECT DISTINCT user FROM user_config").fetchall()]
+
+
+# -- project config --------------------------------------------------------
+# Same division of labour as user_config above: rows, atomicity and the version
+# bump here; the whitelist, the bounds and the resolution chain one layer up in
+# spine/storage/projectconfig.py.
+
+def project_config_get(project):
+    """Every STORED row for this project, {key: decoded value}. Absent keys are
+    absent - resolving them against the workspace is projectconfig.py's job, so
+    a caller can always tell "this project chose it" from "nobody chose"."""
+    rows = conn().execute(
+        "SELECT key,value FROM project_config WHERE project=?", (project,)).fetchall()
+    out = {}
+    for k, v in rows:
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            continue          # a hand-corrupted row reads as absent, not as a crash
+    return out
+
+
+def project_config_put(project, pairs):
+    """Write `pairs` ({key: value}) for one project in one transaction; return
+    the keys actually written."""
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    written = []
+    with conn() as c:
+        for k, v in pairs.items():
+            c.execute(
+                "INSERT OR REPLACE INTO project_config(project,key,value,updated_at)"
+                " VALUES(?,?,?,?)", (project, k, json.dumps(v), now))
+            written.append(k)
+    if written:
+        bump()            # other open devices re-render on the next SSE tick
+    return written
+
+
+def project_config_delete(project, keys):
+    """Remove rows so their keys INHERIT again. This is the whole reason a
+    cleared value is a DELETE and not a stored null: with a null row the chain
+    would have to treat one particular value as "means absent", and every
+    consumer would have to agree on which. Deleting makes "absent" a property
+    of the table."""
+    n = 0
+    with conn() as c:
+        for k in keys:
+            cur = c.execute(
+                "DELETE FROM project_config WHERE project=? AND key=?", (project, k))
+            n += cur.rowcount
+    if n:
+        bump()
+    return n
+
+
+def project_config_drop(project):
+    """Delete every config row for one project. Called when a project record is
+    removed - the rows key on the repo path, so without this a repo later added
+    back at the same path would silently inherit a stale overlay."""
+    with conn() as c:
+        cur = c.execute("DELETE FROM project_config WHERE project=?", (project,))
+        n = cur.rowcount
+    if n:
+        bump()
+    return n
+
+
+def project_config_projects():
+    """Projects that hold at least one config row. Derived from the table, never
+    a flag - the harness screen counts overlays with it."""
+    return [r[0] for r in conn().execute(
+        "SELECT DISTINCT project FROM project_config").fetchall()]
 
 
 # -- boards ----------------------------------------------------------------
