@@ -54,20 +54,32 @@ const FEEDBACK_URL = "https://helmdeck.userjot.com";
 const REPO = "Tienduyvo/helmdeck-release";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 const PLAY_URL = "https://play.google.com/apps/testing/app.helmdeck";
-// iOS ships as an INTERNAL TestFlight group ("Team (Expo)", ASC app 6801637667,
-// ops/docs/ios-requirements.md fixes the scope at internal testing / max 100 testers).
-// Internal testing has NO public join URL by design - Apple invites by Apple-ID
-// email only, and a self-service link would require external testing + Beta App
-// Review, which the owner ruled out of scope. So the honest CTA is a mailto that
-// asks for the Apple ID, not a fake `testflight.apple.com/join/...` link.
+const OWNER_EMAIL = "tienduyvo@googlemail.com";
+// iOS: moving from INTERNAL to EXTERNAL TestFlight (owner decision 2026-09-02),
+// which is what finally produces a public join URL - external group "Public Beta"
+// (ASC app 6801637667) exists, the build still has to clear Apple Beta App Review.
+// Until that link is live this card is INTERIM.
+//
+// What it is fixing, measured in real Chromium on 2026-09-02, not reasoned:
+// the primary button used to be a bare mailto: and clicking it produced
+// `navigated away? False | new tabs opened: 0` - i.e. literally nothing for any
+// visitor without an OS-registered mail handler, which includes every webmail
+// user. A working address you can COPY beats a prettier link that no-ops, so the
+// address is now visible text plus a clipboard button; the mailto survives only
+// as an enhancement for people who do have a handler.
 const TESTFLIGHT_REQUEST_URL =
-  "mailto:tienduyvo@googlemail.com" +
+  "mailto:" + OWNER_EMAIL +
   "?subject=" + encodeURIComponent("HelmDeck iOS – TestFlight-Zugang") +
   "&body=" + encodeURIComponent(
     "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
     "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
   );
-const TESTFLIGHT_APP_URL = "https://apps.apple.com/app/testflight/id899247664";
+// Storefront segment is deliberate: without "/de/" Apple redirects a German
+// visitor through the US storefront, and one of those redirects served a blank
+// "An Error Occurred" page in a real browser on 2026-09-02 (title "App Store",
+// 401 chars, no app content). The error itself is intermittent Apple-side, but
+// the extra hop is not - naming the storefront removes it.
+const TESTFLIGHT_APP_URL = "https://apps.apple.com/de/app/testflight/id899247664";
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 
@@ -246,6 +258,10 @@ h3{margin:0; font-size:1.08rem; font-weight:700}
 .btn{
   display:inline-flex; align-items:center; justify-content:center; height:3rem;
   padding:0 1.35rem; border-radius:10px; font-weight:700; font-size:.94rem;
+  /* <button> does not inherit the page font by default - without this the iOS
+     copy button and the waitlist submit render in the UA's system font while the
+     <a class="btn"> next to them render in Schibsted Grotesk. */
+  font-family:inherit;
   text-decoration:none; border:0; cursor:pointer; transition:background .15s, border-color .15s, transform .1s;
 }
 .btn:active{transform:translateY(1px)}
@@ -269,6 +285,11 @@ section{padding:2.6rem 0; border-top:1px solid var(--border)}
 }
 .dl-meta{margin:0; font-size:.8rem; color:var(--ink-3)}
 .dl-note{margin:0; font-size:.79rem; color:var(--ink-3); line-height:1.5}
+/* The iOS note carries the contact address people are meant to READ OFF and
+   retype, so it gets more contrast than the surrounding note text and keeps its
+   underline (a{color:inherit} would otherwise sink it into the paragraph). */
+.dl-note a{color:var(--ink-2); text-decoration:underline; text-underline-offset:2px}
+.dl-note a:hover{color:var(--accent)}
 .dl-actions{display:flex; flex-direction:column; gap:.5rem; margin-top:auto}
 .dl-all{margin:1.6rem 0 0; text-align:center; font-size:.88rem}
 .dl-all a{color:var(--accent-hi); text-decoration:none}
@@ -372,10 +393,10 @@ footer a:hover{color:var(--ink-2)}
       </div>
       <div class="dl-card">
         <h3>iPhone &amp; iPad</h3>
-        <p class="dl-meta" data-i="dlIosMeta">TestFlight-Beta · geschlossene Gruppe</p>
-        <p class="dl-note" data-i="dlIosNote">Die iOS-App läuft über TestFlight (interner Test, begrenzte Plätze). Schick uns die Apple-ID deines Geräts – du bekommst die Einladung per Mail.</p>
+        <p class="dl-meta" data-i="dlIosMeta">TestFlight-Beta · öffentlicher Link in Vorbereitung</p>
+        <p class="dl-note" data-i-html="dlIosNote">Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href="${TESTFLIGHT_REQUEST_URL}">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_REQUEST_URL}" data-i="dlIosRequestBtn">TestFlight-Zugang anfragen</a>
+          <button type="button" class="btn btn-primary btn-sm btn-block" id="ios-copy" data-copy="${OWNER_EMAIL}" data-i="dlIosCopyBtn">E-Mail-Adresse kopieren</button>
           <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn">TestFlight-App laden</a>
         </div>
       </div>
@@ -451,9 +472,9 @@ footer a:hover{color:var(--ink-2)}
       dlWinNote:"Nicht code-signiert – Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert – öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
-      dlIosMeta:"TestFlight-Beta · geschlossene Gruppe",
-      dlIosNote:"Die iOS-App läuft über TestFlight (interner Test, begrenzte Plätze). Schick uns die Apple-ID deines Geräts – du bekommst die Einladung per Mail.",
-      dlIosRequestBtn:"TestFlight-Zugang anfragen", dlIosAppBtn:"TestFlight-App laden",
+      dlIosMeta:"TestFlight-Beta · öffentlicher Link in Vorbereitung",
+      dlIosNote:"Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail.",
+      dlIosCopyBtn:"E-Mail-Adresse kopieren", dlIosCopied:"Adresse kopiert ✓", dlIosAppBtn:"TestFlight-App laden",
       dlAndroidNote:"Bevorzugt: geschlossener Play-Test. Die APK hier ist zum Sideload, falls du lieber direkt installierst.",
       dlAndroidPlayBtn:"Play-Test beitreten", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
@@ -483,9 +504,9 @@ footer a:hover{color:var(--ink-2)}
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlMacNote:"Signed & notarized by Apple – opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
-      dlIosMeta:"TestFlight beta · closed group",
-      dlIosNote:"The iOS app ships through TestFlight (internal test, limited seats). Send us your device's Apple ID and you'll get the invite by mail.",
-      dlIosRequestBtn:"Request TestFlight access", dlIosAppBtn:"Get the TestFlight app",
+      dlIosMeta:"TestFlight beta · public link in review",
+      dlIosNote:"The public TestFlight link is currently under review at Apple. Until then it's invite-based: send your device's Apple ID to <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> and you'll get the invite by mail.",
+      dlIosCopyBtn:"Copy email address", dlIosCopied:"Address copied ✓", dlIosAppBtn:"Get the TestFlight app",
       dlAndroidNote:"Preferred: the closed Play test. The APK here is for sideloading if you'd rather install directly.",
       dlAndroidPlayBtn:"Join the Play test", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
@@ -525,6 +546,31 @@ footer a:hover{color:var(--ink-2)}
     apply();
   });
   if (lang !== "de") apply(); else langBtn.textContent = "EN";
+
+  // iOS card: copy the contact address. navigator.clipboard is https-only and
+  // absent in older browsers, hence the execCommand fallback - this button
+  // replaced a bare mailto that did NOTHING for visitors without a mail
+  // handler, so silently failing again would defeat the whole fix.
+  var iosCopy = document.getElementById("ios-copy");
+  if (iosCopy) iosCopy.addEventListener("click", function(){
+    var addr = iosCopy.getAttribute("data-copy");
+    function done(){
+      iosCopy.textContent = I18N[lang].dlIosCopied;
+      setTimeout(function(){ iosCopy.textContent = I18N[lang].dlIosCopyBtn; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(addr).then(done, fallback);
+    } else { fallback(); }
+    function fallback(){
+      var ta = document.createElement("textarea");
+      ta.value = addr; ta.setAttribute("readonly", "");
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); }
+      catch(e){ /* last resort: the address is visible in the note above anyway */ }
+      document.body.removeChild(ta);
+    }
+  });
 
   var form = document.getElementById("f");
   var input = document.getElementById("email");

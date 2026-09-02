@@ -43,15 +43,34 @@ REVIEW_DETAIL = {
     "contactFirstName": "Tien Duy",
     "contactLastName": "Vo",
     "contactEmail": "tienduyvo@googlemail.com",
-    # contactPhone deliberately absent - no number in the repo, not invented
+    # contactPhone is NOT here on purpose. Apple makes all four contact fields
+    # mandatory once a build goes to Beta App Review, and the owner supplied the
+    # number on 2026-09-02 - but a private phone number hardcoded in a tracked
+    # file is PII in git history forever, and history is the one thing we do not
+    # rewrite. It was written to App Store Connect once and lives there; a
+    # JSON:API PATCH that omits the key leaves the stored value untouched, so
+    # re-running apply does not clear it. To change it, either set
+    # ASC_CONTACT_PHONE (env or .env, both git-ignored) or edit it in the ASC UI.
     "demoAccountRequired": False,
+    # English first: Beta App Review is read by Apple's international team.
+    # The old wording ("please contact the owner for a UI tour") was written for
+    # INTERNAL testing, which has no review at all. For an EXTERNAL test that
+    # sentence is a guaranteed 2.1 rejection - a reviewer will not email us, they
+    # will reject. Demo mode (surfaces/app/src/data/demo.ts, shipped since
+    # 2026-08-24, i.e. present in every build we would submit) gives a complete
+    # no-hardware review path, so the notes now hand the reviewer that path.
     "notes": (
-        "HelmDeck ist eine Begleit-App: Sie funktioniert nur zusammen mit "
-        "einer eigenen laufenden HelmDeck-Installation (Desktop/Server). Es "
-        "gibt kein zentrales Entwickler-Konto und keinen Demo-Login - "
-        "Pairing erfolgt per QR-Code, den die Installation selbst anzeigt. "
-        "Fuer einen reinen UI-Rundgang ohne eigene Installation bitte den "
-        "Owner kontaktieren."
+        "HelmDeck is a companion app for the user's OWN HelmDeck installation "
+        "(desktop/server). There is no central developer account and no demo "
+        "login to hand out - pairing uses a QR code that the user's own "
+        "installation displays. That is why 'demo account required' is No.\n\n"
+        "FOR APP REVIEW - no pairing, no hardware, no account needed:\n"
+        "On the very first screen, below the pairing field, tap\n"
+        "  \"Try it without your own computer\"\n"
+        "  (German device language: \"Ohne eigenen Rechner ausprobieren\")\n"
+        "This opens the full app on a sample board. Boards, cards, the agent "
+        "chat and settings are all browsable; a banner marks the session as "
+        "demo data. This is the complete review path - please use it."
     ),
 }
 
@@ -64,8 +83,9 @@ LOCALIZATIONS = {
             "Ergebnisse abnimmst - vom Telefon aus. Die App verbindet sich "
             "ausschliesslich mit deinem eigenen Rechner/Server, Inhalte sind "
             "Ende-zu-Ende-verschluesselt (Curve25519/XSalsa20-Poly1305). "
-            "Diese Beta ist der interne Testkanal vor einem moeglichen "
-            "Store-Release."
+            "Noch keine HelmDeck-Installation? Auf dem ersten Screen unten "
+            "\"Ohne eigenen Rechner ausprobieren\" tippen - dann siehst du das "
+            "Board mit Beispieldaten. Feedback gern an die Mail unten."
         ),
         "feedbackEmail": "tienduyvo@googlemail.com",
         "marketingUrl": "https://helmdeck.de",
@@ -77,9 +97,10 @@ LOCALIZATIONS = {
             "installation: a board where AI agents work on real tasks while "
             "you steer, answer questions and approve results - from your "
             "phone. The app talks only to your own machine/server; content "
-            "is end-to-end encrypted (Curve25519/XSalsa20-Poly1305). This "
-            "beta is the internal test channel ahead of a possible App "
-            "Store release."
+            "is end-to-end encrypted (Curve25519/XSalsa20-Poly1305). No "
+            "HelmDeck installation yet? On the first screen, tap \"Try it "
+            "without your own computer\" to explore the board with sample "
+            "data. Feedback is welcome at the address below."
         ),
         "feedbackEmail": "tienduyvo@googlemail.com",
         "marketingUrl": "https://helmdeck.de",
@@ -89,14 +110,17 @@ LOCALIZATIONS = {
 
 BUILD_WHATS_NEW = {
     "de-DE": (
-        "Erster interner Testbuild. Bitte pruefen: Pairing per QR-Code vom "
-        "Desktop, Board ansehen, eine Karte mit Foto-Anhang anlegen, Push-"
-        "Benachrichtigung bei einer Agenten-Rueckfrage."
+        "Bitte pruefen: Pairing per QR-Code vom Desktop, Board ansehen, eine "
+        "Karte mit Foto-Anhang anlegen, Push-Benachrichtigung bei einer "
+        "Agenten-Rueckfrage. Ohne eigene HelmDeck-Installation: auf dem "
+        "ersten Screen \"Ohne eigenen Rechner ausprobieren\" tippen."
     ),
     "en-US": (
-        "First internal test build. Please check: QR-code pairing from the "
-        "desktop, viewing the board, creating a card with a photo "
-        "attachment, receiving a push notification for an agent question."
+        "Please check: QR-code pairing from the desktop, viewing the board, "
+        "creating a card with a photo attachment, receiving a push "
+        "notification for an agent question. Without your own HelmDeck "
+        "installation: tap \"Try it without your own computer\" on the "
+        "first screen."
     ),
 }
 
@@ -218,10 +242,20 @@ def cmd_apply(argv):
               "Store Connect data - review ops/docs/store/ASC_METADATA.md first)")
         sys.exit(2)
 
-    rid, _ = _review_detail_id()
+    rid, live = _review_detail_id()
+    detail = dict(REVIEW_DETAIL)
+    phone = _env().get("ASC_CONTACT_PHONE") or os.environ.get("ASC_CONTACT_PHONE")
+    if phone:
+        detail["contactPhone"] = phone
     _req("PATCH", "/v1/betaAppReviewDetails/%s" % rid, {
-        "data": {"type": "betaAppReviewDetails", "id": rid, "attributes": REVIEW_DETAIL}})
-    print("betaAppReviewDetail updated")
+        "data": {"type": "betaAppReviewDetails", "id": rid, "attributes": detail}})
+    # Loud, because a missing phone is not visible until Apple rejects the
+    # submission - and external Beta App Review requires all four fields.
+    if not phone and not live.get("contactPhone"):
+        print("WARNING: contactPhone is empty in App Store Connect and no "
+              "ASC_CONTACT_PHONE is set - external Beta App Review needs it")
+    print("betaAppReviewDetail updated (contactPhone %s)"
+          % ("set from env" if phone else "left as stored in ASC"))
 
     existing = _existing_localizations()
     for locale, attrs in LOCALIZATIONS.items():
