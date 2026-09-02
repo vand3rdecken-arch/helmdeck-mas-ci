@@ -8,6 +8,7 @@ import json, os, re, shutil, subprocess, threading, time, uuid
 
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
 SESS = os.path.join(ROOT, "copilot_sessions.json")
+MODELS_F = os.path.join(ROOT, "copilot_models.json")
 CHATLOG = os.path.join(ROOT, "copilot_log.json")
 from cells.copilot.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.copilot_actions import _strip_actions_live, _parse_reply_actions
@@ -122,9 +123,12 @@ def prewarm(user, spoken=True):
             # SAME ctx signal chat() uses: ctx_tokens is a routing INPUT (a
             # model whose window cannot hold the session gets lifted), so a
             # prewarm that read it differently from the real turn would warm a
-            # tier the turn then has to switch away from.
+            # tier the turn then has to switch away from. Same STICKY tier as
+            # chat() too: a typed turn resolves explicit > sticky > auto, so a
+            # prewarm that ignored the sticky pick would warm a tier the very
+            # next real turn switches away from.
             cli_model, _ = turnopts.resolve_model(
-                model or "auto", "", False,
+                model or _model_prefs().get(_skey(user)) or "auto", "", False,
                 signals={"ctx_tokens": (_stats().get(user) or {}).get("ctx_tokens")})
             base = harness.brief("board-copilot")
             lock = _turn_lock(user)
@@ -329,6 +333,38 @@ def _save_sessions(d):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(d, f)
     os.replace(tmp, SESS)
+
+
+def _model_prefs():
+    try:
+        with open(MODELS_F, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_model_pref(skey, mid):
+    """Remember which model THIS conversation runs on (skey -> concrete id).
+
+    Why (owner report 2026-09-02): the composer chip said sonnet-5, yet the
+    board session had been served by FOUR models. The chip only rides requests
+    from the one app surface that persists it - watch and glasses turns carry
+    no model at all and re-rolled Auto from each message's wording, and voice
+    turns pin the fast voice_model by decree. Prompt caches are PER MODEL, so
+    every tier flip re-read the whole session at full price (measured: one
+    $16.65 turn at 405k in). The conversation's model is CONVERSATION state,
+    so it lives server-side, keyed like the session id itself."""
+    d = _model_prefs()
+    if d.get(skey) == mid:
+        return
+    d[skey] = mid
+    tmp = MODELS_F + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f)
+        os.replace(tmp, MODELS_F)
+    except OSError:
+        pass                       # a lost pref re-learns next turn; never break the turn
 
 
 def _skey(user, card=None):
@@ -1237,7 +1273,7 @@ def build_argv(cli_model, sid, system):
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
-         client_msg_id="", announce=True, _retried=False):
+         client_msg_id="", announce=True, _retried=False, model_source="user"):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -1285,8 +1321,25 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # long" (2026-08-30, card 20260830-065545). Read from copilot_stats, the
     # ONE owner of that number - folded at event time, never re-derived.
     _st = _stats().get(user) or {}
-    cli_model, _ = turnopts.resolve_model(model or "auto", message, bool(paths),
+    # STICKY TIER (owner decree 2026-09-02, "Fix the routing"): a conversation
+    # keeps its model. Resolution order: explicit pick > this conversation's
+    # recorded model > Auto - so Auto routes at most ONCE per conversation
+    # instead of re-rolling the tier from every message's wording. A tier flip
+    # invalidates the per-model prompt cache and re-reads the whole session at
+    # full price/latency; on a long session that costs far more than any
+    # per-message "right tier" buys (the warm PROCESS never made the CACHE
+    # warm). resolve_model still applies the window law to whatever wins - a
+    # sticky pick that no longer fits the session is lifted, never obeyed
+    # blindly. A voice turn USES its pinned fast model (explicit wins) but
+    # must not RECORD it - the voice pin is a per-turn speed decree, not the
+    # conversation's choice (model_source="voice" from routes_copilot).
+    _pick = (model or "").strip()
+    if not _pick or _pick == "auto":
+        _pick = _model_prefs().get(skey) or "auto"
+    cli_model, _ = turnopts.resolve_model(_pick, message, bool(paths),
                                           signals={"ctx_tokens": _st.get("ctx_tokens")})
+    if cli_model and model_source != "voice":
+        _save_model_pref(skey, cli_model)
     body = turnopts.augment_prompt(message, thinking, paths)
     focus = ""
     card_run_dir = None
