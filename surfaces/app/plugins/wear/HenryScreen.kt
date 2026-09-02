@@ -49,7 +49,6 @@ import app.helmdeck.wear.data.DeviceStore
 import app.helmdeck.wear.data.RelayClient
 import app.helmdeck.wear.data.VoicePlayer
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -407,60 +406,17 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // is gone; this is a HANGING GET, not a poll (owner decree 2026-08-30:
     // "einheitlich wie Paseo, kein Polling, verschluesselter Transport").
     //
-    // /stream/wait?v&c blocks on the daemon side until the board (`v`) or the
-    // chat transcript (`c`) moves, or ~22s passes. We re-arm immediately, so an
-    // idle watch holds ONE open sealed request and transmits nothing until there
-    // is genuinely news. That is strictly less radio than a 15s timer, not more.
+    // The LOOP itself moved to WearStream, started by MainActivity (2026-09-02).
+    // It ran here for two days and that placement was the board's whole problem:
+    // MainActivity composes ONE screen at a time, so opening the board destroyed
+    // the app's only stream and the board fell back to load-once-plus-a-button.
+    // Hoisting it to the activity gives both screens the same channel without a
+    // second open request, and the cursors survive navigation because they live
+    // on WearStream rather than in this composition.
     //
-    // Keyed on `resumed`, which is the battery discipline the old ticker only
-    // approximated with a guard: leaving the screen CANCELS this coroutine and
-    // with it the open request, so nothing is held while the wrist is down. The
-    // resume effect above re-reads the transcript, so nothing missed is lost.
-    //
-    // readTimeout 40s > the daemon's 22s wait, deliberately: at the old 20s
-    // default the client would abort every single wait a beat BEFORE the server
-    // answered, turning a working stream into a permanent reconnect loop. Still
-    // far below the relay's own 120s REPLY_TIMEOUT.
-    //
-    // Exponential backoff 3s->30s on failure, same as the phone's loop: a dead
-    // relay is not hammered, a blip recovers in one pause. Cursors are NOT reset
-    // on failure, so whatever moved meanwhile is reported on the next success -
-    // the reconnect IS the catch-up path, which is why no timer is needed.
-    var chatCursor by remember { mutableStateOf(0) }
-    LaunchedEffect(resumed) {
-        if (!resumed) return@LaunchedEffect
-        val device = DeviceStore.load(context) ?: return@LaunchedEffect
-        var v = 0
-        var c = 0
-        var backoff = 3_000L
-        while (true) {
-            val r = withContext(Dispatchers.IO) {
-                runCatching {
-                    RelayClient.authedCall(
-                        device.relayUrl, device.room, device.daemonPubB64,
-                        device.myPublicKeyB64, device.mySecretKeyB64,
-                        device.deviceToken, "GET", "/stream/wait?v=$v&c=$c", "",
-                        readTimeoutMs = 40_000)
-                }.getOrNull()
-            }
-            if (r == null || r.first !in 200..299) {
-                delay(backoff)
-                backoff = minOf(backoff * 2, 30_000L)
-                continue
-            }
-            backoff = 3_000L
-            val o = runCatching { JSONObject(r.second) }.getOrNull() ?: continue
-            v = o.optInt("v", v)
-            // A daemon older than this build omits `c` entirely - optInt's
-            // default keeps the cursor still rather than snapping it to 0 and
-            // refreshing on every tick forever.
-            val nc = o.optInt("c", c)
-            if (nc != c) {
-                c = nc
-                chatCursor = nc
-            }
-        }
-    }
+    // Reading `.value` here IS the subscription - this composable recomposes
+    // when the chat cursor moves, exactly as it did when it owned the loop.
+    val chatCursor = WearStream.chat.value
 
     // The cursor moved -> re-read the transcript. `busy` is a KEY, not just a
     // guard: a turn in flight must not refresh (the owner's own line only

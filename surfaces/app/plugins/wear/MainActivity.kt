@@ -7,10 +7,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.MaterialTheme
 import app.helmdeck.wear.data.DeviceStore
@@ -74,6 +78,41 @@ class MainActivity : ComponentActivity() {
                     // "actual type is 'BoxScope', but 'Context' was expected".
                     val ctx = this@MainActivity
                     var paired by remember { mutableStateOf(DeviceStore.load(ctx) != null) }
+
+                    // THE APP'S ONE EVENT CHANNEL, started HERE rather than
+                    // inside a screen. MainActivity outlives every screen (the
+                    // `when` below composes exactly one at a time), so a stream
+                    // owned by a screen dies on every navigation - which is
+                    // precisely why the board had no live updates while the
+                    // chat did. See WearStream.kt.
+                    //
+                    // RESUMED, not merely composed: the composition outlives
+                    // onStop, so an unconditional loop would keep an open relay
+                    // request alive from the owner's wrist with the screen off,
+                    // and a watch has neither the battery nor the radio budget
+                    // for that. Read off the Activity's own lifecycle rather
+                    // than pulling in lifecycle-runtime-compose for one boolean
+                    // (§9.1 item 15). FCM is the screen-off half.
+                    var resumed by remember { mutableStateOf(true) }
+                    DisposableEffect(Unit) {
+                        val obs = LifecycleEventObserver { _, e ->
+                            when (e) {
+                                Lifecycle.Event.ON_RESUME -> resumed = true
+                                Lifecycle.Event.ON_PAUSE -> resumed = false
+                                else -> {}
+                            }
+                        }
+                        lifecycle.addObserver(obs)
+                        onDispose { lifecycle.removeObserver(obs) }
+                    }
+                    // Structured cancellation IS the stop button: leaving the
+                    // screen cancels this coroutine and with it the open
+                    // request. The cursors live on WearStream, not in the
+                    // coroutine, so the resume picks up exactly where this left
+                    // off instead of re-reading from 0.
+                    LaunchedEffect(paired, resumed) {
+                        if (paired && resumed) WearStream.run(ctx)
+                    }
                     if (!paired) {
                         PairingScreen(context = ctx, onPaired = {
                             paired = true

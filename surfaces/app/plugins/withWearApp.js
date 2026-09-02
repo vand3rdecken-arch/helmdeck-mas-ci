@@ -137,6 +137,11 @@ function installWearModule(androidDir) {
     // wrist is therefore still the pre-48f78f0, 15s-timer build. The completeness
     // check below is the half that makes this unrepeatable.
     ["ChatRows.kt", [...JAVA, "ChatRows.kt"]],
+    // 2026-09-02: the app's ONE event channel (hanging GET on /stream/wait),
+    // hoisted out of HenryScreen so the board screen shares it instead of
+    // running load-once - MainActivity composes one screen at a time, so a
+    // stream owned by a screen dies on every navigation.
+    ["WearStream.kt", [...JAVA, "WearStream.kt"]],
     // 2026-08-29: HelmDeck's own palette, so the watch stops shipping
     // Material's purple baseline.
     ["WearTheme.kt", [...JAVA, "WearTheme.kt"]],
