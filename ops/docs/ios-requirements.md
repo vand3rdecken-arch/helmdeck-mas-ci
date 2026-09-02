@@ -19,7 +19,7 @@ Begründung. Abweichungen vom Studienstand `b3f756e` sind markiert **[NEU]**.
 | Apple Developer Program | **Pflicht**, 99 €/Jahr. Deckt iOS-Provisioning **und** Mac-Notarization (Studie §5.3) mit ab. | ⬜ Konto anlegen |
 | EAS-Projekt | `eas.json` existiert bereits (Android-Profile; `production`-Profil ist plattformneutral nutzbar). **Fehlt:** `extra.eas.projectId` in `app.json` — kommt beim ersten `eas init`; wird auch für Expo-Push (§3) gebraucht. | ⬜ `eas init` |
 | Build-Weg | **EAS Build (Cloud), managed prebuild** — es gibt kein `ios/`-Verzeichnis und es wird **keines eingecheckt**. Entscheidung fixiert (Studie §2.1). | fixiert |
-| Distribution | **TestFlight, internes Testing** (ohne Review, bis 100 Tester). Kein App-Store-Release im Scope. | fixiert |
+| Distribution | ~~TestFlight, internes Testing~~ → **TestFlight, EXTERNES Testing** (mit Beta App Review, öffentlicher Join-Link). Kein App-Store-Release im Scope. | **geändert 2026-09-02 per Owner-Entscheidung** — siehe `ops/docs/store/EXTERNAL_TESTFLIGHT.md`. Grund: internes Testing hat prinzipbedingt **keinen** öffentlichen Link, weshalb die iOS-Karte auf helmdeck.de nichts verlinken konnte und ein wirkungsloses `mailto:` auslieferte (im echten Browser gemessen). |
 
 ## 2. Native Module — Inventar-Urteil (verifiziert)
 
@@ -113,7 +113,7 @@ weiteres zu deklarieren.
 | R5 | **runtimeVersion-Kopplung** bis §5 umgesetzt ist | Per-Plattform-rtv **vor** dem ersten iOS-Build umsetzen, sonst verliert das iPhone OTAs beim nächsten Android-Native-Bump. |
 | R6 | **Long-Poll im Hintergrund**: iOS suspendiert die App; `boardWait`/`transcriptLive` laufen nur im Vordergrund | Erwartetes Verhalten (auf Android ähnlich); Aktualität im Hintergrund kommt über Push. In der Geräte-QA explizit prüfen (Studie §4.1 Schritt 5). |
 | R7 | **EAS Free-Tier** (~30 Builds/Monat, langsamere Queue) | Reicht absehbar (native Builds sind selten); bei Engpass ab ~19 $/Monat. |
-| R8 | **[NEU]** PostHog: App-Privacy-Angaben („Data Safety" Apple-Pendant) | Erst bei externem TestFlight/Store fällig; für internes Testing nicht. Bei Scope-Wechsel: Privacy-Nutrition-Labels ausfüllen (Events, kein Tracking/IDFA). |
+| R8 | **[NEU]** PostHog: App-Privacy-Angaben („Data Safety" Apple-Pendant) | **JETZT FÄLLIG** — der Scope-Wechsel auf externes Testing (2026-09-02) ist genau der hier vorgesehene Fall. Privacy-Nutrition-Labels + Altersfreigabe ausfüllen (Events, kein Tracking/IDFA). Geht **nur im Web-UI**, die ASC-API bietet keinen Endpunkt dafür — Anleitung in `ops/docs/store/EXTERNAL_TESTFLIGHT.md`. |
 | R9 | Credentials-Gefummel beim EAS-Erstsetup (Zertifikate, ASC-API-Key) | In Studie §4.1 Schritt 1 mit 1–2 T ehrlich eingepreist; einmalig. |
 
 ## 7. Explizit außerhalb des Scopes (fixiert)

@@ -1,20 +1,30 @@
 # HelmDeck — App Store Connect / TestFlight-Metadaten (Entwurf)
 
-**Status: ENTWURF.** Nichts hier ist eingereicht oder abgeschickt. Diese
-Datei ist die Zuarbeit für `ops/deploy/asc_metadata_draft.py apply` bzw. für
-manuelles Ausfüllen in App Store Connect — der Mensch prüft Inhalt und
-Zahlen (Kontakt-Telefon fehlt bewusst) und drückt selbst auf Speichern/Absenden.
+**Status: ANGEWENDET am 2026-09-02.** Die Texte unten stehen live in App Store
+Connect (`asc_metadata_draft.py apply --yes`, danach mit `show` verifiziert).
+Der Kontakt-Telefon-Platzhalter ist gefüllt — der Owner hat die Nummer am
+2026-09-02 geliefert.
 
-Fixierter Scope (`ops/docs/ios-requirements.md` §1/§7): **TestFlight, internes
-Testing, kein App-Store-Release.** Interne Tests (bis 100 Team-Mitglieder)
-brauchen **keine** Beta App Review und **keine** App-Privacy-Nutrition-Label
-(die ist erst für externes Testing/Store-Release Pflicht). Diese Datei deckt
-deshalb nur, was für TestFlight tatsächlich existiert: Beta App Review
-Detail, Beta App Localization, Beta Build Localization. Volles App-Privacy-
-Formular und Store-Listing (Screenshots, Keywords, Kategorie) bleiben
-zurückgestellt, bis ein Store-Release ansteht — dann `ops/docs/store/LISTING.md`
-als Basis nehmen (DE/EN-Texte existieren schon, nur Apple-Zeichenlimits
-prüfen: Subtitle 30, Promotional Text 170, Keywords 100 gesamt).
+**Scope-Änderung, Owner-Entscheidung 2026-09-02: internes → EXTERNES
+Testing.** `ops/docs/ios-requirements.md` §1/§7 fixierte vorher „TestFlight,
+internes Testing, kein App-Store-Release". Das galt, bis sichtbar wurde, was es
+kostet: internes Testing hat **prinzipbedingt keinen öffentlichen Beitritts-
+Link** (Apple lädt nur per Apple-ID-Mail ein), weshalb die iOS-Karte auf
+helmdeck.de nichts zu verlinken hatte und stattdessen einen `mailto:` anbot,
+der bei jedem Besucher ohne Mail-Client **wirkungslos** war (im echten Browser
+gemessen: kein Navigieren, kein neuer Tab). Externes Testing erzeugt eine echte
+`testflight.apple.com/join/...`-URL.
+
+Was der Wechsel zusätzlich verlangt:
+- **Beta App Review** für den Build (24–48 h) — `ops/deploy/asc_external_beta.py`.
+- **App-Privacy-Angaben und Altersfreigabe.** Die deckt die App-Store-Connect-
+  **API nicht ab** — reiner Web-UI-Schritt mit Apple-ID + 2FA, siehe
+  `EXTERNAL_TESTFLIGHT.md`.
+
+Store-Listing (Screenshots, Keywords, Kategorie) bleibt weiter zurückgestellt,
+bis ein echtes Store-Release ansteht — dann `ops/docs/store/LISTING.md` als
+Basis nehmen (DE/EN-Texte existieren schon, nur Apple-Zeichenlimits prüfen:
+Subtitle 30, Promotional Text 170, Keywords 100 gesamt).
 
 Live-Werte (siehe `DEPLOY.md` §2b/§2c, `ops/deploy/asc_build_state.py`):
 ASC App-ID `6801637667`, Bundle `app.helmdeck`, SKU `helmdeck-001`, primäre
@@ -54,10 +64,10 @@ keinen Leerlauf-Schritt hat.
 | `contactFirstName` | Tien Duy | `git config user.name` — **bitte prüfen**, Skript rät nicht weiter |
 | `contactLastName` | Vo | s.o. |
 | `contactEmail` | tienduyvo@googlemail.com | Kontakt-E-Mail aus `ops/docs/store/LISTING.md` |
-| `contactPhone` | *(leer)* | **Owner muss eintragen** — keine Telefonnummer im Repo, wird nicht erfunden |
+| `contactPhone` | *(steht live in ASC, bewusst nicht im Repo)* | Owner-Angabe 2026-09-02, einmal nach App Store Connect geschrieben. Steht **nicht** im Code: eine private Telefonnummer in einer getrackten Datei wäre PII in der Git-History, und History schreiben wir nicht um. `apply` lässt das Feld weg → JSON:API-PATCH erhält den gespeicherten Wert. Ändern über `ASC_CONTACT_PHONE` (env/`.env`, beide git-ignored) oder direkt im ASC-Web-UI |
 | `demoAccountRequired` | `false` | Die App hat kein Entwickler-Konto (`daemon/auth.py` ist pro Installation); Login läuft gegen die *eigene* HelmDeck-Instanz des Testers |
 | `demoAccountName` / `demoAccountPassword` | *(leer)* | s.o., kein zentrales Konto zum Herausgeben |
-| `notes` (DE) | „HelmDeck ist eine Begleit-App: Sie funktioniert nur zusammen mit einer eigenen laufenden HelmDeck-Installation (Desktop/Server). Es gibt kein zentrales Entwickler-Konto und keinen Demo-Login — Pairing erfolgt per QR-Code, den die Installation selbst anzeigt. Für einen reinen UI-Rundgang ohne eigene Installation bitte den Owner kontaktieren." | erklärt Apples Reviewer, warum `demoAccountRequired=false` trotz Login-Bildschirm korrekt ist |
+| `notes` (EN) | erklärt `demoAccountRequired=false` **und weist den Reviewer auf den Demo-Modus**: erster Screen → „Try it without your own computer" / „Ohne eigenen Rechner ausprobieren" (`surfaces/app/src/ui/pairing_gate.tsx`, Label `demo.cta`) | Der alte Text („für einen UI-Rundgang bitte den Owner kontaktieren") stammt aus der Intern-Ära ohne Review. Bei **externer** Review ist er eine sichere 2.1-Ablehnung: ein Reviewer schreibt keine Mail, er lehnt ab. Demo-Modus (`surfaces/app/src/data/demo.ts`, seit 2026-08-24 im Baum, also in jedem einreichbaren Build) liefert den kompletten Prüfpfad ohne Hardware. Englisch, weil Apples Review-Team international liest |
 
 ## 3. Beta App Localization (App-weit, pro Sprache — „Beta App Description")
 
@@ -85,14 +95,13 @@ umformuliert auf Beta-Kontext.
 | `privacyPolicyUrl` | https://relay.helmdeck.de/privacy |
 | `tvOsPrivacyPolicy` | *(leer)* |
 
-⚠ Die Privacy-Policy-Seite (`surfaces/relay/relay.py PRIVACY_HTML`) ist noch auf dem
-Android/FCM-Stand von `ops/docs/store/DATA_SAFETY.md` geschrieben — sie erwähnt
-weder PostHog-Analytics (seit `[NEU]` in `ops/docs/ios-requirements.md` §2) noch
-Apple/APNs (Push läuft auf iOS aktuell noch über den rohen FCM-Token,
-Umbau auf Expo Push ist offener Punkt in `ops/docs/ios-requirements.md` §3).
-Die URL selbst ist live und nutzbar, der **Inhalt braucht ein eigenes
-Update** sobald Analytics/iOS-Push angepasst sind — nicht Teil dieser Karte,
-hier nur vermerkt, damit es nicht als „schon erledigt" gilt.
+~~⚠ Die Privacy-Policy-Seite erwähnt weder PostHog-Analytics noch Apple/APNs.~~
+**Überholt — am 2026-09-02 nachgemessen:** `https://relay.helmdeck.de/privacy`
+antwortet HTTP 200 mit 9.555 Bytes und enthält 10 Treffer auf PostHog/Analytics.
+Die Warnung stammte aus der Zeit vor dem Analytics-Update der Seite. Offen
+bleibt nur der APNs-Punkt (iOS-Push läuft noch über den rohen FCM-Token, Umbau
+auf Expo Push ist offener Punkt in `ops/docs/ios-requirements.md` §3) — der
+gehört in die Datenschutzerklärung, sobald er umgebaut ist.
 
 ## 4. Beta Build Localization (pro Build, „What to Test")
 
@@ -105,10 +114,14 @@ Für den aktuellen Build `e67d1247` (erster iOS-TestFlight-Build).
 
 ## 5. Was hier bewusst NICHT gemacht wird
 
-- Kein Absenden zur Beta App Review (interner Test braucht keine).
-- Keine App-Privacy-Nutrition-Label-Einträge (erst Store-Release-Pflicht,
-  siehe oben) — würde ohnehin die PostHog/Analytics-Aktualisierung aus
-  Abschnitt 3 voraussetzen, sonst wären die Angaben selbst schon veraltet.
+- ~~Kein Absenden zur Beta App Review~~ — **gilt nicht mehr.** Mit dem Wechsel
+  auf externes Testing ist die Review Pflicht; sie läuft über
+  `ops/deploy/asc_external_beta.py submit`, nicht über dieses Skript. Dieses
+  Skript schreibt weiterhin ausschließlich Textfelder.
+- Keine App-Privacy-Nutrition-Label-Einträge **hier** — nicht weil sie
+  entbehrlich wären (für externes Testing sind sie Pflicht), sondern weil die
+  App-Store-Connect-API sie **nicht anbietet**. Web-UI-Schritt, siehe
+  `EXTERNAL_TESTFLIGHT.md`.
 - Kein Ändern von `ITSAppUsesNonExemptEncryption` — reine Rechtsfrage,
   s. Abschnitt 1.
 - Kein volles Store-Listing (Kategorie, Keywords, Screenshots) — außerhalb
