@@ -47,10 +47,21 @@ package app.helmdeck.wear
  *  goes back to; `options` are the worker's own choices when one tap settles
  *  it. All three are empty on an ordinary line, and an older daemon omits them
  *  from the payload entirely - which degrades to exactly the previous
- *  behaviour, never to a blank. */
+ *  behaviour, never to a blank.
+ *
+ *  `key` is the server's identity for a SPEAKABLE line (routes_wear's
+ *  _wear_msg_key, sent on exactly the classes GET /wear/voice will render), and
+ *  its presence is the whole "this one can be spoken" signal - an ordinary line
+ *  carries "". It is what lets the screen tell a NEW answer from the same
+ *  answer seen again: refresh() replaces the list wholesale, so a position
+ *  ("the last one", "lines.size") says nothing about identity, which is the
+ *  same trap the auto-scroll below already had to be keyed around. Not cached
+ *  by DeviceStore, deliberately: a key restored from disk would let the app
+ *  decide on startup that an answer from yesterday is still owed out loud. */
 data class Line(val mine: Boolean, val text: String, val ts: String = "",
                 val date: String = "", val label: String = "",
-                val card: String = "", val options: List<String> = emptyList())
+                val card: String = "", val options: List<String> = emptyList(),
+                val key: String = "")
 
 /** ONE ROW OF THE LIST - and the ONLY description of what the list contains. */
 sealed interface Row {

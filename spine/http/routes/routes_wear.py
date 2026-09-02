@@ -22,7 +22,24 @@ allow_actions=True path, the same chat_dedupe idempotency claim. The
 allow_actions=False, because the glasses authenticate with one shared
 glance_token, not a user session - that boundary was the reason for the
 rule, and the watch was never on the wrong side of it.
+
+GET /wear/voice is the SPOKEN half of the transcript, and it exists because
+POST /wear/talk's inline clip only ever covered ONE of the ways a Henry answer
+reaches the wrist (owner, 2026-09-02: "Stimme aktivieren ist ziemlich broken").
+An answer that outlives talk()'s HTTP request, an answer to a turn started on
+the PHONE or the GLASSES, an answer that lands while the display is off - all
+three arrive over /wear/chat, which carried no audio at all. See
+ops/docs/backlog/wear-voice-stream-playback/README.md.
+
+PULL, not push, and that was measured rather than preferred: the alternative
+was carrying the clip on the /stream/wait event, but that cursor is SHARED with
+the phone, the desktop and the glasses (one hanging GET for the whole fleet), so
+a clip on it would ship a base64 mp3 to every client on every chat event and
+force a TTS render - a network round trip to Microsoft's voice service, per
+reply - even when nothing on the owner's wrist is listening. Pulling renders
+exactly when a watch has voice switched ON and exactly once per answer.
 """
+import hashlib
 import json
 
 # Wear OS quality bar (README.md §7.2): fits a 192dp circle, no keyboard,
@@ -205,6 +222,72 @@ WEAR_CHAT_MAX = 30
 # _wear_text still strips ask-blocks, fences and markdown; only the CUT is gone.
 WEAR_CHAT_LINE_MAX = None
 
+# WHICH transcript lines the watch may SPEAK. Henry's own voice only: "bot" is
+# his answer to a question and "pm" is his proactive half (lane outcomes, broker
+# decisions, alerts) - both are him talking to the owner.
+#
+# Deliberately NOT "card": a mirrored card event is a whole brief with tappable
+# options, and reading one aloud is exactly the podcast WEAR_VOICE_MAX exists to
+# prevent - it is news to LOOK at, and it already buzzes the wrist as a push.
+# Not "act" either (an action receipt is chrome), and not "error" (the text is
+# on the screen he is holding up).
+WEAR_SPEAK_CLS = ("bot", "pm")
+
+# The spoken bound, ONE owner for both voice paths. ~45s of TTS; past that a
+# clip is a podcast, and the full text is on the screen he is looking at.
+WEAR_VOICE_MAX = 600
+
+
+def _wear_msg_key(m):
+    """A transcript line's IDENTITY - the one question the watch has to answer
+    before speaking: "have I already played this?"
+
+    DERIVED FROM THE LINE, because there is nothing else to derive it from: the
+    chat log carries no message id for a Henry line (copilot._append_log writes
+    cls/text/ts/date, and client_msg_id lands only on the OWNER's entry - see
+    ops/tests/test_chat_msg_identity.py). And an INDEX is not an identity here:
+    _append_log trims to the last 80 entries on every write, so the same message
+    changes index over its life and a client holding "index 7" would silently
+    start comparing itself against a different line.
+
+    Hashed over the STORED text, before any wrist rendering. /wear/chat strips
+    markdown and ask-blocks out of it and /wear/voice speaks it; if the key were
+    taken from either rendering, the two routes could disagree about the same
+    line and the watch would speak an answer twice or never.
+
+    Two byte-identical messages in the same MINUTE collapse to one key. That is
+    honest rather than lossy: nothing on the wrist could tell them apart either.
+    """
+    m = m or {}
+    raw = "%s|%s|%s|%s" % (m.get("cls") or "", m.get("date") or "",
+                           m.get("ts") or "", m.get("text") or "")
+    return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _wear_newest_speakable(user, only=WEAR_SPEAK_CLS):
+    """The newest line the watch could still be owed OUT LOUD, or None.
+
+    NEWEST-ONLY is enforced HERE, on the server, and that is the point: the
+    guardrail "never read the history back at him" is then a property of the
+    route rather than a promise the watch makes. No reconnect, no retry and no
+    client bug can turn this into a machine reciting yesterday's conversation,
+    because there is no request that would render an older line.
+    """
+    from cells.copilot import copilot
+    msgs = (copilot.history(user) or {}).get("messages") or []
+    for m in reversed(msgs):
+        # Same defensive read as wear_chat_get: the log is a FILE, and a
+        # truncated write or a hand-edit can leave a non-dict in the array.
+        if not isinstance(m, dict):
+            continue
+        if (m.get("cls") or "") not in only:
+            continue
+        if not (m.get("text") or "").strip():
+            continue
+        return m
+    return None
+
+
 # How much of a mirrored card's task line may become its TITLE on the wrist.
 # Not None like the two above: those bound a message BODY, which scrolls, and
 # this bounds a heading that sits in front of every card line. 42 (the push
@@ -339,6 +422,17 @@ def wear_chat_get(self, user):
         row = {"mine": cls == "you", "text": _wear_text(text, WEAR_CHAT_LINE_MAX),
                "ts": (m or {}).get("ts") or "",
                "date": (m or {}).get("date") or ""}
+        # `key` IS the "this line can be spoken" marker, not a second flag: it
+        # is emitted on exactly the classes /wear/voice will render, so the
+        # watch's whole rule is "the last row that carries a key". A class the
+        # server will not speak has no key, so a client cannot ask for one.
+        #
+        # Sent on EVERY speakable line rather than only the newest, because the
+        # watch replaces its list wholesale on every refresh: it needs to name
+        # the line it is looking at, and "the last one" is a position, which is
+        # precisely what a wholesale replacement makes untrustworthy.
+        if cls in WEAR_SPEAK_CLS:
+            row["key"] = _wear_msg_key(m)
         if cls == "card":
             # The LABEL the watch draws instead of a sender name ("Frage ·
             # Kartenname"). Sent as its parts, not as a rendered string: the
@@ -474,10 +568,15 @@ def wear_talk_post(self, user, body):
     if not q:
         q, prose = ask.parse(reply)
     # The TEXT goes out whole (kein-Zeichen-cap decree); only the VOICE keeps a
-    # bound. 600 chars is ~45s of TTS - past that a clip is a podcast, and the
-    # full text is on the screen he is already looking at.
+    # bound - WEAR_VOICE_MAX, the same one /wear/voice applies.
+    #
+    # _wear_text, not a bare slice, and that is not cosmetic: it is the SAME
+    # rendering /wear/voice runs over the stored line, so both doors hand
+    # voice.render() a byte-identical string and its content-hash cache actually
+    # hits. A raw slice here would mint a second cache entry for the same
+    # sentence and pay a second round trip to the speech service.
     full = prose or reply
-    spoken = full[:600]
+    spoken = _wear_text(full, WEAR_VOICE_MAX)
     resp = {
         # the prose WITHOUT the block - ask.parse already strips it, so the
         # watch renders `reply` as plain text and never sees raw JSON
@@ -488,11 +587,28 @@ def wear_talk_post(self, user, body):
         "question": _glance_question({"question": q}) if q else None,
         "refused": out.get("refused") or [],
     }
-    # ALWAYS render voice, no opt-in flag - unlike /chat (which has a screen
-    # worth reading), the watch is a small round display with no keyboard;
-    # there is no case where making the owner read Henry's reply there beats
-    # hearing it. Same unconditional choice glance_talk already makes for
-    # the glasses, for the identical reason.
+    # WHICH LINE THIS REPLY BECAME IN THE LOG. The watch plays the clip below
+    # and then, a heartbeat later, sees the same answer arrive over /wear/chat
+    # with a key on it - without this handle it would have no way to know the
+    # two are the same sentence and would say it twice. Claimed from the log
+    # rather than from `reply`, so it is the same derivation /wear/chat runs.
+    #
+    # only=("bot",) rather than WEAR_SPEAK_CLS: what we are naming is the turn
+    # that just finished. A "pm" line that landed in the same instant is a
+    # DIFFERENT thing Henry said and must stay unclaimed, or the watch would
+    # swallow it unspoken.
+    _mine = _wear_newest_speakable(user["name"], only=("bot",))
+    if _mine is not None:
+        resp["voiceKey"] = _wear_msg_key(_mine)
+    # Voice on this door is now the CLIENT's call, and defaults to on.
+    #
+    # It used to be unconditional, with the reasoning that a small round screen
+    # with no keyboard should always be heard rather than read. That reasoning
+    # still holds for a watch that is LISTENING - but the watch has had a
+    # "Stimme aktivieren" toggle since 2026-08-29 that defaults to OFF, so the
+    # unconditional render was paying a speech round trip per turn to produce a
+    # clip the wrist threw away. A client that says nothing (an older build)
+    # keeps exactly the old behaviour.
     #
     # render_b64, NOT render()+a URL: the watch talks through the SEALED
     # RELAY (RelayClient.kt's authedCall), exactly like the phone's own
@@ -501,12 +617,54 @@ def wear_talk_post(self, user, body):
     # across the internet anyway. voice.py's own docstring says this
     # explicitly for the phone; it applies to the watch for the identical
     # reason, not a new one.
-    from spine.media import voice as _voice
-    clip = _voice.render_b64(spoken)
-    if clip:
-        resp["voice"] = clip
+    if body.get("voice", True):
+        from spine.media import voice as _voice
+        clip = _voice.render_b64(spoken)
+        if clip:
+            resp["voice"] = clip
     return self._send(200, json.dumps(resp))
 
 
-GET_ROUTES = {"/wear/board": wear_board_get, "/wear/chat": wear_chat_get}
+def wear_voice_get(self, user):
+    """The clip for ONE transcript line - the wrist's catch-up voice path.
+
+    The watch asks for the line it just saw arrive (`?key=`), and gets audio
+    back only if that line is still the newest speakable one. Two properties
+    fall out of that, and both are the reason this is not simply "render the
+    latest":
+
+     1. NO HISTORY. There is no request shape that renders an older line, so
+        "only the newest unplayed answer is spoken" is enforced here rather than
+        trusted to the client (backlog card, Leitplanke 2).
+     2. NO WASTED RENDER. A key that no longer matches costs a log read and
+        nothing else - a watch that woke up late is answered with the current
+        key and speaks that instead, one clip, not a queue of missed ones.
+
+    Voice stays SERVER-rendered (ops/docs/glasses-reference.md §4) - this route
+    is the whole of it; nothing on the watch synthesises anything.
+    """
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    from urllib.parse import parse_qs, urlparse
+    want = (parse_qs(urlparse(self.path).query).get("key") or [""])[0].strip()
+    if not want:
+        return self._send(400, json.dumps({"error": "key required"}))
+    m = _wear_newest_speakable(user["name"])
+    key = _wear_msg_key(m) if m is not None else ""
+    # The current key rides back even on a miss, so a client that raced a newer
+    # answer learns what to ask for instead of retrying the stale one.
+    resp = {"key": key}
+    if m is not None and key == want:
+        from spine.media import voice as _voice
+        clip = _voice.render_b64(_wear_text(m.get("text") or "", WEAR_VOICE_MAX))
+        # An absent clip is SILENCE, never an error: the text is already on the
+        # watch, and voice.py fails soft by contract (no network, no edge-tts,
+        # a rate limit). Same rule wear_talk_post's own clip follows.
+        if clip:
+            resp["voice"] = clip
+    return self._send(200, json.dumps(resp))
+
+
+GET_ROUTES = {"/wear/board": wear_board_get, "/wear/chat": wear_chat_get,
+              "/wear/voice": wear_voice_get}
 POST_ROUTES = {"/wear/talk": wear_talk_post}
