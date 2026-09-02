@@ -29,13 +29,24 @@ einen globalen. Ein Design, das das übergeht, kann die vier Zahlen nur zu einer
 zusammenpressen und würde Henrys Verhalten auf drei Oberflächen ändern.
 
 **Anschluss, nicht Neubau.** Diese Karte ersetzt nichts von dem, was schon
-steht. Sie benutzt drei fertige Bauteile: die U-Bahn-Pipeline
+steht. Sie benutzt vier fertige Bauteile: die U-Bahn-Pipeline
 (`surfaces/app/src/ui/repo_pipeline.tsx`; PRD-Karte 20260830-065545 =
 `ops/docs/backlog/repo-onboarding-templates/README.md` §4 „Das Stationsmodell"),
 den generischen Schema-Renderer (`settings_schema_page.tsx`,
-accounts-boards-prd Phase 4) und die Policy-Plane mit ihrem einen getrackten
-Writer (`spine/auth/policy.py::swap`). Kein zweiter Edit-Ort, kein zweiter
-Chat, kein Drag-Drop-Editor.
+accounts-boards-prd Phase 4), die Policy-Plane mit ihrem einen getrackten
+Writer (`spine/auth/policy.py::swap`) — und **den einen Chat**
+(`card_transcript.tsx` + `card_composer.tsx`, von `chat.tsx` und der
+Kartenseite bereits geteilt) mit Henrys existierenden Verben `configure` und
+`set_station` (`board-copilot.md:123-146`). Kein zweiter Edit-Ort, kein
+zweiter Chat, kein Drag-Drop-Editor — der Chat wird in den Bildschirm
+**eingebettet**, nicht dupliziert (§5.5).
+
+**Nichts erfinden — das Design-Gesetz dieser Karte.** Jedes UI-Element unten
+hat eine benannte Herkunft aus einem Produkt, das Millionen Nutzer schon
+bedienen können (§7.0). Ein Element ohne Herkunftszeile kommt nicht auf den
+Bildschirm. Das ist keine Bescheidenheit, sondern die G3-Strategie: „ohne
+Einarbeitung verständlich" heißt konkret „der Nutzer hat es woanders schon
+gelernt".
 
 ---
 
@@ -286,7 +297,31 @@ Fünf Blöcke, ~18 Einträge. Spalte „heute" ist die Fundstelle des Fließtext
 **Gedächtnis** *(Scope: Workspace)* — Notizen an/aus, Index-Pfad (read-only),
 Verdichtungsschwelle (Erweitert). Heute: `:264` DU HAST EIN GEDAECHTNIS.
 
-### 4.3 Der Autonomie-Dial bekommt endlich etwas zu tun
+### 4.3 Der Brief, lesbar — ein Klick, kein Suchen
+
+Die Regeln als Formular (§4.2) sind die eine Hälfte der Sichtbarkeit. Die
+andere: der Owner muss den **ganzen Brief** sehen können, so wie Henry ihn
+wirklich bekommt — sonst bleibt das Misstrauen „was steht da noch drin, was
+ich nicht sehe". Dafür bekommt jeder Henry-Block oben einen Link
+**„Brief ansehen"**, pro Oberfläche (Chat / Sprache / Uhr / Push):
+
+- **Gerenderte Prosa, read-only**, mit den Slots als farbigen Chips im Text —
+  der Wert steht IM Satz, dort wo er wirkt. Tippen auf einen Chip springt zur
+  Settings-Zeile. Das ist das Merge-Tag-Muster der E-Mail-Template-Editoren
+  (Mailchimp/HubSpot: Prosa mit hervorgehobenen `*|Variablen|*`) — Millionen
+  Nutzer kennen „hervorgehoben = das ist der einstellbare Teil".
+- **Alles Nicht-Hervorgehobene ist sichtbar fix** — gedimmte Prosa, kein
+  Chip. Kein versteckter Absatz: die Ansicht rendert die Datei vollständig,
+  inklusive der Do/Don't-Beispiele und Decrees.
+- **Formular ↔ Brief ist ein Toggle**, kein zweiter Ort — dasselbe Muster wie
+  VS Code „Open Settings (JSON)" (UI-Ansicht und Roh-Ansicht derselben Werte)
+  und GitHub Actions „View workflow file" neben der Pipeline-Ansicht. Beides
+  sind Fenster auf denselben Zustand; editiert wird in der Formular-Ansicht.
+- Die Ansicht existiert nach Phase 2 gratis: sie zeigt exakt das Artefakt,
+  das der Renderer ohnehin baut und das die Byte-Identitäts-Abnahme prüft.
+  Kein zweiter Render-Pfad.
+
+### 4.4 Der Autonomie-Dial bekommt endlich etwas zu tun
 
 `settings-ia-redesign` Karte 4 (`autonomy-dial`, offen) beschreibt einen Dial
 *Nur melden / Fragen / Selbst handeln* über `pm.autonomy` +
@@ -356,6 +391,10 @@ Sackgasse wird zum Eingang.
 scrollbar, wie heute), darunter die Blockliste, Tippen öffnet die Detailseite.
 Kein zweites Layout-Konzept; identisch zur ausgelieferten Hub-Mechanik.
 
+Nicht eingezeichnet, aber Teil des Layouts: unten rechts der angedockte
+Henry-Knopf (öffnet Panel/Bottom-Sheet, §5.5) und in jeder Zeile der
+„Henry fragen"-Link; im Kopf jedes Henry-Blocks „Brief ansehen" (§4.3).
+
 ### 5.2 Die drei Zonen und warum genau diese
 
 - **Oben der Graph — automatisch erzeugt, in einer Reihe** (GitHub
@@ -418,6 +457,52 @@ Der Zustand wird also nicht erfunden, sondern eingelöst.
 Die `edges` liegen bereits im Payload und werden von der Komponente heute
 ignoriert (sie zeichnet einen geraden Verbinder). Für die Henry-Spur bleibt
 das so — die Spur ist ein Band unter der Reihe, keine zweite Kantenmenge.
+
+### 5.5 Henry im Bildschirm — der Chat als gleichberechtigter Bedienweg
+
+Der Owner soll jede Einstellung auf ZWEI Wegen ändern können, die auf
+demselben Zustand landen: die Zeile antippen **oder** es Henry sagen. Das
+Vorbild ist ausgeliefert und bekannt: **Copilot in den Windows-11-
+Einstellungen** (Chat-Panel neben der Settings-Seite, „schalte den Dunkelmodus
+ein" flippt den sichtbaren Schalter) — dasselbe Muster als Seitenpanel kennt
+jeder VS-Code-Nutzer vom Copilot-Chat. Konkret:
+
+- **Ein Chat, angedockt, nicht dupliziert.** Rechts unten ein Henry-Knopf
+  (Intercom-Launcher-Muster); Tippen öffnet auf breiten Screens ein
+  Seitenpanel, auf dem Phone das Bottom-Sheet. Innen leben
+  `card_transcript.tsx` + `card_composer.tsx` — **dieselbe Instanz des
+  Workspace-Chats** (gleiche Session, gleicher Verlauf), nur an dieser Adresse
+  aufgeklappt. Das Ein-Chat-Gesetz (Owner-Direktive) bleibt damit wahr; die
+  Sackgasse „Ändern? Sag es Henry." wird zum Knopf, der Henry wirklich öffnet.
+- **Kontext reist mit, sichtbar.** Jede Settings-Zeile trägt „Henry fragen";
+  Tippen öffnet das Panel mit einem **Kontext-Chip** über dem Composer
+  (`Abnahme · Grüne Karten automatisch annehmen`) — das Attach-Context-Muster
+  aus dem VS-Code-Copilot-Chat. Der Chip reist als `configure`-`repo`/Key-
+  Kontext im Turn mit; Henry muss nicht raten, welche Zeile gemeint war.
+- **Ein Schreibpfad, kein zweiter.** Henry ändert über seine existierenden
+  Verben (`configure`, `set_station`); die landen im selben getrackten
+  `swap()`-Pfad wie ein Zeilen-Tap. Chat-Änderung und Hand-Änderung stehen
+  im selben Audit, mit demselben Rückgängig-Griff.
+- **Die Allowlist wird abgeleitet, nicht doppelt gepflegt.** Heute zählt
+  `board-copilot.md:134-146` zwölf Keys per Hand auf — eine zweite Liste
+  neben dem Schema, die auseinanderlaufen KANN und wird. Ab Phase 2 rendert
+  dieser Brief-Absatz als `fixed`-Slot **aus dem Schema** (`editable=true` ⇒
+  chat-konfigurierbar): was die Seite editieren kann, kann der Chat editieren,
+  per Konstruktion dieselbe Menge. Das ist derselbe UMZUG-Grundsatz wie §6,
+  auf die Allowlist angewandt.
+- **Der Rundlauf ist sichtbar.** Henrys Änderung bumpt `_version`, der
+  SSE-Cursor zieht die offene Seite nach (der Mechanismus, der heute schon
+  zwei Geräte synchron hält), die betroffene Zeile blitzt kurz auf, und
+  Henrys Antwort verlinkt sie („✓ Grüne Karten werden jetzt automatisch
+  angenommen → Abnahme"). Der Nutzer sieht den Schalter sich bewegen — das
+  ist der Moment, der Vertrauen in den Chat-Weg baut.
+- **Schlösser gelten auch im Chat.** Ein `fixed`-Wert bleibt per Chat genauso
+  unveränderbar wie per Zeile; Henry antwortet mit dem `why`-Satz und der
+  Quelle — denselben Daten, die die Zeile zeigt (sein Brief tut das heute
+  schon: „the action refuses it BY NAME with the route that IS open",
+  `:125`). Und `agentMaySwap=false` heißt: bei Charter-Werten schlägt Henry
+  vor und der Owner bestätigt mit einem Tap im Panel — Vorschlag und
+  Bestätigung im selben Verlauf, auditierbar.
 
 ---
 
@@ -489,6 +574,31 @@ ja, tappbar nein.
 
 ## 7. Verständlichkeit — die konkreten Mittel
 
+### 7.0 Die Herkunftstabelle — jedes Element ist irgendwo schon gelernt
+
+Owner-Anforderung wörtlich: nichts erfinden. Deshalb hier die vollständige
+Liste — jedes Element, sein Vorbild, und was genau übernommen wird. Ein
+Element, das in dieser Tabelle fehlt, gehört nicht auf den Bildschirm
+(und wer eines ergänzt, ergänzt die Zeile mit):
+
+| Element | Vorbild (bekannt aus) | übernommen wird |
+|---|---|---|
+| Pipeline in einer Reihe, auto-generiert | GitHub Actions / CircleCI | Graph = Projektion des Ist-Zustands, antippen navigiert, nichts ziehbar |
+| Linke Themen-Navigation + eine Zeile pro Wert + ein Erklärsatz | GitHub-Repo-Settings / Stripe Dashboard | Struktur, Zeilenanatomie (Label · Control · Satz · Badge) |
+| „Geerbt vom Workspace" + Zurücksetzen | GitHub Org→Repo-Settings-Vererbung | Badge-Wortlaut, Reset-Link pro Zeile |
+| Markierung „für dieses Projekt gesetzt" | VS-Code-Settings (blauer Balken = modified, Zahnrad → Reset) | Abweichung vom Default ist auf einen Blick sichtbar |
+| Erweitert (n) eingeklappt | Vercel-Settings / NN/g Progressive Disclosure | max. 5 Zeilen sichtbar, Rest gezählt hinter einem Aufklapper |
+| Suche über alles | VS-Code-Settings-Suche | ein Feld filtert Stationen + Regeln + Türen gleichzeitig |
+| Schloss + Grund + Quelle | Chrome/Edge „Wird von deiner Organisation verwaltet" | Gesperrtes sieht gesperrt aus UND sagt von wem/warum — nie ein toter Schalter |
+| Preset-Dial oben, Einzelzeilen darunter, „angepasst" bei Abweichung | Stripe/Vercel-Presets, Browser-Datenschutzstufen | §4.4, Dial setzt eine benannte Teilmenge |
+| Brief-Ansicht: Prosa mit Wert-Chips | Mailchimp/HubSpot Merge-Tags in E-Mail-Templates | hervorgehoben = einstellbar, gedimmt = fix (§4.3) |
+| Formular ↔ Brief als Toggle | VS Code „Open Settings (JSON)", GitHub Actions „View workflow file" | zwei Fenster auf denselben Zustand, kein zweiter Edit-Ort |
+| Chat-Panel neben den Settings, Chat flippt sichtbare Schalter | Copilot in den Windows-11-Einstellungen | §5.5, der Rundlauf Zeile↔Chat |
+| Angedockter Chat-Knopf unten rechts | Intercom-Launcher | Auffindbarkeit ohne Nav-Eintrag |
+| Kontext-Chip über dem Composer | VS-Code-Copilot-Chat „Attach Context" | „Henry fragen" reicht die Zeile mit, statt sie beschreiben zu lassen |
+
+### 7.1 Die Zeilen selbst
+
 - **Ein Satz pro Zeile, Pflicht.** `descKey` ist bereits vertraglich
   zweisprachig geprüft (`test_harness_layer.py`); die Regeln erben denselben
   Vertrag. Eine Zeile ohne Erklärsatz besteht den Gate nicht.
@@ -513,8 +623,8 @@ ja, tappbar nein.
 | # | Karte | Inhalt | Abnahme |
 |---|---|---|---|
 | 1 | `project-config-store` | `project_config`-Tabelle, Auflösungskette, Scope `project`, getrackter Writer über den `swap()`-Pfad, `_version`-Bump | Zwei Projekte halten verschiedene Werte; ein gelöschter Wert erbt wieder statt auf null zu fallen; jede Änderung steht im Audit |
-| 2 | `behavior-rules-model` | `BEHAVIOR_RULES` als Daten neben `harness.py`; `VOICE_STYLE`/`WEAR_BRIEF`/`GLASS_BRIEF` wandern aus dem Code nach `ops/harness/agents/`; Slots + `per_surface`; beide Vertragstests; `write_agent` schützt fixe Slots | **Bei Defaults sind alle sieben gerenderten Briefe byteweise identisch zum heutigen Stand**; eine Regel ohne Slot bricht den Gate; ein Editor-Versuch, einen `fixed`-Slot zu überschreiben, wird abgewiesen |
-| 3 | `harness-screen` | `/loopmap` wird die Harness-Seite: Stationsfilter über dasselbe Schema, linke Navigation, `SchemaDoor` wiederverwendet; die Stations-Knöpfe ziehen per Metadatum aus ihren alten Türen um (lane_labels-Präzedenzfall) | Kein Knopf verliert seine Editierbarkeit; kein Knopf ist an zwei Orten editierbar — die alte Tür-Zeile verschwindet im selben Commit; Screenshots Phone + Desktop gejudged |
+| 2 | `behavior-rules-model` | `BEHAVIOR_RULES` als Daten neben `harness.py`; `VOICE_STYLE`/`WEAR_BRIEF`/`GLASS_BRIEF` wandern aus dem Code nach `ops/harness/agents/`; Slots + `per_surface`; beide Vertragstests; `write_agent` schützt fixe Slots; die `configure`-Allowlist rendert als `fixed`-Slot aus dem Schema (§5.5) | **Bei Defaults sind alle sieben gerenderten Briefe byteweise identisch zum heutigen Stand**; eine Regel ohne Slot bricht den Gate; ein Editor-Versuch, einen `fixed`-Slot zu überschreiben, wird abgewiesen |
+| 3 | `harness-screen` | `/loopmap` wird die Harness-Seite: Stationsfilter über dasselbe Schema, linke Navigation, `SchemaDoor` wiederverwendet; die Stations-Knöpfe ziehen per Metadatum aus ihren alten Türen um (lane_labels-Präzedenzfall); **Henry angedockt** (§5.5: Panel/Bottom-Sheet um die geteilten Transcript+Composer, „Henry fragen"-Kontext-Chip) und **„Brief ansehen"** (§4.3, rendert das Phase-2-Artefakt) | Kein Knopf verliert seine Editierbarkeit; kein Knopf ist an zwei Orten editierbar — die alte Tür-Zeile verschwindet im selben Commit; **der Rundlauf beide Richtungen: eine per Chat gesetzte Änderung erscheint live in der Zeile, eine per Zeile gesetzte steht in Henrys Verlauf/Audit — beides derselbe `swap()`-Eintrag**; jedes Element hat seine §7.0-Herkunftszeile; Screenshots Phone + Desktop gejudged |
 | 4 | `pipeline-henry-track` | Knopf-Badges, Henry-Spur, Build-Loop als zweite Reihe — in `repo_pipeline.tsx`, ohne Stationsliste im Client | Eine im Daemon ergänzte Regel erscheint in der Spur **ohne Client-Änderung** (das ist der Dummy-Knob-Test aus Phase 4 der Vor-PRD, auf Regeln übertragen) |
 | 5 | `autonomy-dial` *(bestehende offene Karte)* | Dial als Preset über die Regel-Teilmenge, Einzel-Übersteuerung sichtbar | Dial-Stufe ↔ Einzelregeln in beide Richtungen konsistent |
 
@@ -557,4 +667,3 @@ ja, tappbar nein.
   `ops/harness/README.md` gilt weiter: eine Settings-Datei, die die CLI nicht
   mag, wird **schweigend** verworfen. Wenn Phase 2 den Brief generiert,
   gehört `probe_harness_settings.py --validate` in den Ablauf.
-```
