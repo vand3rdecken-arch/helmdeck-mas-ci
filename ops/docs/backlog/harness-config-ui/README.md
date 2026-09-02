@@ -80,6 +80,17 @@ gelernt".
   Overlay darüber, keine Migration.
 - **Kein zweiter Bildschirm.** `/loopmap` wächst in diese Rolle hinein; es gibt
   danach nicht Loop-Map *und* Harness-Seite.
+- **Kein neuer Chat — der vorhandene wird angedockt (Owner-Decree
+  2026-09-02).** Der Henry-Chat existiert als `surfaces/app/src/app/chat.tsx`
+  und teilt seine Bauteile (`card_transcript.tsx`, `card_composer.tsx`) schon
+  heute mit der Kartenseite — der Kommentar in `chat.tsx:42` sagt wörtlich,
+  dass sich nur das Submit-Ziel unterscheidet. Die Harness-Seite **hostet
+  diesen Bildschirm** (Overlay/Sheet um dieselbe Komponente, dieselbe Session,
+  derselbe Verlauf). Verbesserungen — etwa der Kontext-Chip — landen **in**
+  `card_composer.tsx` und kommen damit auch dem Karten-Chat zugute. Ein
+  Worker, der für §5.5 einen dritten Transcript/Composer-Zusammenbau anlegt,
+  hat die Karte falsch verstanden und verletzt zusätzlich das ausgelieferte
+  Ein-Chat-Gesetz.
 
 ---
 
@@ -469,11 +480,15 @@ jeder VS-Code-Nutzer vom Copilot-Chat. Konkret:
 
 - **Ein Chat, angedockt, nicht dupliziert.** Rechts unten ein Henry-Knopf
   (Intercom-Launcher-Muster); Tippen öffnet auf breiten Screens ein
-  Seitenpanel, auf dem Phone das Bottom-Sheet. Innen leben
-  `card_transcript.tsx` + `card_composer.tsx` — **dieselbe Instanz des
-  Workspace-Chats** (gleiche Session, gleicher Verlauf), nur an dieser Adresse
-  aufgeklappt. Das Ein-Chat-Gesetz (Owner-Direktive) bleibt damit wahr; die
-  Sackgasse „Ändern? Sag es Henry." wird zum Knopf, der Henry wirklich öffnet.
+  Seitenpanel, auf dem Phone das Bottom-Sheet. Innen lebt **der bestehende
+  Chat-Bildschirm** (`chat.tsx` — derselbe, der unter /chat läuft: gleiche
+  Session, gleicher Verlauf, gleiche Bauteile), nur an dieser Adresse
+  aufgeklappt. **Neu gebaut wird ausschließlich der Rahmen** (das
+  Panel/Sheet, das ihn hostet, plus der Launcher-Knopf) **und der
+  Kontext-Chip** — letzterer als Verbesserung IN `card_composer.tsx`, nicht
+  daneben. Alles andere an §5.5 ist Wiederverwendung; ein Chat-Neubau ist
+  per Nicht-Ziel ausgeschlossen. Die Sackgasse „Ändern? Sag es Henry." wird
+  so zum Knopf, der Henry wirklich öffnet.
 - **Kontext reist mit, sichtbar.** Jede Settings-Zeile trägt „Henry fragen";
   Tippen öffnet das Panel mit einem **Kontext-Chip** über dem Composer
   (`Abnahme · Grüne Karten automatisch annehmen`) — das Attach-Context-Muster
@@ -624,7 +639,7 @@ Element, das in dieser Tabelle fehlt, gehört nicht auf den Bildschirm
 |---|---|---|---|
 | 1 | `project-config-store` | `project_config`-Tabelle, Auflösungskette, Scope `project`, getrackter Writer über den `swap()`-Pfad, `_version`-Bump | Zwei Projekte halten verschiedene Werte; ein gelöschter Wert erbt wieder statt auf null zu fallen; jede Änderung steht im Audit |
 | 2 | `behavior-rules-model` | `BEHAVIOR_RULES` als Daten neben `harness.py`; `VOICE_STYLE`/`WEAR_BRIEF`/`GLASS_BRIEF` wandern aus dem Code nach `ops/harness/agents/`; Slots + `per_surface`; beide Vertragstests; `write_agent` schützt fixe Slots; die `configure`-Allowlist rendert als `fixed`-Slot aus dem Schema (§5.5) | **Bei Defaults sind alle sieben gerenderten Briefe byteweise identisch zum heutigen Stand**; eine Regel ohne Slot bricht den Gate; ein Editor-Versuch, einen `fixed`-Slot zu überschreiben, wird abgewiesen |
-| 3 | `harness-screen` | `/loopmap` wird die Harness-Seite: Stationsfilter über dasselbe Schema, linke Navigation, `SchemaDoor` wiederverwendet; die Stations-Knöpfe ziehen per Metadatum aus ihren alten Türen um (lane_labels-Präzedenzfall); **Henry angedockt** (§5.5: Panel/Bottom-Sheet um die geteilten Transcript+Composer, „Henry fragen"-Kontext-Chip) und **„Brief ansehen"** (§4.3, rendert das Phase-2-Artefakt) | Kein Knopf verliert seine Editierbarkeit; kein Knopf ist an zwei Orten editierbar — die alte Tür-Zeile verschwindet im selben Commit; **der Rundlauf beide Richtungen: eine per Chat gesetzte Änderung erscheint live in der Zeile, eine per Zeile gesetzte steht in Henrys Verlauf/Audit — beides derselbe `swap()`-Eintrag**; jedes Element hat seine §7.0-Herkunftszeile; Screenshots Phone + Desktop gejudged |
+| 3 | `harness-screen` | `/loopmap` wird die Harness-Seite: Stationsfilter über dasselbe Schema, linke Navigation, `SchemaDoor` wiederverwendet; die Stations-Knöpfe ziehen per Metadatum aus ihren alten Türen um (lane_labels-Präzedenzfall); **Henry angedockt** (§5.5: Panel/Bottom-Sheet hostet den **bestehenden** `chat.tsx`-Screen — neu ist nur Rahmen+Launcher; Kontext-Chip als Verbesserung in `card_composer.tsx`) und **„Brief ansehen"** (§4.3, rendert das Phase-2-Artefakt) | Kein Knopf verliert seine Editierbarkeit; kein Knopf ist an zwei Orten editierbar — die alte Tür-Zeile verschwindet im selben Commit; **der Rundlauf beide Richtungen: eine per Chat gesetzte Änderung erscheint live in der Zeile, eine per Zeile gesetzte steht in Henrys Verlauf/Audit — beides derselbe `swap()`-Eintrag**; jedes Element hat seine §7.0-Herkunftszeile; Screenshots Phone + Desktop gejudged |
 | 4 | `pipeline-henry-track` | Knopf-Badges, Henry-Spur, Build-Loop als zweite Reihe — in `repo_pipeline.tsx`, ohne Stationsliste im Client | Eine im Daemon ergänzte Regel erscheint in der Spur **ohne Client-Änderung** (das ist der Dummy-Knob-Test aus Phase 4 der Vor-PRD, auf Regeln übertragen) |
 | 5 | `autonomy-dial` *(bestehende offene Karte)* | Dial als Preset über die Regel-Teilmenge, Einzel-Übersteuerung sichtbar | Dial-Stufe ↔ Einzelregeln in beide Richtungen konsistent |
 
