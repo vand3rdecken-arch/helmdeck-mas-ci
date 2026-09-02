@@ -120,6 +120,31 @@ ausführen darf er sie nicht ohne menschliche Bestätigung. Das schließt den
 Kreis: die Beschwerde war „ich sehe seine Regeln nicht", die Antwort ist „du
 siehst sie, und er darf dich um eine Änderung bitten".
 
+**Welches Projekt gilt wann — die Auflösungsregel, explizit.** Henry ist EIN
+Agent pro Workspace, und viele seiner Turns haben gar kein Repo
+(`machine_task`, Board-Fragen). Ein Projekt-Scope ohne Auflösungsregel wäre
+eine gespeicherte Annahme — genau die Klasse, die das No-Monkey-Patch-Gesetz
+verbietet. Deshalb wird die Projektzugehörigkeit **am Ereignis** aufgelöst,
+an genau einem Owner:
+
+- **Karten-Turns** (Worker, Broker-Eskalationen zu einer Karte): das Repo der
+  Karte. Es steht am Dispatch fest.
+- **Chat-Turns mit Repo-Bezug** (`direct_task`, `configure` mit `repo`,
+  Pipeline-Fragen): das genannte Repo, sonst `default_repo`.
+- **Alles andere** (Board-Fragen, `machine_task`, Smalltalk): Workspace-Werte,
+  Projekt-Overlay bleibt schlicht unangewendet.
+
+**Der warme Prozess ist die Leitplanke für den Transportweg.** Henrys
+1.6s-Warm-Turns leben davon, dass der Basis-Brief EINMAL beim Spawn mitfährt
+(`--append-system-prompt`, `copilot.py:332`) und danach nicht neu gerendert
+wird. Daraus folgt die Aufteilung: **Workspace-Regeln rendern in den
+Basis-Brief** (eine Änderung bumpt die Config-Version → `_persist_drop`, der
+nächste Turn spawnt mit dem neuen Brief — der Mechanismus existiert), und
+**projektabhängige Regeln reisen als Turn-Overlay** über den vorhandenen
+`extra_system`-Pfad (`copilot.py:1505`), genau wie heute `VOICE_STYLE` und die
+Wear/Glass-Briefs. Kein Respawn pro Projektwechsel, kein kalter Henry nach
+jedem Regel-Edit.
+
 ---
 
 ## 4. Henrys Regeln als strukturierte Einträge
@@ -398,6 +423,18 @@ das so — die Spur ist ein Band unter der Reihe, keine zweite Kantenmenge.
 
 ## 6. Wo die bestehenden Werte landen
 
+**„Landet bei" heißt UMZUG, nie Duplikat.** Mehrere der Knöpfe unten sind
+heute in Tür Automation/System editierbar; die Stationsseite würde sie ein
+zweites Mal rendern — ein Verstoß gegen das eigene Phase-3-Kriterium und gegen
+das Decree „kein zweiter Edit-Ort für irgendeinen Key". Der Mechanismus für
+den Umzug ist ausgeliefert und hat einen Präzedenzfall: `policy.lane_labels`
+ist in Phase 4 der Vor-PRD per `door`-Metadatum von Automation nach Boards
+gezogen, **ohne Client-Edit** (`apimeta.py:146-155` dokumentiert genau das).
+Die Stationszuordnung ist ein weiteres Metadatum derselben Art (`station:
+"backlog"` statt einer neuen Tür); die alte Tür-Zeile verschwindet im selben
+Daemon-Commit, in dem die Stationsseite sie bekommt. Tür Automation behält,
+was keiner Station gehört (Nightshift-Fenster etc.).
+
 **Aus `settings.json`, Zweig `policy.*`** (vollständig, 18 Schlüssel im Code
 belegt):
 
@@ -477,7 +514,7 @@ ja, tappbar nein.
 |---|---|---|---|
 | 1 | `project-config-store` | `project_config`-Tabelle, Auflösungskette, Scope `project`, getrackter Writer über den `swap()`-Pfad, `_version`-Bump | Zwei Projekte halten verschiedene Werte; ein gelöschter Wert erbt wieder statt auf null zu fallen; jede Änderung steht im Audit |
 | 2 | `behavior-rules-model` | `BEHAVIOR_RULES` als Daten neben `harness.py`; `VOICE_STYLE`/`WEAR_BRIEF`/`GLASS_BRIEF` wandern aus dem Code nach `ops/harness/agents/`; Slots + `per_surface`; beide Vertragstests; `write_agent` schützt fixe Slots | **Bei Defaults sind alle sieben gerenderten Briefe byteweise identisch zum heutigen Stand**; eine Regel ohne Slot bricht den Gate; ein Editor-Versuch, einen `fixed`-Slot zu überschreiben, wird abgewiesen |
-| 3 | `harness-screen` | `/loopmap` wird die Harness-Seite: Stationsfilter über dasselbe Schema, linke Navigation, `SchemaDoor` wiederverwendet | Kein Knopf verliert seine Editierbarkeit; kein Knopf ist an zwei Orten editierbar; Screenshots Phone + Desktop gejudged |
+| 3 | `harness-screen` | `/loopmap` wird die Harness-Seite: Stationsfilter über dasselbe Schema, linke Navigation, `SchemaDoor` wiederverwendet; die Stations-Knöpfe ziehen per Metadatum aus ihren alten Türen um (lane_labels-Präzedenzfall) | Kein Knopf verliert seine Editierbarkeit; kein Knopf ist an zwei Orten editierbar — die alte Tür-Zeile verschwindet im selben Commit; Screenshots Phone + Desktop gejudged |
 | 4 | `pipeline-henry-track` | Knopf-Badges, Henry-Spur, Build-Loop als zweite Reihe — in `repo_pipeline.tsx`, ohne Stationsliste im Client | Eine im Daemon ergänzte Regel erscheint in der Spur **ohne Client-Änderung** (das ist der Dummy-Knob-Test aus Phase 4 der Vor-PRD, auf Regeln übertragen) |
 | 5 | `autonomy-dial` *(bestehende offene Karte)* | Dial als Preset über die Regel-Teilmenge, Einzel-Übersteuerung sichtbar | Dial-Stufe ↔ Einzelregeln in beide Richtungen konsistent |
 
@@ -508,6 +545,14 @@ ja, tappbar nein.
   Code-Repo), aber erst im Gebrauch bewiesen. Falsch geraten kostet eine
   Scope-Änderung im Schema, keine Migration — das ist der Grund, es als
   Metadatum zu führen und nicht als zwei Tabellen.
+- **Projekt-Scope könnte v1-Overkill sein.** Heute hat der Workspace faktisch
+  ein aktives Repo (`pm.repos` = eins). Wenn Phase 1 zu schwer wird: die
+  Auflösungskette und die Vererbungs-UI zuerst mit **leerem** Projekt-Layer
+  ausliefern (Badge zeigt dann immer „Geerbt") und die `project_config`-Schreib-
+  seite nachziehen. Die Kette ist von Tag eins die richtige Form; nur der
+  vierte Layer darf später kommen. Nicht erlaubt ist der umgekehrte Schnitt —
+  Projekt-Werte ohne sichtbare Vererbung —, denn der reproduziert exakt die
+  Unsichtbarkeit, gegen die diese Karte gebaut wird.
 - **Stiller Ausfall des Settings-Layers.** Die gemessene Falle aus
   `ops/harness/README.md` gilt weiter: eine Settings-Datei, die die CLI nicht
   mag, wird **schweigend** verworfen. Wenn Phase 2 den Brief generiert,
