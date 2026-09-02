@@ -27,6 +27,14 @@
     "(ops/tools/board_state.py, relative to his cwd=daemon/) and read-only",
     "git. Nothing that writes, ships, or leaves the repo.",
     "",
+    "Agent/Task DENIED (2026-09-02 15:07, measured): on Henry's very first",
+    "checking turn he also spawned a stray subagent by accident (Agent tool,",
+    "prompt 'n/a - not used'), then stopped it - extra seconds, extra cost,",
+    "and an English 'that was a mistake' narration the owner saw as a second",
+    "answer. Chat CHECKS things; BUILDING goes through cards (```actions ->",
+    "the daemon dispatches). A subagent from inside the chat process is",
+    "neither - it bypasses the card rails entirely.",
+    "",
     "The memory Write()/Edit() deny below is belt-and-suspenders for the same reason:",
     "plan mode already withholds the Write/Edit tools, so this only matters if that",
     "mode ever changes - but memory_paths.auto resolves to the SAME shared, non-git",
@@ -48,6 +56,8 @@
       "Bash(git show:*)"
     ],
     "deny": [
+      "Agent",
+      "Task",
       "Read(./daemon/settings.json)",
       "Read(./daemon/users.json)",
       "Read(./daemon/helmdeck.db)",
