@@ -368,12 +368,17 @@ export const screens: Dict = {
   // to: "legt an", never "dispatched into the backlog lane".
   "pipeline.knobs": { de: "{n} Knöpfe", en: "{n} settings" },
   "pipeline.henry": { de: "Henry", en: "Henry" },
+  // SHORT ON PURPOSE. Five stations on a 430px phone leave ~80px each, and
+  // "entscheidet" measured 11 characters too wide there - it rendered as
+  // "entscheid…" in the first screenshot. A truncated verb is worse than a
+  // short one: it looks like a word and isn't. Same lesson, same row, as the
+  // off-reasons that had to move out from under these dots.
   "harness.track.backlog": { de: "legt an", en: "files" },
   "harness.track.working": { de: "steuert", en: "steers" },
   "harness.track.gate": { de: "prüft", en: "checks" },
-  "harness.track.review": { de: "entscheidet", en: "decides" },
+  "harness.track.review": { de: "nimmt ab", en: "accepts" },
   "harness.track.done": { de: "nimmt ab", en: "accepts" },
-  "harness.track.deploy": { de: "entscheidet Ship", en: "decides ship" },
+  "harness.track.deploy": { de: "gibt frei", en: "releases" },
 
   // -- repo onboarding: one choice instead of twenty switches -----------------
   "repo.title": { de: "Repo einrichten", en: "Set up repo" },
