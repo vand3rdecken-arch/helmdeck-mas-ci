@@ -576,16 +576,21 @@ def _snapshot(full=False):
     if not full and (hidden_done or hidden_arch):
         # NOT a silent cap: Henry is told exactly what is missing and how to get
         # it, so "I don't know" is never the honest answer to a history question.
+        # EXACTLY this relative form: it is what the copilot settings layer
+        # pre-approves (ops/harness/settings/copilot.json permissions.allow -
+        # headless -p has no permission prompt, an unapproved variant just
+        # dies), and Henry's cwd IS daemon/ (henry_pmode docstring), so the
+        # relative path resolves. The absolute-path form told him before
+        # 2026-09-02 did not match the allow rule and was unrunnable.
         lines.append(
             "\nNOT SHOWN ABOVE: %d finished and %d archived card(s), plus the full "
             "'bites when' text of each debt item. They are omitted because they are "
             "history and cost ~19k tokens on every turn. When a question is about "
             "finished/archived work, a past outcome, or a debt item's detail, RUN "
-            "THIS FIRST and answer from its output:\n"
-            "    py -3.12 %s --full\n"
-            "(cwd does not matter - the path is absolute.)"
-            % (hidden_done, hidden_arch,
-               os.path.join(_REPO_ROOT, "ops", "tools", "board_state.py")))
+            "THIS FIRST (pre-approved for you, exactly this form - your cwd is "
+            "daemon/) and answer from its output:\n"
+            "    py -3.12 ../ops/tools/board_state.py --full"
+            % (hidden_done, hidden_arch))
     return "\n".join(lines)
 
 # -- action layer: extracted to copilot_actions.py (god-file breakup). ----
