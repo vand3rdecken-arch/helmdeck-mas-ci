@@ -10,6 +10,49 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "workers-die-with-the-daemon",
+        "order": -8,
+        "title": "a daemon restart can only be safe or instant, never both - workers are its children",
+        "status": "open",
+        "what": "Every worker is a CHILD process of the daemon, and the ONLY "
+                "reader of a worker's stdout is a thread inside that same "
+                "daemon (spine/agent/drivers.py:921 `for line in "
+                "self.proc.stdout` -> _on_event; cells/copilot/copilot.py "
+                "runs the same shape for chat). The singleton takeover then "
+                "evicts a prior daemon with `taskkill /F /T` "
+                "(spine/http/startup.py:144), whose /T cascades through that "
+                "child tree. Two consequences, both load-bearing:\n"
+                "(1) an agent that restarts the daemon from inside the tree "
+                "kills ITSELF mid-turn - worked around by launching the "
+                "restart under Task Scheduler's own parentage "
+                "(restart_helmdeck.ps1, restart.cmd), not by fixing the "
+                "lifecycle;\n"
+                "(2) the eviction cannot simply DROP /T either: an orphaned "
+                "worker keeps running with nothing reading its stdout, so "
+                "its output is silently lost - strictly worse than killing "
+                "it. So startup.py buys safety with a timed grace wait "
+                "(HELMDECK_RESTART_GRACE, default 600s) instead.",
+        "why_it_bites": "Every deploy is either slow (wait out the grace "
+                        "while live turns finish) or destructive (grace "
+                        "expires and running work is tree-killed - the owner "
+                        "lost the same 15-minute machine turn to a deploy "
+                        "twice in one evening, per startup.py's own "
+                        "_running_turns docstring). It also makes 'restart "
+                        "the daemon' a multi-step ritual an agent cannot "
+                        "perform on itself.",
+        "trigger": "Any daemon restart while a card or chat turn is live - "
+                   "i.e. most deploys during a working session.",
+        "fix": "Make a worker's output durable independently of the process "
+               "that spawned it (worker writes its own event stream to "
+               "run_dir, or a supervisor separate from the HTTP daemon owns "
+               "the pump), THEN drop /T and let workers survive a daemon "
+               "swap. surfaces/desktop/tray.py already supervises by HEALTH "
+               "rather than PID, so the supervisor half of this shape "
+               "exists; the worker-parentage half does not. Measure before "
+               "shipping - do not drop /T on reasoning alone.",
+        "since": "2026-09-02",
+    },
+    {
         "id": "chat-snapshot-skip-heuristic",
         "order": -7,
         "title": "board snapshot is skipped on a text heuristic, not a real relevance check",
