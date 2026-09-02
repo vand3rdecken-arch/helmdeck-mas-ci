@@ -23,7 +23,7 @@
 # gh must be authenticated (gh auth status). Repo override: HELMDECK_GH_REPO.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
-REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck}"
+REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck-release}"
 
 DIR="surfaces/desktop/release"; TAG=""; USE_LATEST=0; DRY_RUN=0; NOTES_FILE=""
 while [ $# -gt 0 ]; do
