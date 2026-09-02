@@ -15,8 +15,17 @@
     "  so it would be blocked for a build state it can neither cause nor fix.",
     "  So: no ambient layer at all, and everything it needs stated here.",
     "",
-    "The copilot runs --permission-mode plan and executes nothing itself (it emits",
-    "an ```actions block the daemon executes), so it is granted no tools here.",
+    "STALE NOTE, kept for history: 'runs --permission-mode plan, granted no",
+    "tools' described the pre-2026-08-21 world. Owner decree since then: Henry",
+    "runs a WORKING mode (henry_pmode, default acceptEdits). acceptEdits",
+    "auto-approves EDITS but not Bash - and a headless -p session has no",
+    "permission prompt (repo memory: no AskUserQuestion in -p), so every",
+    "ungated Bash call just dies. Measured 2026-09-02 14:55: Henry, told to",
+    "verify a dispatch instead of assuming it, tried the check and reported",
+    "'Freigabe fuer das Kommando fehlt'. The allow list below grants exactly",
+    "the read-only checks his job needs - the board reader",
+    "(ops/tools/board_state.py, relative to his cwd=daemon/) and read-only",
+    "git. Nothing that writes, ships, or leaves the repo.",
     "",
     "The memory Write()/Edit() deny below is belt-and-suspenders for the same reason:",
     "plan mode already withholds the Write/Edit tools, so this only matters if that",
@@ -30,6 +39,14 @@
   },
 
   "permissions": {
+    "allow": [
+      "Bash(py -3.12 ../ops/tools/board_state.py:*)",
+      "Bash(py -3.12 ../ops/tools/loop_state.py:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)"
+    ],
     "deny": [
       "Read(./daemon/settings.json)",
       "Read(./daemon/users.json)",
