@@ -165,6 +165,21 @@ def glance_talk(self, user, body):
     if not msg:
         return self._send(400, json.dumps({"error": "message required"}))
     from cells.copilot import copilot
+    from spine.ops import glassturn
+    # THE TRANSCRIPT REACHES THE LENS HERE, at event time, from the one place
+    # that observes it: the arrival of the words themselves.
+    #
+    # This is what makes the owner's own sentence visible on the display before
+    # the answer exists - and it needs no support from the device, which matters
+    # because the mic lives in a native service that ships on its own APK cycle.
+    # Whatever spoke these words (the glasses mic, the phone mic, a D-pad tap on
+    # the lens), they arrived, and that is a fact this process holds.
+    #
+    # `msg` AFTER the cap, not before: the lens must show what was actually sent
+    # to Henry, not what the client offered. A transcript that disagreed with the
+    # message would be a display lying about the thing it exists to show.
+    glassturn.heard(msg)
+    glassturn.thinking()
     try:
         out = copilot.chat("owner", msg, role="owner",
                            allow_actions=False, extra_system=GLASS_BRIEF,
@@ -174,6 +189,10 @@ def glance_talk(self, user, body):
                            # noise that teaches him to mute the channel.
                            announce=False)
     except Exception as e:                       # noqa: BLE001
+        # Never leave the lens on "thinking" after a turn that will not arrive -
+        # a silent wait is the one thing the on-device UX laws forbid outright,
+        # and "idle" would tell him his sentence was never heard when it was.
+        glassturn.failed()
         return self._send(502, json.dumps({"error": str(e)[:200]}))
     reply = out.get("reply") or ""
     # copilot.chat parses the block at EVENT TIME and returns both halves, so
@@ -190,17 +209,226 @@ def glance_talk(self, user, body):
     # the display is genuinely good at.
     from spine.media import voice
     vid = voice.render(spoken)
+    # TERMINAL, and named for what was actually observed. Not "speaking": whether
+    # the clip ever reached the owner's ear is something only the device learns,
+    # and this process never does - see glassturn's module docstring. A
+    # conversation that continues simply overwrites this with the next
+    # `listening` the mic owner reports.
+    #
+    # The OPTIONS go with it, and that is not a convenience. On a spoken turn
+    # this POST comes from GlassVoiceService on the PHONE, so the lens never sees
+    # the response below - publishing the tappable half only there would leave
+    # every voice turn optionless on the one surface that cannot type. Same
+    # object as the response carries, computed once.
+    lens_q = _glance_question({"question": q}) if q else None
+    glassturn.answered(question=lens_q)
     return self._send(200, json.dumps({
         # the prose WITHOUT the block - ask.parse already strips it
         "reply": spoken,
         # the tappable half; None when the agent ignored the brief,
         # which the lens must show as a dead end rather than hide
-        "question": _glance_question({"question": q}) if q else None,
+        "question": lens_q,
         "refused": out.get("refused") or [],
         # None when speech is unavailable (offline, no edge-tts) -
         # the lens then simply shows the text, never an error
         "voice": ("/glance/voice/%s.mp3?token=%s" % (vid, quote(given)))
                  if vid else None}))
+
+
+# How much of the ONE Henry conversation the lens may pull, and how much of any
+# single line. The wrist dropped its per-line cap by owner decree ("kein Zeichen
+# cap") because a watch scrolls freely; the lens is a 600x600 additive display
+# where a long paragraph pushes the live turn state off the screen, and the state
+# is the thing this surface exists to show. GLASS_BRIEF already holds Henry to
+# two sentences, so this only ever bites on a MIRRORED card line, which the lens
+# shows as context rather than as something to read in full - the card's own text
+# is one tap away on the needs list.
+GLASS_CHAT_MAX = 12
+GLASS_CHAT_LINE = 400
+
+# How long the lens's hanging read may block before answering with "nothing
+# moved". Comfortably inside the Cloudflare Worker's patience in front of it,
+# and matched by db.wait_glass's own default.
+GLASS_WAIT_S = 20
+
+
+def glance_chat(self, user):
+    """THE ONE CONVERSATION, as the lens reads it - plus the live state of the
+    turn happening right now.
+
+    WHY THIS EXISTS. The glasses voice loop already worked and already went to
+    Henry: GlassVoiceService opens the glasses mic, hands the recognised words to
+    POST /glance/talk, and that calls the SAME copilot.chat session the phone and
+    the watch use. What was missing was the lens's half - it never saw any of it.
+    It could not show that a mic was open, it never showed the words about to be
+    sent in the owner's name, and its own talk screen held exactly one reply with
+    no memory of the exchange it belonged to.
+
+    So this is deliberately NOT a new channel. It is the read side of the
+    conversation that already exists, shaped for the lens - the same thing
+    wear_chat_get is for the watch, and it reads the same copilot.history() for
+    the same reason: one Henry, many windows onto him, never a per-surface
+    transcript that can drift.
+
+    A HANGING GET, not a poll. The platform guidance the glasses app already
+    follows is emphatic about idle timers ("start them on demand, stop them when
+    not visible"), and the reference doc's factory rule from the owner's earlier
+    glasses project is blunter still: never ship a fast poll. A conversation
+    needs sub-second feedback, and a poll fast enough to feel live would be a
+    battery fire on a headset. So the lens holds ONE request that transmits
+    nothing until the transcript or the turn state actually moves - exactly the
+    shape the watch was moved to on 2026-08-30 ("einheitlich wie Paseo, kein
+    Polling").
+
+    Both cursors ride in and out. A client that sends neither (or 0) is answered
+    immediately, which is what makes the first load fast and what lets a
+    reconnect catch up without a special case: it always compares the numbers it
+    gets back against the ones it sent.
+    """
+    from spine.storage import events, db
+    from spine.ops import glassturn
+    tok = events.settings().get("glance_token") or ""
+    q = parse_qs(urlparse(self.path).query)
+    given = (q.get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+
+    def _cursor(name):
+        # None means "I have nothing" - ABSENT and ZERO are deliberately not the
+        # same thing, and conflating them is a real bug this test caught on its
+        # first run. On a freshly started daemon both counters ARE zero, so a
+        # client sending c=0&g=0 is genuinely up to date and would correctly
+        # block - leaving a first-time lens staring at an empty conversation for
+        # the full wait, which is the silent wait the on-device UX laws forbid
+        # outright. A client with no cursors yet says so by omitting them.
+        #
+        # A malformed value takes the same path rather than erroring: a lens
+        # stuck retrying a 400 is worse than one that simply resynchronises, and
+        # resynchronising is free.
+        raw = (q.get(name) or [None])[0]
+        if raw is None or raw == "":
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    c_last, g_last = _cursor("c"), _cursor("g")
+    if c_last is None or g_last is None:
+        c_now, g_now = db.current_chat_version(), db.current_glass_version()
+    else:
+        # Blocks only when the client is already up to date. wait_glass returns
+        # the CURRENT pair either way, so a spurious or timed-out wake costs one
+        # round trip and cannot lose an event.
+        c_now, g_now = db.wait_glass(c_last, g_last, timeout=GLASS_WAIT_S)
+    return self._send(200, json.dumps({
+        "c": c_now, "g": g_now,
+        # what is happening RIGHT NOW - the half the lens cannot derive
+        "turn": glassturn.snapshot(),
+        # ...and what has been said, which is durable and shared
+        "messages": _glance_messages()}))
+
+
+# The transcript classes the lens shows. Identical to the watch's allowlist
+# (routes_wear.wear_chat_get) and for the identical reasons - "card" is the
+# mirrored inbox, "pm" is Henry's proactive voice, "act" is the receipt proving a
+# move ran. Dropping any of them here would give the glasses a conversation with
+# a piece missing that every other surface can see, which is precisely the
+# per-surface drift reading copilot.history() is meant to prevent.
+_GLANCE_CLASSES = ("you", "bot", "error", "card", "pm", "act")
+
+# What the lens calls a mirrored card event. The watch's own KIND_LABEL, in
+# English because this surface is (GLASS_BRIEF, the nav bar and every other
+# string here are too).
+_GLANCE_KIND = {"question": "Question", "result": "Result", "blocker": "Blocker"}
+
+
+def _glance_messages():
+    """The tail of the owner's Henry transcript, trimmed for a 600x600 lens.
+
+    Shared shaping (glances.readable) with the watch, so a reply that renders
+    cleanly on the wrist cannot arrive here with literal '**' on it.
+
+    A mirrored card line keeps its label ("Question - card name") and is shown as
+    CONTEXT only: no options are rendered from here. Answering a card already has
+    exactly one path on this surface - the decide screen, reached from the needs
+    list and gated by settings.glance_decide - and offering a second one from the
+    chat would be the drift /glance/answer's docstring exists to forbid.
+    """
+    from cells.copilot import copilot
+    from spine.ops.glances import readable
+    msgs = (copilot.history("owner") or {}).get("messages") or []
+    out = []
+    for m in msgs:
+        # The log is a FILE this only reads; a truncated write or a hand-edit can
+        # leave anything in the array. Same guard wear_chat_get carries after a
+        # string entry there cost the watch its whole transcript for one bad line.
+        if not isinstance(m, dict):
+            continue
+        cls = m.get("cls") or ""
+        if cls not in _GLANCE_CLASSES:
+            continue
+        text = readable(m.get("text") or "", GLASS_CHAT_LINE)
+        if not text:
+            continue
+        row = {"mine": cls == "you", "text": text, "ts": m.get("ts") or ""}
+        if cls == "card":
+            kind = m.get("kind") or ""
+            row["label"] = (_GLANCE_KIND.get(kind) or "Card") + " - " + \
+                ((m.get("cardName") or m.get("card") or "")[:40])
+        out.append(row)
+    return out[-GLASS_CHAT_MAX:]
+
+
+# What a client holding the SHARED glance token may assert about the turn.
+#
+# Deliberately just the two states that party actually OBSERVES: it owns the
+# microphone, so it alone knows the mic opened and alone knows it closed without
+# words. Everything else - heard, thinking, answered, failed - is set by the
+# daemon from its own request handling and can never be claimed from outside. A
+# token that could assert "answered" could paint a reply state the owner never
+# got, which is the one lie this whole surface is being built to remove.
+_CLIENT_STATES = ("listening", "idle")
+
+
+def glance_state(self, user, body):
+    """The microphone's own report - the ONE signal the daemon cannot observe.
+
+    GlassVoiceService is the only party that knows a mic is open: it opens it.
+    Everything else about a glasses turn happens inside this process (the words
+    arrive at /glance/talk, Henry is called here, the answer is rendered here),
+    so this endpoint is small on purpose - it carries exactly the fact that has
+    no other route into the daemon, and nothing else.
+
+    Gated by settings.glance_talk, the same switch the conversation itself is
+    behind: if the lens may not talk to Henry, a listening indicator for a
+    conversation that cannot happen is noise. No NEW consent is asked for, and
+    none is bypassed.
+    """
+    from spine.storage import events
+    from spine.ops import glassturn
+    s = events.settings()
+    tok = s.get("glance_token") or ""
+    given = (body.get("token") or "").strip() or \
+        (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+    if not s.get("glance_talk"):
+        return self._send(403, json.dumps(
+            {"error": "talking to the board agent from the glasses is "
+                      "off (set settings.glance_talk)"}))
+    state = (body.get("state") or "").strip()
+    if state not in _CLIENT_STATES:
+        # Name what IS allowed. A native client debugging a typo against a bare
+        # 400 learns nothing, and this one cannot be stepped through easily.
+        return self._send(400, json.dumps(
+            {"error": "state must be one of %s" % (", ".join(_CLIENT_STATES),)}))
+    mic = (body.get("mic") or "").strip()
+    if state == "listening":
+        glassturn.listening(mic=mic, text=body.get("text") or "")
+    else:
+        glassturn.idle(mic=mic)
+    return self._send(200, json.dumps({"ok": True}))
 
 
 def glance_photo(self, user, body):
@@ -333,9 +561,11 @@ GET_PREFIX_ROUTES = [
 GET_ROUTES = {
     "/glance": glance_get,
     "/glance/banner": glance_banner_voice,
+    "/glance/chat": glance_chat,
 }
 POST_ROUTES = {
     "/glance/talk": glance_talk,
     "/glance/answer": glance_answer,
     "/glance/photo": glance_photo,
+    "/glance/state": glance_state,
 }

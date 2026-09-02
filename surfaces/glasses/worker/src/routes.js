@@ -12,10 +12,16 @@
 //
 // THE PROPERTY THIS FILE EXISTS TO HOLD:
 //
-//     The worker proxies FIVE paths to the daemon and nothing else, ever.
+//     The worker proxies an EXPLICIT LIST of paths to the daemon and nothing
+//     else, ever.
 //
 // The daemon behind it serves cards, settings, chat and driver commands. A
 // generic pass-through would publish all of it behind one query-string token.
+//
+// (The count used to be written into this sentence and into index.js's header.
+// It went stale twice - the list said five while the prose said four - so the
+// invariant is now stated without a number that has to be maintained. The list
+// below is the specification.)
 
 // The daemon's own id rule, mirrored exactly: daemon/voice.py:63-69 accepts an
 // id only if `vid.isalnum() and len(vid) <= 32`. Anchored at both ends so
@@ -29,6 +35,27 @@ export const PROXY_ROUTES = {
   "/glance": "GET",
   "/glance/answer": "POST",
   "/glance/talk": "POST",
+  // THE FIX FOR A ROUTE THAT WAS DEAD IN PRODUCTION ONLY. The daemon has served
+  // /glance/banner since the spoken-blocker card, and app.js has requested it
+  // same-origin since the same day - but it was never added here, so through the
+  // deployed Worker the request fell through to the static assets, r.json() threw
+  // on index.html, and speakBanner's own .catch() swallowed it. The result: the
+  // proactive "N new cards need you" announcement worked when the lens pointed
+  // straight at a daemon on the LAN and was SILENT on glance.helmdeck.de - the
+  // exact configuration the owner actually wears. Nothing errored anywhere.
+  //
+  // Safe by the same argument glance_voice already makes: this route speaks a
+  // server-clamped integer (1-99) and can never carry a task name.
+  "/glance/banner": "GET",
+  // The lens's read of the ONE Henry conversation plus the live turn state. A
+  // HANGING GET (~20s) rather than a poll - see routes_glance.glance_chat. The
+  // Worker needs nothing special for that: it awaits the origin fetch like any
+  // other, and 20s is well inside the edge's patience.
+  "/glance/chat": "GET",
+  // The microphone's own report - the one signal the daemon cannot observe for
+  // itself. Bounded on the daemon side to a two-word vocabulary, so the widest
+  // thing this can do is light or clear a "listening" indicator.
+  "/glance/state": "POST",
   // Added 2026-08-21 for the DAT camera. Deliberately, and with the two
   // mitigations that make it defensible: the daemon side is OFF unless
   // settings.glance_photo is set (its own switch, not glance_token's), and it

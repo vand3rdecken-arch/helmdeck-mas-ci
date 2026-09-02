@@ -23,7 +23,11 @@
 //
 // THE SECURITY PROPERTY THIS FILE MUST HOLD, above all else:
 //
-//     This Worker proxies FOUR paths and nothing else, ever.
+//     This Worker proxies an EXPLICIT ALLOWLIST of paths and nothing else, ever.
+//
+// (This line used to name a count. It was wrong - it said FOUR while routes.js
+// listed five - which is how /glance/banner went missing from the list without
+// anyone noticing the prose and the code disagreeing. routes.js IS the list.)
 //
 // A generic pass-through would publish the entire daemon - cards, settings,
 // chat, the driver commands - to the open internet behind one query-string

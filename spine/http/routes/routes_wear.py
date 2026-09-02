@@ -24,7 +24,6 @@ glance_token, not a user session - that boundary was the reason for the
 rule, and the watch was never on the wrong side of it.
 """
 import json
-import re
 
 # Wear OS quality bar (README.md §7.2): fits a 192dp circle, no keyboard,
 # tap-to-answer or dictation only - the same CLASS of constraint GLASS_BRIEF
@@ -72,76 +71,33 @@ WEAR_BODY_MAX = None
 # already caps it at, so this only ever re-cuts text that arrived at the wall.
 WEAR_DETAIL_MAX = 160
 
-# The markup the phone RENDERS and a watch would show as literal characters.
-# Headings and list bullets are matched per line (re.M); emphasis and code ticks
-# anywhere. Deliberately NOT a markdown parser - this only removes the markers
-# that would otherwise read as '**DELIVERED**' on a 240dp screen.
-_WEAR_MD = re.compile(r"^\s{0,3}#{1,6}\s*|^\s{0,3}[-*+]\s+|\*\*|__|`+", re.M)
-
-
-def _wear_clip(text, cap):
-    """Cut at a boundary, and SAY that it was cut.
-
-    Owner, 2026-08-29, reading a turn report on the watch: "Message
-    abgeschnitten." A plain text[:cap] ends mid-word - the screen showed
-    "... (`wear-debug.apk`, 13:24" and simply stopped, which reads as a bug in
-    the message rather than as a bound on the screen.
-
-    Prefer a sentence end; fall back to a word boundary; the ellipsis is added
-    either way so a cut is never mistaken for the end of the thought. The
-    sentence end is only accepted in the second half of the budget - otherwise a
-    single early full stop would throw away most of what fits.
-    """
-    text = text or ""
-    if cap is None or len(text) <= cap:
-        return text
-    head = text[:cap]
-    end = -1
-    for mark in (". ", "! ", "? ", ".\n", "!\n", "?\n"):
-        end = max(end, head.rfind(mark))
-    if end >= cap // 2:
-        return head[:end + 1].rstrip() + " ..."
-    sp = head.rfind(" ")
-    if sp <= 0:
-        return head.rstrip() + "..."
-    return head[:sp].rstrip(" ,;:-") + " ..."
+# THE WRIST-TEXT POLICY NOW LIVES IN spine/ops/glances.py, and these three names
+# are thin aliases onto it.
+#
+# It moved when the GLASSES gained a transcript of their own (routes_glance
+# glance_chat). The comment further down this file - "One wrist-text policy, one
+# function" - was written after /wear/board and /wear/chat had drifted into two
+# clip rules and the weaker one shipped markdown to the watch. Letting the lens
+# grow a third copy would have been that same defect one surface wider, and the
+# failure mode is silent: the watch renders a reply cleanly, the glasses render
+# the SAME reply with literal '**' on it, and nothing errors.
+#
+# Aliased rather than renamed at the call sites so this file's behaviour and its
+# spelling are unchanged - ops/tests/test_wear_card_body.py drives W._wear_text
+# and W._wear_clip directly and still does.
+from spine.ops.glances import clip_text as _wear_clip
+from spine.ops.glances import readable as _glances_readable
+from spine.ops.glances import _MD_MARKS as _WEAR_MD          # noqa: F401  (kept for callers/tests)
 
 
 def _wear_text(raw, cap=WEAR_BODY_MAX):
     """A card's own prose, made readable on a wrist.
 
-    Three things are stripped, each for a reason already established on another
-    surface rather than invented here:
-
-     1. the <helmdeck-ask> block, via the SAME ask.parse() wear_talk_post and
-        wear_chat_get already use. The stored reply keeps the block verbatim, and
-        rendering it raw is exactly the '{"label": ...' screenful the owner
-        photographed on 2026-08-29.
-     2. fenced blocks. ```actions is machine syntax and a code fence is
-        unreadable at this width; taking the EVEN split segments drops the
-        fenced halves and keeps the prose between them.
-     3. markdown markers, which only a renderer makes invisible.
-
-    Blank-line structure is KEPT (collapsed to one), because paragraph breaks are
-    the only thing left telling the eye where a thought ends. Whitespace inside a
-    line is collapsed - a wrapped 240dp line has no use for the phone's columns.
-    """
-    from spine.ops import ask
-    _q, prose = ask.parse(raw or "")
-    text = prose or raw or ""
-    text = "".join(text.split("```")[0::2])
-    text = _WEAR_MD.sub("", text)
-    out, blank = [], False
-    for line in text.splitlines():
-        line = " ".join(line.split())
-        if not line:
-            blank = True
-            continue
-        if out and blank:
-            out.append("")
-        blank = False
-        out.append(line)
-    return _wear_clip("\n".join(out).strip(), cap)
+    The wrist's default cap is WEAR_BODY_MAX; the shared implementation defaults
+    to None. That difference is the whole reason this wrapper still exists -
+    every existing caller here relies on the wrist default being applied when it
+    passes no cap at all."""
+    return _glances_readable(raw, cap)
 
 
 def _wear_body(t):
