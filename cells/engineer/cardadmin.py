@@ -110,7 +110,10 @@ def update_track(tid, patch, actor="owner"):
             raise ValueError("unknown driver '%s' - choices: %s"
                               % (patch["driver"], ", ".join(sorted(valid)) or "(none configured)"))
         from spine.agent import drivers
-        if drivers.turn_active(tid):
+        # inflight: a QUEUED turn already resolved nothing yet, but it will read
+        # the card's driver when it spawns - swapping it underneath is the same
+        # mid-turn mutation this guard exists to refuse.
+        if drivers.turn_inflight(tid):
             raise RuntimeError("cannot change driver while a turn is running - wait for it to finish")
     if patch.get("fast_track"):
         # Flipping fast-track ON for a worktree-isolated card CONVERTS it onto
@@ -124,7 +127,7 @@ def update_track(tid, patch, actor="owner"):
                 and os.path.isdir(wt)
                 and os.path.abspath(wt) != os.path.abspath(cur.get("repo") or "")):
             from spine.agent import drivers
-            if drivers.turn_active(tid):
+            if drivers.turn_inflight(tid):
                 raise RuntimeError("cannot switch to fast-track while a turn is "
                                    "running - wait for it to finish")
     for k in ONEWAY_TRUE:
@@ -210,7 +213,7 @@ def update_track(tid, patch, actor="owner"):
             # finalize bug already burned us with). Skipped while a turn is
             # running - committing half-done work is worse than waiting.
             from spine.agent import drivers as _drivers
-            if not _drivers.turn_active(tid):
+            if not _drivers.turn_inflight(tid):
                 ac = sessions._autocommit(t)
                 log.log("note", "FAST-TRACK aus: Karte bleibt auf dem Live-Tree "
                         "(kein Worktree vorhanden), Auto-Deploy stoppt.%s"

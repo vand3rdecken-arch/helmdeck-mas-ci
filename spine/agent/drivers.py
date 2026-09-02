@@ -106,13 +106,123 @@ def _native_registries():
     return out
 
 
+# --- turn INTENT: the queued half of a turn's life ---------------------------
+# A turn does not become observable the moment it is decided. Between the caller
+# writing status='running' and drivers.run() actually spawning, _turn may BLOCK
+# for up to 960s on the desktop (cursor) lock or the direct-tree lock - by
+# design, that is the bounded queue. During that window there is no session, so
+# has_session() and turn_active() both say False while a turn is very much
+# alive and about to spend money.
+#
+# Measured 2026-09-02 (owner report, cards 20260902-040607 / 20260901-202935):
+# card filed 04:06:07 -> desktop_wait 04:06:08 -> zombie sweep BOUNCED it
+# 04:07:11 with the phantom note "daemon restarted mid-turn" -> the lock freed
+# 04:10:25 and the very same turn spawned and ran for minutes under a red
+# "abgelehnt" badge. The sibling card took the other branch of the same sweep
+# (worker alive from a prior turn, no turn "active") and was settled green to
+# needs_you at 04:11:12 while ITS turn sat in the same queue. Both badges said
+# stopped; both cards were burning tokens.
+#
+# So QUEUED is a lifecycle state, and like the others it is an OBSERVATION
+# folded in at event time at exactly ONE owner (turnrunner._turn's entry, the
+# single call site of drivers.run - CLAUDE.md's no-monkey-patch law), never a
+# stored card flag. Process-local by construction: a daemon restart empties it,
+# which is exactly right - the startup sweep must still reap everything the old
+# process was queueing.
+_pending = {}                       # tid -> {token: {"since": ts, "cancelled": bool}}
+_pending_guard = threading.Lock()
+_pending_token = 0
+
+
+class _Intent(object):
+    """Handle on ONE registered turn intent. `cancelled` is re-read live, so a
+    Stop that lands while the turn is queued is seen the instant it acquires."""
+
+    __slots__ = ("tid", "token")
+
+    def __init__(self, tid, token):
+        self.tid, self.token = tid, token
+
+    @property
+    def cancelled(self):
+        with _pending_guard:
+            rec = (_pending.get(self.tid) or {}).get(self.token)
+            return bool(rec and rec["cancelled"])
+
+
+class turn_intent(object):
+    """Context manager wrapping a turn's WHOLE life, lock waits included.
+
+    Per-intent tokens (not one flag per card) because interrupt-and-replace
+    cancels the old turn and immediately starts a new one on the same card: a
+    shared flag would have the replacement abort itself on the cancel meant for
+    its predecessor."""
+
+    def __init__(self, tid):
+        self.tid, self.token = tid, None
+
+    def __enter__(self):
+        global _pending_token
+        with _pending_guard:
+            _pending_token += 1
+            self.token = _pending_token
+            _pending.setdefault(self.tid, {})[self.token] = {
+                "since": _time.time(), "cancelled": False}
+        return _Intent(self.tid, self.token)
+
+    def __exit__(self, *exc):
+        with _pending_guard:
+            recs = _pending.get(self.tid)
+            if recs:
+                recs.pop(self.token, None)
+                if not recs:
+                    _pending.pop(self.tid, None)
+        return False
+
+
+def turn_queued(tid):
+    """True while a turn for this track is registered but not yet running -
+    almost always waiting on the desktop or direct-tree lock."""
+    with _pending_guard:
+        return bool(_pending.get(tid))
+
+
+def turn_inflight(tid):
+    """The question every reconciler actually means: is a turn ALIVE on this
+    card - queued or executing? turn_active() alone answers only the second
+    half, and treating "not active" as "dead" is what let the sweep bounce a
+    queued turn. Use this for any "may I declare this card stopped / settled /
+    safe to mutate" decision; use turn_active() only where you need "is the
+    model producing output RIGHT NOW" (spinner, compaction timing)."""
+    return turn_queued(tid) or turn_active(tid)
+
+
+def _cancel_intents(tid):
+    """Mark every currently-queued turn for this track cancelled. _turn checks
+    its own handle once it holds the locks and aborts instead of running - so
+    Stop on a queued card really stops it, rather than bouncing the card while
+    the turn later spawns anyway."""
+    n = 0
+    with _pending_guard:
+        for rec in (_pending.get(tid) or {}).values():
+            if not rec["cancelled"]:
+                rec["cancelled"] = True
+                n += 1
+    return n
+
+
 def cancel(tid):
     """Stop the track's in-flight turn (composer Stop). Unblocks the waiting turn
     with a clean '(cancelled)' and tree-kills the session; the next steer respawns
     and `--resume`s the session id, so no conversation is lost. Idempotent.
     Checks EVERY registry (claude's own, then each native driver's) - see
-    _native_registries' docstring for why the lookup lives here once."""
+    _native_registries' docstring for why the lookup lives here once.
+
+    Also cancels any QUEUED intent: a turn stuck behind the desktop/direct lock
+    has no session to kill, and leaving it armed meant Stop bounced the card
+    while the turn spawned minutes later anyway."""
     _cancelled.add(tid)
+    queued = _cancel_intents(tid)
     with _sessions_guard:
         s = _sessions.get(tid)
     if s:
@@ -124,7 +234,7 @@ def cancel(tid):
         if s:
             s.cancel()
             return True
-    return False
+    return bool(queued)
 
 
 def has_session(tid):
