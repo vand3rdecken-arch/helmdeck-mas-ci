@@ -256,6 +256,15 @@ def _persist_switch(ent, key):
     control plane instead of respawning it (drivers.apply_opts parity - the
     last open item on the persistent-session card).
 
+    THE BRIEF IS NOT SWITCHABLE, and that is why the key carries its
+    fingerprint (harness-config-ui phase 3). The control plane can set a model
+    or a permission mode on a live process; it cannot replace the system prompt,
+    which rode along once at spawn. So a rule edit has to be OBSERVED and cost a
+    respawn - otherwise the owner flips a switch on the harness screen, the page
+    says "gesetzt", and Henry keeps answering out of the brief he was started
+    with until something unrelated happens to restart him. This function refuses
+    the cheap path in that case and the caller drops+respawns.
+
     THIS is what makes the board chat actually stay warm. The composer defaults
     to "auto" (surfaces/app/src/ui/card_composer.tsx), so turnopts.pick_model
     re-picks the tier from EVERY message's text: "danke" routes haiku, a plain
@@ -272,8 +281,10 @@ def _persist_switch(ent, key):
     failure returns False and the caller falls back to today's drop+respawn, so
     the worst case is exactly the behaviour we had before.
     """
-    old_model, old_mode = ent["key"]
-    new_model, new_mode = key
+    old_model, old_mode, old_fp = ent["key"]
+    new_model, new_mode, new_fp = key
+    if new_fp != old_fp:
+        return False          # the brief moved; only a respawn can carry it
     p = ent["p"]
     if new_model != old_model and not _control(p, "set_model", model=(new_model or "default")):
         return False
@@ -281,6 +292,24 @@ def _persist_switch(ent, key):
         return False
     ent["key"] = key
     return True
+
+
+def _brief_fp():
+    """The behaviour-rule fingerprint that the BASE brief was rendered with.
+
+    Workspace layer only (project=""), because that is exactly what
+    harness.brief("board-copilot") renders at spawn - project-scoped rules ride
+    in as a turn overlay (behavior.overlay) and must NOT cost a respawn, or
+    Henry would go cold every time the conversation moved to another repo.
+
+    Never raises: a broken rule table degrades to "no fingerprint", which keeps
+    the process warm on the brief it has - today's shipped behaviour - rather
+    than respawning Henry on every turn."""
+    try:
+        from spine.registry import behavior
+        return behavior.fingerprint("")
+    except Exception:                                        # noqa: BLE001
+        return ""
 
 
 def _persist_get(skey, cli_model, sid, system):
@@ -296,7 +325,7 @@ def _persist_get(skey, cli_model, sid, system):
     conversation pays one spawn on open and stays warm for the rest of it."""
     from spine.agent import drivers
     from spine.registry import harness
-    key = (cli_model or "", henry_pmode())
+    key = (cli_model or "", henry_pmode(), _brief_fp())
     live = None
     with _persist_lock:
         ent = _persist.get(skey)
@@ -328,17 +357,34 @@ def _persist_get(skey, cli_model, sid, system):
     return p, True
 
 
-def henry_pmode():
+def henry_pmode(project=""):
     """Permission mode for every Henry surface - board chat AND the escalation
-    broker (ONE knob, settings `henry_permission_mode`). Owner decree
-    2026-08-21: Henry runs in a WORKING mode, not plan - "should be able to do
-    stuff directly instead of waiting". Plan mode had him proposing cards for
-    fixes he could apply in the same breath, and left the broker judging a
-    merge conflict it wasn't allowed to touch. NOTE the cwd stays DAEMON_ROOT
-    for chat turns (sessions resume per project dir - moving cwd orphans every
-    existing PM conversation), so Henry's hands use absolute paths."""
+    broker (ONE knob). Owner decree 2026-08-21: Henry runs in a WORKING mode,
+    not plan - "should be able to do stuff directly instead of waiting". Plan
+    mode had him proposing cards for fixes he could apply in the same breath,
+    and left the broker judging a merge conflict it wasn't allowed to touch.
+    NOTE the cwd stays DAEMON_ROOT for chat turns (sessions resume per project
+    dir - moving cwd orphans every existing PM conversation), so Henry's hands
+    use absolute paths.
+
+    READS THE RULE (harness-config-ui phase 3). Phase 2 declared
+    `hands.permission_mode` with `reads: copilot.py::henry_pmode` but left this
+    function on the raw settings key, so the row would have rendered a control
+    that moved nothing - the one thing the rule table exists to prevent. The
+    legacy `henry_permission_mode` key stays the floor rather than being
+    migrated: it is the shipped value on every existing install, and a silent
+    reset to the declared default would change how Henry behaves on the machines
+    that had actually set it."""
     from spine.storage import events
-    return (events.settings().get("henry_permission_mode") or "").strip() or "acceptEdits"
+    legacy = (events.settings().get("henry_permission_mode") or "").strip()
+    try:
+        from spine.storage import projectconfig
+        got = projectconfig.resolve("rule.hands.permission_mode.all", project)
+        if got["layer"] != "default" and got["value"]:
+            return got["value"]
+    except Exception:                                        # noqa: BLE001
+        pass                  # a broken store must never cost Henry his hands
+    return legacy or "acceptEdits"
 
 # HENRY'S ROLE IS DATA, IN EXACTLY ONE PLACE: ops/harness/agents/board-copilot.md
 # (owner-editable, versioned via /harness, shipped with every install - the
@@ -1440,6 +1486,30 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
     from spine.registry import harness
     system = harness.brief("board-copilot")
+    # THE PROJECT OVERLAY (harness-config-ui section 3). Project-scoped rules
+    # cannot render into the base brief: that brief rides along once at spawn,
+    # so rendering them there would mean a cold Henry every time the
+    # conversation moved to another repo - and one conversation covers several.
+    # They ride the extra_system path instead, exactly like VOICE_STYLE, and
+    # only where they actually DIFFER from the workspace (overlay() returns ""
+    # in the normal case, so the usual turn pays nothing).
+    #
+    # The project is resolved AT THE EVENT, never stored: a card chat belongs to
+    # that card's repo, everything else to the workspace default. That is the
+    # rule projectconfig.for_card/for_chat already own - this site just asks.
+    try:
+        from spine.storage import projectconfig
+        # _find_card answers with a LIST when the id is ambiguous - a match set
+        # is not a card, and .get("repo") on it would raise inside the turn.
+        _ct = _find_card(card) if card else None
+        _proj = (projectconfig.for_card(_ct) if isinstance(_ct, dict)
+                 else projectconfig.for_chat())
+        from spine.registry import behavior
+        _ovl = behavior.overlay(_proj)
+        if _ovl:
+            extra_system = (extra_system + "\n\n" + _ovl) if extra_system else _ovl
+    except Exception:                                        # noqa: BLE001
+        pass                  # no overlay is the workspace answer, never a broken turn
     if extra_system:
         system = system + "\n\n" + extra_system
     # Results of the PREVIOUS turn's actions, told exactly once (worker parity:

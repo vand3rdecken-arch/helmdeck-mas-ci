@@ -61,6 +61,66 @@ def automation_get(self, user):
     }))
 
 
+def harness_config_get(self, user):
+    """HENRY'S RULES, resolved for one project (harness-config-ui phase 3).
+
+    The half of the harness screen that /loop/map does not already answer.
+    Deliberately NOT a superset of it: the stations, their knobs, the laws and
+    the Henry track all arrive on /loop/map today and the screen reads both, so
+    neither route describes the machine twice.
+
+    ?repo= picks the project layer. Absent means the workspace layer, which is
+    the honest answer for a board question that names no repo - not a fallback.
+    The resolved `project` comes back so the screen can badge with the key the
+    daemon actually used rather than re-deriving it from the repo string."""
+    from urllib.parse import parse_qs, urlparse
+
+    from spine.registry import behavior, harness
+    from spine.storage import projectconfig
+    repo = (parse_qs(urlparse(self.path).query).get("repo") or [""])[0].strip()
+    project = projectconfig.project_key(repo)
+    return self._send(200, json.dumps({
+        "project": project,
+        "repo": repo,
+        # The badge vocabulary, server-owned like DOORS/SCOPES: the app mirrors
+        # the order rather than re-declaring which layer beats which.
+        "layers": list(projectconfig.LAYERS),
+        "blocks": [dict(b) for b in behavior.BLOCKS],
+        "rules": behavior.describe(project),
+        # {key,label} only - the screen labels a per-surface row without
+        # learning what a surface IS, and a surface added to harness.SURFACES
+        # shows up here by itself.
+        "surfaces": [{"key": s["key"], "label": s["label"]} for s in harness.SURFACES],
+    }, ensure_ascii=False))
+
+
+def harness_config_post(self, user, body):
+    """Set or clear behaviour-rule values. {repo, values: {path: value|null}}.
+
+    null CLEARS, which is how a row's "zuruecksetzen" link restores inheritance
+    rather than pinning the current effective value - the difference the whole
+    chain is built around.
+
+    The caller does NOT choose the layer: projectconfig.write_scoped reads each
+    rule's own `scope` and routes workspace rules to settings.json and project
+    rules to the project table. That is what keeps the two edit paths this card
+    ships - tap the row, or tell Henry - landing in the same place with the same
+    audit entry, instead of agreeing by convention."""
+    from spine.storage import projectconfig
+    values = body.get("values")
+    if not isinstance(values, dict) or not values:
+        return self._send(400, json.dumps({"error": "values must be a non-empty object"}))
+    project = projectconfig.project_key((body.get("repo") or "").strip())
+    before, err = projectconfig.write_scoped(values, project=project,
+                                             actor=user["name"], note="harness screen")
+    if err:
+        # 400 with the rule's own why-sentence: a refusal the owner cannot read
+        # is indistinguishable from a bug, and the screen shows this text.
+        return self._send(400, json.dumps({"error": err}, ensure_ascii=False))
+    return self._send(200, json.dumps({"ok": True, "before": before, "project": project},
+                                      ensure_ascii=False))
+
+
 def settings_post(self, user, body):
     from spine.storage import events
     rel = body.get("relay")
@@ -79,9 +139,11 @@ GET_ROUTES = {
     "/nightshift": nightshift_get,
     "/usage": usage_get,
     "/automation": automation_get,
+    "/harness/config": harness_config_get,
 }
 POST_ROUTES = {
     "/settings": settings_post,
+    "/harness/config": harness_config_post,
 }
 # Capability declarations (spine/auth/permissions.py) - the central guard in
 # server.py enforces these BEFORE the handler runs; every check that used to
@@ -90,7 +152,12 @@ POST_ROUTES = {
 GET_CAPS = {
     "/settings": "settings.read", "/nightshift": "settings.read",
     "/usage": "settings.read", "/automation": "settings.read",
+    # The rules ARE workspace policy - the same capability that guards the knobs
+    # they sit beside. Anything weaker would let a role read Henry's instructions
+    # it may not read the settings behind.
+    "/harness/config": "settings.read",
 }
 POST_CAPS = {
     "/settings": "settings.write",
+    "/harness/config": "settings.write",
 }

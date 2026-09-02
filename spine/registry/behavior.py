@@ -823,6 +823,39 @@ def track(project=""):
     return out
 
 
+def overlay(project=""):
+    """The TURN OVERLAY: what this project's rules say that the base brief does
+    not. Empty string when nothing differs, which is the normal case.
+
+    WHY AN OVERLAY AND NOT A RE-RENDER (design doc section 3). The base brief
+    rides along once at spawn - that is what makes Henry's warm turns 1.6s. A
+    project-scoped rule therefore cannot render into it: doing so would mean a
+    respawn on every project switch, and Henry answers about several repos in
+    one conversation. So the base brief carries the WORKSPACE values and this
+    adds only the deltas, on the existing extra_system path that VOICE_STYLE
+    already uses.
+
+    Only rules that actually DIFFER appear. An overlay that restated every
+    project rule would be a second copy of half the brief, and the two copies
+    would be identical in the common case and contradictory in the interesting
+    one - the later instruction winning by accident rather than by design."""
+    out = []
+    for r in BEHAVIOR_RULES:
+        if r.get("scope") != "project" or r["wire"] == "readonly":
+            continue
+        for s in r.get("surfaces") or {}:
+            here, base = value(r["key"], s, project), value(r["key"], s, "")
+            if here == base:
+                continue
+            txt = _render_one(r, s, here)
+            out.append("- %s" % txt.strip().replace("\n", " ")
+                       if txt else "- %s: %s" % (r["key"], here))
+    if not out:
+        return ""
+    return ("FUER DIESES PROJEKT GELTEN ABWEICHENDE REGELN. Sie ersetzen die "
+            "entsprechende Stelle oben:\n" + "\n".join(out))
+
+
 def describe(project=""):
     """The rule table as the app receives it: every rule with its effective
     value per surface, its provenance and its lock. Server-owned end to end -
