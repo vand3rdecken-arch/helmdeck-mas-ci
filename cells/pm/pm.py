@@ -248,6 +248,10 @@ Check specifically:
 - An unresolved OWNER decision the plan silently assumed away?
 - Budget/quota that cannot actually fund it by any stated deadline?
 
+A decision the OWNER CLARIFICATIONS below already answer is RESOLVED, not open: never put
+it in must_ask, not even reworded as a different question. An open question HOLDS EVERY
+DISPATCH, so re-asking an answered one stalls the whole board.
+
 Reply with ONLY this JSON:
 {"ready": true|false,
  "gate": "if not ready: the ONE binding reason - MAX 2 short sentences, plain owner language, no essay",
@@ -256,11 +260,17 @@ Reply with ONLY this JSON:
 If the plan genuinely holds, ready=true with empty arrays."""
 
 
-def _verify_plan(plan, econ, quota):
+def _verify_plan(plan, econ, quota, prev=None):
     """The GATE's second opinion (paseo worker/verifier pattern): an independent, skeptical
     pass that can DOWNGRADE a plan to not-ready (it never upgrades). Catches the over-confident
     failure - a 14-day calendar test sized as 2 days, a not-yet-started recruiting long-pole,
-    an unresolved decision. Fail-open: if the pass errors, don't block."""
+    an unresolved decision. Fail-open: if the pass errors, don't block.
+
+    INDEPENDENT of the planner, but NOT of the owner: this pass gets the same ground
+    truth brief()'s own prompt gets - the owner's chat clarifications and any reconciled
+    corner evidence. Without them it re-derived must_asks the owner had already answered
+    (a resolved question came back in different words), and since an open question is a
+    hard dispatch gate (_state's "ASK"), that answered question held the whole board."""
     try:
         from spine.agent import turnopts
         cli_model, _ = turnopts.resolve_model("auto", "verify plan", False, signals={"priority": "high"})
@@ -268,7 +278,9 @@ def _verify_plan(plan, econ, quota):
                                          "assumptions", "open_questions", "budget")}
         prompt = (VERIFY_PROMPT + "\n\nPLAN:\n" + json.dumps(keep)
                   + "\n\nECONOMICS:\n" + json.dumps(econ)
-                  + "\n\nQUOTA/BUDGET (live):\n" + json.dumps(quota))
+                  + "\n\nQUOTA/BUDGET (live):\n" + json.dumps(quota)
+                  + _reconcile_block(prev)
+                  + _clarifications_block())
         v = _ask(prompt, cli_model)
         return {"ready": bool(v.get("ready", True)), "gate": v.get("gate", "") or "",
                 "issues": v.get("issues") or [], "must_ask": v.get("must_ask") or []}
@@ -331,6 +343,80 @@ def _reconcile_block(prev):
     return ("\n\nRECONCILED EVIDENCE (the owner ran a check on a RED triangle corner - "
             "trust these observed FACTS over the snapshot when scoping):\n"
             + json.dumps(rec, ensure_ascii=False)[:1500])
+
+
+# -- owner questions: one question, ONE identity ------------------------------
+# The verifier's must_ask list joins the planner's open_questions, and an open
+# question is a HARD dispatch gate (_state's "ASK"). A question asked twice in
+# two wordings therefore doesn't just read as noise - it holds the board, and
+# answering one copy leaves the other standing. The PRIMARY fix is that the
+# verifier now sees the owner's clarifications (_verify_plan above); this is the
+# second net, for when the two independent passes phrase the same ask
+# differently - which the `q not in oq` exact match at the merge never caught.
+_Q_STOP = {
+    # pure function words only, DE + EN. Quantifiers ("viele"), negations and
+    # topic nouns deliberately stay: an over-eager stoplist collapses two
+    # different questions into one and silently swallows the real one.
+    "wie", "was", "wann", "wer", "wo", "warum", "wieso", "welche", "welcher", "welches",
+    "welchen", "welchem", "ist", "sind", "war", "waren", "soll", "sollen", "muss",
+    "muessen", "müssen", "kann", "koennen", "können", "hat", "hast", "haben", "wird",
+    "werden", "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einer",
+    "eines", "und", "oder", "fuer", "für", "mit", "von", "vom", "zum", "zur", "auf",
+    "aus", "bei", "nach", "ueber", "über", "dir", "dich", "ich", "wir", "sie", "ihr",
+    "dass", "dann", "denn", "sich", "auch", "als", "beim", "wenn",
+    "what", "when", "who", "whom", "where", "why", "which", "how", "are", "was", "were",
+    "does", "did", "the", "and", "for", "with", "from", "into", "that", "this", "there",
+    "will", "would", "shall", "should", "can", "could", "has", "have", "had", "been",
+    "you", "your", "our", "its", "any", "about",
+}
+
+
+def _q_tokens(q):
+    """The CONTENT words of a question: casefolded, punctuation gone, pure
+    function words dropped. Two wordings of the same ask land on the same set."""
+    return {w for w in re.findall(r"\w+", (q or "").casefold())
+            if len(w) >= 3 and w not in _Q_STOP}
+
+
+# MEASURED, not reasoned (ops/tests/test_pm_clarifications.py pins both sides):
+# on real PM question pairs the same ask reworded scores >= 0.571 Jaccard on its
+# content words, while two DIFFERENT asks about the same object ("Budget fuer den
+# Closed Test?" vs "Deadline fuer den Closed Test?") top out at 0.500. 0.55 is
+# that gap. It is a narrow one - which is why this is only the second net and
+# _verify_plan seeing the clarifications is the real fix.
+_Q_SAME = 0.55
+
+
+def _same_question(a, b):
+    """True when two owner questions ask the SAME thing. Equal after
+    normalisation, or a near-duplicate: one's content words fully contained in
+    the other's (>= 3 words, i.e. a more specific restatement of the same ask),
+    or a _Q_SAME+ Jaccard overlap. Conservative on purpose - a false merge loses
+    a question the owner never gets asked, which is worse than a duplicate line."""
+    ta, tb = _q_tokens(a), _q_tokens(b)
+    if not ta or not tb:                      # nothing but function words: fall back
+        return (a or "").strip().casefold() == (b or "").strip().casefold()
+    if ta == tb:
+        return True
+    small, big = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    if len(small) >= 3 and small <= big:
+        return True
+    return len(ta & tb) / float(len(ta | tb)) >= _Q_SAME
+
+
+def _merge_questions(open_qs, must_ask):
+    """The planner's open_questions + the verifier's must_asks as ONE list with
+    one entry per DISTINCT question. First wording wins (the planner's, which
+    carries the plan's own context); order is preserved so _needs_from_owner
+    still asks the top question first."""
+    out = []
+    for q in list(open_qs or []) + list(must_ask or []):
+        if not isinstance(q, str) or not q.strip():
+            continue
+        q = q.strip()
+        if not any(_same_question(q, k) for k in out):
+            out.append(q)
+    return out
 
 
 def brief(goal=None, model=""):
@@ -403,7 +489,7 @@ def brief(goal=None, model=""):
     # planner's to FIX, not the owner's to hear about. One repair round: feed
     # the verifier's issues back, re-plan, re-verify. Only what still fails
     # (or genuinely needs an owner decision via must_ask) reaches the gate.
-    ver = _verify_plan(out, econ, quota)
+    ver = _verify_plan(out, econ, quota, prev)
     if not ver.get("ready", True) and ver.get("issues"):
         keep = {k: out.get(k) for k in ("goal", "summary", "milestones", "feasibility",
                                         "assumptions", "open_questions", "budget")}
@@ -425,7 +511,7 @@ def brief(goal=None, model=""):
                     out2.setdefault(k, out.get(k))
                 out = out2
                 est_turns = _date_milestones(out)
-                ver = _verify_plan(out, econ, quota)
+                ver = _verify_plan(out, econ, quota, prev)
         except Exception as e:
             ver.setdefault("issues", []).append("self-repair failed: %s" % str(e)[:120])
     out["economics"] = econ
@@ -450,11 +536,11 @@ def brief(goal=None, model=""):
         out["plan_status"] = "blocked"
         if not (out.get("gate") or "").strip():
             out["gate"] = ver.get("gate", "")
-    oq = list(out.get("open_questions") or [])          # verifier's must-asks join the questions
-    for q in ver.get("must_ask", []):
-        if isinstance(q, str) and q.strip() and q not in oq:
-            oq.append(q)
-    out["open_questions"] = oq
+    # the verifier's must-asks join the planner's questions - deduped by MEANING,
+    # not by exact string. The two passes are independent and practically never
+    # word the same ask identically, so `q not in oq` let a re-derived duplicate
+    # through and the board sat on "ASK" with a question the owner had answered.
+    out["open_questions"] = _merge_questions(out.get("open_questions"), ver.get("must_ask"))
     # CRITICAL GATE over the golden triangle - AFTER the verifier so it sees the
     # final plan_status. The LLM PROPOSES each corner; this MEASURED check only
     # DOWNGRADES (ok -> blocked), never beautifies - without it the triangle was

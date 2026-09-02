@@ -10,6 +10,47 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "open-question-identity-is-lexical",
+        "order": -10,
+        "title": "two owner questions are judged 'the same' by word overlap, not by meaning",
+        "status": "open",
+        "what": "cells/pm/pm.py _same_question decides whether the verifier's "
+                "must_ask duplicates a question the planner already asked. It "
+                "does so LEXICALLY: content words (stoplist-filtered), then "
+                "set containment or a Jaccard overlap >= _Q_SAME (0.55). That "
+                "threshold is measured, not reasoned - on real PM question "
+                "pairs the same ask reworded scores >= 0.571 and two different "
+                "asks about the same object top out at 0.500 "
+                "(ops/tests/test_pm_clarifications.py pins both sides) - but "
+                "0.055 of daylight is a narrow gap, and the function has no "
+                "understanding of what either question MEANS.",
+        "why_it_bites": "open_questions is load-bearing: pm._state returns "
+                        "'ASK' and holds EVERY dispatch while one is open. So "
+                        "a false merge silently drops a question the owner "
+                        "then never gets asked, and the PM plans on an "
+                        "assumption instead. The blast radius is bounded "
+                        "because this is the SECOND net - the real fix is that "
+                        "_verify_plan now sees the owner's clarifications and "
+                        "so stops re-deriving answered questions at the source "
+                        "- and because the merge is conservative by "
+                        "construction (small stoplist, >=3-word containment "
+                        "rule), preferring a duplicate line over a lost "
+                        "question.",
+        "trigger": "Two genuinely DIFFERENT owner questions that share most of "
+                   "their content words - most likely two decisions about the "
+                   "same object ('Budget fuer den Closed Test?' vs 'Deadline "
+                   "fuer den Closed Test?' already sits at 0.500, one word "
+                   "away from being merged).",
+        "fix": "Give a question an IDENTITY instead of a spelling: have the "
+               "planner emit a stable key per open question (topic slug + "
+               "decision kind) and dedup/resolve on that, so an answered "
+               "question is closed by its key - the same 'derive it from the "
+               "runtime's own signal, at one owner' shape as "
+               "drivers.turn_active. Then _same_question degrades to a "
+               "fallback for plans that predate the key.",
+        "since": "2026-09-02",
+    },
+    {
         "id": "henry-card-session-uncompacted",
         "order": -9,
         "title": "only the BOARD Henry session is proactively compacted - card sessions are not",
