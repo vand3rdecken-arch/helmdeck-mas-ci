@@ -1,9 +1,28 @@
 # Copilot auf den persistenten Session-Port (Voice-Latenz)
 
 **GEBAUT 2026-08-21 direkt im Live-Tree (Owner-Decree), Commit 2783c10.**
-Gemessen: Turn warm 1.6s (vorher 12s). Abnahme < 5s ERFUELLT. Karte bleibt
-als Doku; offen nur noch: Langzeit-Beobachtung (Idle-Prozesse, Rotation
-unter Kompaktierung).
+Gemessen: Turn warm 1.6s (vorher 12s). Abnahme < 5s ERFUELLT.
+
+**NACHGEZOGEN 2026-09-02: Punkt 3 der Auftragsliste unten - "Model-Wechsel via
+Control-Plane, nicht Respawn" - war NICHT gebaut.** `_persist_get` killte den
+Prozess bei jedem Tier-Wechsel. Im TEXT-Chat machte das die Waerme weitgehend
+wirkungslos: der Composer steht per Default auf "auto" (card_composer.tsx),
+also waehlt turnopts.pick_model das Tier aus dem TEXT jeder Nachricht neu
+("danke" -> haiku, normale Frage -> sonnet, "debug/analysiere/refactor" ->
+opus). Ein gewoehnliches Gespraech warf den warmen Prozess damit Turn um Turn
+weg und zahlte erneut Node-Boot (8-12s) PLUS den vollen --resume-Prefill der
+Board-Session (~20s bei 128k gemessen) - warm war er nur fuer eine Serie von
+Nachrichten, die zufaellig aufs gleiche Tier routeten.
+
+Jetzt schaltet _persist_switch das laufende Modell per set_model um
+(drivers.apply_opts-Paritaet) und uebernimmt den neuen Key NUR bei
+bestaetigtem Erfolg; jeder Fehlschlag faellt auf den alten Respawn-Pfad
+zurueck. Zusaetzlich waermt jetzt auch der Board-Chat vor (bisher nur Voice),
+und die Karten-Antwort streamt (Debt card-henry-reply-not-streamed bezahlt).
+Test: ops/tests/test_copilot_warm_switch.py.
+
+Karte bleibt als Doku; offen nur noch: Langzeit-Beobachtung (Idle-Prozesse,
+Rotation unter Kompaktierung).
 
 ## Warum (gemessen 2026-08-21)
 Ein Sprach-Turn braucht ~12s, davon ~8s reiner CLI-Spawn-Overhead:

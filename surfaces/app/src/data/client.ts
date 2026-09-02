@@ -750,6 +750,10 @@ export const api = {
    *  still rendering. */
   chatLive: (voiceFrom?: number, voiceTurn?: number) => req<{
     text: string; thinking?: string; running: boolean;
+    /** Card id the running turn is scoped to, null for a board-chat turn. The
+     *  feed is per USER, so a card chat must check this before rendering the
+     *  prose as its own (copilot._running_card). Absent on an old daemon. */
+    card?: string | null;
     voice?: (VoiceClip & { turn?: number; seq: number; text?: string })[];
     voice_pending?: boolean;
   }>("GET", voiceFrom === undefined ? "/chat/live"
