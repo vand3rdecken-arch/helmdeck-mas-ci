@@ -513,7 +513,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
               <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
                 {mm.target_date ? tr("pm.by", { date: fmtPlanDate(mm.target_date) })
                   : (mm.cumulative_eta_days ?? mm.eta_days) != null
-                  ? tr("pm.etaDays", { n: mm.cumulative_eta_days ?? mm.eta_days })
+                  ? tr("pm.etaDays", { n: mm.cumulative_eta_days ?? mm.eta_days ?? 0 })
                   : tr("pm.etaUnknown")}
               </Text>
               {mm.card ? <Ionicons name="arrow-forward-circle" size={15} color={t.accent} /> : null}

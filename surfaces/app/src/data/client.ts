@@ -750,6 +750,10 @@ export const api = {
    *  still rendering. */
   chatLive: (voiceFrom?: number, voiceTurn?: number) => req<{
     text: string; thinking?: string; running: boolean;
+    /** The tool action currently executing ("Bash: py ..."), so the wait shows
+     *  WHAT is happening while prose and thinking are silent (tool rounds went
+     *  dark before - owner report 2026-09-02). Absent on an old daemon. */
+    status?: string;
     /** Card id the running turn is scoped to, null for a board-chat turn. The
      *  feed is per USER, so a card chat must check this before rendering the
      *  prose as its own (copilot._running_card). Absent on an old daemon. */
