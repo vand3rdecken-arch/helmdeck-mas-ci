@@ -23,11 +23,11 @@ Grab both parts from the [**Releases**](../../releases) page:
 |---|---|
 | `HelmDeck-Setup-*-x64.exe` | Windows desktop app (the daemon your agents run on) |
 | `HelmDeck-*-arm64.dmg` / `HelmDeck-*-x64.dmg` | macOS desktop app (signed & notarized) |
-| `HelmDeck-*.apk` | Android app, direct APK (or join the [Play closed test](https://play.google.com/apps/testing/app.helmdeck)) |
+| `HelmDeck-*.apk` | Android app, direct APK (or install it from [Google Play](https://play.google.com/store/apps/details?id=app.helmdeck)) |
 
 ### Android
 
-Preferred: join the [closed test on Google Play](https://play.google.com/apps/testing/app.helmdeck) (join the [tester group](https://groups.google.com/g/helmdeck-testers) first, access is instant). The APK here is for sideloading if you'd rather not.
+Preferred: install [**HelmDeck on Google Play**](https://play.google.com/store/apps/details?id=app.helmdeck) – it's publicly available and updates itself. The APK here is for sideloading if you'd rather not use Play.
 
 **No Windows PC?** Open the app unpaired and tap **"Try it without your own computer"**. You get a fully interactive sample board: move cards, steer agents, file requests. Nothing leaves your device.
 
@@ -43,15 +43,12 @@ Preferred: join the [closed test on Google Play](https://play.google.com/apps/te
 2. Signed with a Developer ID certificate and notarized by Apple, so it opens with no Gatekeeper warning.
 3. Start HelmDeck, go to *Settings → Mobile app → Pair phone*, scan the QR with the Android app. Updates apply automatically in the background.
 
-## Testing the closed beta
+## Feedback
 
-We're collecting testers for Google Play's 14-day closed test:
+The closed test is over – HelmDeck is live on Google Play:
+https://play.google.com/store/apps/details?id=app.helmdeck
 
-1. Join the group (instant access): https://groups.google.com/g/helmdeck-testers
-2. Become a tester: https://play.google.com/apps/testing/app.helmdeck
-3. Install "HelmDeck" from Play and check in every day or two
-
-Feedback is very welcome, here in the issues or on the Play test channel.
+Feedback is very welcome, here in the issues or as a Play review.
 
 ## Development
 

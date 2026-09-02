@@ -53,7 +53,13 @@ const FEEDBACK_URL = "https://helmdeck.userjot.com";
 // version label renders empty. Measured live 2026-09-02, not reasoned.
 const REPO = "Tienduyvo/helmdeck-release";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
-const PLAY_URL = "https://play.google.com/apps/testing/app.helmdeck";
+// Android is PUBLIC on Google Play since the 31.08.2026 release, so the button
+// must point at the live store listing, not at the closed-test opt-in page
+// (/apps/testing/... only ever worked for members of the helmdeck-testers group
+// and is a dead end for everyone else). Measured live 2026-09-02: the details
+// page returns 200 with a real "Installieren" button, developer projectkaiser,
+// no early-access badge - i.e. production, not a track.
+const PLAY_URL = "https://play.google.com/store/apps/details?id=app.helmdeck";
 const OWNER_EMAIL = "tienduyvo@googlemail.com";
 // iOS: moving from INTERNAL to EXTERNAL TestFlight (owner decision 2026-09-02),
 // which is what finally produces a public join URL - external group "Public Beta"
@@ -403,9 +409,9 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i="dlAndroidNote">Bevorzugt: geschlossener Play-Test. Die APK hier ist zum Sideload, falls du lieber direkt installierst.</p>
+        <p class="dl-note" data-i="dlAndroidNote">Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn">Play-Test beitreten</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn">Bei Google Play laden</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn">APK herunterladen</a>
         </div>
       </div>
@@ -475,8 +481,8 @@ footer a:hover{color:var(--ink-2)}
       dlIosMeta:"TestFlight-Beta · öffentlicher Link in Vorbereitung",
       dlIosNote:"Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail.",
       dlIosCopyBtn:"E-Mail-Adresse kopieren", dlIosCopied:"Adresse kopiert ✓", dlIosAppBtn:"TestFlight-App laden",
-      dlAndroidNote:"Bevorzugt: geschlossener Play-Test. Die APK hier ist zum Sideload, falls du lieber direkt installierst.",
-      dlAndroidPlayBtn:"Play-Test beitreten", dlAndroidApkBtn:"APK herunterladen",
+      dlAndroidNote:"Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst.",
+      dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
       waitlistTitle:"HelmDeck Watch & Glasses",
       waitlistSub:"Das Steuer aufs Handgelenk und auf die Nase: HelmDeck für Wearables ist als Nächstes dran.",
@@ -507,8 +513,8 @@ footer a:hover{color:var(--ink-2)}
       dlIosMeta:"TestFlight beta · public link in review",
       dlIosNote:"The public TestFlight link is currently under review at Apple. Until then it's invite-based: send your device's Apple ID to <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> and you'll get the invite by mail.",
       dlIosCopyBtn:"Copy email address", dlIosCopied:"Address copied ✓", dlIosAppBtn:"Get the TestFlight app",
-      dlAndroidNote:"Preferred: the closed Play test. The APK here is for sideloading if you'd rather install directly.",
-      dlAndroidPlayBtn:"Join the Play test", dlAndroidApkBtn:"Download APK",
+      dlAndroidNote:"Straight from the Google Play Store – publicly available. The APK here is for sideloading if you'd rather install directly.",
+      dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
       waitlistTitle:"HelmDeck Watch & Glasses",
       waitlistSub:"The helm on your wrist and on your face: HelmDeck for wearables is next.",
