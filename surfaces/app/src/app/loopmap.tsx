@@ -129,11 +129,19 @@ function KnobChip({ path, editable, onOpen, t, tr }: {
  * fallbacks below are for an older daemon only; they say the generic truth
  * rather than inventing a specific reason the app cannot verify.
  */
-function NodeBody({ node, editable, onOpen, t, tr }: {
+function NodeBody({ node, editable, onOpen, t, tr, here }: {
   node: LoopNode; editable: string[]; onOpen: () => void; t: ThemeTokens; tr: Tr;
+  /** Paths that render as REAL CONTROLS on this very page (the station's own
+   *  knobs, section 6). They are dropped from the chip list: after the move,
+   *  a chip saying "im Automatik-Hub ändern" points at a door the knob has
+   *  left, and it points AWAY from the control sitting directly underneath.
+   *  Chips remain for what genuinely lives elsewhere - env.SWARM_WIP_MINUTES
+   *  is an environment variable and never gets a field anywhere. */
+  here?: string[];
 }) {
   const fixed = node.kind === "fixed";
   const why = node.why || tr(fixed ? "loopmap.whyFixedFallback" : "loopmap.whyPolicyFallback");
+  const elsewhere = (node.settings ?? []).filter((s) => !(here ?? []).includes(s));
   return (
     <View style={{ gap: 9 }}>
       <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18.5 }}>{node.instruction}</Text>
@@ -154,10 +162,10 @@ function NodeBody({ node, editable, onOpen, t, tr }: {
         </View>
       ) : null}
 
-      {!fixed && (node.settings?.length ?? 0) > 0 ? (
+      {!fixed && elsewhere.length ? (
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("loopmap.governedBy")}</Text>
-          {node.settings!.map((s) => (
+          {elsewhere.map((s) => (
             <KnobChip key={s} path={s} editable={editable.includes(s)} onOpen={onOpen} t={t} tr={tr} />
           ))}
         </View>
@@ -427,7 +435,8 @@ export default function LoopMapScreen() {
             {/* The graph IS the table of contents (section 5.2): tapping a
                 station selects it in the navigation below. `onSelect` has
                 existed since the component shipped - this card only uses it. */}
-            <RepoPipeline map={data} onSelect={selectStation} selected={selectedStation} hideHint showKnobs />
+            <RepoPipeline map={data} onSelect={selectStation} selected={selectedStation}
+              hideHint showKnobs knobsAt={knobsAt} />
             <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center", lineHeight: 16 }}>
               {repo ? tr("loopmap.repoHint") : tr("loopmap.hint")}
             </Text>
@@ -483,7 +492,8 @@ export default function LoopMapScreen() {
                     </Text>
                     <KindBadge kind={selected.kind} t={t} tr={tr} />
                   </View>
-                  <NodeBody node={selected} editable={editable} onOpen={openHub} t={t} tr={tr} />
+                  <NodeBody node={selected} editable={editable} onOpen={openHub} t={t} tr={tr}
+                    here={schema.filter((i) => i.station === selectedStation).map((i) => i.path)} />
                 </View>
               ) : null}
               {/* The knobs that MOVED here (section 6). Rendered by the hub's own

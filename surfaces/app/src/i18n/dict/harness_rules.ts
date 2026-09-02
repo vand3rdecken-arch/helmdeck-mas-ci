@@ -58,7 +58,12 @@ export const harnessRules: Dict = {
   // GitHub org->repo wording, which is where the owner has already learned it.
   "rule.layer.default": { de: "Standard", en: "Default" },
   "rule.layer.seed": { de: "Grundeinstellung", en: "Seed" },
+  // TWO readings of one layer, and the difference is the rule's own scope: for
+  // a per-project rule a workspace value is genuinely INHERITED, for a
+  // workspace rule that same layer is where it LIVES. One wording for both
+  // told the owner a value he had just set was inherited from somewhere.
   "rule.layer.workspace": { de: "Geerbt vom Arbeitsbereich", en: "Inherited from workspace" },
+  "rule.layer.workspaceSet": { de: "Für den Arbeitsbereich gesetzt", en: "Set for the workspace" },
   "rule.layer.project": { de: "Für dieses Projekt gesetzt", en: "Set for this project" },
   "rule.reset": { de: "zurücksetzen", en: "reset" },
   "rule.locked": { de: "Fest", en: "Fixed" },
