@@ -92,7 +92,24 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    // THE BOARD IS NOW LIVE, on the SAME channel as the chat (owner decision
+    // 2026-09-02: "Mitnehmen"). This was `LaunchedEffect(Unit) { reload() }` -
+    // load once when the screen opened, then nothing until the owner pressed
+    // Reload. A card moving lane, a worker asking a question, a run finishing:
+    // none of it reached the wrist while he was looking straight at the list.
+    //
+    // ONE effect, not two: keying on the board version covers the FIRST load
+    // (the effect runs on composition whatever the value is) and every
+    // subsequent change, so there is no separate initial fetch that could
+    // disagree with the live one. Opening the screen before the stream has
+    // answered costs one extra GET when the first version lands - the same
+    // deliberate trade the chat makes, and for the same reason: a duplicate
+    // read is cheap, a card silently waiting on the owner is not.
+    //
+    // `v` only. WearStream assigns the daemon's CURRENT versions, and writing an
+    // unchanged Int to a Compose state is a no-op, so a chat-only bump never
+    // reloads the board.
+    LaunchedEffect(WearStream.board.value) { reload() }
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
