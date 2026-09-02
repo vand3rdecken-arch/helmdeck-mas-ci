@@ -72,6 +72,33 @@ _turn_locks = {}
 _prewarm_at = {}         # user -> last prewarm start (monotonic-ish wall clock)
 _PREWARM_COOLDOWN = 120.0
 
+# CACHE KEEPALIVE (owner incident 2026-09-02 14:44): a warm PROCESS is not a
+# warm CACHE. The API-side prompt cache lives ~5 minutes; a 10-minute pause
+# between turns expired it and the next turn re-read the whole session at
+# full price/latency (~30s at 99k) despite the process sitting there warm.
+# While the chat surface is open (prewarm rides every /chat/history poll), a
+# hidden systemcheck ping refreshes the cache before it lapses - same hidden
+# turn the spawn warmup already runs, same precedent. Bounded: only within
+# _KEEPALIVE_MAX of the last REAL turn, so an abandoned open tab stops paying
+# for warmth nobody is using.
+_last_turn_at = {}       # skey -> wall clock of the last REAL turn
+_last_touch_at = {}      # skey -> last real turn OR keepalive ping
+_KEEPALIVE_AGE = 240.0   # refresh when the cache is older than this (TTL ~300s)
+_KEEPALIVE_MAX = 2700.0  # stop 45min after the last real turn
+
+# ACTION RESULTS pending for the NEXT turn (owner incident 2026-09-02 14:44):
+# Henry's ```actions run daemon-side AFTER his reply, in a background thread,
+# and their results went ONLY to the owner's display log - Henry never saw
+# them. A failed dispatch ("direct_task: not a git repo") was on the owner's
+# screen while Henry's own transcript still ended with his "Fix laeuft an"
+# claim, so the next turn he reported the fix as running and, asked how he
+# checked, admitted he hadn't. Same blind spot the WORKER path already fixed
+# in sessions._pending_context ("runs OUTSIDE the agent session - prepend the
+# actual report so the worker isn't blind") - this is that wheel, not a new
+# one. In-memory: a daemon restart loses at most one turn's pending results.
+_pending_actions = {}    # skey -> [result strings], folded into the next turn
+_pending_lock = threading.Lock()
+
 
 def _turn_lock(user):
     """One turn at a time per user on the shared warm process - a prewarm
@@ -139,18 +166,29 @@ def prewarm(user, spoken=True):
                 # as the last real turn left it. Going through _persist_get
                 # here would switch its model to this GUESS, only for the next
                 # real turn to switch it straight back: two control ops to end
-                # up where we started.
+                # up where we started. But a live process is NOT a live cache
+                # (5-min API TTL) - when the cache is about to lapse and the
+                # owner was recently active, refresh it with the same hidden
+                # systemcheck the spawn warmup runs. See _KEEPALIVE_AGE above.
+                bkey = _skey(user)
+                p = None
                 with _persist_lock:
-                    ent = _persist.get(user)
+                    ent = _persist.get(bkey)
                     if ent and ent["p"].poll() is None:
-                        return
-                # BOARD key only: the owner's decree is that just the Henry
-                # board chat is kept warm. A card conversation pays one spawn
-                # when it is opened and stays warm for the rest of it.
-                p, fresh = _persist_get(_skey(user), cli_model,
-                                        _sessions().get(_skey(user)), base)
-                if not fresh:
-                    return                  # already warm AND cached
+                        _now = time.time()
+                        if (_now - _last_touch_at.get(bkey, 0.0) > _KEEPALIVE_AGE
+                                and _now - _last_turn_at.get(bkey, 0.0) < _KEEPALIVE_MAX):
+                            p = ent["p"]     # warm but cooling - ping below
+                        else:
+                            return           # warm AND cached (or idle too long)
+                if p is None:
+                    # BOARD key only: the owner's decree is that just the Henry
+                    # board chat is kept warm. A card conversation pays one spawn
+                    # when it is opened and stays warm for the rest of it.
+                    p, fresh = _persist_get(bkey, cli_model,
+                                            _sessions().get(bkey), base)
+                    if not fresh:
+                        return              # already warm AND cached
                 p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
                               "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
                 p.stdin.flush()
@@ -163,6 +201,7 @@ def prewarm(user, spoken=True):
                             break
                     except ValueError:
                         continue
+                _last_touch_at[bkey] = time.time()
             finally:
                 lock.release()
         except Exception:
@@ -1385,7 +1424,19 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     system = harness.brief("board-copilot")
     if extra_system:
         system = system + "\n\n" + extra_system
-    turn = snapshot_block + focus + "\n\nUSER (%s): %s" % (user, body)
+    # Results of the PREVIOUS turn's actions, told exactly once (worker parity:
+    # sessions._pending_context). Without this Henry reported a FAILED dispatch
+    # as running - the error was on the owner's screen, never in his session.
+    with _pending_lock:
+        _pending = _pending_actions.pop(skey, [])
+    action_report = ""
+    if _pending:
+        action_report = ("ERGEBNIS deiner Aktionen aus dem LETZTEN Turn (daemon-"
+                         "seitig NACH deiner Antwort ausgefuehrt - du siehst sie "
+                         "hier zum ersten Mal; ein Fehler heisst: die Aktion ist "
+                         "NICHT gelaufen, behaupte nichts anderes):\n- "
+                         + "\n- ".join(str(r)[:400] for r in _pending) + "\n\n")
+    turn = action_report + snapshot_block + focus + "\n\nUSER (%s): %s" % (user, body)
     # STREAM (shared with the card surface): stream-json so the prose reply types
     # into the per-user live feed the board chat polls, instead of a blocking
     # black box. The turn goes in on stdin (it is huge - never a cmd arg).
@@ -1754,6 +1805,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 except Exception as e:
                     done.append("action failed: %s" % str(e)[:200])
             if done:
+                # Henry sees these NEXT turn (folded into the turn text) - a
+                # result that only reached the owner's log left him claiming a
+                # failed dispatch was running (2026-09-02 14:44).
+                with _pending_lock:
+                    _pending_actions.setdefault(skey, []).extend(done)
                 if card_run_dir:
                     from spine.agent import timeline_store as _ts
                     for r in done:
@@ -1763,5 +1819,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 else:
                     _append_log(user, [{"cls": "act", "text": r} for r in done])
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
+    # feed the keepalive: a real turn IS the freshest cache there is
+    _last_turn_at[skey] = _last_touch_at[skey] = time.time()
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}
