@@ -425,13 +425,31 @@ def rule_path(key, surface=None):
 
     Per-surface by construction (`rule.tone.length.pm`), because the whole
     modelling point is that one rule holds several values. Called with no
-    surface it returns the rule's namespace prefix, which is what
-    projectconfig.overridable() registers."""
+    surface it returns the rule's namespace prefix - useful for grouping, but
+    NOT a storable path: nothing reads it, because every read names a surface.
+    projectconfig.overridable() therefore registers the per-surface paths."""
     return "rule.%s.%s" % (key, surface) if surface else "rule.%s" % key
 
 
 def by_key(key):
     return _BY_KEY.get(key)
+
+
+def split_path(path):
+    """(rule, surface) for a `rule.<key>.<surface>` path, else (None, None).
+
+    Exact, and it resolves the SURFACE too - which is the half by_path() cannot
+    give and every layer below needs. Reporting a rule without its surface makes
+    a four-surface rule answer with the first surface's default for all four,
+    which is precisely the collapse `per_surface` exists to prevent."""
+    if not path.startswith("rule."):
+        return None, None
+    rest = path[5:]
+    head, _, tail = rest.rpartition(".")
+    rule = _BY_KEY.get(head)
+    if rule is not None and tail in (rule.get("surfaces") or {}):
+        return rule, tail
+    return None, None
 
 
 def by_path(path):
@@ -465,6 +483,95 @@ def editable_rules():
     offering a dummy, which is the exact thing SWITCHABLE_STATIONS refuses to
     do for stations."""
     return [r for r in BEHAVIOR_RULES if r["wire"] != "readonly"]
+
+
+# Rules that are `fixed` and yet carry a control, because the control can only
+# ever TIGHTEN them. Today that is the protected-file list, under exactly the
+# rule house_rules already lives under (charter.py:12 - adding yes, weakening
+# never). Keeping this as a named set rather than a `kind` of its own is
+# deliberate: the lock in the UI is honest either way ("you may extend this,
+# not shorten it"), and inventing a third kind would make every consumer learn
+# a distinction only one rule has.
+ADDITIVE_RULES = ("hands.protected_files",)
+
+
+def writable(path):
+    """(rule, surface, error) for a write to one rule path.
+
+    THE ONE GATE, so the HTTP route, the chat verb and any future caller refuse
+    the same set for the same stated reason. `fixed` is refused BY NAME with the
+    why-sentence the row shows, which is what the brief already promises Henry
+    does ("the action refuses it BY NAME with the route that IS open")."""
+    rule, surface = split_path(path)
+    if rule is None:
+        return None, None, "no such rule: %s" % str(path)[:80]
+    if rule["wire"] == "readonly":
+        return None, None, "%s is shown, never set: %s" % (path, rule["why"])
+    if rule["kind"] == "fixed" and rule["key"] not in ADDITIVE_RULES:
+        return None, None, "%s is fixed: %s" % (path, rule["why"])
+    return rule, surface, None
+
+
+def check_value(rule, surface, val):
+    """None when `val` is a legal value for this rule, else why it is not.
+
+    Held against the rule's OWN declaration (control + options + the additive
+    law), not against a per-caller idea of what is sane - the same reason
+    _config_schema declares `control`: a value the renderer cannot produce is
+    still a value an API client can send."""
+    ctl = rule.get("control")
+    if ctl == "toggle":
+        if not isinstance(val, bool):
+            return "%s takes true or false" % rule["key"]
+    elif ctl == "number":
+        if isinstance(val, bool) or not isinstance(val, int):
+            return "%s takes a whole number" % rule["key"]
+        if val < 0:
+            return "%s cannot be negative" % rule["key"]
+    elif ctl == "single":
+        opts = rule.get("options") or []
+        if val not in opts:
+            return "%s takes one of: %s" % (rule["key"], ", ".join(map(str, opts)))
+    elif ctl == "text":
+        if not isinstance(val, str):
+            return "%s takes text" % rule["key"]
+    elif ctl == "list":
+        if not isinstance(val, list) or any(not isinstance(x, str) for x in val):
+            return "%s takes a list of strings" % rule["key"]
+    else:
+        return "%s has no editable control" % rule["key"]
+    if rule["key"] in ADDITIVE_RULES:
+        # ADDITIVE, checked against the DECLARED default rather than the current
+        # effective value: chaining "remove one, save" edits would otherwise walk
+        # the list down to empty one legal step at a time.
+        missing = [x for x in (default_of(rule, surface) or []) if x not in val]
+        if missing:
+            return "%s may only be extended; still required: %s" % (
+                rule["key"], ", ".join(missing))
+    # A rule that renders into a brief must render to SOMETHING for the value it
+    # is given, or the slot silently empties and the paragraph disappears from
+    # Henry's brief - the exact failure the slot-equality test exists to catch,
+    # arriving at runtime instead of at test time.
+    spec = ((rule.get("surfaces") or {}).get(surface) or {})
+    ren = spec.get("renders")
+    if isinstance(ren, dict) and val not in ren:
+        return "%s has no wording for %r on %s" % (rule["key"], val, surface)
+    return None
+
+
+def writable_paths():
+    """Every `rule.<key>.<surface>` path a caller may set, {path: scope}.
+
+    Derived from the table, so a rule added in the daemon becomes settable with
+    no second list to update - and a rule turned `fixed` stops being settable in
+    the same edit."""
+    out = {}
+    for r in BEHAVIOR_RULES:
+        for s in r.get("surfaces") or {}:
+            p = rule_path(r["key"], s)
+            if writable(p)[2] is None:
+                out[p] = r.get("scope")
+    return out
 
 
 # ---------------------------------------------------------------------------
