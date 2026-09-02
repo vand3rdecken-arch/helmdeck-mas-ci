@@ -627,6 +627,7 @@ ALLOWLIST_PROSE = """  policy.lane_labels {backlog,working,review,done: "label"}
   value_per_card, default_repo, registration {open, invite_code, default_role}
   currency "EUR"|"USD"
   prices {<model-substring>: {in: $/Mtok, out: $/Mtok}, default: {...}} - AI cost table
+  jira {base, email, api_token, default_jql} - the Jira connection import_jira reads. It holds a TOKEN: set it only from credentials the owner gives you in that message, never invent or guess one, and never repeat it back in chat.
   appearance {backdrop: "mesh"|"aurora"|"ember"|"forest"|"mono"} - ambient background theme
   dashboard {tiles: [...], panels: [...]} - what the economics dashboard shows, in order.
     tiles vocabulary: value_delivered, ai_spend, margin, yield, automation, leverage

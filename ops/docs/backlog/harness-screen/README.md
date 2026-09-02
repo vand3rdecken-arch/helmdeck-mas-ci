@@ -98,9 +98,17 @@ Harness-Seite (Nicht-Ziel „kein zweiter Bildschirm").
 - Jedes Element hat seine §7.0-Herkunftszeile.
 - Screenshots Phone + Desktop **gejudged**, nicht nur gerendert.
 
-## 4. Offen, entscheidet der Owner
+## 4. Erledigt, bevor diese Karte startet
 
-`configure`-Allowlist (Schuld `configure-allowlist-not-derived`): der Brief
-nennt zwölf Schlüssel, erzwungen wird ein dreizehnter mit — `jira`, das ein
-`api_token` enthält. §5.5 will den Absatz aus dem Schema gerendert; das geht
-erst, wenn entschieden ist, welche der beiden Listen recht hat.
+Die `configure`-Allowlist ist geklärt (Owner-Entscheidung 2026-09-02, Schuld
+`configure-allowlist-not-derived` auf `paid`): `jira` steht jetzt im Brief, mit
+einer ausdrücklichen Warnung zum Token. Brief und erzwungene Menge nennen
+dieselben Schlüssel, und `behavior.allowlist_drift()` hält sie ab jetzt gleich.
+
+**Folge für §5.5:** die Anforderung „die Allowlist wird abgeleitet, nicht
+doppelt gepflegt" ist damit als *Gleichheitsprüfung* erfüllt, nicht als
+Generierung. Wer den Absatz in dieser Karte doch noch aus dem Schema rendern
+will, muss wissen, was dabei verloren geht: die Prosa trägt pro Schlüssel eine
+Erklärung („green gate auto-accepts (autonomy) vs human accepts (control)"),
+die das Schema nicht hat. Der Vertragstest verhindert das Auseinanderlaufen
+bereits — Generieren wäre also Kür, nicht Pflicht.
