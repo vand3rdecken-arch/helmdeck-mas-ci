@@ -15,10 +15,14 @@ files:
 # writes latest.yml + the NSIS blockmap locally without uploading anything -
 # the script uploads them itself alongside the .exe, same discipline as the
 # hand-rolled checksum/SHA256SUMS.txt step already there.
+# NOTE (2026-09-02): must be the PUBLIC binaries repo. The 2026-08-26 repo split
+# made Tienduyvo/helmdeck private; an installed client's GithubProvider hits the
+# unauthenticated API, so pointing here at the private repo returns 404 and every
+# installed app silently stops updating - measured live, not reasoned.
 publish:
   provider: github
   owner: Tienduyvo
-  repo: helmdeck
+  repo: helmdeck-release
 extraResources:
   # the Python daemon SOURCE (the brain + runner). Secrets and per-user data
   # are NEVER bundled - they are created fresh on the user's machine at first

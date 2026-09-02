@@ -46,7 +46,12 @@ const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 // both by UserJot's own "Your HelmDeck board is live" and by loading the page
 // itself (real content, not the JSON error).
 const FEEDBACK_URL = "https://helmdeck.userjot.com";
-const REPO = "Tienduyvo/helmdeck";
+// The PUBLIC binaries repo. The 2026-08-26 repo split made Tienduyvo/helmdeck
+// private; this worker calls the GitHub API unauthenticated, so pointing here at
+// the private repo 404s -> fetchLatestRelease throws -> every download button
+// silently falls back to RELEASES_URL (itself a 404 for visitors) and every
+// version label renders empty. Measured live 2026-09-02, not reasoned.
+const REPO = "Tienduyvo/helmdeck-release";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 const PLAY_URL = "https://play.google.com/apps/testing/app.helmdeck";
 // iOS ships as an INTERNAL TestFlight group ("Team (Expo)", ASC app 6801637667,
