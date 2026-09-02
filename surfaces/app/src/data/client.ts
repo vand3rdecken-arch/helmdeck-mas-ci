@@ -390,6 +390,53 @@ export interface HenrySegment {
   station: string; labelKey: string; rules: string[]; count: number;
 }
 
+/** One rule's value on ONE surface, with the provenance the badge is made of.
+ *
+ *  `layer` is where the effective value came from (default | seed | workspace |
+ *  project) and `inherited` is simply "this project did not set it" - which is
+ *  what "Geerbt vom Workspace" vs "Fuer dieses Projekt gesetzt" and the presence
+ *  of a reset link are both driven by. Both are DERIVED by the daemon's
+ *  resolution chain; the app never re-computes provenance, because two screens
+ *  deriving it independently is exactly how they come to disagree. */
+export interface RuleSurface {
+  surface: string; path: string;
+  value: unknown; default: unknown;
+  layer: string; inherited: boolean;
+}
+/** One of Henry's behaviour rules, as the harness screen receives it.
+ *
+ *  `wire` says how it reaches reality (slot = renders into a brief, code = read
+ *  at runtime by a named module, readonly = shown and never set) and `kind`
+ *  says whether it is a knob at all. A `fixed` rule renders a LOCK with `why`
+ *  and `source`, never a dead control - the same honesty SWITCHABLE_STATIONS
+ *  already applies to stations.
+ *
+ *  The client holds NO rule list of its own: all of this arrives from
+ *  spine/registry/behavior.py, so a rule added in the daemon shows up here with
+ *  no app change - the same contract repo_pipeline.tsx already lives under. */
+export interface BehaviorRule {
+  key: string; block: string;
+  wire: "slot" | "code" | "readonly";
+  kind: "policy" | "fixed";
+  control: string; options?: string[] | null;
+  scope?: string; binds: string[];
+  labelKey: string; descKey: string;
+  why: string; source: string; reads?: string | null;
+  surfaces: RuleSurface[];
+}
+/** GET /harness/config - Henry's rules resolved for one project.
+ *
+ *  Deliberately NOT a superset of /loop/map: the stations, their knobs, the
+ *  laws and the Henry track arrive there and the screen reads both, so neither
+ *  route describes the machine twice. */
+export interface HarnessConfig {
+  project: string; repo: string;
+  layers: string[];
+  blocks: { key: string; labelKey: string; descKey: string }[];
+  rules: BehaviorRule[];
+  surfaces: { key: string; label: string }[];
+}
+
 export interface LoopMap {
   runtime: {
     title: string; lanes: LoopNode[]; gate: LoopNode & { between: string[] };
@@ -803,6 +850,18 @@ export const api = {
   // leaves on, where it deviates). Omit it for the general machine.
   loopMap: (repo?: string) =>
     req<LoopMap>("GET", "/loop/map" + (repo ? `?repo=${encodeURIComponent(repo)}` : "")),
+  // Henry's rules, resolved for one project. `repo` picks the project layer;
+  // omitting it asks the workspace, which is the honest answer for a screen
+  // opened without a repo rather than a fallback to some default one.
+  harnessConfig: (repo?: string) =>
+    req<HarnessConfig>("GET", "/harness/config" + (repo ? `?repo=${encodeURIComponent(repo)}` : "")),
+  // THE write path for a rule. A null value CLEARS it, which is what restores
+  // inheritance - the daemon deletes the row rather than storing a null, so
+  // "absent" stays a property of the table. The server picks the layer from the
+  // rule's own scope; this call deliberately cannot ask for one.
+  saveHarnessConfig: (repo: string, values: Record<string, unknown>) =>
+    req<{ ok?: boolean; before?: Record<string, unknown>; error?: string }>(
+      "POST", "/harness/config", { repo, values }),
   repoTemplates: () => req<RepoTemplates>("GET", "/repo/templates"),
   // THE write path for a repo's type - the same mutator Henry's chat verb
   // calls, so a tap and a sentence can never produce different answers.

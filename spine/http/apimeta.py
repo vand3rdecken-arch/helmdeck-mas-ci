@@ -88,6 +88,12 @@ SCOPES = ("profile", "board", "workspace", "device", "system")
 # metadata the settings hub needs to place, badge and describe it WITHOUT a
 # second, hand-maintained table in the client:
 #   door     - which of the hub's doors renders this knob (DOORS above).
+#   station  - OR: which pipeline station's page renders it (harness-config-ui
+#              section 6). Exactly one of door/station, never both: a knob
+#              editable in two places is the duplication G4 forbids, and the
+#              placement functions drop a row that has neither - which is why a
+#              move and the screen that receives it must ship in ONE commit.
+#              ops/tests/test_harness_layer.py holds every row to that rule.
 #   group    - the section INSIDE that door this knob belongs to, and
 #   groupKey - that section's i18n label. Carried on the knob, not in a
 #              client-side group->label map, for the same reason `door` is:
@@ -138,20 +144,31 @@ def _config_schema(s):
     cap = s.get("capacity") or {}
     tar = cap.get("tariff") or {}
     return [
-        {"group": "policy", "groupKey": "automation.configPolicy",
+        # ---- THE MOVE (design doc section 6). These three knobs GOVERN A
+        # STATION, so they belong on that station's page, not in a door named
+        # after a category. `station` is the same kind of metadatum `door` is
+        # and moves a row the same way policy.lane_labels was moved from
+        # Automation to Boards in phase 4 - with no client edit.
+        #
+        # "Landet bei" means MOVE, never duplicate: the `door` is GONE from each
+        # of these in the same commit that gives the station page its rows.
+        # Leaving both would put one knob in two places, which the card's own
+        # acceptance criterion forbids - and placeRows DROPS a row that has
+        # neither, so the two halves genuinely have to ship together.
+        {"group": "stationReview", "groupKey": "harness.grp.review",
          "path": "policy.auto_accept_green", "control": "toggle",
          "labelKey": "cfg.autoAccept", "value": bool(pol.get("auto_accept_green")),
-         "door": "automation", "level": "basic", "descKey": "cfg.autoAccept.desc", "scope": "workspace"},
-        {"group": "policy", "groupKey": "automation.configPolicy",
+         "station": "review", "level": "basic", "descKey": "cfg.autoAccept.desc", "scope": "workspace"},
+        {"group": "stationBacklog", "groupKey": "harness.grp.backlog",
          "path": "policy.auto_dispatch_modes", "control": "multi",
          "labelKey": "cfg.autoModes", "options": ["do", "prepare", "cowork"],
          "value": pol.get("auto_dispatch_modes") or [],
-         "door": "automation", "level": "basic", "descKey": "cfg.autoModes.desc", "scope": "workspace"},
-        {"group": "policy", "groupKey": "automation.configPolicy",
+         "station": "backlog", "level": "basic", "descKey": "cfg.autoModes.desc", "scope": "workspace"},
+        {"group": "stationBacklog", "groupKey": "harness.grp.backlog",
          "path": "policy.auto_dispatch_priority", "control": "single",
          "labelKey": "cfg.autoPrio", "options": ["never", "urgent", "high"],
          "value": pol.get("auto_dispatch_priority") or "never",
-         "door": "automation", "level": "basic", "descKey": "cfg.autoPrio.desc", "scope": "workspace"},
+         "station": "backlog", "level": "basic", "descKey": "cfg.autoPrio.desc", "scope": "workspace"},
         {"group": "policy", "groupKey": "automation.configPolicy",
          "path": "policy.chat_configure_roles", "control": "multi",
          "labelKey": "cfg.chatRoles", "options": ["owner", "operator"],
@@ -193,10 +210,14 @@ def _config_schema(s):
          "path": "default_repo", "control": "text",
          "labelKey": "settings.business.repo", "value": s.get("default_repo") or "",
          "door": "system", "level": "basic", "descKey": "cfg.defaultRepo.desc", "scope": "workspace"},
-        {"group": "business", "groupKey": "settings.sec.business",
+        # Moved out of door System for the same reason as the three above: how
+        # many cards may be in flight is a property of the station where work
+        # is taken up, not of "business". Same trade as the others - the System
+        # row is gone in this commit, the station row arrives in it.
+        {"group": "stationBacklog", "groupKey": "harness.grp.backlog",
          "path": "capacity.wip_limit", "control": "number",
          "labelKey": "settings.business.wip", "value": cap.get("wip_limit", 0),
-         "door": "system", "level": "basic", "descKey": "cfg.wipLimit.desc", "scope": "workspace"},
+         "station": "backlog", "level": "basic", "descKey": "cfg.wipLimit.desc", "scope": "workspace"},
         {"group": "business", "groupKey": "settings.sec.business",
          "path": "value_per_card", "control": "number",
          "labelKey": "settings.business.value", "value": s.get("value_per_card", 0),

@@ -609,9 +609,31 @@ def test_policy_knob_contract():
     # the client. Held to the same rigor as control/labelKey above - a knob
     # missing one of these renders in the wrong door, in the wrong tier, with
     # no explanation or with no badge, silently.
-    check(all(e.get("door") in server.DOORS for e in schema),
-          "every knob names a REAL settings-hub door (offenders: %s)"
-          % sorted({e["path"] for e in schema if e.get("door") not in server.DOORS}))
+    # EXACTLY ONE HOME: a hub door OR a pipeline station (harness-config-ui
+    # section 6). BOTH would be two edit surfaces for one key - the duplication
+    # this redesign exists to remove. NEITHER is worse: placeRows and
+    # placeStation each DROP a row they do not match, so a knob with no home
+    # renders nowhere, silently, and is only noticed when somebody goes looking
+    # for a setting he remembers having. That is why a knob's move and the
+    # screen that receives it have to land in one commit.
+    def _home(e):
+        return (1 if e.get("door") else 0) + (1 if e.get("station") else 0)
+    check(all(_home(e) == 1 for e in schema),
+          "every knob has exactly ONE home, a door or a station (offenders: %s)"
+          % sorted({e["path"] for e in schema if _home(e) != 1}))
+    check(all(e["door"] in server.DOORS for e in schema if e.get("door")),
+          "every door-placed knob names a REAL settings-hub door (offenders: %s)"
+          % sorted({e["path"] for e in schema
+                    if e.get("door") and e["door"] not in server.DOORS}))
+    # The station vocabulary is the PIPELINE's own (sessions.flow), not a list
+    # kept here. A knob on a station nobody draws is invisible in exactly the
+    # way `done` is - a real lane that the station row does not render.
+    from cells.engineer import sessions as _sess
+    _drawn = set(_sess.flow({}).get("stations") or [])
+    check(all(e["station"] in _drawn for e in schema if e.get("station")),
+          "every station-placed knob names a DRAWN station (drawn: %s, offenders: %s)"
+          % (sorted(_drawn), sorted({e["path"] for e in schema
+                                     if e.get("station") and e["station"] not in _drawn})))
     check(all(e.get("level") in ("basic", "advanced") for e in schema),
           "every knob is basic or advanced (progressive disclosure)")
     check(all(e.get("scope") in server.SCOPES for e in schema),
@@ -627,11 +649,16 @@ def test_policy_knob_contract():
     # One group must not span two doors: the renderer keys sections by group
     # within a door, so the same group id in two doors would draw one heading
     # twice and imply the rows belong together when they do not.
+    # Keyed on the knob's HOME, whichever kind it is: the station page keys its
+    # sections by group exactly as a door does, so one group id living in two
+    # homes would draw the same heading twice and imply the rows belong
+    # together when they no longer do.
     doors_per_group = {}
     for e in schema:
-        doors_per_group.setdefault(e["group"], set()).add(e["door"])
+        doors_per_group.setdefault(e["group"], set()).add(
+            e.get("door") or ("station:" + e["station"]))
     check(all(len(v) == 1 for v in doors_per_group.values()),
-          "no group is split across doors (offenders: %s)"
+          "no group is split across two homes (offenders: %s)"
           % sorted(g for g, v in doors_per_group.items() if len(v) > 1))
     # The whole point of _profile_schema being a SEPARATE list: it is what
     # /me serves, and /me is the one endpoint a client role may call. A
