@@ -3671,7 +3671,7 @@ DEBT = [
     {
         "id": "card-henry-reply-not-streamed",
         "title": "Card-scoped Henry replies arrive whole, not token-streamed",
-        "status": "open",
+        "status": "paid",
         "what": "cells/copilot/copilot.py's chat() already streams its prose "
                 "into a live_partial.txt for the global board chat "
                 "(surfaces/app/src/app/chat.tsx polls /chat/live), but a "
@@ -3685,10 +3685,19 @@ DEBT = [
         "trigger": "a card-scoped Henry turn regularly takes long enough "
                    "(multi-tool-call turns, slow model) that the no-feedback "
                    "wait becomes annoying.",
-        "fix": "OPEN. Fold live_partial.txt's growing text into the card's "
-               "timeline as a streaming step (same shape drivers.py's own "
-               "streaming fold uses), keyed off the copilot run_dir, instead "
-               "of only writing the finished reply.",
+        "fix": "PAID. The prose was always streamed - chat() writes "
+               "live_partial.txt for EVERY turn, card-scoped ones included - so "
+               "the missing half was purely the reader plus a way to know the "
+               "stream belonged here. /chat/live now reports the running turn's "
+               "card (copilot._running_card, a satellite of _running with the "
+               "same lifetime, set and cleared at the same two places), and "
+               "card/[id].tsx polls it while its own Henry send is in flight, "
+               "rendering the growing text as a `streaming` step in the SAME "
+               "card_transcript bubble the worker's stream uses. Scoped twice "
+               "(our send is running AND r.card === this card) because the feed "
+               "is per user and turns are serialised - an unscoped read would "
+               "have painted a board-chat answer into a card's timeline. The "
+               "'Henry denkt…' row now stands down as soon as prose arrives.",
         "order": 50,
     },
     {

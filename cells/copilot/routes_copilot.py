@@ -16,6 +16,13 @@ def chat_history_get(self, user):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from cells.copilot import copilot
+    # Opening the board chat fetches the transcript through THIS route - the
+    # same "a question is coming" signal voice mode gives via /notify/speak.
+    # Warm the process NOW, while the owner is still reading and typing,
+    # instead of on the clock of their first message. Fire-and-forget, a no-op
+    # when the process is already warm, and self-throttled against this route's
+    # 8s fallback poll (copilot._PREWARM_COOLDOWN).
+    copilot.prewarm(user["name"], spoken=False)
     return self._send(200, json.dumps(copilot.history(user["name"])))
 
 
