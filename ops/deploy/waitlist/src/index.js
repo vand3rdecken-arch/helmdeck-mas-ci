@@ -30,6 +30,8 @@
  * tester's Apple ID - see TESTFLIGHT_REQUEST_URL.
  */
 
+import { ICON_SVG } from "./logo.js";
+
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 
 // Owner-picked Userjot board (matches surfaces/app/src/data/feedback.ts) - update both
@@ -89,30 +91,11 @@ const TESTFLIGHT_APP_URL = "https://apps.apple.com/de/app/testflight/id899247664
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 
-const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-<defs>
-<linearGradient id="t" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0" stop-color="#16191d"/><stop offset="1" stop-color="#0c0d0e"/>
-</linearGradient>
-<linearGradient id="h" x1="0" y1="270" x2="0" y2="740" gradientUnits="userSpaceOnUse">
-<stop offset="0" stop-color="#E8F4FC"/><stop offset="1" stop-color="#96B4CD"/>
-</linearGradient>
-<clipPath id="c"><rect width="1024" height="1024" rx="230"/></clipPath>
-<filter id="b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="150"/></filter>
-</defs>
-<rect width="1024" height="1024" rx="230" fill="url(#t)"/>
-<g clip-path="url(#c)">
-<circle cx="205" cy="143" r="470" fill="#2893CC" opacity=".55" filter="url(#b)"/>
-<circle cx="880" cy="123" r="420" fill="#967AF0" opacity=".5" filter="url(#b)"/>
-<circle cx="563" cy="1045" r="470" fill="#2893CC" opacity=".33" filter="url(#b)"/>
-</g>
-<rect x="61" y="51" width="902" height="922" rx="185" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="7"/>
-<g fill="url(#h)">
-<rect x="322.6" y="291.8" width="138.2" height="440.4" rx="58"/>
-<rect x="563.3" y="291.8" width="138.2" height="440.4" rx="58"/>
-<rect x="322.6" y="440.3" width="378.9" height="122.9" rx="39.3"/>
-</g>
-</svg>`;
+// The brand mark is NOT written here. It is generated from the same mask every
+// other surface's icon comes from (ops/tools/assets/logo_h_mask.png) by
+// `py -3.12 ops/tools/make_icon.py`. The previous hand-written copy of the mark
+// silently survived the 2026-08-26 logo redesign and helmdeck.de served the
+// superseded design until 2026-09-02. Do not inline a mark here again.
 
 // --- live release lookup -----------------------------------------------
 

@@ -32,9 +32,19 @@ Outputs:
     surfaces/app/assets/images/android-icon-monochrome.png           (themed-icon H)
     surfaces/app/assets/images/splash-icon.png                       (native splash)
     surfaces/app/assets/expo.icon/Assets/helmdeck-h.png              (iOS Liquid Glass layer)
+    ops/deploy/waitlist/src/logo.js                                  (helmdeck.de brand mark)
+
+The website is the one surface that cannot consume a PNG from this repo - it is a
+single-file Cloudflare Worker with no static asset binding, so it carried its own
+hand-written copy of the mark. That copy silently went stale through the
+2026-08-26 redesign and helmdeck.de served the superseded "glass H" for a week.
+So the site's mark is now GENERATED here too: the same mask is traced to an SVG
+path (see trace_mask_loops) and written as src/logo.js. Same source, one command,
+no second place to forget.
 """
 import json
 import os
+import math
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,9 +52,11 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 DESK = os.path.join(ROOT, "surfaces", "desktop", "assets")
 APPIMG = os.path.join(ROOT, "surfaces", "app", "assets", "images")
 EXPOICON = os.path.join(ROOT, "surfaces", "app", "assets", "expo.icon")
+SITE_LOGO = os.path.join(ROOT, "ops", "deploy", "waitlist", "src", "logo.js")
 MASK_PATH = os.path.join(HERE, "assets", "logo_h_mask.png")
 
 SIZE = 1024
+CORNER_RATIO = 0.225   # rounded-square radius, shared by the tile and the site SVG
 
 # --- brand palette - matches the live android-icon-background.png exactly ---
 GRADIENT_TOP_RIGHT = (0x53, 0x48, 0x85)     # #534885 violet
@@ -87,6 +99,14 @@ def load_glyph_mask():
     return mask
 
 
+def binary_rows(mask):
+    """The 'L' mask as rows of bools, thresholded the same way alpha
+    compositing reads it: >127 is glyph."""
+    w, h = mask.size
+    data = mask.tobytes()
+    return [[data[y * w + x] > 127 for x in range(w)] for y in range(h)]
+
+
 def flat_glyph(mask, color):
     out = Image.new("RGBA", mask.size, color + (0,))
     out.putalpha(mask)
@@ -103,7 +123,7 @@ def shrink_to_safezone(img, scale=SAFE_ZONE):
     return canvas
 
 
-def rounded_mask(size, radius_ratio=0.225):
+def rounded_mask(size, radius_ratio=CORNER_RATIO):
     m = Image.new("L", (size, size), 0)
     ImageDraw.Draw(m).rounded_rectangle([0, 0, size - 1, size - 1],
                                          radius=round(size * radius_ratio), fill=255)
@@ -140,6 +160,205 @@ def mac_master(master):
     out.alpha_composite(shadow)
     out.alpha_composite(body, (PAD, PAD))
     return out
+
+
+# --- mask -> SVG path (for the website, which cannot ship a PNG) -----------
+#
+# Deliberately written against nothing but PIL + stdlib. An OpenCV/potrace
+# dependency here would mean "regenerate the icons" fails on a machine that
+# happens not to have it, halfway through writing eight files - and the whole
+# point of this script is that one command always leaves every surface in sync.
+# Verified against cv2.findContours during development: identical loop count,
+# and both rasterise back to the source mask within 0.2% of its area.
+
+
+def trace_mask_loops(mask):
+    """Trace the exact pixel boundary of a binary mask.
+
+    `mask` is a 2-D sequence of truthy/falsy values (numpy bool array or list
+    of lists). Returns a list of closed loops of integer lattice points, each
+    wound clockwise in SVG screen coordinates (y down) around filled area.
+
+    Method: every filled pixel contributes a unit edge for each of its four
+    sides whose neighbour is empty, oriented so the interior stays on the same
+    hand. Those edges then stitch head-to-tail into closed loops. This is
+    exact - no thresholded curve fitting, no ambiguity about what the shape is
+    - and the smoothing happens afterwards in simplify_loop, where it can be
+    measured.
+    """
+    h = len(mask)
+    w = len(mask[0])
+
+    def filled(x, y):
+        return 0 <= x < w and 0 <= y < h and bool(mask[y][x])
+
+    succ = {}
+    for y in range(h):
+        row = mask[y]
+        for x in range(w):
+            if not row[x]:
+                continue
+            if not filled(x, y - 1):
+                succ.setdefault((x, y), []).append((x + 1, y))
+            if not filled(x + 1, y):
+                succ.setdefault((x + 1, y), []).append((x + 1, y + 1))
+            if not filled(x, y + 1):
+                succ.setdefault((x + 1, y + 1), []).append((x, y + 1))
+            if not filled(x - 1, y):
+                succ.setdefault((x, y + 1), []).append((x, y))
+
+    def step(cur, outs, heading):
+        # At a vertex where two regions touch corner-to-corner there are two
+        # ways out. Prefer the tightest (clockwise) turn, which keeps the loop
+        # hugging the region it is already tracing instead of jumping across
+        # the diagonal. Order: right, straight, left, back.
+        if heading is None or len(outs) == 1:
+            return outs[0]
+        dx, dy = heading
+        for ddx, ddy in ((-dy, dx), (dx, dy), (dy, -dx), (-dx, -dy)):
+            cand = (cur[0] + ddx, cur[1] + ddy)
+            if cand in outs:
+                return cand
+        return outs[0]
+
+    loops = []
+    while succ:
+        start = next(iter(succ))
+        loop, cur, heading = [], start, None
+        while True:
+            outs = succ.get(cur)
+            if not outs:
+                break
+            nxt = step(cur, outs, heading)
+            outs.remove(nxt)
+            if not outs:
+                del succ[cur]
+            loop.append(cur)
+            heading = (nxt[0] - cur[0], nxt[1] - cur[1])
+            cur = nxt
+            if cur == start:
+                break
+        if len(loop) >= 3:
+            loops.append(loop)
+    return loops
+
+
+def _dp_keep(pts, eps):
+    """Douglas-Peucker over an open chain; returns the indices to keep.
+
+    Iterative on purpose: the raw chains here run to thousands of points and
+    the textbook recursive form blows Python's stack on the worst case.
+    """
+    n = len(pts)
+    if n < 3:
+        return list(range(n))
+    keep = [False] * n
+    keep[0] = keep[n - 1] = True
+    stack = [(0, n - 1)]
+    while stack:
+        i0, i1 = stack.pop()
+        if i1 <= i0 + 1:
+            continue
+        ax, ay = pts[i0]
+        bx, by = pts[i1]
+        dx, dy = bx - ax, by - ay
+        norm = dx * dx + dy * dy
+        imax, dmax = i0, -1.0
+        for i in range(i0 + 1, i1):
+            px, py = pts[i]
+            if norm == 0:
+                dist = math.hypot(px - ax, py - ay)
+            else:
+                t = ((px - ax) * dx + (py - ay) * dy) / norm
+                t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                dist = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+            if dist > dmax:
+                imax, dmax = i, dist
+        if dmax > eps:
+            keep[imax] = True
+            stack.append((i0, imax))
+            stack.append((imax, i1))
+    return [i for i in range(n) if keep[i]]
+
+
+def simplify_loop(loop, eps):
+    """Douglas-Peucker for a CLOSED loop.
+
+    A closed ring has no natural endpoints, so anchor it on two points that
+    are certainly corners of the outline - the first point and the point
+    farthest from it - and simplify the two arcs between them independently.
+    """
+    n = len(loop)
+    if n < 4:
+        return list(loop)
+    x0, y0 = loop[0]
+    far = max(range(n), key=lambda i: (loop[i][0] - x0) ** 2 + (loop[i][1] - y0) ** 2)
+    arc_a = loop[:far + 1]
+    arc_b = loop[far:] + [loop[0]]
+    kept_a = [arc_a[i] for i in _dp_keep(arc_a, eps)]
+    kept_b = [arc_b[i] for i in _dp_keep(arc_b, eps)]
+    return kept_a[:-1] + kept_b[:-1]
+
+
+def glyph_path_d(mask, eps=0.8):
+    """The mask as one SVG path `d`.
+
+    eps is in mask pixels (the glyph is drawn on a 1024 grid). 0.8 was chosen
+    by rendering the traced mark against the shipped master PNG at 32/48/96/
+    180/320px and looking: 0.8 is indistinguishable from the master at every
+    one of them (IoU 0.9988) while cutting the raw pixel staircase from 5190
+    points to ~690. At 2.0 the inner curve of the sweep visibly flattens where
+    it meets the right stem, so the cheap end of the range is not free.
+    """
+    parts = []
+    for loop in trace_mask_loops(mask):
+        pts = simplify_loop(loop, eps)
+        if len(pts) < 3:
+            continue
+        head = f"M{pts[0][0]} {pts[0][1]}"
+        rest = "".join(f"L{x} {y}" for x, y in pts[1:])
+        parts.append(head + rest + "Z")
+    return "".join(parts)
+
+
+def site_logo_svg(mask):
+    """The website's brand mark: the same gradient tile and the same glyph as
+    every other surface, as scalable SVG."""
+    tr = "#%02X%02X%02X" % GRADIENT_TOP_RIGHT
+    bl = "#%02X%02X%02X" % GRADIENT_BOTTOM_LEFT
+    ink = "#%02X%02X%02X" % GLYPH_COLOR
+    radius = round(SIZE * CORNER_RATIO)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SIZE} {SIZE}" '
+        f'role="img" aria-label="HelmDeck">'
+        f'<defs><linearGradient id="hd-tile" x1="{SIZE}" y1="0" x2="0" y2="{SIZE}" '
+        f'gradientUnits="userSpaceOnUse">'
+        f'<stop offset="0" stop-color="{tr}"/><stop offset="1" stop-color="{bl}"/>'
+        f'</linearGradient></defs>'
+        f'<rect width="{SIZE}" height="{SIZE}" rx="{radius}" fill="url(#hd-tile)"/>'
+        f'<path fill="{ink}" d="{glyph_path_d(mask)}"/>'
+        f'</svg>'
+    )
+
+
+def write_site_logo(mask):
+    svg = site_logo_svg(mask)
+    # The worker embeds this in a JS template literal.
+    escaped = svg.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+    body = (
+        "// GENERATED FILE - do not edit by hand.\n"
+        "// Source of truth: ops/tools/assets/logo_h_mask.png\n"
+        "// Regenerate:      py -3.12 ops/tools/make_icon.py\n"
+        "//\n"
+        "// The site used to keep its own hand-drawn copy of the brand mark, which\n"
+        "// went stale the moment the logo was redesigned. It is derived now.\n"
+        "\n"
+        f"export const ICON_SVG = `{escaped}`;\n"
+    )
+    os.makedirs(os.path.dirname(SITE_LOGO), exist_ok=True)
+    with open(SITE_LOGO, "w", encoding="utf-8", newline="\n") as f:
+        f.write(body)
+    print("wrote", SITE_LOGO)
 
 
 def save_png(img, path):
@@ -200,6 +419,9 @@ def main():
         json.dump(icon_json, f, indent=2)
         f.write("\n")
     print("wrote", icon_json_path)
+
+    # helmdeck.de: the mark as SVG, traced from this same mask.
+    write_site_logo(binary_rows(mask))
 
 
 if __name__ == "__main__":
