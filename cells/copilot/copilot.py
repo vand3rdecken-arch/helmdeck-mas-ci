@@ -53,15 +53,23 @@ VOICE_STYLE = (
 # The cards already solved this (drivers._ClaudeSession, Paseo's model): keep
 # the process alive on the stream-json port and a turn costs model time only.
 # This is that port for the board chat, deliberately small: ONE process per
-# user, keyed by (model, permission mode) - a model switch (typed sonnet <->
-# voice haiku) respawns via --resume, so context survives and only the
-# switching turn pays the spawn. Two live processes on ONE session id would
-# fork the conversation, hence never more than one per user.
+# user, carrying its live (model, permission mode) as its key. A turn that
+# routes to a DIFFERENT model no longer respawns - it switches the running
+# process on the control plane (_persist_switch, drivers.apply_opts parity),
+# because with the composer's "auto" default the tier is re-picked from every
+# message's text and respawn-on-change meant the process was warm in name only
+# (see _persist_switch for the measured numbers). Two live processes on ONE
+# session id would fork the conversation, hence never more than one per user.
 _persist = {}            # user -> {"p": Popen, "key": (model, pmode)}
 _persist_lock = threading.Lock()
 
 
 _turn_locks = {}
+
+# prewarm throttle - see prewarm(). Guards the FAILING case only (a spawn that
+# dies immediately would otherwise re-warm on every /chat/history poll).
+_prewarm_at = {}         # user -> last prewarm start (monotonic-ish wall clock)
+_PREWARM_COOLDOWN = 120.0
 
 
 def _turn_lock(user):
@@ -71,14 +79,35 @@ def _turn_lock(user):
         return _turn_locks.setdefault(user, threading.Lock())
 
 
-def prewarm(user):
+def prewarm(user, spoken=True):
     """Fire-and-forget: spawn the user's warm chat process AND run a hidden
-    warmup turn on it. Called when voice mode OPENS (the greeting fetch),
-    so the two slow parts - node boot and the prompt-cache prefill of a big
-    resumed session (128k measured 2026-08-21 = the '20s first turn') -
-    happen while the owner is still hearing the greeting and speaking the
-    question. The warmup lands in the session history but never in the chat
-    UI (copilot_log carries only real turns)."""
+    warmup turn on it. Called when voice mode OPENS (the greeting fetch) and
+    when the board chat is OPENED (the /chat/history fetch), so the two slow
+    parts - node boot and the prompt-cache prefill of a big resumed session
+    (128k measured 2026-08-21 = the '20s first turn') - happen while the owner
+    is still hearing the greeting / reading the transcript and typing, instead
+    of on the clock of their first question. The warmup lands in the session
+    history but never in the chat UI (copilot_log carries only real turns).
+
+    Cheap to call: a process that is already warm costs one poll() and returns.
+    The cooldown below only bounds the case where warming genuinely FAILS - a
+    process that dies on every spawn would otherwise be re-spawned (and pay a
+    real warmup turn) on every single /chat/history poll, which the app falls
+    back to every 8s when the event stream is down (data/stream.ts).
+
+    `spoken` picks WHICH tier to warm. It matters because the prompt cache the
+    warmup turn fills is per-model: warming haiku buys a typed sonnet turn only
+    the node boot, not the prefill. Voice pins the fast voice_model, so it says
+    spoken=True; the board chat routes "auto" over an empty message - i.e. the
+    everyday typed tier - so it says spoken=False. Guessing wrong is no longer
+    expensive either way (_persist_switch adopts the real turn's model on the
+    control plane instead of respawning), it just warms less."""
+    now = time.time()
+    with _persist_lock:
+        if now - _prewarm_at.get(user, 0.0) < _PREWARM_COOLDOWN:
+            return
+        _prewarm_at[user] = now
+
     def _go():
         try:
             from spine.agent import drivers, turnopts
@@ -86,12 +115,14 @@ def prewarm(user):
             from spine.registry import harness
             if not drivers.argv_form_safe(CLAUDE):
                 return
-            vm = events.settings().get("voice_model")
-            model = (vm if vm is not None else "haiku") or ""
-            # SAME ctx signal chat() uses - the warm process is keyed by
-            # (model, pmode), so a prewarm that resolved haiku while the real
-            # turn resolves sonnet would kill and respawn the process on every
-            # single turn. Both sides must route from the same measurement.
+            model = ""
+            if spoken:
+                vm = events.settings().get("voice_model")
+                model = (vm if vm is not None else "haiku") or ""
+            # SAME ctx signal chat() uses: ctx_tokens is a routing INPUT (a
+            # model whose window cannot hold the session gets lifted), so a
+            # prewarm that read it differently from the real turn would warm a
+            # tier the turn then has to switch away from.
             cli_model, _ = turnopts.resolve_model(
                 model or "auto", "", False,
                 signals={"ctx_tokens": (_stats().get(user) or {}).get("ctx_tokens")})
@@ -100,6 +131,15 @@ def prewarm(user):
             if not lock.acquire(blocking=False):
                 return                      # a real turn is running - already warm
             try:
+                # A live process is already the whole point - leave it exactly
+                # as the last real turn left it. Going through _persist_get
+                # here would switch its model to this GUESS, only for the next
+                # real turn to switch it straight back: two control ops to end
+                # up where we started.
+                with _persist_lock:
+                    ent = _persist.get(user)
+                    if ent and ent["p"].poll() is None:
+                        return
                 p, fresh = _persist_get(user, cli_model, _sessions().get(user), base)
                 if not fresh:
                     return                  # already warm AND cached
@@ -134,17 +174,101 @@ def _persist_drop(user):
             pass
 
 
+def _control(p, subtype, timeout=3.0, **fields):
+    """Fire ONE control_request at the warm chat process and WAIT for its
+    control_response. True only on a proven `success`
+    (drivers._ClaudeSession._control parity, same 3s bound as Paseo's
+    awaitWithTimeout - and the same wire shape: the id echoes in
+    ev["response"]["request_id"]).
+
+    Reading stdout here is safe because EVERY caller holds the user's turn lock
+    (chat() and prewarm() both acquire it before _persist_get), so between
+    turns nobody else pumps this pipe. And a timeout is not left dangling: the
+    caller kills the process on False, so this reader hits EOF and can never
+    steal the next turn's events.
+    """
+    req_id = "cp-" + uuid.uuid4().hex[:12]
+    try:
+        p.stdin.write(json.dumps({"type": "control_request", "request_id": req_id,
+                                  "request": dict({"subtype": subtype}, **fields)}) + "\n")
+        p.stdin.flush()
+    except Exception:
+        return False
+    done, box = threading.Event(), {}
+
+    def _read():
+        try:
+            for line in p.stdout:
+                try:
+                    ev = json.loads(line.strip() or "{}")
+                except ValueError:
+                    continue
+                resp = ev.get("response") or {}
+                if ev.get("type") == "control_response" and resp.get("request_id") == req_id:
+                    box["resp"] = resp
+                    break
+        except Exception:
+            pass
+        done.set()
+    threading.Thread(target=_read, daemon=True).start()
+    if not done.wait(timeout):
+        return False
+    return (box.get("resp") or {}).get("subtype") == "success"
+
+
+def _persist_switch(ent, key):
+    """Adopt a model / permission-mode change on the LIVE process via the
+    control plane instead of respawning it (drivers.apply_opts parity - the
+    last open item on the persistent-session card).
+
+    THIS is what makes the board chat actually stay warm. The composer defaults
+    to "auto" (surfaces/app/src/ui/card_composer.tsx), so turnopts.pick_model
+    re-picks the tier from EVERY message's text: "danke" routes haiku, a plain
+    question sonnet, anything matching _HARD ("debug", "analysiere",
+    "refactor", "root cause") opus - and a voice turn pins haiku on top of
+    that. Keyed respawn-on-change therefore threw the warm process away on an
+    ordinary typed conversation, and the next turn paid node boot (8-12s) PLUS
+    a full --resume prefill of a months-long board session (~20s measured at
+    128k) - the "warm process" was only ever warm for a run of messages that
+    happened to route to the same tier.
+
+    The key advances ONLY on the runtime's own confirmation (no monkey patches:
+    a control op we did not see succeed is not evidence of anything). Any
+    failure returns False and the caller falls back to today's drop+respawn, so
+    the worst case is exactly the behaviour we had before.
+    """
+    old_model, old_mode = ent["key"]
+    new_model, new_mode = key
+    p = ent["p"]
+    if new_model != old_model and not _control(p, "set_model", model=(new_model or "default")):
+        return False
+    if new_mode != old_mode and not _control(p, "set_permission_mode", mode=new_mode):
+        return False
+    ent["key"] = key
+    return True
+
+
 def _persist_get(user, cli_model, sid, system):
-    """(proc, fresh). Reuse the warm process when model+mode match, else
-    spawn one on the stream-json port. The system brief rides the SPAWN
+    """(proc, fresh). Reuse the warm process - switching its model/mode on the
+    control plane when the turn routed differently (_persist_switch) - and only
+    spawn when there is nothing live to reuse. The system brief rides the SPAWN
     (constant across turns); per-turn overlays travel inside the turn text."""
     from spine.agent import drivers
     from spine.registry import harness
     key = (cli_model or "", henry_pmode())
+    live = None
     with _persist_lock:
         ent = _persist.get(user)
-        if ent and ent["key"] == key and ent["p"].poll() is None:
-            return ent["p"], False
+        if ent and ent["p"].poll() is None:
+            if ent["key"] == key:
+                return ent["p"], False
+            live = ent
+    if live is not None and _persist_switch(live, key):
+        # cancel() can drop the process while the switch was in flight - only
+        # hand back a handle the registry still owns, never a killed one.
+        with _persist_lock:
+            if _persist.get(user) is live and live["p"].poll() is None:
+                return live["p"], False
     _persist_drop(user)
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--input-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", henry_pmode()]
@@ -817,6 +941,13 @@ def say(text, cls="pm", card=None, extra=None):
 
 # live copilot subprocess per user, so the chat's Stop button can kill a turn.
 _running = {}
+# WHICH card the in-flight turn is scoped to (chat(card=...)), or None for a
+# board-chat turn. A satellite of _running with exactly the same lifetime -
+# set and cleared at the same two places, never derived from anything else.
+# The live feed is per USER but a turn belongs to ONE surface, and turns are
+# serialised (_turn_lock), so without this the card chat would render the
+# board chat's prose into the card's timeline while it waited for the lock.
+_running_card = {}
 _cancelled = set()
 
 # -- streaming: ONE chat surface with the card (shared Transcript), only the
@@ -907,9 +1038,14 @@ def live(user):
     # half-typed one - is the same thing the card's readers do
     # (spine/agent/claude_sessions.py: read_transcript_live/_store); the board
     # chat was simply the one live feed that never got it.
+    # `card` scopes the feed to the surface the running turn belongs to, so a
+    # card chat can stream Henry's card-scoped reply (debt
+    # card-henry-reply-not-streamed) without ever painting a BOARD turn's prose
+    # into a card's timeline - see _running_card.
     return {"text": ask.strip_stream(_rd("live_partial.txt")),
             "thinking": _rd("live_thinking.txt"),
-            "running": user in _running}
+            "running": user in _running,
+            "card": _running_card.get(user)}
 
 
 def cancel(user):
@@ -1106,6 +1242,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise
     _running[user] = p
+    _running_card[user] = card or None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     resume_echo, ctx_first = False, {}
     # SILENCE watchdog (persist only): a one-shot process ends the read loop by
@@ -1202,6 +1339,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     finally:
         _beat["done"] = True
         _running.pop(user, None)
+        _running_card.pop(user, None)
         if persistable and (user in _cancelled or p.poll() is not None):
             # a cancelled or dead process must not be reused - next turn
             # respawns via --resume and loses nothing but the warmth

@@ -362,10 +362,32 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
       hint: tr("card.chat.mentionWorker") },
   ], [tr, t]);
   const defaultTo = k.session_id || k.status === "running" || k.lane !== "done" ? "worker" : "henry";
-  // Henry's card-scoped reply arrives whole on the POST return (not token-
-  // streamed like the worker) - this local flag is the only "is Henry
-  // working" cue until then.
+  // Henry is working on THIS card's turn (set by our own send, below).
   const [henryBusy, setHenryBusy] = useState(false);
+  // ...and what he has typed so far. copilot.chat streams its prose into the
+  // per-user live feed for EVERY turn, card-scoped ones included - the card
+  // was simply the surface that never read it (debt
+  // card-henry-reply-not-streamed), so a slow Henry turn showed a bare spinner
+  // while the board chat streamed the identical text. Scoped twice over: only
+  // while OUR send is in flight, and only when the daemon says the running
+  // turn belongs to this card (r.card) - the feed is per user, and turns are
+  // serialised, so an unscoped read could paint a board-chat answer in here.
+  const [henryStream, setHenryStream] = useState("");
+  useEffect(() => {
+    if (!henryBusy) { setHenryStream(""); return; }
+    let alive = true, to: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const r = await api.chatLive();
+        // `card` absent = a daemon that predates the field: stay with the
+        // spinner rather than risk attributing another surface's prose.
+        if (alive && r) setHenryStream(r.card === k.id ? (r.text || "") : "");
+      } catch { /* keep polling - a dropped poll must not end the stream */ }
+      if (alive) to = setTimeout(poll, 500);
+    };
+    poll();
+    return () => { alive = false; clearTimeout(to); };
+  }, [henryBusy, k.id]);
   // optimistic echo: your just-sent message shows instantly, before the
   // session transcript catches up. Reconciled away once the real feed carries it.
   const [pending, setPending] = useState<TStep[]>([]);
@@ -409,7 +431,21 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
   // so it arrives through `feed` exactly like the worker's own turns -
   // identity (by/byKind/to) is what tells them apart in the transcript, not
   // a client-side divider.
-  const steps = useMemo<TStep[]>(() => [...feed, ...pending], [feed, pending]);
+  // Henry's live prose rides along as a STREAMING step, so it renders through
+  // the same bubble the worker's own stream uses instead of a second widget.
+  // It is replaced (not appended to) by the real timeline entry the server
+  // folds in when the turn lands - henryBusy goes false in the same breath.
+  const steps = useMemo<TStep[]>(() => {
+    const base = [...feed, ...pending];
+    if (henryBusy && henryStream.trim()) {
+      // time inlined, not hhmm(): that helper is declared BELOW this memo and
+      // a useMemo factory runs during the same render pass (temporal dead zone).
+      base.push({ role: "assistant", kind: "text", text: henryStream,
+                  by: "Henry", byKind: "henry",
+                  ts: new Date().toTimeString().slice(0, 5), streaming: true });
+    }
+    return base;
+  }, [feed, pending, henryBusy, henryStream]);
 
   // The turn is still PRODUCING while the transcript streams. The machine-card
   // driver can flip status->needs_you on a first/quick reply while claude keeps
@@ -536,10 +572,11 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         <BackgroundTasks tasks={k.bg_tasks} waiting={k.waiting_on === "background"} />
       ) : null}
 
-      {/* Henry's card-scoped reply isn't token-streamed (arrives whole on the
-          POST return - debt card-henry-reply-not-streamed) - this is the only
-          "Henry is working" cue until then. */}
-      {henryBusy ? (
+      {/* The pre-output cue only. Once Henry's prose starts arriving it streams
+          into the transcript as a normal bubble (see the steps memo), so this
+          row stands down instead of sitting under a reply that is already
+          being written. */}
+      {henryBusy && !henryStream.trim() ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
           <ActivityIndicator size="small" color={t.accent2} />
           <Text style={{ color: t.accent2, fontSize: 11.5 }}>{tr("card.chat.henryThinking")}</Text>
