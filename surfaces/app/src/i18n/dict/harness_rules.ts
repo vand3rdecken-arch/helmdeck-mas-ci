@@ -47,6 +47,22 @@ export const harnessRules: Dict = {
   },
   "harness.saveFailed": { de: "Nicht übernommen", en: "Not applied" },
 
+  // Form <-> Brief (design doc 4.3) and "Henry fragen" (5.5).
+  "harness.viewForm": { de: "Einstellungen", en: "Settings" },
+  "harness.viewBrief": { de: "Brief ansehen", en: "View brief" },
+  "harness.briefLegend": {
+    de: "Der ganze Brief, wie Henry ihn bekommt. Hervorgehobenes ist einstellbar — tippe es an, um zur Zeile zu springen. Alles andere ist fest.",
+    en: "The whole brief, as Henry receives it. Highlighted parts are adjustable — tap one to jump to its row. Everything else is fixed.",
+  },
+  "rule.askHenry": { de: "Henry fragen", en: "Ask Henry" },
+  // What the turn carries. Names the rule in HENRY's own vocabulary (the key
+  // his `configure` verb and the rule table both use), so he can act on the
+  // answer instead of guessing which of twenty rows was meant.
+  "rule.askContext": {
+    de: "Es geht um die Einstellung „{label}“ (Regel {key}) auf der Harness-Seite.",
+    en: "This is about the setting \"{label}\" (rule {key}) on the harness page.",
+  },
+
   // Section headings for the knobs that MOVED onto a station page (section 6).
   // Their own, not the ones they wore in Automation/System: a group id that
   // straddled a door and a station would draw one heading in two places and

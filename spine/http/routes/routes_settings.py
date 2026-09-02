@@ -94,6 +94,41 @@ def harness_config_get(self, user):
     }, ensure_ascii=False))
 
 
+def harness_brief_get(self, user):
+    """THE BRIEF, READ-ONLY, as the owner may see it (design doc section 4.3).
+
+    ?surface=pm|voice|wear|glass|... picks which of Henry's briefs; ?repo= picks
+    the project layer, same as /harness/config. Segments rather than a string:
+    the values arrive tagged with the rule that produced them, so the view can
+    chip them in place and route a tap to the row that sets it - "highlighted
+    means adjustable", which is the one thing every user of an email-template
+    editor already knows.
+
+    Same render as the spawn uses (harness.brief_segments shares brief()'s
+    parts), so this cannot reassure the owner about a brief that is not the
+    brief."""
+    from urllib.parse import parse_qs, urlparse
+
+    from spine.registry import harness
+    from spine.storage import projectconfig
+    q = parse_qs(urlparse(self.path).query)
+    surface = (q.get("surface") or ["pm"])[0].strip()
+    repo = (q.get("repo") or [""])[0].strip()
+    surf = next((s for s in harness.SURFACES if s["key"] == surface), None)
+    if surf is None:
+        return self._send(404, json.dumps({"error": "no such surface: %s" % surface[:40]}))
+    project = projectconfig.project_key(repo)
+    segs = harness.brief_segments(surf["agent"], project)
+    return self._send(200, json.dumps({
+        "surface": surface, "label": surf["label"], "agent": surf["agent"],
+        "project": project,
+        "segments": segs,
+        # The owner sees how big the thing is; the phase-2 acceptance already
+        # tracks this number, so it is reported rather than recomputed here.
+        "chars": sum(len(s["text"]) for s in segs),
+    }, ensure_ascii=False))
+
+
 def harness_config_post(self, user, body):
     """Set or clear behaviour-rule values. {repo, values: {path: value|null}}.
 
@@ -140,6 +175,7 @@ GET_ROUTES = {
     "/usage": usage_get,
     "/automation": automation_get,
     "/harness/config": harness_config_get,
+    "/harness/brief": harness_brief_get,
 }
 POST_ROUTES = {
     "/settings": settings_post,
@@ -156,6 +192,10 @@ GET_CAPS = {
     # they sit beside. Anything weaker would let a role read Henry's instructions
     # it may not read the settings behind.
     "/harness/config": "settings.read",
+    # The brief is the instruction set Henry's turns run under - the same
+    # capability that guards the knobs around it, and the same one /harness
+    # (the editor) already sits behind.
+    "/harness/brief": "settings.read",
 }
 POST_CAPS = {
     "/settings": "settings.write",

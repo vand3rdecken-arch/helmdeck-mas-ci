@@ -5,10 +5,12 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type HarnessConfig, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
+import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
+import { api, type BehaviorRule, type HarnessConfig, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { BriefSurfacePicker, BriefView } from "@/ui/harness_brief";
 import { RuleBlock } from "@/ui/harness_rules";
 import { RepoPipeline } from "@/ui/repo_pipeline";
 import { useResponsive } from "@/ui/responsive";
@@ -319,6 +321,50 @@ export default function LoopMapScreen() {
     return by;
   }, [cfg]);
 
+  // ---- "Brief ansehen" (design doc 4.3) ----------------------------------
+  // Form <-> prose is a TOGGLE on one state, not a second edit surface.
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefSurface, setBriefSurface] = useState("pm");
+  const [highlight, setHighlight] = useState("");
+  // WHICH surfaces have a brief worth reading: derived from the rules that
+  // actually render into one (`wire: "slot"`), never a client-side list of
+  // Henry's faces. A surface that stops carrying slots stops being offered.
+  const briefSurfaces = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of cfg?.rules ?? []) {
+      if (r.wire !== "slot") continue;
+      for (const s of r.surfaces) keys.add(s.surface);
+    }
+    return (cfg?.surfaces ?? []).filter((s) => keys.has(s.key));
+  }, [cfg]);
+
+  /** A chip in the prose leads back to the row that sets it: switch to the
+   *  form, open that rule's block, and mark the row so the jump lands
+   *  somewhere visible instead of in a list of twenty. */
+  function openRule(key: string) {
+    const rule = (cfg?.rules ?? []).find((r) => r.key === key);
+    if (!rule) return;
+    setBriefOpen(false);
+    setLane("blk:" + rule.block);
+    setHighlight(key);
+  }
+
+  /** "Henry fragen" (design doc 5.5): open the docked chat carrying THIS row.
+   *  Desktop gets the in-page panel over the dimmed screen; the phone takes the
+   *  /chat route - the same split the board FAB has always used, so there is
+   *  one chat and one way it opens. */
+  function askHenry(rule: BehaviorRule) {
+    const label = tr(rule.labelKey);
+    useCopilotPanel.getState().show({
+      label,
+      // Henry's own vocabulary: the rule key is what `configure` and the rule
+      // table both name it, so he can act on the answer instead of guessing
+      // which of twenty rows the owner meant.
+      hint: tr("rule.askContext", { label, key: rule.key }),
+    });
+    if (!wide) router.push("/chat" as never);
+  }
+
   /** THE ONE WRITE PATH for a rule. A null value CLEARS it (restores
    *  inheritance); the daemon picks the layer from the rule's own scope, so
    *  this cannot ask for the wrong one. On failure the row is NOT optimistically
@@ -514,15 +560,47 @@ export default function LoopMapScreen() {
               {/* ---- one of HENRY's blocks ---- */}
               {selectedBlock && cfg ? (
                 <>
-                  {repo ? (
-                    <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 16 }}>
-                      {tr("harness.projectScope")}
-                    </Text>
-                  ) : null}
-                  {blocks.filter((b) => b.key === selectedBlock).map((b) => (
-                    <RuleBlock key={b.key} block={b} rules={cfg.rules} surfaces={surfaceLabels}
-                      project={cfg.project} onSet={setRule} />
-                  ))}
+                  {/* FORM <-> BRIEF, a toggle on one state (design doc 4.3).
+                      VS Code's "Open Settings (JSON)" and GitHub Actions' "View
+                      workflow file" are the same gesture: two windows onto the
+                      same thing, editing happens in the form. */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {(["form", "brief"] as const).map((m) => (
+                      <Pressable key={m} testID={"briefmode-" + m}
+                        onPress={() => setBriefOpen(m === "brief")}
+                        style={{ backgroundColor: (m === "brief") === briefOpen ? t.accent : t.surface2,
+                          borderColor: t.glassBorder, borderWidth: 1, borderRadius: 999,
+                          paddingHorizontal: 11, paddingVertical: 5 }}>
+                        <Text style={{ color: (m === "brief") === briefOpen ? t.canvas : t.txtSecondary,
+                          fontSize: 11, fontWeight: "700" }}>
+                          {tr(m === "brief" ? "harness.viewBrief" : "harness.viewForm")}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  {briefOpen ? (
+                    <>
+                      {/* Henry has ONE brief PER SURFACE and they differ on
+                          purpose - the length law alone is four values. So the
+                          view picks one instead of implying a single brief. */}
+                      <BriefSurfacePicker surfaces={briefSurfaces} value={briefSurface}
+                        onPick={setBriefSurface} />
+                      <BriefView surface={briefSurface} repo={repo} onOpenRule={openRule} />
+                    </>
+                  ) : (
+                    <>
+                      {repo ? (
+                        <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 16 }}>
+                          {tr("harness.projectScope")}
+                        </Text>
+                      ) : null}
+                      {blocks.filter((b) => b.key === selectedBlock).map((b) => (
+                        <RuleBlock key={b.key} block={b} rules={cfg.rules} surfaces={surfaceLabels}
+                          project={cfg.project} onSet={setRule} onAsk={askHenry}
+                          highlight={highlight} />
+                      ))}
+                    </>
+                  )}
                 </>
               ) : null}
 
@@ -764,6 +842,23 @@ export default function LoopMapScreen() {
           </View>
         </ScrollView>
       )}
+      {/* HENRY, ANGEDOCKT (design doc 5.5). The launcher is the Intercom
+          pattern - bottom right, findable without a nav entry - and the panel
+          it opens is the SHIPPED CopilotOverlay hosting the SHIPPED chat body:
+          same session, same history, same transcript and composer. The card's
+          non-goal is explicit that a third assembly of those parts would break
+          the one-chat law, so nothing here is a new chat; it is the existing
+          one, at this address. The phone takes the /chat route exactly as the
+          board FAB does. */}
+      <Pressable testID="harness-ask-henry"
+        onPress={() => { useCopilotPanel.getState().show(); if (!wide) router.push("/chat" as never); }}
+        style={{ position: "absolute", right: 18, bottom: 24, width: 48, height: 48, borderRadius: 15,
+          backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+          alignItems: "center", justifyContent: "center",
+          ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
+        <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
+      </Pressable>
+      <CopilotOverlay />
     </View>
   );
 }
