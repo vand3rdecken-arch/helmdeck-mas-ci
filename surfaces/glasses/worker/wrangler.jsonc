@@ -12,6 +12,13 @@
   "name": "helmdeck-glance",
   "main": "src/index.js",
   "compatibility_date": "2026-08-01",
+  // Custom domain instead of the default *.workers.dev URL - short and
+  // memorable for the one-time Add-a-Web-App registration on the glasses.
+  // Cloudflare provisions the DNS record + TLS cert automatically since
+  // helmdeck.de is already on this account's zone.
+  "routes": [
+    { "pattern": "glance.helmdeck.de", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
