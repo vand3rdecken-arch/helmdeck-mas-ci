@@ -1561,3 +1561,112 @@ run on actual glasses.
 - Do not design a feature that needs the glasses' mic and the glasses' camera at
   once on Android. §12.4.
 - Do not re-add a ticket registry (§11.1). One device, one `glance_token`.
+
+---
+
+## 13. THE LENS JOINS ITS OWN CONVERSATION (2026-09-02)
+
+Owner: *"Aktuell ist für den Owner nicht erkennbar, wann die Brille zuhört (kein
+Listening-Indikator), und das transkribierte Gesagte wird nirgends angezeigt
+bevor/während es verschickt wird."* Both true, both now fixed — and the reason
+they were true is worth recording, because two sections above say something that
+is **no longer accurate**.
+
+### 13.1 ⚠ §11.6 and §12.5 are SUPERSEDED — the voice loop is LIVE
+
+§11.6 says voice-in is *"walled in the WEBAPP"* and §12.5 says of
+`GlassVoiceService`: *"**Nothing starts it.** A search of `surfaces/app/src` …
+returns **zero matches**."* **Measured 2026-09-02: that is no longer true.** The
+seam landed with the `modules/glasses` bridge:
+
+```
+surfaces/app/src/app/chat.tsx  (glasses button, owner-only)
+  -> surfaces/app/src/data/glasses.ts        configure(origin, token) / listen(useGlassMic)
+  -> modules/glasses  GlassesBridgeModule.kt  starts by explicit ComponentName
+  -> app/plugins/glassvoice/GlassVoiceService.kt
+       RecognizerIntent -> POST /glance/talk -> MediaPlayer -> relisten
+```
+
+So the glasses microphone works today, and it reaches **Henry** — `/glance/talk`
+calls `copilot.chat`, the same session the phone and the watch read. That half
+was never the problem.
+
+### 13.2 The actual defect: the loop ran PAST the lens
+
+The webapp was not on that path at any point. Consequences the owner felt:
+
+1. **No listening indicator anywhere he could see it.** The only status surface
+   was `GlassVoiceService`'s own Android foreground notification — on the phone,
+   in his pocket, while he is wearing the display. `chat.tsx:595` had already
+   written this down: the glasses button is *"an AFFORDANCE, not a status: the
+   service's own foreground notification is the truth surface."* On glasses, that
+   truth surface is unreachable.
+2. **The transcript was never shown.** The recognised words went from the phone's
+   recogniser straight to the daemon, so he could not catch a misheard sentence
+   before it was sent in his name.
+3. **The lens's own talk screen was a one-reply amnesiac** — `#talk-reply` held
+   the latest answer with no memory of the exchange, even though the session
+   behind it was the shared one.
+
+### 13.3 What was built — state, not a second channel
+
+The conversation is still exactly one `copilot.chat` session. What was added is a
+published **state** of it, plus the lens's read of it.
+
+| Piece | Where | Note |
+|---|---|---|
+| turn state, one owner | `spine/ops/glassturn.py` | `listening → heard → thinking → answered/failed`, in memory |
+| its cursor | `db.bump_glass` / `db.wait_glass` | a THIRD counter beside `_version` and `_chat_version`, so a partial recognition result does not wake the phone and the watch |
+| the lens's read | `GET /glance/chat` | **hanging GET (~20s)**, returns cursors + turn + the shared transcript |
+| the mic's report | `POST /glance/state` | the one fact the daemon cannot observe |
+| the display | `surfaces/glasses/` | Wear-shaped chat + a pinned state bar |
+
+**Who observes what, because nothing here is inferred** (the no-monkey-patches
+law): `listening` is reported by the process that opens the microphone, because
+only it knows. `heard`/`thinking`/`answered`/`failed` are set by the daemon from
+its own handling of `/glance/talk`. `answered` is deliberately **not** called
+"speaking" — whether the clip reached an ear is something this process never
+learns, so it states what it observed instead.
+
+### 13.4 Three things measured rather than reasoned
+
+- **A shared token may assert exactly two words.** `/glance/state` accepts only
+  `listening` and `idle` — the two things the mic owner observes. A token that
+  could assert `answered` could paint a reply state the owner never got, which is
+  the class of lie the whole surface exists to remove.
+- **Absent ≠ zero on a cursor.** The first test run hung: on a freshly started
+  daemon both counters *are* zero, so a client sending `c=0&g=0` is genuinely up
+  to date and correctly blocked — leaving a first-time lens on an empty
+  conversation for the full 20s, the silent wait §3.6 forbids. A client with no
+  cursor now **omits** it.
+- **The options must ride the STREAM, not the reply.** The e2e failed with zero
+  options the first time it drove the turn the way the *phone* does. On a spoken
+  turn the `/glance/talk` POST comes from `GlassVoiceService`, so the lens never
+  sees that response — publishing the tappable half only there left **every voice
+  turn optionless** on the one surface with no keyboard, against `GLASS_BRIEF`'s
+  whole reason for demanding options. They now travel with the turn state.
+
+### 13.5 A shipped route that was dead in production only
+
+`/glance/banner` (the spoken *"N new cards need you"*, §11.6) was served by the
+daemon and requested by `app.js`, but **was never in the Worker's allowlist**. So
+it worked against a LAN daemon and was **silent on `glance.helmdeck.de`** — the
+configuration the owner actually wears — and `speakBanner`'s own `.catch()`
+swallowed it. `ops/tests/test_glance_worker.py` asserted `len(routes) == 4`,
+which is blind to an *omission*: the number stayed correct for a list that was
+already incomplete. Fixed, and that assertion is now the exact expected set.
+
+### 13.6 What is NOT proven
+
+The `GlassVoiceService.kt` reporter is **source only** — an APK cannot be built
+from a card worktree (`DEPLOY.md` §2). Registered as debt
+`glass-listening-report-uncompiled`. It **degrades rather than breaks**: on an
+older APK the lens still shows the transcript, the thinking state, the answer and
+the options; it simply never lights the mic indicator, and it never claims a mic
+is open when none is. Missing signal, never a false one.
+
+Everything else was driven for real — 45 route/state assertions
+(`ops/tests/test_glance_conversation.py`) and a 600×600 Playwright run against a
+real daemon with judged screenshots (`ops/tests/e2e_glance_conversation.py`,
+shots in `ops/docs/shots/glance-conversation/`). None of it has run on actual
+glasses.

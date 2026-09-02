@@ -13,10 +13,46 @@ read straight from the HelmDeck daemon.
 
 ```
 surfaces/glasses/
-  index.html   # screens: home · needs-you · card · SoW · connect
+  index.html   # screens: home · needs-you · card · decide · talk · SoW · connect
   styles.css   # additive dark theme (black = transparent), focus states
-  app.js       # /glance fetch, D-pad nav, localStorage config
+  app.js       # /glance fetch, the conversation stream, D-pad nav, localStorage config
 ```
+
+## The conversation, and the listening indicator
+
+The `talk` screen is the lens's window onto **one** Henry conversation — the same
+`copilot.chat` session the phone and the watch read, never a lens-local copy. It
+is shaped like the Wear OS watch's `HenryScreen`: the whole exchange is visible,
+and the owner's own words appear the moment they are sent rather than only after
+the answer arrives.
+
+The lens's own problem is that **it has no microphone**. The mic is opened by
+`GlassVoiceService` on the phone (the glasses mic over Bluetooth HFP, or the
+phone's own), which posts the recognised words to `/glance/talk`. Before this
+screen existed, that loop ran entirely past the display: nothing on the lens said
+anything was listening, and the transcript was never shown — so a misheard
+sentence could not be caught before it was sent in the owner's name.
+
+So the daemon publishes the state of the turn and the lens renders it:
+
+| state | who observes it | on the lens |
+|---|---|---|
+| `listening` | the process holding the mic, via `POST /glance/state` | pulsing dot + **Listening** + which mic |
+| `heard` / `thinking` | the daemon, as `/glance/talk` arrives and runs | the pending line, then **Henry is thinking** |
+| `answered` | the daemon, when the turn returns | the reply and its tappable options |
+| `failed` | the daemon, when the model call raises | **No answer - ask again**, never a silent wait |
+
+`answered` is deliberately not called "speaking": whether the clip reached the
+owner's ear is something the daemon never learns, so it reports what it saw.
+
+Reads go over `GET /glance/chat`, a **hanging GET** (~20s) that returns the moment
+the transcript or the turn moves — one open request, never a fast poll. The
+options travel with the turn state rather than with the `/glance/talk` response,
+because on a spoken turn that response goes to the *phone* and the lens would
+otherwise have nothing to tap.
+
+Two switches, both pre-existing: `glance_token` turns the surface on,
+`glance_talk` turns the conversation (and therefore the indicator) on.
 
 Built with Meta's **Wearables Web App toolkit** (`meta-wearables-webapp`) — the
 Ray-Ban Display renders standard HTML/CSS/JS, so this is a normal webapp under

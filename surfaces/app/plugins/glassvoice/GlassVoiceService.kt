@@ -176,6 +176,11 @@ class GlassVoiceService : Service() {
                     loopMic = null           // end the conversation, not just this turn
                     releaseMic()
                     player?.release(); player = null
+                    // The owner switched the loop off from the phone. Nothing else
+                    // will ever report for this conversation, so clearing the lens
+                    // is this path's job - the display must not keep claiming a
+                    // microphone the owner just closed.
+                    report("idle")
                     stopSelf()
                 }
             }
@@ -287,6 +292,12 @@ class GlassVoiceService : Service() {
     private fun startListening(useGlassMic: Boolean) {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             say("Spracherkennung nicht verfügbar")
+            // No mic will open on this path and nothing downstream will re-report,
+            // so clear the lens here. Both of this function's early returns need
+            // this: a previous turn may have left the indicator lit, and "the
+            // recogniser is gone" must not read on the display as "still
+            // listening".
+            report("idle")
             return
         }
         // OBSERVED, not assumed (the Paseo rule). routeToGlasses() returned a
@@ -307,6 +318,7 @@ class GlassVoiceService : Service() {
         if (useGlassMic) {
             if (!GlassesRadio.acquire(GlassesRadio.Mode.MIC)) {
                 say("Kamera aktiv - Brillen-Mikro nicht möglich")
+                report("idle")               // no mic opened - see above
                 return
             }
             onGlasses = routeToGlasses()
@@ -331,6 +343,14 @@ class GlassVoiceService : Service() {
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             recognizer?.startListening(i)
             say("Hört zu… (Mikro: $micInUse)")
+            // AFTER startListening, and after micInUse was set from the routing
+            // call's OWN answer - so the lens is told a mic is open only once one
+            // actually is, and is told the right one. Reporting before the start
+            // (or from the requested mic rather than the obtained one) would put a
+            // green "listening on glasses" on the display while the phone was
+            // quietly doing the hearing, which is the class of lie this indicator
+            // exists to end.
+            report("listening", micWire())
         }
     }
 
@@ -379,6 +399,10 @@ class GlassVoiceService : Service() {
         if (emptyTurns >= MAX_EMPTY) {
             loopMic = null
             say("Gespräch beendet (nichts gehört)")
+            // The conversation is over and no further turn will re-report. Say so,
+            // or the lens keeps a listening indicator lit over a microphone that
+            // has been closed - the same lie in the other direction.
+            report("idle")
             stopSelf()
             return
         }
@@ -444,6 +468,62 @@ class GlassVoiceService : Service() {
                 relisten(mic)
             }
         }
+    }
+
+    /** The microphone name the DAEMON speaks, derived from the one this class
+     *  already got from the routing call's own answer. `micInUse` is the
+     *  owner-facing German shown in the notification; the wire vocabulary is
+     *  fixed and English (glassturn.MICS). Translating here rather than widening
+     *  the daemon's accepted words keeps that endpoint's vocabulary closed,
+     *  which is the reason it is closed. */
+    private fun micWire(): String = if (micInUse == "Brille") "glasses" else "phone"
+
+    /**
+     * TELL THE LENS SOMETHING IS LISTENING.
+     *
+     * This is the ONE fact in the whole glasses loop the daemon cannot observe
+     * for itself. Everything else happens inside that process - the words arrive
+     * at /glance/talk, Henry is called there, the answer is rendered there - so
+     * the display can be driven from the server for all of it. But only this
+     * class knows a microphone is open, because only this class opens one.
+     *
+     * Until now that fact went nowhere except this service's own Android
+     * notification, which sits on the phone in the owner's pocket while he is
+     * wearing the display. He had no way to tell the glasses were hearing him.
+     *
+     * Deliberately fire-and-forget, on its own thread, with SHORT timeouts and
+     * wrapped in safe{}: a status ping must never delay the microphone or take
+     * the conversation down with it. A dropped report costs one stale indicator
+     * until the next turn re-reports it; a blocking one would cost the turn.
+     * Same contract the notification path already has.
+     *
+     * It reads the same two prefs `ask` does, so on an unpaired device it
+     * returns before touching the network - which is also why an unpaired device
+     * can never light a "listening" indicator it would then be unable to clear.
+     */
+    private fun report(state: String, mic: String = "") {
+        val base = prefs.getString(KEY_BASE, "").orEmpty().trimEnd('/')
+        val token = prefs.getString(KEY_TOKEN, "").orEmpty()
+        if (base.isEmpty() || token.isEmpty()) return
+        Thread {
+            safe("report") {
+                val c = (URL("$base/glance/state").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject()
+                    .put("token", token)
+                    .put("state", state)
+                    .put("mic", mic)
+                    .toString()
+                c.outputStream.use { it.write(body.toByteArray()) }
+                c.responseCode                     // drives the exchange
+                c.disconnect()
+            }
+        }.start()
     }
 
     /**
