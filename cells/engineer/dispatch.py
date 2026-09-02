@@ -503,8 +503,23 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
     if not pol.get("enabled", True):
         raise RuntimeError("direct tasks are switched off (policy.machine.enabled=false)")
     repo = os.path.abspath(os.path.expandvars(os.path.expanduser(repo)))
-    if not os.path.isdir(os.path.join(repo, ".git")):
-        raise RuntimeError("not a git repo (direct builds edit a repo's working tree): %s" % repo)
+    # A path INSIDE a repo names the repo: walk up to the toplevel instead of
+    # rejecting it. Henry's chat turns run with cwd=DAEMON_ROOT (henry_pmode's
+    # docstring), so a direct task minted from board chat arrived here as
+    # <repo>\daemon and bounced with "not a git repo" (owner screenshot
+    # 2026-09-02 14:33) - about a directory that sits two levels inside a
+    # perfectly good one. Derived from the filesystem's own signal (the .git
+    # dir), same answer `git rev-parse --show-toplevel` gives, without needing
+    # git on PATH. machine_root_ok below judges the RESOLVED root, so the
+    # allowlist still sees the real repo, not the subdirectory.
+    _cur = repo
+    while not os.path.isdir(os.path.join(_cur, ".git")):
+        _parent = os.path.dirname(_cur)
+        if _parent == _cur:      # filesystem root - genuinely no repo anywhere above
+            raise RuntimeError("not a git repo (direct builds edit a repo's "
+                               "working tree): %s" % repo)
+        _cur = _parent
+    repo = _cur
     ok, why = machine_root_ok(repo)
     if not ok:
         raise RuntimeError(why)

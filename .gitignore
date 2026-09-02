@@ -48,6 +48,7 @@ daemon/users.json
 daemon/sessions.json
 daemon/processes.json
 daemon/copilot_sessions.json
+daemon/copilot_models.json
 daemon/asc_review_watch.json
 # GxP signing keys (spine/auth/signkeys.py): per-user GPG keyrings whose
 # passphrase is the user's password. Private keys are secrets like users.json

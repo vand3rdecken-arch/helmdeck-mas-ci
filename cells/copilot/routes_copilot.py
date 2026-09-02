@@ -229,13 +229,21 @@ def chat_post(self, user, body):
     # exactly the shape a small model answers well and fast. The model id
     # still walks turnopts.resolve_model's whitelist like every client value.
     model = body.get("model", "")
+    # A voice turn's pinned fast model is a per-turn override, not the
+    # conversation's choice - tell chat() so it does not RECORD it as the
+    # sticky tier (copilot._save_model_pref). model_source stays "user" when
+    # voice_model="" (= keep the chip's pick): then the model IS the user's.
+    model_source = "user"
     if want_voice:
         from spine.storage import events
         vm = events.settings().get("voice_model")
+        if (vm if vm is not None else "haiku"):
+            model_source = "voice"
         model = (vm if vm is not None else "haiku") or model
     try:
         out = copilot.chat(
             user["name"], text, role=user["role"], model=model,
+            model_source=model_source,
             # thinking off while spoken: it buys quality the 3-sentence answer
             # can't spend, and every thinking second is dead air in the ear
             thinking="" if want_voice else body.get("thinking", ""),
