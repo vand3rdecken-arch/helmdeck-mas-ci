@@ -153,6 +153,19 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var loadingHistory by remember { mutableStateOf(false) }
     var voiceOn by remember { mutableStateOf(DeviceStore.loadVoiceOn(context)) }
+    // WHAT HAS ALREADY BEEN SAID OUT LOUD - one variable, and the only thing
+    // that decides whether a clip is played. It holds the server's key for the
+    // newest speakable line this screen has accounted for (routes_wear's
+    // _wear_msg_key); both playback paths write it, so neither can speak what
+    // the other already spoke:
+    //   - ask() claims the key POST /wear/talk hands back with its inline clip,
+    //   - refresh() claims the newest key it sees, and speaks it when it moved.
+    //
+    // null means NOT PRIMED YET, and that distinction is the "no reciting the
+    // history" guard: the first refresh after the app opens adopts whatever is
+    // newest WITHOUT speaking it. Never persisted, for the same reason - a key
+    // restored from disk would make yesterday's answer look unplayed.
+    var spokenKey by remember { mutableStateOf<String?>(null) }
     var suggestions by remember { mutableStateOf<QuestionBlock?>(null) }
     // Cards answered from THIS screen since it opened. The server transcript is
     // the truth, but it is a poll behind: without this the buttons would stay
@@ -173,7 +186,12 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         busy = true
         suggestions = null
         scope.launch {
-            val body = JSONObject().put("message", message).toString()
+            // `voice` tells the daemon whether this wrist is LISTENING. It used
+            // to render a clip on every single turn regardless, which meant a
+            // speech round trip per answer for a toggle that defaults to OFF.
+            // An older daemon ignores the field and behaves exactly as before.
+            val body = JSONObject()
+                .put("message", message).put("voice", voiceOn).toString()
             // talk() = long timeout + dedupe-safe retries (see RelayClient) -
             // a Henry turn outliving one HTTP request is normal, not an error.
             // answerCard below deliberately stays on a single authedCall: its
@@ -199,6 +217,22 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             val reply = (o?.optString("reply") ?: "").ifBlank { "(keine Antwort)" }
             record(Line(false, reply, nowHm(), nowDate()))
             suggestions = parseQuestionBlock(o?.optJSONObject("question"))
+            // CLAIM FIRST, THEN PLAY. `voiceKey` names the line this reply
+            // became in the server's transcript, and the same answer is about
+            // to arrive again over refresh() (the chat cursor moved when the
+            // daemon logged it). Recording it here is what stops the watch
+            // saying the same sentence twice - claimed even when nothing is
+            // played, so switching voice on later does not replay an answer
+            // that was already read on screen.
+            //
+            // A blank key means the daemon did not name the line: either an
+            // older build (which also sends no keys on /wear/chat, so the
+            // refresh path stays silent and this inline clip is the only
+            // voice there is) or a talk() RETRY collecting a settled turn
+            // (which carries no clip either, and refresh() then speaks it).
+            // Both degrade to exactly one utterance.
+            val vk = o?.optString("voiceKey") ?: ""
+            if (vk.isNotBlank()) spokenKey = vk
             // `voice` is ABSENT (not null) when server-side rendering failed;
             // the text is already on screen, so a missing clip is silence and
             // never an error.
@@ -267,6 +301,50 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         putExtra(RecognizerIntent.EXTRA_PROMPT, "Frag Henry")
     }
 
+    /** Fetch and play the clip for ONE transcript line, named by its server key.
+     *
+     *  THE CATCH-UP HALF OF THE VOICE TOGGLE, and the whole reason this file
+     *  changed (owner, 2026-09-02: "Stimme aktivieren ist ziemlich broken").
+     *  POST /wear/talk's inline clip only ever covered a reply that came back
+     *  inside its own HTTP request; an answer that outlived it, an answer to a
+     *  turn started on the phone or the glasses, and an answer that landed with
+     *  the display off all arrive through refresh() instead - the paths the
+     *  event channel made the NORMAL case - and that half was silent.
+     *
+     *  The daemon renders the clip and refuses anything but the NEWEST
+     *  speakable line (routes_wear.wear_voice_get), so a stale key is answered
+     *  with silence rather than with the history: this side cannot make the
+     *  watch recite yesterday's conversation even by mistake. Voice stays
+     *  SERVER-rendered throughout - nothing here synthesises anything
+     *  (ops/docs/glasses-reference.md §4, standing owner decision).
+     *
+     *  60s read timeout, not the 20s default: rendering a clip is a live round
+     *  trip to the speech service on a cold cache, and aborting it a beat early
+     *  would look exactly like the silence this change exists to fix. Still far
+     *  below the relay's own 120s REPLY_TIMEOUT, same as WearStream's 40s.
+     */
+    suspend fun speak(key: String) {
+        val device = DeviceStore.load(context) ?: return
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                RelayClient.authedCall(
+                    device.relayUrl, device.room, device.daemonPubB64,
+                    device.myPublicKeyB64, device.mySecretKeyB64,
+                    device.deviceToken, "GET", "/wear/voice?key=$key", "",
+                    readTimeoutMs = 60_000)
+            }.getOrNull()
+        }
+        if (result == null || result.first !in 200..299) return
+        val v = runCatching {
+            JSONObject(result.second).optJSONObject("voice")
+        }.getOrNull() ?: return
+        // ASKED AGAIN AFTER THE WAIT. The clip took a real render to arrive and
+        // the owner may have tapped "Stimme aus" meanwhile - starting it now
+        // would be the toggle failing in the one direction that matters.
+        if (!voiceOn) return
+        VoicePlayer.play(context, v.optString("mime"), v.optString("b64"))
+    }
+
     // THE SERVER TRANSCRIPT IS THE TRUTH. GET /wear/chat returns the same
     // copilot session the phone renders (routes_wear.wear_chat_get), so the
     // watch shows ONE Henry conversation with the phone instead of a separate,
@@ -333,8 +411,14 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                     if (lbl.isNotBlank()) opts.add(lbl)
                 }
             }
+            // `key` is present on exactly the lines the daemon is willing to
+            // speak (Henry's own voice - "bot" and "pm"), absent everywhere
+            // else, so its presence IS the speakable flag. An older daemon
+            // sends none at all, which degrades to today's silence rather than
+            // to a wrong guess about what may be read aloud.
             fresh.add(Line(o.optBoolean("mine"), text, o.optString("ts"),
-                           o.optString("date"), label, o.optString("card"), opts))
+                           o.optString("date"), label, o.optString("card"), opts,
+                           o.optString("key")))
         }
         // An EMPTY server history is a real answer (fresh session) - but never
         // let it wipe a cache the owner can still read if the trim above threw
@@ -343,6 +427,34 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
             lines.clear()
             lines.addAll(fresh)
             DeviceStore.saveChat(context, lines.map { DeviceStore.ChatLine(it.mine, it.text, it.ts, it.date, it.label) })
+
+            // SPEAK THE ONE ANSWER THAT IS NEW - the half of the voice toggle
+            // that was missing. Every delivery that is not talk()'s own HTTP
+            // reply lands here: a turn that outlived the request, a turn the
+            // owner started on the phone or the glasses, a reply that arrived
+            // with the display off.
+            //
+            // Compared by IDENTITY, never by count. This list was just replaced
+            // wholesale, so "one more line than before" is not a fact about
+            // this conversation - the daemon compacts and rotates, and the same
+            // trap already forced the auto-scroll below onto a content key.
+            val newestVoice = fresh.lastOrNull { it.key.isNotBlank() }?.key
+            val claimed = spokenKey
+            if (claimed == null) {
+                // FIRST LOAD: adopt, do not speak. Opening the app, coming back
+                // from the board, or reconnecting must never make the watch
+                // read back a conversation the owner has already had. "" when
+                // there is nothing speakable yet, so this primes exactly once.
+                spokenKey = newestVoice ?: ""
+            } else if (newestVoice != null && newestVoice != claimed) {
+                // Claimed BEFORE the fetch, not after: speak() suspends for a
+                // real render, and a second refresh landing meanwhile would
+                // otherwise see the same key still unclaimed and say it twice.
+                spokenKey = newestVoice
+                // Advanced even with voice off, so switching it on later starts
+                // with the NEXT answer instead of replaying the last one.
+                if (voiceOn) speak(newestVoice)
+            }
         }
     }
 
