@@ -34,6 +34,24 @@ GATE_CUT_NOTE = ("gate/merge pipeline died mid-run (daemon restart) - nothing wa
 
 
 def _turn(t, prompt, model=None, perm=None, idle_timeout=None, by=None):
+    """THE choke point every turn passes through - and therefore the ONE owner
+    of the turn-intent registration (drivers.turn_intent).
+
+    A turn is alive from the moment it is decided, not from the moment it
+    spawns: the body below can block for up to 960s on the desktop/direct lock
+    before drivers.run() creates a session. Registering here - around the lock
+    waits, not inside them - is what makes drivers.turn_inflight() true for that
+    whole window, so no reconciler can mistake a QUEUED turn for a dead one and
+    bounce/settle the card while it is about to run (measured 2026-09-02; see
+    drivers._pending for the full trace). Event-time fold, exactly one owner,
+    nothing stored on the card."""
+    from spine.agent import drivers as _d
+    with _d.turn_intent(t["id"]) as intent:
+        return _turn_inner(t, prompt, intent, model=model, perm=perm,
+                           idle_timeout=idle_timeout, by=by)
+
+
+def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=None):
     """One turn through the track's DRIVER (drivers.py) - Claude Code by default,
     but any agent runtime configured in settings. Handles the flight-recorder
     hook: a driver with record:true gets its whole turn screen-captured into the
@@ -141,6 +159,16 @@ def _turn(t, prompt, model=None, perm=None, idle_timeout=None, by=None):
                 "turn ends." % wait_s)
     try:
         with _lock_for(t["id"]):   # one turn per card at a time - pays turn-locks debt
+            # Stop pressed while we sat in the queue: there was no session to
+            # kill, so drivers.cancel armed the intent instead. Honour it HERE,
+            # with the locks held and about to be released - running now would
+            # spend money on a turn the owner already stopped (and the card is
+            # already showing the stopped state).
+            if intent is not None and intent.cancelled:
+                raise RuntimeError(
+                    "Turn wurde gestoppt, waehrend er auf einen belegten Lock "
+                    "(Desktop-Steuerung / Live-Tree) wartete - er wurde nicht "
+                    "ausgefuehrt. Einfach neu steuern.")
             return drivers.run(cfg, t, prompt, by=by)
     finally:
         if dlock:

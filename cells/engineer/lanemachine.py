@@ -1019,7 +1019,10 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         # branch below is read-only (classify, no merge) and stays safe to run
         # even mid-turn.
         from spine.agent import drivers as _drivers_ta
-        if _drivers_ta.turn_active(tid):
+        # inflight, not active: a turn QUEUED on the desktop/direct lock will
+        # write session_id/last_reply/status exactly the same way once it
+        # spawns, so the accept race is identical - it must wait for that too.
+        if _drivers_ta.turn_inflight(tid):
             log.log("note", "Karte hat noch einen laufenden Turn - Abnahme wartet, "
                     "bis er fertig ist (sonst ueberschreibt der Turn-Abschluss den "
                     "gerade gelandeten Merge).")
