@@ -13,18 +13,21 @@ Two rules came out of that, and only the first one lives here:
   2. ROUTING - a notice with no owner DECISION in it does not go to his chat
      at all; it goes to the dashboard feed or to Henry. That one cannot be a
      function, because only the caller knows whether there is a decision. It
-     is enforced per-notice, at each call site (cells/pm/pm_comm.py's
+     is enforced per-notice, at each call site (cells/copilot/pm_comm.py's
      _to_henry / _ask_owner carry it).
 
-WHY spine AND NOT THE PM CELL
------------------------------
-Two cells speak into the owner's one chat without him typing: the pm cell
-(pm_comm._say/_escalate) and the copilot cell (henry_broker._notify_owner -
-free LLM prose, and therefore the likeliest future source of exactly the wall
-this law bans). A cap that lived in either cell would have to be imported by
-the other, which is the cross-cell reach the four-folder rule exists to stop.
-Shared infrastructure no cell owns is spine, and "how we reach the owner" is
-already spine/comms (notify, presence).
+WHY spine AND NOT THE COPILOT CELL
+-----------------------------------
+Two independent loops speak into the owner's one chat without him typing:
+the planning loop (pm_comm._say/_escalate, merged into the copilot cell
+2026-09-03) and the broker (henry_broker._notify_owner - free LLM prose, and
+therefore the likeliest future source of exactly the wall this law bans).
+Both now live in the SAME cell, but a cap kept inside either module would
+still be a second place to enforce one rule, and the next cell to gain a
+proactive voice would face the identical choice. Shared infrastructure no
+cell owns is spine, and "how we reach the owner" is already spine/comms
+(notify, presence) - the length law lives there for that reason, not because
+these two happened to be different cells at the time this was written.
 
 This module deliberately holds no policy about WHICH notices exist, no i18n
 and no delivery - it clips a string and nothing else, so it can never become

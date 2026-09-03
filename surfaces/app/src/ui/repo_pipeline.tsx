@@ -251,7 +251,14 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
       return { ...tk, by };
     });
   }, [map]);
-  const hasTracks = showKnobs && tracks.some((tk) => stations.some((s) => tk.by[s.key]));
+  // gate/deploy are STEPS riding a connector, not entries in `stations` (the
+  // LANE list) - a track whose only segment sits on a step (e.g. engineer's
+  // "prüft"/"liefert aus") would otherwise never be found by a lane-only
+  // lookup and silently vanish from the picture. Checked here once, reused by
+  // both the visibility gate and the per-track filter below.
+  const stepKeys = Object.values(stepAt).map((n) => n.key);
+  const hasTracks = showKnobs && tracks.some((tk) =>
+    stations.some((s) => tk.by[s.key]) || stepKeys.some((k) => tk.by[k]));
   // One colour per band, stable by CELL rather than by position, so Henry is
   // always his accent2 whatever order the registry lists the cells in. An
   // unknown cell falls back to a palette slot by index.
@@ -409,7 +416,7 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
       {hasTracks ? (
         <View style={{ gap: 3 }}>
           {tracks.map((tk, ti) => {
-            if (!stations.some((s) => tk.by[s.key])) return null;
+            if (!stations.some((s) => tk.by[s.key]) && !stepKeys.some((k) => tk.by[k])) return null;
             const col = trackColor(tk.cell, ti);
             return (
               <View key={tk.cell} style={{ flexDirection: "row", alignItems: "center" }}>
@@ -422,6 +429,12 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                 </Text>
                 {stations.map((s, i) => {
                   const seg = tk.by[s.key];
+                  // gate/deploy ride the CONNECTOR after this lane, same as
+                  // StepMarker above - a step's verb has no lane of its own to
+                  // sit under, so it renders IN the gap, not in the next lane's
+                  // column (which would misattribute it to that lane).
+                  const step = stepAt[i];
+                  const stepSeg = step ? tk.by[step.key] : undefined;
                   return (
                     <View key={s.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
                       <Pressable
@@ -448,8 +461,26 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                       </Pressable>
                       {/* The SAME gap geometry as the row above - see gapStyle.
                           Any divergence here slides the verbs off their
-                          stations. */}
-                      {i < stations.length - 1 ? <View style={gapStyle(i)} /> : null}
+                          stations. A step's verb (engineer's "prüft"/"liefert
+                          aus") sits centred in this same gap, so it is never
+                          silently dropped for having no lane of its own. */}
+                      {i < stations.length - 1 ? (
+                        <Pressable
+                          testID={step ? (tk.cell === "copilot" ? "henrytrack-"
+                            : "track-" + tk.cell + "-") + step.key : undefined}
+                          onPress={onSelect && stepSeg ? () => onSelect(step!.key) : undefined}
+                          disabled={!onSelect || !stepSeg}
+                          style={{ ...gapStyle(i), alignItems: "center",
+                            borderTopWidth: stepSeg ? 2 : 0, borderTopColor: col,
+                            paddingTop: stepSeg ? 3 : 0, minHeight: stepSeg ? 16 : undefined }}>
+                          {stepSeg ? (
+                            <Text numberOfLines={1} style={{ color: col, fontSize: 9,
+                              fontWeight: "600" }}>
+                              {stepSeg.labelKeys.map((k) => tr(k)).join(" · ")}
+                            </Text>
+                          ) : null}
+                        </Pressable>
+                      ) : null}
                     </View>
                   );
                 })}
