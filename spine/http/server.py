@@ -640,6 +640,13 @@ def serve(port=8140):
         boards.ensure_default()
     except Exception as e:
         print("BOARDS: default board not seeded: %s" % e)
+    # The pre-rules global keys (henry_policy, henry_permission_mode) adopted
+    # onto their declared rule paths - same startup-migration slot and the same
+    # idempotence as the board seed above, and equally best-effort. Derived
+    # every boot from the two stores rather than gated on a stored flag, so this
+    # is a no-op the moment the values are where they belong.
+    from spine.storage import legacypolicy
+    legacypolicy.run_at_boot()
     import atexit
     from spine.agent import drivers
     reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind

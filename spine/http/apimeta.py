@@ -79,6 +79,17 @@ CONTROLS = ("toggle", "multi", "single", "text", "number", "labels")
 # The door order IS the order the hub lists them in ("boards" sits between
 # "general" and "automation", per the PRD's amendment). The app reads this
 # order off the schema rather than re-declaring it.
+#
+# A SCOPE WITH NO ROW IS NOT A DEAD SCOPE. "board" and "device" are both real
+# badges with no entry in the table below, and deliberately so: a scope names
+# who OWNS a value, and the two values those scopes own are not shaped like a
+# knob. A board's column labels are per-column and variable in count (their one
+# edit surface is the board editor, PUT /me/boards); a device's identity is the
+# pairing flow. Declaring the badge without forcing a row is what lets the app
+# label those surfaces with the same vocabulary the hub uses, instead of
+# inventing a second one - and it is why `board` here no longer means "there is
+# a board-scoped settings.json key", which is exactly the confusion debt
+# board-scope-still-in-settings-json was filed about.
 DOORS = ("general", "boards", "automation", "cells", "connections", "team", "system")
 SCOPES = ("profile", "board", "workspace", "device", "system")
 
@@ -174,16 +185,33 @@ def _config_schema(s):
          "labelKey": "cfg.chatRoles", "options": ["owner", "operator"],
          "value": pol.get("chat_configure_roles") or ["owner"],
          "door": "automation", "level": "advanced", "descKey": "cfg.chatRoles.desc", "scope": "workspace"},
-        # The one knob that CHANGED door in phase 4. It names the stations a
-        # board's columns fall back to, so its owner is the board layer, not
-        # the automation one - and PRD section 6 has it migrating into the
-        # default board's column labels outright. Tagging it scope "board"
-        # and door "boards" is what moves it, with no client edit.
+        # THE STATION-NAME REGISTRY - and the scope tag now says so.
+        #
+        # Phase 4 tagged this row scope "board"; debt board-scope-still-in-
+        # settings-json filed the mismatch (badged Board, stored globally). The
+        # fix is NOT to move the key - the TAG was wrong, and the live data says
+        # so. The default board was seeded from this key at phase-2 boot
+        # (boards._seed_columns), so its columns already carry their own labels
+        # in the boards table, and data/boards.ts columnLabel() prefers a
+        # column's own label - which means editing this knob has not moved a
+        # board column since that seed ran. What it still names is every station
+        # OUTSIDE a board (the move menu, the card detail, the loop map) plus
+        # the fallback for a column left deliberately unlabelled (boards.py
+        # invariant 1). That is workspace furniture. Retiring the key, as PRD
+        # section 6 sketched, would have silently reverted all of those surfaces
+        # to the untranslated i18n default and lost renames the owner had made.
+        #
+        # The genuinely BOARD-scoped value is the per-COLUMN label: per column,
+        # variable in count, not a knob any control in CONTROLS renders. Its one
+        # edit surface is the board editor, so it is not a row here. The Boards
+        # door shows both, each under an honest badge - this key as Workspace,
+        # the active board's own columns as Board.
         {"group": "boardLabels", "groupKey": "hub.grp.boardLabels",
          "path": "policy.lane_labels", "control": "labels",
          "labelKey": "cfg.laneLabels", "keys": ["backlog", "working", "review", "done"],
          "value": pol.get("lane_labels") or {},
-         "door": "boards", "level": "basic", "descKey": "cfg.laneLabels.desc", "scope": "board"},
+         "door": "boards", "level": "basic", "descKey": "cfg.laneLabels.desc",
+         "scope": "workspace"},
         {"group": "night", "groupKey": "automation.nightSection",
          "path": "nightshift.enabled", "control": "toggle",
          "labelKey": "cfg.nightEnabled", "value": bool(ns.get("enabled")),

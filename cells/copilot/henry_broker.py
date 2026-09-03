@@ -13,8 +13,13 @@ The split across the architecture:
       2-attempt RESOLVE cap, audit note per decision. Starts with the
       copilot cell, stops with it (copilotEnabled off = no broker).
 
-Policy is DATA: settings.json `henry_policy` overrides DEFAULT_POLICY -
-changing Henry's behaviour is editing prose, never shipping Python.
+Policy is DATA: the mandate below is the DEFAULT, and rule
+`report.judgement_policy` overrides it per workspace or per project - changing
+Henry's behaviour is editing prose, never shipping Python. It resolves through
+spine/registry/behavior.py like every other rule, so it carries a scope, a
+validator, a size bound and a row on the harness screen; the pre-rules global
+key settings.json `henry_policy` is migrated onto that path once by
+spine/storage/legacypolicy.py and stays readable one release as the floor.
 """
 import json
 import os
@@ -402,13 +407,37 @@ def _audit_context(t):
         return ""  # never let a context-enrichment failure block the judgement turn
 
 
+def _judgement_policy(t):
+    """The mandate this judgement turn opens with, resolved through the declared
+    chain (default -> workspace -> project) rather than read off a global key.
+
+    THE PROJECT IS DERIVED FROM THE EVENT, at event time, exactly as
+    projectconfig's docstring requires: the escalation's own card carries the
+    repo it was dispatched against, so a card-less escalation (box load, a
+    deploy hook) honestly resolves the workspace layer instead of being pinned
+    to whatever repo happens to be default.
+
+    Degrades to DEFAULT_POLICY on ANY failure. A broken store must never leave
+    the broker judging with an empty mandate - that would not be a degraded
+    Henry, it would be an unbriefed one."""
+    try:
+        from spine.registry import behavior
+        from spine.storage import projectconfig
+        v = behavior.value("report.judgement_policy", "all",
+                           projectconfig.for_card(t))
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    except Exception:                                        # noqa: BLE001
+        pass
+    return DEFAULT_POLICY
+
+
 def _decide(esc):
     """One judgement round. Returns True if the escalation was closed."""
-    from spine.storage import events
-    policy = (events.settings().get("henry_policy") or "").strip() or DEFAULT_POLICY
     escalations.record_attempt(esc["id"])
     card_log = _card_log_tail(esc.get("card"))
     t = _find_track(esc.get("card"))
+    policy = _judgement_policy(t)
     privileged = _dispatcher_privileged(t)
     prompt = (
         policy

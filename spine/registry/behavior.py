@@ -348,6 +348,39 @@ BEHAVIOR_RULES = [
      "source": "daemon/policy_seed.json:policies.agentMaySwap"},
 
     # -------------------------------------------------------------- report --
+    # Henry's JUDGEMENT MANDATE - the prose the escalation broker opens every
+    # judgement turn with. It was already "policy is data" (henry_broker.py's
+    # own docstring says so), but as a RAW GLOBAL KEY: settings.json
+    # `henry_policy`, read straight in _decide, with no row in any table - so no
+    # scope, no validator, no size bound, no badge and no screen. It is the most
+    # behaviour-defining value in the copilot cell and it was the one value
+    # nothing could show you.
+    #
+    # THE DEFAULT IS "" AND THAT IS DELIBERATE. The mandate itself stays in
+    # henry_broker.DEFAULT_POLICY, version-controlled next to the code that
+    # reasons about it; restating those lines here would be a second home for
+    # the text and the two would drift the first time either is edited. ""
+    # means "use the built-in mandate" - which is exactly what the legacy key
+    # already meant (`(...) or DEFAULT_POLICY`), so byte identity at defaults
+    # holds: an installation that sets nothing gets today's prompt to the
+    # character.
+    #
+    # scope "project" is the honest blast radius: the mandate talks about
+    # landing work, budget and this box's resources, and a workspace driving two
+    # very different repos has every reason to brief Henry differently for each.
+    # A turn that names no repo resolves the workspace layer underneath, which
+    # is where the legacy global value migrates to (spine/storage/legacypolicy.py).
+    {"key": "report.judgement_policy", "block": "report", "wire": "code", "kind": "policy",
+     "control": "text", "scope": "project", "binds": [],
+     "labelKey": "rule.report.judgement", "descKey": "rule.report.judgement.desc",
+     "why": "Bis hierher settings.json `henry_policy` - ein globaler Schluessel "
+            "ohne Zeile, ohne Scope, ohne Schranke und ohne Screen. Der Wert "
+            "bestimmt, wie Henry JEDE Eskalation beurteilt; leer heisst weiter "
+            "'nimm das eingebaute Mandat'.",
+     "reads": "cells/copilot/henry_broker.py::_decide",
+     "surfaces": {"all": {"default": "", "renders": None}},
+     "source": "cells/copilot/henry_broker.py:71 (DEFAULT_POLICY)"},
+
     {"key": "report.followup_interval", "block": "report", "wire": "slot", "kind": "policy",
      "control": "number", "scope": "project", "binds": ["working"],
      "labelKey": "rule.report.interval", "descKey": "rule.report.interval.desc",

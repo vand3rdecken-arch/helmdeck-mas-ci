@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAnalytics } from "@/data/analytics";
 import { useBlockerVoice } from "@/data/blocker_voice";
 import { useBoards } from "@/data/boards";
+import { useLaneLabels } from "@/ui/board";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useCellEnabled } from "@/data/cells";
@@ -122,6 +123,11 @@ export default function Settings() {
   // workspace rows), concatenated. Every door then just filters it.
   const schema = useSchema();
   const { boards } = useBoards();
+  // A station's own name - what an unlabelled column renders as. The SAME
+  // resolver the board and its editor use, not a second one: this door shows
+  // the labels those screens draw, so it has to agree with them by
+  // construction rather than by care.
+  const stationName = useLaneLabels();
 
   const field = fieldStyle(t);
 
@@ -485,8 +491,20 @@ export default function Settings() {
               <Ionicons name={b.owner === "" ? "people-outline" : "person-outline"} size={16} color={t.txtSecondary} />
               <View style={{ flex: 1, gap: 1 }}>
                 <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{b.name}</Text>
-                <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>
-                  {tr("hub.boards.columns", { n: b.columns?.length ?? 0 })}
+                {/* THE BOARD-SCOPED VALUE, shown rather than counted.
+                    This row used to say "4 Spalten", which is the one fact
+                    about a board that needed no screen. The column LABELS are
+                    the only genuinely board-owned values there are - the thing
+                    the hub's "Board" badge points at - and they lived in the
+                    boards table with no surface outside the editor. A label
+                    left empty is shown as the station's own name in the same
+                    dimmed style the editor uses for its placeholder, because
+                    empty means exactly that (boards.py invariant 1) and
+                    printing nothing would read as a broken row. */}
+                <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 11.5 }}>
+                  {(b.columns ?? []).length
+                    ? (b.columns ?? []).map((c) => c.label || stationName(c.station)).join(" · ")
+                    : tr("hub.boards.columns", { n: 0 })}
                 </Text>
               </View>
               {b.owner === "" ? <Chip text={tr("boards.shared")} dot={t.accent} /> : null}
@@ -496,8 +514,13 @@ export default function Settings() {
           <View style={{ height: 12 }} />
           <Btn label={tr("hub.boards.open")} kind="ghost" onPress={() => router.push("/boards" as never)} />
         </Panel>
-        {/* The station names every board's columns fall back to - a board-scope
-            knob, placed here by its own metadata (see apimeta.py). */}
+        {/* The STATION-NAME registry - workspace-scoped, and the badge on it now
+            says so. It is what every surface outside a board calls a station
+            (the move menu, the card detail, the loop map) and what an
+            unlabelled column falls back to; the per-board labels above are the
+            board-scoped half, and their one edit surface is the board editor
+            this door links into. Two values, two scopes, two honest badges -
+            which is what debt board-scope-still-in-settings-json asked for. */}
         <SchemaDoor door="boards" schema={schema} />
       </Frame>
     );

@@ -442,12 +442,53 @@ export interface HarnessBrief {
   surface: string; label: string; agent: string; project: string;
   segments: BriefSegment[]; chars: number;
 }
+/** WHAT IS PHYSICALLY STORED, as opposed to what currently resolves.
+ *
+ *  `rules` above answers "which value applies here, and from which layer"; this
+ *  answers "which rows exist at all". The two are genuinely different questions
+ *  and the resolved view cannot answer the second by construction - it is scoped
+ *  to one project, so a value set against another repo is invisible in it, and
+ *  it filters to keys some table still declares, so a row left behind by a
+ *  retired knob is invisible too. Both of those are exactly what an audit is
+ *  looking for, which is why they arrive here instead.
+ *
+ *  Derived by spine/storage/configreview.py on every read - nothing here is a
+ *  cached summary, and the app resolves nothing from it. */
+export interface StoredProjectRow {
+  project: string; key: string; value: unknown;
+  /** Some table still declares this key. False means the row is on disk and the
+   *  daemon has stopped honouring it - a value the owner set that silently went
+   *  inert, which is the one thing no other screen can show. */
+  declared: boolean;
+  /** Belongs to the project the screen is currently resolving. Used to MARK the
+   *  row, never to filter it. */
+  selected: boolean;
+}
+export interface StoredBoardRow {
+  id: string; name: string; owner: string;
+  /** An empty label means "render this station's own name" (boards.py invariant
+   *  1) and is reported as empty rather than resolved - resolving it here would
+   *  make an unlabelled column look like a stored one. */
+  columns: { station: string; label: string }[];
+}
+/** A pre-rules global settings.json key that has not moved onto its declared
+ *  path. Normally absent; `refuse` carries the reason when the daemon declined
+ *  to adopt a value rather than dropping it. */
+export interface StoredLegacyRow { key: string; path: string; refuse?: string | null }
+export interface StoredConfig {
+  projectRows: StoredProjectRow[];
+  boardRows: StoredBoardRow[];
+  legacyRows: StoredLegacyRow[];
+}
 export interface HarnessConfig {
   project: string; repo: string;
   layers: string[];
   blocks: { key: string; labelKey: string; descKey: string }[];
   rules: BehaviorRule[];
   surfaces: { key: string; label: string }[];
+  /** Optional so the app survives a daemon that predates this block - the same
+   *  contract every Profile field lives under. */
+  stored?: StoredConfig;
 }
 
 export interface LoopMap {
