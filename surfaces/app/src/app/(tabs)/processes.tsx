@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
+import { saveDraft } from "@/data/drafts";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -150,10 +151,14 @@ function StepEditor({ idx, step, act, onClose, onOpenCard }: {
 
 // One pipeline node: a coloured circle (checkmark when done, else a mode icon),
 // the step title, and its state label. "ready" pulses amber; "proposed" is dashed.
-// Only steps not yet turned into a board card (!step.track) are actually
-// actionable, so only those render as a Pressable with a tap affordance
-// (raised ring + pencil badge); the rest render as flat, muted, non-pressable
-// nodes so their appearance stops implying they can be tapped.
+// EVERY node is tappable (fixed 2026-09-03 - a step already turned into a
+// card used to render with `if (!interactive) return node` skipping the
+// Pressable wrapper entirely, so a step WITH a card - the case that most
+// needs a tap-through to its card's transcript - was the one case you could
+// never reach; the "Card oeffnen" link built for exactly that lived inside
+// an editor nothing could open). `interactive` now drives styling ONLY -
+// the raised ring + pencil badge for a still-editable (no card yet) step -
+// never whether the node responds to a tap.
 function PipeNode({ step, interactive, selected, onPress }: {
   step: Step; interactive: boolean; selected: boolean; onPress?: () => void;
 }) {
@@ -221,7 +226,6 @@ function PipeNode({ step, interactive, selected, onPress }: {
     </View>
   );
 
-  if (!interactive) return node;
   return (
     <Pressable onPress={onPress} hitSlop={4}
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
@@ -231,8 +235,9 @@ function PipeNode({ step, interactive, selected, onPress }: {
 }
 
 // Horizontal n8n-style read of the chain: one node per step joined by connector
-// arrows. Scrolls sideways when it overflows. Tapping an actionable node
-// (not yet turned into a card) expands its editor below; other nodes are inert.
+// arrows. Scrolls sideways when it overflows. Tapping ANY node expands its
+// editor below - a step without a card yet gets the full editor, a step with
+// one gets a read-only summary + a link to that card's own transcript.
 function Pipeline({ p, expanded, onToggle }: { p: Process; expanded: number | null; onToggle: (i: number) => void }) {
   const t = useTheme();
   const steps = p.steps ?? [];
@@ -323,13 +328,30 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
     if (yes) processMut.mutate({ action: "cancel" });
   }
 
+  async function askHenry() {
+    await saveDraft("board-copilot", tr("processes.askHenryDraft", { title: (p.request ?? p.id).slice(0, 60) }));
+    router.push("/chat" as never);
+  }
+
   const steps = p.steps ?? [];
+  const [headerOpen, setHeaderOpen] = useState(false);
+  const truncated = (p.request?.length ?? 0) > 120;
   return (
     <Panel style={glass(t)}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Text style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }} numberOfLines={2}>
-          {p.request?.slice(0, 120) ?? p.id}
+      {/* Was fixed at numberOfLines={2} with no way to read the rest - the
+          owner's own report ("ich verstehe nur Bahnhof") named this: the
+          request text IS the answer to "what is this process", and it was
+          the one thing you could never fully read. Tap to expand/collapse;
+          only shows the affordance when there is actually more to read. */}
+      <Pressable onPress={() => truncated && setHeaderOpen((v) => !v)}
+        style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Text style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }}
+          numberOfLines={headerOpen ? undefined : 2}>
+          {p.request ?? p.id}
         </Text>
+        {truncated ? <Ionicons name={headerOpen ? "chevron-up" : "chevron-down"} size={16} color={t.txtTertiary} /> : null}
+      </Pressable>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
         {p.status ? <Chip text={p.status} /> : null}
         {p.client ? <Chip text={tr("processes.clientChip", { name: p.client })} /> : null}
         {p.due ? <Chip text={tr("processes.dueChip", { due: p.due })} /> : null}
@@ -360,23 +382,33 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
         </View>
       ) : null}
       {/* process-level actions - separate row so they read as a different
-          class of action from the step-level ones above (owner report
-          2026-09-03: these two, plus opening a step's card above, were
-          completely missing - "+Schritt" was the only thing this screen
-          could do besides accept). Hidden once cancelled/done - nothing
-          left to edit or stop. */}
-      {p.status !== "cancelled" && p.status !== "done" ? (
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <Pressable onPress={editProcess} disabled={processMut.isPending}
-            style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
-            <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
-          </Pressable>
+          class of action from the step-level ones above. Was HIDDEN
+          entirely once done/cancelled - which is exactly the state the
+          owner's own "Accounts & Boards PRD" process was in when reporting
+          this, so the fix rendered as if nothing had changed at all.
+          Bearbeiten (rename/re-client, still legitimate after done) stays;
+          only Abbrechen (nothing left to stop) hides. */}
+      <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <Pressable onPress={editProcess} disabled={processMut.isPending}
+          style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+          <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
+        </Pressable>
+        {p.status !== "cancelled" && p.status !== "done" ? (
           <Pressable onPress={cancelProcess} disabled={processMut.isPending}
             style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
             <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
           </Pressable>
-        </View>
-      ) : null}
+        ) : null}
+        {/* Henry entry point - the chat actions (process_status/edit_process/
+            cancel_process/add_step/update_step/remove_step) existed with no
+            way to discover them from this screen (owner: "wo ist der
+            chat"). Pre-fills the composer so the owner doesn't have to
+            remember the process's id/fragment by hand. */}
+        <Pressable onPress={askHenry}
+          style={[s.btn, { backgroundColor: t.accent + "14", borderColor: t.accent + "60" }]}>
+          <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.askHenry")}</Text>
+        </Pressable>
+      </View>
     </Panel>
   );
 }

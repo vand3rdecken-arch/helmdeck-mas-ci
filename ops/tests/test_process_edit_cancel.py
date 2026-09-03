@@ -178,6 +178,27 @@ def main():
                        "duy", role="owner")
     check("ambiguous or not found" in r, "an unresolvable process reference refuses cleanly")
 
+    # step-level chat actions (owner decree: "Henry soll den Prozess aendern
+    # koennen" - chat is a full alternative to the UI, not just process-level).
+    p5 = processes.create("Step-level chat test", actor="owner",
+                          steps=[{"title": "First step", "mode": "do", "days": 1}])
+    r = ca._run_action({"type": "add_step", "process": p5["id"], "title": "New via chat"},
+                       "cl", role="client")
+    check("gesperrt" in r or "cards.admin" in r, "add_step refuses a non-admin role")
+    r = ca._run_action({"type": "add_step", "process": p5["id"], "title": "New via chat"},
+                       "duy", role="owner")
+    check(len(processes.get(p5["id"])["steps"]) == 2, "add_step via chat appends a step")
+    r = ca._run_action({"type": "update_step", "process": p5["id"], "step": "New via",
+                        "days": 3}, "duy", role="owner")
+    check(processes.get(p5["id"])["steps"][1]["days"] == 3,
+          "update_step via chat resolves the step by a title fragment (%r)" % r)
+    r = ca._run_action({"type": "update_step", "process": p5["id"], "step": "no such step",
+                        "days": 1}, "duy", role="owner")
+    check("not found" in r, "update_step refuses cleanly when the fragment matches nothing")
+    r = ca._run_action({"type": "remove_step", "process": p5["id"], "step": "New via"},
+                       "duy", role="owner")
+    check(len(processes.get(p5["id"])["steps"]) == 1, "remove_step via chat drops the matched step")
+
     print()
     if _fails:
         print("=== %d FAILED ===" % len(_fails))

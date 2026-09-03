@@ -637,6 +637,48 @@ def _run_action(a, actor, role="operator"):
         except RuntimeError as e:
             return "cancel_process refused: %s" % e
         return "%s cancelled - remaining steps will not auto-advance; already-dispatched cards keep running" % pid
+    if kind in ("add_step", "update_step", "remove_step"):
+        # Owner decree 2026-09-03 ("Henry soll den Prozess aendern koennen"):
+        # chat is a FULL alternative to the (still limited) Prozesse UI, not
+        # just a process-level one - individual steps too. Same admin gate
+        # as edit_process/cancel_process (these mutate structure, same tier
+        # as accepting/removing a step in the UI's own StepEditor, which is
+        # open - but the UI action requires a TAP the owner is looking at;
+        # chat has no such implicit "I can see what I'm changing" context,
+        # so it gets the stricter gate).
+        frag = (a.get("process") or "").lower()
+        ps = [p for p in processes.list_processes()
+              if frag in p["id"].lower() or frag in p["request"].lower()]
+        if len(ps) != 1:
+            return "%s failed: process ref ambiguous or not found" % kind
+        p = ps[0]
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
+        if role not in admin_roles:
+            return _denied(kind, role, admin_roles, "policy.chat_admin_roles")
+        if kind == "add_step":
+            title = (a.get("title") or "").strip()
+            if not title:
+                return "add_step: title required"
+            processes.add_step(p["id"], title, a.get("mode", "do"))
+            return "step '%s' added to %s" % (title[:60], p["id"])
+        step_frag = (a.get("step") or "").lower()
+        idx = next((i for i, s in enumerate(p["steps"])
+                   if step_frag in (s.get("title") or "").lower()), None)
+        if idx is None:
+            return "%s failed: step '%s' not found in %s" % (kind, a.get("step"), p["id"])
+        if kind == "remove_step":
+            try:
+                processes.remove_step(p["id"], idx)
+            except RuntimeError as e:
+                return "remove_step refused: %s" % e
+            return "step removed from %s" % p["id"]
+        # update_step
+        patch = {k: a[k] for k in ("title", "desc", "mode", "due", "days") if k in a}
+        if not patch:
+            return "update_step: nothing to change (give title/desc/mode/due/days)"
+        processes.update_step(p["id"], idx, patch)
+        return "step updated in %s: %s" % (p["id"], json.dumps(patch)[:200])
     if kind == "audit_query":
         # Card 5 (ops/docs/backlog/rbac-gxp): Henry can answer questions about
         # the append-only audit trail - "wer hat GxP aktiviert", "letzte
