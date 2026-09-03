@@ -114,7 +114,10 @@ export function CellsCatalog() {
       <Section title={tr("modules.cells")} hint={tr("modules.cellsHint")}>
         {cells.length ? cells.map((c) => (
           <Pressable key={c.id} onPress={() => setSelectedCell(selectedCell === c.id ? null : c.id)}>
-            <Row label={c.id} sub={`${c.role}${c.surface ? ` — ${c.surface}` : ""}${c.modes.length ? ` — modes: ${c.modes.join(", ")}` : ""}`}
+            {/* the FULL surface list, not just the primary - a merged cell
+                owns its absorbed systems' tabs (engineer: board + processes +
+                connectors since 2026-09-03) and the row should say so. */}
+            <Row label={c.id} sub={`${c.role}${(c.surfaces ?? (c.surface ? [c.surface] : [])).length ? ` — ${(c.surfaces ?? [c.surface]).join(", ")}` : ""}${c.modes.length ? ` — modes: ${c.modes.join(", ")}` : ""}`}
               right={
                 <Switch value={c.enabled} disabled={busy}
                   onValueChange={(v) => setPolicy(c.enabledKey as keyof PolicySet, v).then(loadCells)}
