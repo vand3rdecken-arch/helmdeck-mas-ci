@@ -263,7 +263,7 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
   // always his accent2 whatever order the registry lists the cells in. An
   // unknown cell falls back to a palette slot by index.
   const namedTrackColor: Record<string, string> = {
-    copilot: t.accent2, engineer: t.human, pm: t.accent,
+    copilot: t.accent2, engineer: t.human,
   };
   const palette = [t.ok, t.warn, t.accent2, t.human];
   const trackColor = (cell: string, i: number) =>
@@ -453,8 +453,14 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                           borderTopWidth: seg ? 2 : 0, borderTopColor: col,
                           paddingTop: 3, minHeight: 16 }}>
                         {seg ? (
-                          <Text numberOfLines={1} style={{ color: col, fontSize: 9.5,
-                            fontWeight: "600" }}>
+                          // TWO lines, not one: a merged station carries two
+                          // verbs ("legt an · plant"), and on a phone's ~63px
+                          // column a single line clips - measured by
+                          // e2e_pipeline_track's truncation sweep. Wrapping
+                          // is the honest fallback; a clipped verb looks like
+                          // a word and isn't one.
+                          <Text numberOfLines={2} style={{ color: col, fontSize: 9.5,
+                            fontWeight: "600", textAlign: "center" }}>
                             {seg.labelKeys.map((k) => tr(k)).join(" · ")}
                           </Text>
                         ) : null}
@@ -474,8 +480,8 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                             borderTopWidth: stepSeg ? 2 : 0, borderTopColor: col,
                             paddingTop: stepSeg ? 3 : 0, minHeight: stepSeg ? 16 : undefined }}>
                           {stepSeg ? (
-                            <Text numberOfLines={1} style={{ color: col, fontSize: 9,
-                              fontWeight: "600" }}>
+                            <Text numberOfLines={2} style={{ color: col, fontSize: 9,
+                              fontWeight: "600", textAlign: "center" }}>
                               {stepSeg.labelKeys.map((k) => tr(k)).join(" · ")}
                             </Text>
                           ) : null}

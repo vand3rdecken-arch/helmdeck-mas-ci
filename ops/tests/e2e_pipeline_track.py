@@ -184,20 +184,38 @@ def main():
             # (behavior.track()), but the band used to iterate the five-name
             # station vocabulary, which has no `done` - so his verb at the
             # owner's last lane was silently never drawn.
-            for st, want in (("backlog", "legt an"), ("working", "steuert"),
+            # `backlog` carries TWO verbs since the pm->copilot merge
+            # (2026-09-03): the rule-derived "legt an" plus the planning
+            # loop's "plant", joined " · " (apimeta._cell_tracks merges
+            # behavior.track() with the cell's declared board metadata).
+            for st, want in (("backlog", "legt an · plant"), ("working", "steuert"),
                              ("review", "nimmt ab"), ("done", "nimmt ab")):
                 loc = page.locator('[data-testid="henrytrack-%s"]' % st)
                 txt = loc.inner_text().strip() if loc.count() else ""
                 check(txt == want,
                       "%s: Henry track at %s reads %r (want %r)"
                       % (form, st, txt, want))
-            # The band annotates LANES, so the steps carry no segment at all.
+            # The band annotates LANES for Henry, so the steps carry no
+            # segment on HIS band (the engineer's band does put verbs on
+            # gate/deploy - see the track-engineer-* checks below).
             for st in ("gate", "deploy"):
                 loc = page.locator('[data-testid="henrytrack-%s"]' % st)
                 txt = loc.inner_text().strip() if loc.count() else ""
                 check(txt == "",
                       "%s: Henry track at %s is blank - he does not act there "
                       "(got %r)" % (form, st, txt))
+            # THE ENGINEER BAND (pm->copilot merge session, generalised cell
+            # tracks): the builder's verbs, declared in cells.py's Cell.board,
+            # including the two STEP stations - which the first cut of the
+            # band silently dropped for having no lane column of their own
+            # (caught by screenshot, fixed in repo_pipeline's gap renderer).
+            for st, want in (("working", "baut"), ("gate", "prüft"),
+                             ("deploy", "liefert aus")):
+                loc = page.locator('[data-testid="track-engineer-%s"]' % st)
+                txt = loc.inner_text().strip() if loc.count() else ""
+                check(txt == want,
+                      "%s: engineer track at %s reads %r (want %r)"
+                      % (form, st, txt, want))
 
             # THE STATION NAVIGATION is the same machine described twice, so it
             # gets the same rule: every lane is an entry, and the steps are

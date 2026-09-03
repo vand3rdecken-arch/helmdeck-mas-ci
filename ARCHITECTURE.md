@@ -125,7 +125,17 @@ PM and Copilot have no `nav.tabs` entry (PM's UI is embedded in the dashboard/
 Settings, Copilot's is a floating chat button), so their nav-hide was
 previously a no-op - both now gate directly via `useCellEnabled()`. Known
 remaining, not chased (secondary, not primary): `more.tsx`'s static loopmap
-link ignores `pmEnabled`.
+link ignores the cell flag.
+
+**pm merged into copilot (2026-09-03, owner directive "pm und henry is
+eins").** PM was never a second agent: its loop is plain scheduling code, its
+one-shot planning calls ride Henry's own CLI, and its proactive notices were
+already routed to Henry, not the owner. The standalone `pm` Cell,
+`pmEnabled`, and the `surfaces.pm` kernel surface are gone; `cells/pm/*.py`
+moved into `cells/copilot/`, and ONE switch (`copilotEnabled`) now gates
+Henry's chat, the escalation broker AND the backlog planning loop
+(`Cell.start` takes a tuple of launchers). Registered as debt
+`pm-copilot-merge` (paid) with the full file list.
 
 **Physical Cell folders (2026-08-19).** The registry above was, until this
 date, metadata over files still physically interleaved flat in `daemon/*.py`
