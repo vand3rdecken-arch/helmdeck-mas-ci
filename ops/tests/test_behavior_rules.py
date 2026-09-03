@@ -192,6 +192,47 @@ def test_table_hygiene():
                               % (r["key"], s, o))
 
 
+def _dict_src():
+    """Every i18n dict file, concatenated. test_harness_layer.py reads them the
+    same way for the settings knobs; a rule row is rendered by the same screen
+    machinery and had no such check, which is how a rule could ship a labelKey
+    that renders as the raw key."""
+    d = os.path.join(ROOT, "surfaces", "app", "src", "i18n", "dict")
+    if not os.path.isdir(d):
+        return ""
+    out = []
+    for f in sorted(os.listdir(d)):
+        if f.endswith(".ts"):
+            with io.open(os.path.join(d, f), encoding="utf-8") as fh:
+                out.append(fh.read())
+    return "\n".join(out)
+
+
+def test_rules_are_labelled():
+    """Every rule's labelKey and descKey exist, IN BOTH LANGUAGES.
+
+    test_table_hygiene above already refuses a rule with no key. This is the
+    other half: a key that names no dict entry renders as the raw dotted string
+    on the harness screen, and a key with only `de:` renders German at an
+    English account - the exact two failures _check_i18n was written for on the
+    settings side, arriving here instead because the rule table had no equivalent
+    guard. A rule is a knob; it is held to the knobs' contract."""
+    print("\n[every rule is labelled, in both languages]")
+    src = _dict_src()
+    check(bool(src), "the i18n dict files are readable")
+    if not src:
+        return
+    for r in behavior.BEHAVIOR_RULES:
+        for kind, key in (("label", r.get("labelKey")), ("description", r.get("descKey"))):
+            i = src.find('"%s"' % key)
+            check(i >= 0, "%s: %s %s has an i18n entry" % (r["key"], kind, key))
+            if i < 0:
+                continue
+            entry = src[i:i + 400]
+            check("de:" in entry and "en:" in entry,
+                  "%s: %s %s carries BOTH languages" % (r["key"], kind, key))
+
+
 def test_allowlist_is_measured():
     """The configure allowlist: what the brief PROMISES and what the server
     ENFORCES must name the same keys.
@@ -224,6 +265,7 @@ if __name__ == "__main__":
         _print_hashes()
         sys.exit(0)
     test_table_hygiene()
+    test_rules_are_labelled()
     test_slot_equality()
     test_no_marker_survives()
     test_byte_identity()

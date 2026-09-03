@@ -599,6 +599,19 @@ def boards_owned_by(owner):
     return [b for b in (_board_row(r) for r in rows) if b]
 
 
+def boards_all():
+    """EVERY board row, shared default first then by owner. The audit read, not
+    a render read: boards.for_user() is what a screen draws a board set from and
+    it is scoped to one account by design, so nothing above it could ever see
+    the table whole. spine/storage/configreview.py needs exactly that view to
+    show which board-scoped values physically exist, and building it from
+    board_owners() + boards_owned_by() would issue one query per account to
+    reassemble a single table scan."""
+    rows = conn().execute(
+        "SELECT id,owner,json FROM boards ORDER BY owner,updated_at,id").fetchall()
+    return [b for b in (_board_row(r) for r in rows) if b]
+
+
 def _board_write(board, verb):
     import datetime
     now = datetime.datetime.now().isoformat(timespec="seconds")

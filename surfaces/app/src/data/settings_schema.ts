@@ -68,9 +68,20 @@ export function scopeBadgeKey(scope: string | undefined): string | null {
  *
  *  "profile" -> PUT /me/config (self-scoped, every role, the account's own
  *  view). Everything else -> POST /settings (owner-only, the shared daemon).
- *  A board-scoped knob writes to settings today because that is where
- *  policy.lane_labels still lives; PRD section 6 migrates it into the board
- *  row, and when it does, only this function changes. */
+ *
+ *  NO SHIPPED ROW CARRIES scope "board", and that is the resolution of debt
+ *  board-scope-still-in-settings-json rather than a gap in it. policy.lane_labels
+ *  wore that tag while living in settings.json; it turned out to be the
+ *  workspace's STATION-NAME registry (the move menu, the card detail, the loop
+ *  map, and the fallback for an unlabelled column all read it), so it is tagged
+ *  workspace now and the badge tells the truth. The genuinely board-owned value
+ *  is the per-COLUMN label, which is per column and variable in count - not
+ *  something a ConfigItem can hold - so it is edited in the board editor via
+ *  PUT /me/boards and never routed through here. The "board" scope stays in
+ *  SCOPES because it still names an owner the hub badges (the Boards door
+ *  labels the board list with it); it simply has no knob-shaped row, exactly
+ *  like "device". If one ever appears, THIS is the function that grows a third
+ *  target - it does not need one before then. */
 export type WriteTarget = "profile" | "settings";
 export const writeTargetFor = (scope: string | undefined): WriteTarget =>
   scope === "profile" ? "profile" : "settings";

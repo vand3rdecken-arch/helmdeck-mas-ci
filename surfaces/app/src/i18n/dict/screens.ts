@@ -47,9 +47,20 @@ export const screens: Dict = {
   "cfg.chatRoles": { de: "Wer die Policy per Chat ändern darf", en: "Who may change policy via chat" },
   "cfg.chatRoles.desc": { de: "Welche Rollen dem Copilot im Chat Policy-Änderungen geben dürfen.",
                           en: "Which roles may hand the copilot a policy change via chat." },
-  "cfg.laneLabels": { de: "Spalten-Beschriftungen", en: "Lane labels" },
-  "cfg.laneLabels.desc": { de: "Eigene Namen für die vier Board-Spalten (Backlog/Working/Review/Done).",
-                           en: "Custom names for the four board lanes (backlog/working/review/done)." },
+  // The row is badged WORKSPACE, so it has to describe what it really changes.
+  // "Eigene Namen für die vier Board-Spalten" was true when this key was the
+  // only column rename there was; a board owns its column labels now, and this
+  // key is what every OTHER surface calls a station - so a description still
+  // promising board columns would be the same mismatch the scope badge just
+  // stopped making.
+  // NOT "Stationsnamen": that is already this row's SECTION header
+  // (hub.grp.boardLabels), and the two stacked read as a stutter. The control
+  // labels the grid of four fields, so it names what one field holds.
+  "cfg.laneLabels": { de: "Name je Station", en: "Name per station" },
+  "cfg.laneLabels.desc": {
+    de: "Wie die vier Stationen überall außerhalb eines Boards heißen — im Verschieben-Menü, auf der Karte, im Harness. Board-Spalten ohne eigene Beschriftung zeigen ebenfalls diesen Namen.",
+    en: "What the four stations are called everywhere outside a board — the move menu, the card, the harness. Board columns with no label of their own show this name too.",
+  },
   "cfg.nightEnabled": { de: "Nachtschicht an", en: "Night shift on" },
   "cfg.nightEnabled.desc": { de: "Der PM darf außerhalb deiner Arbeitszeit selbstständig Karten starten.",
                              en: "The PM may dispatch cards on its own outside your working hours." },

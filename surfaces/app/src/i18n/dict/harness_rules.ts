@@ -35,6 +35,51 @@ export const harnessRules: Dict = {
   "harness.navLaws": { de: "Grundgesetze", en: "Ground rules" },
   "harness.navBuild": { de: "Build-Loop", en: "Build loop" },
   "harness.navBriefs": { de: "Briefe", en: "Briefs" },
+  "harness.navStored": { de: "Gespeicherte Werte", en: "Stored values" },
+
+  // ------------------------------------------------- what is REALLY stored --
+  // The audit view. Every other config screen says which value APPLIES; these
+  // strings are for the screen that says which rows EXIST - a different
+  // question, and the only one that can catch a value set against a repo you
+  // are not looking at or a row the daemon quietly stopped honouring.
+  "stored.title": { de: "Gespeicherte Regelwerte", en: "Stored rule values" },
+  "stored.intro": {
+    de: "Was wirklich in der Datenbank steht — nicht, was gerade gilt. Zeilen für alle Projekte, auch die hier nicht ausgewählten.",
+    en: "What is really in the database — not what currently applies. Rows for every project, including the ones not selected here.",
+  },
+  "stored.noProjectRows": {
+    de: "Keine projektspezifischen Werte gesetzt. Alles gilt aus Workspace oder Voreinstellung.",
+    en: "No project-specific values set. Everything resolves from the workspace or the default.",
+  },
+  "stored.thisProject": { de: "dieses Projekt", en: "this project" },
+  "stored.forProject": { de: "Projekt: {project}", en: "Project: {project}" },
+  "stored.workspaceKey": { de: "(ohne Projekt)", en: "(no project)" },
+  "stored.undeclared": { de: "verwaist", en: "orphaned" },
+  "stored.undeclared.desc": {
+    de: "Diesen Schlüssel deklariert keine Tabelle mehr — der Wert liegt auf der Platte, wird aber nicht mehr gelesen.",
+    en: "No table declares this key any more — the value is on disk but is no longer read.",
+  },
+  "stored.boards": { de: "Boards (Scope „Board“)", en: "Boards (scope “Board”)" },
+  "stored.boards.intro": {
+    de: "Die einzigen board-eigenen Werte: die Spaltennamen, in der boards-Tabelle. Leer heißt „zeig den Stationsnamen“.",
+    en: "The only board-owned values: the column labels, in the boards table. Empty means “show the station's own name”.",
+  },
+  "stored.shared": { de: "geteilt", en: "shared" },
+  "stored.emptyLabel": { de: "leer → Stationsname", en: "empty → station name" },
+  "stored.legacy": { de: "Alte globale Schlüssel", en: "Legacy global keys" },
+  "stored.legacy.intro": {
+    de: "Werte aus der Zeit vor den Regelzeilen, die noch nicht auf ihren deklarierten Pfad umgezogen sind.",
+    en: "Values from before the rule rows that have not yet moved onto their declared path.",
+  },
+  "stored.legacy.pending": {
+    de: "Zieht beim nächsten Daemon-Start um.",
+    en: "Will move on the next daemon start.",
+  },
+  "stored.refused": { de: "abgelehnt", en: "refused" },
+  "stored.unavailable": {
+    de: "Dieser Daemon liefert die gespeicherten Zeilen noch nicht mit.",
+    en: "This daemon does not serve the stored rows yet.",
+  },
   "harness.knobCount": { de: "{n} Knöpfe", en: "{n} settings" },
   "harness.knobOne": { de: "1 Knopf", en: "1 setting" },
   "harness.noKnobs": {
@@ -227,6 +272,11 @@ export const harnessRules: Dict = {
   },
 
   // ---------------------------------------------------------------- report --
+  "rule.report.judgement": { de: "Henrys Auftrag bei Eskalationen", en: "Henry's escalation mandate" },
+  "rule.report.judgement.desc": {
+    de: "Der Text, mit dem er jede Eskalation beurteilt. Leer heißt: das eingebaute Mandat gilt.",
+    en: "The text he judges every escalation with. Empty means the built-in mandate applies.",
+  },
   "rule.report.interval": { de: "Nachfass-Abstand", en: "Follow-up interval" },
   "rule.report.interval.desc": {
     de: "Sekunden, die er auf eine Antwort wartet, bevor er noch einmal nachfasst.",

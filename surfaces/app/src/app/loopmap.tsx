@@ -10,6 +10,7 @@ import { api, type BehaviorRule, type HarnessConfig, type LoopMap, type LoopNode
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { StoredConfigPanel } from "@/ui/config_stored";
 import { BriefSurfacePicker, BriefView } from "@/ui/harness_brief";
 import { RuleBlock } from "@/ui/harness_rules";
 import { RepoPipeline } from "@/ui/repo_pipeline";
@@ -560,6 +561,19 @@ export default function LoopMapScreen() {
                 <NavItem testID="nav-laws" active={nav === "laws"} label={tr("harness.navLaws")}
                   onPress={() => setNav("laws")} t={t}
                   right={<Ionicons name="lock-closed" size={11} color={t.txtTertiary} />} />
+                {/* The AUDIT entry, next to the laws rather than beside a block:
+                    it is not one block's detail, it is the whole store seen at
+                    once - including rows for projects this screen is not
+                    resolving, which is precisely what no block view can show. */}
+                <NavItem testID="nav-stored" active={nav === "stored"} label={tr("harness.navStored")}
+                  onPress={() => setNav("stored")} t={t}
+                  right={<NavCount n={(cfg?.stored?.projectRows ?? []).length
+                    + (cfg?.stored?.boardRows ?? []).length
+                    // The legacy rows COUNT. They are the only entries in this
+                    // panel that need action rather than reading - an unadopted
+                    // or refused key - and leaving them out of the badge would
+                    // hide the one thing worth being drawn in for.
+                    + (cfg?.stored?.legacyRows ?? []).length} t={t} />} />
               </NavGroup>
             </View>
 
@@ -591,6 +605,9 @@ export default function LoopMapScreen() {
                     </Text>
                   )
               ) : null}
+
+              {/* ---- the STORE itself, not what resolves out of it ---- */}
+              {nav === "stored" ? <StoredConfigPanel stored={cfg?.stored} /> : null}
 
               {/* ---- one of HENRY's blocks ---- */}
               {selectedBlock && cfg ? (

@@ -76,7 +76,7 @@ def harness_config_get(self, user):
     from urllib.parse import parse_qs, urlparse
 
     from spine.registry import behavior, harness
-    from spine.storage import projectconfig
+    from spine.storage import configreview, projectconfig
     repo = (parse_qs(urlparse(self.path).query).get("repo") or [""])[0].strip()
     project = projectconfig.project_key(repo)
     return self._send(200, json.dumps({
@@ -91,6 +91,15 @@ def harness_config_get(self, user):
         # learning what a surface IS, and a surface added to harness.SURFACES
         # shows up here by itself.
         "surfaces": [{"key": s["key"], "label": s["label"]} for s in harness.SURFACES],
+        # WHAT IS PHYSICALLY STORED, beside what currently resolves. `rules`
+        # above answers "which value applies and from which layer"; this answers
+        # "which rows exist at all" - including rows for projects this request
+        # did not select and rows nothing declares any more, neither of which the
+        # resolved view can show by construction. Same request rather than a
+        # second route: the two halves describe one store and would be read
+        # together every time, and a screen that had to fetch them separately
+        # could render them a refresh apart and disagree with itself.
+        "stored": configreview.review(project),
     }, ensure_ascii=False))
 
 

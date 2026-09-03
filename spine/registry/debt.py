@@ -4007,7 +4007,7 @@ DEBT = [
     {
         "id": "board-scope-still-in-settings-json",
         "title": "policy.lane_labels is BADGED 'Board' but still STORED in settings.json",
-        "status": "open",
+        "status": "paid",
         "what": "accounts-boards-prd phase 4 gave every settings knob a `scope` "
                 "tag, and the tag is load-bearing twice over: the hub badges "
                 "the row from it AND routes the write from it "
@@ -4034,16 +4034,29 @@ DEBT = [
                         "write lands on the owner-only POST /settings.",
         "trigger": "a second board-scoped knob appears, or a non-owner tries "
                    "to rename a station from the Boards door",
-        "fix": "Finish PRD section 6: move the labels into the board row "
-               "(boards.columns already carries a per-column `label`, which "
-               "the board editor edits today), have the Boards door render the "
-               "ACTIVE board's columns instead of this knob, and make "
-               "writeTargetFor('board') a real third target (PUT /me/boards). "
-               "Keep reading policy.lane_labels as the fallback for one "
-               "release - data/boards.ts columnLabel() and useLaneLabels() "
-               "already resolve empty labels through it - then retire the key. "
-               "Until then the honest reading of the badge is 'this is the "
-               "board LAYER's knob', not 'this write is board-local'.",
+        "fix": "PAID, and by the OPPOSITE of what this entry proposed - the "
+               "BADGE was wrong, not the store, and the live data settled it. "
+               "boards._seed_columns already copied this key into the default "
+               "board's columns at phase-2 boot, and data/boards.ts "
+               "columnLabel() prefers a column's own label, so editing this "
+               "knob had not moved a board column since that seed ran. What it "
+               "still names is every station OUTSIDE a board (move menu, card "
+               "detail, loop map) plus the fallback for a deliberately "
+               "unlabelled column. So the key is tagged scope 'workspace' now "
+               "and the badge tells the truth; the genuinely board-owned value "
+               "- the per-COLUMN label, per column and variable in count, which "
+               "no CONTROLS entry can render - keeps the board editor as its "
+               "one edit surface and is SHOWN in the Boards door in place of "
+               "the old column count. The plan above would have caused real "
+               "damage: retiring the key reverts the move menu, the card detail "
+               "and the loop map to the untranslated i18n default, losing "
+               "renames the owner had made. writeTargetFor deliberately did NOT "
+               "grow a third target - no shipped row carries scope 'board', so "
+               "it would have been dead code; 'board' stays in SCOPES as a "
+               "badge with no knob-shaped row, exactly like 'device'. Judged in "
+               "a browser at both form factors (ops/tests/e2e_stored_config.py) "
+               "against a sandbox seeded with every state "
+               "(ops/tools/storedconfig_verify_daemon.py).",
         "order": 54,
     },
     {
