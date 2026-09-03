@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet,
-  Text, TextInput, View,
+  ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView,
+  StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -254,13 +254,19 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
 
   const stepMut = useMutation({
     mutationFn: (v: { idx: number; action: string; patch?: Record<string, unknown>; title?: string }) =>
-      api.post<{ error?: string }>(`/processes/${p.id}/step`, { action: v.action, idx: v.idx, patch: v.patch, title: v.title }),
+      api.post<{ error?: string; steps?: unknown[] }>(`/processes/${p.id}/step`,
+        { action: v.action, idx: v.idx, patch: v.patch, title: v.title }),
     onSuccess: (r, v) => {
       if (r?.error) { Alert.alert(tr("ui.error"), r.error); return; }
       if (v.action === "accept" || v.action === "accept_all")
         Alert.alert(tr("processes.done"),
           v.action === "accept_all" ? tr("processes.cardsCreated") : tr("processes.cardCreated"));
       if (v.action === "accept" || v.action === "accept_all" || v.action === "remove") setExpanded(null);
+      // Android's addStep() has no native prompt (Alert.prompt is iOS-only,
+      // see addStep below) so it appends a generic "new step" - open its
+      // editor immediately, otherwise the tap gave zero visible feedback
+      // AND no way to actually name the thing that was just added.
+      if (v.action === "add" && Array.isArray(r?.steps)) setExpanded(r.steps.length - 1);
       invalidate();
     },
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
@@ -275,8 +281,13 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
       if (title) act(0, "add", undefined, title);
       return;
     }
-    // native: Alert.prompt is iOS-only; fall back to a generic step the user renames inline.
-    if ((Alert as any).prompt) {
+    // native: Alert.prompt only WORKS on iOS - on Android the RN module still
+    // exports a callable stub that silently no-ops (never invokes the
+    // callback, no warning), so a truthy-check on the function reference
+    // took this branch on Android too and "+ Schritt" did nothing at all -
+    // no dialog, no step, no error (owner report 2026-09-03). Gate on the
+    // real platform instead of the function's mere existence.
+    if (Platform.OS === "ios") {
       (Alert as any).prompt(tr("processes.newStep"), tr("processes.titleLabel"),
         (title: string) => title && act(0, "add", undefined, title));
     } else {
