@@ -198,6 +198,32 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, name TEXT NOT NULL, owner TEXT NOT NULL,
         json TEXT NOT NULL, updated_at TEXT NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS boards_owner ON boards(owner)")
+    # WORKSPACE config rows (config-consolidation, owner decree 2026-09-03:
+    # "alles was harness config ist gehoert ins db"). One row per TOP-LEVEL
+    # settings key (capacity, policy, pm, relay, ...), value = the JSON
+    # subtree. Same shape as user_config/project_config above, one layer UP
+    # the resolution chain - this is the store events.settings() overlays on
+    # its code defaults. Shape/validation stay in spine/storage/events.py.
+    c.execute("""CREATE TABLE IF NOT EXISTS workspace_config(
+        key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+    # The composed live POLICY document (policy_live.json's successor), one
+    # row by construction. The tracked policy_seed.json stays a FILE - it is
+    # the code default; this row is the current composed value policy.swap()
+    # mutates. Whole-doc rather than per-key: policy.load() always reads the
+    # complete document and swap() rewrites it under its own lock, so rows
+    # per key would only invent merge questions nothing asks.
+    c.execute("""CREATE TABLE IF NOT EXISTS policy_doc(
+        id TEXT PRIMARY KEY CHECK(id='live'),
+        json TEXT NOT NULL, version INTEGER NOT NULL, updated_at TEXT NOT NULL)""")
+    # HENRY'S MEMORY, store of record (same decree: harness config must be
+    # exportable - "wenn es hier bleibt erreicht es niemanden"). One row per
+    # note file; daemon/henry_memory/ stays the WRITE SURFACE the spawned
+    # agent turn edits with its own hands, and copilot.py folds dir -> here
+    # at event time after each save turn (the one owner). The brief digest
+    # and /harness/export read THIS, never the dir.
+    c.execute("""CREATE TABLE IF NOT EXISTS memory(
+        name TEXT PRIMARY KEY, content TEXT NOT NULL,
+        updated_at TEXT NOT NULL, actor TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS events(
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         id TEXT, ts TEXT, kind TEXT, track TEXT, data TEXT)""")
@@ -561,6 +587,110 @@ def project_config_projects():
     a flag - the harness screen counts overlays with it."""
     return [r[0] for r in conn().execute(
         "SELECT DISTINCT project FROM project_config").fetchall()]
+
+
+# -- workspace config -------------------------------------------------------
+# Same division of labour as user_config above: rows, atomicity and the
+# version bump here; defaults, shape and the diff/audit trail one layer up in
+# spine/storage/events.py (settings()/save_settings() keep being THE api -
+# only their backing store lives here now).
+
+def workspace_config_all():
+    """Every stored workspace key, {key: decoded subtree}. Absent keys are
+    absent - overlaying them on the code defaults is events.settings()'s job.
+    Tolerant of a missing table (a caller racing ahead of init() reads empty,
+    which resolves to pure defaults - today's behaviour for a missing file)."""
+    try:
+        rows = conn().execute("SELECT key,value FROM workspace_config").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out = {}
+    for k, v in rows:
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            continue          # a hand-corrupted row reads as absent, not a crash
+    return out
+
+
+def workspace_config_put(pairs):
+    """Write `pairs` ({top-level key: full subtree}) in one transaction.
+    A key whose subtree is None is DELETED (absent means default, the same
+    absent-means-inherited rule project_config lives by)."""
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with conn() as c:
+        for k, v in pairs.items():
+            if v is None:
+                c.execute("DELETE FROM workspace_config WHERE key=?", (k,))
+            else:
+                c.execute(
+                    "INSERT OR REPLACE INTO workspace_config(key,value,updated_at) "
+                    "VALUES(?,?,?)", (k, json.dumps(v), now))
+    bump()
+
+
+# -- policy doc -------------------------------------------------------------
+
+def policy_doc_get():
+    """The composed live policy document, or None when nothing was ever
+    composed (first boot: policy.load() then composes from the tracked seed
+    file and writes it here)."""
+    try:
+        r = conn().execute("SELECT json FROM policy_doc WHERE id='live'").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if not r:
+        return None
+    try:
+        doc = json.loads(r[0])
+    except ValueError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def policy_doc_put(doc):
+    """Store the whole composed document. Locking/authority live in
+    spine/auth/policy.py (its _LOCK wraps every load-mutate-put cycle)."""
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO policy_doc(id,json,version,updated_at) "
+                  "VALUES('live',?,?,?)",
+                  (json.dumps(doc), int(doc.get("version", 1)), now))
+    bump()
+
+
+# -- memory (Henry's notes, store of record) --------------------------------
+
+def memory_all():
+    """{name: {content, updated_at, actor}} for every note. The brief digest
+    and /harness/export read this - never the write-surface dir."""
+    try:
+        rows = conn().execute(
+            "SELECT name,content,updated_at,actor FROM memory").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {r[0]: {"content": r[1], "updated_at": r[2], "actor": r[3]}
+            for r in rows}
+
+
+def memory_put(name, content, actor="henry"):
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO memory(name,content,updated_at,actor) "
+                  "VALUES(?,?,?,?)", (name, content, now, actor))
+    bump_chat()   # the memory rides Henry's stream, not the board's
+
+
+def memory_delete(name):
+    with conn() as c:
+        cur = c.execute("DELETE FROM memory WHERE name=?", (name,))
+        n = cur.rowcount
+    if n:
+        bump_chat()
+    return n
 
 
 # -- boards ----------------------------------------------------------------
