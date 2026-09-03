@@ -38,6 +38,40 @@ def _seed():
     return _read(SEED)
 
 
+def _backfill_new_seed_keys(doc):
+    """Add any key a LATER code change put into policy_seed.json but this
+    doc's row predates - never touch a key already present (a value the
+    owner explicitly set or explicitly left at a prior default is real
+    state, not a gap). Mutates `doc` in place; returns True if anything
+    changed.
+
+    Found 2026-09-03 the hard way: `load()` returned db.policy_doc_get()'s
+    row completely as-is once it existed, so buildLoopEnabled/copilotEnabled/
+    engineerEnabled/permissions/sod_accept - every seed key ADDED after this
+    workspace's very first boot - were silently ABSENT from every /policy
+    response forever, not merely defaulted. Python readers happened to
+    default the ones they read via `.get(key, True)`, but the app's
+    Modules & Rules screen reads `policies?.buildLoopEnabled` directly and
+    has no such fallback - a genuinely missing key rendered as an
+    unexplained OFF toggle, and permissions.matrix() (same bug class, fixed
+    separately) 403'd the owner on brand-new capabilities. Same rollout
+    seam as _ROLLOUT_CAPS in spine/auth/permissions.py, one layer up: this
+    is the general form, that was the special case for the permissions
+    sub-key specifically."""
+    seed = _seed()
+    healed = False
+    for section in ("policies", "charter", "capability_charter"):
+        seed_section = seed.get(section) or {}
+        if not seed_section:
+            continue
+        live_section = doc.setdefault(section, {})
+        for k, v in seed_section.items():
+            if k not in live_section:
+                live_section[k] = v
+                healed = True
+    return healed
+
+
 def load():
     """Current composed policy doc. Backed by db.policy_doc (config-
     consolidation phase 3) - `LIVE` above is no longer written; it is read
@@ -51,6 +85,9 @@ def load():
         from spine.storage import db
         doc = db.policy_doc_get()
         if doc is not None:
+            if _backfill_new_seed_keys(doc):
+                db.policy_doc_put(doc)
+                print("policy: backfilled new seed key(s) into the stored doc")
             return doc
         # BELT+SUSPENDERS (same shape as db._migrate()'s ROOT/DBPATH guard):
         # LIVE binds to daemon.paths.DAEMON_ROOT at THIS module's import time,
