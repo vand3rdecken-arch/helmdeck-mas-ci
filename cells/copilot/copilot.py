@@ -816,6 +816,22 @@ def _schedule_compact(user):
 
     def _go():
         try:
+            # WAIT FOR A LULL before taking the turn lock (owner incident
+            # 2026-09-03 10:07: compaction fired the moment context crossed the
+            # stay-fast mark - mid-conversation - and the owner's next message
+            # sat 3.5 minutes behind memory-save + /compact, long enough that
+            # the app dropped his bubble as "verschwunden"). Maintenance yields
+            # to conversation: only start once the chat has been quiet for a
+            # few minutes. Bounded - after 30 min of nonstop chatter the
+            # compaction goes ahead anyway (the overflow guard must not be
+            # deferrable forever).
+            _t0 = time.time()
+            while time.time() - _t0 < 1800:
+                _mine = [v for k, v in list(_last_turn_at.items())
+                         if k == _skey(user) or k.startswith(_skey(user) + "\x00")]
+                if time.time() - (max(_mine) if _mine else 0.0) >= 180:
+                    break
+                time.sleep(15)
             lk = _turn_lock(user)
             lk.acquire()
             try:
@@ -1478,6 +1494,19 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
             {"role": "user", "kind": "text", "text": message,
              "by": user, "byKind": "human", "to": "henry", "ts": _tsv, "ta": _tav})
+    if not _retried:
+        # The owner's message exists the moment he SENT it, not when the reply
+        # lands (owner incident 2026-09-03 10:07: his message queued 3.5 min
+        # behind a compaction; the app's optimistic bubble timed out and the
+        # message "verschwand", because this log only learned of it at turn
+        # END). Same at-submission discipline as the card timeline fold above.
+        # client_msg_id rides along so the app can reconcile its optimistic
+        # bubble instead of drawing a duplicate. The completion path appends
+        # only the bot entry now.
+        _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
+        if client_msg_id:
+            _you["client_msg_id"] = client_msg_id
+        _append_log(user, [_you])
     # A turn carries the context of the surface it belongs to, and only that.
     # A CARD chat gets that card's own timeline (worker steps, Henry's notes,
     # every steer - the one-inbox record); it does NOT need 22 other cards, and
@@ -1885,9 +1914,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # Absent for older clients and for surfaces that never send one (the
         # watch, the glasses): the key is simply omitted, and the app falls back
         # to position. Nothing downstream may require it.
-        you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
-        if client_msg_id:
-            you["client_msg_id"] = client_msg_id
+        # `you` is already in the log - folded at SUBMISSION in chat() (the
+        # 2026-09-03 vanished-message fix); only the reply is news here.
         bot = {"cls": "bot", "text": out.get("reply", ""), "ts": time.strftime("%H:%M"), "usage": usage}
         # PERSISTED beside the prose, exactly as card_mirror.say_card stamps a
         # worker's question onto a `cls:"card"` entry. The panel is therefore
@@ -1896,7 +1924,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # next poll, which is the one thing an open decision must not do.
         if question:
             bot["question"] = question
-        entries = [you, bot]
+        entries = [bot]
         if rotate_note:
             entries.append({"cls": "error", "text": rotate_note, "ts": time.strftime("%H:%M")})
         _append_log(user, entries)
