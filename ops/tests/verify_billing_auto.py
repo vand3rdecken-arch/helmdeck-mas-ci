@@ -126,7 +126,7 @@ fake_sessions.list_tracks = lambda: []
 _install_fake("cells.engineer", "sessions", fake_sessions)
 fake_procs = types.ModuleType("processes")
 fake_procs.list_processes = lambda: []
-_install_fake("cells.process", "processes", fake_procs)
+_install_fake("cells.engineer", "processes", fake_procs)
 _orig_settings, _orig_read = events.settings, events.read_events
 events.settings = lambda: {"pm": {"plan": "auto"}, "capacity": {"tariff": {}, "wip_limit": 3, "touch_budget_day": 40},
                            "prices": {"default": {"in": 3.0, "out": 15.0}}, "currency": "EUR"}

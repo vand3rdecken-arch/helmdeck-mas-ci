@@ -73,7 +73,7 @@ from spine.http.routes import routes_misc
 from spine.http.routes import routes_control
 from spine.http.routes import routes_relay
 from spine.http.routes import routes_wear
-from cells.connectors import routes_connectors
+from cells.engineer import routes_connectors
 from spine.http.routes import routes_audit
 from spine.http.routes import routes_checkpoints
 from spine.http.routes import routes_sign

@@ -13,7 +13,7 @@ from spine.http.apimeta import _profile_schema
 
 
 def processes_get(self, user):
-    from cells.process import processes
+    from cells.engineer import processes
     try:
         processes.sync()
     except Exception:
@@ -174,7 +174,7 @@ def me_boards_delete(self, user, _q):
 
 
 def processes_new_post(self, user, body):
-    from cells.process import processes
+    from cells.engineer import processes
     req = body.get("request")
     if not req:
         return self._send(400, json.dumps({"error": "request required"}))

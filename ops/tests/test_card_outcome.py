@@ -107,7 +107,7 @@ class FakeProcesses:
 
 
 sys.modules["spine.storage.events"] = FakeEvents
-sys.modules["cells.process.processes"] = FakeProcesses
+sys.modules["cells.engineer.processes"] = FakeProcesses
 
 # The slow/dangerous seams: never run a real gate, merge, hook or git in a test.
 lanemachine._autocommit = lambda t: True

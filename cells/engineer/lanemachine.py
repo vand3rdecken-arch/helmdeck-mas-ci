@@ -1300,7 +1300,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         except Exception:
             pass
         if t.get("connector"):
-            from cells.connectors import connectors
+            from cells.engineer import connectors
             from spine.ops import checkpoints
             checkpoints.create(actor=actor, reason="connector install: " + t.get("connector", ""))
             try:
@@ -1323,7 +1323,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         # loop above cannot reach - without this the card came back clean but
         # its step stayed "already dispatched" and never ran again.
         try:
-            from cells.process import processes
+            from cells.engineer import processes
             processes.clear_step_stamps(tid)
         except Exception as e:      # a board move must not fail on the chain store
             print("clear_step_stamps failed for %s: %s" % (tid, e))

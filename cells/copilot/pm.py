@@ -1002,7 +1002,7 @@ def _triangle_watch(st):
     gp = st.get("goal_process") or {}
     if gp.get("pid") and gp.get("goal") == get_goal():
         try:
-            from cells.process import processes
+            from cells.engineer import processes
             p = processes.get(gp["pid"])
         except Exception:
             p = None
@@ -1316,7 +1316,10 @@ def _tick():
     the notify/ask/act ladder is a Settings control now, not a dashboard one."""
     # 1 - GATHER
     from spine.registry import cells
-    if not cells.enabled_id("pm"):
+    # "copilot", NOT "pm": the pm cell merged into copilot (2026-09-03) and
+    # enabled_id fails OPEN for an unknown id - left reading "pm", this guard
+    # would have silently stopped guarding anything.
+    if not cells.enabled_id("copilot"):
         # ADDITIONAL early-return, not a replacement: loop_enabled (below) is
         # the owner's proactive on/off Settings control; cellEnabled is the
         # separate whole-cell kill switch (Phase 2 of the cell-registry decree).

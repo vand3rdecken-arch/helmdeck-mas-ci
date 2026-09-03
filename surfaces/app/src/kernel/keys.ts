@@ -114,19 +114,19 @@ export interface PolicySet {
   // Per-CELL enable flags (the agentic-system registry, daemon cells.py). Each
   // toggles a whole agentic system on/off through the same tracked policy.swap;
   // the app filters nav surfaces by the matching flag. All default true.
-  /** Engineer cell — the cards/kanban system (machine + direct are its modes). */
+  /** Engineer cell — the builder and his whole build process: cards/kanban
+   * (machine + direct are its modes), the step-chain pipelines AND the
+   * user-built connector modules merged in from the former process/
+   * connectors cells (owner directive 2026-09-03: one builder, one switch —
+   * off means no cards, no chains, no connector scheduler). */
   readonly engineerEnabled: boolean;
-  /** Process cell — the n8n-style step-chain pipelines. */
-  readonly processEnabled: boolean;
-  /** Connectors cell — user-built integration modules. */
-  readonly connectorsEnabled: boolean;
   /** Copilot cell — the board chat / coordination agent AND the backlog
    * planning loop merged in from the former "pm" cell (owner directive
    * 2026-09-03: one agent, one switch - off means no chat and no planning). */
   readonly copilotEnabled: boolean;
-  /** Cell #6 — the build loop (cells.py "buildloop"). NOT daemon-hosted
-   * like the other 5: governs the CURRENT agent's own workflow via Claude
-   * Code's hooks (ops/tools/loop_state.py reads this flag directly, no daemon
+  /** The build loop cell (cells.py "buildloop"). NOT daemon-hosted like the
+   * other two: governs the CURRENT agent's own workflow via Claude Code's
+   * hooks (ops/tools/loop_state.py reads this flag directly, no daemon
    * round-trip needed). Self-governance, not delegation. */
   readonly buildLoopEnabled: boolean;
 }

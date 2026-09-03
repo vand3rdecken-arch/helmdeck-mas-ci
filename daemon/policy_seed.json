@@ -10,8 +10,6 @@
     "wipLimit": 3,
     "agentMaySwap": false,
     "engineerEnabled": true,
-    "processEnabled": true,
-    "connectorsEnabled": true,
     "copilotEnabled": true,
     "buildLoopEnabled": true,
     "sod_accept": false,

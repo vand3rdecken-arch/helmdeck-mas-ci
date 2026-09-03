@@ -117,7 +117,9 @@ def on_card_done(tid):
     completion costs zero planning turns. Threaded so the accept path never blocks
     on a model call (mirrors review_burn)."""
     from spine.registry import cells
-    if not cells.enabled_id("pm"):
+    # "copilot", NOT "pm" - merged cell id; enabled_id fails OPEN on unknown
+    # ids, so the stale name would have made this guard a no-op.
+    if not cells.enabled_id("copilot"):
         return
     threading.Thread(target=_on_card_done, args=(tid,), daemon=True,
                      name="pm-card-done").start()

@@ -68,7 +68,7 @@ def jira_import(jql, actor="owner", limit=50):
 
 def url_import(url, client="", due="", actor="owner"):
     from spine.storage import events
-    from cells.process import processes
+    from cells.engineer import processes
     if not re.match(r"^https?://", url):
         raise RuntimeError("http(s) URL required")
     req = urllib.request.Request(url, headers={"User-Agent": "HelmDeck/0.1"})

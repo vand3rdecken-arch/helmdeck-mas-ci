@@ -273,7 +273,9 @@ def clear_step_stamps(tid):
     "is in backlog" would re-dispatch a broken step on every 20s poll - the
     same trap _priority_dispatch just had. move_lane fires once, per move."""
     from spine.registry import cells
-    if not cells.enabled_id("process"):
+    # "engineer", NOT "process" - merged cell id (2026-09-03); enabled_id
+    # fails OPEN on unknown ids, so the stale name would disable this guard.
+    if not cells.enabled_id("engineer"):
         return
     with _lock:
         ps = _load()

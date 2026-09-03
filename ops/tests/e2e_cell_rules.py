@@ -118,9 +118,11 @@ def main():
             check('rule-report.followup_attempts' in page.content(),
                   "the followup-attempts row is a real RuleRow (testID present)")
 
-            # 4. a cell WITHOUT rules says so instead of rendering a hole
-            nav2 = page.locator('[data-testid="nav-cell-connectors"]')
-            check(nav2.count() > 0, "the connectors cell is a navigation entry")
+            # 4. a cell WITHOUT rules says so instead of rendering a hole.
+            # buildloop, not connectors: connectors merged into engineer
+            # (2026-09-03) and is no longer its own nav-cell entry.
+            nav2 = page.locator('[data-testid="nav-cell-buildloop"]')
+            check(nav2.count() > 0, "the buildloop cell is a navigation entry")
             if nav2.count():
                 nav2.first.click()
                 page.wait_for_timeout(1200)

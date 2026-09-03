@@ -72,7 +72,7 @@ class Cell:
                  role="", surface="", modes=(),
                  logic_files=(), storage="", harness_file="",
                  route_modules=(), ui_files=(), tools=(), repo_files=(),
-                 board=()):
+                 board=(), surfaces=()):
         self.id = id
         self.enabled_key = enabled_key      # policy flag, e.g. "copilotEnabled"
         self.paths = tuple(paths)           # exact owned paths, e.g. ("/processes",)
@@ -85,7 +85,14 @@ class Cell:
         # either shape.
         self.start = start
         self.role = role                    # harness brief filename OR a short description
-        self.surface = surface              # app-side kernel Surface id this cell renders
+        self.surface = surface              # PRIMARY app-side kernel Surface id this cell renders
+        self.surfaces = tuple(surfaces)     # ADDITIONAL Surface ids this cell owns beyond the
+                                            # primary (a merged cell keeps its absorbed systems'
+                                            # tabs: engineer carries surfaces.processes +
+                                            # surfaces.connectors). The app's tab-hiding iterates
+                                            # the manifest's full list, so disabling the cell
+                                            # hides every one of its tabs - same generalisation
+                                            # `start` got for multi-loop cells.
         self.modes = tuple(modes)           # sub-modes, e.g. engineer -> ("machine","direct")
         self.logic_files = tuple(logic_files)    # daemon/*.py files, e.g. ("pm.py","pm_state.py")
         self.storage = storage                   # short description, e.g. "loop.json (daemon/pm/)"
@@ -152,28 +159,53 @@ class Cell:
 # policy_seed.json, so all of this is a no-op until an owner flips a flag.
 CELLS = [
     Cell(
-        id="engineer", enabled_key="engineerEnabled",
-        # the card/kanban spine-core, conformed last (Phase 3, the crown
-        # jewel). Lifecycle: sessions.start_engineer_lifecycle() launches the
-        # zombie reconciler + background-task watcher, both of which operate
-        # directly on track/session state - genuinely this cell's own
-        # lifecycle, not spine-adjacent housekeeping - so disabling
-        # engineerEnabled also stops them, same as every other cell's poller.
+        # THE BUILDER AND HIS WHOLE BUILD PROCESS (owner directive 2026-09-03,
+        # second half of the two-agent model: "Du hast ein engineer, der
+        # seinen Bau Prozess hat, dazu gehoert alle drei folder. Henry ist der
+        # Koordinator"). The former `process` and `connectors` cells merged in
+        # here, same evidence-backed shape as pm->copilot: a chain's steps
+        # dispatch INTO engineer cards (process's proposer is a stateless
+        # one-shot LLM call, no agent identity), and connectors are BUILT by
+        # engineer cards and installed only after the same gate. Three folders,
+        # one build responsibility, ONE switch - engineerEnabled off = no
+        # cards, no chains, no connector scheduler (a deliberate narrowing,
+        # decided by the owner, not a side effect).
+        #
+        # The card/kanban spine-core (Phase 3, the crown jewel). Lifecycle:
+        # sessions.start_engineer_lifecycle() launches the zombie reconciler +
+        # background-task watcher; the chain poller and connector scheduler
+        # ride the same flag as further launchers (Cell.start tuple).
         # machine/direct are MODES here, gated by the separate policy.machine,
         # not a cell.
-        paths=("/tracks",), prefixes=("/tracks/",),
-        start=("sessions", "start_engineer_lifecycle"),
+        id="engineer", enabled_key="engineerEnabled",
+        # /processes and /processes/<id>/step live in routes_misc + routes_system,
+        # both SHARED modules - path ownership keeps /me (spine) ungated.
+        paths=("/tracks", "/processes", "/connectors"),
+        prefixes=("/tracks/", "/processes/", "/connectors/"),
+        start=(("sessions", "start_engineer_lifecycle"),
+               ("processes", "start_chain_poller"),
+               ("connectors", "start_scheduler")),
         role="(card brief, per-task)", surface="surfaces.board",
+        # The absorbed systems' tabs stay real screens; disabling this cell
+        # hides all three (see Cell.surfaces above).
+        surfaces=("surfaces.processes", "surfaces.connectors"),
         modes=("machine", "direct"),
         logic_files=("sessions.py", "lanemachine.py", "dispatch.py",
-                     "cardadmin.py", "turnrunner.py"),
-        storage="tracks table + worktrees (db.py)",
-        route_modules=("routes_tracks", "routes_track_actions"),
-        # the Surface plugin lives in the CELL's own folder since phase 3 of
+                     "cardadmin.py", "turnrunner.py",
+                     "processes.py", "connectors.py"),
+        storage="tracks + processes + connector_state tables (db.py) + "
+                "worktrees + daemon/connectors/ code dir",
+        route_modules=("routes_tracks", "routes_track_actions",
+                       "routes_misc", "routes_system", "routes_connectors"),
+        # the Surface plugins live in the CELL's own folder since phase 3 of
         # the two-mains split (cells/<id>/ui/, repo-root-relative -> repo_files);
-        # the route shell + shared widgets stay app-side (ui_files).
-        repo_files=("cells/engineer/ui/surface.tsx",),
-        ui_files=("src/ui/board.tsx", "src/app/(tabs)/board.tsx"),
+        # the route shells + shared widgets stay app-side (ui_files).
+        repo_files=("cells/engineer/ui/surface.tsx",
+                    "cells/engineer/ui/processes.tsx",
+                    "cells/engineer/ui/connectors.tsx"),
+        ui_files=("src/ui/board.tsx", "src/app/(tabs)/board.tsx",
+                  "src/app/(tabs)/processes.tsx",
+                  "src/app/(tabs)/connectors.tsx"),
         # WHERE THIS CELL ACTS on the board: it runs the work (turnrunner in
         # the working lane), its gate checks the result, and the accept hook
         # ships it. The band under the pipeline draws from exactly this.
@@ -187,30 +219,6 @@ CELLS = [
         # code-map itself shows what informed its own rendering style.
         tools=("github.com/cathrynlavery/diagram-design (visual style ref "
                "for the code-map diagram, not a vendored dependency)",),
-    ),
-    Cell(
-        id="process", enabled_key="processEnabled",
-        # /processes and /processes/<id>/step live in routes_misc + routes_system,
-        # both SHARED modules - path ownership keeps /me (spine) ungated.
-        paths=("/processes",), prefixes=("/processes/",),
-        start=("processes", "start_chain_poller"),
-        role="(inline proposer prompt in processes.py)", surface="surfaces.processes",
-        logic_files=("processes.py",),
-        storage="processes table (db.py)",
-        route_modules=("routes_misc", "routes_system"),
-        repo_files=("cells/process/ui/surface.tsx",),
-        ui_files=("src/app/(tabs)/processes.tsx",),
-    ),
-    Cell(
-        id="connectors", enabled_key="connectorsEnabled",
-        paths=("/connectors",), prefixes=("/connectors/",),
-        start=("connectors", "start_scheduler"),
-        role="(card-worker builds it)", surface="surfaces.connectors",
-        logic_files=("connectors.py",),
-        storage="connector_state table (db.py) + connectors/ code dir",
-        route_modules=("routes_connectors",),
-        repo_files=("cells/connectors/ui/surface.tsx",),
-        ui_files=("src/app/(tabs)/connectors.tsx",),
     ),
     Cell(
         # MERGED WITH PM (owner directive 2026-09-03, "pm und henry is eins"):
@@ -374,6 +382,10 @@ def manifest():
         "enabledKey": c.enabled_key,
         "role": c.role,
         "surface": c.surface,
+        # The FULL surface list (primary + absorbed) - what the app's
+        # tab-hiding iterates, so one disabled merged cell hides every one
+        # of its tabs. `surface` above stays for wire compat.
+        "surfaces": [s for s in (c.surface, *c.surfaces) if s],
         "modes": list(c.modes),
         "logicFiles": list(c.logic_files) + list(c.repo_files),
         "storage": c.storage,

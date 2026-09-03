@@ -34,6 +34,17 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-storedui-")
+# policy.py binds SEED = DAEMON_ROOT/policy_seed.json at IMPORT TIME (spine/
+# auth/policy.py:25-26, `from daemon.paths import DAEMON_ROOT as HERE`) - the
+# sandbox swap above redirects every OTHER store, but a POST /policy/swap
+# still reads the real seed from the real daemon/, which does not exist under
+# SANDBOX. Copy it in before policy.py is ever imported, or any policy.swap()
+# call (this script's own seed() helper, or an e2e toggling a cell flag) 500s
+# with a bare "No such file or directory" - found the hard way verifying the
+# process/connectors->engineer merge (2026-09-03).
+import shutil
+shutil.copy2(os.path.join(ROOT, "daemon", "policy_seed.json"),
+             os.path.join(SANDBOX, "policy_seed.json"))
 import daemon.paths
 daemon.paths.DAEMON_ROOT = SANDBOX
 

@@ -4248,6 +4248,53 @@ DEBT = [
         "fix": "PAID. See 'what' above for the full file list.",
         "order": 58,
     },
+    {
+        "id": "process-connectors-engineer-merge",
+        "title": "process and connectors were the engineer's own build process "
+                 "wearing two extra cells - merged",
+        "status": "paid",
+        "what": "Owner directive 2026-09-03, completing the two-agent model "
+                "the pm-copilot merge (order 58) began: \"Du hast ein "
+                "engineer, der seinen Bau Prozess hat, dazu gehoert alle drei "
+                "folder. Henry ist der Koordinator.\" Evidence matched the "
+                "directive: a chain's steps dispatch INTO engineer cards, "
+                "process's proposer is a stateless one-shot LLM call (the "
+                "same shape pm's planner was), and connectors are BUILT by "
+                "engineer cards and installed only after the same gate. "
+                "FIXED: cells.py's process + connectors Cell entries deleted; "
+                "their paths/prefixes/logic_files/route_modules/ui folded "
+                "into engineer; Cell.start's tuple form (built for order 58) "
+                "now launches three loops under one flag (engineer lifecycle "
+                "+ chain poller + connector scheduler); processes.py, "
+                "connectors.py, routes_connectors.py physically moved to "
+                "cells/engineer/ (ui plugins renamed processes.tsx/"
+                "connectors.tsx to dodge the surface.tsx collision); "
+                "processEnabled/connectorsEnabled removed from the seeds and "
+                "the app kernel. NEW MECHANISM this merge needed that order "
+                "58 did not: Cell.surfaces (extra surface ids beyond the "
+                "primary) + manifest \"surfaces\" list, because tab-hiding "
+                "(_layout.tsx useDisabledCellSurfaces) keyed off ONE surface "
+                "per cell and the absorbed systems have REAL tabs - engineer "
+                "now declares surfaces.processes + surfaces.connectors, so "
+                "one switch hides all three tabs.",
+        "why_it_bites": "RESOLVED - and it CAUGHT TWO LATENT BUGS from order "
+                        "58 while sweeping for the fail-open trap: pm.py and "
+                        "pm_triangle.py still guarded their loops with "
+                        "enabled_id(\"pm\"), an id that stopped existing at "
+                        "the pm merge - enabled_id returns True for unknown "
+                        "ids, so both guards had silently become no-ops. "
+                        "Repointed to \"copilot\" alongside processes.py's "
+                        "clear_step_stamps guard (\"process\" -> "
+                        "\"engineer\"). The trap is now named in the guard "
+                        "comments themselves; any future cell rename must "
+                        "grep enabled_id( and useCellEnabled( first.",
+        "trigger": "a cell whose outputs only ever become another cell's "
+                   "inputs through that cell's own gate; renaming/merging a "
+                   "cell id (grep enabled_id/useCellEnabled for fail-open "
+                   "guards)",
+        "fix": "PAID. See 'what' above for the full file list.",
+        "order": 59,
+    },
 ]
 
 def list_debt():
