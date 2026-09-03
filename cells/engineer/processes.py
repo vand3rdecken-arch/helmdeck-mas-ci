@@ -346,7 +346,7 @@ def _priority_dispatch():
     order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     tracks = sessions.list_tracks()
     wip = sum(1 for t in tracks if t.get("lane") == "working")
-    headroom = s["capacity"]["wip_limit"] - wip
+    headroom = events.wip_limit_of(s) - wip
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
                    and not t.get("mode") in ("human", "teach", "cowork")
                    and not t.get("priority_dispatched")
@@ -423,7 +423,7 @@ def _autopilot():
     # make (spine/registry/templates.py docstring). auto_accept_green is the
     # opposite: whose work merges itself is a property of the REPO, so it moves
     # inside the loop where the card's repo is known.
-    headroom = (s["capacity"]["wip_limit"]
+    headroom = (events.wip_limit_of(s)
                 - sum(1 for t in tracks if t.get("lane") == "working"))
     for t in auto:
         auto_accept = bool(projects.policy_for(t.get("repo") or "",

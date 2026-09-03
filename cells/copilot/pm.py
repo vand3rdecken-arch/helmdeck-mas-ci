@@ -1250,7 +1250,7 @@ def _state():
 def _dispatch_next(pm, st, day):
     from cells.engineer import sessions
     from spine.storage import events
-    if sum(1 for t in sessions.list_tracks() if t.get("lane") == "working") >= events.settings()["capacity"]["wip_limit"]:
+    if sum(1 for t in sessions.list_tracks() if t.get("lane") == "working") >= events.wip_limit_of():
         return                                           # respect WIP headroom
     todo = _backlog(sessions.list_tracks(), pm, day)
     if not todo:
