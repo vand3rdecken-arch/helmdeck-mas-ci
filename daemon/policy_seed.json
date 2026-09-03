@@ -17,9 +17,9 @@
       "owner": ["settings.read", "settings.write", "users.manage", "recordings.view",
                 "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate",
                 "cards.admin", "system.introspect", "projects.view", "projects.manage",
-                "pm.view", "pm.manage"],
+                "pm.view", "pm.manage", "templates.view", "templates.manage"],
       "operator": ["recordings.view", "devices.manage", "devices.use", "chat.use", "cards.admin",
-                   "projects.view", "pm.view"],
+                   "projects.view", "pm.view", "templates.view"],
       "client": [],
       "quality": [],
       "auditor": ["settings.read", "recordings.view", "audit.read"]
