@@ -89,7 +89,7 @@ SETTINGS["policy"] = {}
 # --- 4) per-tree serialization through the real _turn ----------------------
 _release = threading.Event()
 
-def fake_run(cfg, t, prompt):
+def fake_run(cfg, t, prompt, by=None):
     if t["id"] == "holder":
         _release.wait(timeout=30)
     return ("sid-" + t["id"], "ok", {})

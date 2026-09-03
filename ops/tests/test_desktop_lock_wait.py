@@ -39,7 +39,7 @@ events.emit = lambda *a, **k: None
 
 _release = threading.Event()          # test controls when the holder's turn ends
 
-def fake_run(cfg, t, prompt):
+def fake_run(cfg, t, prompt, by=None):
     if t["id"] == "holder":
         _release.wait(timeout=30)     # holds the desktop lock until told
     return ("sid-" + t["id"], "ok", {})
