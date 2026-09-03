@@ -23,6 +23,91 @@ from spine.agent.agentcli import CLAUDE  # single source - see its module docstr
 MODES = ("do", "prepare", "cowork", "teach", "human")
 _lock = threading.Lock()
 
+# -- process TEMPLATES: the config half of this module ----------------------
+# A process ROW (above/below) is a RUN: request/client/due/status/cost, and
+# each step carries RUNTIME fields (done/lane/track/state/ready/
+# auto_dispatched/auto_accepted) - arbitrary agent output, not something an
+# owner configures. A TEMPLATE is the reusable step SHAPE underneath it
+# (title/desc/mode/days) - that IS config (owner decree 2026-09-03: "das ist
+# auch config, wie trennen" - a run and its shape were one JSON blob and the
+# shape never accumulated anywhere an owner could export it). Kept in this
+# module, not a separate one: it owns MODES and the step shape already.
+TEMPLATE_STEP_FIELDS = ("title", "desc", "mode", "days")
+
+
+def _clean_template_step(s):
+    """The closed step shape - strips every RUNTIME field a live process
+    step carries (done/lane/track/state/ready/auto_dispatched/...). Same
+    validation _propose_steps already applies to a fresh LLM step, reused
+    here so a template can never smuggle a runtime field back in."""
+    return {"title": str(s.get("title", ""))[:120],
+            "desc": str(s.get("desc", ""))[:300],
+            "mode": s.get("mode") if s.get("mode") in MODES else "do",
+            "days": min(5, max(1, int(s.get("days", 1) or 1)))}
+
+
+def _slugify(name, existing):
+    base = re.sub(r"[^a-z0-9]+", "-", (name or "template").lower()).strip("-") or "template"
+    tid, n = base, 2
+    while tid in existing:
+        tid = "%s-%d" % (base, n)
+        n += 1
+    return tid
+
+
+def list_templates():
+    from spine.storage import db
+    return db.process_template_all()
+
+
+def get_template(tid):
+    from spine.storage import db
+    return db.process_template_get(tid)
+
+
+def save_template(name, description, steps, tid=None, actor="owner"):
+    """Create a new template (tid=None, id auto-slugified from the name) or
+    UPSERT one at an explicit id (tid given - create-or-overwrite, so a
+    harness import can replay a template at its original id whether or not
+    that id already exists on the target workspace). Steps are ALWAYS run
+    through _clean_template_step - this is the one writer, so a runtime
+    field can never enter the process_template table by any path."""
+    from spine.storage import db, events
+    if not (name or "").strip():
+        raise ValueError("name required")
+    clean_steps = [_clean_template_step(s) for s in (steps or [])[:8]]
+    if not clean_steps:
+        raise ValueError("at least one step required")
+    if not tid:
+        tid = _slugify(name, db.process_template_all().keys())
+    doc = {"name": name[:120], "description": (description or "")[:500],
+           "steps": clean_steps}
+    db.process_template_put(tid, doc, actor=actor)
+    events.emit("process_template", tid, action="saved", actor=actor)
+    doc["id"] = tid
+    return doc
+
+
+def delete_template(tid, actor="owner"):
+    from spine.storage import db, events
+    ok = db.process_template_delete(tid)
+    if ok:
+        events.emit("process_template", tid, action="deleted", actor=actor)
+    return ok
+
+
+def template_from_process(pid, name=None, actor="owner"):
+    """Strip a process RUN down to its reusable step shape and save it as a
+    NEW template - an explicit owner act, never automatic (NO-MONKEY-PATCH:
+    a template is ADOPTED by decision, not reconstructed by heuristically
+    scanning finished runs at boot)."""
+    p = get(pid)
+    if not p:
+        raise RuntimeError("no such process")
+    return save_template(name or p.get("request", "")[:80],
+                         p.get("request", ""), p.get("steps") or [],
+                         actor=actor)
+
 def _load():
     from spine.storage import db
     return db.processes_all()
@@ -96,10 +181,18 @@ def _lay_dates(p):
         acc += s.get("days", 1)
         s["due"] = time.strftime("%Y-%m-%d", time.localtime(start + horizon * acc / total))
 
-def create(request_text, client="", due="", actor="owner", steps=None):
+def create(request_text, client="", due="", actor="owner", steps=None, template_id=None):
     """File a process. With `steps` (a pre-built list, e.g. from the PM's vetted plan
     milestones) we ADOPT them directly and skip the generic proposer - the steps are
-    already intelligent + gated. Without steps, the background proposer runs as before."""
+    already intelligent + gated. With `template_id` instead, the steps come from a
+    saved template (deterministic, no LLM call). Without either, the background
+    proposer runs as before."""
+    if template_id and not steps:
+        tmpl = get_template(template_id)
+        if not tmpl:
+            raise RuntimeError("no such template")
+        steps = [dict(_clean_template_step(s), status="proposed", track=None, due="")
+                 for s in tmpl["steps"]]
     # Millisecond disambiguator (mirrors checkpoints.py): a bare per-SECOND id
     # collides when two processes are filed in the same wall-clock second - the
     # second INSERT then hits `UNIQUE constraint failed: processes.id` and the
@@ -108,7 +201,8 @@ def create(request_text, client="", due="", actor="owner", steps=None):
     pid = time.strftime("%Y%m%d-%H%M%S") + "-%03d-proc" % (int(time.time() * 1000) % 1000)
     p = {"id": pid, "request": request_text, "client": client, "due": due,
          "status": "proposing", "steps": [], "cost": 0.0,
-         "created": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor}
+         "created": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor,
+         "template_id": template_id or None}
     if steps:
         p["steps"] = steps
         p["status"] = "ready"

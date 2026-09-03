@@ -187,11 +187,14 @@ def harness_export_get(self, user):
 
     Everything that lives in the db config planes this decree moved config
     INTO, assembled read-only: workspace config, the composed policy doc,
-    every project's overlay, every account's profile, Henry's memory. Deliber-
-    ately NOT the harness .md brief files (board-copilot.md, pm.md, ...) -
-    those are already version-controlled in the repo itself, which is a
-    strictly better export than re-embedding their text in this JSON (git
-    gives history and diffs; a JSON blob would not).
+    every project's overlay, every account's profile, Henry's memory, every
+    process TEMPLATE (the process/config split, 2026-09-03: a template's step
+    SHAPE is config an owner configures and should travel with the harness; a
+    process RUN is work, deliberately excluded, same as cards). Deliberately
+    NOT the harness .md brief files (board-copilot.md, pm.md, ...) - those are
+    already version-controlled in the repo itself, which is a strictly better
+    export than re-embedding their text in this JSON (git gives history and
+    diffs; a JSON blob would not).
 
     Owner-only: workspace config can hold real secrets (jira.api_token,
     relay.sk, the fcm service account...). `?secrets=0` masks anything whose
@@ -220,6 +223,7 @@ def harness_export_get(self, user):
         "project_overlays": projects,
         "user_overlays": accounts,
         "memory": db.memory_all(),
+        "process_templates": db.process_template_all(),
     }, ensure_ascii=False))
 
 
@@ -279,6 +283,19 @@ def harness_import_post(self, user, body):
                 db.memory_put(name, content, actor=user["name"])
         if memory:
             result["memory"] = "ok"
+
+    templates = body.get("process_templates")
+    if isinstance(templates, dict):
+        from cells.engineer.chains import processes
+        for tid, doc in templates.items():
+            if not isinstance(doc, dict):
+                continue
+            try:
+                processes.save_template(doc.get("name", tid), doc.get("description", ""),
+                                        doc.get("steps") or [], tid=tid, actor=user["name"])
+                result["template:" + tid] = "ok"
+            except ValueError as e:
+                result["template:" + tid] = "refused: %s" % e
 
     return self._send(200, json.dumps({"ok": True, "result": result}, ensure_ascii=False))
 
