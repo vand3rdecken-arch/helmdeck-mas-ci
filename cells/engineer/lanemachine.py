@@ -775,10 +775,18 @@ def request_ship_decision(t, origin):
     from spine.registry import escalations
     st = events.settings()
     hooks = (st.get("repo_hooks") or {}).get(t.get("repo") or "", {})
-    if not (hooks or {}).get("deploy", "").strip():
-        return None                     # no deploy hook - nothing to decide about
     from spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
+    if not (hooks or {}).get("deploy", "").strip():
+        # NEVER silent (measured 2026-09-03: a flaky settings read returned no
+        # repo_hooks, this branch returned None without a trace, and two
+        # accepted UI cards shipped nowhere - nobody could see why). A repo
+        # that genuinely ships some other way reads this note once per accept;
+        # a broken settings read becomes visible the moment it costs something.
+        log.log("note", "SHIP: kein deploy-Hook fuer repo %r (settings.repo_hooks)"
+                        " - keine Ship-Entscheidung emittiert (%s)."
+                        % (t.get("repo") or "", origin))
+        return None
     try:
         if any(e.get("kind") == "ship-decision" and e.get("card") == t["id"]
                for e in escalations.list_open()):
