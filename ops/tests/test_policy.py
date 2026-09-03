@@ -62,6 +62,29 @@ ok(pols.get("gateBeforeReview") is True, "seeded gateBeforeReview=true")
 ok(pols.get("agentMaySwap") is False, "seeded agentMaySwap=false")
 ok(db.policy_doc_get() is not None, "live doc materialized from seed (db row, not a file since phase 3)")
 
+# 1b. new-seed-key rollout seam (found 2026-09-03: a stored doc returned
+# AS-IS forever, so buildLoopEnabled/copilotEnabled/engineerEnabled/
+# permissions/sod_accept - every seed key added after a workspace's first
+# boot - were silently absent from every /policy response on the real live
+# workspace; the app's Modules & Rules screen has no Python-side "default
+# true" fallback like cells.enabled() does, so a genuinely missing key
+# rendered as an unexplained OFF toggle). Simulate a doc that predates a
+# seed key by deleting it straight from the stored row, then confirm the
+# NEXT load() call heals it without touching anything the caller set.
+doc = db.policy_doc_get()
+del doc["policies"]["buildLoopEnabled"]
+doc["policies"]["wipLimit"] = 42     # an explicit value load() must NOT touch
+db.policy_doc_put(doc)
+healed = policy.load()
+ok(healed["policies"]["buildLoopEnabled"] is True,
+   "a seed key missing from an existing stored doc is backfilled from SEED")
+ok(healed["policies"]["wipLimit"] == 42,
+   "backfill never overwrites a key that WAS present, even a non-default one")
+ok("permissions" in healed["policies"] and
+   "templates.manage" in (healed["policies"]["permissions"].get("owner") or []),
+   "a whole missing top-level key (permissions) backfills as one unit")
+db.policy_doc_put({**healed, "policies": {**healed["policies"], "wipLimit": 3}})  # reset for the tests below
+
 # 2. user swap updates value, returns previous, mirrors ONE tracked event.
 _emitted.clear()
 before = policy.swap("policies", {"wipLimit": 5}, actor="user", note="raise WIP")
