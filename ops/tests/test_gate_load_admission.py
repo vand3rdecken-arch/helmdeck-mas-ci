@@ -36,6 +36,7 @@ sys.path.insert(0, DAEMON)
 
 from spine.storage import events
 from spine.ops import resources
+from spine.registry import escalations
 from cells.engineer.cards import sessions
 from spine.git.locks import _gate_lock_for
 
@@ -52,6 +53,12 @@ SETTINGS = {"policy": {"load_admission": {"enabled": True, "cpu_max_pct": 85,
                                           "wait_s": 1800, "poll_s": 1}}}
 events.settings = lambda: SETTINGS
 events.emit = lambda *a, **k: None
+# self-sandboxing (see module docstring): a give-up past wait_s makes
+# _admit_heavy call escalations.emit for real, which always writes to the
+# PRODUCTION daemon/state/escalations.jsonl (no test hook there like
+# events.emit above) - unmocked, every run of this test paged Henry with a
+# fake "box overloaded" load-contention escalation (measured: 13x in prod).
+escalations.emit = lambda *a, **k: None
 
 _CPU = [10.0]
 resources.cpu_percent = lambda interval=0.2: _CPU[0]
