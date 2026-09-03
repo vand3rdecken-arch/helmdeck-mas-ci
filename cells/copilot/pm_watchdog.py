@@ -21,9 +21,9 @@ pm._pm() is imported LAZILY (inside _cost_watch) - pm.py imports THIS module
 at module level to re-export these names unchanged for existing callers, so
 a top-level import back would cycle."""
 from spine.registry import i18n as _i18n
-from cells.pm.pm_state import _save_loopstate
+from cells.copilot.pm_state import _save_loopstate
 from spine.comms.notice import label as _label
-from cells.pm.pm_comm import _activity, _ask_owner, _to_henry
+from cells.copilot.pm_comm import _activity, _ask_owner, _to_henry
 
 _WATCH_PRIO = {"urgent": 2.0, "high": 1.5, "medium": 1.0, "low": 0.5}
 
@@ -49,7 +49,7 @@ def _watch_budget_ctx():
                        the measured API-equivalent $ - degraded but never
                        silent, and never labeled as spend (ai_billing)."""
     from spine.storage import events
-    from cells.pm.pm import _pm
+    from cells.copilot.pm import _pm
     plan, _src = events.plan_effective()
     if plan == "api" and (_pm().get("monthly_eur") or 0) > 0:
         return "eur", None
@@ -104,7 +104,7 @@ def _cost_watch(st, tracks):
     drops its entry and re-baselines fresh on re-entry. Runs on EVERY tick,
     NOT behind the acting (_in_window/_board_idle) gates - the failure mode is
     burn WHILE the owner is around."""
-    from cells.pm.pm import _pm
+    from cells.copilot.pm import _pm
     pm = _pm()
     ctx_floor = int(pm.get("watch_ctx_floor") or 0) or 150_000
     base_pct = float(pm.get("watch_base_pct") or 0) or 5.0

@@ -25,8 +25,8 @@ import os
 import threading
 
 from spine.registry import i18n as _i18n
-from cells.pm.pm_state import _loopstate, _save_loopstate, _today
-from cells.pm.pm_comm import _activity, _say
+from cells.copilot.pm_state import _loopstate, _save_loopstate, _today
+from cells.copilot.pm_comm import _activity, _say
 
 _RESOLVE_MAX = 2            # delegation attempts per card per day before escalating
 _resolving = set()          # card ids with a fix currently in flight (thread running)
@@ -164,7 +164,7 @@ def _burn_judge(b, t):
     {verdict: legit|loop, why, fix}. A judge failure defaults to 'loop' - the
     signal already crossed the threshold, and a wrong correction only costs a
     detour turn (interrupt-and-replace keeps the session)."""
-    from cells.pm.pm import _ask
+    from cells.copilot.pm import _ask
     prompt = (
         "Ein Worker-Agent hat denselben Tool-Aufruf %d Mal HINTEREINANDER gemacht:\n"
         "  Tool: %s\n  Input (gekuerzt): %s\n"
@@ -197,7 +197,7 @@ def _push_burn(t, task, b):
 
 def _review_burn(tid):
     from cells.engineer import sessions
-    from cells.pm.pm import _pm
+    from cells.copilot.pm import _pm
     try:
         t = sessions._find(sessions._load(), tid)
         b = (t or {}).get("burn")

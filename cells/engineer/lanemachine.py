@@ -1295,7 +1295,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         from spine.comms import notify
         notify.card_event(t, "done")
         try:
-            from cells.pm import pm
+            from cells.copilot import pm
             pm.on_card_done(tid)   # re-judge the golden triangle at event time
         except Exception:
             pass

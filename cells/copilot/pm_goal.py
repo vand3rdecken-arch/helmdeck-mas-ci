@@ -14,14 +14,14 @@ THIS module at module level to re-export these names unchanged for existing
 callers, so a top-level import back would cycle."""
 import re
 
-from cells.pm.pm_budget import _pace, _days, _triage_green
-from cells.pm.pm_state import _save_loopstate
-from cells.pm.pm_comm import _say
+from cells.copilot.pm_budget import _pace, _days, _triage_green
+from cells.copilot.pm_state import _save_loopstate
+from cells.copilot.pm_comm import _say
 
 
 def _goal_has_process(st):
     """True when the current goal is already tracked as a process (the epic)."""
-    from cells.pm.pm import get_goal
+    from cells.copilot.pm import get_goal
     gp = st.get("goal_process") or {}
     return bool(gp.get("pid")) and gp.get("goal") == get_goal()
 
@@ -34,7 +34,7 @@ def _goal_process(pm, st):
     for the deadline/scope/budget so the schedule and budget are real - the intake
     the PM was missing. The owner reviews/accepts steps in the Prozesse tab; each
     accepted step becomes a card linked to the process (step.track)."""
-    from cells.pm.pm import get_goal, latest_plan, _epic_description
+    from cells.copilot.pm import get_goal, latest_plan, _epic_description
     goal = get_goal()
     if not goal or _goal_has_process(st):
         return
@@ -78,7 +78,7 @@ def _goal_process(pm, st):
 def _goal_process_status(st):
     """Compact goal-process view for analysis: (next_open_step_title, next_due,
     process_due, done, total) or None. Cheap read from processes.json."""
-    from cells.pm.pm import get_goal
+    from cells.copilot.pm import get_goal
     gp = st.get("goal_process") or {}
     if gp.get("goal") != get_goal() or not gp.get("pid"):
         return None

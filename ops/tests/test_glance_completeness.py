@@ -332,7 +332,7 @@ def test_phantom_running_is_surfaced():
 def test_surfaces_agree():
     """The bug was never one endpoint - it was three surfaces each deriving
     "blocked on you" from raw status on their own. Pin them together."""
-    from cells.pm import pm
+    from cells.copilot import pm
     from spine.http import server
     print("every surface names the same cards for the same board:")
 

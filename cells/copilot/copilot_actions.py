@@ -573,7 +573,7 @@ def _run_action(a, actor, role="operator"):
         # folds it into the planner's ground truth (pm.add_clarification) and
         # re-plans NOW, one turn, so the chat is a real answer channel, not a
         # dead end that still requires editing the Ziel field by hand.
-        from cells.pm import pm
+        from cells.copilot import pm
         text = (a.get("text") or "").strip()
         if not text:
             return "clarify_goal: kein Text übergeben"

@@ -17,14 +17,14 @@ import json
 
 def pm_economics_get(self, user):
     # cheap, no-LLM economics snapshot + the stored MVP goal
-    from cells.pm import pm
+    from cells.copilot import pm
     return self._send(200, json.dumps({"goal": pm.get_goal(), "economics": pm.economics()}))
 
 
 def pm_plan_get(self, user):
     # the last PM briefing (cached artifact) + live economics - no LLM,
     # so the Dashboard shows instantly; /pm/report refreshes it.
-    from cells.pm import pm
+    from cells.copilot import pm
     return self._send(200, json.dumps({"goal": pm.get_goal(),
         "economics": pm.economics(), "plan": pm.live_plan(),
         "config": pm._pm(), "activity": pm.activity()}))
@@ -33,7 +33,7 @@ def pm_plan_get(self, user):
 def pm_config_post(self, user, body):
     # owner sets the proactive-loop policy (on/off, autonomy ladder,
     # repos allowlist, timing/caps). Whitelisted keys only.
-    from cells.pm import pm
+    from cells.copilot import pm
     from spine.storage import events
     allowed = ("loop_enabled", "autonomy", "repos", "window", "idle_minutes",
                "replan_minutes", "max_dispatch_per_day", "goal", "plan",
@@ -51,7 +51,7 @@ def pm_config_post(self, user, body):
 def pm_consolidate_post(self, user, body):
     # Phase 3: propose (read-only) or apply (non-destructive) the
     # roll-up of many small cards into 2-5 stream cards per repo.
-    from cells.pm import pm
+    from cells.copilot import pm
     try:
         if body.get("mode") == "apply":
             return self._send(200, json.dumps(pm.apply_consolidation(
@@ -65,7 +65,7 @@ def pm_consolidate_post(self, user, body):
 def pm_report_post(self, user, body):
     # Proactive PM/CTO briefing: tasks-to-goal, prioritized next,
     # token/cost projection grounded in real spend. One model turn.
-    from cells.pm import pm
+    from cells.copilot import pm
     try:
         return self._send(200, json.dumps(pm.brief(
             goal=body.get("goal"), model=body.get("model", ""))))
@@ -78,7 +78,7 @@ def pm_reconcile_post(self, user, body):
     # (pm.reconcile_corner). The agent supplies facts; the gate re-derives
     # the corner (no monkey patch). Owner+operator (pm.view), same tier as
     # report - despite the name, this isn't config-changing (pm.manage).
-    from cells.pm import pm
+    from cells.copilot import pm
     try:
         return self._send(200, json.dumps(pm.reconcile_corner(
             body.get("corner", ""), actor=user["name"])))
