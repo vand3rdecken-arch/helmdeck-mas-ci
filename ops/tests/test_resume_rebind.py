@@ -25,7 +25,7 @@ from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs")
 os.makedirs(runs.REC, exist_ok=True)
 from spine.comms import notify
-from cells.engineer import sessions as S
+from cells.engineer.cards import sessions as S
 S.REC = runs.REC
 notify.card_event = lambda *a, **k: None
 

@@ -20,11 +20,11 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-from cells.copilot import pm
-from cells.copilot import pm_comm
-from cells.copilot import pm_state
-from cells.copilot import pm_resolve
-from cells.engineer import sessions
+from cells.copilot.planning import pm
+from cells.copilot.planning import pm_comm
+from cells.copilot.planning import pm_state
+from cells.copilot.planning import pm_resolve
+from cells.engineer.cards import sessions
 from spine.comms import notify
 
 # pm.py, pm_comm.py and pm_state.py each independently compute their own

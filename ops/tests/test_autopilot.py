@@ -17,14 +17,14 @@ import json, os, shutil, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
-from cells.engineer import sessions
-from cells.engineer import cardadmin
+from cells.engineer.cards import sessions
+from cells.engineer.cards import cardadmin
 from spine.storage import events
 from spine.storage import trackstore
-from cells.engineer import processes
-from cells.copilot import pm
-from cells.copilot import pm_state
-from cells.copilot import pm_resolve
+from cells.engineer.chains import processes
+from cells.copilot.planning import pm
+from cells.copilot.planning import pm_state
+from cells.copilot.planning import pm_resolve
 
 
 class FakeDB:

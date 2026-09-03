@@ -47,7 +47,7 @@ events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from cells.copilot import copilot, card_mirror
+from cells.copilot.chat import copilot, card_mirror
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 from spine.auth import auth
@@ -262,8 +262,8 @@ check("**" not in wtxt and "##" not in wtxt and "`" not in wtxt,
       "/wear/board stripped - one wrist-text policy now)")
 
 # -- 7. an owner reply bound to a card is ROUTED to that card -----------------
-from cells.copilot import routes_copilot
-from cells.engineer import sessions
+from cells.copilot.routes import routes_copilot
+from cells.engineer.cards import sessions
 from spine.http import server
 
 server._bg = lambda name, fn: fn()          # run the backgrounded work inline

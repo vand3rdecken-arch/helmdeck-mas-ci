@@ -31,10 +31,10 @@ sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
 
-from cells.copilot import copilot
+from cells.copilot.chat import copilot
 from spine.comms import notify
-from cells.engineer import sessions
-from cells.engineer import lanemachine
+from cells.engineer.cards import sessions
+from cells.engineer.cards import lanemachine
 from spine.storage import trackstore
 
 _fails = []
@@ -107,7 +107,7 @@ class FakeProcesses:
 
 
 sys.modules["spine.storage.events"] = FakeEvents
-sys.modules["cells.engineer.processes"] = FakeProcesses
+sys.modules["cells.engineer.chains.processes"] = FakeProcesses
 
 # The slow/dangerous seams: never run a real gate, merge, hook or git in a test.
 lanemachine._autocommit = lambda t: True

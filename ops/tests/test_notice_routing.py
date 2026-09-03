@@ -51,8 +51,8 @@ sys.path.insert(0, ROOT)
 from spine.comms import notice
 from spine.ops import ask
 from spine.registry import escalations
-from cells.copilot import pm
-from cells.copilot import pm_comm
+from cells.copilot.planning import pm
+from cells.copilot.planning import pm_comm
 
 # -- CUT THE WIRES TO PRODUCTION FIRST, before any test code can run ----------
 _TMP = tempfile.mkdtemp(prefix="hd-notice-test-")
@@ -202,7 +202,7 @@ check("it obeys the length law untouched", CHAT and notice.short(CHAT[0]) == CHA
 print("3. the notices that stay are ANSWERABLE, not just short")
 
 SAID = []
-from cells.copilot import copilot
+from cells.copilot.chat import copilot
 pm_comm._escalation_tid = lambda: ""
 copilot.say = lambda text, cls="pm", card=None, extra=None: SAID.append(
     {"text": text, "cls": cls, "card": card, "extra": extra or {}})

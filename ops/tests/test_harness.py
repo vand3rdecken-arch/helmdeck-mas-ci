@@ -433,7 +433,7 @@ def test_card_argv_excludes_the_operator_layer():
 
 def test_pm_argv_is_its_own_isolated_layer():
     print("8. a PM spawn gets its OWN layer and no ambient one")
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     argv, role_in_turn = copilot.build_argv("claude-opus-4-8", "sess-2", "<role>")
     argv = [str(a) for a in argv]
     check("--setting-sources" in argv, "the copilot argv carries --setting-sources")

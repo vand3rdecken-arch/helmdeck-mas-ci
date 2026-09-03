@@ -93,7 +93,8 @@ check(db.project_config_projects() == [] or all(
       "NO project row was written - a global value stays global")
 
 # And the READER now goes through the chain rather than the legacy key.
-from cells.copilot import copilot, henry_broker                # noqa: E402
+from cells.copilot.broker import henry_broker                # noqa: E402
+from cells.copilot.chat import copilot
 check(copilot.henry_pmode("") == "plan",
       "copilot.henry_pmode reads the adopted rule (%s)" % copilot.henry_pmode(""))
 check(henry_broker._judgement_policy(None) == "Sei knapp und lande Arbeit.",

@@ -262,7 +262,7 @@ def _devalue_persisted_running():
     remember): delegating to sessions.sweep_zombies(min_idle_s=0) keeps the
     behaviour identical - bounce + resume note + live-session promotion."""
     try:
-        from cells.engineer import sessions
+        from cells.engineer.cards import sessions
         zombies = sessions.sweep_zombies(min_idle_s=0)
         if zombies:
             print("db: devalued %d persisted running/gating card(s) at load: %s"

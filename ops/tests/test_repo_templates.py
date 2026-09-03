@@ -61,8 +61,8 @@ def _sandbox(tmp):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-repotpl-")
     db, events = _sandbox(tmp)
-    from cells.copilot import copilot_actions as ca
-    from cells.engineer import sessions
+    from cells.copilot.chat import copilot_actions as ca
+    from cells.engineer.cards import sessions
     from spine.ops import projects
     from spine.registry import templates
 

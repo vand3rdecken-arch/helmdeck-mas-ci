@@ -16,7 +16,7 @@ question is actually about it. Henry runs it himself; it is not wired into the
 turn.
 
 There is NO second implementation of the board text here: this calls
-cells.copilot.copilot._snapshot(full=True), the same one owner the chat turn
+cells.copilot.chat.copilot._snapshot(full=True), the same one owner the chat turn
 uses, so the two can never drift.
 
     py -3.12 ops/tools/board_state.py           # live board (what a turn sees)
@@ -43,7 +43,7 @@ def main(argv):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    from cells.copilot.copilot import _snapshot
+    from cells.copilot.chat.copilot import _snapshot
     out = _snapshot(full=full)
     # stdout is the product - print nothing else, this is read by an agent.
     sys.stdout.write(out + "\n")

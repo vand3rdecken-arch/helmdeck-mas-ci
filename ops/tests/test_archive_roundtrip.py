@@ -25,9 +25,9 @@ import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from cells.copilot import copilot_actions
-from cells.engineer import sessions
-from cells.copilot import pm
+from cells.copilot.chat import copilot_actions
+from cells.engineer.cards import sessions
+from cells.copilot.planning import pm
 from spine.auth import auth
 
 FAILED = []

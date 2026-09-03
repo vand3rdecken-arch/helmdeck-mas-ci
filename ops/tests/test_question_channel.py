@@ -43,8 +43,8 @@ db.init()
 
 from spine.ops import ask
 from spine.agent import claude_sessions
-from cells.engineer import sessions
-from cells.engineer import turnrunner
+from cells.engineer.cards import sessions
+from cells.engineer.cards import turnrunner
 from spine.ops.actionlog import ActionLog
 
 _fails = []

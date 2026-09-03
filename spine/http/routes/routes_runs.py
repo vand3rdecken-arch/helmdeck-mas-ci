@@ -44,7 +44,7 @@ def runs_item_get(self, user, rid, what):
     # so it carries that card's screen recording + action log - same
     # ownership rule as every other per-card route (spine.auth.auth.owns_card).
     from spine.auth import auth
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     if not auth.owns_card(user, sessions.get_track(rid)):
         self._send(403, json.dumps({"error": "not your card"}))
         return True

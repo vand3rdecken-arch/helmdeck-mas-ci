@@ -318,7 +318,7 @@ def _running_cards():
         outlives the 5-minute idle TTL, so without this the feature would kill
         its own subject - the session stays until the task is done."""
     try:
-        from cells.engineer import sessions
+        from cells.engineer.cards import sessions
         return {t.get("id") for t in sessions._load()
                 if t.get("status") == "running" or t.get("waiting_on") == "background"}
     except Exception:
@@ -731,7 +731,7 @@ class _ClaudeSession:
         self._bg_candidates = {}
         self._bg_open = {}
         try:
-            from cells.engineer import sessions
+            from cells.engineer.cards import sessions
             sessions.reconcile_bg(self.tid)
         except Exception:
             pass
@@ -950,7 +950,7 @@ class _ClaudeSession:
         c = m.get("content")
         if not isinstance(c, list):
             return
-        from cells.engineer import sessions
+        from cells.engineer.cards import sessions
         for p in c:
             if not isinstance(p, dict):
                 continue
@@ -1021,7 +1021,7 @@ class _ClaudeSession:
                 if n >= level:
                     cur["burn_fired"] = level
                     try:
-                        from cells.engineer import sessions
+                        from cells.engineer.cards import sessions
                         sessions.flag_burn(self.tid, {
                             "n": n, "name": p.get("name"), "sig": sig, "sample": blob[:200]})
                     except Exception:
@@ -1067,7 +1067,7 @@ class _ClaudeSession:
                 if st not in ("completed", "failed", "canceled"):
                     st = "completed"
                 try:
-                    from cells.engineer import sessions
+                    from cells.engineer.cards import sessions
                     sessions.bg_upsert(self.tid, uid, status=st,
                                        result=str(ev.get("summary") or "")[:400])
                 except Exception:

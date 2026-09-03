@@ -24,8 +24,8 @@ sys.path.insert(0, DAEMON)
 from spine.storage import db
 db.init()
 from spine.storage import trackstore
-from cells.engineer import sessions
-from cells.engineer import devport
+from cells.engineer.cards import sessions
+from cells.engineer.cards import devport
 from spine.agent import drivers
 from spine.storage import events
 

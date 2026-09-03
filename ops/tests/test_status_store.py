@@ -23,9 +23,9 @@ sys.path.insert(0, DAEMON)
 from spine.storage import db
 db.init()                      # role defaults to "tool": NO boot devaluation here
 from spine.storage import trackstore
-from cells.engineer import sessions
-from cells.engineer import lifecycle
-from cells.engineer import turnrunner
+from cells.engineer.cards import sessions
+from cells.engineer.cards import lifecycle
+from cells.engineer.cards import turnrunner
 from spine.agent import drivers
 from spine.storage import events
 from spine.comms import notify

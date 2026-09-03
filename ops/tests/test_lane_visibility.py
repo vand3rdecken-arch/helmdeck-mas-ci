@@ -26,10 +26,10 @@ sys.path.insert(0, DAEMON)
 SANDBOX = tempfile.mkdtemp()
 
 from spine.agent import claude_sessions
-from cells.copilot import copilot
+from cells.copilot.chat import copilot
 from spine.comms import notify
-from cells.engineer import sessions
-from cells.engineer import lanemachine
+from cells.engineer.cards import sessions
+from cells.engineer.cards import lanemachine
 from spine.storage import trackstore
 
 _fails = []

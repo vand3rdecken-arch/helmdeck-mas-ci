@@ -46,7 +46,8 @@ events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from cells.copilot import copilot, copilot_stats, routes_copilot
+from cells.copilot.chat import copilot, copilot_stats
+from cells.copilot.routes import routes_copilot
 # Every file this turn writes goes to the sandbox. copilot_runs/ and the
 # attachment dir hang off copilot.ROOT; the other three are module constants
 # resolved at import. Miss one and a test turn edits the owner's live PM

@@ -50,7 +50,7 @@ SHOTS = os.path.join(ROOT, ".verify")
 sys.path.insert(0, ROOT)
 
 # The lanes this run expects, resolved by the SAME function the daemon serves
-# from (cells.engineer.sessions.flow) and with the SAME labels the sandbox
+# from (cells.engineer.cards.sessions.flow) and with the SAME labels the sandbox
 # daemon was seeded with. No lane list is typed in this file - that is the very
 # duplication the bug under test came from.
 LANE_LABELS = json.loads(os.environ.get("HELMDECK_LANE_LABELS")
@@ -102,7 +102,7 @@ def sign_in(page, who="owner"):
 
 def main():
     from playwright.sync_api import sync_playwright
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
 
     flow = sessions.flow(LANE_LABELS)
     flow_lanes = flow["nodes"]

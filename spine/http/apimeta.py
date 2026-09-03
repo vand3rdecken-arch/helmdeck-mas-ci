@@ -31,7 +31,7 @@ def _lane_flow(lane_labels, repo_view=None):
     `gate` as a node that sits on an edge. Omit it and the payload is exactly
     what it has always been."""
     try:
-        from cells.engineer import sessions
+        from cells.engineer.cards import sessions
         f = sessions.flow(lane_labels, repo_view=repo_view)
         return {"lanes": f["nodes"], "gate": f["gate"], "deploy": f.get("deploy") or {},
                 "stations": f.get("stations") or [], "row": f.get("row") or {},

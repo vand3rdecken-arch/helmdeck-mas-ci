@@ -786,7 +786,7 @@ def allowlist_drift():
     That is the honest half of the same goal: the two lists may differ, but
     they can no longer differ SILENTLY."""
     try:
-        from cells.copilot import copilot_actions
+        from cells.copilot.chat import copilot_actions
         enforced = set(copilot_actions.ALLOWED_CONFIG)
     except Exception:                                        # noqa: BLE001
         return []

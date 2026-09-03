@@ -35,7 +35,7 @@ from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs")
 os.makedirs(runs.REC, exist_ok=True)
 
-from cells.engineer import sessions, dispatch
+from cells.engineer.cards import sessions, dispatch
 from spine.storage.trackstore import _slug, _slug_tail, _card_branch
 from spine.git.gitutil import _worktree_for
 

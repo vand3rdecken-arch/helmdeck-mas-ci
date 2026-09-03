@@ -62,7 +62,7 @@ def main():
     # belt-and-suspenders half so even a regression in reset.py cannot reach
     # the real folder from here.
     from spine.ops import runs
-    from cells.engineer import sessions as _sessions_mod
+    from cells.engineer.cards import sessions as _sessions_mod
     REC = os.path.join(tmp, "recordings")
     os.makedirs(REC, exist_ok=True)
     runs.REC = REC

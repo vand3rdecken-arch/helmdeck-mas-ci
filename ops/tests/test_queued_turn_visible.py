@@ -27,7 +27,7 @@ sys.path.insert(0, ROOT)
 TMP = tempfile.mkdtemp(prefix="hd-queued-test-")
 from spine.storage import db
 db.init()
-from cells.engineer import sessions, lifecycle
+from cells.engineer.cards import sessions, lifecycle
 from spine.storage import trackstore, events
 from spine.agent import drivers
 from spine.comms import notify

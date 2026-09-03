@@ -20,7 +20,7 @@ events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs"); os.makedirs(runs.REC, exist_ok=True)
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 sessions.REC = runs.REC
 
 _fails = []

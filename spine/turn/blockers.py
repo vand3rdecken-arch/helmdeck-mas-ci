@@ -121,7 +121,7 @@ def owner_blockers(tracks):
     the half every surface would otherwise have to remember, and forgetting it
     is a silent gap: the card is stuck, its stored status says `running`, and
     nothing anywhere says the owner has to act."""
-    from cells.engineer import sessions  # present() stays in sessions (lifecycle observation); lazy = no cycle
+    from cells.engineer.cards import sessions  # present() stays in sessions (lifecycle observation); lazy = no cycle
     out = []
     for t in tracks or ():
         t = sessions.present(t)

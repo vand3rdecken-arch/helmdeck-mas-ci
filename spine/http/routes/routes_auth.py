@@ -40,7 +40,7 @@ def auth_setup(self, user, body):
     try:
         from spine.storage import boards
         boards.ensure_default()
-        from cells.engineer import dispatch
+        from cells.engineer.cards import dispatch
         dispatch.seed_example_card()
     except Exception as e:                                         # noqa: BLE001
         print("auth_setup: board/example seed failed (%s) - owner account is "

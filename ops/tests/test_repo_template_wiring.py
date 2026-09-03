@@ -88,7 +88,7 @@ for _n in ("projects_all", "project_get", "project_put", "project_delete"):
     setattr(dbmod, _n, getattr(db, _n))
 
 from spine.ops import projects
-from cells.engineer import dispatch
+from cells.engineer.cards import dispatch
 
 tmp = tempfile.mkdtemp(prefix="hd-tpl-")
 doc_repo = os.path.join(tmp, "docs")

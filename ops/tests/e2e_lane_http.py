@@ -60,8 +60,8 @@ db._LEGACY_DB = os.path.join(SANDBOX, "legacy.db")
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 
-from cells.copilot import copilot
-from cells.engineer import sessions
+from cells.copilot.chat import copilot
+from cells.engineer.cards import sessions
 from spine.http import server
 
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")

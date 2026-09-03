@@ -33,7 +33,7 @@ def _record_econ(t, meta, external=False):
     (2026-08-25) to actively corrupt that shared calibration, not just be
     imprecise."""
     from spine.storage import events
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     u = meta.get("usage") or {}
     cost = events.price_turn(meta.get("models"), u, meta.get("cost_usd"))
     t["ai_cost"] = round(t.get("ai_cost", 0.0) + cost, 6)

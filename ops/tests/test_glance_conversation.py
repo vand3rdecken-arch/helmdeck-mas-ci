@@ -55,7 +55,7 @@ def main():
     # copilot derives its own paths from __file__ - the transcript this surface
     # READS lives there, so an unsandboxed run would serve the owner's real
     # Henry conversation into a test.
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     copilot.ROOT = tmp
     copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
     copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")

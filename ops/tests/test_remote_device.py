@@ -99,7 +99,7 @@ def main():
     from spine.auth import devices
     devices.DEVICES = os.path.join(tmp, "devices.json")
 
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     rec = os.path.join(tmp, "recordings")
     os.makedirs(rec, exist_ok=True)
     dispatch.REC = rec   # module-global rebind, same trick every other
@@ -447,7 +447,7 @@ def main():
 
     # -- 12: present() device_stale derivation (Phase G board hint) ----------
     print("\nlifecycle.present: device_stale derived hint")
-    from cells.engineer.lifecycle import present
+    from cells.engineer.cards.lifecycle import present
     from datetime import datetime as _dt, timedelta as _td
     fmt2 = dispatch._TS_FMT
     fresh = {"id": "d-fresh", "exec_site": "local:" + did, "lane": "working",

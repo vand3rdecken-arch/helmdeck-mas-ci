@@ -49,7 +49,7 @@ def check(cond, msg):
 
 # The card this whole module exercises - minted once, like auth_setup mints it
 # once at first-run.
-from cells.engineer import dispatch                              # noqa: E402
+from cells.engineer.cards import dispatch                              # noqa: E402
 CARD = dispatch.seed_example_card()
 
 
@@ -62,7 +62,7 @@ def test_shape():
 
 
 def test_never_dispatches():
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     for lane in ("working", "review", "done"):
         out = sessions.move_lane(CARD["id"], lane, actor="owner")
         check(bool(out.get("example_refused")),
@@ -78,7 +78,7 @@ def test_steer_never_dispatches_either():
     move_lane's refusal does not sit on, discovered because it runs a chat
     message in a background thread (routes_track_actions.tracks_steer_post),
     so a missed guard here would fail SILENTLY, not loudly."""
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     out = sessions.steer(CARD["id"], "hallo?", actor="owner")
     check(out.get("session_id") is None,
           "steering the example card never opens a session")
@@ -88,7 +88,7 @@ def test_steer_never_dispatches_either():
 
 
 def test_excluded_from_dispatcher():
-    from cells.copilot import pm
+    from cells.copilot.planning import pm
     tracks = [CARD]
     todo = pm._backlog(tracks, pm._pm(), {"dispatched": []})
     check(CARD["id"] not in [t["id"] for t in todo],

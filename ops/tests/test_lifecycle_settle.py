@@ -15,8 +15,8 @@ DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 from spine.storage import db
 db.init()
-from cells.engineer import sessions
-from cells.engineer import lifecycle
+from cells.engineer.cards import sessions
+from cells.engineer.cards import lifecycle
 from spine.storage import trackstore
 from spine.agent import drivers
 from spine.storage import events

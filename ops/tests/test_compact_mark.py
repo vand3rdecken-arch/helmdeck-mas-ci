@@ -16,7 +16,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from cells.copilot import copilot                                 # noqa: E402
+from cells.copilot.chat import copilot                                 # noqa: E402
 from spine.agent import turnopts                                  # noqa: E402
 
 HENRY_CTX = 615_889

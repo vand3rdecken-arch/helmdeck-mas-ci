@@ -62,7 +62,7 @@ def repo_templates_get(self, user):
     default_repo) happens here rather than in a boot sweep: opening this screen
     IS the sighting, and folding it in at that moment is what lets the registry
     be the only source of a repo list from then on."""
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     from spine.ops import projects
     from spine.registry import templates
     projects.adopt_settings_repos(actor=user["name"])

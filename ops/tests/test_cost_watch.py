@@ -35,9 +35,9 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
-from cells.copilot import pm
-from cells.copilot import pm_watchdog
-from cells.copilot import pm_comm
+from cells.copilot.planning import pm
+from cells.copilot.planning import pm_watchdog
+from cells.copilot.planning import pm_comm
 from spine.comms import notify
 from spine.comms import notice
 from spine.comms import presence

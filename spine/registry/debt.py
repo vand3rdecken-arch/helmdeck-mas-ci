@@ -351,7 +351,7 @@ DEBT = [
                    "rival daemon whose SINGLETON taskkill /F /T evicted the "
                    "healthy one. "
                    "Test-sandboxing gap (closed): any ops/tests/*.py that "
-                   "imports cells.copilot.henry_broker and calls _decide() "
+                   "imports cells.copilot.broker.henry_broker and calls _decide() "
                    "or _hands_on_ask() on a privileged/card-less escalation "
                    "without first redirecting _HENRY_REPO_ROOT. Hook-hijack "
                    "gap (open): any privileged/card-less escalation at all - "
@@ -3044,7 +3044,7 @@ DEBT = [
                "spine.cells manifest/_cell_routes()/read_source() "
                "all confirmed working for every cell including cross-cell-"
                "owned route modules (process's routes_misc.py); "
-               "cells.engineer.sessions (the crown jewel, heaviest "
+               "cells.engineer.cards.sessions (the crown jewel, heaviest "
                "cross-module fan-in) imports and its flow()/lane-graph "
                "file:line citations resolve correctly. ops/tools/loop_state.py's "
                "checks_red() (daemon-wiring subprocess check) and "
@@ -4294,6 +4294,62 @@ DEBT = [
                    "guards)",
         "fix": "PAID. See 'what' above for the full file list.",
         "order": 59,
+    },
+    {
+        "id": "config-consolidation-and-canonical-cell-structure",
+        "title": "harness config scattered across 5 planes (no export); "
+                 "cells/engineer and cells/copilot each a flat pile of .py "
+                 "with no shared shape",
+        "status": "paid",
+        "what": "Owner directive 2026-09-03: \"alles was harness config ist "
+                "gehoert ins db... einer stellt seine harness ein und kann "
+                "dieses exportieren\" + \"die Idee von einer Zelle ist dass "
+                "es gemeinsame Struktur gibt... warum hat man eine "
+                "Zellen-Form wenn man am Ende alles unterschiedlich laesst\". "
+                "8-phase plan, both tracks landed: (1-4) settings.json, "
+                "policy_live.json and the wipLimit/users/henry_* duplicate "
+                "keys folded into db tables (workspace_config, policy_doc) "
+                "behind the EXISTING events.settings()/save_settings() and "
+                "policy.load()/swap() call sites - zero call-site churn, "
+                "one-time migration via db._migrate() archiving the legacy "
+                "files (.imported, never deleted); (5) Henry's memory folds "
+                "db-ward at event time right after the spawned turn's own "
+                "file write (fold-at-event-time, not a stored flag); (6) GET/"
+                "POST /harness/export|import replay exclusively through "
+                "those same tracked writers; (7) daemon/ split into state/ "
+                "(runtime bookkeeping) + content/ (feature dirs) + backups/ "
+                "(.imported chaff), board_directives.json deliberately left "
+                "flat (it is TRACKED repo data, not runtime state); (8) both "
+                "cells physically reorganized onto ONE shape - __init__.py + "
+                "routes/ + domain folders + ui/, no loose .py at cell root "
+                "(cells/engineer: cards/ chains/ connectors/; cells/copilot: "
+                "chat/ broker/ planning/) - enforced going forward by "
+                "ops/tests/test_cell_structure.py rather than left to "
+                "discipline. spine/registry/cells.py's logic_files/"
+                "route_modules now store the subpath (e.g. "
+                "\"planning/pm.py\", \"routes.routes_pm\") instead of a bare "
+                "leaf name; Cell.allowed_files()/daemon_roots()/"
+                "_import_by_bare_name() and permissions.py's _import_module "
+                "candidates updated to resolve through the new subpackages.",
+        "why_it_bites": "RESOLVED for the moved files (~170 files touched "
+                        "across two mechanical import-rewrite passes: "
+                        "fully-dotted references, then `from cells.X import "
+                        "Y` style) - full suite run afterward showed ZERO "
+                        "ImportError, confirming the move was structurally "
+                        "sound. Remaining test failures found in the same "
+                        "sweep (steer's `by=` actor kwarg missing from "
+                        "several fake_turn test doubles, a FakeEvents "
+                        "double missing .settings(), a stale pm.md brief "
+                        "hash) are PRE-EXISTING behavioral drift unrelated "
+                        "to this move - none involve a missing module - and "
+                        "are left as separate, un-registered debt for "
+                        "whoever owns that feature next; flagging here so "
+                        "they are not mistaken for a Phase 8 regression.",
+        "trigger": "a config value the owner sets once and never sees again "
+                   "when standing up a second workspace; a cell folder that "
+                   "grew past ~5 files with no shared shape",
+        "fix": "PAID (config track + structure track). See 'what' above.",
+        "order": 60,
     },
 ]
 

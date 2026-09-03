@@ -45,7 +45,7 @@ def harness_version_get(self, user, kind, name):
 def history_get(self, user):
     # the git audit trail: main line + every card branch's commits.
     import subprocess
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     from spine.storage import events
     repo = events.settings().get("default_repo")
     if not repo:
@@ -92,7 +92,7 @@ def history_get(self, user):
 
 def dashboard_data_get(self, user):
     from spine.storage import events
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     m = events.metrics(sessions.list_tracks())
@@ -152,7 +152,7 @@ def nightshift_plan_post(self, user, body):
     # dashboard/settings "Neu planen" button used to hit /pm/report directly,
     # which allows operator too; narrowing to owner-only here would have been
     # a silent permission regression for that button.
-    from cells.copilot import pm
+    from cells.copilot.planning import pm
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.http.server import _bg
@@ -211,7 +211,7 @@ def debt_fix_post(self, user, body, did):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.registry import debt
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     from spine.storage import events
     item = next((d for d in debt.DEBT if d["id"] == did), None)
     if not item:
@@ -241,7 +241,7 @@ def processes_sub_post(self, user, body, pid, step):
     # step == parts[2] of /processes/<pid>/<step>; only "step" is a real
     # action, anything else falls through to the same 404 the original
     # inline try-block produced (kept verbatim, including the try scope).
-    from cells.engineer import processes
+    from cells.engineer.chains import processes
     from spine.storage import events
     try:
         if step == "step":

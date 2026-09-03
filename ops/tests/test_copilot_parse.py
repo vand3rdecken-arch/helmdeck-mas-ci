@@ -8,7 +8,7 @@ import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
-from cells.copilot import copilot as c
+from cells.copilot.chat import copilot as c
 
 _fails = []
 

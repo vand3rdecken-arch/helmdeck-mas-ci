@@ -44,7 +44,7 @@ def check(cond, msg):
 # -- 1. the data and the built-in fallback must not drift --------------------
 def test_no_drift():
     from spine.agent import drivers
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     check(harness.brief("card-worker") == harness._resolve(
         harness._DEFAULT_CARD, harness._DEFAULTS["card-worker"][1]),
         "ops/harness/agents/card-worker.md == the built-in card fallback")
@@ -238,7 +238,7 @@ def test_loop_state():
 
 # -- 6. one definition, both endpoints ---------------------------------------
 def test_one_definition():
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     from spine.http import server
     from spine.http.routes import routes_info
     f = sessions.flow({"done": "Geliefert"})
@@ -357,7 +357,7 @@ def _ts_interfaces():
 
 def test_export_matches_the_app_contract():
     from spine.registry import harness
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     import loop_state
     from spine.storage import boards, userconfig
     fields = _ts_interfaces()
@@ -628,7 +628,7 @@ def test_policy_knob_contract():
     # The station vocabulary is the PIPELINE's own (sessions.flow), not a list
     # kept here. A knob on a station nobody draws is invisible in exactly the
     # way `done` is - a real lane that the station row does not render.
-    from cells.engineer import sessions as _sess
+    from cells.engineer.cards import sessions as _sess
     _drawn = set(_sess.flow({}).get("stations") or [])
     check(all(e["station"] in _drawn for e in schema if e.get("station")),
           "every station-placed knob names a DRAWN station (drawn: %s, offenders: %s)"

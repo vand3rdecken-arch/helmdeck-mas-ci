@@ -67,7 +67,7 @@ def main():
     # network-free. (The same-second id-collision 500 this section also exposed
     # is fixed for real in processes.create()'s id generation, not worked around
     # here.)
-    from cells.engineer import processes as _proc_mod
+    from cells.engineer.chains import processes as _proc_mod
     _proc_mod._propose_steps = lambda request_text: ([], 0.0)
 
     # sandbox EVERYTHING with disk state, before any of it is touched. db.ROOT
@@ -97,7 +97,7 @@ def main():
     # touches them, so a connector list/rollback/run or checkpoint list/
     # diff/restore route never reads or writes the real daemon/connectors/
     # or daemon/checkpoints/ directories.
-    from cells.engineer import connectors
+    from cells.engineer.connectors import connectors
     connectors.CDIR = os.path.join(tmp, "connectors")
     os.makedirs(connectors.CDIR, exist_ok=True)
     connectors.VDIR = os.path.join(connectors.CDIR, "_versions")
@@ -112,7 +112,7 @@ def main():
     # returned real production messages instead of an empty list because
     # copilot.CHATLOG/SESS were never sandboxed - a READ-only leak, no data
     # was written/corrupted, but it proves the bug class isn't fully swept).
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     copilot.ROOT = tmp
     copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
     copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
@@ -138,14 +138,14 @@ def main():
     # sandboxing rule) before this guard existed. Every module holding its own
     # REC copy must be patched here, before any card is filed.
     from spine.ops import runs
-    from cells.engineer import dispatch as _dispatch_mod
-    from cells.engineer import cardadmin as _cardadmin_mod
+    from cells.engineer.cards import dispatch as _dispatch_mod
+    from cells.engineer.cards import cardadmin as _cardadmin_mod
     REC = os.path.join(tmp, "recordings")
     os.makedirs(REC, exist_ok=True)
     runs.REC = REC
     _dispatch_mod.REC = REC
     _cardadmin_mod.REC = REC
-    from cells.engineer import sessions as _sessions_mod
+    from cells.engineer.cards import sessions as _sessions_mod
     _sessions_mod.REC = REC
 
     db.init(role="tool")   # NOT role="daemon" - this process owns no driver sessions
@@ -904,7 +904,7 @@ def main():
         # for an UNKNOWN cell id, so a guard left reading the retired
         # "process" id would pass this test's second half but never no-op.
         policy.swap("policies", {"engineerEnabled": False}, actor="test")
-        from cells.engineer import processes
+        from cells.engineer.chains import processes
         seed_tid = "test-track-clear-stamps"
         processes._save([{"id": "proc-1", "request": "r", "status": "active",
                            "steps": [{"title": "s1", "track": seed_tid, "auto_dispatched": True}]}])
@@ -955,18 +955,18 @@ def main():
         copilot_manifest = next((c for c in (body.get("cells") or []) if c["id"] == "copilot"), {})
         ok("GET /pm/plan" in (copilot_manifest.get("routes") or []),
            "/cells manifest: pm's routes are DERIVED from the real routes_pm dispatch table, now under copilot")
-        ok("pm.py" in (copilot_manifest.get("logicFiles") or []),
+        ok("planning/pm.py" in (copilot_manifest.get("logicFiles") or []),
            "/cells manifest: pm's logicFiles present under the merged copilot cell")
-        status, body = req("GET", "/cells/copilot/source?file=pm.py", cookie=sid, expect=200)
+        status, body = req("GET", "/cells/copilot/source?file=planning/pm.py", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "def " in (body.get("text") or ""),
            "/cells/<id>/source: real pm.py text comes back (contains a def)")
         status, body = req("GET", "/cells/copilot/source?file=../../settings.json", cookie=sid, expect=404)
         ok(isinstance(body, dict), "/cells/<id>/source: path traversal 404s, never leaks settings.json")
-        status, body = req("GET", "/cells/copilot/source?file=connectors.py", cookie=sid, expect=404)
+        status, body = req("GET", "/cells/copilot/source?file=connectors/connectors.py", cookie=sid, expect=404)
         ok(isinstance(body, dict), "/cells/<id>/source: another cell's file (not copilot's) 404s")
         status, body = req("GET", "/cells/nope/source?file=pm.py", cookie=sid, expect=404)
         ok(isinstance(body, dict), "/cells/<id>/source: unknown cell id 404s")
-        status, body = req("GET", "/cells/copilot/source?file=pm.py", cookie=csid, expect=403)
+        status, body = req("GET", "/cells/copilot/source?file=planning/pm.py", cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/cells/<id>/source: client role refused")
 
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of

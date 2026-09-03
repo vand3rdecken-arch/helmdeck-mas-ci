@@ -269,7 +269,7 @@ def test_delete_and_rename_account():
 
 # -- 7. the station list is derived, not restated ----------------------------
 def test_stations_are_derived_from_the_lane_machine():
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     check(tuple(boards.stations()) == tuple(sessions.LANES),
           "boards.stations() IS the Engineer cell's lane tuple - a copy here "
           "would let a board offer a column the lane machine refuses to move "

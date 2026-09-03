@@ -9,7 +9,7 @@ import os, sys, subprocess, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 
 _fails = []
 

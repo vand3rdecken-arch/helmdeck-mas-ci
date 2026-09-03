@@ -125,7 +125,7 @@ class Cell:
         if self.harness_file:
             out.add(self.harness_file)
         for mod in self.route_modules:
-            out.add(mod + ".py")
+            out.add(mod.replace(".", "/") + ".py")
         for f in self.ui_files:
             out.add(f)
         for f in self.repo_files:
@@ -182,21 +182,21 @@ CELLS = [
         # both SHARED modules - path ownership keeps /me (spine) ungated.
         paths=("/tracks", "/processes", "/connectors"),
         prefixes=("/tracks/", "/processes/", "/connectors/"),
-        start=(("sessions", "start_engineer_lifecycle"),
-               ("processes", "start_chain_poller"),
-               ("connectors", "start_scheduler")),
+        start=(("cards.sessions", "start_engineer_lifecycle"),
+               ("chains.processes", "start_chain_poller"),
+               ("connectors.connectors", "start_scheduler")),
         role="(card brief, per-task)", surface="surfaces.board",
         # The absorbed systems' tabs stay real screens; disabling this cell
         # hides all three (see Cell.surfaces above).
         surfaces=("surfaces.processes", "surfaces.connectors"),
         modes=("machine", "direct"),
-        logic_files=("sessions.py", "lanemachine.py", "dispatch.py",
-                     "cardadmin.py", "turnrunner.py",
-                     "processes.py", "connectors.py"),
+        logic_files=("cards/sessions.py", "cards/lanemachine.py", "cards/dispatch.py",
+                     "cards/cardadmin.py", "cards/turnrunner.py",
+                     "chains/processes.py", "connectors/connectors.py"),
         storage="tracks + processes + connector_state tables (db.py) + "
                 "worktrees + daemon/connectors/ code dir",
-        route_modules=("routes_tracks", "routes_track_actions",
-                       "routes_misc", "routes_system", "routes_connectors"),
+        route_modules=("routes.routes_tracks", "routes.routes_track_actions",
+                       "routes_misc", "routes_system", "routes.routes_connectors"),
         # the Surface plugins live in the CELL's own folder since phase 3 of
         # the two-mains split (cells/<id>/ui/, repo-root-relative -> repo_files);
         # the route shells + shared widgets stay app-side (ui_files).
@@ -234,10 +234,11 @@ CELLS = [
         id="copilot", enabled_key="copilotEnabled",
         prefixes=("/chat", "/pm/"),
         role="board-copilot.md", surface="surfaces.chat",
-        logic_files=("copilot.py", "copilot_stats.py", "copilot_actions.py",
-                     "henry_broker.py",
-                     "pm.py", "pm_state.py", "pm_budget.py", "pm_triangle.py",
-                     "pm_resolve.py", "pm_watchdog.py", "pm_goal.py", "pm_comm.py"),
+        logic_files=("chat/copilot.py", "chat/copilot_stats.py", "chat/copilot_actions.py",
+                     "broker/henry_broker.py",
+                     "planning/pm.py", "planning/pm_state.py", "planning/pm_budget.py",
+                     "planning/pm_triangle.py", "planning/pm_resolve.py",
+                     "planning/pm_watchdog.py", "planning/pm_goal.py", "planning/pm_comm.py"),
         storage="copilot_sessions.json, copilot_log.json, escalations.jsonl "
                 "(shared bus); loop.json (daemon/pm/ runtime dir - unrelated "
                 "to where the code now lives)",
@@ -245,12 +246,12 @@ CELLS = [
         # ops/harness/agents/pm.md rides in repo_files below (harness_file
         # stays singular - board-copilot.md is Henry's primary identity brief,
         # pm.md is a report-shape charter fed to a one-shot planning call).
-        route_modules=("routes_copilot", "routes_pm"),
+        route_modules=("routes.routes_copilot", "routes.routes_pm"),
         # Henry's judgement half of the escalation channel (spine/registry/
         # escalations.py is the bus; engineer emits; THIS cell decides), AND
         # the backlog planning loop that used to be pm's own - copilotEnabled
         # off now stops both, per the cell-lifecycle contract.
-        start=(("henry_broker", "start_broker"), ("pm", "start_loop")),
+        start=(("broker.henry_broker", "start_broker"), ("planning.pm", "start_loop")),
         repo_files=("cells/copilot/ui/surface.tsx", "ops/harness/agents/pm.md"),
         ui_files=("src/app/chat.tsx", "src/ui/pm_panel.tsx", "src/app/loopmap.tsx"),
         # WHERE THIS CELL ACTS on the board: `board` is the fallback/declared

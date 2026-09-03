@@ -29,9 +29,9 @@ import os, shutil, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from spine.storage import events
-from cells.copilot import pm
-from cells.engineer import processes
-from cells.engineer import sessions
+from cells.copilot.planning import pm
+from cells.engineer.chains import processes
+from cells.engineer.cards import sessions
 from spine.storage import trackstore
 
 

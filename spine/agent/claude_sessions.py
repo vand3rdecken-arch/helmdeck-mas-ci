@@ -115,7 +115,7 @@ def list_sessions(limit=MAX):
     # dead end. With `card` set, the app renders the row as a link to the
     # owning card instead of a selectable option.
     try:
-        from cells.engineer import sessions as _s
+        from cells.engineer.cards import sessions as _s
         owner = {}
         for t in _s._load():
             for sid in [t.get("session_id")] + list(t.get("session_chain") or []):
