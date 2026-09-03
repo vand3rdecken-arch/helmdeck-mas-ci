@@ -6,7 +6,6 @@
     "engines.deepseek",
     "nav.tabs",
     "surfaces.board",
-    "surfaces.pm",
     "surfaces.processes",
     "surfaces.connectors",
     "surfaces.chat"

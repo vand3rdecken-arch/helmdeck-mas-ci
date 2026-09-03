@@ -14,7 +14,6 @@ import type { Plugin, ProfileDoc } from "@/kernel";
 import { CORE_PLUGINS, CORE_IDS } from "./core";
 import { boardSurface } from "@cells/engineer/ui/surface";
 import { connectorsSurface } from "@cells/connectors/ui/surface";
-import { pmSurface } from "@cells/pm/ui/surface";
 import { processesSurface } from "@cells/process/ui/surface";
 import { copilotSurface } from "@cells/copilot/ui/surface";
 import { tabsNav } from "@/plugins/surfaces/tabs";
@@ -43,11 +42,15 @@ export const PROFILE_DOCS: Record<string, ProfileDoc> = {
  * Every swappable plugin bundled in this build, by id. A profile naming an id
  * absent here fails loudly at boot (no silent skip) — see selectPlugins.
  * Grows one entry per migrated surface/engine; the rest of the app is untouched.
+ *
+ * NO "surfaces.pm" (owner directive 2026-09-03, "pm und henry is eins"): the
+ * pm cell merged into copilot, and its screens (PMStatusPanel, the loop map)
+ * were never wired into nav.tabs anyway - "surfaces.chat" is Henry's one
+ * kernel surface now, same as the daemon's one merged Cell.
  */
 export const AVAILABLE_PLUGINS: Record<string, Plugin> = {
   "surfaces.board": boardSurface,
   "surfaces.connectors": connectorsSurface,
-  "surfaces.pm": pmSurface,
   "surfaces.processes": processesSurface,
   "surfaces.chat": copilotSurface,
   "nav.tabs": tabsNav,

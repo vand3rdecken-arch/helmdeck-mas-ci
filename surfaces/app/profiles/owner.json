@@ -5,7 +5,6 @@
     "engines.copilot",
     "engines.deepseek",
     "surfaces.machine",
-    "surfaces.pm",
     "surfaces.automation",
     "surfaces.recordings",
     "surfaces.connectors",
