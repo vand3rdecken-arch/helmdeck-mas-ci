@@ -10,7 +10,29 @@ import tempfile
 import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# db FIRST: policy.load()/swap() are db-backed (config-consolidation phase
+# 3) - sandbox ROOT+DBPATH together, before importing policy, or a swap()
+# call below would mutate the REAL production policy_doc row (measured
+# 2026-09-03: exactly this gap in a sibling test archived real settings.json).
+_tmp = tempfile.mkdtemp()
+# daemon.paths.DAEMON_ROOT stays REAL: policy.SEED binds to it at import time
+# and must keep resolving to the real tracked policy_seed.json (read-only,
+# safe) - only db.ROOT/DBPATH move, same pattern as test_audit_query.py.
+from spine.storage import db
+db.ROOT = _tmp
+db.DBPATH = os.path.join(_tmp, "test.db")
+db.init()
+
 from spine.auth import policy
+# LIVE is still read as a MIGRATION SOURCE (a pre-db install's leftover
+# file) - left at its default it resolves to the REAL daemon/policy_live.json
+# via daemon.paths.DAEMON_ROOT bound at policy.py's import time, and a stray
+# real file there would leak real production values into this sandbox
+# (caught by this test itself: wipLimit read back as 6, the machine's real
+# live value, instead of the seed's 3). Point it at the empty tmp dir, same
+# as every other policy-touching test already does.
+policy.LIVE = os.path.join(_tmp, "policy_live.json")
 
 _fails = []
 def ok(cond, msg):
@@ -25,10 +47,6 @@ def raises(exc, fn, msg):
     except exc:
         ok(True, msg)
 
-# --- sandbox: temp LIVE + capture the append-only sink -----------------------
-_tmp = tempfile.mkdtemp()
-policy.LIVE = os.path.join(_tmp, "policy_live.json")
-
 _emitted = []
 _fake = types.ModuleType("spine.storage.events")
 _fake.emit = lambda kind, track, **fields: _emitted.append((kind, fields)) or {"kind": kind}
@@ -42,7 +60,7 @@ pols = policy.get_policies()
 ok(pols.get("wipLimit") == 3, "seeded wipLimit=3")
 ok(pols.get("gateBeforeReview") is True, "seeded gateBeforeReview=true")
 ok(pols.get("agentMaySwap") is False, "seeded agentMaySwap=false")
-ok(os.path.exists(policy.LIVE), "live file materialized from seed")
+ok(db.policy_doc_get() is not None, "live doc materialized from seed (db row, not a file since phase 3)")
 
 # 2. user swap updates value, returns previous, mirrors ONE tracked event.
 _emitted.clear()
