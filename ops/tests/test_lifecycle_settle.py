@@ -8,9 +8,14 @@ worker process merely exists (has_session) - a soft cancel keeps the process
 alive for --resume, which is exactly how a card froze at 'running' for 164
 minutes with the sweep blind. Pins the three-way verdict + the guards.
 Self-sandboxing: monkeypatched load/save, no daemon, no real audit writes."""
-import os, sys
+import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# a run_dir OUTSIDE the repo: the settle/sweep paths write actionlog notes
+# into run_dir, and pointing it at HERE/"nonexistent" had the actionlog
+# writer mkdir a stray ops/tests/nonexistent/actions.jsonl into the repo
+# (it even got snapshotted into a commit once, 2026-09-03)
+_RUN_TMP = tempfile.mkdtemp(prefix="hd-settle-")
 DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 from spine.storage import db
@@ -73,7 +78,7 @@ def sweep(status, session, idle=999):
     global _track
     saved.clear()
     _track = {"id": "TEST-X", "status": status,
-              "run_dir": os.path.join(HERE, "nonexistent"), "repo": None}
+              "run_dir": os.path.join(_RUN_TMP, "nonexistent"), "repo": None}
     drivers._sessions.pop("TEST-X", None)
     if session is not None:
         drivers._sessions["TEST-X"] = session

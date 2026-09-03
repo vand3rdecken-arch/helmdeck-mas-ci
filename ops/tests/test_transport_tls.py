@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 """Self-sandboxing checks for the [single-secret-transport] payment: the
 insecure_url truth table, the pairing/settings https guards, and the TLS
-config resolution. Run from daemon/:  py -3.12 test_transport_tls.py
-(Redirects settings to a temp dir - never touches the real settings.json.)"""
+config resolution. Run:  py -3.12 ops/tests/test_transport_tls.py
+(Redirects settings AND the db to a temp dir. Settings live in the db since
+the config consolidation - patching events.SET alone stopped sandboxing
+anything, and a 2026-09-03 run of exactly that stale sandbox wrote this
+test's relay/tls values into the LIVE workspace_config until the relay
+block was restored from its .imported archive. Both db.ROOT and db.DBPATH
+must be patched - see test_hook_idle.py's preamble for the ROOT half.)"""
 import os
 import sys
 import tempfile
@@ -11,12 +16,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 
 def main():
-    from spine.storage import events
+    from spine.storage import db, events
     from spine.comms import relay_client as rc
 
-    # sandbox: settings live in a temp dir for the duration of this test
+    # sandbox: settings (db-backed) live in a temp dir for this test's duration
     tmp = tempfile.mkdtemp(prefix="helmdeck-tls-test-")
+    old_conn = getattr(db._local, "c", None)
+    if old_conn is not None:
+        old_conn.close()
+        db._local.c = None
+    db.ROOT = tmp
+    db.DBPATH = os.path.join(tmp, "helmdeck.db")
     events.SET = os.path.join(tmp, "settings.json")
+    db.init()
+    assert db.DBPATH.startswith(tmp), "REFUSING TO RUN: db not sandboxed"
 
     cases = [
         ("http://192.168.178.22:8140", True),
