@@ -161,6 +161,34 @@ def main():
     permissions.set_role_caps("client", [], actor="duy")
     ok("client" not in auth.chat_admin_roles(), "revoking it removes client again")
 
+    print("\nnew-cap rollout seam (found 2026-09-03 adding templates.*): a stored")
+    print("matrix must not deny-forever a cap that postdates it, and must keep")
+    print("denying a cap that was deliberately revoked")
+    # simulate a workspace whose matrix was stored BEFORE templates.* existed:
+    # a legacy permissions dict without _known_caps, owner list = the rollout
+    # vocabulary minus a DELIBERATE revocation (gxp.activate stripped).
+    legacy_owner = [c for c in permissions._ROLLOUT_CAPS if c != "gxp.activate"]
+    policy.swap("policies", {"permissions": {"owner": legacy_owner}},
+                actor="duy", note="simulate pre-templates stored matrix")
+    m = permissions.matrix()
+    ok("templates.manage" in m["owner"],
+       "a cap UNKNOWN to the stored matrix (postdates _ROLLOUT_CAPS) gets its "
+       "seeded default - the owner is not 403'd on his own new feature")
+    ok("gxp.activate" not in m["owner"],
+       "a cap the stored matrix KNEW and omitted stays revoked - the seam "
+       "never re-grants a deliberate revocation")
+    # after ANY tracked matrix edit, the doc carries its own vocabulary and
+    # the frozen tuple is out of the loop: revoking templates.manage now must
+    # stick, exactly like any rollout-era cap.
+    permissions.set_role_caps("owner", sorted(set(m["owner"]) - {"templates.manage"}),
+                              actor="duy")
+    ok("_known_caps" in (policy.get_policies().get("permissions") or {}),
+       "set_role_caps stamps _known_caps, making the vocabulary explicit")
+    ok("templates.manage" not in permissions.matrix()["owner"],
+       "post-stamp, revoking a NEW cap sticks too (no eternal re-grant)")
+    ok("_known_caps" not in permissions.matrix(),
+       "_known_caps is vocabulary metadata, never surfaced as a role")
+
     print()
     if _fails:
         print("FAILED (%d):" % len(_fails))

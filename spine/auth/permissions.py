@@ -112,18 +112,50 @@ def _policies():
         return {}
 
 
+# The CAPS vocabulary as it stood when matrices STARTED being stored (the
+# original rbac ship, 3149243, 2026-08-26 - read off that commit, not
+# guessed). A stored matrix carrying no explicit `_known_caps` list was
+# necessarily written against exactly this vocabulary, so its silences are
+# only meaningful for THESE caps: a cap absent from such a matrix that is
+# also absent from this tuple provably POST-DATES the store and was never
+# deliberately revoked - it gets its seeded default. This is the new-cap
+# rollout seam the original design lacked (found 2026-09-03 adding
+# templates.*, the first cap after rollout: the owner himself was 403'd on
+# his own live workspace because the stored matrix could never learn a new
+# cap). set_role_caps() stamps `_known_caps` = CAPS on every write, so from
+# the first post-fix matrix edit onward this frozen tuple is no longer
+# consulted - the doc carries its own vocabulary.
+_ROLLOUT_CAPS = (
+    "settings.read", "settings.write", "users.manage", "recordings.view",
+    "audit.read", "devices.manage", "devices.use", "chat.use",
+    "gxp.activate", "cards.admin", "system.introspect",
+    "projects.view", "projects.manage", "pm.view", "pm.manage",
+)
+
+
 def matrix():
     """role -> set(cap), read live from the policy plane every call (no
     caching - same contract as cells.enabled()). Falls back to the seeded
     default for any role missing from a hand-edited policy_live.json, so a
     partial/legacy file degrades to "no extra capabilities" rather than
-    granting nothing-checked-means-everything-allowed."""
+    granting nothing-checked-means-everything-allowed.
+
+    A stored role list is authoritative ONLY for caps its matrix could have
+    known (its `_known_caps` stamp, or _ROLLOUT_CAPS for a pre-stamp doc) -
+    a cap added to the code AFTER the matrix was stored gets its seeded
+    default instead of being silently denied-forever. A cap the owner
+    actually revoked stays revoked: it is in the known vocabulary, so the
+    stored silence keeps meaning "no"."""
     live = _policies().get("permissions") or {}
+    known = set(live.get("_known_caps") or _ROLLOUT_CAPS)
     out = {}
     for role, caps in _DEFAULT_MATRIX.items():
-        out[role] = set(live.get(role, caps))
+        if role in live:
+            out[role] = set(live[role]) | {c for c in caps if c not in known}
+        else:
+            out[role] = set(caps)
     for role, caps in live.items():
-        if role not in out:
+        if role not in out and role != "_known_caps":
             out[role] = set(caps)
     return out
 
@@ -147,10 +179,14 @@ def require(user, cap):
 def set_role_caps(role, caps, actor):
     """Read-merge-write through policy.swap so editing one role's list can
     never wipe another's (policy.swap's patch replaces the WHOLE "permissions"
-    key, not a per-role merge - see this module's docstring)."""
+    key, not a per-role merge - see this module's docstring). Stamps
+    `_known_caps` = the full CAPS vocabulary at write time, so matrix() can
+    tell a deliberate revocation (cap known, absent from the role) from a
+    cap that simply didn't exist yet (see _ROLLOUT_CAPS above)."""
     from spine.auth import policy
     current = {r: sorted(c) for r, c in matrix().items()}
     current[role] = sorted(set(caps) & set(CAPS))
+    current["_known_caps"] = sorted(CAPS)
     policy.swap("policies", {"permissions": current}, actor=actor,
                 note="permissions.set_role_caps(%s)" % role)
 
