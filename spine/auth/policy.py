@@ -23,8 +23,8 @@ import os
 import threading
 
 from daemon.paths import DAEMON_ROOT as HERE
-SEED = os.path.join(HERE, "policy_seed.json")
-LIVE = os.path.join(HERE, "policy_live.json")  # git-ignored; current composed value
+SEED = os.path.join(HERE, "policy_seed.json")   # tracked file, the code default
+LIVE = os.path.join(HERE, "policy_live.json")   # PRE-db era only, see load()
 
 _LOCK = threading.RLock()  # reentrant: swap() holds it and calls load()
 
@@ -39,10 +39,32 @@ def _seed():
 
 
 def load():
-    """Current composed policy doc. Seeds LIVE from SEED on first run so the
-    seed file itself is never mutated in place (seed = defaults, live = state)."""
+    """Current composed policy doc. Backed by db.policy_doc (config-
+    consolidation phase 3) - `LIVE` above is no longer written; it is read
+    ONCE, as a migration source, if a pre-db install's file is still there
+    and the db row does not exist yet (the file is never deleted, only left
+    behind - the db becomes the one source of truth going forward).
+
+    Seeds from SEED on first run so the seed file itself is never mutated in
+    place (seed = defaults, live = state)."""
     with _LOCK:
-        if not os.path.exists(LIVE):
+        from spine.storage import db
+        doc = db.policy_doc_get()
+        if doc is not None:
+            return doc
+        # BELT+SUSPENDERS (same shape as db._migrate()'s ROOT/DBPATH guard):
+        # LIVE binds to daemon.paths.DAEMON_ROOT at THIS module's import time,
+        # independent of db.ROOT/DBPATH - a sandbox that repoints only the
+        # latter (or forgets to patch LIVE itself) would otherwise migrate a
+        # REAL leftover policy_live.json into an isolated db (measured
+        # 2026-09-03: a test read back the machine's real wipLimit instead of
+        # the seed's). Only trust LIVE as a migration source when it sits
+        # next to the db this call is actually writing to.
+        live_is_local = (os.path.dirname(os.path.abspath(LIVE))
+                         == os.path.dirname(os.path.abspath(db.DBPATH)))
+        if live_is_local and os.path.exists(LIVE):
+            doc = _read(LIVE)          # migrate a pre-db install's file once
+        else:
             doc = _seed()
             # wipLimit has an existing owner (settings.capacity.wip_limit). Seed
             # FROM it so the policy plane never diverges from the live board on
@@ -54,9 +76,8 @@ def load():
                     doc.setdefault("policies", {})["wipLimit"] = sw
             except Exception:
                 pass
-            _atomic_write(LIVE, doc)
-            return doc
-        return _read(LIVE)
+        db.policy_doc_put(doc)
+        return doc
 
 
 def get_policies():
@@ -69,13 +90,6 @@ def get_charter():
 
 def get_capability_charter():
     return load().get("capability_charter", {})
-
-
-def _atomic_write(path, doc):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(doc, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
 
 
 class PolicyDenied(Exception):
@@ -108,7 +122,8 @@ def swap(section, patch, actor="system", note=None):
         after.update(patch)
         doc[section] = after
         doc["version"] = int(doc.get("version", 1)) + 1
-        _atomic_write(LIVE, doc)
+        from spine.storage import db
+        db.policy_doc_put(doc)
 
         _mirror(op="swap", section=section, actor=actor, before=before, after=after, note=note)
         return before

@@ -75,13 +75,34 @@ def _build_loop_enabled():
     """The build loop is Cell #6 (cells.py 'buildloop') - but it is NOT
     daemon-hosted like the other 5: it governs THIS agent's own workflow via
     Claude Code's hooks (.claude/settings.json -> this script), not a spawned
-    daemon worker. No HTTP round-trip - reads daemon/policy_live.json (falling
-    back to policy_seed.json, mirroring daemon/policy.py's own seed-then-live
-    semantics) DIRECTLY, so the flag works even when the daemon isn't running.
+    daemon worker. No HTTP round-trip: reads the policy doc DIRECTLY, so the
+    flag works even when the daemon isn't running.
+
+    Since config-consolidation phase 3, the composed doc is a db row
+    (helmdeck.db's policy_doc table) - queried here as plain read-only SQLite
+    (WAL allows a concurrent reader with no daemon involvement, the same
+    property the file read used to have). policy_live.json is read next,
+    for an install whose daemon has not booted the migrating code yet;
+    policy_seed.json (the tracked code-default) is the last resort.
 
     Fails OPEN (True) on any read error or missing key - a missing/corrupt
-    policy file, or an old checkout without buildLoopEnabled seeded yet, must
+    store, or an old checkout without buildLoopEnabled seeded yet, must
     never silently disable the safety net."""
+    dbpath = os.path.join(_POLICY_ROOT, "helmdeck.db")
+    if os.path.exists(dbpath):
+        try:
+            import sqlite3
+            conn = sqlite3.connect("file:%s?mode=ro" % dbpath, uri=True, timeout=2)
+            try:
+                row = conn.execute(
+                    "SELECT json FROM policy_doc WHERE id='live'").fetchone()
+            finally:
+                conn.close()
+            if row:
+                return bool(json.loads(row[0]).get("policies", {})
+                            .get("buildLoopEnabled", True))
+        except Exception:
+            pass          # db not migrated yet / locked / corrupt -> fall through
     for name in ("policy_live.json", "policy_seed.json"):
         path = os.path.join(_POLICY_ROOT, name)
         try:

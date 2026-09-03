@@ -38,6 +38,16 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-sod-test-")
 
+    # db FIRST: policy is db-backed (config-consolidation phase 3) - sandbox
+    # DBPATH+ROOT together, never DBPATH alone (measured 2026-09-03 in a
+    # sibling test: that gap archived the real daemon/settings.json).
+    # daemon.paths.DAEMON_ROOT stays REAL so policy.SEED keeps resolving to
+    # the real tracked policy_seed.json (read-only, safe).
+    from spine.storage import db
+    db.ROOT = tmp
+    db.DBPATH = os.path.join(tmp, "test.db")
+    db.init()
+
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")

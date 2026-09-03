@@ -43,6 +43,18 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-permissions-test-")
 
+    # db FIRST: policy.swap()/load() are db-backed (config-consolidation
+    # phase 3) - sandbox DBPATH+ROOT together or a policy.swap() call here
+    # would mutate the REAL production policy_doc row (measured 2026-09-03:
+    # exactly this gap in a sibling test archived the real settings.json).
+    # daemon.paths.DAEMON_ROOT stays REAL: policy.SEED binds to it at import
+    # time and must keep resolving to the real tracked policy_seed.json
+    # (read-only, safe) - only db.ROOT/DBPATH move.
+    from spine.storage import db
+    db.ROOT = tmp
+    db.DBPATH = os.path.join(tmp, "test.db")
+    db.init()
+
     from spine.auth import policy
     policy.LIVE = os.path.join(tmp, "policy_live.json")  # SEED stays real (read-only)
 
