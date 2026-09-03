@@ -15,14 +15,14 @@ import json
 
 
 def connectors_list_get(self, user):
-    from cells.connectors import connectors
+    from cells.engineer import connectors
     return self._send(200, json.dumps(connectors.list_connectors()))
 
 
 def connectors_rollback_post(self, user, name):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    from cells.connectors import connectors
+    from cells.engineer import connectors
     from spine.storage import events
     try:
         prev = connectors.rollback(name)
@@ -35,7 +35,7 @@ def connectors_rollback_post(self, user, name):
 def connectors_run_post(self, user, name):
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    from cells.connectors import connectors
+    from cells.engineer import connectors
     try:
         made = connectors.run_connector(name, actor=user["name"])
         return self._send(200, json.dumps({"cards": len(made)}))

@@ -21,7 +21,7 @@ from cells.engineer import sessions
 from cells.engineer import cardadmin
 from spine.storage import events
 from spine.storage import trackstore
-from cells.process import processes
+from cells.engineer import processes
 from cells.copilot import pm
 from cells.copilot import pm_state
 from cells.copilot import pm_resolve

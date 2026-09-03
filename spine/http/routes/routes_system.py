@@ -241,7 +241,7 @@ def processes_sub_post(self, user, body, pid, step):
     # step == parts[2] of /processes/<pid>/<step>; only "step" is a real
     # action, anything else falls through to the same 404 the original
     # inline try-block produced (kept verbatim, including the try scope).
-    from cells.process import processes
+    from cells.engineer import processes
     from spine.storage import events
     try:
         if step == "step":

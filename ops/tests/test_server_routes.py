@@ -67,7 +67,7 @@ def main():
     # network-free. (The same-second id-collision 500 this section also exposed
     # is fixed for real in processes.create()'s id generation, not worked around
     # here.)
-    from cells.process import processes as _proc_mod
+    from cells.engineer import processes as _proc_mod
     _proc_mod._propose_steps = lambda request_text: ([], 0.0)
 
     # sandbox EVERYTHING with disk state, before any of it is touched. db.ROOT
@@ -93,7 +93,7 @@ def main():
     # touches them, so a connector list/rollback/run or checkpoint list/
     # diff/restore route never reads or writes the real daemon/connectors/
     # or daemon/checkpoints/ directories.
-    from cells.connectors import connectors
+    from cells.engineer import connectors
     connectors.CDIR = os.path.join(tmp, "connectors")
     os.makedirs(connectors.CDIR, exist_ok=True)
     connectors.VDIR = os.path.join(connectors.CDIR, "_versions")
@@ -659,6 +659,15 @@ def main():
                            cookie=sid, expect=404)
         ok(isinstance(body, dict) and body.get("error") == "cell disabled",
            "disabled cell: POST /tracks/new 404s with 'cell disabled'")
+        # /processes and /connectors MERGED under engineer's one switch
+        # (owner directive 2026-09-03: the builder owns his whole build
+        # process) - all three route families gate together now.
+        status, body = req("GET", "/processes", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: /processes 404s too - process merged into engineer")
+        status, body = req("GET", "/connectors", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: /connectors 404s too - connectors merged into engineer")
         status, body = req("GET", "/me", cookie=sid, expect=200)
         ok(isinstance(body, dict), "spine path /me stays reachable while engineer cell is off")
         status, body = req("GET", "/pm/plan", cookie=sid, expect=200)
@@ -859,15 +868,21 @@ def main():
         # sandboxed above).
         from spine.auth import policy
         status, body = req("GET", "/cells", cookie=sid, expect=200)
-        # pm MERGED into copilot (owner directive 2026-09-03, "pm und henry is
-        # eins"): one enabled_key now covers Henry's chat AND the backlog
-        # planning loop that used to be its own cell - five agentic systems,
-        # not six.
-        ok({"engineer", "process", "connectors", "copilot", "buildloop"}
+        # TWO agents + self-governance (owner directives 2026-09-03): pm
+        # merged into copilot ("pm und henry is eins"), process + connectors
+        # merged into engineer ("ein engineer, der seinen Bau Prozess hat").
+        # Three registered cells, three enabled_keys, no more.
+        ok({"engineer", "copilot", "buildloop"}
            == {c["id"] for c in body.get("cells", [])},
-           "/cells: five agentic systems registered (pm merged into copilot; "
-           "buildloop = Cell #6, self-governing via ops/tools/loop_state.py, "
+           "/cells: three agentic systems registered (builder, coordinator, "
+           "buildloop = self-governing via ops/tools/loop_state.py, "
            "not daemon-hosted)")
+        eng = next((c for c in body.get("cells", []) if c["id"] == "engineer"), {})
+        ok(set(eng.get("surfaces") or []) == {"surfaces.board",
+                                             "surfaces.processes",
+                                             "surfaces.connectors"},
+           "/cells: engineer's manifest carries the FULL surface list - the "
+           "absorbed tabs hide with the one switch")
         buildloop = next((c for c in body.get("cells", []) if c["id"] == "buildloop"), {})
         ok(buildloop.get("enabled") is True, "/cells: buildloop enabled by default")
         ok("ops/tools/loop_state.py" in (buildloop.get("logicFiles") or []),
@@ -876,37 +891,26 @@ def main():
            "/cells: buildloop harness is CLAUDE.md")
         ok(buildloop.get("routes") == [], "/cells: buildloop has no HTTP surface (self-governing)")
 
-        # -- Cell registry gate (Phase 2): process and copilot cells, same
-        # disable/spine-stays-up/re-enable round trip pm used to get on its own -
-        # copilotEnabled now gates /pm/* too, since /pm/ is a copilot prefix.
-        policy.swap("policies", {"processEnabled": False}, actor="test")
-        status, body = req("GET", "/processes", cookie=sid, expect=404)
-        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
-           "disabled cell: /processes 404s with 'cell disabled'")
-        status, body = req("GET", "/me", cookie=sid, expect=200)
-        ok(isinstance(body, dict), "spine path /me stays reachable while process cell is off")
-        status, body = req("GET", "/cells", cookie=sid, expect=200)
-        proc_off = next((c for c in (body.get("cells") or []) if c["id"] == "process"), {})
-        ok(proc_off.get("enabled") is False, "/cells: manifest reflects process disabled")
-
-        # direct-call guard: processes.clear_step_stamps must no-op while the
-        # process cell is off, not just its route. Seed one process with a step
+        # -- direct-call guard under the MERGED engineer switch: processes.
+        # clear_step_stamps must no-op while the engineer cell (which now owns
+        # the chains) is off, not just its route. Seed one process with a step
         # carrying a stamp, call the guarded function directly (bypassing HTTP
-        # entirely), and assert the stamp survives untouched.
-        from cells.process import processes
+        # entirely), and assert the stamp survives untouched. This is the
+        # fail-open trap the merges keep exposing: enabled_id() returns True
+        # for an UNKNOWN cell id, so a guard left reading the retired
+        # "process" id would pass this test's second half but never no-op.
+        policy.swap("policies", {"engineerEnabled": False}, actor="test")
+        from cells.engineer import processes
         seed_tid = "test-track-clear-stamps"
         processes._save([{"id": "proc-1", "request": "r", "status": "active",
                            "steps": [{"title": "s1", "track": seed_tid, "auto_dispatched": True}]}])
         processes.clear_step_stamps(seed_tid)
         after = processes._load()
         stamp_still_set = after[0]["steps"][0].get("auto_dispatched") is True
-        ok(stamp_still_set, "processes.clear_step_stamps: no-ops while process cell is disabled")
+        ok(stamp_still_set, "processes.clear_step_stamps: no-ops while the engineer cell is disabled")
         processes._save([])   # clean up the seeded row before re-enabling
 
-        policy.swap("policies", {"processEnabled": True}, actor="test")   # restore
-        status, body = req("GET", "/cells", cookie=sid, expect=200)
-        proc_back = next((c for c in (body.get("cells") or []) if c["id"] == "process"), {})
-        ok(proc_back.get("enabled") is True, "re-enable via tracked swap: process cell on again")
+        policy.swap("policies", {"engineerEnabled": True}, actor="test")   # restore
         # the same stamp, now with the cell back on, DOES clear (proves the
         # guard above was really gating on cell-enabled, not silently broken).
         processes._save([{"id": "proc-1", "request": "r", "status": "active",
@@ -914,7 +918,7 @@ def main():
         processes.clear_step_stamps(seed_tid)
         after2 = processes._load()
         ok(after2[0]["steps"][0].get("auto_dispatched") is None,
-           "processes.clear_step_stamps: clears for real once the process cell is back on")
+           "processes.clear_step_stamps: clears for real once the engineer cell is back on")
         processes._save([])
 
         policy.swap("policies", {"copilotEnabled": False}, actor="test")

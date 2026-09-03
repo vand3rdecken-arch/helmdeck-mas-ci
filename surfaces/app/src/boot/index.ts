@@ -12,9 +12,12 @@ import { Kernel, resolveProfile, selectPlugins, dumpConfig } from "@/kernel";
 import type { Plugin, ProfileDoc } from "@/kernel";
 
 import { CORE_PLUGINS, CORE_IDS } from "./core";
+// processes/connectors surfaces live under the ENGINEER cell since the
+// merge (owner directive 2026-09-03: the builder owns his whole build
+// process) - real tabs, unchanged screens, one cell attribution.
 import { boardSurface } from "@cells/engineer/ui/surface";
-import { connectorsSurface } from "@cells/connectors/ui/surface";
-import { processesSurface } from "@cells/process/ui/surface";
+import { connectorsSurface } from "@cells/engineer/ui/connectors";
+import { processesSurface } from "@cells/engineer/ui/processes";
 import { copilotSurface } from "@cells/copilot/ui/surface";
 import { tabsNav } from "@/plugins/surfaces/tabs";
 import { claudeEngine } from "@/plugins/engines/claude";

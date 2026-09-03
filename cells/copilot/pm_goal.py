@@ -61,7 +61,7 @@ def _goal_process(pm, st):
     if not steps:
         return
     try:
-        from cells.process import processes
+        from cells.engineer import processes
         p = processes.create(goal, client="", due="", actor="pm", steps=steps)
     except Exception as e:
         print("PM goal_process error:", e)
@@ -83,7 +83,7 @@ def _goal_process_status(st):
     if gp.get("goal") != get_goal() or not gp.get("pid"):
         return None
     try:
-        from cells.process import processes
+        from cells.engineer import processes
         p = processes.get(gp["pid"])
     except Exception:
         return None

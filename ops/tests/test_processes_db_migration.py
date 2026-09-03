@@ -62,7 +62,7 @@ def main():
     ok(not os.path.exists(legacy_path), "processes.json renamed away after migration")
     ok(os.path.exists(legacy_path + ".imported"), "processes.json.imported now exists (nothing lost)")
 
-    from cells.process import processes
+    from cells.engineer import processes
     got = processes.list_processes()
     ok(len(got) == 2, "both synthetic legacy processes migrated into the db")
     ids = {p["id"] for p in got}

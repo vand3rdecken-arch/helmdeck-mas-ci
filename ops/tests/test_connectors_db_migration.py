@@ -44,7 +44,7 @@ def main():
     # sandbox connectors.py's own directory globals too - CDIR/VDIR are NOT
     # under db.ROOT's umbrella, they are module-level paths computed at import
     # time from connectors.py's own __file__.
-    from cells.connectors import connectors
+    from cells.engineer import connectors
     cdir = os.path.join(tmp, "connectors")
     vdir = os.path.join(cdir, "_versions")
     os.makedirs(vdir, exist_ok=True)

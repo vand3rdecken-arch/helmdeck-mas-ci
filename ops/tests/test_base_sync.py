@@ -222,7 +222,7 @@ def test_autoaccept_probe_syncs_before_gating():
     on foreign code forever and never auto-accepted, even though move_lane
     would sync and gate it green. The probe must sync first - and a sync
     CONFLICT must read as red (an auto-accept never lands a half-merge)."""
-    from cells.process import processes
+    from cells.engineer import processes
     repo = new_repo()
     write(os.path.join(repo, "lib.py"), "def f():\n    return 1\n")
     write(os.path.join(repo, "check.py"),

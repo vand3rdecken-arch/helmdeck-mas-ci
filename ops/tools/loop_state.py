@@ -57,8 +57,8 @@ WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 # `import <entry>` in a fresh subprocess run with cwd=ROOT (repo root).
 CORE_MODULES = ["spine.storage.db", "spine.storage.events",
                 "cells.engineer.sessions", "spine.agent.drivers",
-                "cells.process.processes", "cells.copilot.copilot",
-                "cells.connectors.connectors", "spine.auth.charter",
+                "cells.engineer.processes", "cells.copilot.copilot",
+                "cells.engineer.connectors", "spine.auth.charter",
                 "spine.ops.checkpoints", "spine.auth.auth",
                 "spine.ops.importers", "spine.registry.debt",
                 "spine.http.server"]

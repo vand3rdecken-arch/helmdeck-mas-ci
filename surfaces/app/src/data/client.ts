@@ -672,6 +672,12 @@ export interface CellInfo {
   enabledKey: string;
   role: string;
   surface: string;
+  /** The FULL surface list (primary + absorbed) - a merged cell keeps its
+   *  absorbed systems' tabs (engineer carries surfaces.processes +
+   *  surfaces.connectors), and tab-hiding iterates THIS so one switch hides
+   *  them all. Optional so the app survives an older daemon (falls back to
+   *  [surface]). */
+  surfaces?: string[];
   modes: string[];
   logicFiles: string[];
   storage: string;

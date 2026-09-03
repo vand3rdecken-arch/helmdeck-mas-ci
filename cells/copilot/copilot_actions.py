@@ -226,7 +226,7 @@ def _note_overrides(repo, patch, actor):
 
 def _run_action(a, actor, role="operator"):
     from cells.engineer import sessions
-    from cells.process import processes
+    from cells.engineer import processes
     from spine.storage import events
     kind = a.get("type")
     if kind == "configure":
@@ -527,7 +527,7 @@ def _run_action(a, actor, role="operator"):
             return "set_driver failed: %s" % e
         return "%s: Treiber auf '%s' gesetzt." % (t["branch"], driver)
     if kind == "build_integration":
-        from cells.connectors import connectors
+        from cells.engineer import connectors
         name = re.sub(r"[^a-z0-9-]", "-", (a.get("name") or "connector").lower())[:24]
         repo = events.settings().get("default_repo")
         if not repo:
@@ -540,11 +540,11 @@ def _run_action(a, actor, role="operator"):
         return ("integration card dispatched (%s) - the agent is writing the connector; "
                 "gate + your accept installs it" % t["id"])
     if kind == "run_connector":
-        from cells.connectors import connectors
+        from cells.engineer import connectors
         made = connectors.run_connector(a.get("name", ""), actor=actor)
         return "connector ran: %d new backlog cards" % len(made)
     if kind == "rollback_connector":
-        from cells.connectors import connectors
+        from cells.engineer import connectors
         prev = connectors.rollback(a.get("name", ""))
         events.emit("connector", "-", action="rollback", name=a.get("name"), actor=actor)
         return "rolled back %s to %s" % (a.get("name"), prev)

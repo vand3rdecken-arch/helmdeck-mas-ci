@@ -525,7 +525,7 @@ def _snapshot(full=False):
     ops/tools/board_state.py, which calls this with full=True) instead of being
     pushed into every turn."""
     from cells.engineer import sessions
-    from cells.process import processes
+    from cells.engineer import processes
     from spine.storage import events
     m = events.metrics(sessions.list_tracks())
     pol = events.settings().get("policy") or {}
@@ -584,7 +584,7 @@ def _snapshot(full=False):
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
             t["task"][:90].replace("\n", " "), tail))
     try:
-        from cells.connectors import connectors as _c
+        from cells.engineer import connectors as _c
         cs = _c.list_connectors()
         if cs:
             lines.append("INSTALLED CONNECTORS: " + ", ".join(

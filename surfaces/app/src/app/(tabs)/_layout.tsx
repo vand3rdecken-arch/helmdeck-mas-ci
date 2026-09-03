@@ -58,11 +58,19 @@ function useDisabledCellSurfaces(): Set<string> {
   const { data } = useQuery({ queryKey: ["cells"], queryFn: api.cells, staleTime: 30000, retry: false });
   const disabled = new Set<string>();
   for (const c of (data?.cells ?? []) as CellInfo[]) {
-    if (c.enabled || !c.surface) continue;
-    disabled.add(c.surface);
-    // Nav-only tab entries (nav.tabs, e.g. id "tab.connectors" route "connectors")
-    // don't share the cell's "surfaces.<id>" id, so also index the bare suffix.
-    disabled.add(c.surface.replace(/^surfaces\./, ""));
+    if (c.enabled) continue;
+    // The FULL surface list, not just the primary: a merged cell owns its
+    // absorbed systems' tabs too (engineer carries surfaces.processes +
+    // surfaces.connectors since 2026-09-03), and disabling it must hide all
+    // of them. `surfaces` is absent on an older daemon - fall back to the
+    // singular field.
+    for (const sid of c.surfaces ?? (c.surface ? [c.surface] : [])) {
+      if (!sid) continue;
+      disabled.add(sid);
+      // Nav-only tab entries (nav.tabs, e.g. id "tab.connectors" route "connectors")
+      // don't share the cell's "surfaces.<id>" id, so also index the bare suffix.
+      disabled.add(sid.replace(/^surfaces\./, ""));
+    }
   }
   return disabled;
 }

@@ -165,7 +165,7 @@ def main():
     log_reset(bdir, ok, total, a)
 
     if a.connectors:
-        from cells.connectors import connectors
+        from cells.engineer import connectors
         st = os.path.join(os.path.dirname(connectors.STATE), "_state.json")
         if os.path.exists(st):
             os.remove(st); print("cleared connector import state (they'll re-pull fresh)")
