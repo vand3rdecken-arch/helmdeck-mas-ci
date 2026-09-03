@@ -8,6 +8,7 @@
 import { audit } from "./dict/audit";
 import { board } from "./dict/board";
 import { gxp } from "./dict/gxp";
+import { harnessRules } from "./dict/harness_rules";
 import { card } from "./dict/card";
 import { chrome } from "./dict/chrome";
 import { composer } from "./dict/composer";
@@ -30,7 +31,7 @@ export type Dict = Record<string, Entry>;
 
 export const DICT: Dict = {
   ...chrome, ...board, ...card, ...composer, ...demo, ...net, ...onboard, ...screens, ...settings,
-  ...sign, ...audit, ...gxp,
+  ...sign, ...audit, ...gxp, ...harnessRules,
 };
 
 /** The device's language, used ONLY as the fallback when the workspace hasn't

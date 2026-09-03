@@ -368,6 +368,34 @@ def brief(name, default=None, project=""):
     return _render_rules(_resolve(body, merged), name, project)
 
 
+def brief_segments(name, project=""):
+    """brief(), but as [{kind, text, rule?}] - the read-only "Brief ansehen"
+    view of design doc section 4.3.
+
+    Deliberately assembled from the SAME parts as brief() (same file, same
+    frontmatter resolution, same substitution) instead of re-rendered: the whole
+    reassurance this view offers is "that IS what he is started with", and a
+    second render path could quietly stop being that. Total, like brief(): any
+    failure degrades to a single prose block holding the ordinary rendered text,
+    which is still the honest artefact - just without the chips."""
+    try:
+        from spine.registry import behavior
+        d_body, d_fm = _DEFAULTS.get(name, ("", {}))
+        got = _agent_file(name)
+        if not got or not got[0]:
+            resolved = _resolve(d_body, d_fm) if d_body else (d_body or "")
+        else:
+            body, fm = got
+            merged = dict(d_fm)
+            merged.update(fm or {})
+            resolved = _resolve(body, merged)
+        surf = _BY_AGENT.get(name) or {}
+        return behavior.segments(resolved, surf.get("key") or name, project)
+    except Exception as e:                                   # noqa: BLE001
+        _note("segments:%s" % name, "%s: %s" % (type(e).__name__, str(e)[:200]))
+        return [{"kind": "prose", "text": brief(name, project=project)}]
+
+
 def meta(name):
     """The agent's frontmatter, defaults filled in. Never raises."""
     d_body, d_fm = _DEFAULTS.get(name, ("", {}))

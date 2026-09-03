@@ -5,7 +5,7 @@ import { Alert, Pressable, Text, TextInput, type TextStyle, View } from "react-n
 
 import { api } from "@/data/client";
 import { saveProfile } from "@/data/profile";
-import { type ConfigItem, type Section, nest, placeRows, scopeBadgeKey } from "@/data/settings_schema";
+import { type ConfigItem, type Section, nest, placeRows, placeStation, scopeBadgeKey } from "@/data/settings_schema";
 import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { can } from "@/kernel";
@@ -268,6 +268,19 @@ function SchemaSection({ sec }: { sec: Section }) {
  *  its id, which is the acceptance criterion. */
 export function SchemaDoor({ door, schema }: { door: string; schema: ConfigItem[] }) {
   const sections = placeRows(schema, door);
+  if (!sections.length) return null;
+  return <>{sections.map((s) => <SchemaSection key={s.group} sec={s} />)}</>;
+}
+
+/** The knobs that govern ONE pipeline station (harness-config-ui section 6).
+ *
+ *  The SAME SchemaSection the hub renders - reused, not re-implemented. That is
+ *  the whole reason the move is a metadatum rather than a new screen: a knob
+ *  keeps its control, its save path, its badge and its "Erweitert" fold when it
+ *  changes owner, so "kein Knopf verliert seine Editierbarkeit" is a property
+ *  of the data instead of something the station page has to re-earn. */
+export function SchemaStation({ station, schema }: { station: string; schema: ConfigItem[] }) {
+  const sections = placeStation(schema, station);
   if (!sections.length) return null;
   return <>{sections.map((s) => <SchemaSection key={s.group} sec={s} />)}</>;
 }

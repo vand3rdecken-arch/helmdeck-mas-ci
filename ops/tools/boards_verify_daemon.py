@@ -43,6 +43,16 @@ auth.create_user("owner", PW, "owner")
 auth.create_user("ada", PW, "client")
 boards.ensure_default()
 
+# ONE KNOWN REPO, so the sandbox can answer a per-PROJECT question at all
+# (harness-config-ui phase 3). The cards below already carry repo=ROOT, but a
+# card's repo string is not a project RECORD - the repo chips and the project
+# layer of the config chain both read the registry, and without an entry there
+# the harness screen can only ever show the workspace answer. sight_repo is the
+# one door in and is idempotent, so seeding it here produces exactly the state
+# a real first card against this repo would.
+from spine.ops import projects                  # noqa: E402
+projects.sight_repo(ROOT, actor="owner", name="HelmDeck")
+
 # Cards in every lane, so the overflow invariant has something to be about.
 NOW = "2026-09-01 12:00:00"
 CARDS = [

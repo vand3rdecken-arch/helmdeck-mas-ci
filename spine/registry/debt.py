@@ -4147,6 +4147,43 @@ DEBT = [
                "duplication this item was about.",
         "order": 56,
     },
+    {
+        "id": "agent-may-swap-readonly",
+        "title": "\"Henry darf Regeln selbst aendern\" ships READ-ONLY - the "
+                 "design doc asked for a real switch",
+        "status": "open",
+        "what": "harness-config-ui section 6 lists `agentMaySwap` as an "
+                "\"echter Schalter, Default aus\" in Henry's block \"Was er "
+                "darf\". Phase 3 renders it as a LOCKED row instead. The reason "
+                "is mechanical: the value that actually gates an agent-initiated "
+                "swap is `policies.agentMaySwap` in the POLICY PLANE, written "
+                "only by spine/auth/policy.py::swap. Every other behaviour rule "
+                "stores under `rule.<key>.<surface>` in settings.json or the "
+                "project table, and a rule row doing that for this key would "
+                "save cleanly, badge itself \"gesetzt\", and gate nothing.",
+        "why_it_bites": "The owner cannot grant or withdraw Henry's swap "
+                        "authority from the screen that shows him every other "
+                        "rule - he has to know this one value lives elsewhere. "
+                        "That is a smaller version of the complaint the whole "
+                        "card answers. The direction that shipped is the safe "
+                        "one (it stays OFF, the seeded default), so this costs "
+                        "reach, not safety.",
+        "trigger": "Opening Henry > \"Was er selbst darf\" on the harness "
+                   "screen: the row carries a lock and a why-sentence saying the "
+                   "value lives in the policy plane, where the doc specifies a "
+                   "switch.",
+        "fix": "Give projectconfig.write_scoped a third branch for rules that "
+               "declare a policy-plane path, routing them through policy.swap() "
+               "- the shipped, tracked, human-authority writer - instead of the "
+               "settings/project writers. This is an OWNER DECISION rather than "
+               "a refactor, because it puts 'may the agent change the rules' on "
+               "a screen the agent can also drive through `configure`: the same "
+               "swap() would become reachable from the chat, and whether that is "
+               "wanted is precisely the question agentMaySwap asks. Shipping a "
+               "dummy toggle meanwhile was REFUSED - a dead switch on this row "
+               "of all rows is the worst place in the app for one.",
+        "order": 57,
+    },
 ]
 
 def list_debt():

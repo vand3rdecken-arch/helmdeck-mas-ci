@@ -1,46 +1,35 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated as RNAnimated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
+import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
+import { api, type BehaviorRule, type HarnessConfig, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { BriefSurfacePicker, BriefView } from "@/ui/harness_brief";
+import { RuleBlock } from "@/ui/harness_rules";
 import { RepoPipeline } from "@/ui/repo_pipeline";
 import { useResponsive } from "@/ui/responsive";
+import { SchemaStation, useSchema } from "@/ui/settings_schema_page";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
 
 type Tr = (k: string, p?: Record<string, string | number>) => string;
 
-// A glowing token that travels the lane pipeline, left to right, forever.
-// RN core Animated (not reanimated worklets) so it stays React-Compiler safe.
-function FlowToken({ width, color }: { width: number; color: string }) {
-  const x = useRef(new RNAnimated.Value(0)).current;
-  useEffect(() => {
-    if (width <= 0) return;
-    const anim = RNAnimated.loop(
-      RNAnimated.timing(x, { toValue: 1, duration: 3200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [width, x]);
-  const tx = x.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(0, width - 14)] });
-  const op = x.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.15, 1, 0.15] });
-  return (
-    <RNAnimated.View pointerEvents="none" style={{ position: "absolute", top: -3, left: 0, transform: [{ translateX: tx }], opacity: op }}>
-      <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: color,
-        shadowColor: color, shadowOpacity: 0.9, shadowRadius: 8, elevation: 6 }} />
-    </RNAnimated.View>
-  );
-}
-
 // The gate's pulsing shield moved into ui/repo_pipeline.tsx with the rest of the
 // station row - it belongs to the pipeline, not to this screen, now that repo
 // onboarding draws the same row.
+//
+// FlowToken (a glowing dot travelling the pipeline) lived here and was already
+// unrendered: the stations grew a label AND a note line, and the token's
+// absolutely-positioned band then landed on top of the last station and read as
+// a stray artifact. It was cut from the render and left defined; this card
+// removes the definition too, so the file does not carry a decoration nothing
+// can reach.
 
 /**
  * FIXED vs ADJUSTABLE, in words.
@@ -142,11 +131,19 @@ function KnobChip({ path, editable, onOpen, t, tr }: {
  * fallbacks below are for an older daemon only; they say the generic truth
  * rather than inventing a specific reason the app cannot verify.
  */
-function NodeBody({ node, editable, onOpen, t, tr }: {
+function NodeBody({ node, editable, onOpen, t, tr, here }: {
   node: LoopNode; editable: string[]; onOpen: () => void; t: ThemeTokens; tr: Tr;
+  /** Paths that render as REAL CONTROLS on this very page (the station's own
+   *  knobs, section 6). They are dropped from the chip list: after the move,
+   *  a chip saying "im Automatik-Hub ändern" points at a door the knob has
+   *  left, and it points AWAY from the control sitting directly underneath.
+   *  Chips remain for what genuinely lives elsewhere - env.SWARM_WIP_MINUTES
+   *  is an environment variable and never gets a field anywhere. */
+  here?: string[];
 }) {
   const fixed = node.kind === "fixed";
   const why = node.why || tr(fixed ? "loopmap.whyFixedFallback" : "loopmap.whyPolicyFallback");
+  const elsewhere = (node.settings ?? []).filter((s) => !(here ?? []).includes(s));
   return (
     <View style={{ gap: 9 }}>
       <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18.5 }}>{node.instruction}</Text>
@@ -167,14 +164,74 @@ function NodeBody({ node, editable, onOpen, t, tr }: {
         </View>
       ) : null}
 
-      {!fixed && (node.settings?.length ?? 0) > 0 ? (
+      {!fixed && elsewhere.length ? (
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("loopmap.governedBy")}</Text>
-          {node.settings!.map((s) => (
+          {elsewhere.map((s) => (
             <KnobChip key={s} path={s} editable={editable.includes(s)} onOpen={onOpen} t={t} tr={tr} />
           ))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * THE LEFT NAVIGATION (design doc section 5.2), and why it is three primitives
+ * rather than one list component: the groups hold DIFFERENT kinds of thing
+ * (stations, Henry's blocks, the machine) and the only thing they share is the
+ * row shape. A single component taking a discriminated union would have to know
+ * what a station is, which is exactly the knowledge this screen does not keep -
+ * every label and every order below comes off the payload.
+ */
+function NavGroup({ label, children, t }: {
+  label: string; children: React.ReactNode; t: ThemeTokens;
+}) {
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={{ color: t.txtTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 0.7,
+        marginBottom: 5, paddingHorizontal: 2 }}>
+        {label.toUpperCase()}
+      </Text>
+      <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
+        borderRadius: 12, overflow: "hidden" }}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function NavItem({ label, active, onPress, right, testID, t }: {
+  label: string; active: boolean; onPress: () => void;
+  right?: React.ReactNode; testID?: string; t: ThemeTokens;
+}) {
+  return (
+    <Pressable testID={testID} onPress={onPress}
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 11,
+        paddingVertical: 10, backgroundColor: active ? t.surface2 : "transparent" }}>
+      {/* A left rail rather than a filled row: the active entry has to read as
+          selected next to a detail pane, without turning the whole column into
+          a block of colour on a phone where the column is full width. */}
+      <View style={{ width: 2.5, height: 15, borderRadius: 2,
+        backgroundColor: active ? t.accent : "transparent" }} />
+      <Text numberOfLines={1} style={{ color: active ? t.txtPrimary : t.txtSecondary,
+        fontSize: 12.5, fontWeight: active ? "700" : "500", flex: 1 }}>
+        {label}
+      </Text>
+      {right}
+    </Pressable>
+  );
+}
+
+/** How many knobs sit behind an entry. DERIVED (from the schema / the rule
+ *  list), never a number anybody maintains - the same discipline the pipeline's
+ *  own knob badge already lives under. */
+function NavCount({ n, t }: { n: number; t: ThemeTokens }) {
+  if (!n) return null;
+  return (
+    <View style={{ minWidth: 17, alignItems: "center", borderRadius: 999, paddingHorizontal: 5,
+      paddingVertical: 1, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.borderSubtle }}>
+      <Text style={{ color: t.txtTertiary, fontSize: 10, fontWeight: "700" }}>{n}</Text>
     </View>
   );
 }
@@ -202,27 +259,129 @@ export default function LoopMapScreen() {
   // and the owner never saw it fire. Loop stages now expand in place.
   const [lane, setLane] = useState<string>("");
   const [openState, setOpenState] = useState<string>("");
-  const [trackW, setTrackW] = useState(0);
   const [showCharter, setShowCharter] = useState(false);
   // On a desktop window this page is almost all prose, and prose at 1280px is a
   // 200-character measure nobody reads. Same cap the automation hub uses.
   const { wide } = useResponsive();
+  const qc = useQueryClient();
+
+  // HENRY'S RULES, resolved for the repo the page is showing (harness-config-ui
+  // phase 3). A second query rather than a fatter /loop/map: the stations and
+  // their knobs already arrive there, and one route answering both would be one
+  // route describing the machine twice. Failing to load must not take the map
+  // down - the pipeline is useful without the rules, and `retry: false` keeps a
+  // role without settings.read from re-asking on every mount.
+  const { data: cfg } = useQuery<HarnessConfig>({
+    queryKey: ["harnessConfig", repo], queryFn: () => api.harnessConfig(repo),
+    staleTime: 30000, retry: false,
+  });
+  // The knobs a STATION owns, from the same schema the settings hub renders -
+  // so a knob keeps its control, its save path and its badge when it changes
+  // owner (design doc section 6: "landet bei" means MOVE, never duplicate).
+  const schema = useSchema();
 
   const openHub = () => router.push("/automation" as never);
   const editable = data?.editable ?? [];
   const lanes = data?.runtime.lanes ?? [];
-  // default selection = the gate: the one node on the pipeline that is neither
-  // a lane nor optional, so the card below the track is never empty.
-  // Deploy joined gate as a step-on-an-edge, so it resolves the same way -
-  // otherwise tapping the station the owner most wants explained (the only
-  // switchable one) would silently select nothing.
-  const selected = useMemo<LoopNode | null>(() => {
+  // THE LEFT NAVIGATION (design doc section 5.2): stations in flow order, then
+  // Henry's blocks, then the ground rules. The ORDER COMES FROM THE SERVER -
+  // `runtime.stations` for the first half, `cfg.blocks` for the second - so the
+  // client keeps no list of either. A sixth Henry block or a renamed station
+  // costs a daemon edit and nothing here.
+  const stations = data?.runtime.stations ?? [];
+  const nodeFor = useMemo(() => (k: string): LoopNode | null => {
     if (!data) return null;
-    if (lane === "gate") return data.runtime.gate;
-    if (lane === "deploy") return data.runtime.deploy ?? null;
-    if (lane) return lanes.find((l) => l.key === lane) ?? null;
-    return data.runtime.gate;
-  }, [data, lane, lanes]);
+    if (k === "gate") return data.runtime.gate;
+    if (k === "deploy") return data.runtime.deploy ?? null;
+    return lanes.find((l) => l.key === k) ?? null;
+  }, [data, lanes]);
+  // How many knobs a station owns. DERIVED from the schema, never counted by
+  // hand - the same derivation the pipeline's own badge already trusts.
+  const knobsAt = useMemo(() => {
+    const by: Record<string, number> = {};
+    for (const it of schema) if (it.station) by[it.station] = (by[it.station] ?? 0) + 1;
+    return by;
+  }, [schema]);
+  const blocks = cfg?.blocks ?? [];
+  const nav = lane || (stations[0] ? "st:" + stations[0] : "laws");
+  const setNav = (k: string) => setLane(k);
+  // Tapping a station on the PIPELINE selects it in the navigation - the graph
+  // IS the table of contents (section 5.2), which is why nothing else was
+  // needed to wire it: `onSelect` has existed since the component shipped.
+  const selectStation = (k: string) => setLane("st:" + k);
+  const selectedStation = nav.startsWith("st:") ? nav.slice(3) : "";
+  const selectedBlock = nav.startsWith("blk:") ? nav.slice(4) : "";
+  // Deploy and the gate are steps-on-an-edge rather than lanes, so they resolve
+  // through nodeFor like everything else - otherwise tapping the one station
+  // the owner most wants explained (the only switchable one) selects nothing.
+  const selected = selectedStation ? nodeFor(selectedStation) : null;
+  const surfaceLabels = useMemo(() => {
+    const by: Record<string, string> = {};
+    for (const s of cfg?.surfaces ?? []) by[s.key] = s.label;
+    return by;
+  }, [cfg]);
+
+  // ---- "Brief ansehen" (design doc 4.3) ----------------------------------
+  // Form <-> prose is a TOGGLE on one state, not a second edit surface.
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefSurface, setBriefSurface] = useState("pm");
+  const [highlight, setHighlight] = useState("");
+  // WHICH surfaces have a brief worth reading: derived from the rules that
+  // actually render into one (`wire: "slot"`), never a client-side list of
+  // Henry's faces. A surface that stops carrying slots stops being offered.
+  const briefSurfaces = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of cfg?.rules ?? []) {
+      if (r.wire !== "slot") continue;
+      for (const s of r.surfaces) keys.add(s.surface);
+    }
+    return (cfg?.surfaces ?? []).filter((s) => keys.has(s.key));
+  }, [cfg]);
+
+  /** A chip in the prose leads back to the row that sets it: switch to the
+   *  form, open that rule's block, and mark the row so the jump lands
+   *  somewhere visible instead of in a list of twenty. */
+  function openRule(key: string) {
+    const rule = (cfg?.rules ?? []).find((r) => r.key === key);
+    if (!rule) return;
+    setBriefOpen(false);
+    setLane("blk:" + rule.block);
+    setHighlight(key);
+  }
+
+  /** "Henry fragen" (design doc 5.5): open the docked chat carrying THIS row.
+   *  Desktop gets the in-page panel over the dimmed screen; the phone takes the
+   *  /chat route - the same split the board FAB has always used, so there is
+   *  one chat and one way it opens. */
+  function askHenry(rule: BehaviorRule) {
+    const label = tr(rule.labelKey);
+    useCopilotPanel.getState().show({
+      label,
+      // Henry's own vocabulary: the rule key is what `configure` and the rule
+      // table both name it, so he can act on the answer instead of guessing
+      // which of twenty rows the owner meant.
+      hint: tr("rule.askContext", { label, key: rule.key }),
+    });
+    if (!wide) router.push("/chat" as never);
+  }
+
+  /** THE ONE WRITE PATH for a rule. A null value CLEARS it (restores
+   *  inheritance); the daemon picks the layer from the rule's own scope, so
+   *  this cannot ask for the wrong one. On failure the row is NOT optimistically
+   *  moved - the refusal text is the daemon's own why-sentence, and showing a
+   *  flipped switch next to it would be the screen lying about what happened. */
+  async function setRule(path: string, value: unknown) {
+    try {
+      const res = await api.saveHarnessConfig(repo, { [path]: value });
+      if (res?.error) throw new Error(res.error);
+      await qc.invalidateQueries({ queryKey: ["harnessConfig"] });
+      // The rules render INTO the briefs, so the harness section's char counts
+      // and any open settings view move with them.
+      await qc.invalidateQueries({ queryKey: ["loopmap"] });
+    } catch (e) {
+      Alert.alert(tr("harness.saveFailed"), String((e as Error).message));
+    }
+  }
 
   const build = data?.build;
   const states = build?.states ?? [];
@@ -241,7 +400,10 @@ export default function LoopMapScreen() {
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}>
         <Pressable onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
-        <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "700", flex: 1 }}>{tr("loopmap.title")}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "700" }}>{tr("harness.page")}</Text>
+          <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("harness.pageSub")}</Text>
+        </View>
       </View>
 
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 40 }} /> :
@@ -316,29 +478,137 @@ export default function LoopMapScreen() {
                 badges and the Henry track. Repo onboarding leaves them off -
                 it shows the route to someone who has no repo set up yet and
                 therefore no knobs to count. */}
-            <RepoPipeline map={data} onSelect={setLane} selected={selected?.key} hideHint showKnobs />
+            {/* The graph IS the table of contents (section 5.2): tapping a
+                station selects it in the navigation below. `onSelect` has
+                existed since the component shipped - this card only uses it. */}
+            <RepoPipeline map={data} onSelect={selectStation} selected={selectedStation}
+              hideHint showKnobs knobsAt={knobsAt} />
             <Text style={{ color: t.txtTertiary, fontSize: 11, marginTop: 14, textAlign: "center", lineHeight: 16 }}>
               {repo ? tr("loopmap.repoHint") : tr("loopmap.hint")}
             </Text>
           </View>
 
-          {/* the selected lane/gate, directly under the track it belongs to */}
-          {selected ? (
-            <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, padding: 14, gap: 10 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <Text style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: "700", flexShrink: 1 }}>
-                  {selected.label ?? selected.key}
-                </Text>
-                <KindBadge kind={selected.kind} t={t} tr={tr} />
-              </View>
-              <NodeBody node={selected} editable={editable} onOpen={openHub} t={t} tr={tr} />
+          {/* ================= NAVIGATION + DETAIL =================
+              Stations in flow order, then Henry's blocks, then the ground
+              rules - the GitHub-repo-settings / Stripe shape. Side by side on a
+              wide window, stacked on a phone: the SAME entries and the same
+              detail pane, not a second layout concept. */}
+          <View style={{ flexDirection: wide ? "row" : "column", gap: 14, alignItems: "flex-start" }}>
+            <View style={wide ? { width: 208 } : { width: "100%" }}>
+              <NavGroup label={tr("harness.navStations")} t={t}>
+                {stations.map((k) => {
+                  const n = nodeFor(k);
+                  const cnt = knobsAt[k] ?? 0;
+                  return (
+                    <NavItem key={k} testID={"nav-st-" + k} active={nav === "st:" + k}
+                      label={n?.label ?? k} onPress={() => setNav("st:" + k)} t={t}
+                      right={n?.kind === "fixed"
+                        ? <Ionicons name="lock-closed" size={11} color={t.txtTertiary} />
+                        : cnt ? <NavCount n={cnt} t={t} /> : null} />
+                  );
+                })}
+              </NavGroup>
+              {blocks.length ? (
+                <NavGroup label={tr("harness.navHenry")} t={t}>
+                  {blocks.map((b) => (
+                    <NavItem key={b.key} testID={"nav-blk-" + b.key} active={nav === "blk:" + b.key}
+                      label={tr(b.labelKey)} onPress={() => setNav("blk:" + b.key)} t={t}
+                      right={<NavCount n={(cfg?.rules ?? []).filter((r) => r.block === b.key).length} t={t} />} />
+                  ))}
+                </NavGroup>
+              ) : null}
+              <NavGroup label={tr("harness.navMachine")} t={t}>
+                <NavItem testID="nav-build" active={nav === "build"} label={tr("harness.navBuild")}
+                  onPress={() => setNav("build")} t={t} />
+                <NavItem testID="nav-briefs" active={nav === "briefs"} label={tr("harness.navBriefs")}
+                  onPress={() => setNav("briefs")} t={t} />
+                <NavItem testID="nav-laws" active={nav === "laws"} label={tr("harness.navLaws")}
+                  onPress={() => setNav("laws")} t={t}
+                  right={<Ionicons name="lock-closed" size={11} color={t.txtTertiary} />} />
+              </NavGroup>
             </View>
-          ) : null}
+
+            <View style={{ flex: wide ? 1 : undefined, width: wide ? undefined : "100%", gap: 14 }}>
+              {/* ---- a STATION: what it is, why it is fixed, and its knobs ---- */}
+              {selected ? (
+                <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, padding: 14, gap: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <Text style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: "700", flexShrink: 1 }}>
+                      {selected.label ?? selected.key}
+                    </Text>
+                    <KindBadge kind={selected.kind} t={t} tr={tr} />
+                  </View>
+                  <NodeBody node={selected} editable={editable} onOpen={openHub} t={t} tr={tr}
+                    here={schema.filter((i) => i.station === selectedStation).map((i) => i.path)} />
+                </View>
+              ) : null}
+              {/* The knobs that MOVED here (section 6). Rendered by the hub's own
+                  SchemaStation, so a knob keeps its control, its save path and
+                  its badge when it changes owner - which is what makes "kein
+                  Knopf verliert seine Editierbarkeit" a property of the data
+                  rather than something this screen has to re-earn. */}
+              {selectedStation ? (
+                (knobsAt[selectedStation] ?? 0) > 0
+                  ? <SchemaStation station={selectedStation} schema={schema} />
+                  : (
+                    <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16.5 }}>
+                      {tr("harness.noKnobs")}
+                    </Text>
+                  )
+              ) : null}
+
+              {/* ---- one of HENRY's blocks ---- */}
+              {selectedBlock && cfg ? (
+                <>
+                  {/* FORM <-> BRIEF, a toggle on one state (design doc 4.3).
+                      VS Code's "Open Settings (JSON)" and GitHub Actions' "View
+                      workflow file" are the same gesture: two windows onto the
+                      same thing, editing happens in the form. */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {(["form", "brief"] as const).map((m) => (
+                      <Pressable key={m} testID={"briefmode-" + m}
+                        onPress={() => setBriefOpen(m === "brief")}
+                        style={{ backgroundColor: (m === "brief") === briefOpen ? t.accent : t.surface2,
+                          borderColor: t.glassBorder, borderWidth: 1, borderRadius: 999,
+                          paddingHorizontal: 11, paddingVertical: 5 }}>
+                        <Text style={{ color: (m === "brief") === briefOpen ? t.canvas : t.txtSecondary,
+                          fontSize: 11, fontWeight: "700" }}>
+                          {tr(m === "brief" ? "harness.viewBrief" : "harness.viewForm")}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  {briefOpen ? (
+                    <>
+                      {/* Henry has ONE brief PER SURFACE and they differ on
+                          purpose - the length law alone is four values. So the
+                          view picks one instead of implying a single brief. */}
+                      <BriefSurfacePicker surfaces={briefSurfaces} value={briefSurface}
+                        onPick={setBriefSurface} />
+                      <BriefView surface={briefSurface} repo={repo} onOpenRule={openRule} />
+                    </>
+                  ) : (
+                    <>
+                      {repo ? (
+                        <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 16 }}>
+                          {tr("harness.projectScope")}
+                        </Text>
+                      ) : null}
+                      {blocks.filter((b) => b.key === selectedBlock).map((b) => (
+                        <RuleBlock key={b.key} block={b} rules={cfg.rules} surfaces={surfaceLabels}
+                          project={cfg.project} onSet={setRule} onAsk={askHenry}
+                          highlight={highlight} />
+                      ))}
+                    </>
+                  )}
+                </>
+              ) : null}
 
           {/* Lane RENAMES are data on every lane whatever its kind, and nothing
               on this screen said so — the owner could stare at four lanes he is
-              free to rename and see only padlocks and dots. */}
-          {data.lane_labels_path && editable.includes(data.lane_labels_path) ? (
+              free to rename and see only padlocks and dots. Shown with the
+              stations, since that is what it renames. */}
+          {selectedStation && data.lane_labels_path && editable.includes(data.lane_labels_path) ? (
             <Pressable onPress={openHub}
               style={{ flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: t.surface1,
                 borderColor: t.accent, borderWidth: 1, borderRadius: 14, padding: 12 }}>
@@ -358,6 +628,7 @@ export default function LoopMapScreen() {
               ACTIVE in this checkout, and the guard on each transition. Nothing
               here is described a second time in the app — a new state or a
               changed condition shows up by itself. */}
+          {nav === "build" ? (<>
           <SectionHead title={tr("loopmap.secBuild")} hint={tr("loopmap.secBuildHint")} t={t} tr={tr}
             right={build?.mode ? (
               <View style={{ backgroundColor: t.surface2, borderColor: t.glassBorder, borderWidth: 1,
@@ -481,12 +752,13 @@ export default function LoopMapScreen() {
               );
             })}
           </View>
+          </>) : null}
 
           {/* ---- 3. the agent briefs: what an AGENT is started with ----
               Exported by harness.describe(). Without this a broken agent file is
               INVISIBLE: harness.py falls back to its built-in default rather than
               breaking a spawn, so nothing else would say an edit is being ignored. */}
-          {data.harness ? (
+          {nav === "briefs" && data.harness ? (
             <>
               <SectionHead title={tr("loopmap.harness")} hint={tr("loopmap.secHarnessHint")}
                 kind="policy" t={t} tr={tr} />
@@ -529,6 +801,7 @@ export default function LoopMapScreen() {
           ) : null}
 
           {/* ---- 4. harness laws ---- */}
+          {nav === "laws" ? (<>
           <SectionHead title={tr("loopmap.laws")} hint={tr("loopmap.lawsHint")} kind="fixed" t={t} tr={tr} />
           <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1, borderRadius: 14, overflow: "hidden" }}>
             {data.laws.map((law, i) => (
@@ -564,8 +837,28 @@ export default function LoopMapScreen() {
               <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 17 }}>{data.charter}</Text>
             </View>
           ) : null}
+          </>) : null}
+            </View>
+          </View>
         </ScrollView>
       )}
+      {/* HENRY, ANGEDOCKT (design doc 5.5). The launcher is the Intercom
+          pattern - bottom right, findable without a nav entry - and the panel
+          it opens is the SHIPPED CopilotOverlay hosting the SHIPPED chat body:
+          same session, same history, same transcript and composer. The card's
+          non-goal is explicit that a third assembly of those parts would break
+          the one-chat law, so nothing here is a new chat; it is the existing
+          one, at this address. The phone takes the /chat route exactly as the
+          board FAB does. */}
+      <Pressable testID="harness-ask-henry"
+        onPress={() => { useCopilotPanel.getState().show(); if (!wide) router.push("/chat" as never); }}
+        style={{ position: "absolute", right: 18, bottom: 24, width: 48, height: 48, borderRadius: 15,
+          backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+          alignItems: "center", justifyContent: "center",
+          ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
+        <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
+      </Pressable>
+      <CopilotOverlay />
     </View>
   );
 }
