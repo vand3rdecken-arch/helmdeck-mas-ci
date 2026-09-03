@@ -267,6 +267,8 @@ export const screens: Dict = {
   "processes.cardChipOpen": { de: "✓ Card öffnen", en: "✓ open card" },
   "processes.editProcess": { de: "Bearbeiten", en: "Edit" },
   "processes.cancelProcess": { de: "Abbrechen", en: "Cancel" },
+  "processes.askHenry": { de: "Henry fragen", en: "Ask Henry" },
+  "processes.askHenryDraft": { de: "Wo steht „{title}“?", en: "Where does \"{title}\" stand?" },
   "processes.clientPrompt": { de: "Client:", en: "Client:" },
   "processes.duePrompt": { de: "Fällig (YYYY-MM-DD):", en: "Due (YYYY-MM-DD):" },
   "processes.cancelConfirmTitle": { de: "Prozess abbrechen?", en: "Cancel process?" },
