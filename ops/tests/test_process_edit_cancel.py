@@ -199,6 +199,65 @@ def main():
                        "duy", role="owner")
     check(len(processes.get(p5["id"])["steps"]) == 1, "remove_step via chat drops the matched step")
 
+    # move_step + relaxed remove_step + delete_process (owner report
+    # 2026-09-03: "Bearbeiten still doesn't cover all, cannot remove or
+    # switch steps. Or delete process" - hit specifically on a DONE process
+    # where every step already has a card).
+    p6 = processes.create("Reorder + delete test", actor="owner",
+                          steps=[{"title": "A", "mode": "do", "days": 1},
+                                 {"title": "B", "mode": "do", "days": 1},
+                                 {"title": "C", "mode": "do", "days": 1, "track": "t-fake",
+                                  "status": "accepted", "done": True}])
+    moved = processes.move_step(p6["id"], 0, "down", actor="owner")
+    check([s["title"] for s in moved["steps"]] == ["B", "A", "C"],
+          "move_step swaps a step with its neighbour")
+    try:
+        processes.move_step(p6["id"], 0, "up", actor="owner")
+        check(False, "move_step at the top refuses 'up'")
+    except RuntimeError as e:
+        check("top" in str(e), "move_step at the top refuses 'up', names why (%r)" % e)
+    try:
+        processes.move_step(p6["id"], 2, "down", actor="owner")
+        check(False, "move_step at the bottom refuses 'down'")
+    except RuntimeError as e:
+        check("bottom" in str(e), "move_step at the bottom refuses 'down', names why (%r)" % e)
+    # "C" (index 2) has a track - removing it used to refuse ("step already
+    # has a card"), which is exactly what blocked the owner on their DONE
+    # process where every step had one.
+    removed = processes.remove_step(p6["id"], 2)
+    check(len(removed["steps"]) == 2 and all(s["title"] != "C" for s in removed["steps"]),
+          "remove_step now works even for a step that already has a card - "
+          "the card itself is untouched, only this process's own list shrinks")
+
+    r = ca._run_action({"type": "move_step", "process": p6["id"], "step": "B", "direction": "down"},
+                       "duy", role="owner")
+    check(processes.get(p6["id"])["steps"][1]["title"] == "B",
+          "move_step via chat resolves the step by fragment and moves it (%r)" % r)
+    r = ca._run_action({"type": "move_step", "process": p6["id"], "step": "B", "direction": "sideways"},
+                       "duy", role="owner")
+    check("direction" in r, "move_step via chat refuses a bogus direction, not a crash")
+
+    check(processes.get(p6["id"]) is not None, "sanity: process still exists before delete")
+    r = ca._run_action({"type": "delete_process", "process": p6["id"]}, "cl", role="client")
+    check("gesperrt" in r or "cards.admin" in r, "delete_process via chat refuses a non-admin role")
+    check(processes.get(p6["id"]) is not None, "the refused delete did not apply")
+    r = ca._run_action({"type": "delete_process", "process": p6["id"]}, "duy", role="owner")
+    check(processes.get(p6["id"]) is None, "delete_process via chat removes the process row (%r)" % r)
+    r = ca._run_action({"type": "delete_process", "process": p6["id"]}, "duy", role="owner")
+    check("ambiguous or not found" in r, "deleting an already-gone process refuses cleanly, not a crash")
+
+    # HTTP-layer: delete is admin-gated the same way edit/cancel are.
+    p7 = processes.create("HTTP delete cap check", actor="owner",
+                          steps=[{"title": "S", "mode": "do", "days": 1}])
+    fs4 = FakeSelf()
+    routes_system.processes_sub_post(fs4, client_role, {}, p7["id"], "delete")
+    check(fs4.sent[0] == 403, "HTTP: a role with no cards.admin is refused on delete")
+    check(processes.get(p7["id"]) is not None, "the refused HTTP delete did not apply")
+    fs5 = FakeSelf()
+    routes_system.processes_sub_post(fs5, owner, {}, p7["id"], "delete")
+    check(fs5.sent[0] == 200 and processes.get(p7["id"]) is None,
+          "HTTP: owner may delete, and the process is actually gone")
+
     print()
     if _fails:
         print("=== %d FAILED ===" % len(_fails))
