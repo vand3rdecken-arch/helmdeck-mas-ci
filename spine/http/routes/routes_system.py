@@ -54,15 +54,23 @@ def history_get(self, user):
         r = subprocess.run(["git", "-C", repo, *args],
                            capture_output=True, text=True, timeout=20)
         return r.stdout.strip() if r.returncode == 0 else ""
+    # SEP is written as an ESCAPE, never as a raw \x1f byte in the source. The
+    # raw byte was here until bd260db (the two-mains split), whose text rewrite
+    # silently ate every control character in the file: `--pretty=format:%h%s%an%ad`
+    # came back one unseparated blob and `line.split("")` raised
+    # "ValueError: empty separator" - so GET /history answered 500 on every call
+    # and the Verlauf screen showed a false "Desktop nicht erreichbar".
+    # Invisible bytes in source do not survive refactors; escapes do.
+    SEP = "\x1f"
     def parse(log):
         out = []
         for line in log.splitlines():
-            bits = line.split("")
+            bits = line.split(SEP)
             if len(bits) >= 4:
                 out.append({"h": bits[0], "msg": bits[1][:100],
                             "author": bits[2], "date": bits[3]})
         return out
-    fmt = "--pretty=format:%h%s%an%ad"
+    fmt = "--pretty=format:%h{s}%s{s}%an{s}%ad".format(s=SEP)
     head = git("rev-parse", "--abbrev-ref", "HEAD") or "main"
     main = parse(git("log", "-n", "40", "--date=short", fmt, head))
     tmap = {}

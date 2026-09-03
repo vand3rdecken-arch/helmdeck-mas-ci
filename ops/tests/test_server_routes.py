@@ -564,9 +564,53 @@ def main():
         # (routes_system.sessions_claude_get is a byte-identical body move)
         # is verified by py_compile + the identical-function check below.
 
+        # No default_repo in this sandbox, so this asserts the EMPTY branch of
+        # history_get and nothing more. That gap is why a broken parse() shipped
+        # for ten days behind a green test - the real git log path below is what
+        # actually covers it.
         status, body = req("GET", "/history", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "main" in body and "branches" in body,
-           "/history shape: main+branches present (real git log against the sandboxed repo)")
+           "/history shape: main+branches present (no default_repo -> empty)")
+
+        # ...and now the PARSE path, against a throwaway git repo. history_get
+        # asks git for %h/%s/%an/%ad joined by \x1f and splits on it; when a text
+        # rewrite ate those separator bytes (bd260db) the split raised
+        # "empty separator", /history answered 500 on every call, and the Verlauf
+        # screen reported a false "Desktop nicht erreichbar". Assert on the
+        # PARSED FIELDS, not just the shape - a shape check passes on [].
+        import subprocess as _sp
+        _repo = os.path.join(tmp, "histrepo")
+        os.makedirs(_repo, exist_ok=True)
+        def _g(*a):
+            return _sp.run(["git", "-C", _repo, *a], capture_output=True, text=True)
+        # plain `git init` + symbolic-ref, NOT `git init -b main`: the -b switch
+        # needs git >= 2.28 and this machine's git is older (measured: exit 129,
+        # "unknown switch `b'"), which silently left no repo at all.
+        _g("init")
+        _g("symbolic-ref", "HEAD", "refs/heads/main")
+        _g("config", "user.email", "t@example.com")
+        _g("config", "user.name", "Route Test")
+        with open(os.path.join(_repo, "f.txt"), "w") as _f:
+            _f.write("one")
+        _g("add", "-A"); _g("commit", "-m", "first commit")
+        _g("checkout", "-b", "side")
+        with open(os.path.join(_repo, "f.txt"), "w") as _f:
+            _f.write("two")
+        _g("add", "-A"); _g("commit", "-m", "side commit")
+        _g("checkout", "main")
+        events.save_settings({"default_repo": _repo}, actor="test", reason="history parse test")
+        status, body = req("GET", "/history", cookie=sid, expect=200)
+        _main = (body or {}).get("main") or []
+        ok(len(_main) == 1 and _main[0].get("msg") == "first commit"
+           and _main[0].get("author") == "Route Test"
+           and len(_main[0].get("h") or "") >= 7
+           and (_main[0].get("date") or "").count("-") == 2,
+           "/history parses real commits into h/msg/author/date (the \\x1f separator survives)")
+        _side = [b for b in ((body or {}).get("branches") or []) if b.get("name") == "side"]
+        ok(len(_side) == 1 and len(_side[0].get("commits") or []) == 1
+           and _side[0]["commits"][0].get("msg") == "side commit",
+           "/history parses per-branch commits ahead of HEAD")
+        events.save_settings({"default_repo": ""}, actor="test", reason="history parse test done")
 
         status, body = req("GET", "/harness/version/agents/doesnotexist?id=x", cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/harness/version/... refuses a non-owner")
