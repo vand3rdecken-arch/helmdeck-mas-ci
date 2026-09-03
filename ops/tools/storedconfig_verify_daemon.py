@@ -60,16 +60,17 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8151
 PW = "hunter2hunter2"
 
 db.init()
-with open(events.SET, "w", encoding="utf-8") as f:
-    json.dump({
-        "policy": {"lang": "de",
-                   "lane_labels": {"backlog": "Inbox", "working": "In Arbeit",
-                                   "review": "Abnahme", "done": "Fertig"}},
-        "appearance": {"backdrop": "mesh"},
-        # The refusal case: not one of the rule's options, so it is KEPT and
-        # reported rather than adopted or dropped.
-        "henry_permission_mode": "yolo",
-    }, f)
+# Seed through the db store (config-consolidation phase 2): settings live in
+# workspace_config now, a settings.json written here would reach nobody.
+db.workspace_config_replace({
+    "policy": {"lang": "de",
+               "lane_labels": {"backlog": "Inbox", "working": "In Arbeit",
+                               "review": "Abnahme", "done": "Fertig"}},
+    "appearance": {"backdrop": "mesh"},
+    # The refusal case: not one of the rule's options, so it is KEPT and
+    # reported rather than adopted or dropped.
+    "henry_permission_mode": "yolo",
+})
 
 auth.create_user("owner", PW, "owner")
 boards.ensure_default()

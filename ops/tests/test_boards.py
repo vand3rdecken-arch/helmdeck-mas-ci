@@ -46,8 +46,9 @@ def check(cond, msg):
 
 
 def workspace(**settings):
-    with open(events.SET, "w", encoding="utf-8") as f:
-        json.dump(settings, f)
+    # db store, not settings.json (config-consolidation phase 2) - wholesale
+    # replace, the same reset semantics overwriting the file used to have.
+    db.workspace_config_replace(settings)
 
 
 def cols(*stations):
@@ -56,8 +57,10 @@ def cols(*stations):
 
 # The owner renamed exactly ONE lane before boards existed - that is the state
 # the migration has to carry over without inventing labels for the other three.
-workspace(policy={"lane_labels": {"working": "Bei uns"}})
+# init BEFORE the seed since the workspace store moved into the db (config-
+# consolidation phase 2) - the table has to exist to be seeded.
 db.init()
+workspace(policy={"lane_labels": {"working": "Bei uns"}})
 
 
 # -- 1. the default board IS the lane_labels migration -----------------------

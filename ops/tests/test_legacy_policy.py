@@ -53,10 +53,10 @@ def check(cond, msg):
 
 
 def workspace(**settings):
-    """Replace settings.json wholesale. events.settings() re-reads the file on
-    every call and caches nothing, so this is the whole reset."""
-    with open(events.SET, "w", encoding="utf-8") as f:
-        json.dump(settings, f)
+    """Replace the workspace store wholesale (db-backed since config-
+    consolidation phase 2). events.settings() reads the db on every call and
+    caches nothing, so this is the whole reset."""
+    db.workspace_config_replace(settings)
 
 
 def stored():

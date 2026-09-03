@@ -20,7 +20,18 @@ DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-hookidle-")
+import daemon.paths
+daemon.paths.DAEMON_ROOT = SANDBOX
 from spine.storage import db
+# BOTH, not just DBPATH: _migrate() derives its legacy-file paths (settings.
+# json, events.jsonl, ...) from db.ROOT, not from DBPATH's dirname. Patching
+# DBPATH alone here once let a real test run archive the REAL daemon/
+# settings.json + daemon/events.jsonl (measured 2026-09-03 while adding the
+# settings->db migration - the live daemon degraded to defaults until the
+# files were restored from their own .imported archives). db._migrate() now
+# also refuses to run at all when ROOT and DBPATH disagree (belt+suspenders),
+# but this test must not rely on that backstop.
+db.ROOT = SANDBOX
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
@@ -40,8 +51,7 @@ def check(cond, msg):
 def _settings(cmd, **extra):
     s = {"repo_hooks": {SANDBOX: {"deploy": cmd}}}
     s.update(extra)
-    with open(events.SET, "w", encoding="utf-8") as f:
-        json.dump(s, f)
+    db.workspace_config_replace(s)
 
 
 def _track(name):

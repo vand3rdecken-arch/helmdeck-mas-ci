@@ -78,16 +78,26 @@ def _health():
 
 
 def _relay_status():
-    """Read the (git-ignored) settings to report pairing without hitting the
-    daemon: paired = a phone public key is pinned for the room."""
+    """Report pairing without hitting the daemon: paired = a phone public key
+    is pinned for the room. Settings live in the db since the config
+    consolidation (2026-09-03) - read via the daemon's own loader (WAL allows
+    a concurrent reader process); the old settings.json file stays as the
+    fallback for an install whose daemon never booted the new code, so the
+    tray never claims 'unbekannt' on a machine that is actually paired."""
     try:
-        with open(SETTINGS, encoding="utf-8") as f:
-            rel = (json.load(f).get("relay") or {})
-        if not (rel.get("url") and rel.get("room")):
-            return "nicht konfiguriert"
-        return "gekoppelt" if rel.get("phone_pub") else "wartet auf Kopplung"
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from spine.storage import events
+        rel = (events.settings().get("relay") or {})
     except Exception:
-        return "unbekannt"
+        try:
+            with open(SETTINGS, encoding="utf-8") as f:
+                rel = (json.load(f).get("relay") or {})
+        except Exception:
+            return "unbekannt"
+    if not (rel.get("url") and rel.get("room")):
+        return "nicht konfiguriert"
+    return "gekoppelt" if rel.get("phone_pub") else "wartet auf Kopplung"
 
 
 def _python_for_daemon():

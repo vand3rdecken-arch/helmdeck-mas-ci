@@ -44,8 +44,7 @@ def check(cond, msg):
 
 
 def workspace(**settings):
-    with open(events.SET, "w", encoding="utf-8") as f:
-        json.dump(settings, f)
+    db.workspace_config_replace(settings)
 
 
 db.init()

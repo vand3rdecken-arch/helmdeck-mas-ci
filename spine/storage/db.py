@@ -289,6 +289,20 @@ def _archive(path):
 
 
 def _migrate():
+    # BELT+SUSPENDERS: every import below reads/archives files under `ROOT`,
+    # while the db itself lives at `DBPATH`. A sandbox that repoints only one
+    # of the two (measured 2026-09-03: a test patched DBPATH but left ROOT
+    # bound to the real daemon.paths.DAEMON_ROOT from db.py's own import time)
+    # would run this against an EMPTY sandboxed table but the REAL daemon's
+    # settings.json/events.jsonl/tracks.json - archiving live data a test
+    # never meant to touch. If the two disagree, refuse outright: a skipped
+    # migration is recoverable (the files just stay put), a wrong-target one
+    # is not.
+    if os.path.dirname(os.path.abspath(DBPATH)) != os.path.abspath(ROOT):
+        print("db: _migrate() SKIPPED - ROOT (%s) and DBPATH's directory (%s) "
+              "disagree; a caller repointed one without the other" %
+              (ROOT, os.path.dirname(DBPATH)))
+        return
     c = conn()
     tj = os.path.join(ROOT, "tracks.json")
     if os.path.exists(tj):
@@ -366,6 +380,30 @@ def _migrate():
             print("db: imported connector state (%d connectors) from connectors/_state.json" % len(cstate))
         except Exception as e:
             print("db: connector state import failed:", e)
+    # settings.json -> workspace_config (config-consolidation phase 2,
+    # owner decree 2026-09-03). FIRST-START ONLY, same rule as events above:
+    # an empty table + an existing file means this install predates the db
+    # store; a populated table means the db is already the truth and the file
+    # (if any reappeared) is not - never re-import over live config. One row
+    # per top-level key; the file is archived, not deleted.
+    sj = os.path.join(ROOT, "settings.json")
+    if (os.path.exists(sj)
+            and c.execute("SELECT 1 FROM workspace_config LIMIT 1").fetchone() is None):
+        try:
+            with open(sj, encoding="utf-8") as f:
+                sdoc = json.load(f)
+            if isinstance(sdoc, dict):
+                import datetime
+                now = datetime.datetime.now().isoformat(timespec="seconds")
+                with c:
+                    for k, v in sdoc.items():
+                        c.execute("INSERT OR REPLACE INTO workspace_config"
+                                  "(key,value,updated_at) VALUES(?,?,?)",
+                                  (k, json.dumps(v), now))
+                _archive(sj)
+                print("db: imported %d settings keys from settings.json" % len(sdoc))
+        except Exception as e:
+            print("db: settings import failed:", e)
 
 # -- tracks --------------------------------------------------------------
 
@@ -611,6 +649,20 @@ def workspace_config_all():
         except ValueError:
             continue          # a hand-corrupted row reads as absent, not a crash
     return out
+
+
+def workspace_config_replace(doc):
+    """Replace the WHOLE store with `doc` ({key: subtree}) in one transaction.
+    The wholesale write path: /harness/import and test/sandbox seeding - the
+    db-era equivalent of overwriting settings.json."""
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with conn() as c:
+        c.execute("DELETE FROM workspace_config")
+        for k, v in (doc or {}).items():
+            c.execute("INSERT INTO workspace_config(key,value,updated_at) "
+                      "VALUES(?,?,?)", (k, json.dumps(v), now))
+    bump()
 
 
 def workspace_config_put(pairs):

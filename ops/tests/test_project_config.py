@@ -107,7 +107,7 @@ def main():
     pc.write_scoped({"rule.tone.address.pm": "Sie"}, actor="owner")
     ok(bh.value("tone.length", "voice") == "normal", "the first workspace value survives")
     ok(bh.value("tone.address", "pm") == "Sie", "the second landed too")
-    stored = json.load(open(events.SET, encoding="utf-8")).get("rule") or {}
+    stored = (db.workspace_config_all().get("rule") or {})
     ok(set(stored.get("tone") or {}) == {"length", "address"},
        "both live under one `rule` subtree (got %r)" % sorted(stored.get("tone") or {}))
 

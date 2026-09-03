@@ -144,37 +144,24 @@ DEFAULTS = {
     "users": [],
 }
 
-# Last successfully parsed settings.json content. Windows gives a reader a
-# transient PermissionError while os.replace(tmp, SET) swaps the file (measured
-# 2026-09-03: /me 500'd with Errno 13 in the daemon log, and in the same window
-# request_ship_decision read a settings WITHOUT repo_hooks and silently skipped
-# the ship-decision for two accepted UI cards - no OTA ever went out). A read
-# that fails while the file EXISTS must degrade to the last good read, never to
-# DEFAULTS: DEFAULTS has no repo_hooks/users/drivers, and every caller treats
-# the return as the truth.
-_last_good = None
-
-
 def settings():
-    global _last_good
+    """DEFAULTS overlaid with the stored workspace rows (db.workspace_config,
+    config-consolidation phase 2 - 'alles was harness config ist gehoert ins
+    db'). The signature and the return shape are unchanged on purpose: 100+
+    call sites read this lazily per tick/request, and they keep doing so.
+
+    The file-era retry/_last_good machinery is GONE WITH ITS CAUSE: it
+    compensated for Windows' transient PermissionError while os.replace
+    swapped settings.json under a reader (measured 2026-09-03, /me 500s +
+    a silently skipped ship-decision). WAL reads never see a half-swapped
+    store, so degrading to a remembered copy would now only hide a real db
+    error. db.workspace_config_all() itself degrades to {} (pure defaults)
+    only for a caller racing ahead of db.init() - the same answer a missing
+    settings.json always produced."""
     s = json.loads(json.dumps(DEFAULTS))
-    if os.path.exists(SET):
-        loaded = None
-        for _ in range(4):                  # lock windows are ms-sized; 3x50ms covers them
-            try:
-                with open(SET, encoding="utf-8") as f:
-                    loaded = json.load(f)
-                break
-            except ValueError:
-                break                       # corrupt file: defaults, as before
-            except OSError:
-                time.sleep(0.05)
-        if loaded is None:
-            loaded = _last_good             # unreadable but existing -> last good read
-        if loaded is not None:
-            _last_good = loaded
-            for k, v in loaded.items():
-                s[k] = v
+    from spine.storage import db
+    for k, v in db.workspace_config_all().items():
+        s[k] = v
     return s
 
 # A checkpoint marks REAL development - new integrations/runtimes, structural
@@ -215,15 +202,12 @@ def save_settings(patch, actor="system", reason=""):
             s[k].update(v)
         else:
             s[k] = v
-    tmp = SET + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(s, f, indent=2)
-    os.replace(tmp, SET)
-    try:
-        from spine.storage import db
-        db.bump()
-    except Exception:
-        pass
+    # Persist ONLY the patched top-level keys (their merged subtrees) - the
+    # file era wrote the whole doc and thereby froze every default into the
+    # store on the first save; per-key rows keep untouched keys following the
+    # code defaults. workspace_config_put bumps the SSE version itself.
+    from spine.storage import db
+    db.workspace_config_put({k: s[k] for k in (patch or {})})
     # Audit trail (card 5): one event per write, old->new per CHANGED top-level
     # key only (unmodified keys stay silent - the diff is the point, not the
     # whole blob), secrets masked by name. Best-effort, same contract as every

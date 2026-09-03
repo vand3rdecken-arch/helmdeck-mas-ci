@@ -84,6 +84,10 @@ def main():
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
     from spine.storage import events
+    # events.SET only feeds the ONE-TIME settings.json->db migration since the
+    # config consolidation (2026-09-03); the live workspace store is the
+    # workspace_config table, covered by the db.ROOT/DBPATH sandbox above.
+    # The patch stays so a migration-path test could never touch a real file.
     events.SET = os.path.join(tmp, "settings.json")
     events.EV = os.path.join(tmp, "events.jsonl")   # the append-only audit sink
 
