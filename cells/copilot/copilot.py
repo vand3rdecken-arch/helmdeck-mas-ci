@@ -1494,7 +1494,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         timeline_store.append(card_run_dir, "s:" + uuid.uuid4().hex,
             {"role": "user", "kind": "text", "text": message,
              "by": user, "byKind": "human", "to": "henry", "ts": _tsv, "ta": _tav})
-    if not _retried:
+    if not _retried and not card_run_dir:
+        # BOARD chat only - a card chat already folded the message into ITS
+        # timeline above, and its reply never lands in copilot_log either.
         # The owner's message exists the moment he SENT it, not when the reply
         # lands (owner incident 2026-09-03 10:07: his message queued 3.5 min
         # behind a compaction; the app's optimistic bubble timed out and the
