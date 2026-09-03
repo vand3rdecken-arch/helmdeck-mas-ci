@@ -68,19 +68,19 @@ from spine.http.routes import routes_policy
 from spine.http.routes import routes_settings
 from spine.http.routes import routes_glance
 from spine.http.routes import routes_info
-from cells.copilot import routes_pm
+from cells.copilot.routes import routes_pm
 from spine.http.routes import routes_misc
 from spine.http.routes import routes_control
 from spine.http.routes import routes_relay
 from spine.http.routes import routes_wear
-from cells.engineer import routes_connectors
+from cells.engineer.routes import routes_connectors
 from spine.http.routes import routes_audit
 from spine.http.routes import routes_checkpoints
 from spine.http.routes import routes_sign
 from spine.http.routes import routes_projects
-from cells.copilot import routes_copilot
-from cells.engineer import routes_tracks
-from cells.engineer import routes_track_actions
+from cells.copilot.routes import routes_copilot
+from cells.engineer.routes import routes_tracks
+from cells.engineer.routes import routes_track_actions
 from spine.http.routes import routes_runs
 from spine.http.routes import routes_system
 from spine.http.routes import routes_cells
@@ -128,7 +128,7 @@ class H(BaseHTTPRequestHandler):
             # board look permanently busy and the PM/night loop would never
             # find its idle window again. Heartbeats say "he is here", which is
             # a different question from "he is working" - see presence.py.
-            from cells.copilot import pm
+            from cells.copilot.planning import pm
             pm.touch()
         return u
 
@@ -532,7 +532,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/sessions/claude/adopt":
                 if user["role"] == "client":
                     return self._send(403, json.dumps({"error": "owner/operator only"}))
-                from cells.engineer import sessions
+                from cells.engineer.cards import sessions
                 try:
                     return self._send(200, json.dumps(sessions.adopt_session(
                         body.get("session_id", ""), body.get("cwd", ""),
@@ -661,7 +661,7 @@ def serve(port=8140):
         print("WINCAP: reaped %d orphan screen recorder(s) from a previous run." % rreaped)
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
     atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
         print("SESSIONS: reclaimed %d merged worktree(s)" % reclaimed)  # stays clean by having none at all.

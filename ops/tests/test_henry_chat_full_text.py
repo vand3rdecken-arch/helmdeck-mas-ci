@@ -18,11 +18,12 @@ import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
-from cells.copilot import henry_broker as hb
+from cells.copilot.broker import henry_broker as hb
 # Imported UP HERE, before section 4 swaps package attributes around: pm_comm
 # binds `from spine.registry import i18n as _i18n` at module level, so importing
 # it while that attribute is stubbed would freeze the stub into the module.
-from cells.copilot import pm_comm
+from cells.copilot.planning import pm_comm
+from cells.copilot.chat import copilot as _  # noqa: F401 (registers cells.copilot.chat before section 4 swaps its attribute)
 
 _fails = []
 
@@ -125,11 +126,11 @@ class _Copilot:
 import spine.comms, spine.registry, cells.copilot
 _prev = (getattr(spine.comms, "notify", None), getattr(spine.registry, "i18n", None),
          getattr(cells.copilot, "copilot", None))
-spine.comms.notify, spine.registry.i18n, cells.copilot.copilot = _Notify, _I18n, _Copilot
+spine.comms.notify, spine.registry.i18n, cells.copilot.chat.copilot = _Notify, _I18n, _Copilot
 try:
     hb._notify_owner("Henry (deploy_failed): " + LONG, None)
 finally:
-    spine.comms.notify, spine.registry.i18n, cells.copilot.copilot = _prev
+    spine.comms.notify, spine.registry.i18n, cells.copilot.chat.copilot = _prev
 
 check(said and LONG in said[0], "_notify_owner: the CHAT gets the whole message")
 check(said and said[0].rstrip().endswith(TAIL), "_notify_owner: chat message is not mangled")
@@ -157,7 +158,7 @@ class _Notify2:
     escalate = staticmethod(lambda title, body, tid: pm_pushed.append(body))
 
 
-spine.comms.notify, cells.copilot.copilot = _Notify2, _Copilot
+spine.comms.notify, cells.copilot.chat.copilot = _Notify2, _Copilot
 said[:] = []
 try:
     pm_comm._say(LONG)
@@ -178,7 +179,7 @@ try:
     check(bool(_body) and LONG.startswith(_body) and LONG[len(_body):len(_body) + 1].isspace(),
           "pm _escalate: the push cut lands between words, not mid-word")
 finally:
-    spine.comms.notify, cells.copilot.copilot = _prev[0], _prev[2]
+    spine.comms.notify, cells.copilot.chat.copilot = _prev[0], _prev[2]
 
 # 6) `chars` is a TRUE ceiling - the " …" marker is paid out of the budget, not
 # added on top. A caller at a hard limit must not have to write chars-2 itself.

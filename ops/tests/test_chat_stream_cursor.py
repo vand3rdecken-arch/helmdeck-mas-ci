@@ -45,7 +45,7 @@ def ok(cond, msg):
 
 def main():
     from spine.storage import db
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
 
     # --- sandbox the ONE global that reaches live data ------------------------
     real_log = copilot.CHATLOG

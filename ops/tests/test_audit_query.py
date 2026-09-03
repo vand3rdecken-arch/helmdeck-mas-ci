@@ -81,7 +81,7 @@ def main():
 
     # ------------------------------------------------------------------ 4 ---
     print("\naudit_query chat action: role-gated, readable output")
-    from cells.copilot import copilot_actions as ca
+    from cells.copilot.chat import copilot_actions as ca
     from spine.auth import auth
     r = ca._run_action({"type": "audit_query", "kind": "gxp"}, "ext-client", role="client")
     ok("gesperrt" in r or "audit.read" in r, "client role refused, told the gate name")

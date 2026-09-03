@@ -305,7 +305,7 @@ def clear_dedup(track_id):
     # about a question the chat had decided was not news, and the owner would
     # tap that notification into a transcript that never mentioned it.
     try:
-        from cells.copilot import card_mirror
+        from cells.copilot.chat import card_mirror
         card_mirror.clear_dedup(track_id)
     except Exception:
         pass
@@ -456,7 +456,7 @@ def card_event(track, status):
     # inside it: the mirror keeps its own reason table (card_mirror.REASONS) so
     # the inbox's editorial policy and the push's never silently drift into one.
     try:
-        from cells.copilot import card_mirror
+        from cells.copilot.chat import card_mirror
         card_mirror.mirror(track, status)
     except Exception as _me:                                    # noqa: BLE001
         # Best-effort like every other write in this module, but never SILENT:

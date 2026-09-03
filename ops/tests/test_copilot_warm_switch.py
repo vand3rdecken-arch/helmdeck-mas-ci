@@ -19,7 +19,7 @@ import os, subprocess, sys, time
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-from cells.copilot import copilot                                  # noqa: E402
+from cells.copilot.chat import copilot                                  # noqa: E402
 
 FAKE = os.path.join(ROOT, "ops", "tests", "fake_claude.py")
 USER = "warm-switch-test"

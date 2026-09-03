@@ -25,8 +25,8 @@ sys.path.insert(0, ROOT)
 
 SANDBOX = tempfile.mkdtemp()
 
-from cells.copilot import pm
-from cells.copilot import pm_state
+from cells.copilot.planning import pm
+from cells.copilot.planning import pm_state
 
 PLANS = os.path.join(SANDBOX, "pm")
 pm.PLANS = PLANS
@@ -86,7 +86,7 @@ _SET = {"pm": dict(pm.PM_DEFAULTS, goal=GOAL), "policy": {}}
 events.settings = lambda: _SET
 events.save_settings = lambda d: _SET.update(d)
 
-from cells.copilot import copilot
+from cells.copilot.chat import copilot
 copilot._snapshot = lambda: "(kein Board)"
 
 

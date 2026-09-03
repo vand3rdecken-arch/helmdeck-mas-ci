@@ -105,7 +105,7 @@ def glance_get(self, user):
     # READS here; the one write is POST /glance/answer, which is
     # separately gated by settings.glance_decide - see there.
     from spine.storage import events
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     tok = events.settings().get("glance_token") or ""
     given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
     if not tok or given != tok:
@@ -152,7 +152,7 @@ def glance_talk(self, user, body):
     msg = (body.get("message") or "").strip()[:400]
     if not msg:
         return self._send(400, json.dumps({"error": "message required"}))
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     from spine.ops import glassturn
     # THE TRANSCRIPT REACHES THE LENS HERE, at event time, from the one place
     # that observes it: the arrival of the words themselves.
@@ -343,7 +343,7 @@ def _glance_messages():
     list and gated by settings.glance_decide - and offering a second one from the
     chat would be the drift /glance/answer's docstring exists to forbid.
     """
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     from spine.ops.glances import readable
     msgs = (copilot.history("owner") or {}).get("messages") or []
     out = []
@@ -439,7 +439,7 @@ def glance_photo(self, user, body):
     # WRONG card is unrecoverable in a way a 400 is not. The lens knows which
     # card is on screen; it says so.
     from spine.storage import events
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     s = events.settings()
     tok = s.get("glance_token") or ""
     given = (body.get("token") or "").strip() or \
@@ -477,7 +477,7 @@ def glance_photo(self, user, body):
     import time as _t
     name = _t.strftime("glasses-%Y%m%d-%H%M%S", _t.localtime()) + ".%s" % ext
     try:
-        from cells.engineer import cardadmin
+        from cells.engineer.cards import cardadmin
         cardadmin.add_attachments(
             tid, [{"name": name, "data": b64, "mime": mime}], actor="glasses")
     except Exception as e:                       # noqa: BLE001
@@ -506,7 +506,7 @@ def glance_answer(self, user, body):
     #   4. it can only ever pick among options the WORKER wrote.
     from spine.ops import ask
     from spine.storage import events
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     s = events.settings()
     tok = s.get("glance_token") or ""
     given = (body.get("token") or "").strip() or \

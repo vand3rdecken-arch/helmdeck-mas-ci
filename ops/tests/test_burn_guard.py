@@ -20,8 +20,8 @@ db.init()
 from spine.ops import runs
 runs.REC = os.path.join(SANDBOX, "runs"); os.makedirs(runs.REC, exist_ok=True)
 from spine.agent import drivers
-from cells.engineer import sessions
-from cells.copilot import pm
+from cells.engineer.cards import sessions
+from cells.copilot.planning import pm
 sessions.REC = runs.REC
 
 _WRAP = os.path.join(tempfile.mkdtemp(), "fake_claude.cmd")

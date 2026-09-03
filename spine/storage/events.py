@@ -645,7 +645,7 @@ def metrics(tracks):
     # minus their AI cost. Cards not in any process bill standalone (still in
     # `cards`). This replaces the old separate projects.py billing wrapper -
     # billing now lives on the card, the process is just the grouping.
-    from cells.engineer import processes as _processes
+    from cells.engineer.chains import processes as _processes
     track_proc, proc_meta = {}, {}
     for p in _processes.list_processes():
         proc_meta[p["id"]] = {"name": (p.get("request") or p["id"])[:70],

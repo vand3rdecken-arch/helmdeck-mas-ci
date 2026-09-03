@@ -169,8 +169,8 @@ _CAP_MODULES = (
 
 def _import_module(name):
     import importlib
-    for cand in ("spine.http.routes." + name, "cells.engineer." + name,
-                 "cells.copilot." + name):
+    for cand in ("spine.http.routes." + name, "cells.engineer.routes." + name,
+                 "cells.copilot.routes." + name):
         try:
             return importlib.import_module(cand)
         except ImportError:

@@ -33,7 +33,7 @@ db.init()
 
 from spine.ops import ask
 from spine.comms import presence
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 from spine.ops.actionlog import ActionLog
 
 _fails = []

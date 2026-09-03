@@ -49,7 +49,7 @@ def backup():
 
 
 def wipe_cards():
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     ts = sessions.list_tracks()
     ok = 0
     for t in ts:
@@ -165,7 +165,7 @@ def main():
     log_reset(bdir, ok, total, a)
 
     if a.connectors:
-        from cells.engineer import connectors
+        from cells.engineer.connectors import connectors
         st = os.path.join(os.path.dirname(connectors.STATE), "_state.json")
         if os.path.exists(st):
             os.remove(st); print("cleared connector import state (they'll re-pull fresh)")

@@ -18,7 +18,7 @@ def settings_get(self, user):
 
 
 def nightshift_get(self, user):
-    from cells.copilot import pm
+    from cells.copilot.planning import pm
     return self._send(200, json.dumps(pm.status()))
 
 
@@ -36,7 +36,7 @@ def automation_get(self, user):
     # (auto-dispatch/accept), and the build-loop state machine + where
     # it currently sits - so the UI can expose "what is the harness doing".
     from spine.storage import events
-    from cells.copilot import pm
+    from cells.copilot.planning import pm
     s = events.settings(); pol = s.get("policy") or {}
     # ONE definition, shared with /loop/map (see _loop_machine). The
     # hand-written list that used to sit here had drifted: it still

@@ -120,7 +120,7 @@ def _reject_followup(tid, actor, reason):
     """A rejection is an instruction, not a dead end: back to working, and the
     reason becomes the worker's next brief instead of dying in the log."""
     try:
-        from cells.engineer import sessions
+        from cells.engineer.cards import sessions
         sessions.move_lane(tid, "working", actor=actor)
         if reason:
             sessions.steer(tid, "Freigabe abgelehnt: " + reason,

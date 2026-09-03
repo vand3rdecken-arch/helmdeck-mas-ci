@@ -65,7 +65,7 @@ def main():
     archived = os.path.join(os.path.dirname(legacy_path), "backups", "processes.json.imported")
     ok(os.path.exists(archived), "processes.json.imported now exists in backups/ (nothing lost)")
 
-    from cells.engineer import processes
+    from cells.engineer.chains import processes
     got = processes.list_processes()
     ok(len(got) == 2, "both synthetic legacy processes migrated into the db")
     ids = {p["id"] for p in got}

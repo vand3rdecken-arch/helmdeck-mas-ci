@@ -29,7 +29,7 @@ def _live_cohabitant(t, wt):
     belongs here: those cards are still on the board, still sharing trees. It is
     also the nothing-lost invariant stated where it is actually enforced, so no
     future naming scheme can quietly reopen the same hole."""
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     p = os.path.realpath(wt)
     for o in sessions._load():
         if o.get("id") == t.get("id") or not o.get("worktree"):
@@ -110,7 +110,7 @@ def sweep_worktrees():
     in the done lane) is now kept regardless of git's merge verdict - "is
     anyone still using this" is the daemon's own fact, and it must win over
     what git alone can see. Returns the number reclaimed."""
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     tracks = sessions._load()
     repos = {t.get("repo") for t in tracks if t.get("repo")}
     referenced = {os.path.realpath(t["worktree"]) for t in tracks if t.get("worktree")}

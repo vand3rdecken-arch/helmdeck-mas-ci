@@ -38,7 +38,7 @@ events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
 from spine.agent import claude_sessions, drivers
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 from spine.ops.actionlog import ActionLog
 
 PROJECTS = os.path.join(SANDBOX, "projects", "proj")

@@ -195,7 +195,7 @@ def main():
     _db.init()
     _db.track_put({"id": "t-oneway", "lane": "backlog", "status": "queued",
                    "task": "x", "gxp": True})
-    from cells.engineer import cardadmin
+    from cells.engineer.cards import cardadmin
     try:
         cardadmin.update_track("t-oneway", {"gxp": False}, actor="duy")
         ok(False, "clearing gxp should have been refused")
@@ -209,7 +209,7 @@ def main():
     # ------------------------------------------------------------- 4 and 5 ---
     print("\nthe lane machine itself refuses, and does not move the card")
     from spine.storage import trackstore
-    from cells.engineer import lanemachine
+    from cells.engineer.cards import lanemachine
     db.init()                     # create the sandboxed tables
     for status, label in (("submitted", "a card resting on review"),
                           ("accepted", "an ALREADY ACCEPTED card")):

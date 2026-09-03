@@ -26,7 +26,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-from cells.copilot import chat_dedupe as dd   # noqa: E402
+from cells.copilot.chat import chat_dedupe as dd   # noqa: E402
 
 _fails = []
 
@@ -181,8 +181,8 @@ ok(running in dd._entries, "an UNFINISHED turn is never collected, however long 
 print("\nPOST /chat, replayed (route level)")
 fresh()
 import json as _json                                   # noqa: E402
-from cells.copilot import copilot as _copilot          # noqa: E402
-from cells.copilot import routes_copilot as _routes    # noqa: E402
+from cells.copilot.chat import copilot as _copilot          # noqa: E402
+from cells.copilot.routes import routes_copilot as _routes    # noqa: E402
 
 turns, chatlog, sent = [], [], []
 _real_chat = _copilot.chat

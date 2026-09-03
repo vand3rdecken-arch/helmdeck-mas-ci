@@ -30,9 +30,9 @@ from spine.registry import escalations
 escalations.ESC_PATH = os.path.join(SANDBOX, "escalations.jsonl")
 db.init()
 
-from cells.engineer import sessions
-from cells.engineer import dispatch
-from cells.copilot import copilot
+from cells.engineer.cards import sessions
+from cells.engineer.cards import dispatch
+from cells.copilot.chat import copilot
 from spine.agent import drivers
 from spine.comms import notify
 

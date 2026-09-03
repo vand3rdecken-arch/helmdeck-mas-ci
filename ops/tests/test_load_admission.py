@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from spine.storage import events
 from spine.ops import resources
 from spine.git import locks
-from cells.engineer import lanemachine
+from cells.engineer.cards import lanemachine
 
 _fails = []
 
@@ -173,7 +173,7 @@ check(len(_emitted) == 1, "no duplicate escalation while one is already open")
 locks._release_heavy(token5b)
 
 # --- 6) Henry's snapshot line reads the SAME seam the admission decides by -
-from cells.copilot import henry_broker
+from cells.copilot.broker import henry_broker
 _CPU[0] = 42.0
 tok6 = lanemachine._admit_heavy(track("visible-holder"), "gate", FakeLog())
 line = henry_broker._box_load_line()

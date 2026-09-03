@@ -137,7 +137,7 @@ TRACKS = [
     {"id": "arch-1", "task": "archiviert", "status": "running", "branch": "b4",
      "archived": True},
 ]
-from cells.engineer import sessions as _sessions
+from cells.engineer.cards import sessions as _sessions
 # present() is what makes `running` HONEST - it demotes a card whose turn died
 # to needs_you, and a headless test has no live turn, so every fixture below
 # would otherwise be demoted and the working bucket would be empty for the wrong
@@ -175,7 +175,7 @@ check(live["working"] == [] and live["working_total"] == 0,
 # Drive the real route with a stub transport: this is the loop that would
 # silently attach the WRONG card's text if it ever drifted to positional
 # matching, and no pure-function test can reach it.
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 from spine.ops import glances
 
 sent = {}

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from spine.storage import db
 db.init()
 from spine.agent import drivers
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 
 _fails = []
 

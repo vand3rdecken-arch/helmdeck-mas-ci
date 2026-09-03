@@ -37,7 +37,7 @@ from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 
 _fails = []
 

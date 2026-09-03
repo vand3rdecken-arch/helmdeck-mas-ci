@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from spine.storage import db
 db.init()
-from cells.engineer import sessions as S
+from cells.engineer.cards import sessions as S
 
 _fails = []
 

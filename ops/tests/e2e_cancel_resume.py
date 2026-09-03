@@ -32,13 +32,13 @@ os.makedirs(runs.REC, exist_ok=True)
 
 from spine.agent import drivers, proctable
 from spine.comms import notify
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 # dispatch/cardadmin bind their OWN copy of REC at import time (`from runs import
 # REC`), which is why test_server_routes.py patches each of them by hand. Same
 # hazard here: patch every holder, or a real card lands in the owner's
 # daemon/recordings while this file believes it is sandboxed.
 sessions.REC = runs.REC
-from cells.engineer import dispatch as _dispatch, cardadmin as _cardadmin
+from cells.engineer.cards import dispatch as _dispatch, cardadmin as _cardadmin
 _dispatch.REC = runs.REC
 _cardadmin.REC = runs.REC
 notify.card_event = lambda *a, **k: None     # no push targets in the sandbox

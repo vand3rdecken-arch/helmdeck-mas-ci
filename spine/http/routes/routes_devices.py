@@ -62,7 +62,7 @@ def devices_queue_get(self, user, did):
     # resolve enforces that this specific device belongs to that user.
     import time as _t
     from spine.auth import devices
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     # Role gate is now the central permission guard (cap devices.use, PATTERNS
     # in permissions.py) - a user demoted to client after registering a
     # device loses access at the next request, same as before. This check is
@@ -84,7 +84,7 @@ def devices_card_status_get(self, user, did, tid):
     # the queue/submit routes; touch() so a worker doing a long turn (polling
     # THIS, not /queue) still counts as alive to sweep_stale_device_claims.
     from spine.auth import devices
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     if not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
     devices.touch(did)
@@ -98,7 +98,7 @@ def devices_stream_post(self, user, body, did):
     # ignores (its real result still lands via /submit); it never affects the
     # turn.
     from spine.auth import devices
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     if not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
     devices.touch(did)
@@ -115,7 +115,7 @@ def devices_stream_post(self, user, body, did):
 
 def devices_submit_post(self, user, body, did):
     from spine.auth import devices
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     # Resource-ownership check only - see devices_queue_get's comment.
     if not devices.resolve(user, did):
         return self._send(404, json.dumps({"error": "no such device"}))
@@ -157,7 +157,7 @@ def devices_submit_post(self, user, body, did):
 
 
 def devices_reassign_post(self, user, body):
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     tid = body.get("track")
     to_device = (body.get("to_device") or "").strip()
     if not tid:

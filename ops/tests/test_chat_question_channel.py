@@ -39,7 +39,8 @@ sys.path.insert(0, ROOT)
 SANDBOX = tempfile.mkdtemp(prefix="hd-chatq-")
 
 from spine.ops import ask
-from cells.copilot import copilot, routes_copilot
+from cells.copilot.chat import copilot
+from cells.copilot.routes import routes_copilot
 
 # Redirect the ONLY two files this module reads/writes before anything touches
 # them. _log() opens CHATLOG directly, so this is the whole isolation.

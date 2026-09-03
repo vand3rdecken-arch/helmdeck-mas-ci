@@ -52,7 +52,7 @@ def main():
     auth.create_user("aud", "a-real-password", "auditor")
     auth.create_user("ext", "a-real-password", "client")
 
-    from cells.copilot import henry_broker
+    from cells.copilot.broker import henry_broker
 
     # ------------------------------------------------------------------ 1 ---
     print("\nno card / no dispatcher -> empty, never a crash")

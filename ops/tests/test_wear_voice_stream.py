@@ -50,7 +50,7 @@ events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from cells.copilot import copilot
+from cells.copilot.chat import copilot
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 from spine.http.routes import routes_wear as W

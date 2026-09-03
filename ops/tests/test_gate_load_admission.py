@@ -36,7 +36,7 @@ sys.path.insert(0, DAEMON)
 
 from spine.storage import events
 from spine.ops import resources
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 from spine.git.locks import _gate_lock_for
 
 _fails = []

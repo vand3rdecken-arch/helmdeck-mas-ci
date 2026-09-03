@@ -991,7 +991,7 @@ def preview(surface_key, cfg=None):
     # -- the argv, from the one real builder -------------------------------
     try:
         if surface_key == "pm":
-            from cells.copilot import copilot
+            from cells.copilot.chat import copilot
             argv, role_in_turn = copilot.build_argv("<model>", "<session-id>", BRIEF_ARG_MARKER)
             out["note"] = ("Der Rollen-Prompt reist als --append-system-prompt." if not role_in_turn
                            else "cmd.exe-Fallback aktiv: die Rolle wird dem Turn vorangestellt "

@@ -56,7 +56,7 @@ def main():
     auth.create_user("opuser", "operator-password-1", "operator")
     auth.create_user("eve", "client-password-1", "client")
 
-    from cells.copilot import henry_broker as hb
+    from cells.copilot.broker import henry_broker as hb
 
     # -- 1: _dispatcher_privileged -------------------------------------------
     print("\n_dispatcher_privileged")

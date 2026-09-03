@@ -53,12 +53,12 @@ WORKORDER = os.path.join(LOOPDIR, "workorder.md")
 WIP_MIN = int(os.environ.get("SWARM_WIP_MINUTES", "30"))
 
 # Fully package-qualified now that daemon/ is a real Python package (import
-# cells.copilot.pm, not a sys.path trick) - each entry is checked via
+# cells.copilot.planning.pm, not a sys.path trick) - each entry is checked via
 # `import <entry>` in a fresh subprocess run with cwd=ROOT (repo root).
 CORE_MODULES = ["spine.storage.db", "spine.storage.events",
-                "cells.engineer.sessions", "spine.agent.drivers",
-                "cells.engineer.processes", "cells.copilot.copilot",
-                "cells.engineer.connectors", "spine.auth.charter",
+                "cells.engineer.cards.sessions", "spine.agent.drivers",
+                "cells.engineer.chains.processes", "cells.copilot.chat.copilot",
+                "cells.engineer.connectors.connectors", "spine.auth.charter",
                 "spine.ops.checkpoints", "spine.auth.auth",
                 "spine.ops.importers", "spine.registry.debt",
                 "spine.http.server"]

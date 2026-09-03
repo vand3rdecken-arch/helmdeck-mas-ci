@@ -164,7 +164,7 @@ def glance_payload(tracks, m):
     Split out of do_GET so the selection is testable without a socket - the gap
     this closes is precisely the kind no test could reach before."""
     import time
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     ny = [{"id": t["id"], "task": (t.get("task") or "")[:70],
            "client": t.get("client", ""), "status": t.get("status"),
            "reason": b["reason"], "detail": b["detail"],

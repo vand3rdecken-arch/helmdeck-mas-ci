@@ -15,7 +15,7 @@ import os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from spine.registry import escalations as esc
-from cells.copilot import henry_broker as hb
+from cells.copilot.broker import henry_broker as hb
 from spine.storage import events
 
 
@@ -135,7 +135,7 @@ def main():
 
         # -- SHIP_KIND must actually REACH the hook subprocess (the whole -----
         # -- point: ship.sh runs the DECISION, not the legacy hash fallback) --
-        import cells.engineer.lanemachine as lm
+        import cells.engineer.cards.lanemachine as lm
         marker = os.path.join(tmp, "shipkind.txt")
         events.settings = lambda: {"default_repo": tmp, "repo_hooks": {
             tmp: {"deploy": 'sh -c "echo $SHIP_KIND > \\"%s\\""' % marker.replace("\\", "/")}}}

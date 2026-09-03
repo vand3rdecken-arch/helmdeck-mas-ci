@@ -44,7 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
 
 from spine.storage.trackstore import _load                       # noqa: E402
 from spine.ops.actionlog import ActionLog                        # noqa: E402
-from cells.engineer import sessions                              # noqa: E402
+from cells.engineer.cards import sessions                              # noqa: E402
 
 
 def _pick(frag):
@@ -109,7 +109,7 @@ def main():
         # runs. This turn is therefore the verification AND the refresh: if the
         # session no longer resumes, it fails here loudly instead of silently
         # leaving a red meter over a healthy card.
-        from cells.engineer.turnrunner import _turn
+        from cells.engineer.cards.turnrunner import _turn
         from spine.turn.econ import _record_econ
         from spine.storage.trackstore import _mutate
         t = sessions.get_track(t["id"])

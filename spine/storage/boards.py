@@ -68,7 +68,7 @@ def stations():
     3, "no per-user WORKFLOW"), and a copy here would drift the day a lane is
     added and let a board offer a column the lane machine would refuse to move
     a card into. Lazy import for the same cycle-free reason db.py uses one."""
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     return tuple(sessions.LANES)
 
 

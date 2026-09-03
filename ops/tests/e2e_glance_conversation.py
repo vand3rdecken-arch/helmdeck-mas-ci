@@ -71,7 +71,7 @@ def main():
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
     events.EV = os.path.join(tmp, "events.jsonl")
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     copilot.ROOT = tmp
     copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
     copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")

@@ -54,7 +54,7 @@ def main():
     from spine.auth import policy
     policy.LIVE = os.path.join(tmp, "policy_live.json")
 
-    from cells.engineer import lanemachine
+    from cells.engineer.cards import lanemachine
 
     auth.create_user("duy", "a-real-password", "owner")
     auth.create_user("sam", "a-real-password", "operator")
@@ -105,7 +105,7 @@ def main():
     class _FakeSelf:
         def _send(self, code, body, ctype="application/json"):
             self.sent = (code, _json.loads(body) if isinstance(body, str) else body)
-    from cells.engineer import routes_tracks
+    from cells.engineer.routes import routes_tracks
     for role, name in (("quality", "qa"), ("auditor", "aud1")):
         if role == "auditor":
             auth.create_user(name, "a-real-password", "auditor")

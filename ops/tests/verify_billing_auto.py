@@ -119,7 +119,7 @@ fake_login_mod = types.ModuleType("usage")
 fake_login_mod.login_method = lambda: {"method": "oauth", "subscription": "max", "plan": "Max 20x"}
 fake_login_mod.cached = lambda refresh=True: None
 _install_fake("spine.ops", "usage", fake_login_mod)
-from cells.copilot import pm                                           # noqa: E402
+from cells.copilot.planning import pm                                           # noqa: E402
 check("PM default is auto", pm.PM_DEFAULTS["plan"], "auto")
 fake_sessions = types.ModuleType("sessions")
 fake_sessions.list_tracks = lambda: []

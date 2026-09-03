@@ -139,7 +139,7 @@ def _wear_pipeline(tracks, taken_ids):
     watch would be a lie the owner cannot see through. Anything already in
     needs_you/yours is skipped so no card appears in two sections.
     """
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     working, backlog = [], []
     for t in tracks or ():
         t = sessions.present(t or {})
@@ -166,7 +166,7 @@ def wear_board_get(self, user):
     # role has no board-wide view to be shown here, on any surface.
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    from cells.engineer import sessions
+    from cells.engineer.cards import sessions
     from spine.storage import events
     from spine.ops.glances import glance_payload
     tracks = sessions.list_tracks()
@@ -261,7 +261,7 @@ def _wear_newest_speakable(user, only=WEAR_SPEAK_CLS):
     client bug can turn this into a machine reciting yesterday's conversation,
     because there is no request that would render an older line.
     """
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     msgs = (copilot.history(user) or {}).get("messages") or []
     for m in reversed(msgs):
         # Same defensive read as wear_chat_get: the log is a FILE, and a
@@ -302,7 +302,7 @@ def _wear_card_name(card_id, stored, cache):
         return stored
     if "by_id" not in cache:
         try:
-            from cells.engineer import sessions
+            from cells.engineer.cards import sessions
             cache["by_id"] = {t.get("id"): t for t in sessions.list_tracks() or ()}
         except Exception:                                   # noqa: BLE001
             cache["by_id"] = {}
@@ -344,7 +344,7 @@ def wear_chat_get(self, user):
     """
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     from spine.ops import ask
     from spine.ops.glances import _glance_question
     msgs = (copilot.history(user["name"]) or {}).get("messages") or []
@@ -473,7 +473,7 @@ def wear_talk_post(self, user, body):
     # is a decision, not the free-text authorship that stays off a wearable.
     reply_to = str(body.get("reply_to_card") or "").strip()
     if reply_to:
-        from cells.engineer import sessions
+        from cells.engineer.cards import sessions
         from spine.auth import auth
         from spine.http import server
         t = sessions.get_track(reply_to)
@@ -495,7 +495,7 @@ def wear_talk_post(self, user, body):
         return self._send(200, json.dumps(
             {"reply": "", "question": None, "refused": [],
              "routed": {"card": reply_to, "as": routed}}))
-    from cells.copilot import copilot
+    from cells.copilot.chat import copilot
     # SAME IDEMPOTENCY as the phone's /chat (chat_dedupe). Advisory turns could
     # afford a relay retry running twice - the worst case was a duplicate
     # sentence. With allow_actions=True (owner decree 2026-08-29, one source of
@@ -503,7 +503,7 @@ def wear_talk_post(self, user, body):
     # the turn here exactly as routes_copilot.chat_post does. The watch sends no
     # mid; claim() falls back to the content key + time window for id-less
     # clients, which is precisely the relay-retry shape.
-    from cells.copilot import chat_dedupe
+    from cells.copilot.chat import chat_dedupe
     mine, original = chat_dedupe.claim(user["name"], msg, body.get("card"), None)
     if original is not None:
         # The watch RETRIES on this (RelayClient.talk): its first POST died on

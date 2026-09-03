@@ -58,7 +58,7 @@ def main():
     db.init()
     from spine.auth import devices
     devices.DEVICES = os.path.join(tmp, "devices.json")
-    from cells.engineer import dispatch
+    from cells.engineer.cards import dispatch
     rec = os.path.join(tmp, "recordings")
     os.makedirs(rec, exist_ok=True)
     dispatch.REC = rec

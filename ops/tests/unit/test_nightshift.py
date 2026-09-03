@@ -16,7 +16,7 @@ with synchronous calls so claim order is deterministic."""
 import sys
 import types
 
-from cells.engineer import processes
+from cells.engineer.chains import processes
 
 
 def _fake(monkeypatch, pkg_path, attr, mod):

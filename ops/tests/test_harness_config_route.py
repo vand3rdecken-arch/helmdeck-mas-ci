@@ -187,7 +187,7 @@ check(call("POST", "/harness/config", {"values": {}}, who="owner1")[0] == 400,
 
 # -- 5. the warm process observes the brief ------------------------------
 print("\n[the warm process cannot keep a stale brief]")
-from cells.copilot import copilot                  # noqa: E402
+from cells.copilot.chat import copilot                  # noqa: E402
 
 
 class _FakeProc:

@@ -37,7 +37,7 @@ events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
-from cells.engineer import sessions
+from cells.engineer.cards import sessions
 from spine.storage.trackstore import _save_track, _load, _find
 
 _fails = []
@@ -222,7 +222,7 @@ def test_autoaccept_probe_syncs_before_gating():
     on foreign code forever and never auto-accepted, even though move_lane
     would sync and gate it green. The probe must sync first - and a sync
     CONFLICT must read as red (an auto-accept never lands a half-merge)."""
-    from cells.engineer import processes
+    from cells.engineer.chains import processes
     repo = new_repo()
     write(os.path.join(repo, "lib.py"), "def f():\n    return 1\n")
     write(os.path.join(repo, "check.py"),
