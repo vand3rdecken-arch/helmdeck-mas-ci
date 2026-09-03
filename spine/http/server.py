@@ -68,7 +68,7 @@ from spine.http.routes import routes_policy
 from spine.http.routes import routes_settings
 from spine.http.routes import routes_glance
 from spine.http.routes import routes_info
-from cells.pm import routes_pm
+from cells.copilot import routes_pm
 from spine.http.routes import routes_misc
 from spine.http.routes import routes_control
 from spine.http.routes import routes_relay
@@ -128,7 +128,7 @@ class H(BaseHTTPRequestHandler):
             # board look permanently busy and the PM/night loop would never
             # find its idle window again. Heartbeats say "he is here", which is
             # a different question from "he is working" - see presence.py.
-            from cells.pm import pm
+            from cells.copilot import pm
             pm.touch()
         return u
 

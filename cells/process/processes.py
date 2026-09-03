@@ -376,7 +376,7 @@ def _auto_resolve(t):
     is exhausted, alert ONCE - with the ladder's own unblock proposal, so the
     escalation is a decision you can act on, never a bare 'it is stuck'."""
     from spine.storage import events
-    from cells.pm import pm
+    from cells.copilot import pm
     tid = t["id"]
     state = pm.resolve_card_now(tid)
     if state != "exhausted" or t.get("autopilot_alerted"):

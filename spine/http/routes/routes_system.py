@@ -152,7 +152,7 @@ def nightshift_plan_post(self, user, body):
     # dashboard/settings "Neu planen" button used to hit /pm/report directly,
     # which allows operator too; narrowing to owner-only here would have been
     # a silent permission regression for that button.
-    from cells.pm import pm
+    from cells.copilot import pm
     if user["role"] == "client":
         return self._send(403, json.dumps({"error": "owner/operator only"}))
     from spine.http.server import _bg

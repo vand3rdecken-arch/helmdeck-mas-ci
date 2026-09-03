@@ -1247,7 +1247,7 @@ def _pm_plan_digest():
     it (owner decisions, DoD, risks, feasibility, the measured triangle) instead
     of improvising a second, shallower plan. Empty when no goal is planned."""
     try:
-        from cells.pm import pm
+        from cells.copilot import pm
         p = pm.live_plan() or {}
     except Exception:
         return ""

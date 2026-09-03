@@ -88,7 +88,7 @@ def flag_burn(tid, evidence):
     from spine.storage import events
     events.emit("burn", tid, n=evidence.get("n"), name=evidence.get("name"))
     try:
-        from cells.pm import pm
+        from cells.copilot import pm
         pm.review_burn(tid)
     except Exception:
         pass

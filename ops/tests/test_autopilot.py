@@ -22,9 +22,9 @@ from cells.engineer import cardadmin
 from spine.storage import events
 from spine.storage import trackstore
 from cells.process import processes
-from cells.pm import pm
-from cells.pm import pm_state
-from cells.pm import pm_resolve
+from cells.copilot import pm
+from cells.copilot import pm_state
+from cells.copilot import pm_resolve
 
 
 class FakeDB:

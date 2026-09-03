@@ -203,7 +203,7 @@ def test_structured_error_and_nightshift():
     # _limit_hit lives in pm.py since the PM loop absorbed nightshift.py (the
     # old `import nightshift` kept "working" as a namespace package - the
     # daemon/nightshift/ DATA folder - and then failed on the attribute).
-    from cells.pm import pm
+    from cells.copilot import pm
     track = {"last_subtype": meta.get("subtype"), "last_error": meta.get("error"),
              "last_reply": "all fine here"}   # reply is clean; only structured field flags it
     check(pm._limit_hit(track), "PM loop detects limit from STRUCTURED field, not prose")

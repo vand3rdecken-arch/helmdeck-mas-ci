@@ -1048,7 +1048,7 @@ def _accept_machine(t, lane, actor, log):
     from spine.comms import notify
     notify.card_event(t, "done")
     try:
-        from cells.pm import pm
+        from cells.copilot import pm
         pm.on_card_done(t["id"])   # re-judge the golden triangle at event time
     except Exception:
         pass

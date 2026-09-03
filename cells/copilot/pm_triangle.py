@@ -19,10 +19,10 @@ import back would cycle."""
 import threading
 import time
 
-from cells.pm.pm_budget import _pace, _budget_assess
-from cells.pm.pm_state import _loopstate, _save_loopstate
-from cells.pm.pm_comm import _activity
-from cells.pm.pm_resolve import _resolving_lock
+from cells.copilot.pm_budget import _pace, _budget_assess
+from cells.copilot.pm_state import _loopstate, _save_loopstate
+from cells.copilot.pm_comm import _activity
+from cells.copilot.pm_resolve import _resolving_lock
 
 
 def live_plan():
@@ -32,7 +32,7 @@ def live_plan():
     plan time (a budget baked into the daily artifact is stale the moment usage
     moves). The LLM's content (milestones, scope, questions) is preserved; only
     the measured verdict + budget block are refreshed. Cheap: no LLM call."""
-    from cells.pm.pm import latest_plan, economics
+    from cells.copilot.pm import latest_plan, economics
     plan = latest_plan()
     if not plan:
         return plan
@@ -125,7 +125,7 @@ def on_card_done(tid):
 
 def _on_card_done(_tid):
     from spine.storage import events
-    from cells.pm.pm import get_goal, make_plan
+    from cells.copilot.pm import get_goal, make_plan
     try:
         if not get_goal():
             return
@@ -176,7 +176,7 @@ def reconcile_corner(corner, actor="owner"):
     supplies the facts the planner was missing; the corner stays DERIVED, folded in
     at this event, mutated at one owner (_gate_triangle)."""
     from cells.copilot import copilot
-    from cells.pm.pm import get_goal, _system_state, _ask, latest_plan, _write_artifact, brief
+    from cells.copilot.pm import get_goal, _system_state, _ask, latest_plan, _write_artifact, brief
     corner = (corner or "").strip().lower()
     if corner not in ("budget", "timeline", "scope"):
         return {"error": "corner must be budget|timeline|scope"}

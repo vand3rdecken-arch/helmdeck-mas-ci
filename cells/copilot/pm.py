@@ -196,15 +196,15 @@ def _system_state():
     return "\n".join(lines) or "(keine gesonderten System-Fakten)"
 
 
-from cells.pm.pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
+from cells.copilot.pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
                        _usage_flag_text, _quota_floor, _goal_budget_text, _triage_green)
-from cells.pm.pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle, LOOPSTATE
+from cells.copilot.pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle, LOOPSTATE
 
 
 # -- golden-triangle gate: extracted to pm_triangle.py (god-file breakup). --
 # Re-imported here so every existing pm.<name> caller (routes_pm.py,
 # sessions.py's on_card_done hook) stays unchanged.
-from cells.pm.pm_triangle import (
+from cells.copilot.pm_triangle import (
     live_plan, _gate_triangle, _triage_shape, on_card_done, _on_card_done,
     RECONCILE_PROMPT, reconcile_corner)
 
@@ -824,7 +824,7 @@ def _backlog(tracks, pm, day):
 # -- RESOLVE + BURN GUARD: extracted to pm_resolve.py (god-file breakup). ----
 # Re-imported here so every existing pm.<name> caller (routes_pm.py,
 # processes.py's autopilot, sessions.flag_burn) stays unchanged.
-from cells.pm.pm_resolve import (
+from cells.copilot.pm_resolve import (
     _RESOLVE_MAX, _resolving, _resolving_lock, _bounce_kind, _unblock_proposal,
     _bump_attempt, _give_up, _bounced_to_resolve, _resolve_next, mark_notified,
     _burn_lock, _burn_active, review_burn, _burn_judge, _push_burn,
@@ -1041,13 +1041,13 @@ def _triangle_watch(st):
 
 # -- per-card budget watchdog: extracted to pm_watchdog.py (god-file breakup).
 # Re-imported here so every existing pm.<name> caller stays unchanged.
-from cells.pm.pm_watchdog import (
+from cells.copilot.pm_watchdog import (
     _WATCH_PRIO, _watch_budget_ctx, _watch_bac_pct, _cost_watch)
 
 
 # -- goal->process (PMP epic): extracted to pm_goal.py (god-file breakup). --
 # Re-imported here so every existing pm.<name> caller stays unchanged.
-from cells.pm.pm_goal import (
+from cells.copilot.pm_goal import (
     _goal_has_process, _goal_process, _goal_process_status)
 
 
@@ -1393,7 +1393,7 @@ def status():
 # Extracted to pm_comm.py (god-file breakup). Re-imported here so every
 # existing pm.<name> caller (routes_pm.py, this file's own many callers)
 # stays unchanged.
-from cells.pm.pm_comm import (
+from cells.copilot.pm_comm import (
     PLANS as _COMM_PLANS, _ACTIVITY, _activity, _say, _escalation_tid,
     _escalate, _ask_owner, _to_henry, _short, _read_activity)
 assert _COMM_PLANS == PLANS, "pm_comm.PLANS drifted from pm.PLANS"

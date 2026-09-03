@@ -231,7 +231,8 @@ CELLS = [
                      "pm.py", "pm_state.py", "pm_budget.py", "pm_triangle.py",
                      "pm_resolve.py", "pm_watchdog.py", "pm_goal.py", "pm_comm.py"),
         storage="copilot_sessions.json, copilot_log.json, escalations.jsonl "
-                "(shared bus); loop.json (cells/pm/)",
+                "(shared bus); loop.json (daemon/pm/ runtime dir - unrelated "
+                "to where the code now lives)",
         harness_file="ops/harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
         # ops/harness/agents/pm.md rides in repo_files below (harness_file
         # stays singular - board-copilot.md is Henry's primary identity brief,

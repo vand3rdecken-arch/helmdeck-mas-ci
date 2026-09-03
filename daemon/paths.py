@@ -9,7 +9,7 @@
 # allowed to be hardcoded - every other module imports REPO_ROOT/DAEMON_ROOT
 # from here instead of recomputing them.
 #
-# daemon/ is a REAL Python package now (import cells.pm.pm, not a
+# daemon/ is a REAL Python package now (import cells.copilot.pm, not a
 # sys.path trick) - this module holds only the two path CONSTANTS every
 # storage/data path is built from, it does not touch sys.path at all.
 import os

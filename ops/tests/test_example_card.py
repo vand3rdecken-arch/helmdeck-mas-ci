@@ -88,7 +88,7 @@ def test_steer_never_dispatches_either():
 
 
 def test_excluded_from_dispatcher():
-    from cells.pm import pm
+    from cells.copilot import pm
     tracks = [CARD]
     todo = pm._backlog(tracks, pm._pm(), {"dispatched": []})
     check(CARD["id"] not in [t["id"] for t in todo],

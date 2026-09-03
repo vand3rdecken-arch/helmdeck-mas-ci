@@ -51,8 +51,8 @@ sys.path.insert(0, ROOT)
 from spine.comms import notice
 from spine.ops import ask
 from spine.registry import escalations
-from cells.pm import pm
-from cells.pm import pm_comm
+from cells.copilot import pm
+from cells.copilot import pm_comm
 
 # -- CUT THE WIRES TO PRODUCTION FIRST, before any test code can run ----------
 _TMP = tempfile.mkdtemp(prefix="hd-notice-test-")

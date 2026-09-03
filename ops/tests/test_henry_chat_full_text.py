@@ -22,7 +22,7 @@ from cells.copilot import henry_broker as hb
 # Imported UP HERE, before section 4 swaps package attributes around: pm_comm
 # binds `from spine.registry import i18n as _i18n` at module level, so importing
 # it while that attribute is stubbed would freeze the stub into the module.
-from cells.pm import pm_comm
+from cells.copilot import pm_comm
 
 _fails = []
 

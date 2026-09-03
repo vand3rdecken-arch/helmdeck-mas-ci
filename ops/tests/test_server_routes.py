@@ -56,7 +56,7 @@ def main():
     # network-free while still exercising the real state transitions
     # around it (worktree creation, lane writes, gate, merge).
     from spine.agent import drivers
-    def _fake_driver_run(cfg, t, prompt):
+    def _fake_driver_run(cfg, t, prompt, by=None):
         return ("sid-" + t["id"], "ok", {})
     drivers.run = _fake_driver_run
 

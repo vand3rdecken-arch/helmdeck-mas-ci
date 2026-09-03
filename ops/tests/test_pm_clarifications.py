@@ -25,8 +25,8 @@ sys.path.insert(0, ROOT)
 
 SANDBOX = tempfile.mkdtemp()
 
-from cells.pm import pm
-from cells.pm import pm_state
+from cells.copilot import pm
+from cells.copilot import pm_state
 
 PLANS = os.path.join(SANDBOX, "pm")
 pm.PLANS = PLANS
