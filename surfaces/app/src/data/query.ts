@@ -69,7 +69,19 @@ const PERSIST_MAX_BYTES = 3_500_000;   // headroom under the ~6MB Android cap
 const PERSIST_STEPS_PER_CARD = 200;    // newest steps kept per transcript
 
 function boundedState() {
-  const state = dehydrate(queryClient);   // successful queries only, by default
+  // shouldDehydrateQuery defaults to status==='success' only - an errored
+  // refetch (daemon unreachable) flips a query to 'error' while React Query
+  // KEEPS its last-known data in memory, and the default silently dropped
+  // that data from the very next persisted write. Net effect during an
+  // outage: the screen still shows last-known data (served from memory),
+  // but disk quietly loses it - so a process kill mid-outage (routine on
+  // Android) woke up to an empty cache instead of last-known data (owner
+  // report 2026-09-03, the "Keine Verbindung" screen with nothing behind
+  // it). Persist any query that HAS data, regardless of status - that is
+  // the whole point of a last-known-good cache.
+  const state = dehydrate(queryClient, {
+    shouldDehydrateQuery: (q) => q.state.data !== undefined,
+  });
   interface Q { queryKey: readonly unknown[]; state: { data?: unknown } }
   const qs = state.queries as unknown as Q[];
   for (const q of qs) {
