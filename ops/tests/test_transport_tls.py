@@ -28,6 +28,7 @@ def main():
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "helmdeck.db")
     events.SET = os.path.join(tmp, "settings.json")
+    events.EV = os.path.join(tmp, "events.jsonl")  # audit rows too, not just the store
     db.init()
     assert db.DBPATH.startswith(tmp), "REFUSING TO RUN: db not sandboxed"
 
