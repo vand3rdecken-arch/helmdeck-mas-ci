@@ -1355,8 +1355,9 @@ def start_engineer_lifecycle():
     operate directly on track/session state (card `status`, session
     liveness, background-task completion, a remote device's claim) - they
     are the Engineer cell's own lifecycle, not spine-adjacent generic
-    housekeeping, so they belong behind engineerEnabled the same way pm's
-    proactive loop belongs behind pmEnabled.
+    housekeeping, so they belong behind engineerEnabled the same way the
+    planning loop belongs behind copilotEnabled (pm merged into copilot,
+    2026-09-03).
     (Contrast: sessions.sweep_worktrees() stays a flat ONE-SHOT boot call in
     serve() - it is a backstop pass over git worktrees at startup, not a
     continuous poller, so it has nothing to "stop" if a cell is disabled later
