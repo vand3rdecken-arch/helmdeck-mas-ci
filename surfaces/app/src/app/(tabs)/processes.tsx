@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView,
-  StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet,
+  Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -15,6 +15,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { useAiFlat } from "@/ui/billing";
 import { Chip, Dot, Empty, Panel, ScreenHeader } from "@/ui/kit";
 import { isWeb, useResponsive } from "@/ui/responsive";
+import { promptText } from "@/ui/settings_sections";
 
 // Executor modes the daemon understands (daemon/processes.py MODES).
 const MODES = ["do", "prepare", "cowork", "teach", "human"] as const;
@@ -262,11 +263,6 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
         Alert.alert(tr("processes.done"),
           v.action === "accept_all" ? tr("processes.cardsCreated") : tr("processes.cardCreated"));
       if (v.action === "accept" || v.action === "accept_all" || v.action === "remove") setExpanded(null);
-      // Android's addStep() has no native prompt (Alert.prompt is iOS-only,
-      // see addStep below) so it appends a generic "new step" - open its
-      // editor immediately, otherwise the tap gave zero visible feedback
-      // AND no way to actually name the thing that was just added.
-      if (v.action === "add" && Array.isArray(r?.steps)) setExpanded(r.steps.length - 1);
       invalidate();
     },
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
@@ -275,24 +271,19 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
     stepMut.mutate({ idx, action, patch, title });
   const [expanded, setExpanded] = useState<number | null>(null);
 
-  function addStep() {
-    if (isWeb) {
-      const title = (globalThis as any).prompt?.(tr("processes.stepTitlePrompt"));
-      if (title) act(0, "add", undefined, title);
-      return;
-    }
-    // native: Alert.prompt only WORKS on iOS - on Android the RN module still
-    // exports a callable stub that silently no-ops (never invokes the
-    // callback, no warning), so a truthy-check on the function reference
-    // took this branch on Android too and "+ Schritt" did nothing at all -
-    // no dialog, no step, no error (owner report 2026-09-03). Gate on the
-    // real platform instead of the function's mere existence.
-    if (Platform.OS === "ios") {
-      (Alert as any).prompt(tr("processes.newStep"), tr("processes.titleLabel"),
-        (title: string) => title && act(0, "add", undefined, title));
-    } else {
-      act(0, "add", undefined, "new step");
-    }
+  async function addStep() {
+    // Was: isWeb ? window.prompt : (Alert as any).prompt(...) - Alert.prompt's
+    // entire body is `if (Platform.OS === 'ios')` (react-native's own
+    // Alert.js), so on Android the function reference is truthy but its
+    // body never runs and the callback never fires - "+ Schritt" did
+    // NOTHING on Android: no dialog, no step, no error (owner report
+    // 2026-09-03, screenshot circling the button). promptText() is the
+    // app's own cross-platform helper (settings_sections.tsx) - web uses
+    // window.prompt, iOS Alert.prompt, and ANDROID GETS A REAL MODAL
+    // (<PromptHost/>, mounted once at the app root in _layout.tsx) instead
+    // of silently no-oping.
+    const title = await promptText(tr("processes.stepTitlePrompt"));
+    if (title) act(0, "add", undefined, title);
   }
 
   const steps = p.steps ?? [];
