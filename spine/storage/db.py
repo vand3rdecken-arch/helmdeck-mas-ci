@@ -277,8 +277,17 @@ def _archive(path):
     overwrote the archive from a previous run - so the docstring's promise
     ("originals preserved, per the safeguard rule") stopped holding on the second
     boot. Nothing is allowed to eat a backup here, so a taken name gets a
-    numbered sibling instead."""
-    dest = path + ".imported"
+    numbered sibling instead.
+
+    Lands in ROOT/backups/ (config-consolidation phase 7: daemon/ had 30+
+    loose *.imported.N files at its root before this) rather than beside the
+    original - `backups/` already existed as a concept (checkpoints.py's
+    restore points live there too), this just gives every archived legacy
+    file the same home instead of littering the directory it was retired
+    from."""
+    bdir = os.path.join(os.path.dirname(path) or ".", "backups")
+    os.makedirs(bdir, exist_ok=True)
+    dest = os.path.join(bdir, os.path.basename(path) + ".imported")
     if os.path.exists(dest):
         n = 2
         while os.path.exists("%s.%d" % (dest, n)):
@@ -286,6 +295,61 @@ def _archive(path):
         dest = "%s.%d" % (dest, n)
     os.replace(path, dest)
     return dest
+
+
+# config-consolidation phase 7 (owner decree: daemon/ was ~20 loose json/
+# jsonl files with no grouping). Every (old flat name, new subfolder) this
+# daemon used to write straight into ROOT, now written into ROOT/state or
+# ROOT/content by the modules themselves (daemon.paths.state_dir()/
+# content_dir()) - this list is ONLY the one-time physical move of a file
+# that already exists at the old flat path, run once at boot before any
+# module gets a chance to write its own fresh copy at the NEW path (which
+# would otherwise make the move look like data loss: old file sits unread
+# at the flat path, new module starts a fresh empty one next to it).
+_RELOCATE_STATE = ("sessions.json", "copilot_sessions.json", "copilot_log.json",
+                   "copilot_stats.json", "copilot_models.json", "driver_pids.json",
+                   "recorder_pids.json", "models_cache.json", "escalations.jsonl")
+# board_directives.json is DELIBERATELY NOT here: unlike everything above it
+# is TRACKED, real repo data (cardadmin.py: "shipped as repo DATA" - policy
+# is data, this is a card worker's board-change deliverable applied once at
+# boot), the same reason policy_seed.json also stays flat at ROOT. Moving a
+# git-tracked file into an otherwise git-ignored state/ folder would need a
+# .gitignore carve-out for one file inside an ignored directory - messier
+# than just leaving it where its git history already is.
+_RELOCATE_CONTENT = ("henry_memory", "copilot_runs", "voice_cache", "models_stt")
+
+
+def _relocate_daemon_layout():
+    """Move each known flat file/dir into state/ or content/ if the OLD path
+    exists and the NEW one does not - archive-don't-clobber, same spirit as
+    db._archive() elsewhere in this module, but a plain move (not a rename
+    to .imported): these are not retired formats, they are the SAME file at
+    a new address, and every module above already points at the new address
+    on its next read/write. Both destination dirs are created here since no
+    individual module creates its own before writing (see auth.py/copilot.py
+    etc. - unchanged from their pre-move behaviour of assuming the flat ROOT
+    already existed)."""
+    state_dir = os.path.join(ROOT, "state")
+    content_dir = os.path.join(ROOT, "content")
+    os.makedirs(state_dir, exist_ok=True)
+    os.makedirs(content_dir, exist_ok=True)
+    for name in _RELOCATE_STATE:
+        old, new = os.path.join(ROOT, name), os.path.join(state_dir, name)
+        if os.path.exists(old) and not os.path.exists(new):
+            try:
+                os.replace(old, new)
+                print("db: relocated %s -> state/" % name)
+            except OSError as e:
+                print("db: relocate %s failed:" % name, e)
+    for name in _RELOCATE_CONTENT:
+        old, new = os.path.join(ROOT, name), os.path.join(content_dir, name)
+        if os.path.isdir(old) and not os.path.exists(new):
+            try:
+                import shutil
+                shutil.move(old, new)
+                print("db: relocated %s/ -> content/" % name)
+            except OSError as e:
+                print("db: relocate %s/ failed:" % name, e)
 
 
 def _migrate():
@@ -434,6 +498,12 @@ def _migrate():
                 print("db: imported %d settings keys from settings.json" % len(sdoc))
         except Exception as e:
             print("db: settings import failed:", e)
+
+    # LAST, on purpose: every migration above reads its own flat ROOT path
+    # (settings.json, henry_memory/, ...) BEFORE this runs, so a fresh
+    # install's one-time content import still finds its source. Only once
+    # every migration has had its look does the physical layout move.
+    _relocate_daemon_layout()
 
 # -- tracks --------------------------------------------------------------
 

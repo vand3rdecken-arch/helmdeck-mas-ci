@@ -65,7 +65,7 @@ def _model():
     with _LOCK:
         if _MODEL is not None and _MODEL_NAME == name:
             return _MODEL
-        root = os.path.join(DAEMON_ROOT, "models_stt")
+        root = os.path.join(DAEMON_ROOT, "content", "models_stt")
         if name == "parakeet":
             try:
                 import sherpa_onnx
@@ -76,7 +76,7 @@ def _model():
             if not os.path.isdir(d):
                 raise RuntimeError(
                     "Parakeet-Modell fehlt: gh release download asr-models "
-                    "-R k2-fsa/sherpa-onnx -p %s.tar.bz2 (nach daemon/models_stt "
+                    "-R k2-fsa/sherpa-onnx -p %s.tar.bz2 (nach daemon/content/models_stt "
                     "entpacken) - oder settings.voice_stt_model auf 'base' stellen"
                     % _PARAKEET_DIR)
             _MODEL = sherpa_onnx.OfflineRecognizer.from_transducer(

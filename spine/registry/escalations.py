@@ -17,7 +17,7 @@ import time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 
-ESC_PATH = os.path.join(ROOT, "escalations.jsonl")
+ESC_PATH = os.path.join(ROOT, "state", "escalations.jsonl")
 _LOCK = threading.Lock()
 
 

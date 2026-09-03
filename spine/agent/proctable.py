@@ -135,7 +135,7 @@ def _tree_kill(proc, grace=2.0):
 
 
 from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
-_PIDFILE = os.path.join(_DAEMON_ROOT, "driver_pids.json")
+_PIDFILE = os.path.join(_DAEMON_ROOT, "state", "driver_pids.json")
 _pid_lock = threading.Lock()
 
 

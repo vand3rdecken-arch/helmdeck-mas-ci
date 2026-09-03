@@ -147,7 +147,7 @@ def _settings_models():
 # it for: curated labels/order + an OFFLINE FALLBACK. Cached 24h; any failure
 # (no token, offline, 401) silently falls back to the last cache, then the
 # manifest - the picker is never empty.
-_MODELS_CACHE = os.path.join(_DAEMON_ROOT, "models_cache.json")
+_MODELS_CACHE = os.path.join(_DAEMON_ROOT, "state", "models_cache.json")
 _DISCOVER_TTL = 24 * 3600
 
 

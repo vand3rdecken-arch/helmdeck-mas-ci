@@ -54,6 +54,9 @@ def main():
     events.SET = os.path.join(tmp, "settings.json")
 
     ej = os.path.join(tmp, "events.jsonl")
+    # backups/ (config-consolidation phase 7): _archive() now lands every
+    # retired legacy file in ROOT/backups/, not beside the original.
+    ej_archived = os.path.join(tmp, "backups", "events.jsonl.imported")
 
     # --- a SYNTHETIC legacy events.jsonl, never the real one ----------------
     with open(ej, "w", encoding="utf-8") as f:
@@ -65,7 +68,7 @@ def main():
     print("boot 1 - first start, legacy file present")
     db.init()
     ok(count_events(db) == 3, "3 legacy events imported (got %d)" % count_events(db))
-    ok(os.path.exists(ej + ".imported"), "legacy file archived as .imported")
+    ok(os.path.exists(ej_archived), "legacy file archived as .imported (in backups/)")
     ok(not os.path.exists(ej), "legacy file no longer at its original name")
 
     print("operation - two real events, the way the daemon emits them")
@@ -78,8 +81,8 @@ def main():
     db.init()
     ok(count_events(db) == 5,
        "STILL 5 after restart, no re-import (got %d)" % count_events(db))
-    ok(os.path.exists(ej + ".imported"), "boot-1 archive survived boot 2")
-    with open(ej + ".imported", encoding="utf-8") as f:
+    ok(os.path.exists(ej_archived), "boot-1 archive survived boot 2")
+    with open(ej_archived, encoding="utf-8") as f:
         archived = [l for l in f if l.strip()]
     ok(len(archived) == 3 and "legacy" in archived[0],
        "boot-1 archive still holds the ORIGINAL 3 legacy lines")

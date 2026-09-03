@@ -12,8 +12,8 @@ the user table is empty)."""
 import hashlib, hmac, json, os, secrets, threading, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
-USERS = os.path.join(ROOT, "users.json")
-SESS = os.path.join(ROOT, "sessions.json")
+USERS = os.path.join(ROOT, "users.json")            # accounts stay at root - credentials
+SESS = os.path.join(ROOT, "state", "sessions.json")  # pure runtime bookkeeping
 SESSION_TTL = 30 * 86400
 ROLES = ("owner", "operator", "client", "quality", "auditor")
 

@@ -11,7 +11,7 @@ import os
 import time
 
 from daemon.paths import DAEMON_ROOT as ROOT
-STATS = os.path.join(ROOT, "copilot_stats.json")
+STATS = os.path.join(ROOT, "state", "copilot_stats.json")
 
 
 def _stats():
