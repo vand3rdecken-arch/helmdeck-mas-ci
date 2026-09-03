@@ -178,6 +178,111 @@ def settings_post(self, user, body):
     return self._send(200, json.dumps(events.save_settings(body, actor=user["name"])))
 
 
+EXPORT_VERSION = 1
+
+
+def harness_export_get(self, user):
+    """THE HARNESS, as one JSON document (config-consolidation phase 6, owner
+    decree: "einer stellt seine harness ein und kann dieses exportieren").
+
+    Everything that lives in the db config planes this decree moved config
+    INTO, assembled read-only: workspace config, the composed policy doc,
+    every project's overlay, every account's profile, Henry's memory. Deliber-
+    ately NOT the harness .md brief files (board-copilot.md, pm.md, ...) -
+    those are already version-controlled in the repo itself, which is a
+    strictly better export than re-embedding their text in this JSON (git
+    gives history and diffs; a JSON blob would not).
+
+    Owner-only: workspace config can hold real secrets (jira.api_token,
+    relay.sk, the fcm service account...). `?secrets=0` masks anything whose
+    KEY name matches the same pattern save_settings already audits with
+    (events._masked) - present so a support handoff can still see the SHAPE
+    of a config without seeing the values."""
+    if not user or user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
+    from urllib.parse import parse_qs, urlparse
+    from spine.storage import db, events
+    from spine.auth import policy
+    mask_secrets = (parse_qs(urlparse(self.path).query).get("secrets") or ["1"])[0] == "0"
+
+    workspace = events.settings()
+    if mask_secrets:
+        workspace = {k: events._masked(v, k) for k, v in workspace.items()}
+
+    projects = {p: db.project_config_get(p) for p in db.project_config_projects()}
+    accounts = {u: db.user_config_get(u) for u in db.user_config_users()}
+
+    return self._send(200, json.dumps({
+        "version": EXPORT_VERSION,
+        "exported_at": __import__("time").strftime("%Y-%m-%dT%H:%M:%SZ", __import__("time").gmtime()),
+        "workspace": workspace,
+        "policy": policy.load(),
+        "project_overlays": projects,
+        "user_overlays": accounts,
+        "memory": db.memory_all(),
+    }, ensure_ascii=False))
+
+
+def harness_import_post(self, user, body):
+    """Replay an exported harness document EXCLUSIVELY through the existing
+    tracked writers - never a raw db write - so every validator, checkpoint
+    and audit entry a hand-typed change would trigger fires here too. A
+    section missing from the body is left untouched, not cleared: import is
+    a MERGE onto whatever this workspace already has, the same reasoning
+    save_settings already applies per-key.
+
+    Owner-only, same reason as the export. Reports per-section success/error
+    rather than failing the whole request on one bad project - one workspace
+    that rejects a stale project overlay must not also lose the ninety that
+    are fine."""
+    if not user or user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
+    if not isinstance(body, dict):
+        return self._send(400, json.dumps({"error": "import body must be an object"}))
+    from spine.storage import db, events, projectconfig, userconfig
+    from spine.auth import policy
+    result = {}
+
+    ws = body.get("workspace")
+    if isinstance(ws, dict) and ws:
+        events.save_settings(ws, actor=user["name"], reason="harness import")
+        result["workspace"] = "ok"
+
+    pol = body.get("policy")
+    if isinstance(pol, dict):
+        for section in ("policies", "charter", "capability_charter"):
+            patch = pol.get(section)
+            if isinstance(patch, dict) and patch:
+                try:
+                    policy.swap(section, patch, actor=user["name"], note="harness import")
+                    result["policy." + section] = "ok"
+                except policy.PolicyDenied as e:
+                    result["policy." + section] = "refused: %s" % e
+
+    for project, patch in (body.get("project_overlays") or {}).items():
+        if not isinstance(patch, dict) or not patch:
+            continue
+        _, err = projectconfig.write(project, patch, actor=user["name"], note="harness import")
+        result["project:" + project] = err or "ok"
+
+    for account, patch in (body.get("user_overlays") or {}).items():
+        if not isinstance(patch, dict) or not patch:
+            continue
+        _, _, err = userconfig.write(account, patch, actor=user["name"])
+        result["user:" + account] = err or "ok"
+
+    memory = body.get("memory")
+    if isinstance(memory, dict):
+        for name, note in memory.items():
+            content = (note or {}).get("content")
+            if isinstance(content, str):
+                db.memory_put(name, content, actor=user["name"])
+        if memory:
+            result["memory"] = "ok"
+
+    return self._send(200, json.dumps({"ok": True, "result": result}, ensure_ascii=False))
+
+
 GET_ROUTES = {
     "/settings": settings_get,
     "/nightshift": nightshift_get,
@@ -185,10 +290,12 @@ GET_ROUTES = {
     "/automation": automation_get,
     "/harness/config": harness_config_get,
     "/harness/brief": harness_brief_get,
+    "/harness/export": harness_export_get,
 }
 POST_ROUTES = {
     "/settings": settings_post,
     "/harness/config": harness_config_post,
+    "/harness/import": harness_import_post,
 }
 # Capability declarations (spine/auth/permissions.py) - the central guard in
 # server.py enforces these BEFORE the handler runs; every check that used to
@@ -205,8 +312,15 @@ GET_CAPS = {
     # capability that guards the knobs around it, and the same one /harness
     # (the editor) already sits behind.
     "/harness/brief": "settings.read",
+    # settings.read is the closed vocabulary's ceiling (operator can hold it);
+    # the export handler enforces the STRICTER owner-only check itself
+    # (it contains real secrets an operator must not read) - the capability
+    # here is only what makes this route visible in the coverage sweep at
+    # all, not the actual gate.
+    "/harness/export": "settings.read",
 }
 POST_CAPS = {
     "/settings": "settings.write",
     "/harness/config": "settings.write",
+    "/harness/import": "settings.write",
 }
