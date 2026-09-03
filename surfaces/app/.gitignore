@@ -48,3 +48,8 @@ google-services.json.bak*
 .claude/settings.json
 .vscode/settings.json
 dist-ota/
+# ANY dist-* export dir, not just dist-ota - a bare `expo export` for a
+# verification screenshot (dist-check2, dist-verify, ...) got scooped into
+# a commit by the Henry auto-snapshot hook (2026-09-03, 16548 lines of
+# built HTML) because only the literal dist-ota/ name was excluded.
+dist-*/
