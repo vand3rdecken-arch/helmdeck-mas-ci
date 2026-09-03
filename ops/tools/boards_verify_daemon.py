@@ -35,8 +35,16 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8149
 PW = "hunter2hunter2"
 
 db.init()
+# "Bei uns" is the default because the boards tests assert on it (a rename that
+# survived the seed). HELMDECK_LANE_LABELS lets a verification run reproduce the
+# OWNER's actual labels instead - the pipeline row is drawn FROM these, so
+# judging it against invented names would judge the wrong picture. Sandbox only;
+# the real settings.json is never read or written here (see the assert above).
+LANE_LABELS = {"working": "Bei uns"}
+if os.environ.get("HELMDECK_LANE_LABELS"):
+    LANE_LABELS = json.loads(os.environ["HELMDECK_LANE_LABELS"])
 with open(events.SET, "w", encoding="utf-8") as f:
-    json.dump({"policy": {"lang": "de", "lane_labels": {"working": "Bei uns"}},
+    json.dump({"policy": {"lang": "de", "lane_labels": LANE_LABELS},
                "appearance": {"backdrop": "mesh"}}, f)
 
 auth.create_user("owner", PW, "owner")

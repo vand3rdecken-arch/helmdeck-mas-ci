@@ -34,7 +34,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 
 // The gate's ring pulses: "checked here". Same motion the loop map used, kept
 // with the station rather than with the screen so both callers get it.
-function GateDot({ color, dim }: { color: string; dim: boolean }) {
+function GateDot({ color, dim, size = 30 }: { color: string; dim: boolean; size?: number }) {
   const p = useRef(new RNAnimated.Value(0)).current;
   useEffect(() => {
     if (dim) return;
@@ -49,18 +49,73 @@ function GateDot({ color, dim }: { color: string; dim: boolean }) {
   return (
     <View style={{ alignItems: "center", justifyContent: "center" }}>
       {!dim ? (
-        <RNAnimated.View style={{ position: "absolute", width: 30, height: 30, borderRadius: 15,
+        <RNAnimated.View style={{ position: "absolute", width: size, height: size,
+          borderRadius: size / 2,
           borderWidth: 2, borderColor: color, transform: [{ scale }], opacity: op }} />
       ) : null}
-      <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center",
+      <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: "center",
         justifyContent: "center", backgroundColor: dim ? "transparent" : color,
         borderWidth: dim ? 1.5 : 0, borderColor: color,
         borderStyle: dim ? "dashed" : "solid" }}>
-        <Ionicons name="shield-checkmark" size={16} color={dim ? color : "#fff"} />
+        <Ionicons name="shield-checkmark" size={size * 0.53} color={dim ? color : "#fff"} />
       </View>
     </View>
   );
 }
+
+/** A STEP, drawn ON the connector it runs in - deliberately smaller than a lane
+ *  dot and sitting on the line rather than beside it.
+ *
+ *  The size difference is the whole point of the fix. The gate is not a place a
+ *  card waits, it is what happens on the way from "In Arbeit" to "Abnahme";
+ *  deploy is what happens after the accept. Rendered as equal columns they read
+ *  as lanes the owner should be able to find on his board - and he cannot,
+ *  because they are not there. Same dot, half the size, on the edge: the
+ *  picture now says "inside this transition". */
+function StepMarker({ step, onSelect, selected }: {
+  step: LoopNode; onSelect?: (k: string) => void; selected?: string;
+}) {
+  const t = useTheme();
+  const off = step.active === false;
+  const col = stationColor(t, step.key);
+  const on = selected === step.key;
+  return (
+    <Pressable
+      testID={"station-" + step.key}
+      onPress={onSelect ? () => onSelect(step.key) : undefined}
+      disabled={!onSelect}
+      style={{ alignItems: "center", width: STEP_W }}>
+      {/* A ring in the canvas colour so the connector does not run through the
+          glyph - the line has to READ as passing behind the step. */}
+      <View style={{ borderRadius: 13, padding: 2, backgroundColor: t.canvas }}>
+        {step.key === "gate" ? <GateDot color={col} dim={off} size={STEP_DOT} /> : (
+          <View style={{ width: STEP_DOT, height: STEP_DOT, borderRadius: STEP_DOT / 2,
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: off ? "transparent" : (on ? col : t.surface2),
+            borderWidth: off ? 1.5 : 2, borderColor: col,
+            borderStyle: off ? "dashed" : "solid" }}>
+            <Ionicons name={step.key === "deploy" ? "rocket" : "ellipse"}
+              size={STEP_DOT * 0.5} color={off ? col : (on ? t.canvas : col)} />
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+// ONE geometry, used by the station row AND by the Henry band under it, so the
+// band cannot drift out of alignment with the dots it annotates.
+//
+// STEP_W IS A BUDGET, and a measured one. The step marker carried its name
+// under the dot at first, which needed 52px of gap - and on a 430px phone that
+// took the lane columns down to 41px, clipping Henry's "nimmt ab" and making
+// the steps WIDER than the lanes they are subordinate to. Inverting the
+// hierarchy is the same lie as the five-column row, just drawn differently. So
+// the marker keeps only its glyph here and its name moved to the legend below,
+// where it has a full line to be read on.
+const STEP_DOT = 22;
+const STEP_W = 26;
+const PLAIN_W = 14;
 
 function stationColor(t: ThemeTokens, key: string): string {
   // gate and deploy are STEPS, not lanes, so they have no lane colour to
@@ -114,26 +169,67 @@ function knobCount(node: LoopNode, editable?: string[],
   return named.filter((p) => editable.includes(p)).length;
 }
 
-/** The stations, in the daemon's order, with lanes/gate/deploy merged. */
-export function useStations(map?: LoopMap | null): LoopNode[] {
+/** A step (gate/deploy) riding the connector that LEAVES lane `afterIdx`. */
+export interface PipelineStep { node: LoopNode; afterIdx: number }
+export interface PipelineRow { lanes: LoopNode[]; steps: PipelineStep[] }
+
+/** The row to draw: the real lanes as columns, gate/deploy as steps on the
+ *  connectors between them.
+ *
+ *  THE COLUMNS ARE THE LANES, and nothing else. This used to render
+ *  `runtime.stations` - a flat five-name vocabulary - as five equal columns,
+ *  which drew "Quality Gate" and "Deploy" ranking with the lanes and left the
+ *  owner's fourth lane ("Fertig") off the screen entirely. The board said four,
+ *  the map said five. Count and names now come from `row.lanes`, i.e. from the
+ *  same nodes policy.lane_labels renames, so renaming a lane or adding one
+ *  changes this row with no edit here. */
+export function useRow(map?: LoopMap | null): PipelineRow {
   return useMemo(() => {
     const rt = map?.runtime;
-    if (!rt) return [];
+    if (!rt) return { lanes: [], steps: [] };
     const by: Record<string, LoopNode> = {};
     for (const l of rt.lanes ?? []) by[l.key] = l;
     if (rt.gate?.key) by[rt.gate.key] = rt.gate;
     if (rt.deploy?.key) by[rt.deploy.key] = rt.deploy;
-    // `stations` is the server's draw order. Falling back to the lane order
-    // keeps an older daemon rendering rather than blank.
-    const order = rt.stations?.length ? rt.stations : (rt.lanes ?? []).map((l) => l.key);
-    return order.map((k) => by[k]).filter(Boolean);
+    // An older daemon sends no `row`; then the lanes ARE the row and the steps
+    // are simply not placed. A plain lane row is still a true picture - the
+    // five-column one was not.
+    const keys = rt.row?.lanes?.length ? rt.row.lanes : (rt.lanes ?? []).map((l) => l.key);
+    const lanes = keys.map((k) => by[k]).filter(Boolean);
+    const steps: PipelineStep[] = [];
+    for (const s of rt.row?.steps ?? []) {
+      const node = by[s.key];
+      if (!node) continue;
+      const afterIdx = keys.indexOf(s.after);
+      // Placed by KEY on the server, resolved to a position here. An unplaceable
+      // step still gets drawn, on the last connector, rather than disappearing.
+      steps.push({ node, afterIdx: afterIdx >= 0 ? afterIdx : lanes.length - 1 });
+    }
+    return { lanes, steps };
   }, [map]);
 }
 
 export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, knobsAt }: PipelineProps) {
   const t = useTheme();
   const tr = useT();
-  const stations = useStations(map);
+  const { lanes: stations, steps } = useRow(map);
+  // Which connector carries which step, and therefore how wide each gap is.
+  // Read by both rows below - the band under the dots has to use the SAME
+  // widths or Henry's segments end up annotating the wrong station.
+  const stepAt = useMemo(() => {
+    const by: Record<number, LoopNode> = {};
+    for (const s of steps) by[s.afterIdx] = s.node;
+    return by;
+  }, [steps]);
+  // The connector GROWS with the row instead of staying a 14px stub. On a
+  // desktop-width card a fixed stub left the dots floating unconnected, which
+  // undoes the whole point of putting the steps ON the line - a step has to be
+  // seen sitting IN a transition. minWidth keeps the step's own glyph from ever
+  // being squeezed on a phone; the flex share stays well under a lane's 1 so a
+  // connector can never out-measure the lanes it joins.
+  const gapStyle = (i: number) => ({
+    flex: stepAt[i] ? 0.5 : 0.3, minWidth: stepAt[i] ? STEP_W : PLAIN_W,
+  });
   // The Henry band, indexed by station so the row below can line each segment
   // up under its own dot. No station list is built here - this only re-keys
   // what the daemon already aggregated.
@@ -145,7 +241,9 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
   const hasHenry = showKnobs && stations.some((s) => henry[s.key]);
   const repo: RepoView | null | undefined = map?.repo;
   // Everything the row could only hint at, collected for the list below it.
-  const notes = stations
+  // Lanes AND steps: the sentence explaining why deploy is dark is exactly the
+  // one the owner needs, and the step's caption is far too small to carry it.
+  const notes = [...stations, ...steps.map((s) => s.node)]
     .map((s) => ({
       key: s.key, label: s.label ?? s.key, off: s.active === false,
       text: s.active === false ? (s.off_reason || tr("pipeline.off")) : (s.note || ""),
@@ -180,10 +278,10 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                       backgroundColor: off ? "transparent" : (on ? t.canvas : col) }} />
                   </View>
                 )}
-                {/* TWO lines, centred. On a 430px phone five stations get ~80px
-                    each, and "Quality Gate" rendered as "Quality ..." - the one
-                    station the owner is most likely to ask about, its name cut
-                    off. Judged from the screenshot, not assumed. */}
+                {/* TWO lines, centred. The old five-column row left ~80px per
+                    station on a 430px phone and cut "Quality Gate" to
+                    "Quality ..."; moving the two steps onto the connectors buys
+                    the real lanes their width back. */}
                 <Text numberOfLines={2} style={{ color: off ? t.txtTertiary : t.txtPrimary,
                   fontSize: 11, fontWeight: on ? "800" : "600", textAlign: "center" }}>
                   {s.label ?? s.key}
@@ -220,14 +318,59 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                   ) : null;
                 })() : null}
               </Pressable>
+              {/* THE CONNECTOR, which is also where the steps live. The line is
+                  drawn absolutely across the full gap and the step sits on top
+                  of it, so gate/deploy read as something happening ON the way
+                  from one lane to the next - not as a lane. */}
               {i < stations.length - 1 ? (
-                <View style={{ width: 14, height: 2, marginTop: 14,
-                  backgroundColor: t.borderStrong }} />
+                <View style={{ ...gapStyle(i), alignItems: "center" }}>
+                  <View style={{ position: "absolute", left: 0, right: 0, top: 14, height: 2,
+                    backgroundColor: t.borderStrong }} />
+                  {stepAt[i] ? (
+                    <StepMarker step={stepAt[i]} onSelect={onSelect} selected={selected} />
+                  ) : null}
+                </View>
               ) : null}
             </View>
           );
         })}
       </View>
+
+      {/* THE STEP LEGEND: what the two markers on the connectors ARE, and -
+          said in words, not only by position - that each happens INSIDE a lane
+          transition. The card this fixes was filed because the row implied the
+          opposite: an owner reading "Quality Gate" as a column went looking for
+          that lane on his board and it does not exist. A glyph on an edge is
+          the picture; this line is the sentence, and the owner gets both. */}
+      {steps.length ? (
+        <View style={{ gap: 5 }}>
+          {steps.map(({ node, afterIdx }) => {
+            const off = node.active === false;
+            const col = stationColor(t, node.key);
+            // The transition it runs in, named with the lanes' CURRENT labels -
+            // the same ones the row above drew, so a rename cannot leave this
+            // sentence talking about a lane the owner no longer has.
+            const from = stations[afterIdx];
+            const to = stations[afterIdx + 1];
+            return (
+              <View key={node.key}
+                style={{ flexDirection: "row", gap: 7, alignItems: "center" }}>
+                <Ionicons name={node.key === "gate" ? "shield-checkmark" : "rocket"}
+                  size={11} color={off ? t.txtTertiary : col} />
+                <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11,
+                  lineHeight: 15, flex: 1 }}>
+                  <Text style={{ fontWeight: "700", color: off ? t.txtTertiary : t.txtPrimary }}>
+                    {node.label ?? node.key}
+                  </Text>
+                  {from && to ? " — " + tr("pipeline.stepOn", {
+                    from: from.label ?? from.key, to: to.label ?? to.key,
+                  }) : ""}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
 
       {/* THE HENRY TRACK (design doc 5.4.3): a band under the row spanning the
           stations Henry acts at, with his verb per station. The segments arrive
@@ -267,7 +410,9 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
                     </Text>
                   ) : null}
                 </Pressable>
-                {i < stations.length - 1 ? <View style={{ width: 14 }} /> : null}
+                {/* The SAME gap geometry as the row above - see gapStyle. Any
+                    divergence here slides Henry's verbs off their stations. */}
+                {i < stations.length - 1 ? <View style={gapStyle(i)} /> : null}
               </View>
             );
           })}

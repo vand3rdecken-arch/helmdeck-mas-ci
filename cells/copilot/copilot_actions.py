@@ -155,20 +155,44 @@ def _pipeline_answer(repo, headline):
     try:
         from cells.engineer import sessions
         from spine.ops import projects
+        from spine.storage import events as _ev
         view = projects.resolve(repo)
-        f = sessions.flow(None, repo_view=view)
+        # The owner's lane RENAMES, same read routes_info does for the map. This
+        # passed None and so answered in default labels: chat said "Backlog ->
+        # ... -> Review" about a board whose columns are called "Inbox" and
+        # "Abnahme". A name he cannot find on his board is not an answer.
+        ll = (_ev.settings().get("policy") or {}).get("lane_labels") or {}
+        f = sessions.flow(ll, repo_view=view)
         by_key = {n["key"]: n for n in f["nodes"]}
         by_key["gate"] = f["gate"]
         by_key["deploy"] = f["deploy"]
-        row = []
-        for k in f["stations"]:
+
+        def _name(k):
             n = by_key.get(k) or {}
-            row.append("%s%s" % (n.get("label") or k, "" if n.get("active") else " (aus)"))
+            return "%s%s" % (n.get("label") or k, "" if n.get("active") else " (aus)")
+
+        # The SAME picture the pipeline draws: lanes are the stations of the
+        # route, gate and deploy are named ON the arrow they run in. Listing all
+        # five flat read as five lanes and silently dropped "Fertig" - the chat
+        # and the map must not describe the machine differently.
+        draw = f.get("row") or {}
+        lanes = draw.get("lanes") or [n["key"] for n in f["nodes"]]
+        on_edge = {}
+        for s in draw.get("steps") or []:
+            on_edge.setdefault(s.get("after"), []).append(_name(s["key"]))
+        row = []
+        for i, k in enumerate(lanes):
+            row.append(_name(k))
+            if i < len(lanes) - 1:
+                here = on_edge.get(k) or []
+                row.append("-(%s)->" % ", ".join(here) if here else "->")
         tail = ""
         if view.get("deviations"):
             tail = ("\nVom Vorlagen-Standard abgewichen: %s."
                     % ", ".join(d["key"] for d in view["deviations"]))
-        return "%s\nStrecke: %s.%s" % (headline, " -> ".join(row), tail)
+        # `row` already carries its own arrows (a step names the edge it runs
+        # in), so this joins with a SPACE - " -> " here would double them.
+        return "%s\nStrecke: %s.%s" % (headline, " ".join(row), tail)
     except Exception as e:                                   # noqa: BLE001
         # A confirmation that dies is worse than a plain one: the change ALREADY
         # happened, so say so rather than letting an exception read as failure.

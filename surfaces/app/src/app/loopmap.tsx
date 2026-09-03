@@ -201,21 +201,35 @@ function NavGroup({ label, children, t }: {
   );
 }
 
-function NavItem({ label, active, onPress, right, testID, t }: {
+function NavItem({ label, active, onPress, right, testID, t, sub }: {
   label: string; active: boolean; onPress: () => void;
   right?: React.ReactNode; testID?: string; t: ThemeTokens;
+  /** A STEP, not a lane: indented under the lane whose transition it runs in.
+   *  This list used to render the flat five-name station vocabulary, so
+   *  "Quality Gate" sat level with the lanes and the owner's last lane
+   *  ("Fertig") was missing from it altogether. The row above and this list are
+   *  two views of ONE machine and must not disagree about what a lane is. */
+  sub?: boolean;
 }) {
   return (
     <Pressable testID={testID} onPress={onPress}
-      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 11,
-        paddingVertical: 10, backgroundColor: active ? t.surface2 : "transparent" }}>
+      style={{ flexDirection: "row", alignItems: "center", gap: 8,
+        paddingLeft: sub ? 26 : 11, paddingRight: 11,
+        paddingVertical: sub ? 8 : 10, backgroundColor: active ? t.surface2 : "transparent" }}>
       {/* A left rail rather than a filled row: the active entry has to read as
           selected next to a detail pane, without turning the whole column into
           a block of colour on a phone where the column is full width. */}
       <View style={{ width: 2.5, height: 15, borderRadius: 2,
         backgroundColor: active ? t.accent : "transparent" }} />
+      {/* An ICON, not a "↳" character: the arrow glyph is not in the bundled
+          face and fell back to something that read as a literal "l," in the
+          screenshot. An Ionicon cannot fall back. */}
+      {sub ? (
+        <Ionicons name="return-down-forward" size={11} color={t.txtTertiary}
+          style={{ marginRight: -3 }} />
+      ) : null}
       <Text numberOfLines={1} style={{ color: active ? t.txtPrimary : t.txtSecondary,
-        fontSize: 12.5, fontWeight: active ? "700" : "500", flex: 1 }}>
+        fontSize: sub ? 11.5 : 12.5, fontWeight: active ? "700" : "500", flex: 1 }}>
         {label}
       </Text>
       {right}
@@ -289,6 +303,24 @@ export default function LoopMapScreen() {
   // client keeps no list of either. A sixth Henry block or a renamed station
   // costs a daemon edit and nothing here.
   const stations = data?.runtime.stations ?? [];
+  // THE NAVIGATION, in the SAME shape the pipeline draws: every lane an entry,
+  // each step nested under the lane whose transition it runs in. Built from
+  // `runtime.row` - the daemon's own placement - so the list and the row cannot
+  // disagree. `stations` (the flat five-name vocabulary) is the fallback for an
+  // older daemon only; rendering it as the list was the bug, because it ranks
+  // gate/deploy with the lanes and contains no `done`.
+  const navStations = useMemo(() => {
+    const row = data?.runtime.row;
+    if (!row?.lanes?.length) return stations.map((key) => ({ key, sub: false }));
+    const after: Record<string, string[]> = {};
+    for (const s of row.steps ?? []) (after[s.after] ||= []).push(s.key);
+    const out: { key: string; sub: boolean }[] = [];
+    for (const k of row.lanes) {
+      out.push({ key: k, sub: false });
+      for (const s of after[k] ?? []) out.push({ key: s, sub: true });
+    }
+    return out;
+  }, [data, stations]);
   const nodeFor = useMemo(() => (k: string): LoopNode | null => {
     if (!data) return null;
     if (k === "gate") return data.runtime.gate;
@@ -303,7 +335,9 @@ export default function LoopMapScreen() {
     return by;
   }, [schema]);
   const blocks = cfg?.blocks ?? [];
-  const nav = lane || (stations[0] ? "st:" + stations[0] : "laws");
+  // Default to the FIRST ENTRY OF THE LIST, not to stations[0] - one list, one
+  // idea of where it starts.
+  const nav = lane || (navStations[0] ? "st:" + navStations[0].key : "laws");
   const setNav = (k: string) => setLane(k);
   // Tapping a station on the PIPELINE selects it in the navigation - the graph
   // IS the table of contents (section 5.2), which is why nothing else was
@@ -496,12 +530,13 @@ export default function LoopMapScreen() {
           <View style={{ flexDirection: wide ? "row" : "column", gap: 14, alignItems: "flex-start" }}>
             <View style={wide ? { width: 208 } : { width: "100%" }}>
               <NavGroup label={tr("harness.navStations")} t={t}>
-                {stations.map((k) => {
+                {navStations.map(({ key: k, sub }) => {
                   const n = nodeFor(k);
                   const cnt = knobsAt[k] ?? 0;
                   return (
                     <NavItem key={k} testID={"nav-st-" + k} active={nav === "st:" + k}
                       label={n?.label ?? k} onPress={() => setNav("st:" + k)} t={t}
+                      sub={sub}
                       right={n?.kind === "fixed"
                         ? <Ionicons name="lock-closed" size={11} color={t.txtTertiary} />
                         : cnt ? <NavCount n={cnt} t={t} /> : null} />

@@ -343,12 +343,53 @@ def flow(lane_labels=None, repo_view=None):
         out[step]["label"] = out[step]["default_label"]
         out[step]["source"] = src.get(LANE_FLOW[step]["key"], "cells/engineer/sessions.py")
         _mark(out[step])
-    # The station order the pipeline is DRAWN in, named once here rather than
-    # re-derived by the client from lanes + gate + deploy. `done` is not a
-    # station: it is where a card ends up, and the decree's fifth station
-    # (Deploy) is the step that gets it there.
+    # The station VOCABULARY, in flow order: what the owner can name in chat,
+    # what a template may list, what the config screen offers a page for. It is
+    # NOT the picture - see out["row"] below.
     out["stations"] = list(STATIONS)
+    out["row"] = _draw_row(out)
     return out
+
+
+def _draw_row(f):
+    """THE PICTURE: which columns the pipeline is drawn with, and where the
+    steps hang off it.
+
+    Why this is not `stations`. `STATIONS` is a vocabulary - five names the
+    owner, the templates and the chat verb share. Drawing it as the row made
+    the screen assert something false: gate and deploy appeared as columns
+    RANKING WITH the lanes, while `done` - a real lane the owner had renamed to
+    "Fertig" in policy.lane_labels - was not drawn at all. The board said four
+    lanes, the map said five stations, and neither list was the other's.
+
+    So the row is DERIVED, twice over:
+      columns - the lane nodes themselves, in LANE_FLOW order. Count AND names
+                come from the same nodes policy.lane_labels renamed, so a
+                rename or a fifth lane needs no edit here.
+      steps   - gate and deploy, placed by reading their OWN declared edge
+                (`between` for the gate, `on` for deploy) and hanging them on
+                the connector that leaves that lane. Move the gate onto another
+                edge and the drawing follows; nothing here re-states where it
+                sits.
+
+    `after` is a lane KEY, never an index - an index would silently point at the
+    wrong lane the moment the lane list changed length, which is the class of
+    bug this function exists to end."""
+    lanes = [n["key"] for n in f["nodes"]]
+    steps = []
+    for key in ("gate", "deploy"):
+        node = f.get(key) or {}
+        if not node.get("key"):
+            continue
+        # The step's own declaration of the edge it sits on. First endpoint =
+        # the lane it leaves; that connector is where it gets drawn.
+        edge = list(node.get("between") or node.get("on") or [])
+        after = next((k for k in edge if k in lanes), "")
+        # A step whose edge does not touch a drawn lane keeps its marker at the
+        # end rather than vanishing: an undrawn step is the failure we came from.
+        steps.append({"key": node["key"], "after": after or (lanes[-1] if lanes else ""),
+                      "on": edge})
+    return {"lanes": lanes, "steps": steps}
 
 
 # -- public API ----------------------------------------------------------

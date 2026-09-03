@@ -34,11 +34,11 @@ def _lane_flow(lane_labels, repo_view=None):
         from cells.engineer import sessions
         f = sessions.flow(lane_labels, repo_view=repo_view)
         return {"lanes": f["nodes"], "gate": f["gate"], "deploy": f.get("deploy") or {},
-                "stations": f.get("stations") or [], "edges": f["edges"],
-                "henry": _henry_track()}
+                "stations": f.get("stations") or [], "row": f.get("row") or {},
+                "edges": f["edges"], "henry": _henry_track()}
     except Exception as e:                                   # noqa: BLE001
-        return {"lanes": [], "gate": {}, "deploy": {}, "stations": [], "edges": [],
-                "henry": [], "error": str(e)[:200]}
+        return {"lanes": [], "gate": {}, "deploy": {}, "stations": [], "row": {},
+                "edges": [], "henry": [], "error": str(e)[:200]}
 
 
 def _henry_track():
