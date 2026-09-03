@@ -1524,7 +1524,18 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                          "hier zum ersten Mal; ein Fehler heisst: die Aktion ist "
                          "NICHT gelaufen, behaupte nichts anderes):\n- "
                          + "\n- ".join(str(r)[:400] for r in _pending) + "\n\n")
-    turn = action_report + snapshot_block + focus + "\n\nUSER (%s): %s" % (user, body)
+    # Turn-LOCAL first-word reminder, every message. The brief carries the same
+    # law (board-copilot.md SPEED OF FIRST WORD), but system-prompt prose alone
+    # measurably lost to the "look first, then speak" habit: all four owner
+    # turns after the 91db9c1 brief change still ran 51-116s of silent tool
+    # rounds before the first streamed word (session b085da2d, 2026-09-02/03).
+    # An instruction INSIDE the turn is the strongest placement the harness
+    # controls without touching the fixed spawn - one line, ~20 tokens.
+    turn = (action_report + snapshot_block + focus
+            + "\n\nUSER (%s): %s" % (user, body)
+            + "\n\n(Falls du gleich Tools nutzt: erst EIN kurzer Prosa-Satz an "
+              "den Owner - was du siehst oder was du pruefst -, DANN der erste "
+              "Tool-Call. Antwortest du ohne Tools, einfach direkt antworten.)")
     # STREAM (shared with the card surface): stream-json so the prose reply types
     # into the per-user live feed the board chat polls, instead of a blocking
     # black box. The turn goes in on stdin (it is huge - never a cmd arg).
