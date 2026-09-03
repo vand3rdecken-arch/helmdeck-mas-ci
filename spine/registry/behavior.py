@@ -323,13 +323,26 @@ BEHAVIOR_RULES = [
      "surfaces": {"all": {"default": "acceptEdits", "renders": None}},
      "source": "cells/copilot/copilot.py:343"},
 
-    {"key": "hands.agent_may_swap", "block": "hands", "wire": "code", "kind": "policy",
+    # READONLY, not a toggle - and that is a deliberate refusal, not an
+    # oversight (harness-config-ui phase 3). The value that really gates an
+    # agent-initiated swap lives in the POLICY PLANE as `policies.agentMaySwap`
+    # and is written only by spine/auth/policy.py::swap. A rule row storing
+    # `rule.hands.agent_may_swap.all` in settings.json would therefore save
+    # cleanly, badge itself "gesetzt", and change NOTHING - the dummy switch
+    # this table exists to refuse, and a dummy on the one row that reads "Henry
+    # darf Regeln selbst aendern" is the worst possible place for one.
+    # The design doc asks for a real toggle here; giving it one needs a write
+    # path into the policy plane, which is an owner decision because it touches
+    # who may change the rules. Registered as [agent-may-swap-readonly].
+    {"key": "hands.agent_may_swap", "block": "hands", "wire": "readonly", "kind": "fixed",
      "control": "toggle", "scope": "workspace", "binds": [],
      "labelKey": "rule.hands.maySwap", "descKey": "rule.hands.maySwap.desc",
      "why": "Henry ist der Ausnahme-Broker - vorschlagen ist sein Job, "
-            "ausfuehren ohne menschliche Bestaetigung nicht. Das schliesst den "
-            "Kreis der Beschwerde: du siehst seine Regeln, und er darf dich um "
-            "eine Aenderung bitten.",
+            "ausfuehren ohne menschliche Bestaetigung nicht. Steht heute auf "
+            "aus. Der Wert lebt in der Policy-Ebene und wird nur ueber "
+            "policy.swap gesetzt; diese Seite zeigt ihn, sie schreibt ihn "
+            "(noch) nicht - ein Schalter hier wuerde speichern und nichts "
+            "bewirken.",
      "reads": "spine/auth/policy.py::swap",
      "surfaces": {"all": {"default": False, "renders": None}},
      "source": "daemon/policy_seed.json:policies.agentMaySwap"},
@@ -425,13 +438,31 @@ def rule_path(key, surface=None):
 
     Per-surface by construction (`rule.tone.length.pm`), because the whole
     modelling point is that one rule holds several values. Called with no
-    surface it returns the rule's namespace prefix, which is what
-    projectconfig.overridable() registers."""
+    surface it returns the rule's namespace prefix - useful for grouping, but
+    NOT a storable path: nothing reads it, because every read names a surface.
+    projectconfig.overridable() therefore registers the per-surface paths."""
     return "rule.%s.%s" % (key, surface) if surface else "rule.%s" % key
 
 
 def by_key(key):
     return _BY_KEY.get(key)
+
+
+def split_path(path):
+    """(rule, surface) for a `rule.<key>.<surface>` path, else (None, None).
+
+    Exact, and it resolves the SURFACE too - which is the half by_path() cannot
+    give and every layer below needs. Reporting a rule without its surface makes
+    a four-surface rule answer with the first surface's default for all four,
+    which is precisely the collapse `per_surface` exists to prevent."""
+    if not path.startswith("rule."):
+        return None, None
+    rest = path[5:]
+    head, _, tail = rest.rpartition(".")
+    rule = _BY_KEY.get(head)
+    if rule is not None and tail in (rule.get("surfaces") or {}):
+        return rule, tail
+    return None, None
 
 
 def by_path(path):
@@ -465,6 +496,95 @@ def editable_rules():
     offering a dummy, which is the exact thing SWITCHABLE_STATIONS refuses to
     do for stations."""
     return [r for r in BEHAVIOR_RULES if r["wire"] != "readonly"]
+
+
+# Rules that are `fixed` and yet carry a control, because the control can only
+# ever TIGHTEN them. Today that is the protected-file list, under exactly the
+# rule house_rules already lives under (charter.py:12 - adding yes, weakening
+# never). Keeping this as a named set rather than a `kind` of its own is
+# deliberate: the lock in the UI is honest either way ("you may extend this,
+# not shorten it"), and inventing a third kind would make every consumer learn
+# a distinction only one rule has.
+ADDITIVE_RULES = ("hands.protected_files",)
+
+
+def writable(path):
+    """(rule, surface, error) for a write to one rule path.
+
+    THE ONE GATE, so the HTTP route, the chat verb and any future caller refuse
+    the same set for the same stated reason. `fixed` is refused BY NAME with the
+    why-sentence the row shows, which is what the brief already promises Henry
+    does ("the action refuses it BY NAME with the route that IS open")."""
+    rule, surface = split_path(path)
+    if rule is None:
+        return None, None, "no such rule: %s" % str(path)[:80]
+    if rule["wire"] == "readonly":
+        return None, None, "%s is shown, never set: %s" % (path, rule["why"])
+    if rule["kind"] == "fixed" and rule["key"] not in ADDITIVE_RULES:
+        return None, None, "%s is fixed: %s" % (path, rule["why"])
+    return rule, surface, None
+
+
+def check_value(rule, surface, val):
+    """None when `val` is a legal value for this rule, else why it is not.
+
+    Held against the rule's OWN declaration (control + options + the additive
+    law), not against a per-caller idea of what is sane - the same reason
+    _config_schema declares `control`: a value the renderer cannot produce is
+    still a value an API client can send."""
+    ctl = rule.get("control")
+    if ctl == "toggle":
+        if not isinstance(val, bool):
+            return "%s takes true or false" % rule["key"]
+    elif ctl == "number":
+        if isinstance(val, bool) or not isinstance(val, int):
+            return "%s takes a whole number" % rule["key"]
+        if val < 0:
+            return "%s cannot be negative" % rule["key"]
+    elif ctl == "single":
+        opts = rule.get("options") or []
+        if val not in opts:
+            return "%s takes one of: %s" % (rule["key"], ", ".join(map(str, opts)))
+    elif ctl == "text":
+        if not isinstance(val, str):
+            return "%s takes text" % rule["key"]
+    elif ctl == "list":
+        if not isinstance(val, list) or any(not isinstance(x, str) for x in val):
+            return "%s takes a list of strings" % rule["key"]
+    else:
+        return "%s has no editable control" % rule["key"]
+    if rule["key"] in ADDITIVE_RULES:
+        # ADDITIVE, checked against the DECLARED default rather than the current
+        # effective value: chaining "remove one, save" edits would otherwise walk
+        # the list down to empty one legal step at a time.
+        missing = [x for x in (default_of(rule, surface) or []) if x not in val]
+        if missing:
+            return "%s may only be extended; still required: %s" % (
+                rule["key"], ", ".join(missing))
+    # A rule that renders into a brief must render to SOMETHING for the value it
+    # is given, or the slot silently empties and the paragraph disappears from
+    # Henry's brief - the exact failure the slot-equality test exists to catch,
+    # arriving at runtime instead of at test time.
+    spec = ((rule.get("surfaces") or {}).get(surface) or {})
+    ren = spec.get("renders")
+    if isinstance(ren, dict) and val not in ren:
+        return "%s has no wording for %r on %s" % (rule["key"], val, surface)
+    return None
+
+
+def writable_paths():
+    """Every `rule.<key>.<surface>` path a caller may set, {path: scope}.
+
+    Derived from the table, so a rule added in the daemon becomes settable with
+    no second list to update - and a rule turned `fixed` stops being settable in
+    the same edit."""
+    out = {}
+    for r in BEHAVIOR_RULES:
+        for s in r.get("surfaces") or {}:
+            p = rule_path(r["key"], s)
+            if writable(p)[2] is None:
+                out[p] = r.get("scope")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -714,6 +834,101 @@ def track(project=""):
     order = list(HENRY_VERBS)
     out.sort(key=lambda s: order.index(s["station"]))
     return out
+
+
+def segments(text, surface, project=""):
+    """The same render as render(), but as [{kind, text, rule?}] instead of one
+    string (design doc section 4.3, "Brief ansehen").
+
+    THE POINT IS THAT IT IS THE SAME RENDER. The brief view shows the owner
+    exactly the artefact Henry is started with, with the values highlighted
+    where they act - the Mailchimp merge-tag pattern. A second renderer built
+    for the screen could drift from the one that feeds the agent, and then the
+    page would be reassuring him about a brief that is not the brief. So this
+    walks the identical markers with the identical substitution and only
+    records WHERE each value went.
+
+    `kind` is "prose" (fixed text, dimmed, not tappable) or "rule" (a value,
+    chipped, tapping it opens the row that sets it). Block slots keep their
+    trailing newline handling so the prose reads the same as the string form.
+    """
+    out = []
+    if not text:
+        return out
+
+    def _emit(kind, chunk, key=None):
+        if not chunk:
+            return
+        if out and out[-1]["kind"] == "prose" and kind == "prose":
+            out[-1]["text"] += chunk
+            return
+        row = {"kind": kind, "text": chunk}
+        if key:
+            row["rule"] = key
+        out.append(row)
+
+    pos = 0
+    for m in SLOT_RE.finditer(text):
+        _emit("prose", text[pos:m.start()])
+        key = m.group(1)
+        rule = _BY_KEY.get(key)
+        val = ""
+        if rule is not None:
+            try:
+                val = _render_one(rule, surface, value(key, surface, project))
+            except Exception:                                # noqa: BLE001
+                val = ""
+        # A block slot that renders empty takes its line with it, exactly as
+        # render() does - otherwise the prose view would show a blank line the
+        # real brief does not have.
+        _emit("rule", val, key)
+        pos = m.end()
+        # BLOCK SLOT ONLY. render() drops the line (and the blank line after it)
+        # for a marker that sits ALONE on its line and renders empty - see
+        # BLOCK_SLOT_RE. An inline slot that happens to render empty keeps its
+        # surroundings, and eating a newline there is how this view first
+        # disagreed with the brief by one character: tone.house_rules is empty
+        # by default, and the join stopped matching brief() byte for byte.
+        alone = (m.start() == 0 or text[m.start() - 1] == "\n") and text[pos:pos + 1] == "\n"
+        if not val and alone:
+            pos += 1
+            if text[pos:pos + 1] == "\n":
+                pos += 1
+    _emit("prose", text[pos:])
+    return out
+
+
+def overlay(project=""):
+    """The TURN OVERLAY: what this project's rules say that the base brief does
+    not. Empty string when nothing differs, which is the normal case.
+
+    WHY AN OVERLAY AND NOT A RE-RENDER (design doc section 3). The base brief
+    rides along once at spawn - that is what makes Henry's warm turns 1.6s. A
+    project-scoped rule therefore cannot render into it: doing so would mean a
+    respawn on every project switch, and Henry answers about several repos in
+    one conversation. So the base brief carries the WORKSPACE values and this
+    adds only the deltas, on the existing extra_system path that VOICE_STYLE
+    already uses.
+
+    Only rules that actually DIFFER appear. An overlay that restated every
+    project rule would be a second copy of half the brief, and the two copies
+    would be identical in the common case and contradictory in the interesting
+    one - the later instruction winning by accident rather than by design."""
+    out = []
+    for r in BEHAVIOR_RULES:
+        if r.get("scope") != "project" or r["wire"] == "readonly":
+            continue
+        for s in r.get("surfaces") or {}:
+            here, base = value(r["key"], s, project), value(r["key"], s, "")
+            if here == base:
+                continue
+            txt = _render_one(r, s, here)
+            out.append("- %s" % txt.strip().replace("\n", " ")
+                       if txt else "- %s: %s" % (r["key"], here))
+    if not out:
+        return ""
+    return ("FUER DIESES PROJEKT GELTEN ABWEICHENDE REGELN. Sie ersetzen die "
+            "entsprechende Stelle oben:\n" + "\n".join(out))
 
 
 def describe(project=""):

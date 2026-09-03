@@ -31,11 +31,33 @@ import * as glassVoice from "@/data/glasses";
 // and visible-behind-dimmed — a route/transparentModal leaves a black void on web
 // because expo-router doesn't keep the previous screen rendered. The FAB opens
 // this store on wide screens; the phone still navigates to the /chat route.
-interface CopilotPanel { open: boolean; show: () => void; hide: () => void }
+// `context` is what the chat was opened ABOUT (harness-config-ui 5.5): the
+// harness screen's "Henry fragen" hands over the row, the chip renders it above
+// the composer, and the turn carries it - so Henry never has to guess which
+// setting was meant. It rides on THIS store rather than on a prop because the
+// panel is opened imperatively from anywhere (useCopilotPanel.getState().show()),
+// which is the same reason `open` lives here.
+export interface ChatContext {
+  /** What the chip reads: "Abnahme · Grüne Karten automatisch annehmen". */
+  label: string;
+  /** The line the turn carries, naming the setting in Henry's own terms. */
+  hint: string;
+}
+interface CopilotPanel {
+  open: boolean; context?: ChatContext;
+  show: (ctx?: ChatContext) => void;
+  hide: () => void;
+  clearContext: () => void;
+}
 export const useCopilotPanel = create<CopilotPanel>((set) => ({
   open: false,
-  show: () => set({ open: true }),
+  context: undefined,
+  // Opening WITHOUT a context CLEARS the previous one. A stale chip would
+  // attach the last question's subject to an unrelated message, which is worse
+  // than no chip at all - the chip's whole value is that it is trustworthy.
+  show: (ctx) => set({ open: true, context: ctx }),
   hide: () => set({ open: false }),
+  clearContext: () => set({ context: undefined }),
 }));
 
 // Board copilot chat = the SAME transcript + composer UI as the card chat
@@ -179,6 +201,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const colMax = wide ? 860 : undefined;
+  // What this conversation was opened ABOUT (harness-config-ui 5.5). Subscribed
+  // here rather than passed down, because BOTH doors render this body - the
+  // phone's /chat route and the desktop CopilotOverlay - and only the store is
+  // reachable from both.
+  const chatCtx = useCopilotPanel((s) => s.context);
   // Presence: while this body is mounted the owner is LOOKING at the Henry
   // transcript, so his own answer must not also buzz his pocket. It hangs on
   // ChatBody rather than on ChatScreen because BOTH doors render this - the
@@ -448,8 +475,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     // mirror stamped on the message - at no point is it inferred from the text.
     const to = opts.to ?? replyTarget;
     const replyCard = to?.startsWith("card:") ? to.slice("card:".length) : "";
+    // THE CONTEXT TRAVELS WITH THE TURN (harness-config-ui 5.5), but NOT into
+    // the owner's own bubble: queueTurn above already rendered what he typed,
+    // and echoing a machine-written "es geht um ..." line back at him as his
+    // words would be the screen putting sentences in his mouth. Henry gets the
+    // subject, the transcript stays his.
+    const ctx = useCopilotPanel.getState().context;
+    const wire = ctx?.hint ? ctx.hint + "\n\n" + q : q;
     try {
-      const r = await api.chat(q, {
+      const r = await api.chat(wire, {
         ...opts, mid, ...(replyCard ? { reply_to_card: replyCard } : {}) });
       // Past the await = the daemon answered. THAT is the proof a retried
       // message is delivered; nothing earlier is (a dispatched request is not
@@ -721,6 +755,13 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
             // is what makes that "clearly": he is never guessing where his
             // words went, and a remark meant for Henry is one tap away.
             recipients={cardRecipients} defaultTo={replyTarget}
+            // WHAT this message is about, when the chat was opened from a
+            // settings row. Stays attached across messages (the VS Code
+            // "Attach Context" behaviour the design cites) and is dropped with
+            // the chip's own x - never silently, because a chip that vanishes
+            // on its own is a chip the owner stops trusting.
+            contextChip={chatCtx?.label}
+            onClearContext={chatCtx ? () => useCopilotPanel.getState().clearContext() : undefined}
             bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
         </View>
         {kb > 0 ? <View style={{ height: kb }} /> : null}

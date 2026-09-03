@@ -42,6 +42,10 @@ export interface ConfigItem {
   descKey?: string;
   level?: "basic" | "advanced";
   door?: string;
+  /** OR: the pipeline station whose page renders this knob (harness-config-ui
+   *  section 6). Exactly one of door/station - a knob editable in two places is
+   *  the duplication G4 forbids, and a knob with neither renders nowhere. */
+  station?: string;
   scope?: string;
   value: unknown;
   options?: string[];
@@ -120,10 +124,32 @@ export interface Section {
  *  knob that appears somewhere arbitrary is worse than one that visibly does
  *  not appear, because only the second gets reported. */
 export function placeRows(schema: readonly ConfigItem[], door: string): Section[] {
+  return groupRows(schema, (it) => it.door === door);
+}
+
+/** THE SAME PLACEMENT RULE, keyed on `station` instead of `door`
+ *  (harness-config-ui section 6): the knobs that govern one pipeline station,
+ *  in schema order, sectioned exactly as a door's are.
+ *
+ *  Deliberately the same function underneath rather than a parallel one. The
+ *  station page and the hub have to agree about what a section IS, what counts
+ *  as advanced and which endpoint saves it - and two implementations of that
+ *  would agree right up until one of them was edited. */
+export function placeStation(schema: readonly ConfigItem[], station: string): Section[] {
+  return groupRows(schema, (it) => it.station === station);
+}
+
+/** Which stations the schema actually has rows for - the station page uses it
+ *  the way the hub uses doorsWithRows, and the pipeline uses it to badge a
+ *  station with how many knobs sit behind it. */
+export const stationsWithRows = (schema: readonly ConfigItem[]): string[] =>
+  Array.from(new Set(schema.map((i) => i.station).filter(Boolean) as string[]));
+
+function groupRows(schema: readonly ConfigItem[], keep: (it: ConfigItem) => boolean): Section[] {
   const order: string[] = [];
   const by = new Map<string, ConfigItem[]>();
   for (const it of schema) {
-    if (it.door !== door) continue;
+    if (!keep(it)) continue;
     const g = it.group || "";
     if (!by.has(g)) { by.set(g, []); order.push(g); }
     by.get(g)!.push(it);
