@@ -45,18 +45,25 @@ daemon/plane_links.json
 daemon/plane_credentials.txt
 daemon/events.jsonl
 daemon/users.json
-daemon/sessions.json
 daemon/processes.json
-daemon/copilot_sessions.json
-daemon/copilot_models.json
 daemon/asc_review_watch.json
+# config-consolidation phase 7 (2026-09-03): daemon/ runtime bookkeeping
+# (sessions.json, copilot_sessions.json, driver_pids.json, ...) and durable
+# content a feature produces about itself (henry_memory/, voice_cache/,
+# models_stt/, copilot_runs/) both moved from loose flat files into these two
+# folders (spine/registry/db.py's relocator, daemon/paths.py's STATE_SUBDIR/
+# CONTENT_SUBDIR). Blanket rules replace the individual flat-file entries
+# above (sessions.json, copilot_sessions.json, copilot_models.json,
+# voice_cache/ used to be named here one by one) - nothing tracked lives in
+# either folder. board_directives.json is the one exception that stays flat
+# and tracked (real repo data, see db.py's _RELOCATE_STATE comment).
+daemon/state/
+daemon/content/
 # GxP signing keys (spine/auth/signkeys.py): per-user GPG keyrings whose
 # passphrase is the user's password. Private keys are secrets like users.json
 # above; the PUBLIC keys an auditor needs are exported per signature, and even
 # those stay out of git - they belong to an installation, not the source.
 daemon/signkeys/
-# rendered speech clips (voice.py): regenerated on demand, content-addressed
-daemon/voice_cache/
 daemon/checkpoints/
 daemon/swarmdeck.db
 daemon/helmdeck.db

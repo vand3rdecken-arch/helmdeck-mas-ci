@@ -60,7 +60,10 @@ def main():
 
     # -- migration ran: imported into the db, legacy file renamed ------------
     ok(not os.path.exists(legacy_path), "processes.json renamed away after migration")
-    ok(os.path.exists(legacy_path + ".imported"), "processes.json.imported now exists (nothing lost)")
+    # backups/ (config-consolidation phase 7): _archive() now lands every
+    # retired legacy file in ROOT/backups/, not beside the original.
+    archived = os.path.join(os.path.dirname(legacy_path), "backups", "processes.json.imported")
+    ok(os.path.exists(archived), "processes.json.imported now exists in backups/ (nothing lost)")
 
     from cells.engineer import processes
     got = processes.list_processes()

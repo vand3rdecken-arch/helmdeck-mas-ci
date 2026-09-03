@@ -7,9 +7,9 @@ processes, accept steps). Text in, board changes out."""
 import json, os, re, shutil, subprocess, threading, time, uuid
 
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
-SESS = os.path.join(ROOT, "copilot_sessions.json")
-MODELS_F = os.path.join(ROOT, "copilot_models.json")
-CHATLOG = os.path.join(ROOT, "copilot_log.json")
+SESS = os.path.join(ROOT, "state", "copilot_sessions.json")
+MODELS_F = os.path.join(ROOT, "state", "copilot_models.json")
+CHATLOG = os.path.join(ROOT, "state", "copilot_log.json")
 from cells.copilot.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.copilot_actions import _strip_actions_live, _parse_reply_actions
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
@@ -729,7 +729,7 @@ _compacting = set()              # users with a background compaction in flight
 # (progressive disclosure - the index is always in context, a file is read only
 # when it's relevant). Machine-local runtime data, so it lives under daemon/
 # like every other runtime store.
-MEMORY_DIR = os.path.join(ROOT, "henry_memory")
+MEMORY_DIR = os.path.join(ROOT, "content", "henry_memory")
 MEMORY_INDEX = os.path.join(MEMORY_DIR, "MEMORY.md")
 
 
@@ -1325,7 +1325,7 @@ def _pm_plan_digest():
 
 def _copilot_run_dir(user):
     safe = re.sub(r"[^A-Za-z0-9_-]+", "_", user or "u") or "u"
-    d = os.path.join(ROOT, "copilot_runs", safe)
+    d = os.path.join(ROOT, "content", "copilot_runs", safe)
     os.makedirs(d, exist_ok=True)
     return d
 

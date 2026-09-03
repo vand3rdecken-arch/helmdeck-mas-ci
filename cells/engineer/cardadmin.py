@@ -223,7 +223,7 @@ def update_track(tid, patch, actor="owner"):
                         "laufenden Turn; Karte bleibt auf dem Live-Tree.")
     return t
 
-DIRECTIVES = os.path.join(ROOT, "board_directives.json")
+DIRECTIVES = os.path.join(ROOT, "board_directives.json")  # tracked repo data, stays flat
 
 def apply_board_directives():
     """One-shot board-data patches shipped as repo DATA (policy is data). A

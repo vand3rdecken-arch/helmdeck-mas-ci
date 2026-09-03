@@ -21,7 +21,7 @@ FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 # run_dir it was spawned in, which pinned an app/ subdirectory against
 # deletion until found and killed by hand). Track pids the same pid-reuse-
 # safe way drivers.py does; reap on the next boot.
-_PIDFILE = os.path.join(_DAEMON_ROOT, "recorder_pids.json")
+_PIDFILE = os.path.join(_DAEMON_ROOT, "state", "recorder_pids.json")
 _pid_lock = threading.Lock()
 
 

@@ -62,7 +62,10 @@ def main():
     db.init(role="tool")
 
     ok(not os.path.exists(legacy_path), "_state.json renamed away after migration")
-    ok(os.path.exists(legacy_path + ".imported"), "_state.json.imported now exists (nothing lost)")
+    # backups/ (config-consolidation phase 7): _archive() now lands every
+    # retired legacy file in ROOT/backups/, not beside the original.
+    archived = os.path.join(os.path.dirname(legacy_path), "backups", "_state.json.imported")
+    ok(os.path.exists(archived), "_state.json.imported now exists in backups/ (nothing lost)")
 
     st = connectors._state()
     ok(st == legacy, "migrated state dict round-trips exactly")
