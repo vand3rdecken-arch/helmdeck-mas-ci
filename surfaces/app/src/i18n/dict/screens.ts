@@ -253,6 +253,13 @@ export const screens: Dict = {
   "history.hash": { de: "Hash", en: "hash" },
   "history.author": { de: "Autor", en: "author" },
   "history.date": { de: "Datum", en: "date" },
+  // A 500 from the daemon is NOT "Desktop nicht erreichbar" - the desktop
+  // answered. Naming the real error is what turns a wrong-and-unactionable
+  // message into a debuggable one.
+  "history.loadFailed": {
+    de: "Konnte nicht geladen werden: {msg}",
+    en: "Could not load: {msg}",
+  },
 
   // ---- processes ----------------------------------------------------------
   "processes.stateDone": { de: "fertig", en: "done" },

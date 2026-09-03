@@ -6,7 +6,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api } from "@/data/client";
+import { api, TransportError } from "@/data/client";
 import type { Me } from "@/data/types";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -33,6 +33,21 @@ function val(v: unknown): string {
   if (typeof v === "string") return v === "" ? '""' : v;
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+/* One failed query, two very different owner actions. A TransportError means we
+   never reached the daemon (relay 503, LAN timeout) - "Desktop nicht erreichbar"
+   is then true and points at the desktop. Anything else means the daemon DID
+   answer and the call itself failed (a 500, a 403); calling that "unreachable"
+   is a lie that sends the owner to restart a daemon that is running - the exact
+   false report this screen shipped while GET /history was raising 500s. */
+function QueryError({ t, err }: { t: ThemeTokens; err: unknown }) {
+  const tr = useT();
+  if (!err) return null;
+  const msg = err instanceof TransportError
+    ? tr("health.unreachable")
+    : tr("history.loadFailed", { msg: String((err as Error)?.message ?? err) });
+  return <Text style={{ color: t.danger, fontSize: 12.5 }}>{msg}</Text>;
 }
 
 function Panel({ t, title, sub, children }: { t: ThemeTokens; title: string; sub?: string; children: React.ReactNode }) {
@@ -179,7 +194,7 @@ export default function History() {
         width: "100%", maxWidth: wide ? 1200 : undefined, alignSelf: "center",
       }}>
         {hist.isLoading ? <ActivityIndicator color={t.accent} /> : null}
-        {hist.error ? <Text style={{ color: t.danger }}>{tr("health.unreachable")}</Text> : null}
+        <QueryError t={t} err={hist.error} />
 
         {hist.data ? (
           <Panel t={t} title={tr("history.commitGraph")}
@@ -207,6 +222,7 @@ export default function History() {
           <Panel t={t} title={tr("history.checkpoints")}
             sub={tr("history.checkpointsSub")}>
             {cps.isLoading ? <ActivityIndicator color={t.accent} /> : null}
+            <QueryError t={t} err={cps.error} />
             {cps.data && cps.data.length === 0 ? <Empty text={tr("history.noCheckpoints")} /> : null}
             {(cps.data ?? []).slice(0, 20).map((c) => <CheckpointRow key={c.id} t={t} c={c} isOwner={isOwner} />)}
           </Panel>
@@ -215,6 +231,7 @@ export default function History() {
         <Panel t={t} title={tr("history.debt")}
           sub={tr("history.debtSub")}>
           {debt.isLoading ? <ActivityIndicator color={t.accent} /> : null}
+          <QueryError t={t} err={debt.error} />
           {debt.data && debt.data.length === 0 ? <Empty text={tr("history.noDebt")} /> : null}
           {(debt.data ?? []).map((d) => <DebtRow key={d.id} t={t} d={d} canFix={canFix} />)}
         </Panel>

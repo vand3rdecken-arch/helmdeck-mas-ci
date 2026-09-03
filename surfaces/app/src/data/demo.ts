@@ -453,8 +453,19 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
     { id: "demo-buildbox", owner: "owner", label: "Build box (shared)",
       billing_scope: "shared", created: iso(2000), last_seen: iso(30) },
   ];
+  // /history is an OBJECT, not a list: HistoryGraph reads h.branches.filter(),
+  // so answering [] here threw "h.branches is undefined" and the whole Verlauf
+  // screen hit the error boundary in demo mode. Honestly empty (this section
+  // needs a real installation) but correctly SHAPED - an empty fixture must
+  // still satisfy the type its consumer destructures.
+  if (path === "/history") return { head: "main", main: [], branches: [] };
   // Sections that need a real installation stay honestly empty in the demo.
-  if (["/processes", "/runs", "/sessions/claude", "/history", "/connectors", "/users"].includes(path)) return [];
+  // /checkpoints and /debt are LISTS the Verlauf screen calls .slice()/.map()
+  // on; unmodelled they fell through to the `{}` default and took the whole
+  // screen to the error boundary ("(cps.data ?? []).slice is not a function").
+  // "Unmodelled" must not mean "wrong type".
+  if (["/processes", "/runs", "/sessions/claude", "/connectors", "/users",
+       "/checkpoints", "/debt"].includes(path)) return [];
   if (path === "/settings") return metrics().settings ?? {};
   if (path === "/automation") return {};
   if (path === "/pm/plan") return pmPlan();
