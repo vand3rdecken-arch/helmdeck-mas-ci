@@ -144,15 +144,37 @@ DEFAULTS = {
     "users": [],
 }
 
+# Last successfully parsed settings.json content. Windows gives a reader a
+# transient PermissionError while os.replace(tmp, SET) swaps the file (measured
+# 2026-09-03: /me 500'd with Errno 13 in the daemon log, and in the same window
+# request_ship_decision read a settings WITHOUT repo_hooks and silently skipped
+# the ship-decision for two accepted UI cards - no OTA ever went out). A read
+# that fails while the file EXISTS must degrade to the last good read, never to
+# DEFAULTS: DEFAULTS has no repo_hooks/users/drivers, and every caller treats
+# the return as the truth.
+_last_good = None
+
+
 def settings():
+    global _last_good
     s = json.loads(json.dumps(DEFAULTS))
     if os.path.exists(SET):
-        try:
-            with open(SET, encoding="utf-8") as f:
-                for k, v in json.load(f).items():
-                    s[k] = v
-        except ValueError:
-            pass
+        loaded = None
+        for _ in range(4):                  # lock windows are ms-sized; 3x50ms covers them
+            try:
+                with open(SET, encoding="utf-8") as f:
+                    loaded = json.load(f)
+                break
+            except ValueError:
+                break                       # corrupt file: defaults, as before
+            except OSError:
+                time.sleep(0.05)
+        if loaded is None:
+            loaded = _last_good             # unreadable but existing -> last good read
+        if loaded is not None:
+            _last_good = loaded
+            for k, v in loaded.items():
+                s[k] = v
     return s
 
 # A checkpoint marks REAL development - new integrations/runtimes, structural
