@@ -728,6 +728,20 @@ def _repo_hook(t, kind, extra_env=None):
             log.log("note", s[len("HOOK-NOTE:"):].strip())
 
     token = _admit_heavy(t, "build" if kind == "deploy" else "preview", log)
+    # A hook that says plain `bash` means GIT-bash, never WSL. _run_streamed
+    # runs shell=True -> cmd.exe -> PATH, and since the daemon's PATH
+    # hydration appends the Windows dirs, `bash` can resolve to
+    # System32\bash.exe (WSL) - measured 2026-09-03: Henry's first executed
+    # ship-decision (ota) died on "Windows Subsystem for Linux must be
+    # updated". Same trap the native-stale fingerprint already hit (debt
+    # register: "plain bash=WSL, use git-bash path"); signkeys.py resolves
+    # the identical candidates for gpg.
+    if os.name == "nt" and (cmd == "bash" or cmd.startswith("bash ")):
+        for _cand in (r"C:\Program Files\Git\bin\bash.exe",
+                      r"C:\Program Files (x86)\Git\bin\bash.exe"):
+            if os.path.exists(_cand):
+                cmd = '"%s"%s' % (_cand, cmd[4:])
+                break
     env = dict(os.environ)
     if extra_env:
         env.update(extra_env)
