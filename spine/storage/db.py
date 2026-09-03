@@ -380,6 +380,36 @@ def _migrate():
             print("db: imported connector state (%d connectors) from connectors/_state.json" % len(cstate))
         except Exception as e:
             print("db: connector state import failed:", e)
+    # daemon/henry_memory/*.md -> memory table, store of record (config-
+    # consolidation phase 5, owner decree: "das muss ins db... wenn es hier
+    # bleibt erreicht es niemanden"). FIRST-START ONLY, same rule as every
+    # migration above: an empty table + files on disk means this install
+    # predates the db store. The DIRECTORY IS NOT ARCHIVED - unlike
+    # settings.json/policy_live.json it stays the live WRITE SURFACE a
+    # spawned Henry turn edits with its own hands; copilot.py folds it into
+    # this table at event time after every save turn from here on
+    # (cells/copilot/copilot.py::_fold_memory_to_db). This import only
+    # covers notes that existed before that mechanism shipped.
+    mdir = os.path.join(ROOT, "henry_memory")
+    if (os.path.isdir(mdir)
+            and c.execute("SELECT 1 FROM memory LIMIT 1").fetchone() is None):
+        try:
+            n = 0
+            for fname in os.listdir(mdir):
+                if not fname.endswith(".md"):
+                    continue
+                fpath = os.path.join(mdir, fname)
+                try:
+                    with open(fpath, encoding="utf-8") as f:
+                        content = f.read()
+                except OSError:
+                    continue
+                memory_put(fname[:-3], content, actor="migration")
+                n += 1
+            if n:
+                print("db: imported %d memory notes from henry_memory/" % n)
+        except Exception as e:
+            print("db: memory import failed:", e)
     # settings.json -> workspace_config (config-consolidation phase 2,
     # owner decree 2026-09-03). FIRST-START ONLY, same rule as events above:
     # an empty table + an existing file means this install predates the db

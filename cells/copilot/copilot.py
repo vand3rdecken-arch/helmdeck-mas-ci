@@ -738,11 +738,16 @@ def _memory_digest():
 
     That split is the whole mechanism: the index is small and always present, a
     note is opened only when it turns out to matter. Putting the notes inline
-    would re-grow exactly the context the compaction just freed."""
+    would re-grow exactly the context the compaction just freed.
+
+    Reads the DB (config-consolidation phase 5), not the file: the db is the
+    store of record - exportable, the thing GET /harness/export ships -
+    while MEMORY_DIR stays only the write surface a spawned turn edits with
+    its own hands. _fold_memory_to_db() is what keeps the two in step."""
     try:
-        with open(MEMORY_INDEX, encoding="utf-8") as f:
-            body = f.read().strip()
-    except OSError:
+        from spine.storage import db
+        body = (db.memory_all().get("MEMORY") or {}).get("content", "").strip()
+    except Exception:                                            # noqa: BLE001
         return ""
     if not body:
         return ""
@@ -875,6 +880,40 @@ _SAVE_PROMPT = (
 )
 
 
+def _fold_memory_to_db():
+    """Mirror MEMORY_DIR into db.memory (config-consolidation phase 5) -
+    fold-at-event-time at the ONE owner who just observed the write, the
+    same shape as db.bump_chat/drivers.turn_active: never re-derived by a
+    background scan, never a stored flag. Called immediately after a save
+    turn returns, because that subprocess is the one and only writer of the
+    directory - nothing else in this process touches it.
+
+    A file with no matching db row is a new/changed note (INSERT OR
+    REPLACE); a db row with no matching file is a note Henry deleted or
+    renamed, folded out the same way. Best-effort: the directory is already
+    the durable state if this fails, same contract as every other
+    fold/emit call site here."""
+    try:
+        from spine.storage import db
+        on_disk = set()
+        for fname in os.listdir(MEMORY_DIR):
+            if not fname.endswith(".md"):
+                continue
+            name = fname[:-3]
+            on_disk.add(name)
+            try:
+                with open(os.path.join(MEMORY_DIR, fname), encoding="utf-8") as f:
+                    content = f.read()
+            except OSError:
+                continue
+            db.memory_put(name, content, actor="henry")
+        for name in list(db.memory_all()):
+            if name not in on_disk:
+                db.memory_delete(name)
+    except Exception as e:                                        # noqa: BLE001
+        print("copilot: memory fold failed -", str(e)[:200])
+
+
 def _save_memory(user, sid):
     """Give Henry ONE turn to persist what matters BEFORE the verdichtung.
 
@@ -895,6 +934,8 @@ def _save_memory(user, sid):
         if not os.path.exists(MEMORY_INDEX):
             with open(MEMORY_INDEX, "w", encoding="utf-8") as f:
                 f.write(_MEMORY_SEED)
+            _fold_memory_to_db()      # so the digest sees the seed immediately,
+                                      # not only after the first real save turn
     except OSError:
         return False
     # acceptEdits, NOT the plan mode the /compact spawn uses: a turn told to
@@ -911,6 +952,7 @@ def _save_memory(user, sid):
         p.wait(timeout=20)
     except Exception:                                            # noqa: BLE001
         return False
+    _fold_memory_to_db()          # the write surface just changed - mirror it
     return True
 
 
