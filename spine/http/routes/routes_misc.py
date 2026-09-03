@@ -22,6 +22,37 @@ def processes_get(self, user):
         client=user["name"] if user["role"] == "client" else None)))
 
 
+def process_templates_get(self, user):
+    """Team-visible (same tier as projects.view) - the RUN data stays behind
+    /processes' own client filter, but the reusable step SHAPE is workspace
+    config every teammate should be able to see and start from."""
+    from cells.engineer.chains import processes
+    return self._send(200, json.dumps(processes.list_templates()))
+
+
+def process_templates_save_post(self, user, body):
+    from cells.engineer.chains import processes
+    try:
+        doc = processes.save_template(
+            body.get("name", ""), body.get("description", ""),
+            body.get("steps") or [], tid=body.get("id"), actor=user["name"])
+    except (ValueError, RuntimeError) as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(doc))
+
+
+def process_templates_from_process_post(self, user, body):
+    from cells.engineer.chains import processes
+    pid = body.get("process_id")
+    if not pid:
+        return self._send(400, json.dumps({"error": "process_id required"}))
+    try:
+        doc = processes.template_from_process(pid, name=body.get("name"), actor=user["name"])
+    except RuntimeError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(doc))
+
+
 def me_get(self, user):
     # Carries the PUBLIC UI policy, not just the identity: the
     # workspace language (and the lane labels the board renders) has
@@ -179,8 +210,24 @@ def processes_new_post(self, user, body):
     if not req:
         return self._send(400, json.dumps({"error": "request required"}))
     client = user["name"] if user["role"] == "client" else body.get("client", "")
-    return self._send(200, json.dumps(processes.create(
-        req, client=client, due=body.get("due", ""), actor=user["name"])))
+    try:
+        p = processes.create(req, client=client, due=body.get("due", ""),
+                             actor=user["name"], template_id=body.get("template_id"))
+    except RuntimeError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(p))
+
+
+def process_templates_sub_post(self, user, body, tid, action):
+    """/process_templates/<id>/<action> - only 'delete' today, same nested-
+    router shape as /processes/<id>/step (routes_system.processes_sub_post)."""
+    from cells.engineer.chains import processes
+    if action != "delete":
+        return self._send(404, json.dumps({"error": "?"}))
+    ok = processes.delete_template(tid, actor=user["name"])
+    if not ok:
+        return self._send(404, json.dumps({"error": "no such template"}))
+    return self._send(200, json.dumps({"ok": True}))
 
 
 def voice_transcribe_post(self, user, body):
@@ -206,10 +253,13 @@ def voice_transcribe_post(self, user, body):
 
 GET_ROUTES = {
     "/processes": processes_get,
+    "/process_templates": process_templates_get,
     "/me": me_get,
 }
 POST_ROUTES = {
     "/processes/new": processes_new_post,
+    "/process_templates/save": process_templates_save_post,
+    "/process_templates/from_process": process_templates_from_process_post,
     "/voice/transcribe": voice_transcribe_post,
 }
 PUT_ROUTES = {
@@ -221,8 +271,16 @@ DELETE_ROUTES = {
 }
 # /processes, /me, /processes/new are open to every role by design (client
 # filtering happens by parameter, not by capability) - no entry here for them.
+# process_templates: list is team-visible (templates.view, same tier as
+# projects.view); save/from_process/delete are owner-only (templates.manage) -
+# this is CONFIG now, not a run, so it gets config's write bar.
+GET_CAPS = {
+    "/process_templates": "templates.view",
+}
 POST_CAPS = {
     "/voice/transcribe": "chat.use",
+    "/process_templates/save": "templates.manage",
+    "/process_templates/from_process": "templates.manage",
 }
 # PUT /me/config and PUT|DELETE /me/boards are deliberately absent from a
 # *_CAPS table: they are self-scoped (see me_config_put / me_boards_put), so

@@ -64,6 +64,12 @@ CAPS = (
     # team-visible, config/consolidate (changes the loop's own policy) is
     # owner-only.
     "pm.view", "pm.manage",
+    # process TEMPLATES (config-consolidation, process/config split
+    # 2026-09-03): the reusable step SHAPE is config, same tier as projects -
+    # view is team-visible, save/delete/from_process is owner-only. A
+    # process RUN stays open to every role (processes_get/processes_new_post
+    # carry no cap), same as before this split.
+    "templates.view", "templates.manage",
 )
 
 # role -> tuple(cap) as shipped. This is the CURRENT effective behaviour,
@@ -78,10 +84,11 @@ _DEFAULT_MATRIX = {
         "audit.read", "devices.manage", "devices.use", "chat.use",
         "gxp.activate", "cards.admin", "system.introspect",
         "projects.view", "projects.manage", "pm.view", "pm.manage",
+        "templates.view", "templates.manage",
     ),
     "operator": (
         "recordings.view", "devices.manage", "devices.use", "chat.use",
-        "cards.admin", "projects.view", "pm.view",
+        "cards.admin", "projects.view", "pm.view", "templates.view",
     ),
     "client": (),
     # card 3 (ops/docs/backlog/rbac-gxp): quality is the SoD approver - its
@@ -200,6 +207,7 @@ PATTERNS = (
     ("GET", "exact", "/cells/*/source", "system.introspect"),
     ("POST", "exact", "/projects/*/update", "projects.manage"),
     ("POST", "exact", "/projects/*/delete", "projects.manage"),
+    ("POST", "exact", "/process_templates/*/delete", "templates.manage"),
 )
 
 

@@ -4387,6 +4387,54 @@ DEBT = [
         "fix": "PAID. See 'what' above.",
         "order": 61,
     },
+    {
+        "id": "process-template-config-split",
+        "title": "a process's reusable step SHAPE and its per-run state "
+                 "were one JSON blob - the shape never accumulated anywhere "
+                 "exportable",
+        "status": "open",
+        "what": "Owner decree 2026-09-03, spotted looking at the Prozesse "
+                "screen: \"das ist auch config, wie trennen\". The "
+                "`processes` table's rows mixed RUN fields (request/client/"
+                "due/status/cost, steps carrying done/lane/track/state/"
+                "ready/auto_dispatched) with the step DEFINITION (title/"
+                "desc/mode/days) that is actually reusable across clients - "
+                "'Schritte vorschlagen' re-invented the same shape from "
+                "scratch every time via an LLM call, and it never landed "
+                "anywhere an owner could export it. FIXED: new "
+                "process_template db table (closed doc: name/description/"
+                "steps, steps restricted to title/desc/mode/days by "
+                "cells/engineer/chains/processes.py's _clean_template_step, "
+                "the one writer - a runtime field can never enter this "
+                "table by any path, including template_from_process lifting "
+                "a step off a REAL run). create() gained template_id: a "
+                "template-sourced process skips the LLM proposer entirely "
+                "(deterministic, free). /harness/export gained the "
+                "process_templates plane; import replays through "
+                "save_template only. New caps templates.view (team-visible, "
+                "same tier as projects.view) / templates.manage (owner-only, "
+                "since this is config now) - a process RUN itself stays open "
+                "to every role, unchanged.",
+        "why_it_bites": "RESOLVED for the backend + export/import track "
+                        "(ops/tests/test_process_templates.py, full round "
+                        "trip through the real HTTP handlers). The UI split "
+                        "(a Vorlagen list above the Läufe list on the "
+                        "Prozesse screen, 'als Vorlage speichern' action) "
+                        "is NOT yet built - the API is there "
+                        "(GET /process_templates, POST /process_templates/"
+                        "save|from_process|<id>/delete, POST /processes/new "
+                        "with template_id) but cells/engineer/ui/"
+                        "processes.tsx still only shows the freetext "
+                        "'Schritte vorschlagen' form. Trigger for whoever "
+                        "picks this up: the backend is done, this is a UI-"
+                        "only remaining task.",
+        "trigger": "config data (a reusable shape/definition) stored only "
+                   "as a byproduct of one run's instance data, with no "
+                   "separate identity or export path",
+        "fix": "PAID (backend). OPEN: cells/engineer/ui/processes.tsx UI "
+               "for template list/save/start-from/delete.",
+        "order": 62,
+    },
 ]
 
 def list_debt():

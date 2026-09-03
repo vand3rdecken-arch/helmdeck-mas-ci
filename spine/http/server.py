@@ -573,6 +573,8 @@ class H(BaseHTTPRequestHandler):
             parts = p.strip("/").split("/")
             if parts[0] == "processes" and len(parts) >= 3:
                 return routes_system.processes_sub_post(self, user, body, parts[1], parts[2])
+            if parts[0] == "process_templates" and len(parts) == 3:
+                return routes_misc.process_templates_sub_post(self, user, body, parts[1], parts[2])
             if p in routes_control.POST_ROUTES:
                 return routes_control.POST_ROUTES[p](self, user, body)
             if p in routes_settings.POST_ROUTES:

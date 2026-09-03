@@ -163,6 +163,18 @@ def init(role="tool"):
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS connector_state(
         id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    # Process TEMPLATES (config-consolidation, process/config split 2026-09-03,
+    # owner decree: "das ist auch config" - the reusable step SHAPE of a
+    # process, deliberately separate from the `processes` table above, which
+    # is a RUN (request/client/due/status/cost/steps-with-runtime-fields).
+    # A template's `data` is a CLOSED doc {name, description, steps:[{title,
+    # desc, mode, days}]} - runtime fields (done/lane/track/state/ready/
+    # auto_dispatched) never enter this table; see cells/engineer/chains/
+    # processes.py's _clean_template_steps, the one writer. Exported by
+    # /harness/export like every other config plane; a run is not.
+    c.execute("""CREATE TABLE IF NOT EXISTS process_template(
+        id TEXT PRIMARY KEY, data TEXT NOT NULL,
+        updated_at TEXT NOT NULL, actor TEXT NOT NULL)""")
     # Per-ACCOUNT profile rows (accounts-boards-prd phase 1). Keyed on the
     # user NAME, which is what users.json calls an account - see
     # spine/storage/userconfig.py for why that makes a rename an identity
@@ -843,6 +855,64 @@ def memory_delete(name):
     if n:
         bump_chat()
     return n
+
+
+# -- process templates (config, not a run) ----------------------------------
+# Dumb storage, exactly like user_config above: no schema check, no defaults.
+# cells/engineer/chains/processes.py owns the closed step shape - this layer
+# only knows rows, atomicity and the version bump.
+
+def process_template_all():
+    """{id: {name, description, steps, updated_at, actor}} for every template."""
+    try:
+        rows = conn().execute(
+            "SELECT id,data,updated_at,actor FROM process_template").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out = {}
+    for tid, data, updated_at, actor in rows:
+        try:
+            doc = json.loads(data)
+        except ValueError:
+            continue          # a hand-corrupted row reads as absent, not a crash
+        doc["updated_at"] = updated_at
+        doc["actor"] = actor
+        out[tid] = doc
+    return out
+
+
+def process_template_get(tid):
+    r = conn().execute(
+        "SELECT data,updated_at,actor FROM process_template WHERE id=?", (tid,)).fetchone()
+    if not r:
+        return None
+    try:
+        doc = json.loads(r[0])
+    except ValueError:
+        return None
+    doc["updated_at"] = r[1]
+    doc["actor"] = r[2]
+    return doc
+
+
+def process_template_put(tid, doc, actor="owner"):
+    """Store one template doc (name/description/steps only - the caller's job
+    to have already stripped anything else)."""
+    import datetime
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO process_template(id,data,updated_at,actor) "
+                  "VALUES(?,?,?,?)", (tid, json.dumps(doc), now, actor))
+    bump()
+
+
+def process_template_delete(tid):
+    with conn() as c:
+        cur = c.execute("DELETE FROM process_template WHERE id=?", (tid,))
+        n = cur.rowcount
+    if n:
+        bump()
+    return bool(n)
 
 
 # -- boards ----------------------------------------------------------------
