@@ -87,6 +87,13 @@ _KEEPALIVE_MAX = 2700.0  # stop 45min after the last real turn
 _pending_actions = {}    # skey -> [result strings], folded into the next turn
 _pending_lock = threading.Lock()
 
+# skey -> (sha1 of last FULL snapshot/card-context sent, monotonic-enough ts).
+# The snapshot-delta seam (see chat()'s DELTA comment): an unchanged board
+# collapses to a one-line reference because the model's own session already
+# carries the state. Stamped only on turn SUCCESS (a failed turn never showed
+# the model the snapshot), cleared when a resume turns out detached.
+_snap_seen = {}
+
 
 def _turn_lock(user):
     """One turn at a time per user on the shared warm process - a prewarm
@@ -981,6 +988,11 @@ def _maybe_compact(user):
     # below what /compact actually reaches, and that must not become a loop.
     m["compacted_at_turn"] = int(st.get("turns") or 0)
     _save_stats(all_st)
+    # the compacted session may have summarized the board state away - the
+    # snapshot-delta seam must send the next snapshot FULL (board key: a
+    # compaction belongs to the user's board conversation, same key chat()
+    # uses when card is None)
+    _snap_seen.pop(_skey(user), None)
     # REFERENT RESCUE (owner incident 2026-09-02 14:33): compaction summarized
     # away the immediate exchange - Henry had just asked "soll ich das im Code
     # nachschauen?" (about the WATCH), the owner's "Ja" ran on the compacted
@@ -1476,11 +1488,40 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _cc = _card_context(card)
         snapshot_block = (("CARD CONTEXT (%s):\n" % time.strftime("%Y-%m-%d %H:%M"))
                           + _cc + "\n\n") if _cc else ""
+        _snap_body = _cc or ""
     else:
         _plan = _pm_plan_digest()
         snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
             + _snapshot() + (("\n\n" + _plan) if _plan else "") \
             + _memory_digest()
+        _snap_body = snapshot_block
+    # DELTA, not repetition (Paseo-shape, owner decree 2026-09-03 "direkt hier
+    # fixen"): the conversation is CONTINUOUS - the model still carries the
+    # board state it read last turn in its own session context. Re-sending an
+    # UNCHANGED snapshot is 8-12k uncachable tokens of pure prefill per turn
+    # (measured: the bulk of the warm-turn latency gap vs Paseo, which sends
+    # only the user's text). Content-hash per conversation: unchanged state
+    # collapses to a one-line reference. The 30min expiry is the drift guard -
+    # after a compaction, a detached resume or plain model forgetfulness the
+    # full snapshot rides again; _snap_seen is also cleared when a resume is
+    # detected as detached (the fresh session never saw any snapshot).
+    _snap_hash = None
+    if _snap_body:
+        import hashlib
+        _snap_hash = hashlib.sha1(_snap_body.encode("utf-8", "replace")).hexdigest()
+        _seen = _snap_seen.get(skey)
+        if _seen and _seen[0] == _snap_hash and time.time() - _seen[1] < 1800:
+            snapshot_block = ("BOARD SNAPSHOT: unveraendert seit deiner letzten "
+                              "Antwort - der Stand aus deinem letzten Turn gilt "
+                              "weiter.\n" if not card else
+                              "CARD CONTEXT: unveraendert seit deiner letzten "
+                              "Antwort - der Stand aus deinem letzten Turn gilt "
+                              "weiter.\n\n")
+            # None = do NOT re-stamp on success: the expiry keeps counting
+            # from the last FULL snapshot, so the drift guard actually fires
+            # mid-conversation instead of being refreshed away by every
+            # unchanged turn.
+            _snap_hash = None
     # The ROLE is data: ops/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
@@ -1739,6 +1780,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 rotate_note = ("⚠ Kontext verloren: die Session liess sich nicht "
                                 "fortsetzen (%s…), neu begonnen (%s…). Der bisherige "
                                 "Verlauf bleibt oben sichtbar." % (sid[:8], sid_final[:8]))
+                # the fresh session never saw any snapshot - the delta seam
+                # must send the next one FULL, not as a reference to a turn
+                # this session doesn't contain
+                _snap_seen.pop(skey, None)
             chain = [s for s in (st.get("session_chain") or []) if s != sid]
             chain.append(sid)
             st["session_chain"] = chain[-6:]           # bounded - last 6 prior sessions
@@ -1938,5 +1983,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
     # feed the keepalive: a real turn IS the freshest cache there is
     _last_turn_at[skey] = _last_touch_at[skey] = time.time()
+    if _snap_hash:
+        # the model has now really SEEN this state - only from here on may an
+        # unchanged board collapse to the one-line reference
+        _snap_seen[skey] = (_snap_hash, time.time())
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}
