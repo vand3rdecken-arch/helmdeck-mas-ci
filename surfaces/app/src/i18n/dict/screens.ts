@@ -647,6 +647,11 @@ export const screens: Dict = {
     de: "Aus = Human-Bestätigung nötig",
     en: "Off = a human has to confirm",
   },
+  "modules.buildLoop": { de: "Build-Loop (Selbststeuerung)", en: "Build loop (self-governance)" },
+  "modules.buildLoopSub": {
+    de: "Der interaktive Agent folgt seinem Build-Workflow (ALIGN bis COMMIT). Aus = Stop-Hook still.",
+    en: "The interactive agent follows its build workflow (ALIGN through COMMIT). Off silences the Stop hook.",
+  },
   "modules.wipLimit": { de: "WIP-Limit", en: "WIP limit" },
   "modules.wipLimitSub": { de: "laufende Karten", en: "cards in flight" },
   "modules.cells": { de: "Cells", en: "Cells" },

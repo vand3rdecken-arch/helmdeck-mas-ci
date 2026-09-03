@@ -5,6 +5,13 @@ warum hat man eine Zellen-Form wenn man am Ende alles unterschiedlich
 laesst" - both cells must share ONE form, held by a test, not discipline).
 
 The contract, checked against the real cells/ tree on disk:
+  - THE TREE IS THE TAKTGEBER (owner decree 2026-09-03: "wenn 2 folder da
+    sind dann gibt es 2 Zellen und nicht mehr - die Registry ist nicht
+    Taktgeber sondern code"): the CELLS registry ids and the cells/ folders
+    must match EXACTLY, both directions - a registry entry without a folder
+    rendered a third "cell" in settings that did not exist on disk
+    (buildloop), and a folder without an entry would be an unregistered
+    agentic system
   - every cells/<id>/ has an __init__.py and a routes/ subpackage
   - no loose .py file sits directly at the cell root (everything belongs to
     routes/, ui/, or a named domain folder)
@@ -37,10 +44,21 @@ def check(cond, msg):
 
 CELLS_DIR = os.path.join(ROOT, "cells")
 
+# -- the tree is the Taktgeber: registry ids == folders, both directions ----
+_folders = sorted(d for d in os.listdir(CELLS_DIR)
+                  if os.path.isdir(os.path.join(CELLS_DIR, d))
+                  and d != "__pycache__")
+_registered = sorted(c.id for c in CELLS)
+check(_registered == _folders,
+      "CELLS registry ids exactly mirror the cells/ folders on disk "
+      "(registry %r vs tree %r) - a registry entry without a folder is a "
+      "phantom cell in the UI, a folder without an entry is unregistered" %
+      (_registered, _folders))
+
 for c in CELLS:
     cdir = os.path.join(CELLS_DIR, c.id)
     if not os.path.isdir(cdir):
-        continue  # e.g. buildloop: not daemon-hosted, has no cells/<id>/ tree
+        continue  # already reported by the mirror check above
     entries = sorted(os.listdir(cdir))
     check("__init__.py" in entries, "cells/%s/: has __init__.py" % c.id)
     loose_py = [f for f in entries

@@ -76,12 +76,13 @@ with sync_playwright() as p:
                 if (sc) sc.scrollTop = y;
             }""", y)
             shot(page, "modules_%s_%d.png" % (lang, i))
-        # cell_diagram's empty-state leaf ("no routes"): buildloop is the cell
-        # with zero routes, and that column sits past the diagram's own
-        # horizontal scroller.
-        page.click("text=buildloop")
+        # cell_diagram shot: copilot's diagram (buildloop left the cell list
+        # 2026-09-03 - it is a harness rule now, so no registered cell has
+        # zero routes anymore; the diagram's "no routes" empty-state leaf is
+        # only reachable through a future cell without routes).
+        page.click("text=copilot")
         page.wait_for_timeout(1500)
-        page.get_by_text("buildloop").first.scroll_into_view_if_needed()
+        page.get_by_text("copilot").first.scroll_into_view_if_needed()
         page.evaluate("""() => {
             const h = [...document.querySelectorAll('div')].filter(e => e.scrollWidth > e.clientWidth + 100);
             const sc = h.sort((a, b) => b.scrollWidth - a.scrollWidth)[0];

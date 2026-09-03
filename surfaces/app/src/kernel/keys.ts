@@ -124,10 +124,11 @@ export interface PolicySet {
    * planning loop merged in from the former "pm" cell (owner directive
    * 2026-09-03: one agent, one switch - off means no chat and no planning). */
   readonly copilotEnabled: boolean;
-  /** The build loop cell (cells.py "buildloop"). NOT daemon-hosted like the
-   * other two: governs the CURRENT agent's own workflow via Claude Code's
+  /** The build-loop HARNESS RULE (reclassified from "Cell #6" 2026-09-03,
+   * owner decree: the cells/ tree is the Taktgeber - no folder, no cell).
+   * Governs the CURRENT interactive agent's own workflow via Claude Code's
    * hooks (ops/tools/loop_state.py reads this flag directly, no daemon
-   * round-trip needed). Self-governance, not delegation. */
+   * round-trip needed); rendered with the seeded rules, not the cells. */
   readonly buildLoopEnabled: boolean;
 }
 

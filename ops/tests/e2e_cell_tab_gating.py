@@ -95,15 +95,18 @@ def main():
         token = json.loads(page.evaluate(
             "() => localStorage.getItem('helmdeck.config')") or "{}").get("token", "")
 
-        # 1. daemon truth: three cells, engineer carries the full surface list.
+        # 1. daemon truth: exactly the two cells/ folders (owner decree
+        # 2026-09-03: the tree is the Taktgeber - buildloop was reclassified
+        # as a harness rule, no folder = no cell), engineer carries the full
+        # surface list.
         import urllib.request
         req = urllib.request.Request(DAEMON + "/cells")
         req.add_header("Authorization", "Bearer " + token)
         with urllib.request.urlopen(req, timeout=10) as r:
             manifest = json.loads(r.read().decode())
         ids = {c["id"] for c in manifest.get("cells", [])}
-        check(ids == {"engineer", "copilot", "buildloop"},
-              "GET /cells: exactly three cells (got %s)" % sorted(ids))
+        check(ids == {"engineer", "copilot"},
+              "GET /cells: exactly the two cells the tree holds (got %s)" % sorted(ids))
         eng = next((c for c in manifest["cells"] if c["id"] == "engineer"), {})
         check(set(eng.get("surfaces") or []) == {"surfaces.board",
               "surfaces.processes", "surfaces.connectors"},

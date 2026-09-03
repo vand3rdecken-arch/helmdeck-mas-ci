@@ -872,28 +872,29 @@ def main():
         # sandboxed above).
         from spine.auth import policy
         status, body = req("GET", "/cells", cookie=sid, expect=200)
-        # TWO agents + self-governance (owner directives 2026-09-03): pm
-        # merged into copilot ("pm und henry is eins"), process + connectors
-        # merged into engineer ("ein engineer, der seinen Bau Prozess hat").
-        # Three registered cells, three enabled_keys, no more.
-        ok({"engineer", "copilot", "buildloop"}
+        # TWO agents, exactly the cells/ folders (owner directives
+        # 2026-09-03): pm merged into copilot ("pm und henry is eins"),
+        # process + connectors merged into engineer ("ein engineer, der
+        # seinen Bau Prozess hat"), and buildloop RECLASSIFIED out of the
+        # registry ("wenn 2 folder da sind dann gibt es 2 Zellen und nicht
+        # mehr - die Registry ist nicht Taktgeber sondern code") - it is a
+        # harness rule (buildLoopEnabled) now, rendered with the seeded
+        # rules, not an agentic system.
+        ok({"engineer", "copilot"}
            == {c["id"] for c in body.get("cells", [])},
-           "/cells: three agentic systems registered (builder, coordinator, "
-           "buildloop = self-governing via ops/tools/loop_state.py, "
-           "not daemon-hosted)")
+           "/cells: exactly the two agentic systems the tree holds "
+           "(builder + coordinator; buildloop is a rule, not a cell)")
         eng = next((c for c in body.get("cells", []) if c["id"] == "engineer"), {})
         ok(set(eng.get("surfaces") or []) == {"surfaces.board",
                                              "surfaces.processes",
                                              "surfaces.connectors"},
            "/cells: engineer's manifest carries the FULL surface list - the "
            "absorbed tabs hide with the one switch")
-        buildloop = next((c for c in body.get("cells", []) if c["id"] == "buildloop"), {})
-        ok(buildloop.get("enabled") is True, "/cells: buildloop enabled by default")
-        ok("ops/tools/loop_state.py" in (buildloop.get("logicFiles") or []),
-           "/cells: buildloop manifest carries its real repo-root logic file")
-        ok(buildloop.get("harnessFile") == "CLAUDE.md",
-           "/cells: buildloop harness is CLAUDE.md")
-        ok(buildloop.get("routes") == [], "/cells: buildloop has no HTTP surface (self-governing)")
+        # the reclassified flag stays real in the policy plane - the rule
+        # toggle in the app posts the same tracked /policy/swap as before.
+        ok(policy.get_policies().get("buildLoopEnabled", None) is True,
+           "/cells: buildLoopEnabled lives on as a seeded policy rule "
+           "(default true), just not as a cell")
 
         # -- direct-call guard under the MERGED engineer switch: processes.
         # clear_step_stamps must no-op while the engineer cell (which now owns
