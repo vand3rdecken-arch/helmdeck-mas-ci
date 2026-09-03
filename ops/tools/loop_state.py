@@ -72,11 +72,13 @@ _POLICY_ROOT = DAEMON
 
 
 def _build_loop_enabled():
-    """The build loop is Cell #6 (cells.py 'buildloop') - but it is NOT
-    daemon-hosted like the other 5: it governs THIS agent's own workflow via
-    Claude Code's hooks (.claude/settings.json -> this script), not a spawned
-    daemon worker. No HTTP round-trip: reads the policy doc DIRECTLY, so the
-    flag works even when the daemon isn't running.
+    """The build loop is a HARNESS RULE, not a cell (reclassified 2026-09-03,
+    owner decree: 2 cells/ folders = 2 cells, the registry mirrors the tree;
+    'Cell #6' before that). It governs THIS agent's own workflow via Claude
+    Code's hooks (.claude/settings.json -> this script), not a spawned
+    daemon worker - rendered with the other seeded rules in Modules & Rules.
+    No HTTP round-trip: reads the policy doc DIRECTLY, so the flag works
+    even when the daemon isn't running.
 
     Since config-consolidation phase 3, the composed doc is a db row
     (helmdeck.db's policy_doc table) - queried here as plain read-only SQLite

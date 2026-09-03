@@ -144,6 +144,13 @@ export function CellsCatalog() {
             <Bool k="authRequired" label={tr("modules.authRequired")} />
             <Bool k="measuredEconomics" label={tr("modules.measuredEconomics")} />
             <Bool k="agentMaySwap" label={tr("modules.agentMaySwap")} sub={tr("modules.agentMaySwapSub")} />
+            {/* buildLoopEnabled moved here from the cell list (owner decree
+                2026-09-03: 2 folders = 2 cells, the registry mirrors the
+                tree). It was never an agentic system - no routes, no
+                surface, no lifecycle - it is a harness rule: it silences
+                the interactive agent's Stop hook (ops/tools/loop_state.py
+                reads the policy plane directly, daemon not required). */}
+            <Bool k="buildLoopEnabled" label={tr("modules.buildLoop")} sub={tr("modules.buildLoopSub")} />
             {/* WIP-Limit dedup (the plan's point D): ONE source is
                 capacity.wip_limit, which is now a schema knob in door
                 "System". This row stays a read-only mirror and says so,

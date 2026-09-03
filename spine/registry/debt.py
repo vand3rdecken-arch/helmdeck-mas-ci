@@ -4351,6 +4351,42 @@ DEBT = [
         "fix": "PAID (config track + structure track). See 'what' above.",
         "order": 60,
     },
+    {
+        "id": "buildloop-was-a-rule-not-a-cell",
+        "title": "the settings UI rendered 3 cells while cells/ holds 2 "
+                 "folders - buildloop was a registry entry with no tree",
+        "status": "paid",
+        "what": "Owner decree 2026-09-03 (spotted on the phone's Zellen "
+                "door): \"wenn 2 folder da sind dann gibt es 2 Zellen und "
+                "nicht mehr - die Registry ist nicht Taktgeber sondern "
+                "code\". buildloop (registered 2026-08-18 as 'Cell #6', see "
+                "cell-6-buildloop-self-governing) never had routes, an "
+                "owned surface, a daemon lifecycle, or a cells/<id>/ "
+                "folder - it is a HARNESS RULE: buildLoopEnabled silences "
+                "the interactive agent's Stop hook. FIXED: the buildloop "
+                "Cell removed from CELLS (a dated comment marks the spot); "
+                "the flag lives on unchanged in the policy plane "
+                "(loop_state.py's direct read untouched) and is now "
+                "rendered as a toggle in the app's REGELN section "
+                "(cells_catalog.tsx, next to gateBeforeReview) instead of "
+                "the cell list; test_cell_structure.py gained the "
+                "bidirectional mirror check (CELLS ids == cells/ folders, "
+                "both directions) so a phantom cell or an unregistered "
+                "folder fails the contract instead of drifting silently; "
+                "e2e_cell_tab_gating/e2e_cell_rules/shot_modules_i18n "
+                "repointed (engineer is the rule-less cell now - all 23 "
+                "rule bindings resolve to copilot).",
+        "why_it_bites": "RESOLVED. The root cause was one-directional "
+                        "enforcement: the phase-8 contract test verified "
+                        "'every registered cell WITH a folder has the "
+                        "canonical form' and silently skipped entries "
+                        "without one - the exact skip that let the UI show "
+                        "an architecture the disk did not have.",
+        "trigger": "a Cell registered without a cells/<id>/ folder; a UI "
+                   "count that disagrees with `ls cells/`",
+        "fix": "PAID. See 'what' above.",
+        "order": 61,
+    },
 ]
 
 def list_debt():

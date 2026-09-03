@@ -119,10 +119,12 @@ def main():
                   "the followup-attempts row is a real RuleRow (testID present)")
 
             # 4. a cell WITHOUT rules says so instead of rendering a hole.
-            # buildloop, not connectors: connectors merged into engineer
-            # (2026-09-03) and is no longer its own nav-cell entry.
-            nav2 = page.locator('[data-testid="nav-cell-buildloop"]')
-            check(nav2.count() > 0, "the buildloop cell is a navigation entry")
+            # engineer, not buildloop: buildloop left the cell list (owner
+            # decree 2026-09-03, the tree is the Taktgeber - it is a harness
+            # rule now), and engineer is the registered cell owning zero
+            # behavior rules (every rule binding resolves to copilot).
+            nav2 = page.locator('[data-testid="nav-cell-engineer"]')
+            check(nav2.count() > 0, "the engineer cell is a navigation entry")
             if nav2.count():
                 nav2.first.click()
                 page.wait_for_timeout(1200)

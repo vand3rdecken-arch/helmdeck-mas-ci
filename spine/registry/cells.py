@@ -262,36 +262,19 @@ CELLS = [
         # of two.
         board=(("backlog", "cell.track.pm.backlog"),),
     ),
-    Cell(
-        # Cell #6 - added 2026-08-18 after owner pushback: structurally this
-        # has the same shape as every other cell (its own ops/harness/laws,
-        # states/gates, UI presence), so it belongs in the registry. It is
-        # NOT daemon-hosted like the other 5 though - it governs the CURRENT
-        # interactive agent's own workflow via Claude Code's hooks
-        # (.claude/settings.json -> ops/tools/loop_state.py), not a spawned
-        # daemon worker. No HTTP dispatch gate applies (paths=(),
-        # prefixes=()) - ops/tools/loop_state.py reads policy_live.json/
-        # policy_seed.json DIRECTLY (see its _build_loop_enabled()), so the
-        # flag is real - it actually silences the Stop hook - even when the
-        # daemon isn't running. See daemon/debt.py for the full incident/
-        # design record and the explicit "never toggle the real policy file
-        # to test this" safety note.
-        id="buildloop", enabled_key="buildLoopEnabled",
-        role="governs the current agent's own build workflow "
-             "(ALIGN>ANALYZE>EXECUTE>TEST>CLEAN>BUILD>COMMIT), not a spawned "
-             "worker - self-governance, not delegation",
-        repo_files=("ops/tools/loop_state.py",),
-        storage="derived live from git status + compile/test/tsc results "
-                "(no persisted table - this cell IS its own NO-MONKEY-PATCH example)",
-        harness_file="CLAUDE.md",
-        # route_modules deliberately empty: /loop/map (routes_info.py) is a
-        # SHARED read-only mirror (engineer's lane/gate flow + this cell's
-        # build state merged in one response) - attributing routes_info's
-        # other, unrelated routes (debt/charter/harness-version/models) to
-        # this cell would repeat the exact inaccuracy already flagged for
-        # loopmap.tsx's UI sharing. Informational only, not an owned surface.
-        ui_files=("src/app/loopmap.tsx",),  # shared with engineer, noted above
-    ),
+    # buildloop is NOT a cell anymore (owner decree 2026-09-03: "wenn 2
+    # folder da sind dann gibt es 2 Zellen und nicht mehr - die Registry ist
+    # nicht Taktgeber sondern code"). It was registered 2026-08-18 as "Cell
+    # #6" because it structurally rhymed (own harness, states/gates, enable
+    # flag), but it never had routes, a lifecycle, an owned surface, or a
+    # cells/<id>/ folder - it is a HARNESS RULE: buildLoopEnabled silences
+    # the current interactive agent's Stop hook (ops/tools/loop_state.py
+    # reads the policy plane directly, daemon not required). The flag lives
+    # on, rendered with the other seeded rules (gateBeforeReview etc.) in
+    # the app's Modules & Rules surface. The registry now mirrors the tree
+    # exactly - ops/tests/test_cell_structure.py enforces CELLS ids ==
+    # cells/ folders in BOTH directions. See debt.py
+    # 'buildloop-was-a-rule-not-a-cell' for the record.
 ]
 
 _BY_ID = {c.id: c for c in CELLS}
