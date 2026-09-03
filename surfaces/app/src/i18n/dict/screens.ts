@@ -268,7 +268,10 @@ export const screens: Dict = {
   "processes.editProcess": { de: "Bearbeiten", en: "Edit" },
   "processes.cancelProcess": { de: "Abbrechen", en: "Cancel" },
   "processes.askHenry": { de: "Henry fragen", en: "Ask Henry" },
-  "processes.askHenryDraft": { de: "Wo steht „{title}“?", en: "Where does \"{title}\" stand?" },
+  "processes.askHenryContext": {
+    de: "Es geht um den Prozess „{label}“ (id {id}).",
+    en: "This is about the process \"{label}\" (id {id}).",
+  },
   "processes.clientPrompt": { de: "Client:", en: "Client:" },
   "processes.duePrompt": { de: "Fällig (YYYY-MM-DD):", en: "Due (YYYY-MM-DD):" },
   "processes.cancelConfirmTitle": { de: "Prozess abbrechen?", en: "Cancel process?" },

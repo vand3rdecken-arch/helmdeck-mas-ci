@@ -8,8 +8,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { api } from "@/data/client";
-import { saveDraft } from "@/data/drafts";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -265,6 +265,7 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
+  const { wide } = useResponsive();
 
   const stepMut = useMutation({
     mutationFn: (v: { idx: number; action: string; patch?: Record<string, unknown>; title?: string }) =>
@@ -315,12 +316,20 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
 
-  async function editProcess() {
-    const client = await promptText(tr("processes.clientPrompt"), p.client ?? "");
-    if (client === null) return;   // cancelled
-    const due = await promptText(tr("processes.duePrompt"), p.due ?? "");
-    if (due === null) return;
-    processMut.mutate({ action: "edit", patch: { client, due } });
+  // Was a chain of two sequential OS prompts (one field at a time, native
+  // "text window" dialogs) - clunky, and looked like an afterthought next
+  // to the real inline editors this screen already has for steps. A real
+  // inline form (same shape as StepEditor) instead, editing all three
+  // fields at once with an explicit Save/Cancel.
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [editTitle, setEditTitle] = useState(p.request ?? "");
+  const [editClient, setEditClient] = useState(p.client ?? "");
+  const [editDue, setEditDue] = useState(p.due ?? "");
+
+  function saveHeaderEdit() {
+    processMut.mutate({ action: "edit",
+      patch: { request: editTitle, client: editClient, due: editDue } });
+    setEditingHeader(false);
   }
 
   async function cancelProcess() {
@@ -328,9 +337,19 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
     if (yes) processMut.mutate({ action: "cancel" });
   }
 
-  async function askHenry() {
-    await saveDraft("board-copilot", tr("processes.askHenryDraft", { title: (p.request ?? p.id).slice(0, 60) }));
-    router.push("/chat" as never);
+  // "Henry fragen" (same pattern as loopmap.tsx's rule rows and the board
+  // FAB - ONE chat, opened either as the desktop in-page panel or the
+  // phone's /chat route). Carries a ChatContext (label + hint), rendered as
+  // a chip above the composer, so Henry knows which process without the
+  // owner typing the id - and unlike a draft-text prefill, this can never
+  // clobber something the owner was already mid-typing in chat.
+  function askHenry() {
+    const label = (p.request ?? p.id).slice(0, 60);
+    useCopilotPanel.getState().show({
+      label,
+      hint: tr("processes.askHenryContext", { label, id: p.id }),
+    });
+    if (!wide) router.push("/chat" as never);
   }
 
   const steps = p.steps ?? [];
@@ -338,25 +357,71 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   const truncated = (p.request?.length ?? 0) > 120;
   return (
     <Panel style={glass(t)}>
-      {/* Was fixed at numberOfLines={2} with no way to read the rest - the
-          owner's own report ("ich verstehe nur Bahnhof") named this: the
-          request text IS the answer to "what is this process", and it was
-          the one thing you could never fully read. Tap to expand/collapse;
-          only shows the affordance when there is actually more to read. */}
-      <Pressable onPress={() => truncated && setHeaderOpen((v) => !v)}
-        style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Text style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }}
-          numberOfLines={headerOpen ? undefined : 2}>
-          {p.request ?? p.id}
-        </Text>
-        {truncated ? <Ionicons name={headerOpen ? "chevron-up" : "chevron-down"} size={16} color={t.txtTertiary} /> : null}
-      </Pressable>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-        {p.status ? <Chip text={p.status} /> : null}
-        {p.client ? <Chip text={tr("processes.clientChip", { name: p.client })} /> : null}
-        {p.due ? <Chip text={tr("processes.dueChip", { due: p.due })} /> : null}
-        {p.cost && p.cost > 0 ? <Chip text={flat ? tr("processes.aiFlat") : tr("processes.aiCost", { amount: p.cost.toFixed(2) })} /> : null}
-      </View>
+      {editingHeader ? (
+        // A real inline form (same shape as StepEditor's own editor below) -
+        // was a chain of two sequential OS "text window" prompts, one field
+        // at a time, with no visible relation to Henry's identical chat
+        // capability (owner: "Logik ist zu komisch"). One thing, one form.
+        <View style={{ gap: 8 }}>
+          <TextInput
+            value={editTitle}
+            onChangeText={setEditTitle}
+            multiline
+            placeholder={tr("processes.newProcessHint")}
+            placeholderTextColor={t.txtPlaceholder}
+            style={[s.input, { color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle, minHeight: 60 }]}
+          />
+          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+            <TextInput
+              value={editClient}
+              onChangeText={setEditClient}
+              placeholder={tr("processes.clientPrompt")}
+              placeholderTextColor={t.txtPlaceholder}
+              style={[s.input, { color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle, flex: 1, minWidth: 120 }]}
+            />
+            <TextInput
+              value={editDue}
+              onChangeText={setEditDue}
+              placeholder={tr("processes.duePrompt")}
+              placeholderTextColor={t.txtPlaceholder}
+              style={[s.input, { color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle, width: 140 }]}
+            />
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable onPress={saveHeaderEdit} disabled={processMut.isPending}
+              style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
+              <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("ui.save")}</Text>
+            </Pressable>
+            <Pressable onPress={() => setEditingHeader(false)}
+              style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+              <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("ui.cancel")}</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <>
+          {/* Was fixed at numberOfLines={2} with no way to read the rest -
+              the owner's own report ("ich verstehe nur Bahnhof") named this:
+              the request text IS the answer to "what is this process", and
+              it was the one thing you could never fully read. Tap to
+              expand/collapse; only shows the affordance when there is
+              actually more to read. */}
+          <Pressable onPress={() => truncated && setHeaderOpen((v) => !v)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Text style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }}
+              numberOfLines={headerOpen ? undefined : 2}>
+              {p.request ?? p.id}
+            </Text>
+            {truncated ? <Ionicons name={headerOpen ? "chevron-up" : "chevron-down"} size={16} color={t.txtTertiary} /> : null}
+          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+            {p.status ? <Chip text={p.status} /> : null}
+            {p.client ? <Chip text={tr("processes.clientChip", { name: p.client })} /> : null}
+            {p.due ? <Chip text={tr("processes.dueChip", { due: p.due })} /> : null}
+            {p.cost && p.cost > 0 ? <Chip text={flat ? tr("processes.aiFlat") : tr("processes.aiCost", { amount: p.cost.toFixed(2) })} /> : null}
+          </View>
+        </>
+      )}
       {p.status === "proposing" ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("processes.proposing")}</Text> : null}
       {p.status === "failed" ? <Text style={{ color: t.danger, fontSize: 12 }}>{p.error ?? tr("processes.proposeFailed")}</Text> : null}
 
@@ -387,28 +452,34 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
           owner's own "Accounts & Boards PRD" process was in when reporting
           this, so the fix rendered as if nothing had changed at all.
           Bearbeiten (rename/re-client, still legitimate after done) stays;
-          only Abbrechen (nothing left to stop) hides. */}
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <Pressable onPress={editProcess} disabled={processMut.isPending}
-          style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
-          <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
-        </Pressable>
-        {p.status !== "cancelled" && p.status !== "done" ? (
-          <Pressable onPress={cancelProcess} disabled={processMut.isPending}
-            style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
-            <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
+          only Abbrechen (nothing left to stop) hides. Hidden while the
+          inline edit form itself is open - no point offering "Bearbeiten"
+          again on top of the form it opens. */}
+      {!editingHeader ? (
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <Pressable onPress={() => setEditingHeader(true)} disabled={processMut.isPending}
+            style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+            <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
           </Pressable>
-        ) : null}
-        {/* Henry entry point - the chat actions (process_status/edit_process/
-            cancel_process/add_step/update_step/remove_step) existed with no
-            way to discover them from this screen (owner: "wo ist der
-            chat"). Pre-fills the composer so the owner doesn't have to
-            remember the process's id/fragment by hand. */}
-        <Pressable onPress={askHenry}
-          style={[s.btn, { backgroundColor: t.accent + "14", borderColor: t.accent + "60" }]}>
-          <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.askHenry")}</Text>
-        </Pressable>
-      </View>
+          {p.status !== "cancelled" && p.status !== "done" ? (
+            <Pressable onPress={cancelProcess} disabled={processMut.isPending}
+              style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
+              <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
+            </Pressable>
+          ) : null}
+          {/* Henry entry point - the chat actions (process_status/edit_process/
+              cancel_process/add_step/update_step/remove_step) existed with no
+              way to discover them from this screen (owner: "wo ist der
+              chat"). Carries a ChatContext chip (same pattern as loopmap.tsx's
+              rule rows) so Henry knows which process without the owner typing
+              its id, and opens the desktop in-page panel on wide screens
+              instead of always navigating away and losing the process in view. */}
+          <Pressable onPress={askHenry}
+            style={[s.btn, { backgroundColor: t.accent + "14", borderColor: t.accent + "60" }]}>
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.askHenry")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </Panel>
   );
 }
@@ -479,6 +550,9 @@ export default function Processes() {
         {data && data.length === 0 ? <Empty text={tr("processes.empty")} /> : null}
         {(data ?? []).map((p: Process) => <ProcCard key={p.id} p={p} invalidate={invalidate} />)}
       </ScrollView>
+      {/* self-guards on !wide||!open (chat.tsx) - same pattern board.tsx and
+          loopmap.tsx use for their own "Henry fragen" entry points. */}
+      <CopilotOverlay />
     </View>
   );
 }
