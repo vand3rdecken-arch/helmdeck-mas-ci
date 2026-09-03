@@ -232,6 +232,68 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
     threading.Thread(target=go, daemon=True).start()
     return p
 
+# -- process-LEVEL editing (owner report 2026-09-03: "+Schritt war die
+# einzige Aktion auf dem Screen ausser Steps annehmen - man kann nicht mal
+# den Client/die Faelligkeit aendern oder abbrechen"). Deliberately a
+# SEPARATE small surface from update_step: these fields belong to the
+# process itself, not to any one step, and are gated the same as any other
+# structural card action (cards.admin) rather than left open like the
+# per-step editor is.
+PROCESS_EDITABLE_FIELDS = ("client", "due", "request")
+
+def update_process(pid, patch, actor="owner"):
+    bad = set(patch) - set(PROCESS_EDITABLE_FIELDS)
+    if bad:
+        raise ValueError("cannot edit: %s (only %s)" %
+                         (", ".join(sorted(bad)), ", ".join(PROCESS_EDITABLE_FIELDS)))
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid:
+                p.update({k: v for k, v in patch.items() if k in PROCESS_EDITABLE_FIELDS})
+                if "due" in patch and p["steps"]:
+                    _lay_dates(p)
+                _save(ps)
+                from spine.storage import events
+                events.emit("process", pid, action="edited", actor=actor, patch=patch)
+                return p
+    raise RuntimeError("no such process")
+
+def cancel_process(pid, actor="owner"):
+    """Stops the CHAIN (sync() skips a cancelled process entirely - no more
+    auto-dispatch/auto-accept of its remaining steps) without touching any
+    card a step already spawned; those keep running/stay on the board like
+    any other card - cancelling the process is not an authority to yank
+    live work out from under whoever is already on it."""
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid:
+                if p.get("status") == "done":
+                    raise RuntimeError("already done - nothing to cancel")
+                p["status"] = "cancelled"
+                _save(ps)
+                from spine.storage import events
+                events.emit("process", pid, action="cancelled", actor=actor)
+                return p
+    raise RuntimeError("no such process")
+
+def progress_summary(pid):
+    """One line per step - state, and the card's lane once it has one. What
+    Henry reads out loud when asked "wo steht Prozess X" (owner report
+    2026-09-03: no visibility into what's happening in the steps from
+    either the UI or chat)."""
+    sync()
+    p = get(pid)
+    if not p:
+        raise RuntimeError("no such process")
+    lines = []
+    for i, s in enumerate(p["steps"], 1):
+        state = s.get("state") or ("done" if s.get("done") else "proposed")
+        lane = " (%s)" % s["lane"] if s.get("lane") else ""
+        lines.append("%d. %s - %s%s" % (i, s.get("title", ""), state, lane))
+    return p, lines
+
 def update_step(pid, idx, patch):
     with _lock:
         ps = _load()
@@ -321,7 +383,8 @@ def sync():
                 # is_delivered, not status alone: a card parked on an unanswered
                 # question or a running background task is NOT finished work, and
                 # accepting it would merge the branch and discard the question.
-                if auto_accept and s["ready"] and sessions.is_delivered(t) \
+                if auto_accept and p.get("status") != "cancelled" and s["ready"] \
+                   and sessions.is_delivered(t) \
                    and s.get("mode") in auto_modes and not s.get("auto_accepted"):
                     ok, _problems = _probe_gate(t)
                     if ok:
@@ -331,7 +394,8 @@ def sync():
                         threading.Thread(target=_auto_accept, args=(t["id"],),
                                          daemon=True).start()
                 # auto-run agent steps the moment the chain reaches them
-                if s["ready"] and s.get("mode") in auto_modes \
+                if p.get("status") != "cancelled" and s["ready"] \
+                   and s.get("mode") in auto_modes \
                    and t.get("lane") == "backlog" and not s.get("auto_dispatched") \
                    and not t.get("example"):
                     s["auto_dispatched"] = True
@@ -340,7 +404,9 @@ def sync():
                     threading.Thread(target=_auto_dispatch, args=(t["id"],),
                                      daemon=True).start()
             prev_done = done
-        if p["steps"] and all(x.get("done") for x in p["steps"]):
+        if p.get("status") == "cancelled":
+            pass   # a cancelled process stays cancelled - never reclassified by sync()
+        elif p["steps"] and all(x.get("done") for x in p["steps"]):
             if p.get("status") != "done":
                 p["status"] = "done"
                 from spine.storage import events as _e

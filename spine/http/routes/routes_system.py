@@ -238,12 +238,28 @@ def import_post(self, user, body, p):
 
 
 def processes_sub_post(self, user, body, pid, step):
-    # step == parts[2] of /processes/<pid>/<step>; only "step" is a real
-    # action, anything else falls through to the same 404 the original
-    # inline try-block produced (kept verbatim, including the try scope).
+    # step == parts[2] of /processes/<pid>/<step>; "step" is the per-step
+    # sub-router (open to every role by design, unchanged); "edit"/"cancel"
+    # are PROCESS-level actions added 2026-09-03 (owner report: the only
+    # thing this screen let you do besides accepting steps was add MORE
+    # steps - no way to change client/due, no way to stop a process, no
+    # visibility into progress). Gated like any other structural card
+    # action (cards.admin), not left open like accept/add/remove are.
     from cells.engineer.chains import processes
     from spine.storage import events
+    if step in ("edit", "cancel"):
+        from spine.auth import auth
+        if not auth.is_admin(user):
+            return self._send(403, json.dumps({"error": "cards.admin required"}))
     try:
+        if step == "edit":
+            return self._send(200, json.dumps(
+                processes.update_process(pid, body.get("patch") or {}, actor=user["name"])))
+        if step == "cancel":
+            return self._send(200, json.dumps(processes.cancel_process(pid, actor=user["name"])))
+        if step == "status":
+            p, lines = processes.progress_summary(pid)
+            return self._send(200, json.dumps({"process": p, "lines": lines}))
         if step == "step":
             act = body.get("action")
             idx = int(body.get("idx", -1))

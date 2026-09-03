@@ -15,7 +15,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { useAiFlat } from "@/ui/billing";
 import { Chip, Dot, Empty, Panel, ScreenHeader } from "@/ui/kit";
 import { isWeb, useResponsive } from "@/ui/responsive";
-import { promptText } from "@/ui/settings_sections";
+import { confirmAsync, promptText } from "@/ui/settings_sections";
 
 // Executor modes the daemon understands (daemon/processes.py MODES).
 const MODES = ["do", "prepare", "cowork", "teach", "human"] as const;
@@ -77,10 +77,11 @@ function ModeSelect({ value, onChange }: { value?: string; onChange: (m: string)
 // accepted). Every mutation hits POST /processes/{id}/step. Rendered inline
 // below the timeline instead of as a permanent per-step row, so only the step
 // the user opened shows editable controls.
-function StepEditor({ idx, step, act, onClose }: {
+function StepEditor({ idx, step, act, onClose, onOpenCard }: {
   idx: number; step: Step;
   act: (idx: number, action: string, patch?: Record<string, unknown>, title?: string) => void;
   onClose: () => void;
+  onOpenCard: (trackId: string) => void;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -121,7 +122,14 @@ function StepEditor({ idx, step, act, onClose }: {
           style={[s.input, { color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle, width: 140 }]}
         />
         {step.track ? (
-          <Chip text={tr("processes.cardChip")} dot={t.ok} />
+          // Was a plain status Chip - the ONLY visibility this screen gave
+          // into a running step was the pipeline dot's colour, nothing about
+          // what the card is actually doing (owner report 2026-09-03). The
+          // card's own detail view already has the full transcript/progress;
+          // this is the missing bridge to it, not a duplicate of it.
+          <Pressable onPress={() => onOpenCard(step.track!)}>
+            <Chip text={tr("processes.cardChipOpen")} dot={t.ok} />
+          </Pressable>
         ) : (
           <>
             <Pressable onPress={() => act(idx, "accept")}
@@ -286,6 +294,35 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
     if (title) act(0, "add", undefined, title);
   }
 
+  // Process-LEVEL actions (owner report 2026-09-03: "+Schritt war die
+  // einzige Aktion ausser Steps annehmen - man kann nicht mal den Client/
+  // die Faelligkeit aendern oder abbrechen"). Separate mutation from
+  // stepMut - these hit /processes/<id>/edit|cancel, not /step, and are
+  // admin-gated server-side (cards.admin), unlike the per-step editor.
+  const processMut = useMutation({
+    mutationFn: (v: { action: "edit" | "cancel"; patch?: Record<string, unknown> }) =>
+      api.post<{ error?: string }>(`/processes/${p.id}/${v.action}`,
+        v.action === "edit" ? { patch: v.patch } : {}),
+    onSuccess: (r) => {
+      if (r?.error) { Alert.alert(tr("ui.error"), r.error); return; }
+      invalidate();
+    },
+    onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
+  });
+
+  async function editProcess() {
+    const client = await promptText(tr("processes.clientPrompt"), p.client ?? "");
+    if (client === null) return;   // cancelled
+    const due = await promptText(tr("processes.duePrompt"), p.due ?? "");
+    if (due === null) return;
+    processMut.mutate({ action: "edit", patch: { client, due } });
+  }
+
+  async function cancelProcess() {
+    const yes = await confirmAsync(tr("processes.cancelConfirmTitle"), tr("processes.cancelConfirmBody"));
+    if (yes) processMut.mutate({ action: "cancel" });
+  }
+
   const steps = p.steps ?? [];
   return (
     <Panel style={glass(t)}>
@@ -305,12 +342,13 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
 
       {expanded !== null && steps[expanded] ? (
         <View style={{ marginTop: 6 }}>
-          <StepEditor idx={expanded} step={steps[expanded]} act={act} onClose={() => setExpanded(null)} />
+          <StepEditor idx={expanded} step={steps[expanded]} act={act} onClose={() => setExpanded(null)}
+            onOpenCard={(id) => router.push(`/card/${id}` as never)} />
         </View>
       ) : null}
 
       {steps.length > 0 ? (
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           <Pressable onPress={() => act(0, "accept_all")}
             style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
             <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.acceptAll")}</Text>
@@ -318,6 +356,24 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
           <Pressable onPress={addStep}
             style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
             <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.addStep")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {/* process-level actions - separate row so they read as a different
+          class of action from the step-level ones above (owner report
+          2026-09-03: these two, plus opening a step's card above, were
+          completely missing - "+Schritt" was the only thing this screen
+          could do besides accept). Hidden once cancelled/done - nothing
+          left to edit or stop. */}
+      {p.status !== "cancelled" && p.status !== "done" ? (
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <Pressable onPress={editProcess} disabled={processMut.isPending}
+            style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+            <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
+          </Pressable>
+          <Pressable onPress={cancelProcess} disabled={processMut.isPending}
+            style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
+            <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
           </Pressable>
         </View>
       ) : null}

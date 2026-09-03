@@ -602,6 +602,41 @@ def _run_action(a, actor, role="operator"):
             if not p["steps"][i].get("track"):
                 p = processes.accept_step(p["id"], i, repo, actor=actor)
         return "accepted all steps of %s into cards" % p["id"]
+    if kind in ("edit_process", "cancel_process", "process_status"):
+        # Added 2026-09-03 (owner report: the Prozesse screen let you add
+        # steps and nothing else - no rename/re-schedule, no way to stop a
+        # process, no visibility into what's happening). Same process-ref-
+        # by-fragment resolution accept_steps already uses, so "der
+        # Vertragsprozess" works the same way in every one of these.
+        frag = (a.get("process") or "").lower()
+        ps = [p for p in processes.list_processes()
+              if frag in p["id"].lower() or frag in p["request"].lower()]
+        if len(ps) != 1:
+            return "%s failed: process ref ambiguous or not found" % kind
+        pid = ps[0]["id"]
+        if kind == "process_status":
+            # read-only - anyone who can see /processes can ask about one.
+            _, lines = processes.progress_summary(pid)
+            return ("%s:\n" % pid) + "\n".join(lines) if lines else "%s hat keine Schritte." % pid
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
+        if role not in admin_roles:
+            return _denied(kind, role, admin_roles, "policy.chat_admin_roles")
+        if kind == "edit_process":
+            patch = {k: a[k] for k in ("client", "due", "request") if k in a}
+            if not patch:
+                return "edit_process: nothing to change (give client/due/request)"
+            try:
+                processes.update_process(pid, patch, actor=actor)
+            except ValueError as e:
+                return "edit_process refused: %s" % e
+            return "%s updated: %s" % (pid, json.dumps(patch)[:200])
+        # cancel_process
+        try:
+            processes.cancel_process(pid, actor=actor)
+        except RuntimeError as e:
+            return "cancel_process refused: %s" % e
+        return "%s cancelled - remaining steps will not auto-advance; already-dispatched cards keep running" % pid
     if kind == "audit_query":
         # Card 5 (ops/docs/backlog/rbac-gxp): Henry can answer questions about
         # the append-only audit trail - "wer hat GxP aktiviert", "letzte
