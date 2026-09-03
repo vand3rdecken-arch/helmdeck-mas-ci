@@ -138,10 +138,9 @@ DEFAULTS = {
     },
     # Jira Cloud data flow (Settings > Data flows). api_token = Atlassian API token.
     "jira": {"base": "", "email": "", "api_token": "", "default_jql": ""},
-    # auth: every API call needs a bearer token of one of these users.
-    # roles: owner (everything) / operator (work, no settings) / client
-    # (file + comment + watch own cards only). Filled on first serve.
-    "users": [],
+    # NOTE: a "users" key used to live here as a dead mirror of auth.py's real
+    # users.json - nothing read it, nothing wrote it (config-consolidation
+    # phase 4). Accounts have exactly one owner: spine/auth/auth.py.
 }
 
 def settings():
@@ -163,6 +162,32 @@ def settings():
     for k, v in db.workspace_config_all().items():
         s[k] = v
     return s
+
+
+def wip_limit_of(s=None):
+    """THE single WIP-limit resolution (config-consolidation phase 4: this
+    used to be duplicated - pm.py and processes.py each read
+    settings.capacity.wip_limit directly, silently ignoring a value changed
+    via policy.swap(), while events.metrics() alone applied the override
+    below. A policy-swapped limit therefore governed dispatch capacity but
+    not the number the dashboard showed, or vice versa depending which
+    reader you hit.
+
+    `capacity.wip_limit` (settings/workspace_config) is the SEED value -
+    policy.load() copies it into policy.wipLimit on first composition (see
+    policy.py) - and after that ONE swap is the true source; this always
+    prefers it, falling back to the settings value only if policy is
+    unreachable. `s` is accepted so a caller already holding settings() need
+    not re-fetch it."""
+    if s is None:
+        s = settings()
+    wip_limit = s["capacity"]["wip_limit"]
+    try:
+        from spine.auth import policy
+        wip_limit = int(policy.get_policies().get("wipLimit", wip_limit))
+    except Exception:
+        pass
+    return wip_limit
 
 # A checkpoint marks REAL development - new integrations/runtimes, structural
 # policy, the target repo - not cosmetic settings tuning (backdrop, card value,
@@ -658,16 +683,7 @@ def metrics(tracks):
     ai_all = sum(c["ai_cost"] for c in cards)
     tok_all = sum(c["tokens_in"] + c["tokens_out"] for c in cards)
     touch_all = sum(c["touches"] for c in cards) or 1
-    # WIP limit now flows through the tracked policy control plane. policy seeds
-    # its wipLimit FROM settings (below), so this is identical to the old value
-    # until someone swaps it; a tracked policy.swap then changes it live. Fully
-    # defensive: any policy hiccup falls back to the settings value.
-    wip_limit = s["capacity"]["wip_limit"]
-    try:
-        from spine.auth import policy
-        wip_limit = int(policy.get_policies().get("wipLimit", wip_limit))
-    except Exception:
-        pass
+    wip_limit = wip_limit_of(s)
     return {
         "settings": s,
         "ai_billing": billing_mode,
