@@ -12,16 +12,27 @@ again, so they get the same treatment - screenshots at both form factors,
 judged, not merely rendered.
 
 What is checked:
-  1. the station row renders and the daemon's five stations are all present
-  2. every station Henry acts at shows its verb, and the ones he does not are
+  1. the COLUMNS ARE THE LANES: every lane the owner's policy.lane_labels names
+     is drawn, under that name, and nothing else is a column
+  2. gate and deploy are drawn as STEPS on the connectors, not as columns -
+     smaller than a lane dot, and sitting between the two lanes they run
+     between
+  3. every station Henry acts at shows its verb, and the ones he does not are
      BLANK - the band's whole meaning is where it stops
-  3. the knob badge shows a number on a policy station and a padlock on a
+  4. the knob badge shows a number on a policy station and a padlock on a
      fixed one - never a toggle (exactly one station is switchable)
-  4. no text is truncated with an ellipsis inside the row
-  5. no console error or page error
+  5. no text is truncated with an ellipsis inside the row
+  6. no console error or page error
+
+1 and 2 are the regression this file exists for since 2026-09-03: the row used
+to render `runtime.stations` - a five-name VOCABULARY - as five equal columns,
+so "Quality Gate" and "Deploy" ranked with the lanes while the owner's fourth
+lane ("Fertig") was not drawn at all. The board said four, the map said five.
 
 Prereqs (two background processes, both sandboxed):
-  py -3.12 ops/tools/boards_verify_daemon.py 8478
+  HELMDECK_LANE_LABELS='{"backlog":"Inbox","working":"In Arbeit",
+                         "review":"Abnahme","done":"Fertig"}' \
+      py -3.12 ops/tools/boards_verify_daemon.py 8478
   cd surfaces/app && npx expo start --web --port 3478 --offline
 
   py -3.12 ops/tests/e2e_pipeline_track.py [web-port] [daemon-port]
@@ -35,6 +46,15 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 SHOTS = os.path.join(ROOT, ".verify")
+
+sys.path.insert(0, ROOT)
+
+# The lanes this run expects, resolved by the SAME function the daemon serves
+# from (cells.engineer.sessions.flow) and with the SAME labels the sandbox
+# daemon was seeded with. No lane list is typed in this file - that is the very
+# duplication the bug under test came from.
+LANE_LABELS = json.loads(os.environ.get("HELMDECK_LANE_LABELS")
+                         or '{"working": "Bei uns"}')
 
 WEB = int(sys.argv[1]) if len(sys.argv) > 1 else 3478
 DAEMON_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8478
@@ -82,6 +102,10 @@ def sign_in(page, who="owner"):
 
 def main():
     from playwright.sync_api import sync_playwright
+    from cells.engineer import sessions
+
+    flow = sessions.flow(LANE_LABELS)
+    flow_lanes = flow["nodes"]
 
     os.makedirs(SHOTS, exist_ok=True)
     errors = []
@@ -109,24 +133,103 @@ def main():
             page.wait_for_timeout(5000)
 
             print("\n[%s %dx%d]" % (form, size["width"], size["height"]))
-            for st in ("backlog", "working", "gate", "review", "deploy"):
+            for st in ("backlog", "working", "gate", "review", "deploy", "done"):
                 check(page.locator('[data-testid="station-%s"]' % st).count() > 0,
                       "%s: station %s is drawn" % (form, st))
 
+            # THE LANES ARE THE COLUMNS. Asked of the SERVER, not written down
+            # here: the labels come from the same policy.lane_labels the daemon
+            # resolved, so renaming a lane cannot make this test wrong.
+            labels = {n["key"]: n["label"] for n in flow_lanes}
+            body_txt = page.inner_text("body")
+            for key, label in labels.items():
+                check(label in body_txt,
+                      "%s: lane %s is drawn under its own name %r"
+                      % (form, key, label))
+            check("Fertig" in labels.values() or "done" not in labels,
+                  "%s: the done lane carries the owner's rename" % form)
+
+            # ...AND THE STEPS ARE NOT COLUMNS. Geometry, because that is the
+            # actual claim: a step's dot must be SMALLER than a lane's, and must
+            # sit horizontally BETWEEN the two lanes it runs between. Text
+            # assertions cannot tell a column from a marker on an edge.
+            def box(st):
+                el = page.locator('[data-testid="station-%s"]' % st)
+                return el.bounding_box() if el.count() else None
+
+            lane_boxes = [box(k) for k in labels]
+            lane_w = min(b["width"] for b in lane_boxes if b)
+            for st in ("gate", "deploy"):
+                b = box(st)
+                check(bool(b) and b["width"] < lane_w,
+                      "%s: %s is a STEP, narrower than any lane column "
+                      "(%s vs %s)" % (form, st,
+                                      round(b["width"]) if b else "?",
+                                      round(lane_w)))
+            # gate runs working->review, deploy runs review->done: each must be
+            # centred strictly between the two lane dots it sits between.
+            for st, left, right in (("gate", "working", "review"),
+                                    ("deploy", "review", "done")):
+                b, lb, rb = box(st), box(left), box(right)
+                if not (b and lb and rb):
+                    check(False, "%s: cannot place %s" % (form, st))
+                    continue
+                mid = b["x"] + b["width"] / 2
+                check(lb["x"] + lb["width"] <= mid + 1 <= rb["x"] + rb["width"],
+                      "%s: %s sits between %s and %s, on their connector"
+                      % (form, st, left, right))
+
             # The band: present where Henry acts, BLANK where he does not.
+            # `done` is in this list since the row fix: Henry binds a rule there
+            # (behavior.track()), but the band used to iterate the five-name
+            # station vocabulary, which has no `done` - so his verb at the
+            # owner's last lane was silently never drawn.
             for st, want in (("backlog", "legt an"), ("working", "steuert"),
-                             ("review", "nimmt ab")):
+                             ("review", "nimmt ab"), ("done", "nimmt ab")):
                 loc = page.locator('[data-testid="henrytrack-%s"]' % st)
                 txt = loc.inner_text().strip() if loc.count() else ""
                 check(txt == want,
                       "%s: Henry track at %s reads %r (want %r)"
                       % (form, st, txt, want))
+            # The band annotates LANES, so the steps carry no segment at all.
             for st in ("gate", "deploy"):
                 loc = page.locator('[data-testid="henrytrack-%s"]' % st)
                 txt = loc.inner_text().strip() if loc.count() else ""
                 check(txt == "",
                       "%s: Henry track at %s is blank - he does not act there "
                       "(got %r)" % (form, st, txt))
+
+            # THE STATION NAVIGATION is the same machine described twice, so it
+            # gets the same rule: every lane is an entry, and the steps are
+            # nested under one. It used to render the flat five-name vocabulary,
+            # which ranked the gate with the lanes and had no "Fertig" at all.
+            for key in labels:
+                check(page.locator('[data-testid="nav-st-%s"]' % key).count() > 0,
+                      "%s: nav lists lane %s" % (form, key))
+            # Nesting is judged by GEOMETRY, not by a marker character: the
+            # indent is the thing the owner actually sees, and a glyph check
+            # once passed on a "↳" that rendered as a literal "l,".
+            def nav_text_x(st):
+                el = page.locator('[data-testid="nav-st-%s"] div:has-text("")' % st)
+                b = page.locator('[data-testid="nav-st-%s"]' % st)
+                if not b.count():
+                    return None
+                return page.evaluate("""(sel) => {
+                    const el = document.querySelector(sel);
+                    for (const n of el.querySelectorAll('*')) {
+                      if (n.children.length === 0 && n.textContent.trim())
+                        return n.getBoundingClientRect().left;
+                    }
+                    return null;
+                }""", '[data-testid="nav-st-%s"]' % st)
+
+            lane_x = min(x for x in (nav_text_x(k) for k in labels) if x is not None)
+            for st in ("gate", "deploy"):
+                x = nav_text_x(st)
+                check(x is not None and x > lane_x + 5,
+                      "%s: nav indents %s under a lane - it is a step, not a "
+                      "column (%s vs lane %s)"
+                      % (form, st, round(x) if x else "?", round(lane_x)))
 
             body = page.inner_text("body")
             check("Knöpfe" in body, "%s: a knob badge renders" % form)

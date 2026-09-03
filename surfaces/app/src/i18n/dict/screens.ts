@@ -363,6 +363,14 @@ export const screens: Dict = {
     de: "Vom Standard der Vorlage „{template}“ abgewichen: {keys}. Bewusst so gesetzt — die Vorlage gibt nur den Startwert vor.",
     en: "Deviates from the “{template}” template default: {keys}. Set deliberately — the template only provides the starting value.",
   },
+  // THE STEP LEGEND. A step is not a lane: it runs inside a transition between
+  // two of them, and the arrow is what says so. Written out because position
+  // alone was not enough - the row used to draw the gate as a column and the
+  // owner went looking for that lane on his board.
+  "pipeline.stepOn": {
+    de: "läuft im Übergang {from} → {to}",
+    en: "runs inside the {from} → {to} move",
+  },
   // The knob badge + the Henry track (harness-config-ui phase 4). The verbs are
   // owner language on purpose - the same jargon ban Henry's own brief holds him
   // to: "legt an", never "dispatched into the backlog lane".

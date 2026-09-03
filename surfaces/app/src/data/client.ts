@@ -457,10 +457,18 @@ export interface LoopMap {
      *  (lanemachine._repo_hook), which is why it arrives beside `gate` with an
      *  `on` edge rather than in `lanes`. The owner still has to see it. */
     deploy?: LoopNode & { on?: string[] };
-    /** The draw order of the pipeline, from the daemon - the client keeps NO
-     *  station list of its own (that duplication is what /loop/map exists to
-     *  end). */
+    /** The station VOCABULARY in flow order (backlog..deploy): what gets a
+     *  config PAGE, what the owner may name in chat. NOT the picture - it
+     *  contains gate and deploy, which are steps, and omits `done`, which is a
+     *  lane. Use it for navigation; use `row` to draw. */
     stations?: string[];
+    /** THE PICTURE, derived by the daemon (sessions._draw_row): `lanes` are the
+     *  real columns - count and names straight from the nodes policy.lane_labels
+     *  renames - and each step names the lane whose OUTGOING connector it sits
+     *  on. Drawing `stations` as a flat row was the bug this replaced: it showed
+     *  five equal columns for a four-lane board and dropped "Fertig" entirely.
+     *  Absent on an older daemon, which falls back to the plain lane row. */
+    row?: { lanes: string[]; steps: { key: string; after: string; on?: string[] }[] };
     edges?: LoopEdge[];
     /** THE HENRY TRACK (harness-config-ui phase 4): the band under the station
      *  row saying where Henry acts and what he does there. Aggregated by the
