@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Animated as RNAnimated, Easing, Pressable, Text, View } from "react-native";
 import { useEffect, useMemo, useRef } from "react";
 
-import type { HenrySegment, LoopMap, LoopNode, RepoView } from "@/data/client";
+import type { CellTrack, LoopMap, LoopNode, RepoView } from "@/data/client";
 import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -230,15 +230,37 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
   const gapStyle = (i: number) => ({
     flex: stepAt[i] ? 0.5 : 0.3, minWidth: stepAt[i] ? STEP_W : PLAIN_W,
   });
-  // The Henry band, indexed by station so the row below can line each segment
-  // up under its own dot. No station list is built here - this only re-keys
-  // what the daemon already aggregated.
-  const henry = useMemo(() => {
-    const by: Record<string, HenrySegment> = {};
-    for (const seg of map?.runtime?.henry ?? []) by[seg.station] = seg;
-    return by;
+  // THE CELL TRACKS, one band per acting agent - the generalisation of the
+  // Henry band (owner directive 2026-09-03: "Henry steuert, Engineer baut"
+  // has to be readable as a picture). Each track arrives FINISHED from the
+  // daemon (apimeta._cell_tracks: copilot derived from its rules' binds,
+  // every other cell from its declared board metadata in the registry) and is
+  // only re-keyed by station here. An older daemon sends `henry` alone; that
+  // degrades to the one band this row always had.
+  const tracks = useMemo(() => {
+    const raw: CellTrack[] = map?.runtime?.cells?.length
+      ? map.runtime.cells
+      : (map?.runtime?.henry?.length
+          ? [{ cell: "copilot", label: "Henry",
+               segments: (map.runtime.henry ?? []).map((s) => ({
+                 station: s.station, labelKeys: [s.labelKey] })) }]
+          : []);
+    return raw.map((tk) => {
+      const by: Record<string, { station: string; labelKeys: string[] }> = {};
+      for (const seg of tk.segments) by[seg.station] = seg;
+      return { ...tk, by };
+    });
   }, [map]);
-  const hasHenry = showKnobs && stations.some((s) => henry[s.key]);
+  const hasTracks = showKnobs && tracks.some((tk) => stations.some((s) => tk.by[s.key]));
+  // One colour per band, stable by CELL rather than by position, so Henry is
+  // always his accent2 whatever order the registry lists the cells in. An
+  // unknown cell falls back to a palette slot by index.
+  const namedTrackColor: Record<string, string> = {
+    copilot: t.accent2, engineer: t.human, pm: t.accent,
+  };
+  const palette = [t.ok, t.warn, t.accent2, t.human];
+  const trackColor = (cell: string, i: number) =>
+    namedTrackColor[cell] ?? palette[i % palette.length];
   const repo: RepoView | null | undefined = map?.repo;
   // Everything the row could only hint at, collected for the list below it.
   // Lanes AND steps: the sentence explaining why deploy is dark is exactly the
@@ -372,47 +394,65 @@ export function RepoPipeline({ map, onSelect, selected, hideHint, showKnobs, kno
         </View>
       ) : null}
 
-      {/* THE HENRY TRACK (design doc 5.4.3): a band under the row spanning the
-          stations Henry acts at, with his verb per station. The segments arrive
-          FINISHED from the daemon (behavior.track(), aggregated from the rules'
-          `binds`), so adding a rule in the daemon lights a station here with no
-          edit to this file - the dummy-knob test of the pipeline PRD, carried
-          over to rules.
+      {/* THE CELL TRACKS (design doc 5.4.3, generalised): one band per acting
+          agent under the station row - who does WHAT and WHERE, as a picture.
+          "Henry steuert, engineer baut" is readable without a word of prose:
+          each band spans the stations its cell acts at, with its verb per
+          station. The segments arrive FINISHED from the daemon, so adding a
+          rule (copilot) or a board declaration (any other cell) lights a
+          station here with no edit to this file - the dummy-knob test of the
+          pipeline PRD, carried over to cells.
 
-          A band, not a second set of edges: `edges` stays deliberately unread
-          (see the header comment), and Henry's presence is not a route through
-          the graph, it is a property OF stations. */}
-      {hasHenry ? (
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Text style={{ color: t.txtTertiary, fontSize: 10, fontWeight: "700",
-            marginRight: 6 }}>
-            {tr("pipeline.henry")}
-          </Text>
-          {stations.map((s, i) => {
-            const seg = henry[s.key];
+          Bands, not a second set of edges: `edges` stays deliberately unread
+          (see the header comment), and a cell's presence is not a route
+          through the graph, it is a property OF stations. */}
+      {hasTracks ? (
+        <View style={{ gap: 3 }}>
+          {tracks.map((tk, ti) => {
+            if (!stations.some((s) => tk.by[s.key])) return null;
+            const col = trackColor(tk.cell, ti);
             return (
-              <View key={s.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                <Pressable
-                  testID={"henrytrack-" + s.key}
-                  onPress={onSelect && seg ? () => onSelect(s.key) : undefined}
-                  disabled={!onSelect || !seg}
-                  style={{ flex: 1, paddingHorizontal: 2, alignItems: "center",
-                    // A continuous rule under the stations he touches; a gap
-                    // where he does not. The band IS the answer to "where does
-                    // Henry act", so an unbroken line across everything would
-                    // say the opposite of what it means.
-                    borderTopWidth: seg ? 2 : 0, borderTopColor: t.accent2,
-                    paddingTop: 3, minHeight: 16 }}>
-                  {seg ? (
-                    <Text numberOfLines={1} style={{ color: t.accent2, fontSize: 9.5,
-                      fontWeight: "600" }}>
-                      {tr(seg.labelKey)}
-                    </Text>
-                  ) : null}
-                </Pressable>
-                {/* The SAME gap geometry as the row above - see gapStyle. Any
-                    divergence here slides Henry's verbs off their stations. */}
-                {i < stations.length - 1 ? <View style={gapStyle(i)} /> : null}
+              <View key={tk.cell} style={{ flexDirection: "row", alignItems: "center" }}>
+                {/* A FIXED label column, shared by every band, so the bands'
+                    segments line up with each other - a label as wide as its
+                    text would slide each band by a different offset. */}
+                <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 10,
+                  fontWeight: "700", width: 58 }}>
+                  {tk.label}
+                </Text>
+                {stations.map((s, i) => {
+                  const seg = tk.by[s.key];
+                  return (
+                    <View key={s.key} style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      <Pressable
+                        // The copilot band keeps the testID contract the Henry
+                        // band shipped with (e2e_pipeline_track.py reads it).
+                        testID={(tk.cell === "copilot" ? "henrytrack-"
+                          : "track-" + tk.cell + "-") + s.key}
+                        onPress={onSelect && seg ? () => onSelect(s.key) : undefined}
+                        disabled={!onSelect || !seg}
+                        style={{ flex: 1, paddingHorizontal: 2, alignItems: "center",
+                          // A continuous rule under the stations this agent
+                          // touches; a gap where it does not. The band IS the
+                          // answer to "where does this agent act", so an
+                          // unbroken line across everything would say the
+                          // opposite of what it means.
+                          borderTopWidth: seg ? 2 : 0, borderTopColor: col,
+                          paddingTop: 3, minHeight: 16 }}>
+                        {seg ? (
+                          <Text numberOfLines={1} style={{ color: col, fontSize: 9.5,
+                            fontWeight: "600" }}>
+                            {seg.labelKeys.map((k) => tr(k)).join(" · ")}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                      {/* The SAME gap geometry as the row above - see gapStyle.
+                          Any divergence here slides the verbs off their
+                          stations. */}
+                      {i < stations.length - 1 ? <View style={gapStyle(i)} /> : null}
+                    </View>
+                  );
+                })}
               </View>
             );
           })}

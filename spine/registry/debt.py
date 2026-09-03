@@ -4197,6 +4197,57 @@ DEBT = [
                "of all rows is the worst place in the app for one.",
         "order": 57,
     },
+    {
+        "id": "pm-copilot-merge",
+        "title": "pm and copilot were two cells for one responsibility - merged",
+        "status": "paid",
+        "what": "Owner directive 2026-09-03 (\"pm und henry is eins\"), backed "
+                "by evidence, not just preference: cells/pm/pm.py's start_loop "
+                "was a plain ticker with no LLM identity, no chat surface and "
+                "no memory - its _ask() spawned the SAME copilot.CLAUDE binary "
+                "Henry's broker uses, one-shot, for report generation. PM's "
+                "proactive notices already routed to Henry, never to the owner "
+                "directly (owner decree 2026-08-30, pm.py's _to_henry). Two "
+                "registered Cells, two enabled_keys (pmEnabled/copilotEnabled), "
+                "two route groups, for one agent identity. Order 33 above (this "
+                "same file) had already documented them as structurally "
+                "identical/parallel without proposing a merge - this entry is "
+                "that merge. FIXED: spine/registry/cells.py's standalone `pm` "
+                "Cell deleted; its logic_files/route_modules/repo_files/"
+                "ui_files/board folded into the `copilot` Cell. `Cell.start` "
+                "generalised to accept a tuple of (module, func) pairs so one "
+                "enabled_key can launch two independent loops "
+                "(henry_broker.start_broker + pm.start_loop) - a failure in "
+                "one does not take the other down. `pmEnabled` removed from "
+                "daemon/policy_seed.json, surfaces/app/src/boot/policies.ts and "
+                "kernel/keys.ts's PolicySet. Every useCellEnabled(\"pm\") call "
+                "site (index.tsx's PMStatusPanel gate, settings.tsx's "
+                "PMControls gate) repointed to useCellEnabled(\"copilot\") - "
+                "confirmed trap: the hook fails OPEN for an unknown cell id, so "
+                "leaving these unchanged would have made both panels "
+                "permanently visible the moment the pm cell id left the /cells "
+                "manifest, regardless of the Henry toggle. apimeta._cell_tracks "
+                "(the pipeline's per-cell band, added the same day) now joins "
+                "copilot's rule-derived segments with its declared `board` "
+                "entry when both fire at the same station (backlog), so the "
+                "merge does not silently drop PM's verb from the picture.",
+        "why_it_bites": "RESOLVED. This was a deliberate BEHAVIOR NARROWING, "
+                        "decided explicitly by the owner rather than left as a "
+                        "side effect: before the merge, PM's backlog-planning "
+                        "loop ran independent of copilotEnabled (only specific "
+                        "escalation notices routed through Henry); after the "
+                        "merge, turning Henry off also stops backlog planning. "
+                        "ops/tests/test_server_routes.py's cell-registry-gate "
+                        "block rewritten accordingly: /cells now lists five "
+                        "agentic systems (not six), and disabling copilotEnabled "
+                        "404s /pm/plan alongside /chat/history in the same "
+                        "policy.swap round trip.",
+        "trigger": "adding a cell that only ever speaks through another cell's "
+                   "voice; a UI toggle that never independently controlled "
+                   "anything the owner could observe",
+        "fix": "PAID. See 'what' above for the full file list.",
+        "order": 58,
+    },
 ]
 
 def list_debt():

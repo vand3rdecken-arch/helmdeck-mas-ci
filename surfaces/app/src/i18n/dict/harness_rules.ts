@@ -143,25 +143,20 @@ export const harnessRules: Dict = {
     en: "This rule is per project — pick a project above to set it here.",
   },
 
-  // ------------------------------------------- the cells door's rule groups --
-  // The seam closed: every rule arrives with its owning cell (derived in the
-  // daemon), and the cells door shows them right under the catalog that
-  // switches the cells - so "welche Agenten gibt es" and "wonach richten sie
-  // sich" are finally one screen. Same rows, same write path as the harness
-  // page; these strings only introduce the grouping.
-  "cells.rules.title": { de: "Regeln: {cell}", en: "Rules: {cell}" },
-  "cells.rules.hint": {
-    de: "Wonach sich dieser Agent richtet. Ändern hier ist ändern überall — es ist dieselbe Regel wie auf der Harness-Seite.",
-    en: "What this agent follows. Changing it here changes it everywhere — it is the same rule as on the harness page.",
+  // ------------------------------------------ the cells, on the harness page --
+  // The seam closed (owner directive 2026-09-03): the agents and the rules they
+  // follow arrive on ONE screen. Every rule comes tagged with its owning cell
+  // (derived in the daemon, behavior.cell_of); the navigation gets a cell group
+  // and the detail pane shows switch + rules together. Same rows, same write
+  // path as the theme blocks - these strings only introduce the grouping.
+  "harness.navCells": { de: "Zellen", en: "Cells" },
+  "harness.cellHint": {
+    de: "Wonach sich dieser Agent richtet. Dieselben Regeln wie unter „Henry“ — nur nach Agent sortiert. Ändern hier ist ändern überall.",
+    en: "What this agent follows. The same rules as under “Henry” — just grouped by agent. Changing it here changes it everywhere.",
   },
-  "cells.rules.shared": { de: "Gemeinsame Regeln", en: "Shared rules" },
-  "cells.rules.sharedHint": {
-    de: "Regeln, die keinem einzelnen Agenten gehören — sie gelten für Meldungen und Arbeitsweise insgesamt.",
-    en: "Rules owned by no single agent — they apply to notices and the way of working overall.",
-  },
-  "cells.rules.openMap": {
-    de: "Alle Regeln im Zusammenhang (pro Projekt) ansehen",
-    en: "See all rules in context (per project)",
+  "harness.cellNoRules": {
+    de: "Dieser Agent hat keine einstellbaren Regeln — sein Verhalten steht in seinem Brief und Code.",
+    en: "This agent has no adjustable rules — its behaviour lives in its brief and code.",
   },
 
   // ---------------------------------------------------------------- blocks --

@@ -856,16 +856,18 @@ def main():
         # -- Cell registry gate (Phase 0): a DISABLED agentic system's routes
         # 404 cleanly, spine paths stay reachable, and GET /cells reflects the
         # toggle. Exercises the REAL tracked policy.swap path (policy.LIVE
-        # sandboxed above). The disabled 404 fires in server.py's dispatch
-        # BEFORE any pm logic runs, so no real pm state is ever touched.
+        # sandboxed above).
         from spine.auth import policy
         status, body = req("GET", "/cells", cookie=sid, expect=200)
-        pm_on = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
-        ok(pm_on.get("enabled") is True, "/cells: pm cell enabled by default")
-        ok({"engineer", "pm", "process", "connectors", "copilot", "buildloop"}
-           <= {c["id"] for c in body.get("cells", [])},
-           "/cells: all six agentic systems registered (buildloop = Cell #6, "
-           "self-governing via ops/tools/loop_state.py, not daemon-hosted)")
+        # pm MERGED into copilot (owner directive 2026-09-03, "pm und henry is
+        # eins"): one enabled_key now covers Henry's chat AND the backlog
+        # planning loop that used to be its own cell - five agentic systems,
+        # not six.
+        ok({"engineer", "process", "connectors", "copilot", "buildloop"}
+           == {c["id"] for c in body.get("cells", [])},
+           "/cells: five agentic systems registered (pm merged into copilot; "
+           "buildloop = Cell #6, self-governing via ops/tools/loop_state.py, "
+           "not daemon-hosted)")
         buildloop = next((c for c in body.get("cells", []) if c["id"] == "buildloop"), {})
         ok(buildloop.get("enabled") is True, "/cells: buildloop enabled by default")
         ok("ops/tools/loop_state.py" in (buildloop.get("logicFiles") or []),
@@ -873,22 +875,10 @@ def main():
         ok(buildloop.get("harnessFile") == "CLAUDE.md",
            "/cells: buildloop harness is CLAUDE.md")
         ok(buildloop.get("routes") == [], "/cells: buildloop has no HTTP surface (self-governing)")
-        policy.swap("policies", {"pmEnabled": False}, actor="test")
-        status, body = req("GET", "/pm/plan", cookie=sid, expect=404)
-        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
-           "disabled cell: /pm/plan 404s with 'cell disabled'")
-        status, body = req("GET", "/me", cookie=sid, expect=200)
-        ok(isinstance(body, dict), "spine path /me stays reachable while pm cell is off")
-        status, body = req("GET", "/cells", cookie=sid, expect=200)
-        pm_off = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
-        ok(pm_off.get("enabled") is False, "/cells: manifest reflects pm disabled")
-        policy.swap("policies", {"pmEnabled": True}, actor="test")   # restore
-        status, body = req("GET", "/cells", cookie=sid, expect=200)
-        pm_back = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
-        ok(pm_back.get("enabled") is True, "re-enable via tracked swap: pm cell on again")
 
         # -- Cell registry gate (Phase 2): process and copilot cells, same
-        # disable/spine-stays-up/re-enable round trip as pm above.
+        # disable/spine-stays-up/re-enable round trip pm used to get on its own -
+        # copilotEnabled now gates /pm/* too, since /pm/ is a copilot prefix.
         policy.swap("policies", {"processEnabled": False}, actor="test")
         status, body = req("GET", "/processes", cookie=sid, expect=404)
         ok(isinstance(body, dict) and body.get("error") == "cell disabled",
@@ -931,6 +921,11 @@ def main():
         status, body = req("GET", "/chat/history", cookie=sid, expect=404)
         ok(isinstance(body, dict) and body.get("error") == "cell disabled",
            "disabled cell: /chat/history 404s with 'cell disabled'")
+        # /pm/* MERGED under copilot's prefixes - one flag now gates chat AND
+        # the former pm cell's routes together (owner directive 2026-09-03).
+        status, body = req("GET", "/pm/plan", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error") == "cell disabled",
+           "disabled cell: /pm/plan 404s too - pm merged into copilot's one switch")
         status, body = req("GET", "/me", cookie=sid, expect=200)
         ok(isinstance(body, dict), "spine path /me stays reachable while copilot cell is off")
         status, body = req("GET", "/cells", cookie=sid, expect=200)
@@ -946,22 +941,24 @@ def main():
         # cells.py's read_source/allowed_files - the real security boundary;
         # this pins the HTTP-level contract on top of it: real file back,
         # traversal/wrong-cell/unknown-cell all 404, never leak a path).
+        # pm.py now lives under cid="copilot" (the merge moved its logic_files/
+        # route_modules onto the copilot Cell).
         status, body = req("GET", "/cells", cookie=sid, expect=200)
-        pm_manifest = next((c for c in (body.get("cells") or []) if c["id"] == "pm"), {})
-        ok("GET /pm/plan" in (pm_manifest.get("routes") or []),
-           "/cells manifest: pm's routes are DERIVED from the real routes_pm dispatch table")
-        ok("pm.py" in (pm_manifest.get("logicFiles") or []),
-           "/cells manifest: pm's logicFiles present")
-        status, body = req("GET", "/cells/pm/source?file=pm.py", cookie=sid, expect=200)
+        copilot_manifest = next((c for c in (body.get("cells") or []) if c["id"] == "copilot"), {})
+        ok("GET /pm/plan" in (copilot_manifest.get("routes") or []),
+           "/cells manifest: pm's routes are DERIVED from the real routes_pm dispatch table, now under copilot")
+        ok("pm.py" in (copilot_manifest.get("logicFiles") or []),
+           "/cells manifest: pm's logicFiles present under the merged copilot cell")
+        status, body = req("GET", "/cells/copilot/source?file=pm.py", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "def " in (body.get("text") or ""),
            "/cells/<id>/source: real pm.py text comes back (contains a def)")
-        status, body = req("GET", "/cells/pm/source?file=../../settings.json", cookie=sid, expect=404)
+        status, body = req("GET", "/cells/copilot/source?file=../../settings.json", cookie=sid, expect=404)
         ok(isinstance(body, dict), "/cells/<id>/source: path traversal 404s, never leaks settings.json")
-        status, body = req("GET", "/cells/pm/source?file=connectors.py", cookie=sid, expect=404)
-        ok(isinstance(body, dict), "/cells/<id>/source: another cell's file (not pm's) 404s")
+        status, body = req("GET", "/cells/copilot/source?file=connectors.py", cookie=sid, expect=404)
+        ok(isinstance(body, dict), "/cells/<id>/source: another cell's file (not copilot's) 404s")
         status, body = req("GET", "/cells/nope/source?file=pm.py", cookie=sid, expect=404)
         ok(isinstance(body, dict), "/cells/<id>/source: unknown cell id 404s")
-        status, body = req("GET", "/cells/pm/source?file=pm.py", cookie=csid, expect=403)
+        status, body = req("GET", "/cells/copilot/source?file=pm.py", cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/cells/<id>/source: client role refused")
 
         # -- logout: cookie is invalidated, the general auth gate (line ~259 of

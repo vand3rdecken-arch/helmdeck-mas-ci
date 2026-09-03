@@ -24,7 +24,6 @@ import { can } from "@/kernel";
 import { useTheme } from "@/theme";
 import { Chip, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { CellsCatalog } from "@/ui/cells_catalog";
-import { CellRules } from "@/ui/cell_rules";
 import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
 import { GxpActivate } from "@/ui/gxp_activate";
@@ -119,7 +118,11 @@ export default function Settings() {
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, enabled: owner });
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000, enabled: owner });
   const actors = metrics?.capacity?.actors ?? {};
-  const pmEnabled = useCellEnabled("pm");
+  // The pm cell merged into copilot (owner directive 2026-09-03) - PMControls
+  // now gates on the same switch as Henry's chat. useCellEnabled fails OPEN
+  // for an unknown id, so leaving this reading "pm" would have made the
+  // panel unhideable the moment the pm cell id left the manifest.
+  const pmEnabled = useCellEnabled("copilot");
   // BOTH halves of the config schema (/me's account rows + /automation's
   // workspace rows), concatenated. Every door then just filters it.
   const schema = useSchema();
@@ -578,11 +581,6 @@ export default function Settings() {
         <Panel>
           <CellsCatalog />
         </Panel>
-        {/* EACH CELL'S RULES, right under the catalog that toggles the cells -
-            the cells<->settings seam closed. Grouped by the daemon's own
-            derivation (behavior.cell_of), rendered with the SAME RuleRow the
-            harness page uses, written over the same POST /harness/config. */}
-        <CellRules />
         <SchemaDoor door="cells" schema={schema} />
       </Frame>
     );

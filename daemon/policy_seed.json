@@ -10,7 +10,6 @@
     "wipLimit": 3,
     "agentMaySwap": false,
     "engineerEnabled": true,
-    "pmEnabled": true,
     "processEnabled": true,
     "connectorsEnabled": true,
     "copilotEnabled": true,

@@ -20,7 +20,6 @@ export const CHARTER_DEFAULTS: PolicySet = {
   // default; the daemon's policy_seed.json is the canonical source these hydrate
   // from at boot. Toggling one hides that whole system (nav surface + routes).
   engineerEnabled: true,
-  pmEnabled: true,
   processEnabled: true,
   connectorsEnabled: true,
   copilotEnabled: true,
