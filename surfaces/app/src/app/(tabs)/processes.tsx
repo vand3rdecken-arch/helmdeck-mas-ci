@@ -3,13 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet,
-  Text, TextInput, View,
+  ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView,
+  StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { api } from "@/data/client";
+import { useCellEnabled } from "@/data/cells";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -265,7 +266,6 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
-  const { wide } = useResponsive();
 
   const stepMut = useMutation({
     mutationFn: (v: { idx: number; action: string; patch?: Record<string, unknown>; title?: string }) =>
@@ -337,20 +337,6 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
     if (yes) processMut.mutate({ action: "cancel" });
   }
 
-  // "Henry fragen" (same pattern as loopmap.tsx's rule rows and the board
-  // FAB - ONE chat, opened either as the desktop in-page panel or the
-  // phone's /chat route). Carries a ChatContext (label + hint), rendered as
-  // a chip above the composer, so Henry knows which process without the
-  // owner typing the id - and unlike a draft-text prefill, this can never
-  // clobber something the owner was already mid-typing in chat.
-  function askHenry() {
-    const label = (p.request ?? p.id).slice(0, 60);
-    useCopilotPanel.getState().show({
-      label,
-      hint: tr("processes.askHenryContext", { label, id: p.id }),
-    });
-    if (!wide) router.push("/chat" as never);
-  }
 
   const steps = p.steps ?? [];
   const [headerOpen, setHeaderOpen] = useState(false);
@@ -467,17 +453,6 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
               <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
             </Pressable>
           ) : null}
-          {/* Henry entry point - the chat actions (process_status/edit_process/
-              cancel_process/add_step/update_step/remove_step) existed with no
-              way to discover them from this screen (owner: "wo ist der
-              chat"). Carries a ChatContext chip (same pattern as loopmap.tsx's
-              rule rows) so Henry knows which process without the owner typing
-              its id, and opens the desktop in-page panel on wide screens
-              instead of always navigating away and losing the process in view. */}
-          <Pressable onPress={askHenry}
-            style={[s.btn, { backgroundColor: t.accent + "14", borderColor: t.accent + "60" }]}>
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.askHenry")}</Text>
-          </Pressable>
         </View>
       ) : null}
     </Panel>
@@ -539,6 +514,7 @@ export default function Processes() {
   const { wide } = useResponsive();
   const { data, isLoading, error } = useQuery({ queryKey: ["processes"], queryFn: api.processes, refetchInterval: 8000 });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["processes"] });
+  const copilotEnabled = useCellEnabled("copilot");
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
@@ -550,8 +526,22 @@ export default function Processes() {
         {data && data.length === 0 ? <Empty text={tr("processes.empty")} /> : null}
         {(data ?? []).map((p: Process) => <ProcCard key={p.id} p={p} invalidate={invalidate} />)}
       </ScrollView>
+      {/* ONE floating chat entry, same as the board screen's FAB - not a
+          "Henry fragen" button on every single process card (owner
+          pushback 2026-09-03: "das soll ein Chat-Fenster wie auf dem Board
+          sein, nicht ein Button überall"). Desktop opens the docked panel,
+          phone takes the /chat route - identical to board.tsx. */}
+      {copilotEnabled ? (
+        <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat" as never)}
+          style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84, width: 48, height: 48, borderRadius: 15,
+            backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
+            alignItems: "center", justifyContent: "center",
+            ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
+        </Pressable>
+      ) : null}
       {/* self-guards on !wide||!open (chat.tsx) - same pattern board.tsx and
-          loopmap.tsx use for their own "Henry fragen" entry points. */}
+          loopmap.tsx use for their own chat entry points. */}
       <CopilotOverlay />
     </View>
   );
