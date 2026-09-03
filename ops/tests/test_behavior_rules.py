@@ -251,6 +251,40 @@ def test_allowlist_is_measured():
           % ("; ".join(drift) if drift else "equal"))
 
 
+def test_cell_references_resolve():
+    """Every rule pointing into cells/<id>/ resolves to a REGISTERED cell.
+
+    The rule table's `reads`/`source` entries are string references - the one
+    place the cells<->settings seam could rot silently: rename a cell folder and
+    every screen grouping rules by cell_of() would quietly file those rules
+    under "belongs to no cell". This holds the strings to the registry, so the
+    rot becomes a red test instead. And the copilot cell must actually claim
+    rules: it is the cell the whole table was written around, so it resolving
+    to zero rules means the derivation broke, not the world changed."""
+    print("\n[cell references resolve against the registry]")
+    from spine.registry import cells
+    ids = {c.id for c in cells.CELLS}
+    owned = 0
+    for r in behavior.BEHAVIOR_RULES:
+        cell = behavior.cell_of(r)
+        if cell is not None:
+            owned += 1
+            check(cell in ids, "%s: cell_of names a registered cell (%s)"
+                  % (r["key"], cell))
+        for ref in (r.get("reads") or "", r.get("source") or ""):
+            path = ref.split("::")[0].split(":")[0].strip()
+            if not path.startswith("cells/"):
+                continue
+            cid = path.split("/")[1] if len(path.split("/")) > 1 else ""
+            check(cid in ids,
+                  "%s: reference %s names a registered cell folder" % (r["key"], ref))
+            check(cell == cid,
+                  "%s: cell_of agrees with the reference (%s)" % (r["key"], ref))
+    check(any(behavior.cell_of(r) == "copilot" for r in behavior.BEHAVIOR_RULES),
+          "the copilot cell owns at least one rule (the derivation is alive)")
+    print("  (%d of %d rules resolve to a cell)" % (owned, len(behavior.BEHAVIOR_RULES)))
+
+
 def _print_hashes():
     for surface, path in sorted(SURFACE_FILES.items()):
         full = os.path.join(ROOT, path)
@@ -270,5 +304,6 @@ if __name__ == "__main__":
     test_no_marker_survives()
     test_byte_identity()
     test_allowlist_is_measured()
+    test_cell_references_resolve()
     print("\n%d failure(s)" % len(_fails))
     sys.exit(1 if _fails else 0)
