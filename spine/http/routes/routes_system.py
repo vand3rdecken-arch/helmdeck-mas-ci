@@ -247,7 +247,7 @@ def processes_sub_post(self, user, body, pid, step):
     # action (cards.admin), not left open like accept/add/remove are.
     from cells.engineer.chains import processes
     from spine.storage import events
-    if step in ("edit", "cancel"):
+    if step in ("edit", "cancel", "delete"):
         from spine.auth import auth
         if not auth.is_admin(user):
             return self._send(403, json.dumps({"error": "cards.admin required"}))
@@ -257,6 +257,9 @@ def processes_sub_post(self, user, body, pid, step):
                 processes.update_process(pid, body.get("patch") or {}, actor=user["name"])))
         if step == "cancel":
             return self._send(200, json.dumps(processes.cancel_process(pid, actor=user["name"])))
+        if step == "delete":
+            processes.delete_process(pid, actor=user["name"])
+            return self._send(200, json.dumps({"ok": True}))
         if step == "status":
             p, lines = processes.progress_summary(pid)
             return self._send(200, json.dumps({"process": p, "lines": lines}))
@@ -277,6 +280,10 @@ def processes_sub_post(self, user, body, pid, step):
             if act == "add":
                 return self._send(200, json.dumps(processes.add_step(
                     pid, body.get("title", "new step"), body.get("mode", "do"))))
+            if act == "move":
+                direction = body.get("direction")
+                return self._send(200, json.dumps(
+                    processes.move_step(pid, idx, direction, actor=user["name"])))
             if act == "accept_all":
                 repo = body.get("repo") or events.settings().get("default_repo")
                 pr = processes.get(pid)

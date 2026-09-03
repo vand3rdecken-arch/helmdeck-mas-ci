@@ -278,6 +278,51 @@ def cancel_process(pid, actor="owner"):
                 return p
     raise RuntimeError("no such process")
 
+def delete_process(pid, actor="owner"):
+    """Removes the process ROW entirely (owner report 2026-09-03: cancel
+    only soft-stops the chain, the process still sits in the list forever -
+    sometimes you just want it gone). Any card a step already spawned is
+    UNTOUCHED - same rule as cancel: this is authority over the process's
+    own bookkeeping, never over a card someone is already working."""
+    with _lock:
+        ps = _load()
+        remaining = [p for p in ps if p["id"] != pid]
+        if len(remaining) == len(ps):
+            raise RuntimeError("no such process")
+        _save(remaining)
+    from spine.storage import events
+    events.emit("process", pid, action="deleted", actor=actor)
+    return True
+
+def move_step(pid, idx, direction, actor="owner"):
+    """Swap a step with its neighbour (owner report 2026-09-03: no way to
+    reorder steps at all). Works regardless of whether either step already
+    has a card - the CARDS themselves are untouched, only the process's own
+    step LIST order changes, which re-lays every step's due date end-to-end
+    from today (same _lay_dates() every other structural change already
+    runs) so the schedule reflects the new order."""
+    if direction not in ("up", "down"):
+        raise ValueError("direction must be 'up' or 'down'")
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] != pid:
+                continue
+            steps = p["steps"]
+            if not (0 <= idx < len(steps)):
+                raise RuntimeError("no such step")
+            j = idx - 1 if direction == "up" else idx + 1
+            if not (0 <= j < len(steps)):
+                raise RuntimeError("already at the %s" % ("top" if direction == "up" else "bottom"))
+            steps[idx], steps[j] = steps[j], steps[idx]
+            _lay_dates(p)
+            _save(ps)
+            from spine.storage import events
+            events.emit("process", pid, action="step_moved", actor=actor,
+                        idx=idx, direction=direction)
+            return p
+    raise RuntimeError("no such process")
+
 def progress_summary(pid):
     """One line per step - state, and the card's lane once it has one. What
     Henry reads out loud when asked "wo steht Prozess X" (owner report
@@ -320,12 +365,20 @@ def add_step(pid, title, mode="do"):
     raise RuntimeError("no such process")
 
 def remove_step(pid, idx):
+    """Drops a step from the process's OWN bookkeeping list - never the
+    card itself. Was refused once a step had a track (owner report
+    2026-09-03: hit this on their own DONE process, where every step
+    already has a card - "cannot remove steps" was really "cannot remove
+    ANY step, ever, once the process actually ran"). A card lives in its
+    own tracks table, independent of the process row that spawned it - the
+    card's own `process`/`process_title` fields survive untouched, it just
+    stops being counted in THIS process's pipeline/progress view. Same
+    "authority over the process's bookkeeping, never over a live card"
+    rule cancel_process/delete_process already follow."""
     with _lock:
         ps = _load()
         for p in ps:
             if p["id"] == pid and 0 <= idx < len(p["steps"]):
-                if p["steps"][idx].get("track"):
-                    raise RuntimeError("step already has a card")
                 p["steps"].pop(idx)
                 _save(ps)
                 return p

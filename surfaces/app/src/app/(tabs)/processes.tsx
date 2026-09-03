@@ -79,9 +79,9 @@ function ModeSelect({ value, onChange }: { value?: string; onChange: (m: string)
 // accepted). Every mutation hits POST /processes/{id}/step. Rendered inline
 // below the timeline instead of as a permanent per-step row, so only the step
 // the user opened shows editable controls.
-function StepEditor({ idx, step, act, onClose, onOpenCard }: {
-  idx: number; step: Step;
-  act: (idx: number, action: string, patch?: Record<string, unknown>, title?: string) => void;
+function StepEditor({ idx, total, step, act, onClose, onOpenCard }: {
+  idx: number; total: number; step: Step;
+  act: (idx: number, action: string, patch?: Record<string, unknown>, title?: string, direction?: string) => void;
   onClose: () => void;
   onOpenCard: (trackId: string) => void;
 }) {
@@ -95,6 +95,20 @@ function StepEditor({ idx, step, act, onClose, onOpenCard }: {
     <View style={[s.step, { borderColor: t.accent + "80", backgroundColor: t.accent + "0F" }]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Text style={{ color: t.txtTertiary, width: 18, textAlign: "right", fontSize: 12 }}>{idx + 1}.</Text>
+        {/* Reorder (owner report 2026-09-03: "cannot... switch steps") - a
+            step's CARD is untouched by moving it, only the process's own
+            step list order + the schedule laid out from it change. Works
+            for any step regardless of whether it already has a card. */}
+        <View style={{ gap: 1 }}>
+          <Pressable onPress={() => idx > 0 && act(idx, "move", undefined, undefined, "up")}
+            disabled={idx === 0} hitSlop={4}>
+            <Ionicons name="chevron-up" size={14} color={idx === 0 ? t.borderSubtle : t.txtSecondary} />
+          </Pressable>
+          <Pressable onPress={() => idx < total - 1 && act(idx, "move", undefined, undefined, "down")}
+            disabled={idx === total - 1} hitSlop={4}>
+            <Ionicons name="chevron-down" size={14} color={idx === total - 1 ? t.borderSubtle : t.txtSecondary} />
+          </Pressable>
+        </View>
         <TextInput
           value={title}
           onChangeText={setTitle}
@@ -133,17 +147,21 @@ function StepEditor({ idx, step, act, onClose, onOpenCard }: {
             <Chip text={tr("processes.cardChipOpen")} dot={t.ok} />
           </Pressable>
         ) : (
-          <>
-            <Pressable onPress={() => act(idx, "accept")}
-              style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
-              <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{tr("processes.acceptCard")}</Text>
-            </Pressable>
-            <Pressable onPress={() => act(idx, "remove")}
-              style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
-              <Text style={{ color: t.danger, fontSize: 11, fontWeight: "600" }}>✕</Text>
-            </Pressable>
-          </>
+          <Pressable onPress={() => act(idx, "accept")}
+            style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
+            <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{tr("processes.acceptCard")}</Text>
+          </Pressable>
         )}
+        {/* Remove was refused for any step that already had a card - owner
+            hit this on their own DONE process, where every step already
+            had one, so "remove" was silently unreachable for the entire
+            process. Removing only drops the step from this process's OWN
+            list; a card a step already spawned lives independently and
+            keeps existing on the board either way. */}
+        <Pressable onPress={() => act(idx, "remove")}
+          style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+          <Text style={{ color: t.danger, fontSize: 11, fontWeight: "600" }}>✕</Text>
+        </Pressable>
       </View>
       {step.desc ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, paddingLeft: 26 }}>{step.desc}</Text> : null}
     </View>
@@ -268,21 +286,26 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   const router = useRouter();
 
   const stepMut = useMutation({
-    mutationFn: (v: { idx: number; action: string; patch?: Record<string, unknown>; title?: string }) =>
+    mutationFn: (v: { idx: number; action: string; patch?: Record<string, unknown>; title?: string; direction?: string }) =>
       api.post<{ error?: string; steps?: unknown[] }>(`/processes/${p.id}/step`,
-        { action: v.action, idx: v.idx, patch: v.patch, title: v.title }),
+        { action: v.action, idx: v.idx, patch: v.patch, title: v.title, direction: v.direction }),
     onSuccess: (r, v) => {
       if (r?.error) { Alert.alert(tr("ui.error"), r.error); return; }
       if (v.action === "accept" || v.action === "accept_all")
         Alert.alert(tr("processes.done"),
           v.action === "accept_all" ? tr("processes.cardsCreated") : tr("processes.cardCreated"));
       if (v.action === "accept" || v.action === "accept_all" || v.action === "remove") setExpanded(null);
+      // follow the SAME step to its new position, so repeated up/down taps
+      // keep working on the step the owner is actually looking at.
+      if (v.action === "move" && r && !r.error) {
+        setExpanded(v.direction === "up" ? v.idx - 1 : v.idx + 1);
+      }
       invalidate();
     },
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
-  const act = (idx: number, action: string, patch?: Record<string, unknown>, title?: string) =>
-    stepMut.mutate({ idx, action, patch, title });
+  const act = (idx: number, action: string, patch?: Record<string, unknown>, title?: string, direction?: string) =>
+    stepMut.mutate({ idx, action, patch, title, direction });
   const [expanded, setExpanded] = useState<number | null>(null);
 
   async function addStep() {
@@ -306,12 +329,12 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   // stepMut - these hit /processes/<id>/edit|cancel, not /step, and are
   // admin-gated server-side (cards.admin), unlike the per-step editor.
   const processMut = useMutation({
-    mutationFn: (v: { action: "edit" | "cancel"; patch?: Record<string, unknown> }) =>
+    mutationFn: (v: { action: "edit" | "cancel" | "delete"; patch?: Record<string, unknown> }) =>
       api.post<{ error?: string }>(`/processes/${p.id}/${v.action}`,
         v.action === "edit" ? { patch: v.patch } : {}),
     onSuccess: (r) => {
       if (r?.error) { Alert.alert(tr("ui.error"), r.error); return; }
-      invalidate();
+      invalidate();   // a delete just means this card is absent from the next fetch
     },
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
@@ -335,6 +358,15 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   async function cancelProcess() {
     const yes = await confirmAsync(tr("processes.cancelConfirmTitle"), tr("processes.cancelConfirmBody"));
     if (yes) processMut.mutate({ action: "cancel" });
+  }
+
+  // Owner report 2026-09-03: "Or delete process" - cancel only soft-stops
+  // the chain, the row stays in the list forever. Same "never touches a
+  // card already spawned" guarantee as cancel, just removes the bookkeeping
+  // entirely instead of marking it cancelled.
+  async function deleteProcess() {
+    const yes = await confirmAsync(tr("processes.deleteConfirmTitle"), tr("processes.deleteConfirmBody"));
+    if (yes) processMut.mutate({ action: "delete" });
   }
 
 
@@ -415,7 +447,7 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
 
       {expanded !== null && steps[expanded] ? (
         <View style={{ marginTop: 6 }}>
-          <StepEditor idx={expanded} step={steps[expanded]} act={act} onClose={() => setExpanded(null)}
+          <StepEditor idx={expanded} total={steps.length} step={steps[expanded]} act={act} onClose={() => setExpanded(null)}
             onOpenCard={(id) => router.push(`/card/${id}` as never)} />
         </View>
       ) : null}
@@ -453,6 +485,10 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
               <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
             </Pressable>
           ) : null}
+          <Pressable onPress={deleteProcess} disabled={processMut.isPending}
+            style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
+            <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.deleteProcess")}</Text>
+          </Pressable>
         </View>
       ) : null}
     </Panel>

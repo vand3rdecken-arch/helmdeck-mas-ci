@@ -274,6 +274,12 @@ export const screens: Dict = {
     de: "Verbleibende Schritte starten nicht mehr automatisch. Bereits erstellte Cards laufen normal weiter.",
     en: "Remaining steps will no longer auto-advance. Cards already created keep running normally.",
   },
+  "processes.deleteProcess": { de: "Löschen", en: "Delete" },
+  "processes.deleteConfirmTitle": { de: "Prozess löschen?", en: "Delete process?" },
+  "processes.deleteConfirmBody": {
+    de: "Der Prozess verschwindet aus der Liste. Bereits erstellte Cards laufen normal weiter.",
+    en: "The process disappears from the list. Cards already created keep running normally.",
+  },
   "processes.acceptCard": { de: "Übernehmen → Card", en: "Accept → card" },
   "processes.acceptAll": { de: "Alle übernehmen → Cards", en: "Accept all → cards" },
   "processes.addStep": { de: "+ Schritt", en: "+ add step" },

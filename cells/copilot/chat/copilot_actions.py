@@ -602,7 +602,7 @@ def _run_action(a, actor, role="operator"):
             if not p["steps"][i].get("track"):
                 p = processes.accept_step(p["id"], i, repo, actor=actor)
         return "accepted all steps of %s into cards" % p["id"]
-    if kind in ("edit_process", "cancel_process", "process_status"):
+    if kind in ("edit_process", "cancel_process", "delete_process", "process_status"):
         # Added 2026-09-03 (owner report: the Prozesse screen let you add
         # steps and nothing else - no rename/re-schedule, no way to stop a
         # process, no visibility into what's happening). Same process-ref-
@@ -631,13 +631,21 @@ def _run_action(a, actor, role="operator"):
             except ValueError as e:
                 return "edit_process refused: %s" % e
             return "%s updated: %s" % (pid, json.dumps(patch)[:200])
-        # cancel_process
+        if kind == "cancel_process":
+            try:
+                processes.cancel_process(pid, actor=actor)
+            except RuntimeError as e:
+                return "cancel_process refused: %s" % e
+            return "%s cancelled - remaining steps will not auto-advance; already-dispatched cards keep running" % pid
+        # delete_process - removes the row entirely (owner: "cancel bleibt
+        # nur stehen, ich will es weg"); cards a step already spawned are
+        # untouched, same rule as cancel.
         try:
-            processes.cancel_process(pid, actor=actor)
+            processes.delete_process(pid, actor=actor)
         except RuntimeError as e:
-            return "cancel_process refused: %s" % e
-        return "%s cancelled - remaining steps will not auto-advance; already-dispatched cards keep running" % pid
-    if kind in ("add_step", "update_step", "remove_step"):
+            return "delete_process refused: %s" % e
+        return "%s deleted - it will no longer appear in the Prozesse list; any card already created keeps running" % pid
+    if kind in ("add_step", "update_step", "remove_step", "move_step"):
         # Owner decree 2026-09-03 ("Henry soll den Prozess aendern koennen"):
         # chat is a FULL alternative to the (still limited) Prozesse UI, not
         # just a process-level one - individual steps too. Same admin gate
@@ -673,6 +681,15 @@ def _run_action(a, actor, role="operator"):
             except RuntimeError as e:
                 return "remove_step refused: %s" % e
             return "step removed from %s" % p["id"]
+        if kind == "move_step":
+            direction = (a.get("direction") or "").strip().lower()
+            if direction not in ("up", "down"):
+                return "move_step: direction must be 'up' or 'down'"
+            try:
+                processes.move_step(p["id"], idx, direction, actor=actor)
+            except RuntimeError as e:
+                return "move_step refused: %s" % e
+            return "step moved %s in %s" % (direction, p["id"])
         # update_step
         patch = {k: a[k] for k in ("title", "desc", "mode", "due", "days") if k in a}
         if not patch:
