@@ -43,9 +43,9 @@ db.init()
 LANE_LABELS = {"working": "Bei uns"}
 if os.environ.get("HELMDECK_LANE_LABELS"):
     LANE_LABELS = json.loads(os.environ["HELMDECK_LANE_LABELS"])
-with open(events.SET, "w", encoding="utf-8") as f:
-    json.dump({"policy": {"lang": "de", "lane_labels": LANE_LABELS},
-               "appearance": {"backdrop": "mesh"}}, f)
+# db store, not settings.json (config-consolidation phase 2).
+db.workspace_config_replace({"policy": {"lang": "de", "lane_labels": LANE_LABELS},
+                             "appearance": {"backdrop": "mesh"}})
 
 auth.create_user("owner", PW, "owner")
 auth.create_user("ada", PW, "client")

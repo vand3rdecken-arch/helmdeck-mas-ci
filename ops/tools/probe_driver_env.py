@@ -25,7 +25,8 @@ def probe(label, cfg, command):
 
 
 def main():
-    env = (json.load(open(SETTINGS)).get("drivers", {}).get("claude", {}) or {}).get("env") or {}
+    from spine.storage import events
+    env = ((events.settings().get("drivers", {}) or {}).get("claude", {}) or {}).get("env") or {}
     print("driver env configured:", "yes" if env else "NO - agents cannot build")
     print("\nwith the driver env (what a card gets now):")
     probe("java -version", {"env": env}, "java -version")

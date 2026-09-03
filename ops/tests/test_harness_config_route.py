@@ -63,8 +63,7 @@ def check(cond, msg):
 
 
 db.init()
-with open(events.SET, "w", encoding="utf-8") as f:
-    json.dump({"policy": {"lang": "de"}, "default_repo": "c:/proj/alpha"}, f)
+db.workspace_config_replace({"policy": {"lang": "de"}, "default_repo": "c:/proj/alpha"})
 
 auth.create_user("owner1", "hunter2hunter2", "owner")
 auth.create_user("ada", "hunter2hunter2", "client")
