@@ -116,13 +116,13 @@ export interface PolicySet {
   // the app filters nav surfaces by the matching flag. All default true.
   /** Engineer cell — the cards/kanban system (machine + direct are its modes). */
   readonly engineerEnabled: boolean;
-  /** PM cell — the proactive daily-loop / planning role. */
-  readonly pmEnabled: boolean;
   /** Process cell — the n8n-style step-chain pipelines. */
   readonly processEnabled: boolean;
   /** Connectors cell — user-built integration modules. */
   readonly connectorsEnabled: boolean;
-  /** Copilot cell — the board chat / coordination agent. */
+  /** Copilot cell — the board chat / coordination agent AND the backlog
+   * planning loop merged in from the former "pm" cell (owner directive
+   * 2026-09-03: one agent, one switch - off means no chat and no planning). */
   readonly copilotEnabled: boolean;
   /** Cell #6 — the build loop (cells.py "buildloop"). NOT daemon-hosted
    * like the other 5: governs the CURRENT agent's own workflow via Claude

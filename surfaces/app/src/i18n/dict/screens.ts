@@ -398,6 +398,14 @@ export const screens: Dict = {
   "harness.track.review": { de: "nimmt ab", en: "accepts" },
   "harness.track.done": { de: "nimmt ab", en: "accepts" },
   "harness.track.deploy": { de: "gibt frei", en: "releases" },
+  // The other cells' bands (apimeta._cell_tracks): each verb is declared per
+  // cell in spine/registry/cells.py (Cell.board) and only WORDED here - "Henry
+  // steuert, engineer baut", readable straight off the pipeline. Same length
+  // budget as the Henry verbs above (~80px per station on a phone).
+  "cell.track.eng.working": { de: "baut", en: "builds" },
+  "cell.track.eng.gate": { de: "prüft", en: "checks" },
+  "cell.track.eng.deploy": { de: "liefert aus", en: "ships" },
+  "cell.track.pm.backlog": { de: "plant", en: "plans" },
 
   // -- repo onboarding: one choice instead of twenty switches -----------------
   "repo.title": { de: "Repo einrichten", en: "Set up repo" },

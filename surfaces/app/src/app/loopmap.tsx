@@ -2,17 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
-import { api, type BehaviorRule, type HarnessConfig, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
+import { api, type BehaviorRule, type CellInfo, type HarnessConfig, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { StoredConfigPanel } from "@/ui/config_stored";
 import { BriefSurfacePicker, BriefView } from "@/ui/harness_brief";
-import { RuleBlock } from "@/ui/harness_rules";
+import { RuleBlock, RuleRow } from "@/ui/harness_rules";
 import { RepoPipeline } from "@/ui/repo_pipeline";
 import { useResponsive } from "@/ui/responsive";
 import { SchemaStation, useSchema } from "@/ui/settings_schema_page";
@@ -295,6 +295,35 @@ export default function LoopMapScreen() {
   // owner (design doc section 6: "landet bei" means MOVE, never duplicate).
   const schema = useSchema();
 
+  // THE CELLS, on this page (owner directive 2026-09-03: the agents and the
+  // rules they follow belong TOGETHER - one harness screen, not a cells door
+  // here and a rule table there). The registry arrives from /cells; the rules
+  // arrive already tagged with their owning cell (behavior.cell_of, derived
+  // daemon-side from the rule's own reads/source against the registry). This
+  // screen only groups - it keeps no cell list and no rule list of its own.
+  const { data: cellReg } = useQuery({
+    queryKey: ["cells"], queryFn: api.cells, staleTime: 30000, retry: false,
+  });
+  const cells: CellInfo[] = cellReg?.cells ?? [];
+  const rulesOfCell = useMemo(() => {
+    const by: Record<string, BehaviorRule[]> = {};
+    for (const r of cfg?.rules ?? []) if (r.cell) (by[r.cell] ||= []).push(r);
+    return by;
+  }, [cfg]);
+  const [cellBusy, setCellBusy] = useState(false);
+  /** The SAME tracked write path the cells catalog uses (POST /policy/swap) -
+   *  a second door onto one switch, never a second switch. */
+  async function setCellEnabled(c: CellInfo, v: boolean) {
+    setCellBusy(true);
+    try {
+      await api.post("/policy/swap", { section: "policies",
+        patch: { [c.enabledKey]: v }, actor: "user", note: `harness: ${c.id}` });
+      await qc.invalidateQueries({ queryKey: ["cells"] });
+    } catch (e) {
+      Alert.alert(tr("harness.saveFailed"), String((e as Error).message));
+    } finally { setCellBusy(false); }
+  }
+
   const openHub = () => router.push("/automation" as never);
   const editable = data?.editable ?? [];
   const lanes = data?.runtime.lanes ?? [];
@@ -346,6 +375,7 @@ export default function LoopMapScreen() {
   const selectStation = (k: string) => setLane("st:" + k);
   const selectedStation = nav.startsWith("st:") ? nav.slice(3) : "";
   const selectedBlock = nav.startsWith("blk:") ? nav.slice(4) : "";
+  const selectedCell = nav.startsWith("cell:") ? nav.slice(5) : "";
   // Deploy and the gate are steps-on-an-edge rather than lanes, so they resolve
   // through nodeFor like everything else - otherwise tapping the one station
   // the owner most wants explained (the only switchable one) selects nothing.
@@ -553,6 +583,22 @@ export default function LoopMapScreen() {
                   ))}
                 </NavGroup>
               ) : null}
+              {/* THE CELLS, between Henry and the machine: the agents this
+                  harness runs, each with its switch and - selected - the rules
+                  that govern it. Count and grouping are DERIVED (rulesOfCell,
+                  off the rules' own `cell` tag), never maintained here. */}
+              {cells.length ? (
+                <NavGroup label={tr("harness.navCells")} t={t}>
+                  {cells.map((c) => (
+                    <NavItem key={c.id} testID={"nav-cell-" + c.id} active={nav === "cell:" + c.id}
+                      label={c.id} onPress={() => setNav("cell:" + c.id)} t={t}
+                      right={!c.enabled
+                        ? <Ionicons name="power-outline" size={11} color={t.txtTertiary} />
+                        : (rulesOfCell[c.id] ?? []).length
+                          ? <NavCount n={(rulesOfCell[c.id] ?? []).length} t={t} /> : null} />
+                  ))}
+                </NavGroup>
+              ) : null}
               <NavGroup label={tr("harness.navMachine")} t={t}>
                 <NavItem testID="nav-build" active={nav === "build"} label={tr("harness.navBuild")}
                   onPress={() => setNav("build")} t={t} />
@@ -608,6 +654,51 @@ export default function LoopMapScreen() {
 
               {/* ---- the STORE itself, not what resolves out of it ---- */}
               {nav === "stored" ? <StoredConfigPanel stored={cfg?.stored} /> : null}
+
+              {/* ---- one CELL: its switch and its rules, one place ----
+                  The rows ARE the block views' rows (same RuleRow, same
+                  setRule/askHenry), only grouped by the agent they govern
+                  instead of by theme - two navigations onto one table, so a
+                  value changed here is changed everywhere by construction. */}
+              {selectedCell ? (() => {
+                const c = cells.find((x) => x.id === selectedCell);
+                if (!c) return null;
+                const mine = rulesOfCell[c.id] ?? [];
+                return (
+                  <>
+                    <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder,
+                      borderWidth: 1, borderRadius: 14, padding: 14, gap: 8 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                        <Text style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: "700", flex: 1 }}>
+                          {c.id}
+                        </Text>
+                        <Switch value={c.enabled} disabled={cellBusy}
+                          onValueChange={(v) => setCellEnabled(c, v)}
+                          trackColor={{ true: t.accent, false: t.glassBorder }} />
+                      </View>
+                      <Text style={{ color: t.txtSecondary, fontSize: 11.5, lineHeight: 16.5 }}>{c.role}</Text>
+                      <Text style={{ color: t.txtTertiary, fontSize: 11.5, lineHeight: 16.5 }}>
+                        {tr(mine.length ? "harness.cellHint" : "harness.cellNoRules")}
+                      </Text>
+                    </View>
+                    {mine.length ? (
+                      <View style={{ backgroundColor: t.surface1, borderColor: t.glassBorder,
+                        borderWidth: 1, borderRadius: 14, padding: 14, gap: 2 }}>
+                        {repo ? (
+                          <Text style={{ color: t.txtTertiary, fontSize: 11, lineHeight: 16 }}>
+                            {tr("harness.projectScope")}
+                          </Text>
+                        ) : null}
+                        {mine.map((r) => (
+                          <RuleRow key={r.key} rule={r} surfaces={surfaceLabels}
+                            project={cfg?.project ?? ""} onSet={setRule} onAsk={askHenry}
+                            t={t} tr={tr} />
+                        ))}
+                      </View>
+                    ) : null}
+                  </>
+                );
+              })() : null}
 
               {/* ---- one of HENRY's blocks ---- */}
               {selectedBlock && cfg ? (

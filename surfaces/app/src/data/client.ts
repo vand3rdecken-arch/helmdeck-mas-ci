@@ -389,6 +389,18 @@ export interface HarnessAgent {
 export interface HenrySegment {
   station: string; labelKey: string; rules: string[]; count: number;
 }
+/** One cell's band under the pipeline: where this agent acts and what it does
+ *  there. Copilot's segments are derived from its rules' binds, every other
+ *  cell's from its declared `board` metadata in spine/registry/cells.py - the
+ *  client keeps no cell list and no station list, it only draws what arrives. */
+export interface CellTrack {
+  cell: string; label: string;
+  /** `labelKeys` (not `labelKey`) because one station can carry more than one
+   *  verb for the same cell - e.g. copilot/backlog, where Henry's rule-derived
+   *  "steuert" and the merged-in planning loop's "plant" both apply. Render
+   *  every key and join; almost always a single-element array. */
+  segments: { station: string; labelKeys: string[] }[];
+}
 
 /** One rule's value on ONE surface, with the provenance the badge is made of.
  *
@@ -522,6 +534,11 @@ export interface LoopMap {
      *  list, exactly as it keeps no station list. Absent on an older daemon,
      *  which simply draws no band. */
     henry?: HenrySegment[];
+    /** THE CELL TRACKS: one band per acting agent ("Henry steuert, engineer
+     *  baut"), aggregated by the daemon (apimeta._cell_tracks) from the cell
+     *  registry + the behaviour rules. Absent on an older daemon, which falls
+     *  back to drawing the Henry band alone. */
+    cells?: CellTrack[];
   };
   /** Present only when ?repo= was passed: how that one repo runs. */
   repo?: RepoView | null;

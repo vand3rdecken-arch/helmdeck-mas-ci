@@ -23,7 +23,11 @@ export default function DashboardTab() {
   const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 10000 });
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const isOwner = me?.role === "owner";
-  const pmEnabled = useCellEnabled("pm");
+  // The pm cell merged into copilot (owner directive 2026-09-03): one switch
+  // now gates both Henry's chat and the backlog-planning loop PMStatusPanel
+  // shows. useCellEnabled fails OPEN for an unknown id, so this could NOT be
+  // left reading "pm" - the panel would have kept rendering forever once the
+  // pm cell id stopped existing in the manifest.
   const copilotEnabled = useCellEnabled("copilot");
 
   return (
@@ -50,7 +54,7 @@ export default function DashboardTab() {
                 <>
                   <TrianglePanel />
                   <TriageFollowUp m={data} wide={wide} defaultRepo={defaultRepo} />
-                  {pmEnabled ? <PMStatusPanel /> : null}
+                  {copilotEnabled ? <PMStatusPanel /> : null}
                 </>
               );
             }

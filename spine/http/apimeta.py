@@ -35,7 +35,8 @@ def _lane_flow(lane_labels, repo_view=None):
         f = sessions.flow(lane_labels, repo_view=repo_view)
         return {"lanes": f["nodes"], "gate": f["gate"], "deploy": f.get("deploy") or {},
                 "stations": f.get("stations") or [], "row": f.get("row") or {},
-                "edges": f["edges"], "henry": _henry_track()}
+                "edges": f["edges"], "henry": _henry_track(),
+                "cells": _cell_tracks()}
     except Exception as e:                                   # noqa: BLE001
         return {"lanes": [], "gate": {}, "deploy": {}, "stations": [], "row": {},
                 "edges": [], "henry": [], "error": str(e)[:200]}
@@ -50,6 +51,46 @@ def _henry_track():
     try:
         from spine.registry import behavior
         return behavior.track()
+    except Exception:                                        # noqa: BLE001
+        return []
+
+
+def _cell_tracks():
+    """WHICH CELL ACTS WHERE on the board - one band per acting cell, under the
+    pipeline (owner directive 2026-09-03: "Henry steuert, Engineer baut" has to
+    be readable as a picture, generated from the cell registry).
+
+    GENERATED, never drawn by hand: copilot's segments are DERIVED from its
+    rules' `binds` (behavior.track(), same as the Henry band always was) AND
+    its own declared `board` (the planning loop merged in from the former pm
+    cell - see spine/registry/cells.py's copilot Cell) - every other cell's
+    come only from `board`. A station both a rule binds to AND `board` names
+    (backlog: Henry's initiative rules AND the planning loop) gets BOTH verbs,
+    joined client-side (`labelKeys` is a list, not a single key, for exactly
+    this case) - one band, no verb lost to the merge.
+    A DISABLED cell draws no band: the band claims "this agent acts here", and
+    a switched-off agent acts nowhere. Empty rather than absent on failure."""
+    try:
+        from spine.registry import behavior, cells
+        out = []
+        for c in cells.CELLS:
+            if not cells.enabled(c):
+                continue
+            by_station = {}
+            if c.id == "copilot":
+                for s in behavior.track():
+                    by_station.setdefault(s["station"], []).append(s["labelKey"])
+                label = "Henry"   # the persona the whole app calls this cell
+            else:
+                label = c.id
+            for st, key in c.board:
+                by_station.setdefault(st, [])
+                if key not in by_station[st]:
+                    by_station[st].append(key)
+            if by_station:
+                segs = [{"station": st, "labelKeys": keys} for st, keys in by_station.items()]
+                out.append({"cell": c.id, "label": label, "segments": segs})
+        return out
     except Exception:                                        # noqa: BLE001
         return []
 

@@ -71,12 +71,19 @@ class Cell:
     def __init__(self, id, enabled_key, paths=(), prefixes=(), start=None,
                  role="", surface="", modes=(),
                  logic_files=(), storage="", harness_file="",
-                 route_modules=(), ui_files=(), tools=(), repo_files=()):
+                 route_modules=(), ui_files=(), tools=(), repo_files=(),
+                 board=()):
         self.id = id
-        self.enabled_key = enabled_key      # policy flag, e.g. "pmEnabled"
+        self.enabled_key = enabled_key      # policy flag, e.g. "copilotEnabled"
         self.paths = tuple(paths)           # exact owned paths, e.g. ("/processes",)
         self.prefixes = tuple(prefixes)     # owned path prefixes, e.g. ("/pm/",)
-        self.start = start                  # ("module","func") lazy lifecycle launcher, or None
+        # ("module","func") for ONE lazy lifecycle launcher, or a TUPLE of those
+        # for a cell that starts more than one poller under its one flag (e.g.
+        # copilot starts both henry_broker's escalation loop and pm's planning
+        # loop - merged cell, one enabled_key, two independent loops). None for
+        # a cell with no background lifecycle. start_enabled() below normalises
+        # either shape.
+        self.start = start
         self.role = role                    # harness brief filename OR a short description
         self.surface = surface              # app-side kernel Surface id this cell renders
         self.modes = tuple(modes)           # sub-modes, e.g. engineer -> ("machine","direct")
@@ -90,6 +97,13 @@ class Cell:
         self.repo_files = tuple(repo_files)      # REPO-ROOT-relative logic (not under daemon/ or
                                                   # app/) - e.g. ops/tools/loop_state.py for the buildloop
                                                   # cell, which isn't daemon-hosted like the other 5
+        self.board = tuple(board)                # ((station, verbLabelKey), ...): where this cell
+                                                  # ACTS on the board pipeline, in flow order - the
+                                                  # cell-track band under the pipeline renders from
+                                                  # this (copilot's band is DERIVED from its rules'
+                                                  # binds instead, see apimeta._cell_tracks). Declared
+                                                  # metadata like logic_files: the registry is the one
+                                                  # place that says what a cell is responsible for.
 
     def owns(self, path):
         """Does this cell own the given request path?"""
@@ -160,6 +174,12 @@ CELLS = [
         # the route shell + shared widgets stay app-side (ui_files).
         repo_files=("cells/engineer/ui/surface.tsx",),
         ui_files=("src/ui/board.tsx", "src/app/(tabs)/board.tsx"),
+        # WHERE THIS CELL ACTS on the board: it runs the work (turnrunner in
+        # the working lane), its gate checks the result, and the accept hook
+        # ships it. The band under the pipeline draws from exactly this.
+        board=(("working", "cell.track.eng.working"),
+               ("gate", "cell.track.eng.gate"),
+               ("deploy", "cell.track.eng.deploy")),
         # documentation-only reference (owner directive, 2026-08-18): the
         # editorial-diagram visual language this cell's own code-map UI
         # (this file's read_source() + surfaces/app/src/ui/cell_diagram.tsx) follows.
@@ -167,18 +187,6 @@ CELLS = [
         # code-map itself shows what informed its own rendering style.
         tools=("github.com/cathrynlavery/diagram-design (visual style ref "
                "for the code-map diagram, not a vendored dependency)",),
-    ),
-    Cell(
-        id="pm", enabled_key="pmEnabled",
-        prefixes=("/pm/",),
-        start=("pm", "start_loop"),
-        role="pm.md", surface="surfaces.pm",
-        logic_files=("pm.py", "pm_state.py", "pm_budget.py"),
-        storage="loop.json (daemon/pm/)",
-        harness_file="ops/harness/agents/pm.md",
-        route_modules=("routes_pm",),
-        repo_files=("cells/pm/ui/surface.tsx",),
-        ui_files=("src/ui/pm_panel.tsx", "src/app/loopmap.tsx"),
     ),
     Cell(
         id="process", enabled_key="processEnabled",
@@ -205,20 +213,44 @@ CELLS = [
         ui_files=("src/app/(tabs)/connectors.tsx",),
     ),
     Cell(
+        # MERGED WITH PM (owner directive 2026-09-03, "pm und henry is eins"):
+        # PM had no LLM identity, no chat surface and no memory of its own -
+        # its _ask() spawned the same copilot.CLAUDE binary Henry uses for a
+        # stateless one-shot planning call, and its proactive notices were
+        # already routed TO HENRY, never to the owner directly (owner decree
+        # 2026-08-30, pm.py's _to_henry). Two registered cells were describing
+        # one responsibility with two enable flags; now there is one
+        # (copilotEnabled off = no chat AND no backlog planning - a
+        # deliberate narrowing, not an oversight, decided by the owner
+        # explicitly rather than left as a side effect of the merge).
         id="copilot", enabled_key="copilotEnabled",
-        prefixes=("/chat",),
+        prefixes=("/chat", "/pm/"),
         role="board-copilot.md", surface="surfaces.chat",
         logic_files=("copilot.py", "copilot_stats.py", "copilot_actions.py",
-                     "henry_broker.py"),
-        storage="copilot_sessions.json, copilot_log.json, escalations.jsonl (shared bus)",
+                     "henry_broker.py",
+                     "pm.py", "pm_state.py", "pm_budget.py", "pm_triangle.py",
+                     "pm_resolve.py", "pm_watchdog.py", "pm_goal.py", "pm_comm.py"),
+        storage="copilot_sessions.json, copilot_log.json, escalations.jsonl "
+                "(shared bus); loop.json (cells/pm/)",
         harness_file="ops/harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
-        route_modules=("routes_copilot",),
+        # ops/harness/agents/pm.md rides in repo_files below (harness_file
+        # stays singular - board-copilot.md is Henry's primary identity brief,
+        # pm.md is a report-shape charter fed to a one-shot planning call).
+        route_modules=("routes_copilot", "routes_pm"),
         # Henry's judgement half of the escalation channel (spine/registry/
-        # escalations.py is the bus; engineer emits; THIS cell decides) -
-        # copilotEnabled off = no broker, per the cell-lifecycle contract.
-        start=("henry_broker", "start_broker"),
-        repo_files=("cells/copilot/ui/surface.tsx",),
-        ui_files=("src/app/chat.tsx",),
+        # escalations.py is the bus; engineer emits; THIS cell decides), AND
+        # the backlog planning loop that used to be pm's own - copilotEnabled
+        # off now stops both, per the cell-lifecycle contract.
+        start=(("henry_broker", "start_broker"), ("pm", "start_loop")),
+        repo_files=("cells/copilot/ui/surface.tsx", "ops/harness/agents/pm.md"),
+        ui_files=("src/app/chat.tsx", "src/ui/pm_panel.tsx", "src/app/loopmap.tsx"),
+        # WHERE THIS CELL ACTS on the board: `board` is the fallback/declared
+        # half (backlog planning, formerly pm's own station) - apimeta.
+        # _cell_tracks() joins it with the RULE-derived segments from
+        # behavior.track() when both fire at the same station, so the picture
+        # keeps every verb ("plant" + "steuert") under one Henry band instead
+        # of two.
+        board=(("backlog", "cell.track.pm.backlog"),),
     ),
     Cell(
         # Cell #6 - added 2026-08-18 after owner pushback: structurally this
@@ -294,18 +326,24 @@ def path_disabled(path):
 
 
 def start_enabled():
-    """Boot: launch the lifecycle poller of every enabled cell that has one.
+    """Boot: launch the lifecycle poller(s) of every enabled cell that has one.
     Replaces the flat processes/connectors/pm start calls in serve() with a
-    registry-driven loop. Lazy-imports each module so cells.py stays cycle-free."""
+    registry-driven loop. Lazy-imports each module so cells.py stays cycle-free.
+
+    `c.start` is either one `(mod, func)` pair or a tuple of them - normalised
+    here so a cell with two independent loops under one flag (copilot: the
+    escalation broker AND the pm planning loop) starts both, and a failure in
+    one loop does not take the other down with it."""
     for c in CELLS:
         if not c.start or not enabled(c):
             continue
-        mod_name, func_name = c.start
-        try:
-            mod = _import_by_bare_name(mod_name, c.id)
-            getattr(mod, func_name)()
-        except Exception as e:
-            print("cells: %s.%s failed to start: %s" % (mod_name, func_name, e))
+        pairs = c.start if isinstance(c.start[0], (tuple, list)) else (c.start,)
+        for mod_name, func_name in pairs:
+            try:
+                mod = _import_by_bare_name(mod_name, c.id)
+                getattr(mod, func_name)()
+            except Exception as e:
+                print("cells: %s.%s failed to start: %s" % (mod_name, func_name, e))
 
 
 def _cell_routes(c):
