@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 """Adversarial tests for the deterministic pairing lifecycle
 (daemon/relay_client.py: _admit / pairing_payload / unpair) and the relay's
-idle-room GC. SELF-SANDBOXING: events.SET/EV are redirected into a temp dir
-before anything runs - the real settings.json is never read or written.
+idle-room GC. SELF-SANDBOXING: events.SET/EV AND the db are redirected into
+a temp dir before anything runs. Settings live in the DB since the config
+consolidation (workspace_config table) - patching events.SET alone stopped
+sandboxing anything, and a 2026-09-03 run of exactly that stale sandbox
+CLOBBERED the live relay config (sk='x', room='r', test pubs pinned) until
+it was restored from daemon/backups/settings.json.imported. db.ROOT and
+db.DBPATH must BOTH be patched (see test_hook_idle.py's preamble for why),
+and the thread-cached connection reset so a prior import can't leak the
+real db in.
 
 Run: py -3.12 ops/tests/test_pairing_lifecycle.py
 """
@@ -10,11 +17,19 @@ import os, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from spine.storage import events  # noqa: E402
+from spine.storage import db, events  # noqa: E402
 
 _TMP = tempfile.mkdtemp(prefix="helmdeck-pairtest-")
+_old_conn = getattr(db._local, "c", None)
+if _old_conn is not None:
+    _old_conn.close()
+    db._local.c = None
+db.ROOT = _TMP
+db.DBPATH = os.path.join(_TMP, "helmdeck.db")
 events.SET = os.path.join(_TMP, "settings.json")
 events.EV = os.path.join(_TMP, "events.jsonl")
+db.init()
+assert db.DBPATH.startswith(_TMP), "REFUSING TO RUN: db not sandboxed"
 
 from spine.comms import relay_client as rc  # noqa: E402  (after the sandbox redirect)
 
@@ -28,8 +43,9 @@ def check(name, cond, note=""):
 
 
 def reset(relay_patch=None):
-    if os.path.exists(events.SET):
-        os.remove(events.SET)
+    # settings live in the db now - wholesale-replace is the reset that
+    # removing the settings.json file used to be
+    db.workspace_config_replace({})
     if relay_patch:
         events.save_settings({"relay": relay_patch})
 

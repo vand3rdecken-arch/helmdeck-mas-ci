@@ -33,6 +33,7 @@ sys.path.insert(0, ROOT)
 SANDBOX = tempfile.mkdtemp(prefix="hd-push-")
 
 from spine.storage import db
+db.ROOT = SANDBOX   # BOTH, not just DBPATH - see test_hook_idle.py's preamble
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 from spine.storage import events
 events.EV = os.path.join(SANDBOX, "events.jsonl")
