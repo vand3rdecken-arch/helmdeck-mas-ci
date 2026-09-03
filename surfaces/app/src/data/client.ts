@@ -422,6 +422,10 @@ export interface BehaviorRule {
   scope?: string; binds: string[];
   labelKey: string; descKey: string;
   why: string; source: string; reads?: string | null;
+  /** The registered cell this rule governs (behavior.cell_of, derived from the
+   *  rule's own reads/source against the cell registry), or null for a
+   *  spine-owned rule. Optional so the app survives a daemon that predates it. */
+  cell?: string | null;
   surfaces: RuleSurface[];
 }
 /** GET /harness/config - Henry's rules resolved for one project.

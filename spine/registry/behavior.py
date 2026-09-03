@@ -510,6 +510,36 @@ def by_path(path):
     return _BY_KEY.get(head)
 
 
+def cell_of(rule):
+    """The registered cell this rule governs, or None for a spine-owned rule.
+
+    DERIVED, never hand-kept: a rule already names the code that consumes it
+    (`reads`) and the file it came from (`source`), and the cell registry
+    already declares which folder and which brief belong to which cell
+    (cells/<id>/ and Cell.harness_file). This resolves one against the other at
+    read time - the same string references the table always carried, now with
+    ONE owner answering "whose rule is this" instead of every screen guessing.
+    ops/tests/test_behavior_rules.py holds the strings to the registry, so a
+    renamed cell or a moved file breaks a test instead of silently un-grouping
+    a rule."""
+    try:
+        from spine.registry import cells
+    except Exception:                                        # noqa: BLE001
+        return None
+    for ref in (rule.get("reads") or "", rule.get("source") or ""):
+        # "cells/copilot/henry_broker.py::_decide" / "...board-copilot.md:93"
+        # -> the bare file path the registry can recognise.
+        path = ref.split("::")[0].split(":")[0].strip().replace("\\", "/")
+        if not path:
+            continue
+        for c in cells.CELLS:
+            if path.startswith("cells/%s/" % c.id):
+                return c.id
+            if c.harness_file and path == c.harness_file.replace("\\", "/"):
+                return c.id
+    return None
+
+
 def surfaces_of(rule):
     return list((rule or {}).get("surfaces") or {})
 
@@ -991,5 +1021,10 @@ def describe(project=""):
             "binds": r.get("binds") or [], "labelKey": r["labelKey"],
             "descKey": r["descKey"], "why": r["why"], "source": r["source"],
             "reads": r.get("reads"), "surfaces": surfs,
+            # WHOSE rule this is (derived, see cell_of) - the settings hub's
+            # cells door groups by it, so a cell and its rules finally arrive
+            # on one screen instead of the rule table knowing the cell only as
+            # a string nobody resolved.
+            "cell": cell_of(r),
         })
     return out

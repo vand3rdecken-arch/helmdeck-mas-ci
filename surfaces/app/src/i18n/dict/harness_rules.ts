@@ -143,6 +143,27 @@ export const harnessRules: Dict = {
     en: "This rule is per project — pick a project above to set it here.",
   },
 
+  // ------------------------------------------- the cells door's rule groups --
+  // The seam closed: every rule arrives with its owning cell (derived in the
+  // daemon), and the cells door shows them right under the catalog that
+  // switches the cells - so "welche Agenten gibt es" and "wonach richten sie
+  // sich" are finally one screen. Same rows, same write path as the harness
+  // page; these strings only introduce the grouping.
+  "cells.rules.title": { de: "Regeln: {cell}", en: "Rules: {cell}" },
+  "cells.rules.hint": {
+    de: "Wonach sich dieser Agent richtet. Ändern hier ist ändern überall — es ist dieselbe Regel wie auf der Harness-Seite.",
+    en: "What this agent follows. Changing it here changes it everywhere — it is the same rule as on the harness page.",
+  },
+  "cells.rules.shared": { de: "Gemeinsame Regeln", en: "Shared rules" },
+  "cells.rules.sharedHint": {
+    de: "Regeln, die keinem einzelnen Agenten gehören — sie gelten für Meldungen und Arbeitsweise insgesamt.",
+    en: "Rules owned by no single agent — they apply to notices and the way of working overall.",
+  },
+  "cells.rules.openMap": {
+    de: "Alle Regeln im Zusammenhang (pro Projekt) ansehen",
+    en: "See all rules in context (per project)",
+  },
+
   // ---------------------------------------------------------------- blocks --
   "harness.blk.tone": { de: "Ton & Länge", en: "Tone & length" },
   "harness.blk.tone.desc": {

@@ -24,6 +24,7 @@ import { can } from "@/kernel";
 import { useTheme } from "@/theme";
 import { Chip, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { CellsCatalog } from "@/ui/cells_catalog";
+import { CellRules } from "@/ui/cell_rules";
 import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
 import { GxpActivate } from "@/ui/gxp_activate";
@@ -577,6 +578,11 @@ export default function Settings() {
         <Panel>
           <CellsCatalog />
         </Panel>
+        {/* EACH CELL'S RULES, right under the catalog that toggles the cells -
+            the cells<->settings seam closed. Grouped by the daemon's own
+            derivation (behavior.cell_of), rendered with the SAME RuleRow the
+            harness page uses, written over the same POST /harness/config. */}
+        <CellRules />
         <SchemaDoor door="cells" schema={schema} />
       </Frame>
     );
