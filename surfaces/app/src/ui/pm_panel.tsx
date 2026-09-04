@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
 
-import { api, type PmBrief, type PmConfig, type PmData } from "@/data/client";
+import { api, type PmConfig, type PmData } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
@@ -127,9 +127,24 @@ export function PMControls() {
   const [editGoal, setEditGoal] = useState(false);
   const { planning, replan } = usePmReplan();
 
-  const report = useMutation({
-    mutationFn: (g?: string) => api.pmReport(g),
-    onSuccess: (b: PmBrief) => { qc.setQueryData<PmData>(["pmPlan"], (o) => o ? { ...o, plan: b, goal: b.goal ?? o.goal } : o); setEditGoal(false); },
+  // Setting the goal used to POST /pm/report directly - the SAME synchronous,
+  // full-model-turn endpoint usePmReplan's own comment above documents as
+  // regularly taking 2-3 minutes. Over the relay that request is bounded by
+  // REPLY_TIMEOUT (surfaces/relay/relay.py, 120s), so most goal edits died
+  // with an unread 504 before the turn ever finished - "kann das nicht
+  // bearbeiten" (bug found 2026-09-04). set_goal() itself is a plain settings
+  // write, no LLM call; persist it instantly through /pm/config (already the
+  // fast, whitelisted path setCfg below uses) and let the existing async
+  // replan (usePmReplan -> /nightshift/plan -> pm.make_plan, backed by a
+  // background thread) pick up the new goal on its own schedule, same as
+  // every other proactive re-plan.
+  const saveGoal = useMutation({
+    mutationFn: (g: string) => api.pmConfig({ goal: g }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pmPlan"] });
+      setEditGoal(false);
+      replan();
+    },
     onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
   });
   const setCfg = useMutation({
@@ -185,11 +200,14 @@ export function PMControls() {
             placeholderTextColor={t.txtPlaceholder}
             style={{ color: t.txtPrimary, backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, minHeight: 60 }} />
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable onPress={() => report.mutate(goal ?? curGoal)} disabled={report.isPending}
-              style={{ flex: 1, backgroundColor: t.accent, borderRadius: 8, padding: 10, alignItems: "center" }}>
-              <Text style={{ color: "#fff", fontWeight: "600" }}>{tr("pm.setGoal")}</Text>
+            <Pressable onPress={() => saveGoal.mutate(goal ?? curGoal)} disabled={saveGoal.isPending}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+                backgroundColor: t.accent, borderRadius: 8, padding: 10, opacity: saveGoal.isPending ? 0.7 : 1 }}>
+              {saveGoal.isPending ? <ActivityIndicator size="small" color="#fff" /> : null}
+              <Text style={{ color: "#fff", fontWeight: "600" }}>{saveGoal.isPending ? tr("pm.saving") : tr("pm.setGoal")}</Text>
             </Pressable>
-            <Pressable onPress={() => setEditGoal(false)} style={{ backgroundColor: t.surface2, borderRadius: 8, padding: 10, paddingHorizontal: 14, alignItems: "center" }}>
+            <Pressable onPress={() => setEditGoal(false)} disabled={saveGoal.isPending}
+              style={{ backgroundColor: t.surface2, borderRadius: 8, padding: 10, paddingHorizontal: 14, alignItems: "center" }}>
               <Text style={{ color: t.txtSecondary, fontWeight: "600" }}>{tr("ui.cancel")}</Text>
             </Pressable>
           </View>
