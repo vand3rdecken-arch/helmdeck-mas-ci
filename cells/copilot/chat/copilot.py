@@ -1344,8 +1344,8 @@ def _pm_plan_digest():
         L.append("MILESTONES:")
         for m in ms[:6]:
             dw = m.get("done_when") or []
-            L.append("  - %s (due %s, %s%s)%s" % (
-                str(m.get("name"))[:80], m.get("target_date") or "?", m.get("priority") or "?",
+            L.append("  - %s (~%s turns, %s%s)%s" % (
+                str(m.get("name"))[:80], m.get("est_turns") or "?", m.get("priority") or "?",
                 (", blocked_by: " + str(m.get("blocked_by"))[:70]) if m.get("blocked_by") else "",
                 (" done_when: " + "; ".join(str(x)[:55] for x in dw[:2])) if dw else ""))
     return "\n".join(L)

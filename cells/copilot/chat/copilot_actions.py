@@ -585,6 +585,7 @@ def _run_action(a, actor, role="operator"):
         except Exception as e:
             return "Notiert: „%s“ - Re-Plan ist fehlgeschlagen (%s), läuft beim nächsten Mal mit." % (
                 text[:120], str(e)[:150])
+        pm.goal_check_async()   # best-effort, fire-and-forget - see routes_pm.py's pm_config_post
         return "Notiert: „%s“ - Plan neu gerechnet." % text[:150]
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),

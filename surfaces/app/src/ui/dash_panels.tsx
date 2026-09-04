@@ -2,16 +2,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { api, type PmBrief, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
-import { t as tt, useT } from "@/i18n";
+import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { fmtPlanPct, fmtTok, useAiFlat } from "./billing";
 import { Empty } from "./kit";
-import { usePmReplan } from "./pm_panel";
 
 const isWeb = Platform.OS === "web";
 
@@ -287,13 +286,15 @@ function TriCorner({ label, state, issues, open, onToggle }: {
   );
 }
 
-/** Split the plan's diagnostic text (verifier issues + open questions) by which
- *  corner it's actually about, so each button only shows ITS OWN issues -
- *  budget/kontingent/quota/€ words -> budget, tag/woche/kalender/termin -> timeline,
- *  else -> scope (most open_questions are scope decisions). Heuristic on real
- *  text the PM already wrote; nothing invented. */
+/** Split the plan's open questions by which corner they're actually about, so
+ *  each button only shows ITS OWN. budget/kontingent/quota/€ words -> budget,
+ *  tag/woche/kalender/termin -> timeline, else -> scope (most open_questions
+ *  ARE scope decisions - that's the corner CODE now blocks on when this list
+ *  is non-empty). Heuristic on real text the PM already wrote; nothing
+ *  invented. (The old verifier's own issue list is gone with the verifier -
+ *  pm-lean-advisor, 2026-09-04 - so open_questions is the whole source now.) */
 function cornerIssues(plan: PmBrief | null | undefined, corner: "budget" | "timeline" | "scope"): string[] {
-  const all = [...(plan?.verify?.issues ?? []), ...(plan?.open_questions ?? [])];
+  const all = plan?.open_questions ?? [];
   const BUDGET_RE = /budget|kontingent|quota|€|kosten|spend|kapazit/i;
   const TIMELINE_RE = /tag|woche|kalender|termin|frist|deadline|datum|zeit/i;
   return all.filter((x) => {
@@ -301,6 +302,16 @@ function cornerIssues(plan: PmBrief | null | undefined, corner: "budget" | "time
     if (TIMELINE_RE.test(x)) return corner === "timeline";
     return corner === "scope";
   });
+}
+
+/** The one ETA the app shows anywhere: a RANGE derived from measured pace,
+ *  never a single day (pm-lean-advisor, 2026-09-04 - no surviving PM product
+ *  lets an LLM commit a calendar date, and neither does this one anymore). */
+function fmtEta(tr: ReturnType<typeof useT>, eta?: PmBrief["eta"]): string {
+  if (!eta?.known || eta.days_min == null || eta.days_max == null) return tr("pm.etaUnknown");
+  return eta.days_min === eta.days_max
+    ? tr("pm.etaDays", { n: eta.days_min })
+    : tr("dash.triangle.etaRange", { min: eta.days_min, max: eta.days_max });
 }
 
 /** THE dashboard focus: the goal gated by the golden triage. Big, first, loud - the
@@ -313,15 +324,6 @@ export function TrianglePanel() {
   const tr = useT();
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [openCorner, setOpenCorner] = React.useState<"budget" | "timeline" | "scope" | null>(null);
-  // manual re-scope, right on the dashboard (was Settings-only). Fire-and-
-  // forget (usePmReplan): the model turn runs server-side in a background
-  // thread instead of holding one HTTP request open for the minutes a
-  // self-repair + verify pass can take - see pm_panel.tsx's usePmReplan for
-  // why (a held-open relay request left "Neu planen" spinning forever even
-  // after the plan had actually landed). Budget itself no longer even needs
-  // a tap (pm_triangle.py tracks its measured state live, both directions);
-  // Timeline/Scope still only tighten until the planner revisits them.
-  const { planning, replan } = usePmReplan();
   const goal = data?.goal || data?.plan?.goal;
   if (!goal) return null;
   const plan = data?.plan;
@@ -330,15 +332,20 @@ export function TrianglePanel() {
   const blocked = !!status && status !== "ready";
   const bannerCol = blocked ? t.danger : status === "ready" ? t.ok : t.txtTertiary;
   const shownIssues = openCorner ? cornerIssues(plan, openCorner) : [];
+  // NO manual "Neu planen" (pm-lean-advisor, 2026-09-04): re-scoping is
+  // event-driven now (a card lands in Done and a triangle corner flips, or
+  // the goal changes) - nothing here waits on a model turn. This panel just
+  // reflects live_plan(), which recomputes Budget/Timeline on every read
+  // with no LLM call at all; "zuletzt geprüft" says when the one remaining
+  // planner turn last ran.
+  const checkedAt = plan?.generated_at ? plan.generated_at.slice(11, 16) : null;
   return (
     <GlassPanel title={tr("dash.triangle.title")}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
         <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, flex: 1 }}>{goal}</Text>
-        <Pressable onPress={replan} disabled={planning} hitSlop={8}
-          style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.surface2, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
-          {planning ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={13} color={t.txtSecondary} />}
-          <Text style={{ color: t.txtSecondary, fontSize: 11, fontWeight: "600" }}>{planning ? tr("pm.planning") : tr("pm.refresh")}</Text>
-        </Pressable>
+        {checkedAt ? (
+          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.triangle.checkedAt", { when: checkedAt })}</Text>
+        ) : null}
       </View>
       {/* the three corners as prominent status cards - tap a blocked one for its issues */}
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
@@ -380,16 +387,6 @@ export function TrianglePanel() {
 // budget chips, progress, next actions) lands here, under its corner.
 
 const eur = (n?: number) => "€" + (n ?? 0).toFixed(2);
-const LAUNCH_RE = /store|play|launch|release|deploy/i;
-
-/** Plan dates are day-precise ISO; render as the workspace's short weekday form. */
-function fmtPlanDate(iso?: string): string {
-  if (!iso) return "";
-  const d = new Date(iso + "T00:00:00");
-  if (isNaN(d.getTime())) return "";
-  const wd = tt("pm.weekdays").split(",");
-  return `${wd[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 function MiniChip({ label, color }: { label: string; color?: string }) {
   const t = useTheme();
@@ -441,9 +438,6 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   const feas = plan.feasibility;
   const c = cur(m);
   const ms = plan.milestones ?? [];
-  const launch = ms.find((x) => LAUNCH_RE.test((x.name || "") + " " + (x.tasks || []).map((y) => y.title).join(" "))) ?? ms[ms.length - 1];
-  const launchDate = launch?.target_date;
-  const days = launchDate ? Math.ceil((new Date(launchDate + "T00:00:00").getTime() - Date.now()) / 86400000) : undefined;
   const pct = Math.max(0, Math.min(100, plan.done_pct ?? 0));
   const cap = m.capacity;
 
@@ -487,21 +481,14 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
   const timeline = (
     <CornerPanel key="timeline" label={tr("dash.triangle.timeline")} state={tri?.timeline} style={wide ? { flex: 1 } : undefined}>
       <GateReason text={reasons?.timeline} />
-      {launch && (launchDate || days != null) ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-          <Ionicons name="rocket" size={13} color={t.accent} />
-          <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700", flex: 1 }}>{launch.name}</Text>
-          {days != null ? (
-            <Text style={{ color: t.accent, fontSize: 11.5, fontWeight: "800" }}>
-              {days > 0 ? tr("pm.daysLeft", { n: days }) : days === 0 ? tr("pm.today") : tr("pm.daysOver", { n: -days })}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
+      {/* the ONE eta the app shows anywhere - a RANGE from measured pace,
+          never a single invented day (pm-lean-advisor, 2026-09-04) */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+        <Ionicons name="speedometer-outline" size={13} color={t.accent} />
+        <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "700", flex: 1 }}>{fmtEta(tr, plan.eta)}</Text>
+      </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
-        {b?.eta_days != null ? <MiniChip label={tr("pm.eta", { n: b.eta_days })} /> : null}
         {b?.velocity_turns_per_day != null ? <MiniChip label={tr("pm.perDay", { n: b.velocity_turns_per_day })} /> : null}
-        {feas?.earliest_done ? <MiniChip label={tr("dash.triangle.earliest", { when: feas.earliest_done })} /> : null}
       </View>
       {ms.length ? (
         <View style={{ gap: 6 }}>
@@ -511,9 +498,9 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: t.accent2 }} />
               <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12, flex: 1 }}>{mm.name}</Text>
               <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
-                {mm.target_date ? tr("pm.by", { date: fmtPlanDate(mm.target_date) })
-                  : (mm.cumulative_eta_days ?? mm.eta_days) != null
-                  ? tr("pm.etaDays", { n: mm.cumulative_eta_days ?? mm.eta_days ?? 0 })
+                {mm.status === "done" ? tr("dash.triangle.msDone")
+                  : mm.calendar_wait ? tr("dash.triangle.msWait")
+                  : mm.est_turns != null ? tr("pm.turns", { n: mm.est_turns })
                   : tr("pm.etaUnknown")}
               </Text>
               {mm.card ? <Ionicons name="arrow-forward-circle" size={15} color={t.accent} /> : null}

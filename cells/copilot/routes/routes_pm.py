@@ -45,6 +45,11 @@ def pm_config_post(self, user, body):
     if merged.get("autonomy") not in ("notify", "ask", "act"):
         merged["autonomy"] = "act"
     events.save_settings({"pm": merged})
+    if "goal" in body and (body.get("goal") or "").strip():
+        # pm-lean-advisor phase 2: a changed goal deserves a fast, cheap check
+        # against the board - fire-and-forget, this request never waits on it
+        # (UX rule 1, "kein Warte-Knopf").
+        pm.goal_check_async(body["goal"])
     return self._send(200, json.dumps(pm._pm()))
 
 
