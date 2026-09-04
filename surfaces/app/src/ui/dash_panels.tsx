@@ -391,7 +391,10 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
           <Ionicons name={details ? "chevron-up" : "chevron-down"} size={13} color={t.txtTertiary} />
         </Pressable>
       </GlassPanel>
-      {details ? <TriageFollowUp m={m} wide={wide} defaultRepo={defaultRepo} /> : null}
+      {/* the budget bars stay STANDING (owner, 2026-09-04: "best part of the
+          dashboard") - only the timeline/scope analysis hides behind Details */}
+      <TriageFollowUp m={m} wide={wide} defaultRepo={defaultRepo} only={["budget"]} />
+      {details ? <TriageFollowUp m={m} wide={wide} defaultRepo={defaultRepo} only={["timeline", "scope"]} /> : null}
     </>
   );
 }
@@ -435,7 +438,13 @@ function CornerPanel({ label, state, children, style }: {
   );
 }
 
-export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boolean; defaultRepo?: string }) {
+export function TriageFollowUp({ m, wide, defaultRepo, only }: {
+  m: Metrics; wide: boolean; defaultRepo?: string;
+  /** Render only these corners. StatusPanel keeps "budget" standing on the
+   *  dashboard (owner: "best part of dashboard") and puts the other two
+   *  behind its Details toggle - one component, two subsets, no copy. */
+  only?: ("budget" | "timeline" | "scope")[];
+}) {
   const t = useTheme();
   const tr = useT();
   const flat = useAiFlat();
@@ -566,9 +575,11 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
     </CornerPanel>
   );
 
+  const parts = { budget, timeline, scope } as const;
+  const shown = (only ?? ["budget", "timeline", "scope"]).map((k) => parts[k]);
   return wide
-    ? <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>{budget}{timeline}{scope}</View>
-    : <View style={{ gap: 12 }}>{budget}{timeline}{scope}</View>;
+    ? <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>{shown}</View>
+    : <View style={{ gap: 12 }}>{shown}</View>;
 }
 
 // ---- Claude usage (rate-limit windows + weekly pacing) ----
