@@ -533,6 +533,38 @@ When mirroring with robocopy, exclude `dist`/`build` **fully qualified** —
 bare `-XD dist build` drops those dirs out of every npm package too and breaks
 autolinking (`Cannot find module '@jridgewell/gen-mapping/dist/…'`).
 
+⚠ **…but in the MAIN repo the same error is usually the ABI, not the path — and
+the fix is one flag.** Measured 2026-09-04 building 1.0.47 from
+`Downloads/swarmdeck` (long path, spaces in it).
+`:react-native-reanimated:buildCMakeRelWithDebInfo[armeabi-v7a]` failed with the
+identical `ninja: manifest 'build.ninja' still dirty after 100 tries` on **four**
+attempts — clearing `.cxx`, a full CMake clean, and `./gradlew --stop` all
+changed nothing. `arm64-v8a` built fine every time. Two measurements settle it:
+
+- CMake's own warning says the object dir has **203** characters against a limit
+  of **250** — so it is NOT over the path cap here, unlike the worktree case.
+- `lib/` in the shipped `app-release.apk` (versionCode 88) holds **`arm64-v8a`
+  and nothing else** — 54 `.so` files, no `armeabi-v7a`, no x86. The four ABIs in
+  `gradle.properties` are compiled and then dropped at packaging.
+
+So the ABI that reliably breaks the build is one that **never reaches a phone**.
+Build only what ships, with the override `gradle.properties:30` already
+documents:
+
+```bash
+./gradlew :app:assembleRelease -x lint -PreactNativeArchitectures=arm64-v8a
+```
+
+That produced an APK whose `lib/` is `{'arm64-v8a': 54}` — the same ABI content
+as the one in the owner's hands — so this is not a narrowing of device support,
+it is skipping dead work. Verify with `aapt2 dump badging` plus a `lib/` listing
+rather than trusting it. Reach for the `C:\hd\app` mirror only when arm64 itself
+fails.
+
+⚠ **Never read a build's exit code through a pipe.** `bash build.sh | tail`
+reports *tail's* status: two of those four failures first appeared as "exit 0,
+but no new APK". Redirect to a log and check `$?`.
+
 Other Git-Bash traps when driving the emulator: `adb shell … /sdcard/x` gets
 rewritten to `/Files/Git/sdcard/x` — prefix `MSYS_NO_PATHCONV=1`. And the
 emulator is shared: `ops/deploy/build_apk.sh` does `adb uninstall` + `adb install`
