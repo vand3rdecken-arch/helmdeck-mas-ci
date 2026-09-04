@@ -219,8 +219,6 @@ export default function Settings() {
       await qc.invalidateQueries({ queryKey: ["automation"] });
     } catch (e) { Alert.alert(tr("ui.error"), String((e as Error).message)); } finally { setNsBusy(false); }
   }
-  const cur = (auto?.loop_current as { state: string; action: string }[]) ?? [];
-  const curState = cur[0]?.state ?? "";
   const autoRepos = (auto?.repos as string[]) ?? [];
 
   // ---- pairing (door: team) ----
@@ -581,18 +579,11 @@ export default function Settings() {
             <PMControls />
           </Panel>
         ) : null}
-        <Panel>
-          <SectionLabel text="build-loop" />
-          <Text style={{ color: t.accent, fontWeight: "600", marginBottom: 2 }}>{curState ? tr("automation.now", { state: curState }) : "?"}</Text>
-          {cur[0]?.action ? <Text style={{ color: t.txtSecondary, fontSize: 12, marginBottom: 8 }}>{cur[0].action}</Text> : null}
-          <Pressable onPress={() => router.push("/loopmap" as never)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: t.surface2,
-              borderColor: t.glassBorder, borderWidth: 1, borderRadius: 12, padding: 11 }}>
-            <Ionicons name="git-network-outline" size={16} color={t.accent} />
-            <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "600", flex: 1 }}>{tr("automation.openMap")}</Text>
-            <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
-          </Pressable>
-        </Panel>
+        {/* Loop-Map is its own row in the Mehr tab (more_groups.ts,
+            more.grp.system) - the exact "row lands on the same screen as
+            another entry point" wildwuchs the settings-ia-redesign already
+            removed once for the old "automation" row. This door does not
+            get a second door into it. */}
         {/* policy + nightshift, both schema-rendered. This door is still the
             ONLY place nightshift.* is editable (the plan's dedup requirement);
             the old duplicate form in settings.tsx is long gone. */}
