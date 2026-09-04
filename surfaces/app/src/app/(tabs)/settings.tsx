@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import util from "tweetnacl-util";
 import { useConfig } from "@/data/config";
 import { qrDataUrl } from "@/data/qrgen";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, BackHandler, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAnalytics } from "@/data/analytics";
@@ -427,6 +427,21 @@ export default function Settings() {
 
   const goDoor = (d: DoorId) => { setDoor(d); router.setParams({ door: d }); };
   const goList = () => { setDoor(null); router.setParams({ door: undefined }); };
+
+  // Android back gesture/button used to skip goList entirely and pop the
+  // whole screen (back to Mehr), unlike the chevron in ScreenHeader which
+  // only ever leaves the DOOR. `door` is local state, not a router entry, so
+  // the OS back handler never saw it. Intercept while a door is open and
+  // make it do what the chevron does; only once `door` is null does the
+  // event fall through to the real screen pop.
+  useFocusEffect(() => {
+    if (!door) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      goList();
+      return true;
+    });
+    return () => sub.remove();
+  });
 
   const content = { padding: 12, gap: 10, paddingBottom: 60, width: "100%" as const,
     maxWidth: wide ? 1100 : undefined, alignSelf: "center" as const };
