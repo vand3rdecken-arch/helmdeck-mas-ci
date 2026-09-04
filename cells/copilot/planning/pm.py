@@ -273,7 +273,10 @@ def _verify_plan(plan, econ, quota, prev=None):
     hard dispatch gate (_state's "ASK"), that answered question held the whole board."""
     try:
         from spine.agent import turnopts
-        cli_model, _ = turnopts.resolve_model("auto", "verify plan", False, signals={"priority": "high"})
+        # explicit "opus": this pass existed to get the strong tier and used to
+        # ride the prio-high Auto trigger, which was dropped 2026-09-04 (Sonnet
+        # is the Auto default for cards) - so the intent is stated outright now.
+        cli_model, _ = turnopts.resolve_model("opus", "verify plan")
         keep = {k: plan.get(k) for k in ("goal", "summary", "milestones", "feasibility",
                                          "assumptions", "open_questions", "budget")}
         prompt = (VERIFY_PROMPT + "\n\nPLAN:\n" + json.dumps(keep)

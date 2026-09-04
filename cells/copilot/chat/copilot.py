@@ -274,9 +274,10 @@ def _persist_switch(ent, key):
 
     THIS is what makes the board chat actually stay warm. The composer defaults
     to "auto" (surfaces/app/src/ui/card_composer.tsx), so turnopts.pick_model
-    re-picks the tier from EVERY message's text: "danke" routes haiku, a plain
-    question sonnet, anything matching _HARD ("debug", "analysiere",
-    "refactor", "root cause") opus - and a voice turn pins haiku on top of
+    re-picks the tier from EVERY message's text: "danke" routes haiku,
+    anything else sonnet (since 2026-09-04 text/prio-high/turns no longer
+    escalate - only urgent/value/gate-fail reach opus) - and a voice turn pins
+    haiku on top of
     that. Keyed respawn-on-change therefore threw the warm process away on an
     ordinary typed conversation, and the next turn paid node boot (8-12s) PLUS
     a full --resume prefill of a months-long board session (~20s measured at

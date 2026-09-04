@@ -39,9 +39,11 @@ _ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "cla
 # on measured difficulty. These thresholds are policy - kept as named constants
 # so they can later move to settings (events.settings) without touching logic.
 HIGH_VALUE = 100.0      # €: a card worth this much gets the best model on Auto
-ESCALATE_TURNS = 3      # a card that's taken this many turns has proven hard
+ESCALATE_TURNS = 3      # consecutive GATE FAILS before needs_you (sessions.py);
+                        # no longer a model-routing trigger (owner decree 2026-09-04)
 
-# text is only a WEAK, secondary signal (structural signals win)
+# text signals: _HARD is no longer a routing trigger (it fired on ordinary
+# German card prose - see pick_model), kept only as documentation of the class
 _HARD = re.compile(r"\b(refactor|architect|debug|design|analy[sz]e|"
                    r"root cause|prove|derive|reconcile|migrat)", re.I)
 _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b", re.I)
@@ -240,38 +242,30 @@ def pick_model(text, has_attach=False, signals=None):
     # back-compat one-shot flag; either one means "escalate the retry".
     fails = int(s.get("fails") or 0)
     failed = bool(s.get("failed")) or fails > 0
-    # STRONG tier - structural/stakes signals (any one): a high-stakes card
-    # (urgent|high priority, or >= HIGH_VALUE) OR it already FAILED (bounce/gate
-    # -> escalate the retry) OR it's dragged on (turns >= ESCALATE_TURNS) OR an
-    # attachment (deliberate, rare - real evidence of work) OR hard keywords in
-    # the text. The failed/turns paths are "escalate on measured evidence" -
-    # the next turn after a rejection gets the strong model, no retry loop.
-    # every return goes through fits_window: the tier answers "how hard is this
-    # turn", the window answers "can that model still carry the conversation".
-    # Both must hold, and the second one is not negotiable - see CTX_WINDOWS.
-    #
-    # Bare length and a stray ``` used to be STRONG triggers too, contradicting
-    # this function's own doctrine ("text is only a weak, secondary signal -
-    # structural signals win", see module header). Every real HelmDeck card
-    # description easily runs past 600 chars or quotes a filename/function in
-    # backticks, so that pair fired on ~80% of ordinary cards (measured
-    # 2026-08-31 from daemon/events.jsonl: 144/285 recent turns landed pure
-    # claude-opus-5 vs. 26 pure claude-sonnet-5) and starved Sonnet as the
-    # everyday default the owner expects for a plain no-model card. Dropped;
-    # _HARD keyword match is the text signal that actually correlates with
-    # real difficulty.
+    _ = turns  # kept in the signal shape; no longer a trigger (see below)
+    # STRONG tier - every return goes through fits_window: the tier answers
+    # "how hard is this turn", the window answers "can that model still carry
+    # the conversation". Both must hold, the second is not negotiable - see
+    # CTX_WINDOWS. The failed path is "escalate on measured evidence": the
+    # next turn after a gate rejection gets the strong model, no retry loop.
     ctx = s.get("ctx_tokens")
-    # "high" priority is NOT an escalation signal: Henry mints practically
-    # every chat-born direct card as priority=high (measured 2026-09-04, all
-    # recent -direct cards prio=high -> 100% Opus), which starved Sonnet the
-    # same way the length/backtick triggers did below. Owner decree: Sonnet 5
-    # is the Auto default for card implementation; only "urgent" escalates.
+    # Owner decree 2026-09-04: Sonnet 5 IS the Auto model for card
+    # implementation. Three former STRONG triggers got dropped because each
+    # was measured to fire on ordinary cards and starve Sonnet, exactly like
+    # the length/backtick pair before them:
+    #  - prio "high": Henry mints practically every chat-born direct card
+    #    priority=high (all recent -direct cards -> 100% Opus);
+    #  - turns >= ESCALATE_TURNS(3): a normal implementation card reaches 3
+    #    turns routinely (live board 2026-09-04: turns 4/5/7/9/34 on ordinary
+    #    cards) - turn count is age, not difficulty;
+    #  - _HARD keywords: German card prose trips them constantly ("Design",
+    #    "Root Cause", "migrat..." in 2 of 5 recent cards).
+    # What still escalates is deliberate or measured: "urgent", a card worth
+    # HIGH_VALUE, an attachment, or a real gate failure (retry gets strength).
     if (has_attach
             or prio == "urgent"
             or (value and value >= HIGH_VALUE)
-            or failed
-            or turns >= ESCALATE_TURNS
-            or _HARD.search(t)):
+            or failed):
         return fits_window("claude-opus-5", ctx)
     # CHEAP tier - ONLY clear chatter (greetings/acks). A short imperative like
     # "add a null check" is still work -> it falls through to Sonnet, never Haiku.
