@@ -1261,6 +1261,22 @@ is blocked only on the APK build itself, which cannot run from a card worktree
 | v0.8 | 2026-06-26 | video moves to WiFi — **iOS only** (see §12.4) |
 | **v0.9** | **2026-08-04** | current; what the docs and README pin |
 
+⚠ **RE-CHECKED 2026-09-04 against the registry itself — STILL 0.9.0, nothing
+moved.** The owner asked "hast du auch die neuste dat Version geschaut", which is
+exactly what the header of this document tells every reader to do. Method as in
+§12.1b (`gh auth token`, in memory only). `maven-metadata.xml` for `mwdat-core`
+returned HTTP 200 with the complete published history:
+
+```
+0.2.1  0.3.0  0.4.0  0.5.0  0.6.0  0.7.0  0.8.0  0.9.0
+<latest>0.9.0</latest>   <release>0.9.0</release>
+```
+
+So the three-releases-in-three-months cadence (v0.7 May, v0.8 June, v0.9 August)
+has now gone **a month without a release** — the preview is not moving as fast as
+this page's warning assumes. Re-check anyway before the next native build; the
+check costs one command.
+
 The repo publishes **no GitHub Releases or tags** — versions are announced in
 Discussions only, so "check the releases page" returns nothing and reads as "no
 SDK". Read the Discussions list instead. `libs.versions.toml` verbatim:
@@ -1288,6 +1304,17 @@ At 0.9.0 the published set is exactly `mwdat-core`, `mwdat-camera`,
 `mwdat-display`, `mwdat-mockdevice`. **There is no audio artifact**, one release
 train later. §11.7's central correction — *the microphone is not a DAT API* —
 survives re-verification and should be treated as settled.
+
+⚠ **Re-verified 2026-09-04, and this time by PROBING rather than by reading the
+docs.** All four known artifacts return 200 at 0.9.0. Eight plausible audio/input
+module names were requested directly against the registry and every one is a
+**404**: `mwdat-audio`, `mwdat-microphone`, `mwdat-mic`, `mwdat-speech`,
+`mwdat-voice`, `mwdat-sensors`, `mwdat-neural`, `mwdat-input`. That matters more
+than another doc read, because an audio module appearing is the ONE event that
+would reopen this: it would mean the mic had become an SDK capability with its
+own permission model, instead of the plain Bluetooth HFP headset it is. It has
+not happened. **The mic path in `GlassVoiceService.kt` remains the right shape,
+and needs no PAT and no Meta approval.**
 
 **What is NEW:** Meta now ships an official page for it,
 `wearables.developer.meta.com/docs/develop/dat/microphones-and-speakers/`, which
