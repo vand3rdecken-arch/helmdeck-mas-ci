@@ -46,6 +46,7 @@ export interface ChatContext {
 interface CopilotPanel {
   open: boolean; context?: ChatContext;
   show: (ctx?: ChatContext) => void;
+  setContext: (ctx?: ChatContext) => void;
   hide: () => void;
   clearContext: () => void;
 }
@@ -56,6 +57,12 @@ export const useCopilotPanel = create<CopilotPanel>((set) => ({
   // attach the last question's subject to an unrelated message, which is worse
   // than no chip at all - the chip's whole value is that it is trustworthy.
   show: (ctx) => set({ open: true, context: ctx }),
+  // Hand over the subject WITHOUT arming the desktop panel - what the phone
+  // path needs, because there the chat is the /chat route and `open` governs
+  // only the wide-screen overlay. Callers used to show()+push(), which left
+  // `open` true behind the route; a later resize to a wide window then popped
+  // the overlay on top of the chat screen. Same clearing semantics as show().
+  setContext: (ctx) => set({ context: ctx }),
   hide: () => set({ open: false }),
   clearContext: () => set({ context: undefined }),
 }));
