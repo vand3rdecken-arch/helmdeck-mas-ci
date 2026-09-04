@@ -29,6 +29,22 @@ import { GROUPS as GROUPS_DATA } from "@/nav/more_groups";
 const GROUPS = GROUPS_DATA as unknown as
   readonly [string, readonly (readonly [string, string, keyof typeof Ionicons.glyphMap, string, string | undefined])[]][];
 
+// Settings doors, pulled straight into the Mehr tab (owner request
+// 2026-09-04): the single "Einstellungen" row forced Mehr -> Einstellungen
+// -> pick a door for a two-tap detour to something people open often. Rows
+// point at /settings?door=<id>, the SAME route settings.tsx's own door list
+// uses - one destination, two entry points, not a second settings surface.
+// "cells" stays out, same as its door-list hide (settings.tsx HIDDEN_DOORS).
+// cap mirrors settings.tsx's DOOR_META exactly - keep the two in sync.
+const SETTINGS_DOORS: readonly [string, string, string, keyof typeof Ionicons.glyphMap, string | undefined][] = [
+  ["general", "hub.door.general", "hub.door.general.sub", "person-circle-outline", undefined],
+  ["boards", "hub.door.boards", "hub.door.boards.sub", "grid-outline", undefined],
+  ["automation", "hub.door.automation", "hub.door.automation.sub", "flash-outline", "settings.read"],
+  ["connections", "hub.door.connections", "hub.door.connections.sub", "extension-puzzle-outline", "settings.read"],
+  ["team", "hub.door.team", "hub.door.team.sub", "people-outline", "settings.read"],
+  ["system", "hub.door.system", "hub.door.system.sub", "hardware-chip-outline", "settings.read"],
+];
+
 export default function MoreTab() {
   const t = useTheme();
   const tr = useT();
@@ -146,19 +162,32 @@ export default function MoreTab() {
           // door: too much on one screen). GROUPS itself is untouched, so
           // this is a one-line revert if either group comes back.
           if (grpKey === "more.grp.control" || grpKey === "more.grp.logs") return null;
-          // "repo" row hidden the same way (2026-09-04): rest of the pattern
-          // stays in more_groups.ts, revert by dropping this filter.
-          const links = allLinks.filter(([route, , , , cap]) => route !== "repo" && can(me, cap));
-          if (!links.length) return null;
+          // "repo" row hidden the same way (2026-09-04); "settings" replaced
+          // below by the doors pulled up inline, so it drops out here too.
+          const links = allLinks.filter(([route, , , , cap]) => route !== "repo" && route !== "settings" && can(me, cap));
+          const doors = SETTINGS_DOORS.filter(([, , , , cap]) => can(me, cap));
+          if (!links.length && grpKey !== "more.grp.system") return null;
           return (
           <View key={grpKey} style={{ gap: 6 }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "700", letterSpacing: 0.6,
               textTransform: "uppercase", paddingHorizontal: 4, paddingTop: 6 }}>{tr(grpKey)}</Text>
             <Panel style={{ padding: 0 }}>
+              {grpKey === "more.grp.system" ? doors.map(([id, labelKey, subKey, icon], i) => (
+                <Pressable key={id} onPress={() => router.push(`/settings?door=${id}` as never)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11,
+                    borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
+                  <Ionicons name={icon} size={18} color={t.txtSecondary} />
+                  <View style={{ flex: 1, gap: 1 }}>
+                    <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{tr(labelKey)}</Text>
+                    <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr(subKey)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
+                </Pressable>
+              )) : null}
               {links.map(([route, labelKey, icon, subKey], i) => (
                 <Pressable key={route} onPress={() => router.push(`/${route}` as never)}
                   style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11,
-                    borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.glassBorder }}>
+                    borderTopWidth: i === 0 && !(grpKey === "more.grp.system" && doors.length) ? 0 : 1, borderTopColor: t.glassBorder }}>
                   <Ionicons name={icon} size={18} color={t.txtSecondary} />
                   <View style={{ flex: 1, gap: 1 }}>
                     <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{tr(labelKey)}</Text>
