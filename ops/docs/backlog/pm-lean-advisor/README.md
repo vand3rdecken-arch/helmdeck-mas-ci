@@ -27,6 +27,13 @@ viel, aber wenig sinnvoller Output."
    markierte Play-Store-Karten als "stale" - der Owner stellte klar: nicht
    Duplikat, nicht veraltet, die Karte trägt ein Update. Vom Titel auf den
    Wert einer Karte zu schließen ist unzuverlässig.
+5. **Der Plan widerspricht dem Board.** Screenshot 14:52: das Scope-Gate
+   diskutiert M1s erfundenes Live-Datum (2026-09-05, "sofortige
+   Play-Store-Freigabe"), während der Owner den App-Release-Stand längst in
+   einer Karte pflegt. Der Planer liest das Board als Snapshot, gleicht
+   seine eigenen Behauptungen aber nicht damit ab - zwei Wahrheiten, und
+   die falsche steht groß auf der Übersicht. Bestätigt die Kern-Entscheidung:
+   das Board ist die einzige Wahrheit, das Plan-Dokument entfällt.
 
 ## Externe Evidenz (Recherche 2026-09-04, zwei unabhängige Sweeps)
 
