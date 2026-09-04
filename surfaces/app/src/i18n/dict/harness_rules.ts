@@ -185,6 +185,11 @@ export const harnessRules: Dict = {
     de: "Was er sich über Gespräche hinweg merkt.",
     en: "What he remembers across conversations.",
   },
+  "harness.blk.routing": { de: "Modell-Routing", en: "Model routing" },
+  "harness.blk.routing.desc": {
+    de: "Welches Modell eine Karte auf Automatik bekommt, und wann das eskaliert. Pro Projekt einstellbar.",
+    en: "Which model a card on Auto gets, and when that escalates. Overridable per project.",
+  },
 
   // ------------------------------------------------------------------ tone --
   "rule.tone.length": { de: "Antwortlänge", en: "Answer length" },
@@ -285,6 +290,23 @@ export const harnessRules: Dict = {
   "rule.hands.maySwap.desc": {
     de: "Aus: er darf eine Änderung vorschlagen, ausführen musst du sie. An: er darf sie selbst setzen.",
     en: "Off: he may propose a change, you carry it out. On: he may set it himself.",
+  },
+
+  // --------------------------------------------------------------- routing --
+  "rule.routing.autoModel": { de: "Modell auf Automatik", en: "Model on Auto" },
+  "rule.routing.autoModel.desc": {
+    de: "Welches Modell eine Karte oder ein Gespräch auf „Automatik“ normalerweise bekommt.",
+    en: "Which model a card or chat on “Auto” normally gets.",
+  },
+  "rule.routing.escalateValue": { de: "Eskalations-Schwelle (Kartenwert)", en: "Escalation threshold (card value)" },
+  "rule.routing.escalateValue.desc": {
+    de: "Ab diesem Kartenwert wechselt Automatik zur stärkeren Stufe, unabhängig vom Text.",
+    en: "At this card value, Auto switches to the stronger tier, regardless of the text.",
+  },
+  "rule.routing.escalateUrgent": { de: "Dringend eskaliert immer", en: "Urgent always escalates" },
+  "rule.routing.escalateUrgent.desc": {
+    de: "An: Priorität „dringend“ eskaliert automatisch zur stärkeren Stufe.",
+    en: "On: “urgent” priority automatically escalates to the stronger tier.",
   },
 
   // ---------------------------------------------------------------- report --

@@ -1,5 +1,22 @@
 # Model-Routing als Projekt-Policy — wann welches Modell, sichtbar und pro Projekt
 
+> **Karten 1+2 SHIPPED 2026-09-04** (direct, ungatet): `routing.auto_model` /
+> `routing.escalate_value` / `routing.escalate_urgent` als `scope: "project"`
+> Rules in `spine/registry/behavior.py` (neuer Block "routing", `reads` zeigt
+> auf `cells/engineer/cards/turnrunner.py::_routing_policy` → `cell_of()`
+> attribuiert korrekt an **engineer**, nicht spine). `turnopts.pick_model`/
+> `resolve_model` nehmen jetzt einen optionalen `policy`-Parameter
+> (`DEFAULT_ROUTING_POLICY` = heutiges Verhalten bei Aufruf ohne Policy).
+> `turnrunner._routing_policy(t)` (Karten, `for_card`) und
+> `copilot._chat_routing_policy(card)` (Chat, `for_chat`) lösen die drei Rows
+> am Event auf. Renderer/Endpoint/i18n sind der bestehende Harness-Layer
+> (`behavior.describe()`, `/harness/config`, `harness_rules.tsx`) — keine
+> neue UI nötig, die Tür zeigt die Gruppe automatisch. Verifiziert: write→
+> project-layer→turnrunner→pick_model→revert end-to-end, `test_turn_model_
+> routing` (neuer Fall: Projekt-Override gewinnt, anderes Repo bleibt beim
+> Workspace-Default), `test_harness_config_route`/`test_behavior_rules`/
+> `run_gate.py` grün. **Karte 3 (visibility-Zusammenfassungszeile) offen.**
+
 Owner-Entscheid (2026-09-04, Chat): "Das ist doch Logik von Henry oder engineer,
 nicht auf spine-Ebene. Je nach Projekt und Situation braucht man doch
 verschiedene Flows und Modelle." Vorgeschichte: Auto routete faktisch immer

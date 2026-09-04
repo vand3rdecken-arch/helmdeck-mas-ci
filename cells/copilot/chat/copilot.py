@@ -394,6 +394,33 @@ def henry_pmode(project=""):
         pass                  # a broken store must never cost Henry his hands
     return legacy or "acceptEdits"
 
+
+def _chat_routing_policy(card):
+    """This CHAT turn's effective model-routing policy - same rows and same
+    project-overlay read as turnrunner.py::_routing_policy (owner decree
+    2026-09-04: routing is engineer/Henry policy per project). `card` names
+    the card this chat is scoped to, if any (see _skey) - its repo IS the
+    project for_card() would use; board chat with no card falls back to
+    for_chat("") (default_repo), same as every other board-wide Henry read."""
+    from spine.agent import turnopts
+    out = dict(turnopts.DEFAULT_ROUTING_POLICY)
+    try:
+        from spine.storage import projectconfig
+        repo = ""
+        if card:
+            from cells.engineer.cards import sessions
+            repo = (sessions.get_track(card) or {}).get("repo") or ""
+        project = projectconfig.for_chat(repo)
+        for key, path in (("auto_model", "rule.routing.auto_model.all"),
+                          ("escalate_value", "rule.routing.escalate_value.all"),
+                          ("escalate_urgent", "rule.routing.escalate_urgent.all")):
+            got = projectconfig.resolve(path, project)
+            if got["value"] is not None:
+                out[key] = got["value"]
+    except Exception:                                          # noqa: BLE001
+        pass                  # a broken row must never block a chat turn
+    return out
+
 # HENRY'S ROLE IS DATA, IN EXACTLY ONE PLACE: ops/harness/agents/board-copilot.md
 # (owner-editable, versioned via /harness, shipped with every install - the
 # desktop bundle carries ops/harness as an extraResource). The 17 KB copy that
@@ -1511,7 +1538,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     if not _pick or _pick == "auto":
         _pick = _model_prefs().get(skey) or "auto"
     cli_model, _ = turnopts.resolve_model(_pick, message, bool(paths),
-                                          signals={"ctx_tokens": _st.get("ctx_tokens")})
+                                          signals={"ctx_tokens": _st.get("ctx_tokens")},
+                                          policy=_chat_routing_policy(card))
     if cli_model and model_source != "voice":
         _save_model_pref(skey, cli_model)
     body = turnopts.augment_prompt(message, thinking, paths)

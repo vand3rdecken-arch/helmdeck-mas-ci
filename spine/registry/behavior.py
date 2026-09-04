@@ -92,6 +92,7 @@ BLOCKS = (
     {"key": "hands", "labelKey": "harness.blk.hands", "descKey": "harness.blk.hands.desc"},
     {"key": "report", "labelKey": "harness.blk.report", "descKey": "harness.blk.report.desc"},
     {"key": "memory", "labelKey": "harness.blk.memory", "descKey": "harness.blk.memory.desc"},
+    {"key": "routing", "labelKey": "harness.blk.routing", "descKey": "harness.blk.routing.desc"},
 )
 
 # How a rule is wired to reality. The distinction is load-bearing: it is what
@@ -457,6 +458,54 @@ BEHAVIOR_RULES = [
             "von Policy.",
      "surfaces": {"pm": {"default": None, "renders": None}},
      "source": "cells/copilot/copilot.py::MEMORY_DIR"},
+
+    # ------------------------------------------------------------- routing --
+    # WHICH MODEL, WHEN - owner decree 2026-09-04 ("das ist doch Logik von
+    # Henry oder engineer, nicht auf spine-Ebene. Je nach Projekt und Situation
+    # braucht man doch verschiedene Flows und Modelle"). Until here this was
+    # THREE bare constants in spine/agent/turnopts.py (HIGH_VALUE,
+    # "claude-opus-5", "claude-sonnet-5") - workspace-wide, invisible, and
+    # measured to starve Sonnet by accident three times over (fa54463,
+    # 33a2412: prio-high/turns/keyword triggers all fired on ordinary cards).
+    # turnopts.py KEEPS the mechanism (server whitelist, context-window law,
+    # "explicit wins") - that is a harness invariant, not a preference. These
+    # three rows are the POLICY half: which model Auto picks, and the one
+    # measured-evidence signal (a card's own value) that escalates it. Each
+    # `reads` names the CELL that actually calls turnopts with this value -
+    # cell_of() therefore attributes ownership to engineer/copilot, not spine,
+    # exactly the split the owner asked for.
+    {"key": "routing.auto_model", "block": "routing", "wire": "code", "kind": "policy",
+     "control": "single", "options": ["claude-sonnet-5", "claude-opus-5"],
+     "scope": "project", "binds": [],
+     "labelKey": "rule.routing.autoModel", "descKey": "rule.routing.autoModel.desc",
+     "why": "Sonnet 5 ist heute der Auto-Default fuer Karten (Owner-Decree "
+            "2026-09-04). Ein Kundenprojekt mit hoeherem Risiko will "
+            "moeglicherweise durchgaengig die staerkere Stufe - pro Projekt, "
+            "nicht workspace-weit.",
+     "reads": "cells/engineer/cards/turnrunner.py::_routing_policy",
+     "surfaces": {"all": {"default": "claude-sonnet-5", "renders": None}},
+     "source": "spine/agent/turnopts.py:pick_model"},
+
+    {"key": "routing.escalate_value", "block": "routing", "wire": "code", "kind": "policy",
+     "control": "number", "scope": "project", "binds": [],
+     "labelKey": "rule.routing.escalateValue", "descKey": "rule.routing.escalateValue.desc",
+     "why": "Ab diesem Kartenwert (Waehrung: value_per_card) eskaliert Auto "
+            "auf die starke Stufe, unabhaengig vom Text. Ein Projekt mit "
+            "durchweg hohen Werten will die Schwelle vielleicht anders "
+            "ziehen als der Workspace-Default.",
+     "reads": "cells/engineer/cards/turnrunner.py::_routing_policy",
+     "surfaces": {"all": {"default": 100, "renders": None}},
+     "source": "spine/agent/turnopts.py:HIGH_VALUE"},
+
+    {"key": "routing.escalate_urgent", "block": "routing", "wire": "code", "kind": "policy",
+     "control": "toggle", "scope": "project", "binds": [],
+     "labelKey": "rule.routing.escalateUrgent", "descKey": "rule.routing.escalateUrgent.desc",
+     "why": "An: Prioritaet 'urgent' eskaliert immer auf die starke Stufe. "
+            "Aus, fuer ein Projekt, das Prioritaet fuer die Reihenfolge in "
+            "der Warteschlange nutzt statt fuer Modell-Risiko.",
+     "reads": "cells/engineer/cards/turnrunner.py::_routing_policy",
+     "surfaces": {"all": {"default": True, "renders": None}},
+     "source": "spine/agent/turnopts.py:pick_model"},
 ]
 
 

@@ -88,6 +88,30 @@ sessions._turn(t, "ok")
 check(captured["cfg"].get("model") == "claude-opus-5",
       "high-value/priority card -> strong tier (%r)" % captured["cfg"].get("model"))
 
+# 6) a project-level routing.* override (owner decree 2026-09-04: routing is
+#    per-project policy, resolved by the engineer cell at the choke point,
+#    not a spine constant) actually changes what Auto picks for THAT repo's
+#    cards, and leaves every other repo's cards on the workspace default.
+from spine.storage import projectconfig
+REPO = os.path.join(SANDBOX, "proj-repo")
+os.makedirs(REPO, exist_ok=True)
+proj = projectconfig.for_card({"repo": REPO})
+before, err = projectconfig.write(proj, {"rule.routing.auto_model.all": "claude-opus-5"},
+                                  actor="test")
+check(err is None, "project routing override writes cleanly (%r)" % err)
+
+t = _track("t-proj-override", repo=REPO)
+sessions._turn(t, "ordinary text, no escalation signal at all")
+check(captured["cfg"].get("model") == "claude-opus-5",
+      "this project's Auto override wins (%r)" % captured["cfg"].get("model"))
+
+t2 = _track("t-no-override", repo=os.path.join(SANDBOX, "other-repo"))
+sessions._turn(t2, "ordinary text, no escalation signal at all")
+check(captured["cfg"].get("model") == "claude-sonnet-5",
+      "a repo with no override still gets the workspace default (%r)" % captured["cfg"].get("model"))
+
+projectconfig.revert(proj, before, actor="test")
+
 print()
 if _fails:
     print("FAILED: %d check(s)" % len(_fails))
