@@ -310,7 +310,7 @@ function cornerIssues(plan: PmBrief | null | undefined, corner: "budget" | "time
 function fmtEta(tr: ReturnType<typeof useT>, eta?: PmBrief["eta"]): string {
   if (!eta?.known || eta.days_min == null || eta.days_max == null) return tr("pm.etaUnknown");
   return eta.days_min === eta.days_max
-    ? tr("pm.etaDays", { n: eta.days_min })
+    ? tr("dash.triangle.etaOne", { n: eta.days_min })
     : tr("dash.triangle.etaRange", { min: eta.days_min, max: eta.days_max });
 }
 
@@ -500,7 +500,7 @@ export function TriageFollowUp({ m, wide, defaultRepo }: { m: Metrics; wide: boo
               <Text style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
                 {mm.status === "done" ? tr("dash.triangle.msDone")
                   : mm.calendar_wait ? tr("dash.triangle.msWait")
-                  : mm.est_turns != null ? tr("pm.turns", { n: mm.est_turns })
+                  : mm.est_turns != null ? tr("dash.triangle.msTurns", { n: mm.est_turns })
                   : tr("pm.etaUnknown")}
               </Text>
               {mm.card ? <Ionicons name="arrow-forward-circle" size={15} color={t.accent} /> : null}

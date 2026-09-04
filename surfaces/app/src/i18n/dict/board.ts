@@ -200,10 +200,16 @@ export const board: Dict = {
   "dash.triangle.unknown": { de: "offen", en: "open" },
   "dash.triangle.blocked": { de: "Plan-Gate ROT", en: "plan gate RED" },
   "dash.triangle.ready": { de: "Plan-Gate grün — bereit", en: "plan gate green — ready" },
-  "dash.triangle.etaRange": { de: "~{min}–{max} Tage", en: "~{min}–{max} days" },
+  // Standard PM vocabulary, owner-requested (2026-09-04: "man hat da eher
+  // Velocity und Burnchart - kenne diese Sprache nicht" about the internal
+  // word "Turns"): Restaufwand/Velocity are the terms a PM-literate owner
+  // already knows; "Turns" never reaches this surface.
+  "dash.triangle.etaOne": { de: "Restaufwand: ~{n} Tag(e)", en: "remaining: ~{n} day(s)" },
+  "dash.triangle.etaRange": { de: "Restaufwand: ~{min}–{max} Tage", en: "remaining: ~{min}–{max} days" },
+  "dash.triangle.msTurns": { de: "~{n} Schritte", en: "~{n} steps" },
   "dash.triangle.checkedAt": { de: "zuletzt geprüft {when}", en: "last checked {when}" },
   "dash.triangle.msDone": { de: "fertig", en: "done" },
-  "dash.triangle.msWait": { de: "Wartezeit", en: "waiting" },
+  "dash.triangle.msWait": { de: "wartet auf extern", en: "external wait" },
   // ---- triage follow-up: the three corners own every deep-dive -------------
   "dash.corner.spentToDate": { de: "bisher {v}", en: "{v} spent" },
   "dash.corner.usageNote": {
