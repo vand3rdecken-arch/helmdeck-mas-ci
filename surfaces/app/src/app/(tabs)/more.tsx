@@ -34,13 +34,13 @@ const GROUPS = GROUPS_DATA as unknown as
 // -> pick a door for a two-tap detour to something people open often. Rows
 // point at /settings?door=<id>, the SAME route settings.tsx's own door list
 // uses - one destination, two entry points, not a second settings surface.
-// "cells" stays out, same as its door-list hide (settings.tsx HIDDEN_DOORS).
-// cap mirrors settings.tsx's DOOR_META exactly - keep the two in sync.
+// "cells" and "connections" stay out, same as their door-list hide
+// (settings.tsx HIDDEN_DOORS - this list mirrors it, keep the two in sync).
+// cap mirrors settings.tsx's DOOR_META exactly.
 const SETTINGS_DOORS: readonly [string, string, string, keyof typeof Ionicons.glyphMap, string | undefined][] = [
   ["general", "hub.door.general", "hub.door.general.sub", "person-circle-outline", undefined],
   ["boards", "hub.door.boards", "hub.door.boards.sub", "grid-outline", undefined],
   ["automation", "hub.door.automation", "hub.door.automation.sub", "flash-outline", "settings.read"],
-  ["connections", "hub.door.connections", "hub.door.connections.sub", "extension-puzzle-outline", "settings.read"],
   ["team", "hub.door.team", "hub.door.team.sub", "people-outline", "settings.read"],
   ["system", "hub.door.system", "hub.door.system.sub", "hardware-chip-outline", "settings.read"],
 ];
